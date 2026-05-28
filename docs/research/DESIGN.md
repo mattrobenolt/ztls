@@ -242,6 +242,12 @@ A `libcrypto` backend will also be offered as an opt-in build flag
   libcrypto-compatible and can slot in transparently.
 - **Performance**: OpenSSL's AES-NI + CLMUL for GCM, hand-rolled assembly,
   hardware acceleration on x86 in particular.
+- **ifunc runtime dispatch**: libcrypto uses GNU indirect function resolvers
+  to detect CPU features at process startup and resolve function pointers to
+  the best available implementation (e.g. VAES on supporting hardware, AES-NI
+  on older, software fallback on embedded). One binary runs optimally across
+  the hardware spectrum. Zig's SIMD is fixed at compile time — you target one
+  CPU feature level and that's what you get.
 
 The tradeoff is linking libcrypto pulls in libc, which is undesirable for
 embedded or minimal targets. Hence opt-in, not default.
