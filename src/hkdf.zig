@@ -4,11 +4,14 @@
 /// RFC 8446 §7.1 and §7.3.
 const std = @import("std");
 const assert = std.debug.assert;
-const memx = @import("memx.zig");
-const nonce = @import("nonce.zig");
+const crypto = std.crypto;
+const sha2 = crypto.auth.hmac.sha2;
+const HmacSha256 = sha2.HmacSha256;
+const HmacSha384 = sha2.HmacSha384;
+const testing = std.testing;
 
-const HmacSha256 = std.crypto.auth.hmac.sha2.HmacSha256;
-const HmacSha384 = std.crypto.auth.hmac.sha2.HmacSha384;
+const Iv = @import("nonce.zig").Iv;
+const memx = @import("memx.zig");
 
 /// TLS_AES_128_GCM_SHA256 and TLS_CHACHA20_POLY1305_SHA256.
 pub const HkdfSha256 = Hkdf(HmacSha256);
@@ -17,7 +20,7 @@ pub const HkdfSha256 = Hkdf(HmacSha256);
 pub const HkdfSha384 = Hkdf(HmacSha384);
 
 pub fn Hkdf(comptime Hmac: type) type {
-    const H = std.crypto.kdf.hkdf.Hkdf(Hmac);
+    const H = crypto.kdf.hkdf.Hkdf(Hmac);
 
     return struct {
         /// Length of the pseudorandom key and all derived secrets.
@@ -49,7 +52,11 @@ pub fn Hkdf(comptime Hmac: type) type {
             //   opaque label<7..255>  = "tls13 " + label
             //   opaque context<0..255>
             const full_label = "tls13 " ++ label;
-            var buf: [2 + 1 + full_label.len + 1 + 255]u8 = undefined;
+            const length_field = @sizeOf(u16);
+            const label_len_field = @sizeOf(u8);
+            const context_len_field = @sizeOf(u8);
+            const max_context_len = 255;
+            var buf: [length_field + label_len_field + full_label.len + context_len_field + max_context_len]u8 = undefined;
             var pos: usize = 0;
 
             buf[pos..][0..2].* = memx.toBytes(u16, @intCast(out.len));
@@ -74,15 +81,13 @@ pub fn Hkdf(comptime Hmac: type) type {
 
         /// RFC 8446 §7.3 — derive the write IV from a traffic secret.
         /// Always 12 bytes for all TLS 1.3 cipher suites.
-        pub fn trafficIv(prk: Prk) nonce.Iv {
-            var iv: nonce.Iv = undefined;
+        pub fn trafficIv(prk: Prk) Iv {
+            var iv: Iv = undefined;
             expandLabel(&iv, "iv", "", prk);
             return iv;
         }
     };
 }
-
-const testing = std.testing;
 
 // RFC 8446 §7.3 — traffic key calculation
 // Test vectors from RFC 8448 §3 (server handshake traffic keys).
