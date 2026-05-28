@@ -12,6 +12,9 @@ const construct = @import("nonce.zig").construct;
 const Iv = @import("aead.zig").Iv;
 const memx = @import("memx.zig");
 const record = @import("record.zig");
+const ContentType = record.ContentType;
+const DecryptedRecord = record.DecryptedRecord;
+const Header = record.Header;
 const Tag = @import("aead.zig").Tag;
 const tag_len = @import("aead.zig").tag_len;
 
@@ -31,7 +34,7 @@ seq: u64 = 0,
 /// Sequence number increments only on successful authentication.
 ///
 /// RFC 8446 §5.2
-pub fn decrypt(self: *RecordLayer, buf: []u8) !record.DecryptedRecord {
+pub fn decrypt(self: *RecordLayer, buf: []u8) !DecryptedRecord {
     if (self.seq == std.math.maxInt(u64)) {
         @branchHint(.cold);
         return error.SequenceNumberOverflow;
@@ -71,7 +74,7 @@ pub fn decrypt(self: *RecordLayer, buf: []u8) !record.DecryptedRecord {
 /// Returns the number of bytes written.
 ///
 /// RFC 8446 §5.2
-pub fn encrypt(self: *RecordLayer, content_type: record.ContentType, content: []const u8, buf: []u8) !usize {
+pub fn encrypt(self: *RecordLayer, content_type: ContentType, content: []const u8, out: []u8) ![]u8 {
     if (self.seq == std.math.maxInt(u64)) {
         @branchHint(.cold);
         return error.SequenceNumberOverflow;
@@ -79,24 +82,24 @@ pub fn encrypt(self: *RecordLayer, content_type: record.ContentType, content: []
 
     const inner_len = content.len + 1; // content + type byte
     const total = record.header_len + inner_len + tag_len;
-    if (buf.len < total) return error.BufferTooShort;
+    if (out.len < total) return error.BufferTooShort;
 
     // Write the record header: application_data, length = inner_len + tag_len.
-    buf[0..record.header_len].* = std.mem.toBytes(record.Header.init(.application_data, @intCast(inner_len + tag_len)));
+    out[0..record.header_len].* = std.mem.toBytes(Header.init(.application_data, @intCast(inner_len + tag_len)));
 
     // Write TLSInnerPlaintext: content || real ContentType byte.
-    @memcpy(buf[record.header_len..][0..content.len], content);
-    buf[record.header_len + content.len] = @intFromEnum(content_type);
+    @memcpy(out[record.header_len..][0..content.len], content);
+    out[record.header_len + content.len] = @intFromEnum(content_type);
 
     // Encrypt the inner plaintext in place, append the tag.
-    const inner = buf[record.header_len..][0..inner_len];
+    const inner = out[record.header_len..][0..inner_len];
     var tag: Tag = undefined;
     const npub = construct(&self.iv, self.seq);
-    self.aead.encrypt(inner, &tag, inner, buf[0..record.header_len], &npub);
-    buf[record.header_len + inner_len ..][0..tag_len].* = tag;
+    self.aead.encrypt(inner, &tag, inner, out[0..record.header_len], &npub);
+    out[record.header_len + inner_len ..][0..tag_len].* = tag;
 
     self.seq += 1;
-    return total;
+    return out[0..total];
 }
 
 // RFC 8446 §5.2 — record protection
@@ -122,10 +125,10 @@ test "encrypt/decrypt: round-trip" {
     const plaintext = "hello, ztls";
     var buf: [record.header_len + plaintext.len + 1 + tag_len]u8 = undefined;
 
-    const n = try tx.encrypt(.application_data, plaintext, &buf);
-    const result = try rx.decrypt(buf[0..n]);
+    const record_buf = try tx.encrypt(.application_data, plaintext, &buf);
+    const result = try rx.decrypt(record_buf);
 
-    try testing.expectEqual(record.ContentType.application_data, result.content_type);
+    try testing.expectEqual(ContentType.application_data, result.content_type);
     try testing.expectEqualSlices(u8, plaintext, result.content);
 }
 
@@ -138,8 +141,8 @@ test "encrypt/decrypt: sequence numbers advance" {
     var buf: [record.header_len + 5 + 1 + tag_len]u8 = undefined;
 
     for (0..3) |_| {
-        const n = try tx.encrypt(.application_data, "hello", &buf);
-        _ = try rx.decrypt(buf[0..n]);
+        const encrypted = try tx.encrypt(.application_data, "hello", &buf);
+        _ = try rx.decrypt(encrypted);
     }
     try testing.expectEqual(@as(u64, 3), tx.seq);
     try testing.expectEqual(@as(u64, 3), rx.seq);
