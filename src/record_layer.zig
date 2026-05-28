@@ -2,12 +2,9 @@
 ///
 /// Composes record framing, nonce construction, and AEAD to implement
 /// TLSCiphertext encrypt/decrypt. RFC 8446 §5.2
-const aead_mod = @import("aead.zig");
-const nonce_mod = @import("nonce.zig");
-const record = @import("record.zig");
-
-const Aead = aead_mod.Aead;
-const ContentType = record.ContentType;
+const Aead = @import("aead.zig").Aead;
+const ContentType = @import("record.zig").ContentType;
+const Iv = @import("nonce.zig").Iv;
 
 pub const DecryptResult = struct {
     content_type: ContentType,
@@ -20,10 +17,6 @@ pub const DecryptResult = struct {
 /// The caller maintains two of these — one for each direction.
 pub const RecordLayer = struct {
     aead: Aead,
-    iv: nonce_mod.Iv,
-    seq: u64,
-
-    pub fn init(aead: Aead, iv: nonce_mod.Iv) RecordLayer {
-        return .{ .aead = aead, .iv = iv, .seq = 0 };
-    }
+    iv: Iv,
+    seq: u64 = 0,
 };
