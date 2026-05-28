@@ -75,6 +75,77 @@ fn Hkdf(comptime Hmac: type) type {
             H.expand(out, buf[0..pos], prk);
         }
 
+        // Compute Hash("") for use in the "derived" steps between key schedule
+        // levels. RFC 8446 §7.1: Derive-Secret(., "derived", "") uses
+        // Transcript-Hash of empty input, which is just Hash("").
+        fn hashEmpty() Prk {
+            var out: Prk = undefined;
+            if (prk_len == 32) {
+                std.crypto.hash.sha2.Sha256.hash(&.{}, &out, .{});
+            } else {
+                comptime assert(prk_len == 48);
+                std.crypto.hash.sha2.Sha384.hash(&.{}, &out, .{});
+            }
+            return out;
+        }
+
+        /// RFC 8446 §7.1 — Derive-Secret.
+        ///
+        /// Expands `secret` using `label` and a transcript hash as context.
+        /// Output is always `prk_len` bytes (the hash output length).
+        pub fn deriveSecret(secret: Prk, comptime label: []const u8, transcript_hash: []const u8) Prk {
+            var out: Prk = undefined;
+            expandLabel(&out, label, transcript_hash, secret);
+            return out;
+        }
+
+        /// RFC 8446 §7.1 — EarlySecret.
+        ///
+        /// Starting point of the key schedule. For a full handshake with no
+        /// PSK, both salt and IKM are zero.
+        pub fn earlySecret() Prk {
+            const zero: Prk = @splat(0);
+            return H.extract(&zero, &zero);
+        }
+
+        /// RFC 8446 §7.1 — HandshakeSecret.
+        ///
+        /// Mixes the DHE shared secret into the key schedule.
+        /// `dhe` is the raw ECDH output (32 bytes for X25519/P-256).
+        pub fn handshakeSecret(early: Prk, dhe: []const u8) Prk {
+            const salt = deriveSecret(early, "derived", &hashEmpty());
+            return H.extract(&salt, dhe);
+        }
+
+        /// RFC 8446 §7.1 — MasterSecret.
+        ///
+        /// No new key material at this stage; IKM is zero.
+        pub fn masterSecret(handshake: Prk) Prk {
+            const salt = deriveSecret(handshake, "derived", &hashEmpty());
+            const zero: Prk = @splat(0);
+            return H.extract(&salt, &zero);
+        }
+
+        // RFC 8446 §7.1 — traffic secrets from HandshakeSecret.
+
+        pub fn clientHandshakeTrafficSecret(handshake: Prk, transcript_hash: []const u8) Prk {
+            return deriveSecret(handshake, "c hs traffic", transcript_hash);
+        }
+
+        pub fn serverHandshakeTrafficSecret(handshake: Prk, transcript_hash: []const u8) Prk {
+            return deriveSecret(handshake, "s hs traffic", transcript_hash);
+        }
+
+        // RFC 8446 §7.1 — traffic secrets from MasterSecret.
+
+        pub fn clientApplicationTrafficSecret(master: Prk, transcript_hash: []const u8) Prk {
+            return deriveSecret(master, "c ap traffic", transcript_hash);
+        }
+
+        pub fn serverApplicationTrafficSecret(master: Prk, transcript_hash: []const u8) Prk {
+            return deriveSecret(master, "s ap traffic", transcript_hash);
+        }
+
         /// RFC 8446 §7.3 — derive the write key from a traffic secret.
         /// `out.len` must match the AEAD key length for the cipher suite.
         pub fn trafficKey(prk: Prk, out: []u8) void {
@@ -131,4 +202,103 @@ test "HkdfSha256.trafficIv: RFC 8448 §3 server handshake" {
         0x95, 0x69, 0xec, 0xdd, 0x4d, 0x05, 0x36, 0x70,
         0x5e, 0x9e, 0xf7, 0x25,
     }, &iv);
+}
+
+// RFC 8446 §7.1 — key schedule
+// All vectors from RFC 8448 §3 (simple 1-RTT handshake, X25519, TLS_AES_128_GCM_SHA256).
+// https://www.rfc-editor.org/rfc/rfc8448
+
+test "HkdfSha256.earlySecret: RFC 8448 §3" {
+    const early = HkdfSha256.earlySecret();
+    try testing.expectEqualSlices(u8, &.{
+        0x33, 0xad, 0x0a, 0x1c, 0x60, 0x7e, 0xc0, 0x3b,
+        0x09, 0xe6, 0xcd, 0x98, 0x93, 0x68, 0x0c, 0xe2,
+        0x10, 0xad, 0xf3, 0x00, 0xaa, 0x1f, 0x26, 0x60,
+        0xe1, 0xb2, 0x2e, 0x10, 0xf1, 0x70, 0xf9, 0x2a,
+    }, &early);
+}
+
+test "HkdfSha256.handshakeSecret: RFC 8448 §3" {
+    const early = HkdfSha256.earlySecret();
+    // X25519 shared secret from RFC 8448 §3
+    const dhe: [32]u8 = .{
+        0x8b, 0xd4, 0x05, 0x4f, 0xb5, 0x5b, 0x9d, 0x63,
+        0xfd, 0xfb, 0xac, 0xf9, 0xf0, 0x4b, 0x9f, 0x0d,
+        0x35, 0xe6, 0xd6, 0x3f, 0x53, 0x75, 0x63, 0xef,
+        0xd4, 0x62, 0x72, 0x90, 0x0f, 0x89, 0x49, 0x2d,
+    };
+    const handshake = HkdfSha256.handshakeSecret(early, &dhe);
+    try testing.expectEqualSlices(u8, &.{
+        0x1d, 0xc8, 0x26, 0xe9, 0x36, 0x06, 0xaa, 0x6f,
+        0xdc, 0x0a, 0xad, 0xc1, 0x2f, 0x74, 0x1b, 0x01,
+        0x04, 0x6a, 0xa6, 0xb9, 0x9f, 0x69, 0x1e, 0xd2,
+        0x21, 0xa9, 0xf0, 0xca, 0x04, 0x3f, 0xbe, 0xac,
+    }, &handshake);
+}
+
+test "HkdfSha256.masterSecret: RFC 8448 §3" {
+    const early = HkdfSha256.earlySecret();
+    const dhe: [32]u8 = .{
+        0x8b, 0xd4, 0x05, 0x4f, 0xb5, 0x5b, 0x9d, 0x63,
+        0xfd, 0xfb, 0xac, 0xf9, 0xf0, 0x4b, 0x9f, 0x0d,
+        0x35, 0xe6, 0xd6, 0x3f, 0x53, 0x75, 0x63, 0xef,
+        0xd4, 0x62, 0x72, 0x90, 0x0f, 0x89, 0x49, 0x2d,
+    };
+    const handshake = HkdfSha256.handshakeSecret(early, &dhe);
+    const master = HkdfSha256.masterSecret(handshake);
+    try testing.expectEqualSlices(u8, &.{
+        0x18, 0xdf, 0x06, 0x84, 0x3d, 0x13, 0xa0, 0x8b,
+        0xf2, 0xa4, 0x49, 0x84, 0x4c, 0x5f, 0x8a, 0x47,
+        0x80, 0x01, 0xbc, 0x4d, 0x4c, 0x62, 0x79, 0x84,
+        0xd5, 0xa4, 0x1d, 0xa8, 0xd0, 0x40, 0x29, 0x19,
+    }, &master);
+}
+
+test "HkdfSha256.clientHandshakeTrafficSecret: RFC 8448 §3" {
+    const early = HkdfSha256.earlySecret();
+    const dhe: [32]u8 = .{
+        0x8b, 0xd4, 0x05, 0x4f, 0xb5, 0x5b, 0x9d, 0x63,
+        0xfd, 0xfb, 0xac, 0xf9, 0xf0, 0x4b, 0x9f, 0x0d,
+        0x35, 0xe6, 0xd6, 0x3f, 0x53, 0x75, 0x63, 0xef,
+        0xd4, 0x62, 0x72, 0x90, 0x0f, 0x89, 0x49, 0x2d,
+    };
+    // Transcript hash: SHA-256(ClientHello || ServerHello)
+    const transcript_hash: [32]u8 = .{
+        0x86, 0x0c, 0x06, 0xed, 0xc0, 0x78, 0x58, 0xee,
+        0x8e, 0x78, 0xf0, 0xe7, 0x42, 0x8c, 0x58, 0xed,
+        0xd6, 0xb4, 0x3f, 0x2c, 0xa3, 0xe6, 0xe9, 0x5f,
+        0x02, 0xed, 0x06, 0x3c, 0xf0, 0xe1, 0xca, 0xd8,
+    };
+    const handshake = HkdfSha256.handshakeSecret(early, &dhe);
+    const secret = HkdfSha256.clientHandshakeTrafficSecret(handshake, &transcript_hash);
+    try testing.expectEqualSlices(u8, &.{
+        0xb3, 0xed, 0xdb, 0x12, 0x6e, 0x06, 0x7f, 0x35,
+        0xa7, 0x80, 0xb3, 0xab, 0xf4, 0x5e, 0x2d, 0x8f,
+        0x3b, 0x1a, 0x95, 0x07, 0x38, 0xf5, 0x2e, 0x96,
+        0x00, 0x74, 0x6a, 0x0e, 0x27, 0xa5, 0x5a, 0x21,
+    }, &secret);
+}
+
+test "HkdfSha256.serverHandshakeTrafficSecret: RFC 8448 §3" {
+    const early = HkdfSha256.earlySecret();
+    const dhe: [32]u8 = .{
+        0x8b, 0xd4, 0x05, 0x4f, 0xb5, 0x5b, 0x9d, 0x63,
+        0xfd, 0xfb, 0xac, 0xf9, 0xf0, 0x4b, 0x9f, 0x0d,
+        0x35, 0xe6, 0xd6, 0x3f, 0x53, 0x75, 0x63, 0xef,
+        0xd4, 0x62, 0x72, 0x90, 0x0f, 0x89, 0x49, 0x2d,
+    };
+    const transcript_hash: [32]u8 = .{
+        0x86, 0x0c, 0x06, 0xed, 0xc0, 0x78, 0x58, 0xee,
+        0x8e, 0x78, 0xf0, 0xe7, 0x42, 0x8c, 0x58, 0xed,
+        0xd6, 0xb4, 0x3f, 0x2c, 0xa3, 0xe6, 0xe9, 0x5f,
+        0x02, 0xed, 0x06, 0x3c, 0xf0, 0xe1, 0xca, 0xd8,
+    };
+    const handshake = HkdfSha256.handshakeSecret(early, &dhe);
+    const secret = HkdfSha256.serverHandshakeTrafficSecret(handshake, &transcript_hash);
+    try testing.expectEqualSlices(u8, &.{
+        0xb6, 0x7b, 0x7d, 0x69, 0x0c, 0xc1, 0x6c, 0x4e,
+        0x75, 0xe5, 0x42, 0x13, 0xcb, 0x2d, 0x37, 0xb4,
+        0xe9, 0xc9, 0x12, 0xbc, 0xde, 0xd9, 0x10, 0x5d,
+        0x42, 0xbe, 0xfd, 0x59, 0xd3, 0x91, 0xad, 0x38,
+    }, &secret);
 }
