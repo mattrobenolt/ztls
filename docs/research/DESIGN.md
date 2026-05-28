@@ -274,7 +274,7 @@ Options when we get there: (a) libcrypto just for cert verification,
 - ✅ 2. AEAD wrapper — zig stdlib `std.crypto.aead` (`aead.zig`)
 - ✅ 3. Nonce construction — XOR of IV with seq number (`nonce.zig`)
 - ✅ 4. Encrypted record encode/decode — `RecordLayer.zig` (Layer 1 complete)
-- 5. HKDF key schedule — derive handshake and application secrets
+- ✅ 5. HKDF key schedule — `hkdf.zig`, full ladder + traffic secrets, RFC 8448 §3 vectors
 - 6. ClientHello construction
 - 7. ServerHello parsing + key_share extraction
 - 8. EncryptedExtensions, Certificate, CertificateVerify parsing
