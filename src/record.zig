@@ -51,11 +51,11 @@ pub const ContentType = enum(u8) {
 /// to read the u16 fields in native byte order.
 pub const Header = extern struct {
     content_type: ContentType,
-    /// Big-endian on the wire. Use legacyVersion() to read as native u16.
-    /// Should be 0x0303 for TLS 1.3. We parse but do not enforce — middlebox
-    /// compatibility and older stacks send other values on the initial record.
+    /// Always 0x0303 on the wire for TLS 1.3. Frozen for middlebox compatibility;
+    /// actual version negotiation happens in the supported_versions extension.
+    /// Not exposed — no caller should branch on this.
     legacy_version_be: [2]u8,
-    /// Big-endian on the wire. Use length() to read as native u16.
+    /// Big-endian payload length. Use length() to read as native u16.
     length_be: [2]u8,
 
     comptime {
