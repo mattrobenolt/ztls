@@ -75,19 +75,28 @@ fn Hkdf(comptime Hmac: type) type {
             H.expand(out, buf[0..pos], prk);
         }
 
-        // Compute Hash("") for use in the "derived" steps between key schedule
-        // levels. RFC 8446 §7.1: Derive-Secret(., "derived", "") uses
-        // Transcript-Hash of empty input, which is just Hash("").
-        fn hashEmpty() Prk {
+        // Hash("") — used as the transcript context for the "derived" steps
+        // between key schedule levels. RFC 8446 §7.1: Derive-Secret(., "derived", "")
+        // uses Transcript-Hash of empty input = Hash("").
+        const empty_hash: Prk = blk: {
+            @setEvalBranchQuota(100_000);
             var out: Prk = undefined;
             if (prk_len == 32) {
                 std.crypto.hash.sha2.Sha256.hash(&.{}, &out, .{});
             } else {
-                comptime assert(prk_len == 48);
+                assert(prk_len == 48);
                 std.crypto.hash.sha2.Sha384.hash(&.{}, &out, .{});
             }
-            return out;
-        }
+            break :blk out;
+        };
+
+        /// EarlySecret for a full handshake with no PSK.
+        /// Salt and IKM are both zero — comptime constant per RFC 8446 §7.1.
+        pub const early_secret: Prk = blk: {
+            @setEvalBranchQuota(100_000);
+            const zero: Prk = @splat(0);
+            break :blk H.extract(&zero, &zero);
+        };
 
         /// RFC 8446 §7.1 — Derive-Secret.
         ///
@@ -99,21 +108,12 @@ fn Hkdf(comptime Hmac: type) type {
             return out;
         }
 
-        /// RFC 8446 §7.1 — EarlySecret.
-        ///
-        /// Starting point of the key schedule. For a full handshake with no
-        /// PSK, both salt and IKM are zero.
-        pub fn earlySecret() Prk {
-            const zero: Prk = @splat(0);
-            return H.extract(&zero, &zero);
-        }
-
         /// RFC 8446 §7.1 — HandshakeSecret.
         ///
         /// Mixes the DHE shared secret into the key schedule.
         /// `dhe` is the raw ECDH output (32 bytes for X25519/P-256).
         pub fn handshakeSecret(early: Prk, dhe: []const u8) Prk {
-            const salt = deriveSecret(early, "derived", &hashEmpty());
+            const salt = deriveSecret(early, "derived", &empty_hash);
             return H.extract(&salt, dhe);
         }
 
@@ -121,7 +121,7 @@ fn Hkdf(comptime Hmac: type) type {
         ///
         /// No new key material at this stage; IKM is zero.
         pub fn masterSecret(handshake: Prk) Prk {
-            const salt = deriveSecret(handshake, "derived", &hashEmpty());
+            const salt = deriveSecret(handshake, "derived", &empty_hash);
             const zero: Prk = @splat(0);
             return H.extract(&salt, &zero);
         }
@@ -209,7 +209,7 @@ test "HkdfSha256.trafficIv: RFC 8448 §3 server handshake" {
 // https://www.rfc-editor.org/rfc/rfc8448
 
 test "HkdfSha256.earlySecret: RFC 8448 §3" {
-    const early = HkdfSha256.earlySecret();
+    const early = HkdfSha256.early_secret;
     try testing.expectEqualSlices(u8, &.{
         0x33, 0xad, 0x0a, 0x1c, 0x60, 0x7e, 0xc0, 0x3b,
         0x09, 0xe6, 0xcd, 0x98, 0x93, 0x68, 0x0c, 0xe2,
@@ -219,7 +219,7 @@ test "HkdfSha256.earlySecret: RFC 8448 §3" {
 }
 
 test "HkdfSha256.handshakeSecret: RFC 8448 §3" {
-    const early = HkdfSha256.earlySecret();
+    const early = HkdfSha256.early_secret;
     // X25519 shared secret from RFC 8448 §3
     const dhe: [32]u8 = .{
         0x8b, 0xd4, 0x05, 0x4f, 0xb5, 0x5b, 0x9d, 0x63,
@@ -237,7 +237,7 @@ test "HkdfSha256.handshakeSecret: RFC 8448 §3" {
 }
 
 test "HkdfSha256.masterSecret: RFC 8448 §3" {
-    const early = HkdfSha256.earlySecret();
+    const early = HkdfSha256.early_secret;
     const dhe: [32]u8 = .{
         0x8b, 0xd4, 0x05, 0x4f, 0xb5, 0x5b, 0x9d, 0x63,
         0xfd, 0xfb, 0xac, 0xf9, 0xf0, 0x4b, 0x9f, 0x0d,
@@ -255,7 +255,7 @@ test "HkdfSha256.masterSecret: RFC 8448 §3" {
 }
 
 test "HkdfSha256.clientHandshakeTrafficSecret: RFC 8448 §3" {
-    const early = HkdfSha256.earlySecret();
+    const early = HkdfSha256.early_secret;
     const dhe: [32]u8 = .{
         0x8b, 0xd4, 0x05, 0x4f, 0xb5, 0x5b, 0x9d, 0x63,
         0xfd, 0xfb, 0xac, 0xf9, 0xf0, 0x4b, 0x9f, 0x0d,
@@ -280,7 +280,7 @@ test "HkdfSha256.clientHandshakeTrafficSecret: RFC 8448 §3" {
 }
 
 test "HkdfSha256.serverHandshakeTrafficSecret: RFC 8448 §3" {
-    const early = HkdfSha256.earlySecret();
+    const early = HkdfSha256.early_secret;
     const dhe: [32]u8 = .{
         0x8b, 0xd4, 0x05, 0x4f, 0xb5, 0x5b, 0x9d, 0x63,
         0xfd, 0xfb, 0xac, 0xf9, 0xf0, 0x4b, 0x9f, 0x0d,
