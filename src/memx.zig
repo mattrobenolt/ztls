@@ -26,16 +26,17 @@ pub fn lastIndexOfNonZero(buf: []const u8) ?usize {
     assert(buf.len > 0);
     if (buf[buf.len - 1] != 0) return buf.len - 1;
 
-    const Vec = @Vector(16, u8);
+    const chunk_len = std.simd.suggestVectorLength(u8) orelse 1;
+    const Vec = @Vector(chunk_len, u8);
     const zero: Vec = @splat(0);
 
     var i = buf.len - 1;
 
-    while (i >= 16) {
-        i -= 16;
-        const chunk: Vec = buf[i..][0..16].*;
+    while (i >= chunk_len) {
+        i -= chunk_len;
+        const chunk: Vec = buf[i..][0..chunk_len].*;
         if (@reduce(.Or, chunk != zero)) {
-            var j: usize = 15;
+            var j: usize = chunk_len - 1;
             while (true) {
                 if (buf[i + j] != 0) return i + j;
                 if (j == 0) break;
