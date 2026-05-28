@@ -4,10 +4,11 @@
 /// two parties sharing a key and IV, sending application data back
 /// and forth across a simulated channel.
 const std = @import("std");
-const ztls = @import("ztls");
+const print = std.debug.print;
 
+const ztls = @import("ztls");
 const RecordLayer = ztls.RecordLayer;
-const record = ztls.record;
+const frame = ztls.frame;
 
 pub fn main() !void {
     // In a real TLS connection, key and IV are derived from the handshake
@@ -26,17 +27,17 @@ pub fn main() !void {
 
     for (messages) |msg| {
         // Sender: encrypt into a stack-allocated output buffer.
-        var out: [record.header_len + 256 + 1 + ztls.aead.tag_len]u8 = undefined;
+        var out: [frame.header_len + 256 + 1 + ztls.aead.tag_len]u8 = undefined;
         const wire = try sender.encrypt(.application_data, msg, &out);
 
-        std.debug.print("encrypted {} bytes -> {} wire bytes\n", .{ msg.len, wire.len });
+        print("encrypted {} bytes -> {} wire bytes\n", .{ msg.len, wire.len });
 
         // Receiver: decrypt in place. `wire` is modified; result points into it.
         const received = try receiver.decrypt(wire);
 
-        std.debug.print("  content_type: {s}\n", .{@tagName(received.content_type)});
-        std.debug.print("  content:      {s}\n", .{received.content});
+        print("  content_type: {s}\n", .{@tagName(received.content_type)});
+        print("  content:      {s}\n", .{received.content});
     }
 
-    std.debug.print("\nsender seq: {d}  receiver seq: {d}\n", .{ sender.seq, receiver.seq });
+    print("\nsender seq: {d}  receiver seq: {d}\n", .{ sender.seq, receiver.seq });
 }

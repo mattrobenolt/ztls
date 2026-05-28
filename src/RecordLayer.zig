@@ -11,10 +11,10 @@ const Aes128GcmKey = @import("aead.zig").Aes128GcmKey;
 const construct = @import("nonce.zig").construct;
 const Iv = @import("aead.zig").Iv;
 const memx = @import("memx.zig");
-const record = @import("record.zig");
-const ContentType = record.ContentType;
-const DecryptedRecord = record.DecryptedRecord;
-const Header = record.Header;
+const frame = @import("frame.zig");
+const ContentType = frame.ContentType;
+const DecryptedRecord = frame.DecryptedRecord;
+const Header = frame.Header;
 const Tag = @import("aead.zig").Tag;
 const tag_len = @import("aead.zig").tag_len;
 
@@ -40,20 +40,20 @@ pub fn decrypt(self: *RecordLayer, buf: []u8) !DecryptedRecord {
         return error.SequenceNumberOverflow;
     }
 
-    const hdr = try record.parseHeader(buf);
+    const hdr = try frame.parseHeader(buf);
     if (hdr.content_type != .application_data) return error.UnexpectedContentType;
 
     const payload_len = hdr.length();
     if (payload_len <= tag_len) return error.RecordTooShort;
 
     const ct_len = payload_len - tag_len;
-    const payload = buf[record.header_len..][0..payload_len];
+    const payload = buf[frame.header_len..][0..payload_len];
     const inner = payload[0..ct_len];
     const tag: *const Tag = payload[ct_len..][0..tag_len];
 
     const npub = construct(&self.iv, self.seq);
     // Decrypt in place: inner holds ciphertext on entry, plaintext on exit.
-    try self.aead.decrypt(inner, inner, tag, buf[0..record.header_len], &npub);
+    try self.aead.decrypt(inner, inner, tag, buf[0..frame.header_len], &npub);
 
     self.seq += 1;
 
@@ -69,7 +69,7 @@ pub fn decrypt(self: *RecordLayer, buf: []u8) !DecryptedRecord {
 ///
 /// Writes the full TLSCiphertext record into `buf`: 5-byte header, ciphertext,
 /// and authentication tag. `buf` must be at least
-/// `record.header_len + content.len + 1 + tag_len` bytes.
+/// `frame.header_len + content.len + 1 + tag_len` bytes.
 ///
 /// Returns the number of bytes written.
 ///
@@ -81,15 +81,15 @@ pub fn encrypt(self: *RecordLayer, content_type: ContentType, content: []const u
     }
 
     const inner_len = content.len + 1; // content + type byte
-    const total = record.header_len + inner_len + tag_len;
+    const total = frame.header_len + inner_len + tag_len;
     if (out.len < total) return error.BufferTooShort;
 
-    const inner = out[record.header_len..][0..inner_len];
-    const tag: *Tag = out[record.header_len + inner_len ..][0..tag_len];
+    const inner = out[frame.header_len..][0..inner_len];
+    const tag: *Tag = out[frame.header_len + inner_len ..][0..tag_len];
 
     // Write the record header: application_data, length = inner_len + tag_len.
     const header: Header = .init(.application_data, @intCast(inner_len + tag_len));
-    const hdr = out[0..record.header_len];
+    const hdr = out[0..frame.header_len];
     hdr.* = std.mem.toBytes(header);
 
     // Write TLSInnerPlaintext: content || real ContentType byte.
@@ -132,7 +132,7 @@ test "encrypt/decrypt: round-trip" {
     var rx: RecordLayer = .{ .aead = .initAes128Gcm(key), .iv = iv };
 
     const plaintext = "hello, ztls";
-    var buf: [record.header_len + plaintext.len + 1 + tag_len]u8 = undefined;
+    var buf: [frame.header_len + plaintext.len + 1 + tag_len]u8 = undefined;
 
     const record_buf = try tx.encrypt(.application_data, plaintext, &buf);
     const result = try rx.decrypt(record_buf);
@@ -147,7 +147,7 @@ test "encrypt/decrypt: sequence numbers advance" {
     var tx: RecordLayer = .{ .aead = .initAes128Gcm(key), .iv = iv };
     var rx: RecordLayer = .{ .aead = .initAes128Gcm(key), .iv = iv };
 
-    var buf: [record.header_len + 5 + 1 + tag_len]u8 = undefined;
+    var buf: [frame.header_len + 5 + 1 + tag_len]u8 = undefined;
 
     for (0..3) |_| {
         const encrypted = try tx.encrypt(.application_data, "hello", &buf);
