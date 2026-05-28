@@ -20,14 +20,17 @@ aead: Aead,
 iv: Iv,
 seq: u64 = 0,
 
-/// Decrypt a TLSCiphertext record from `buf` into `out`.
+/// Decrypt a TLSCiphertext record in place.
 ///
-/// `buf` is the full record as received from the wire (header + encrypted payload).
-/// `out` must be at least `buf.len - header_len - tag_len` bytes.
+/// `buf` must contain the full record as received from the wire
+/// (header + encrypted payload). Decryption overwrites the ciphertext
+/// portion of `buf` with the plaintext. The returned `DecryptedRecord.content`
+/// is a subslice of `buf` — no allocation, no copy.
+///
 /// Sequence number increments only on successful authentication.
 ///
 /// RFC 8446 §5.2
-pub fn decrypt(self: *RecordLayer, buf: []const u8, out: []u8) !record.DecryptedRecord {
+pub fn decrypt(self: *RecordLayer, buf: []u8) !record.DecryptedRecord {
     if (self.seq == std.math.maxInt(u64)) {
         @branchHint(.cold);
         return error.SequenceNumberOverflow;
@@ -40,64 +43,40 @@ pub fn decrypt(self: *RecordLayer, buf: []const u8, out: []u8) !record.Decrypted
     if (payload_len <= tag_len) return error.RecordTooShort;
 
     const ct_len = payload_len - tag_len;
-    if (out.len < ct_len) return error.BufferTooShort;
-
     const payload = buf[record.header_len..][0..payload_len];
     const ciphertext = payload[0..ct_len];
     const tag: *const Tag = payload[ct_len..][0..tag_len];
 
     const npub = construct(&self.iv, self.seq);
-    try self.aead.decrypt(out[0..ct_len], ciphertext, tag, buf[0..record.header_len], &npub);
+    // Decrypt in place: ciphertext and plaintext occupy the same slice.
+    try self.aead.decrypt(ciphertext, ciphertext, tag, buf[0..record.header_len], &npub);
 
     self.seq += 1;
 
     // RFC 8446 §5.2: last non-zero byte is the real ContentType.
-    const i = memx.lastIndexOfNonZero(out[0..ct_len]) orelse return error.InvalidInnerPlaintext;
+    const i = memx.lastIndexOfNonZero(ciphertext) orelse return error.InvalidInnerPlaintext;
     return .{
-        .content_type = @enumFromInt(out[i]),
-        .content = out[0..i],
+        .content_type = @enumFromInt(ciphertext[i]),
+        .content = ciphertext[0..i],
     };
 }
 
 // RFC 8446 §5.2 — record protection
 
 test "decrypt: wrong content type" {
-    var rl: RecordLayer = .{
-        .aead = .initAes128Gcm(@splat(0)),
-        .iv = @splat(0),
-    };
-    const buf = [_]u8{ 22, 0x03, 0x03, 0x00, 0x10 } ++ [_]u8{0} ** 16;
-    var out: [16]u8 = undefined;
-    try testing.expectError(error.UnexpectedContentType, rl.decrypt(&buf, &out));
+    var rl: RecordLayer = .{ .aead = .initAes128Gcm(@splat(0)), .iv = @splat(0) };
+    var buf = [_]u8{ 22, 0x03, 0x03, 0x00, 0x10 } ++ [_]u8{0} ** 16;
+    try testing.expectError(error.UnexpectedContentType, rl.decrypt(&buf));
 }
 
 test "decrypt: payload shorter than tag" {
-    var rl: RecordLayer = .{
-        .aead = .initAes128Gcm(@splat(0)),
-        .iv = @splat(0),
-    };
-    const buf = [_]u8{ 23, 0x03, 0x03, 0x00, 0x04 } ++ [_]u8{0} ** 4;
-    var out: [4]u8 = undefined;
-    try testing.expectError(error.RecordTooShort, rl.decrypt(&buf, &out));
-}
-
-test "decrypt: output buffer too small" {
-    var rl: RecordLayer = .{
-        .aead = .initAes128Gcm(@splat(0)),
-        .iv = @splat(0),
-    };
-    const buf = [_]u8{ 23, 0x03, 0x03, 0x00, 0x14 } ++ [_]u8{0} ** 20;
-    var out: [3]u8 = undefined;
-    try testing.expectError(error.BufferTooShort, rl.decrypt(&buf, &out));
+    var rl: RecordLayer = .{ .aead = .initAes128Gcm(@splat(0)), .iv = @splat(0) };
+    var buf = [_]u8{ 23, 0x03, 0x03, 0x00, 0x04 } ++ [_]u8{0} ** 4;
+    try testing.expectError(error.RecordTooShort, rl.decrypt(&buf));
 }
 
 test "decrypt: sequence number overflow" {
-    var rl: RecordLayer = .{
-        .aead = .initAes128Gcm(@splat(0)),
-        .iv = @splat(0),
-        .seq = std.math.maxInt(u64),
-    };
-    const buf = [_]u8{ 23, 0x03, 0x03, 0x00, 0x14 } ++ [_]u8{0} ** 20;
-    var out: [4]u8 = undefined;
-    try testing.expectError(error.SequenceNumberOverflow, rl.decrypt(&buf, &out));
+    var rl: RecordLayer = .{ .aead = .initAes128Gcm(@splat(0)), .iv = @splat(0), .seq = std.math.maxInt(u64) };
+    var buf = [_]u8{ 23, 0x03, 0x03, 0x00, 0x14 } ++ [_]u8{0} ** 20;
+    try testing.expectError(error.SequenceNumberOverflow, rl.decrypt(&buf));
 }
