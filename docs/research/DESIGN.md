@@ -234,10 +234,16 @@ instances and drive them once keys are derived from the key schedule.
 Default backend is `std.crypto` — zero dependencies, pure Zig, works everywhere.
 
 A `libcrypto` backend will also be offered as an opt-in build flag
-(e.g. `-Dcrypto=libcrypto`). OpenSSL's symmetric crypto is extremely
-well-optimized — hardware AES-NI, CLMUL for GCM, hand-rolled assembly —
-and may be measurably faster for throughput-sensitive deployments. The
-tradeoff is linking libcrypto pulls in libc, which is undesirable for
+(e.g. `-Dcrypto=libcrypto`). Reasons to use it:
+
+- **Security patching**: dynamically linking libcrypto means an OpenSSL
+  security release propagates to your application without a recompile.
+- **Drop-in compatibility**: BoringSSL, LibreSSL, AWS-LC, and others are
+  libcrypto-compatible and can slot in transparently.
+- **Performance**: OpenSSL's AES-NI + CLMUL for GCM, hand-rolled assembly,
+  hardware acceleration on x86 in particular.
+
+The tradeoff is linking libcrypto pulls in libc, which is undesirable for
 embedded or minimal targets. Hence opt-in, not default.
 
 The AEAD (and eventually HKDF) layers will dispatch to the right
