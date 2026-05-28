@@ -120,7 +120,7 @@ pub fn encode(
 
     // cipher_suites
     w.append(u16, cipher_suites.len * 2);
-    for (cipher_suites) |cs| w.append(CipherSuite, cs);
+    inline for (cipher_suites) |cs| w.append(CipherSuite, cs);
 
     // legacy_compression_methods: null only
     w.append(u8, 0x01);
@@ -159,7 +159,7 @@ pub fn encode(
     w.append(u16, 0x000d);
     w.append(u16, 2 + sig_schemes.len * 2); // extension data length
     w.append(u16, sig_schemes.len * 2); // list length
-    for (sig_schemes) |s| w.append(SignatureScheme, s);
+    inline for (sig_schemes) |s| w.append(SignatureScheme, s);
 
     // key_share (RFC 8446 §4.2.8)
     w.append(u16, 0x0033);
