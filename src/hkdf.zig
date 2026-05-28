@@ -43,20 +43,22 @@ pub fn Hkdf(comptime Hmac: type) type {
             context: []const u8,
             prk: Prk,
         ) void {
-            comptime assert(6 + label.len <= 255);
-            assert(context.len <= 255);
-            assert(out.len <= 0xffff);
+            const tls13_prefix = "tls13 ";
+            comptime assert(tls13_prefix.len + label.len <= 255); // label<7..255>
+            assert(context.len <= 255); // context<0..255>
+            assert(out.len <= std.math.maxInt(u16)); // length is uint16
 
             // HkdfLabel wire encoding (RFC 8446 §7.1):
             //   uint16 length
             //   opaque label<7..255>  = "tls13 " + label
             //   opaque context<0..255>
-            const full_label = "tls13 " ++ label;
+            const full_label = tls13_prefix ++ label;
             const length_field = @sizeOf(u16);
             const label_len_field = @sizeOf(u8);
             const context_len_field = @sizeOf(u8);
             const max_context_len = 255;
-            var buf: [length_field + label_len_field + full_label.len + context_len_field + max_context_len]u8 = undefined;
+            const buf_len = length_field + label_len_field + full_label.len + context_len_field + max_context_len;
+            var buf: [buf_len]u8 = undefined;
             var pos: usize = 0;
 
             buf[pos..][0..2].* = memx.toBytes(u16, @intCast(out.len));
