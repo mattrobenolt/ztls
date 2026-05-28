@@ -107,7 +107,7 @@ fn Hkdf(comptime Hmac: type) type {
         ///
         /// Expands `secret` using `label` and a transcript hash as context.
         /// Output is always `prk_len` bytes (the hash output length).
-        pub inline fn deriveSecret(secret: Prk, comptime label: []const u8, transcript_hash: []const u8) Prk {
+        pub inline fn deriveSecret(secret: Prk, comptime label: []const u8, transcript_hash: *const Prk) Prk {
             var out: Prk = undefined;
             expandLabel(&out, label, transcript_hash, secret);
             return out;
@@ -117,7 +117,7 @@ fn Hkdf(comptime Hmac: type) type {
         ///
         /// Mixes the DHE shared secret into the key schedule.
         /// `dhe` is the raw ECDH output (32 bytes for X25519/P-256).
-        pub fn handshakeSecret(early: Prk, dhe: []const u8) Prk {
+        pub fn handshakeSecret(early: Prk, dhe: *const [32]u8) Prk {
             const salt = deriveSecret(early, "derived", &empty_hash);
             return H.extract(&salt, dhe);
         }
@@ -133,21 +133,21 @@ fn Hkdf(comptime Hmac: type) type {
 
         // RFC 8446 §7.1 — traffic secrets from HandshakeSecret.
 
-        pub inline fn clientHandshakeTrafficSecret(handshake: Prk, transcript_hash: []const u8) Prk {
+        pub inline fn clientHandshakeTrafficSecret(handshake: Prk, transcript_hash: *const Prk) Prk {
             return deriveSecret(handshake, "c hs traffic", transcript_hash);
         }
 
-        pub inline fn serverHandshakeTrafficSecret(handshake: Prk, transcript_hash: []const u8) Prk {
+        pub inline fn serverHandshakeTrafficSecret(handshake: Prk, transcript_hash: *const Prk) Prk {
             return deriveSecret(handshake, "s hs traffic", transcript_hash);
         }
 
         // RFC 8446 §7.1 — traffic secrets from MasterSecret.
 
-        pub inline fn clientApplicationTrafficSecret(master: Prk, transcript_hash: []const u8) Prk {
+        pub inline fn clientApplicationTrafficSecret(master: Prk, transcript_hash: *const Prk) Prk {
             return deriveSecret(master, "c ap traffic", transcript_hash);
         }
 
-        pub inline fn serverApplicationTrafficSecret(master: Prk, transcript_hash: []const u8) Prk {
+        pub inline fn serverApplicationTrafficSecret(master: Prk, transcript_hash: *const Prk) Prk {
             return deriveSecret(master, "s ap traffic", transcript_hash);
         }
 
