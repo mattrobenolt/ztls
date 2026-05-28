@@ -4,6 +4,7 @@
 const std = @import("std");
 const mem = std.mem;
 const assert = std.debug.assert;
+const testing = std.testing;
 
 pub inline fn readInt(comptime T: type, buf: *const [@divExact(@bitSizeOf(T), 8)]u8) T {
     return mem.readInt(T, buf, .big);
@@ -19,14 +20,18 @@ pub inline fn toBytes(comptime T: type, value: T) [@sizeOf(T)]u8 {
 
 /// Return the index of the last non-zero byte in `buf`, or null if all zeros.
 ///
-/// Processes 16 bytes at a time using SIMD, falling back to scalar for the
-/// remaining prefix. std.mem.lastIndexOfNone compiles to a scalar loop even
-/// at ReleaseFast, so we hand-roll this.
+/// Fast path: if the last byte is non-zero, returns immediately.
+/// SIMD path: processes `chunk_len` bytes at a time backwards, where
+/// `chunk_len` is target-optimal (suggestVectorLength), defaulting to 16
+/// and capped at 32.
+/// Scalar path: handles the remaining prefix shorter than `chunk_len`.
+///
+/// `buf` must be non-empty — caller is responsible for ensuring this.
 pub fn lastIndexOfNonZero(buf: []const u8) ?usize {
     assert(buf.len > 0);
 
     var i = buf.len - 1;
-    if (buf[i] != 0) return buf.len - 1;
+    if (buf[i] != 0) return i;
 
     const chunk_len = @min(std.simd.suggestVectorLength(u8) orelse 16, 32);
     const Vec = @Vector(chunk_len, u8);
@@ -52,8 +57,6 @@ pub fn lastIndexOfNonZero(buf: []const u8) ?usize {
 
     return null;
 }
-
-const testing = std.testing;
 
 test "lastIndexOfNonZero: last byte non-zero (fast path)" {
     const buf = [_]u8{ 0, 0, 0, 0xab };
