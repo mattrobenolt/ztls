@@ -1,7 +1,9 @@
 /// Extensions to std.mem for ztls.
 ///
 /// TLS is entirely big-endian, so readInt/writeInt drop the endian argument.
-const mem = @import("std").mem;
+const std = @import("std");
+const mem = std.mem;
+const assert = std.debug.assert;
 
 pub inline fn readInt(comptime T: type, buf: *const [@divExact(@bitSizeOf(T), 8)]u8) T {
     return mem.readInt(T, buf, .big);
@@ -21,7 +23,7 @@ pub inline fn toBytes(comptime T: type, value: T) [@sizeOf(T)]u8 {
 /// remaining prefix. std.mem.lastIndexOfNone compiles to a scalar loop even
 /// at ReleaseFast, so we hand-roll this.
 pub fn lastIndexOfNonZero(buf: []const u8) ?usize {
-    if (buf.len == 0) return null;
+    assert(buf.len > 0);
     if (buf[buf.len - 1] != 0) return buf.len - 1;
 
     const Vec = @Vector(16, u8);
