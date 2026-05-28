@@ -37,7 +37,7 @@ pub fn decrypt(self: *RecordLayer, buf: []const u8, out: []u8) !record.Decrypted
     if (hdr.content_type != .application_data) return error.UnexpectedContentType;
 
     const payload_len = hdr.length();
-    if (payload_len < tag_len) return error.RecordTooShort;
+    if (payload_len <= tag_len) return error.RecordTooShort;
 
     const ct_len = payload_len - tag_len;
     if (out.len < ct_len) return error.BufferTooShort;
