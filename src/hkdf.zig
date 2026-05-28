@@ -20,6 +20,11 @@ pub const HkdfSha256 = Hkdf(HmacSha256);
 /// TLS_AES_256_GCM_SHA384.
 pub const HkdfSha384 = Hkdf(HmacSha384);
 
+/// Raw ECDH shared secret output.
+/// TODO: replace with a proper typed result from the key exchange layer
+/// (X25519, P-256) once implemented.
+pub const SharedSecret = [32]u8;
+
 fn Hkdf(comptime Hmac: type) type {
     const H = crypto.kdf.hkdf.Hkdf(Hmac);
 
@@ -117,7 +122,7 @@ fn Hkdf(comptime Hmac: type) type {
         ///
         /// Mixes the DHE shared secret into the key schedule.
         /// `dhe` is the raw ECDH output (32 bytes for X25519/P-256).
-        pub fn handshakeSecret(early: Prk, dhe: *const [32]u8) Prk {
+        pub fn handshakeSecret(early: Prk, dhe: *const SharedSecret) Prk {
             const salt = deriveSecret(early, "derived", &empty_hash);
             return H.extract(&salt, dhe);
         }
