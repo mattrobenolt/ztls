@@ -33,10 +33,12 @@
         {
           devShells.default = pkgs.mkShell {
             packages = with pkgs; [
+              openssl
+              pkg-config
               zig_0_15
-              zls_0_15
-              ziglint
               zigdoc
+              ziglint
+              zls_0_15
             ];
 
             shellHook = ''
