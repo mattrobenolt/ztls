@@ -10,15 +10,10 @@ const Aead = @import("aead.zig").Aead;
 const construct = @import("nonce.zig").construct;
 const Iv = @import("aead.zig").Iv;
 const record = @import("record.zig");
-const ContentType = record.ContentType;
 const Tag = @import("aead.zig").Tag;
 const tag_len = @import("aead.zig").tag_len;
 
-pub const DecryptResult = struct {
-    content_type: ContentType,
-    /// Plaintext content — subslice of the caller-provided output buffer.
-    content: []u8,
-};
+
 
 /// Protection state for one direction of a TLS connection (read or write).
 ///
@@ -35,7 +30,7 @@ pub const RecordLayer = struct {
     /// Sequence number increments only on successful authentication.
     ///
     /// RFC 8446 §5.2
-    pub fn decrypt(self: *RecordLayer, buf: []const u8, out: []u8) !DecryptResult {
+    pub fn decrypt(self: *RecordLayer, buf: []const u8, out: []u8) !record.DecryptedRecord {
         if (self.seq == std.math.maxInt(u64)) {
             @branchHint(.cold);
             return error.SequenceNumberOverflow;
@@ -59,8 +54,7 @@ pub const RecordLayer = struct {
 
         self.seq += 1;
 
-        // Strip TLSInnerPlaintext padding: scan back for last non-zero byte.
-        // RFC 8446 §5.2
+        // RFC 8446 §5.2: scan back for last non-zero byte — that's the real ContentType.
         var i = ct_len;
         while (i > 0) {
             i -= 1;

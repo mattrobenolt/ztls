@@ -100,42 +100,11 @@ pub fn parseHeader(buf: []const u8) ParseError!*const Header {
     return h;
 }
 
-/// Result of stripping TLSInnerPlaintext padding.
-pub const InnerPlaintext = struct {
-    /// The real content type, found by scanning from the end.
+pub const DecryptedRecord = struct {
     content_type: ContentType,
-    /// The content, not including the type byte or padding zeros.
-    /// This is a subslice of the original buffer — no copy.
-    content: []const u8,
+    /// Subslice of the caller-provided output buffer — no copy.
+    content: []u8,
 };
-
-pub const InnerPlaintextError = error{
-    /// The entire buffer is zero bytes with no content type.
-    /// RFC 8446 §5.4: "If the zero-padding results in the inner plaintext
-    /// being empty, the content type is invalid."
-    InvalidInnerPlaintext,
-};
-
-/// Decode a TLSInnerPlaintext by stripping trailing zero padding and
-/// extracting the real content type.
-///
-/// RFC 8446 §5.2: the content type is the last non-zero byte. Everything
-/// before it is the content. Trailing zeros are padding.
-///
-/// Zero-copy: returns a subslice of `inner`.
-pub fn stripInnerPadding(inner: []const u8) InnerPlaintextError!InnerPlaintext {
-    var i = inner.len;
-    while (i > 0) {
-        i -= 1;
-        if (inner[i] != 0) {
-            return .{
-                .content_type = @enumFromInt(inner[i]),
-                .content = inner[0..i],
-            };
-        }
-    }
-    return error.InvalidInnerPlaintext;
-}
 
 /// Write a TLSInnerPlaintext into `buf`: content || type_byte || padding.
 ///
@@ -207,39 +176,6 @@ test "Header.init round-trips with parseHeader" {
     try testing.expectEqual(@as(u16, 512), h.length());
 }
 
-// RFC 8446 §5.2 — TLSInnerPlaintext padding strip
-test "stripInnerPadding: no padding" {
-    // content = [0xde, 0xad], type = handshake(22), no zeros
-    const inner = [_]u8{ 0xde, 0xad, 22 };
-    const result = try stripInnerPadding(&inner);
-    try testing.expectEqual(ContentType.handshake, result.content_type);
-    try testing.expectEqualSlices(u8, &[_]u8{ 0xde, 0xad }, result.content);
-}
-
-test "stripInnerPadding: with padding zeros" {
-    // content = [0x01, 0x02], type = application_data(23), 3 zeros padding
-    const inner = [_]u8{ 0x01, 0x02, 23, 0, 0, 0 };
-    const result = try stripInnerPadding(&inner);
-    try testing.expectEqual(ContentType.application_data, result.content_type);
-    try testing.expectEqualSlices(u8, &[_]u8{ 0x01, 0x02 }, result.content);
-}
-
-test "stripInnerPadding: empty content, just type byte" {
-    const inner = [_]u8{22}; // handshake, no content
-    const result = try stripInnerPadding(&inner);
-    try testing.expectEqual(ContentType.handshake, result.content_type);
-    try testing.expectEqual(@as(usize, 0), result.content.len);
-}
-
-test "stripInnerPadding: all zeros — invalid" {
-    const inner = [_]u8{ 0, 0, 0, 0 };
-    try testing.expectError(error.InvalidInnerPlaintext, stripInnerPadding(&inner));
-}
-
-test "stripInnerPadding: empty buffer — invalid" {
-    try testing.expectError(error.InvalidInnerPlaintext, stripInnerPadding(&.{}));
-}
-
 // RFC 8446 §5.4 — padding
 test "writeInnerPlaintext: no padding" {
     var buf: [16]u8 = undefined;
@@ -257,14 +193,7 @@ test "writeInnerPlaintext: with padding" {
     try testing.expectEqualSlices(u8, &[_]u8{ 0xab, 22, 0, 0, 0, 0 }, buf[0..n]);
 }
 
-test "writeInnerPlaintext: round-trips with stripInnerPadding" {
-    var buf: [32]u8 = undefined;
-    const content = [_]u8{ 1, 2, 3, 4 };
-    const n = try writeInnerPlaintext(&buf, &content, .application_data, 3);
-    const result = try stripInnerPadding(buf[0..n]);
-    try testing.expectEqual(ContentType.application_data, result.content_type);
-    try testing.expectEqualSlices(u8, &content, result.content);
-}
+
 
 test "writeInnerPlaintext: buffer too short" {
     var buf: [2]u8 = undefined;
