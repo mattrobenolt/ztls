@@ -17,7 +17,7 @@ pub const Error = crypto.errors.AuthenticationError;
 const testing = std.testing;
 
 const construct = @import("nonce.zig").construct;
-const Iv = @import("nonce.zig").Iv;
+pub const Iv = @import("nonce.zig").Iv;
 const Nonce = @import("nonce.zig").Nonce;
 
 // Verify our assumptions about the stdlib types at compile time.

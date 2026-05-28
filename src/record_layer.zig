@@ -3,15 +3,16 @@
 /// Composes record framing, nonce construction, and AEAD to implement
 /// TLSCiphertext encrypt/decrypt. RFC 8446 §5.2
 const std = @import("std");
-const aead_mod = @import("aead.zig");
-const nonce_mod = @import("nonce.zig");
-const record = @import("record.zig");
+const testing = std.testing;
+const Aes128Gcm = std.crypto.aead.aes_gcm.Aes128Gcm;
 
-const Aead = aead_mod.Aead;
-const Tag = aead_mod.Tag;
-const tag_len = aead_mod.tag_len;
+const Aead = @import("aead.zig").Aead;
+const construct = @import("nonce.zig").construct;
+const Iv = @import("aead.zig").Iv;
+const record = @import("record.zig");
 const ContentType = record.ContentType;
-const Iv = nonce_mod.Iv;
+const Tag = @import("aead.zig").Tag;
+const tag_len = @import("aead.zig").tag_len;
 
 pub const DecryptResult = struct {
     content_type: ContentType,
@@ -35,7 +36,10 @@ pub const RecordLayer = struct {
     ///
     /// RFC 8446 §5.2
     pub fn decrypt(self: *RecordLayer, buf: []const u8, out: []u8) !DecryptResult {
-        if (self.seq == std.math.maxInt(u64)) return error.SequenceNumberOverflow;
+        if (self.seq == std.math.maxInt(u64)) {
+            @branchHint(.cold);
+            return error.SequenceNumberOverflow;
+        }
 
         const hdr = try record.parseHeader(buf);
         if (hdr.content_type != .application_data) return error.UnexpectedContentType;
@@ -50,7 +54,7 @@ pub const RecordLayer = struct {
         const ciphertext = payload[0..ct_len];
         const tag: *const Tag = payload[ct_len..][0..tag_len];
 
-        const npub = nonce_mod.construct(&self.iv, self.seq);
+        const npub = construct(&self.iv, self.seq);
         try self.aead.decrypt(out[0..ct_len], ciphertext, tag, buf[0..record.header_len], &npub);
 
         self.seq += 1;
@@ -69,14 +73,11 @@ pub const RecordLayer = struct {
     }
 };
 
-const testing = std.testing;
-const Aes128Gcm = std.crypto.aead.aes_gcm.Aes128Gcm;
-
 // RFC 8446 §5.2 — record protection
 
 test "decrypt: wrong content type" {
-    var rl = RecordLayer{
-        .aead = aead_mod.Aead.initAes128Gcm(@splat(0)),
+    var rl: RecordLayer = .{
+        .aead = .initAes128Gcm(@splat(0)),
         .iv = @splat(0),
     };
     // handshake record, not application_data
@@ -86,8 +87,8 @@ test "decrypt: wrong content type" {
 }
 
 test "decrypt: payload shorter than tag" {
-    var rl = RecordLayer{
-        .aead = aead_mod.Aead.initAes128Gcm(@splat(0)),
+    var rl: RecordLayer = .{
+        .aead = .initAes128Gcm(@splat(0)),
         .iv = @splat(0),
     };
     // application_data but only 4 bytes payload — less than tag_len (16)
@@ -97,8 +98,8 @@ test "decrypt: payload shorter than tag" {
 }
 
 test "decrypt: output buffer too small" {
-    var rl = RecordLayer{
-        .aead = aead_mod.Aead.initAes128Gcm(@splat(0)),
+    var rl: RecordLayer = .{
+        .aead = .initAes128Gcm(@splat(0)),
         .iv = @splat(0),
     };
     // 20 bytes payload = 4 bytes ciphertext + 16 bytes tag
@@ -108,8 +109,8 @@ test "decrypt: output buffer too small" {
 }
 
 test "decrypt: sequence number overflow" {
-    var rl = RecordLayer{
-        .aead = aead_mod.Aead.initAes128Gcm(@splat(0)),
+    var rl: RecordLayer = .{
+        .aead = .initAes128Gcm(@splat(0)),
         .iv = @splat(0),
         .seq = std.math.maxInt(u64),
     };
