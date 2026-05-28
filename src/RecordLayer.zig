@@ -6,7 +6,8 @@ const std = @import("std");
 const testing = std.testing;
 const Aes128Gcm = std.crypto.aead.aes_gcm.Aes128Gcm;
 
-const Aead = @import("aead.zig").Aead;
+const aead_mod = @import("aead.zig");
+const Aead = aead_mod.Aead;
 const construct = @import("nonce.zig").construct;
 const Iv = @import("aead.zig").Iv;
 const memx = @import("memx.zig");
@@ -61,7 +62,88 @@ pub fn decrypt(self: *RecordLayer, buf: []u8) !record.DecryptedRecord {
     };
 }
 
+/// Encrypt a TLS record in place into `buf`.
+///
+/// Writes the full TLSCiphertext record into `buf`: 5-byte header, ciphertext,
+/// and authentication tag. `buf` must be at least
+/// `record.header_len + content.len + 1 + tag_len` bytes.
+///
+/// Returns the number of bytes written.
+///
+/// RFC 8446 §5.2
+pub fn encrypt(self: *RecordLayer, content_type: record.ContentType, content: []const u8, buf: []u8) !usize {
+    if (self.seq == std.math.maxInt(u64)) {
+        @branchHint(.cold);
+        return error.SequenceNumberOverflow;
+    }
+
+    const inner_len = content.len + 1; // content + type byte
+    const total = record.header_len + inner_len + tag_len;
+    if (buf.len < total) return error.BufferTooShort;
+
+    // Write the record header: application_data, length = inner_len + tag_len.
+    buf[0..record.header_len].* = std.mem.toBytes(record.Header.init(.application_data, @intCast(inner_len + tag_len)));
+
+    // Write TLSInnerPlaintext: content || real ContentType byte.
+    @memcpy(buf[record.header_len..][0..content.len], content);
+    buf[record.header_len + content.len] = @intFromEnum(content_type);
+
+    // Encrypt the inner plaintext in place, append the tag.
+    const inner = buf[record.header_len..][0..inner_len];
+    var tag: Tag = undefined;
+    const npub = construct(&self.iv, self.seq);
+    self.aead.encrypt(inner, &tag, inner, buf[0..record.header_len], &npub);
+    buf[record.header_len + inner_len ..][0..tag_len].* = tag;
+
+    self.seq += 1;
+    return total;
+}
+
 // RFC 8446 §5.2 — record protection
+
+test "encrypt: buffer too short" {
+    var rl: RecordLayer = .{ .aead = .initAes128Gcm(@splat(0)), .iv = @splat(0) };
+    var buf: [4]u8 = undefined;
+    try testing.expectError(error.BufferTooShort, rl.encrypt(.application_data, "hello", &buf));
+}
+
+test "encrypt: sequence number overflow" {
+    var rl: RecordLayer = .{ .aead = .initAes128Gcm(@splat(0)), .iv = @splat(0), .seq = std.math.maxInt(u64) };
+    var buf: [64]u8 = undefined;
+    try testing.expectError(error.SequenceNumberOverflow, rl.encrypt(.application_data, "hello", &buf));
+}
+
+test "encrypt/decrypt: round-trip" {
+    const key: aead_mod.Aes128GcmKey = @splat(0xab);
+    const iv: Iv = @splat(0xcd);
+    var tx: RecordLayer = .{ .aead = .initAes128Gcm(key), .iv = iv };
+    var rx: RecordLayer = .{ .aead = .initAes128Gcm(key), .iv = iv };
+
+    const plaintext = "hello, ztls";
+    var buf: [record.header_len + plaintext.len + 1 + tag_len]u8 = undefined;
+
+    const n = try tx.encrypt(.application_data, plaintext, &buf);
+    const result = try rx.decrypt(buf[0..n]);
+
+    try testing.expectEqual(record.ContentType.application_data, result.content_type);
+    try testing.expectEqualSlices(u8, plaintext, result.content);
+}
+
+test "encrypt/decrypt: sequence numbers advance" {
+    const key: aead_mod.Aes128GcmKey = @splat(0x01);
+    const iv: Iv = @splat(0x02);
+    var tx: RecordLayer = .{ .aead = .initAes128Gcm(key), .iv = iv };
+    var rx: RecordLayer = .{ .aead = .initAes128Gcm(key), .iv = iv };
+
+    var buf: [record.header_len + 5 + 1 + tag_len]u8 = undefined;
+
+    for (0..3) |_| {
+        const n = try tx.encrypt(.application_data, "hello", &buf);
+        _ = try rx.decrypt(buf[0..n]);
+    }
+    try testing.expectEqual(@as(u64, 3), tx.seq);
+    try testing.expectEqual(@as(u64, 3), rx.seq);
+}
 
 test "decrypt: wrong content type" {
     var rl: RecordLayer = .{ .aead = .initAes128Gcm(@splat(0)), .iv = @splat(0) };
