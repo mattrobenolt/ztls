@@ -5,9 +5,10 @@
 const std = @import("std");
 const assert = std.debug.assert;
 const crypto = std.crypto;
-const sha2 = crypto.auth.hmac.sha2;
-const HmacSha256 = sha2.HmacSha256;
-const HmacSha384 = sha2.HmacSha384;
+const HmacSha256 = crypto.auth.hmac.sha2.HmacSha256;
+const HmacSha384 = crypto.auth.hmac.sha2.HmacSha384;
+const Sha256 = crypto.hash.sha2.Sha256;
+const Sha384 = crypto.hash.sha2.Sha384;
 const testing = std.testing;
 
 const Iv = @import("nonce.zig").Iv;
@@ -26,6 +27,10 @@ fn Hkdf(comptime Hmac: type) type {
         /// Length of the pseudorandom key and all derived secrets.
         pub const prk_len = H.prk_length;
         pub const Prk = [prk_len]u8;
+
+        comptime {
+            assert(prk_len == 32 or prk_len == 48);
+        }
 
         /// RFC 8446 §7.1 — HKDF-Extract.
         pub fn extract(salt: []const u8, ikm: []const u8) Prk {
@@ -81,12 +86,12 @@ fn Hkdf(comptime Hmac: type) type {
         const empty_hash: Prk = blk: {
             @setEvalBranchQuota(100_000);
             var out: Prk = undefined;
-            if (prk_len == 32) {
-                std.crypto.hash.sha2.Sha256.hash(&.{}, &out, .{});
-            } else {
-                assert(prk_len == 48);
-                std.crypto.hash.sha2.Sha384.hash(&.{}, &out, .{});
-            }
+            const S = switch (prk_len) {
+                32 => Sha256,
+                48 => Sha384,
+                else => unreachable,
+            };
+            S.hash(&.{}, &out, .{});
             break :blk out;
         };
 
