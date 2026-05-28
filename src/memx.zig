@@ -18,6 +18,8 @@ pub inline fn toBytes(comptime T: type, value: T) [@sizeOf(T)]u8 {
     return mem.toBytes(mem.nativeTo(T, value, .big));
 }
 
+const vector_chunk_len = @min(std.simd.suggestVectorLength(u8) orelse 16, 32);
+
 /// Return the index of the last non-zero byte in `buf`, or null if all zeros.
 ///
 /// Fast path: if the last byte is non-zero, returns immediately.
@@ -33,15 +35,14 @@ pub fn lastIndexOfNonZero(buf: []const u8) ?usize {
     var i = buf.len - 1;
     if (buf[i] != 0) return i;
 
-    const chunk_len = @min(std.simd.suggestVectorLength(u8) orelse 16, 32);
-    const Vec = @Vector(chunk_len, u8);
+    const Vec = @Vector(vector_chunk_len, u8);
     const zero: Vec = @splat(0);
 
-    while (i >= chunk_len) {
-        i -= chunk_len;
-        const chunk: Vec = buf[i..][0..chunk_len].*;
+    while (i >= vector_chunk_len) {
+        i -= vector_chunk_len;
+        const chunk: Vec = buf[i..][0..vector_chunk_len].*;
         if (@reduce(.Or, chunk != zero)) {
-            var j: usize = chunk_len - 1;
+            var j: usize = vector_chunk_len - 1;
             while (true) {
                 if (buf[i + j] != 0) return i + j;
                 if (j == 0) break;
@@ -90,34 +91,29 @@ test "lastIndexOfNonZero: non-zero in scalar tail" {
 }
 
 test "lastIndexOfNonZero: exactly chunk_len bytes, non-zero at start" {
-    const chunk_len = @min(std.simd.suggestVectorLength(u8) orelse 16, 32);
-    var buf = [_]u8{0} ** chunk_len;
+    var buf = [_]u8{0} ** vector_chunk_len;
     buf[0] = 0xab;
     try testing.expectEqual(@as(?usize, 0), lastIndexOfNonZero(&buf));
 }
 
 test "lastIndexOfNonZero: exactly chunk_len bytes, all zeros" {
-    const chunk_len = @min(std.simd.suggestVectorLength(u8) orelse 16, 32);
-    const buf = [_]u8{0} ** chunk_len;
+    const buf = [_]u8{0} ** vector_chunk_len;
     try testing.expectEqual(@as(?usize, null), lastIndexOfNonZero(&buf));
 }
 
 test "lastIndexOfNonZero: large buffer, non-zero in first chunk" {
-    const chunk_len = @min(std.simd.suggestVectorLength(u8) orelse 16, 32);
-    var buf = [_]u8{0} ** (chunk_len * 4);
+    var buf = [_]u8{0} ** (vector_chunk_len * 4);
     buf[1] = 0xab; // in the first chunk, not last byte
     try testing.expectEqual(@as(?usize, 1), lastIndexOfNonZero(&buf));
 }
 
 test "lastIndexOfNonZero: large buffer, non-zero in middle chunk" {
-    const chunk_len = @min(std.simd.suggestVectorLength(u8) orelse 16, 32);
-    var buf = [_]u8{0} ** (chunk_len * 4);
-    buf[chunk_len + 3] = 0xab;
-    try testing.expectEqual(@as(?usize, chunk_len + 3), lastIndexOfNonZero(&buf));
+    var buf = [_]u8{0} ** (vector_chunk_len * 4);
+    buf[vector_chunk_len + 3] = 0xab;
+    try testing.expectEqual(@as(?usize, vector_chunk_len + 3), lastIndexOfNonZero(&buf));
 }
 
 test "lastIndexOfNonZero: large buffer, all zeros" {
-    const chunk_len = @min(std.simd.suggestVectorLength(u8) orelse 16, 32);
-    const buf = [_]u8{0} ** (chunk_len * 4);
+    const buf = [_]u8{0} ** (vector_chunk_len * 4);
     try testing.expectEqual(@as(?usize, null), lastIndexOfNonZero(&buf));
 }
