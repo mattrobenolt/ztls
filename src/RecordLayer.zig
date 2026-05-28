@@ -6,8 +6,8 @@ const std = @import("std");
 const testing = std.testing;
 const Aes128Gcm = std.crypto.aead.aes_gcm.Aes128Gcm;
 
-const aead_mod = @import("aead.zig");
-const Aead = aead_mod.Aead;
+const Aead = @import("aead.zig").Aead;
+const Aes128GcmKey = @import("aead.zig").Aes128GcmKey;
 const construct = @import("nonce.zig").construct;
 const Iv = @import("aead.zig").Iv;
 const memx = @import("memx.zig");
@@ -105,19 +105,26 @@ pub fn encrypt(self: *RecordLayer, content_type: ContentType, content: []const u
 // RFC 8446 §5.2 — record protection
 
 test "encrypt: buffer too short" {
-    var rl: RecordLayer = .{ .aead = .initAes128Gcm(@splat(0)), .iv = @splat(0) };
+    var rl: RecordLayer = .{
+        .aead = .initAes128Gcm(@splat(0)),
+        .iv = @splat(0),
+    };
     var buf: [4]u8 = undefined;
     try testing.expectError(error.BufferTooShort, rl.encrypt(.application_data, "hello", &buf));
 }
 
 test "encrypt: sequence number overflow" {
-    var rl: RecordLayer = .{ .aead = .initAes128Gcm(@splat(0)), .iv = @splat(0), .seq = std.math.maxInt(u64) };
+    var rl: RecordLayer = .{
+        .aead = .initAes128Gcm(@splat(0)),
+        .iv = @splat(0),
+        .seq = std.math.maxInt(u64),
+    };
     var buf: [64]u8 = undefined;
     try testing.expectError(error.SequenceNumberOverflow, rl.encrypt(.application_data, "hello", &buf));
 }
 
 test "encrypt/decrypt: round-trip" {
-    const key: aead_mod.Aes128GcmKey = @splat(0xab);
+    const key: Aes128GcmKey = @splat(0xab);
     const iv: Iv = @splat(0xcd);
     var tx: RecordLayer = .{ .aead = .initAes128Gcm(key), .iv = iv };
     var rx: RecordLayer = .{ .aead = .initAes128Gcm(key), .iv = iv };
@@ -128,12 +135,12 @@ test "encrypt/decrypt: round-trip" {
     const record_buf = try tx.encrypt(.application_data, plaintext, &buf);
     const result = try rx.decrypt(record_buf);
 
-    try testing.expectEqual(ContentType.application_data, result.content_type);
+    try testing.expectEqual(.application_data, result.content_type);
     try testing.expectEqualSlices(u8, plaintext, result.content);
 }
 
 test "encrypt/decrypt: sequence numbers advance" {
-    const key: aead_mod.Aes128GcmKey = @splat(0x01);
+    const key: Aes128GcmKey = @splat(0x01);
     const iv: Iv = @splat(0x02);
     var tx: RecordLayer = .{ .aead = .initAes128Gcm(key), .iv = iv };
     var rx: RecordLayer = .{ .aead = .initAes128Gcm(key), .iv = iv };
@@ -149,19 +156,29 @@ test "encrypt/decrypt: sequence numbers advance" {
 }
 
 test "decrypt: wrong content type" {
-    var rl: RecordLayer = .{ .aead = .initAes128Gcm(@splat(0)), .iv = @splat(0) };
+    var rl: RecordLayer = .{
+        .aead = .initAes128Gcm(@splat(0)),
+        .iv = @splat(0),
+    };
     var buf = [_]u8{ 22, 0x03, 0x03, 0x00, 0x10 } ++ [_]u8{0} ** 16;
     try testing.expectError(error.UnexpectedContentType, rl.decrypt(&buf));
 }
 
 test "decrypt: payload shorter than tag" {
-    var rl: RecordLayer = .{ .aead = .initAes128Gcm(@splat(0)), .iv = @splat(0) };
+    var rl: RecordLayer = .{
+        .aead = .initAes128Gcm(@splat(0)),
+        .iv = @splat(0),
+    };
     var buf = [_]u8{ 23, 0x03, 0x03, 0x00, 0x04 } ++ [_]u8{0} ** 4;
     try testing.expectError(error.RecordTooShort, rl.decrypt(&buf));
 }
 
 test "decrypt: sequence number overflow" {
-    var rl: RecordLayer = .{ .aead = .initAes128Gcm(@splat(0)), .iv = @splat(0), .seq = std.math.maxInt(u64) };
+    var rl: RecordLayer = .{
+        .aead = .initAes128Gcm(@splat(0)),
+        .iv = @splat(0),
+        .seq = std.math.maxInt(u64),
+    };
     var buf = [_]u8{ 23, 0x03, 0x03, 0x00, 0x14 } ++ [_]u8{0} ** 20;
     try testing.expectError(error.SequenceNumberOverflow, rl.decrypt(&buf));
 }
