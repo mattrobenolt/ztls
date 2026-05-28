@@ -17,6 +17,7 @@ pub fn build(b: *std.Build) void {
 
     // Examples
     const examples = [_][]const u8{
+        "key_schedule",
         "record_protection",
     };
     for (examples) |name| {
