@@ -14,16 +14,19 @@
 /// always application_data (23), and the real type is smuggled inside the AEAD
 /// plaintext as TLSInnerPlaintext.
 const std = @import("std");
+const mem = std.mem;
+const testing = std.testing;
+const assert = std.debug.assert;
 
 /// RFC 8446 §5.1 — maximum plaintext fragment length.
-pub const max_plaintext_len: usize = 1 << 14; // 16384
+pub const max_plaintext_len = 1 << 14; // 16384
 
 /// RFC 8446 §5.2 — maximum ciphertext length (plaintext + AEAD overhead).
 /// "MUST NOT exceed 2^14 + 256 bytes."
-pub const max_ciphertext_len: usize = max_plaintext_len + 256; // 16640
+pub const max_ciphertext_len = max_plaintext_len + 256; // 16640
 
 /// Wire size of a record header.
-pub const header_len: usize = 5;
+pub const header_len = 5;
 
 /// RFC 8446 §5.1 — legacy_record_version is fixed at 0x0303 (TLS 1.2)
 /// for all TLS 1.3 records after the initial ClientHello.
@@ -55,23 +58,23 @@ pub const Header = extern struct {
     length_be: [2]u8,
 
     comptime {
-        std.debug.assert(@sizeOf(Header) == header_len);
-        std.debug.assert(@alignOf(Header) == 1);
+        assert(@sizeOf(Header) == header_len);
+        assert(@alignOf(Header) == 1);
     }
 
     pub inline fn legacyVersion(self: Header) u16 {
-        return std.mem.readInt(u16, &self.legacy_version_be, .big);
+        return mem.readInt(u16, &self.legacy_version_be, .big);
     }
 
     pub inline fn length(self: Header) u16 {
-        return std.mem.readInt(u16, &self.length_be, .big);
+        return mem.readInt(u16, &self.length_be, .big);
     }
 
     pub fn init(content_type: ContentType, len: u16) Header {
         var h: Header = undefined;
         h.content_type = content_type;
-        std.mem.writeInt(u16, &h.legacy_version_be, legacy_record_version, .big);
-        std.mem.writeInt(u16, &h.length_be, len, .big);
+        mem.writeInt(u16, &h.legacy_version_be, legacy_record_version, .big);
+        mem.writeInt(u16, &h.length_be, len, .big);
         return h;
     }
 };
@@ -93,7 +96,7 @@ pub const ParseError = error{
 /// RFC 8446 §5.1, §5.2
 pub fn parseHeader(buf: []const u8) ParseError!Header {
     if (buf.len < header_len) return error.BufferTooShort;
-    const h = std.mem.bytesToValue(Header, buf[0..header_len]);
+    const h = mem.bytesToValue(Header, buf[0..header_len]);
     if (h.length() > max_ciphertext_len) return error.RecordTooLarge;
     return h;
 }
@@ -103,7 +106,7 @@ pub fn parseHeader(buf: []const u8) ParseError!Header {
 /// Always writes legacy_record_version = 0x0303.
 pub fn writeHeader(buf: []u8, content_type: ContentType, len: u16) error{BufferTooShort}!void {
     if (buf.len < header_len) return error.BufferTooShort;
-    buf[0..header_len].* = std.mem.toBytes(Header.init(content_type, len));
+    buf[0..header_len].* = mem.toBytes(Header.init(content_type, len));
 }
 
 /// Result of stripping TLSInnerPlaintext padding.
@@ -162,12 +165,6 @@ pub fn writeInnerPlaintext(
     @memset(buf[content.len + 1 ..][0..padding_len], 0);
     return total;
 }
-
-// -----------------------------------------------------------------------------
-// Tests
-// -----------------------------------------------------------------------------
-
-const testing = std.testing;
 
 // RFC 8446 §5.1 — record header format
 test "parseHeader: valid plaintext record" {
