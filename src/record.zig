@@ -63,10 +63,6 @@ pub const Header = extern struct {
         assert(@alignOf(Header) == 1);
     }
 
-    pub inline fn legacyVersion(self: Header) u16 {
-        return memx.readInt(u16, &self.legacy_version_be);
-    }
-
     pub inline fn length(self: Header) u16 {
         return memx.readInt(u16, &self.length_be);
     }
@@ -167,7 +163,6 @@ test "parseHeader: valid plaintext record" {
     const buf = [_]u8{ 22, 0x03, 0x03, 0x00, 0x64 } ++ [_]u8{0} ** 100;
     const h = try parseHeader(&buf);
     try testing.expectEqual(ContentType.handshake, h.content_type);
-    try testing.expectEqual(@as(u16, 0x0303), h.legacyVersion());
     try testing.expectEqual(@as(u16, 100), h.length());
 }
 
@@ -209,7 +204,6 @@ test "Header.init round-trips with parseHeader" {
     buf = mem.toBytes(Header.init(.handshake, 512));
     const h = try parseHeader(&buf);
     try testing.expectEqual(ContentType.handshake, h.content_type);
-    try testing.expectEqual(legacy_record_version, h.legacyVersion());
     try testing.expectEqual(@as(u16, 512), h.length());
 }
 
