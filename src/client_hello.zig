@@ -18,8 +18,8 @@ pub const Random = memx.Array(32);
 /// RFC 8446 §4.1.2 — legacy_version is frozen at 0x0303.
 const legacy_version: u16 = 0x0303;
 
-/// RFC 8446 §4.2.7 — NamedGroup values.
-const NamedGroup = enum(u16) { x25519 = 0x001d };
+/// RFC 8446 §4.2.7 — x25519 NamedGroup identifier.
+const named_group_x25519: u16 = 0x001d;
 
 /// RFC 8446 §4.2.3 — SignatureScheme values.
 const SignatureScheme = enum(u16) {
@@ -159,7 +159,7 @@ pub fn encode(
     out[pos..][0..2].* = memx.toBytes(u16, 0x000a);
     out[pos + 2..][0..2].* = memx.toBytes(u16, 4);
     out[pos + 4..][0..2].* = memx.toBytes(u16, 2);
-    out[pos + 6..][0..2].* = memx.toBytes(u16, @intFromEnum(NamedGroup.x25519));
+    out[pos + 6..][0..2].* = memx.toBytes(u16, named_group_x25519);
     pos += ext_supported_groups_len;
 
     // ── signature_algorithms (RFC 8446 §4.2.3) ──────────────────────────────
@@ -176,7 +176,7 @@ pub fn encode(
     out[pos..][0..2].* = memx.toBytes(u16, 0x0033);
     out[pos + 2..][0..2].* = memx.toBytes(u16, 2 + 2 + 2 + 32);
     out[pos + 4..][0..2].* = memx.toBytes(u16, 2 + 2 + 32);
-    out[pos + 6..][0..2].* = memx.toBytes(u16, @intFromEnum(NamedGroup.x25519));
+    out[pos + 6..][0..2].* = memx.toBytes(u16, named_group_x25519);
     out[pos + 8..][0..2].* = memx.toBytes(u16, 32);
     out[pos + 10..][0..32].* = public_key.data;
     pos += ext_key_share_len;
