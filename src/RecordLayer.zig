@@ -20,6 +20,10 @@ const tag_len = @import("aead.zig").tag_len;
 
 const RecordLayer = @This();
 
+/// Bytes added to plaintext length to produce the encrypted wire record.
+/// Accounts for the 5-byte header, content type byte, and 16-byte AEAD tag.
+pub const overhead = frame.header_len + 1 + tag_len;
+
 aead: Aead,
 iv: Iv,
 seq: u64 = 0,

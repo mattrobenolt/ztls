@@ -8,7 +8,6 @@ const print = std.debug.print;
 
 const ztls = @import("ztls");
 const RecordLayer = ztls.RecordLayer;
-const frame = ztls.frame;
 
 pub fn main() !void {
     // In a real TLS connection, key and IV are derived from the handshake
@@ -27,7 +26,7 @@ pub fn main() !void {
 
     for (messages) |msg| {
         // Sender: encrypt into a stack-allocated output buffer.
-        var out: [frame.header_len + 256 + 1 + ztls.aead.tag_len]u8 = undefined;
+        var out: [256 + RecordLayer.overhead]u8 = undefined;
         const wire = try sender.encrypt(.application_data, msg, &out);
 
         print("encrypted {} bytes -> {} wire bytes\n", .{ msg.len, wire.len });
