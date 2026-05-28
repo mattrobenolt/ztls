@@ -13,6 +13,7 @@ const testing = std.testing;
 
 const Iv = @import("nonce.zig").Iv;
 const memx = @import("memx.zig");
+const Aes128GcmKey = @import("aead.zig").Aes128GcmKey;
 
 /// TLS_AES_128_GCM_SHA256 and TLS_CHACHA20_POLY1305_SHA256.
 pub const HkdfSha256 = Hkdf(HmacSha256);
@@ -42,7 +43,7 @@ fn Hkdf(comptime Hmac: type) type {
 
         /// RFC 8446 §7.1 — HKDF-Extract.
         pub inline fn extract(salt: []const u8, ikm: []const u8) Prk {
-            return Prk.init(H.extract(salt, ikm));
+            return .init(H.extract(salt, ikm));
         }
 
         /// RFC 8446 §7.1 — HKDF-Expand-Label.
@@ -159,9 +160,11 @@ fn Hkdf(comptime Hmac: type) type {
 
         /// RFC 8446 §7.3 — derive the write key from a traffic secret.
         /// `out.len` must match the AEAD key length for the cipher suite.
-        pub inline fn trafficKey(prk: Prk, out: []u8) void {
-            assert(out.len == 16 or out.len == 32);
-            expandLabel(out, "key", "", prk);
+        pub inline fn trafficKey(comptime KeyType: type, prk: Prk) KeyType {
+            comptime assert(@sizeOf(KeyType) == 16 or @sizeOf(KeyType) == 32);
+            var out: KeyType = undefined;
+            expandLabel(&out.data, "key", "", prk);
+            return out;
         }
 
         /// RFC 8446 §7.3 — derive the write IV from a traffic secret.
@@ -206,12 +209,11 @@ test "HkdfSha256.trafficKey: RFC 8448 §3 server handshake" {
         0x20, 0x45, 0x0d, 0xc4, 0xec, 0xff, 0xaa, 0x05,
         0xa1, 0xa3, 0x5d, 0x27, 0x51, 0x8e, 0x78, 0x03,
     });
-    var key: [16]u8 = undefined;
-    HkdfSha256.trafficKey(secret, &key);
+    const key: Aes128GcmKey = HkdfSha256.trafficKey(Aes128GcmKey, secret);
     try testing.expectEqualSlices(u8, &.{
         0x27, 0xc6, 0xbd, 0xc0, 0xa3, 0xdc, 0xea, 0x39,
         0xa4, 0x73, 0x26, 0xd7, 0x9b, 0xc9, 0xe4, 0xee,
-    }, &key);
+    }, &key.data);
 }
 
 test "HkdfSha256.trafficIv: RFC 8448 §3 server handshake" {

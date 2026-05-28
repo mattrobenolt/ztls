@@ -48,12 +48,10 @@ pub fn main() !void {
     print("server_hs_secret:     {x}\n", .{server_hs_secret.data});
 
     // Derive RecordLayer keys and IVs from the server handshake traffic secret.
-    var server_write_key: ztls.aead.Aes128GcmKey = undefined;
-    hkdf.trafficKey(server_hs_secret, &server_write_key.data);
+    const server_write_key: ztls.aead.Aes128GcmKey = hkdf.trafficKey(ztls.aead.Aes128GcmKey, server_hs_secret);
     const server_write_iv = hkdf.trafficIv(server_hs_secret);
 
-    var client_write_key: ztls.aead.Aes128GcmKey = undefined;
-    hkdf.trafficKey(client_hs_secret, &client_write_key.data);
+    const client_write_key: ztls.aead.Aes128GcmKey = hkdf.trafficKey(ztls.aead.Aes128GcmKey, client_hs_secret);
     const client_write_iv = hkdf.trafficIv(client_hs_secret);
 
     print("\n=== handshake traffic keys ===\n", .{});
