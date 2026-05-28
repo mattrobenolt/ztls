@@ -5,7 +5,7 @@
 ///
 /// Record layout on the wire:
 ///
-///   ContentType    (1 byte)
+///   ContentType     (1 byte)
 ///   ProtocolVersion (2 bytes, always 0x0303 in TLS 1.3)
 ///   length          (2 bytes, big-endian)
 ///   fragment        (length bytes)
@@ -40,14 +40,40 @@ pub const ContentType = enum(u8) {
     _,
 };
 
-/// A parsed record header.
-pub const Header = struct {
+/// A TLS record header — exactly the 5-byte wire layout.
+///
+/// Uses extern struct with [2]u8 for big-endian u16 fields so the in-memory
+/// layout matches the wire byte-for-byte. Use legacyVersion() and length()
+/// to read the u16 fields in native byte order.
+pub const Header = extern struct {
     content_type: ContentType,
+    /// Big-endian on the wire. Use legacyVersion() to read as native u16.
     /// Should be 0x0303 for TLS 1.3. We parse but do not enforce — middlebox
     /// compatibility and older stacks send other values on the initial record.
-    legacy_version: u16,
-    /// Length of the fragment that follows, in bytes.
-    length: u16,
+    legacy_version_be: [2]u8,
+    /// Big-endian on the wire. Use length() to read as native u16.
+    length_be: [2]u8,
+
+    comptime {
+        std.debug.assert(@sizeOf(Header) == header_len);
+        std.debug.assert(@alignOf(Header) == 1);
+    }
+
+    pub inline fn legacyVersion(self: Header) u16 {
+        return std.mem.readInt(u16, &self.legacy_version_be, .big);
+    }
+
+    pub inline fn length(self: Header) u16 {
+        return std.mem.readInt(u16, &self.length_be, .big);
+    }
+
+    pub fn init(content_type: ContentType, len: u16) Header {
+        var h: Header = undefined;
+        h.content_type = content_type;
+        std.mem.writeInt(u16, &h.legacy_version_be, legacy_record_version, .big);
+        std.mem.writeInt(u16, &h.length_be, len, .big);
+        return h;
+    }
 };
 
 pub const ParseError = error{
@@ -59,30 +85,25 @@ pub const ParseError = error{
 
 /// Parse the 5-byte record header from the front of `buf`.
 ///
-/// Returns the parsed header. The fragment begins at `buf[header_len..]`
-/// and is `header.length` bytes long. Caller is responsible for ensuring
-/// that many bytes are available before reading the fragment.
+/// Returns the parsed header. Use header.length() and header.legacyVersion()
+/// to read the u16 fields in native byte order.
+/// The fragment begins at `buf[header_len..]` and is `header.length()`
+/// bytes long — caller ensures that many bytes are available.
 ///
 /// RFC 8446 §5.1, §5.2
 pub fn parseHeader(buf: []const u8) ParseError!Header {
     if (buf.len < header_len) return error.BufferTooShort;
-    const length = std.mem.readInt(u16, buf[3..5], .big);
-    if (length > max_ciphertext_len) return error.RecordTooLarge;
-    return .{
-        .content_type = @enumFromInt(buf[0]),
-        .legacy_version = std.mem.readInt(u16, buf[1..3], .big),
-        .length = length,
-    };
+    const h = std.mem.bytesToValue(Header, buf[0..header_len]);
+    if (h.length() > max_ciphertext_len) return error.RecordTooLarge;
+    return h;
 }
 
 /// Write a 5-byte record header into `buf[0..header_len]`.
 ///
 /// Always writes legacy_record_version = 0x0303.
-pub fn writeHeader(buf: []u8, content_type: ContentType, length: u16) error{BufferTooShort}!void {
+pub fn writeHeader(buf: []u8, content_type: ContentType, len: u16) error{BufferTooShort}!void {
     if (buf.len < header_len) return error.BufferTooShort;
-    buf[0] = @intFromEnum(content_type);
-    std.mem.writeInt(u16, buf[1..3], legacy_record_version, .big);
-    std.mem.writeInt(u16, buf[3..5], length, .big);
+    buf[0..header_len].* = std.mem.toBytes(Header.init(content_type, len));
 }
 
 /// Result of stripping TLSInnerPlaintext padding.
@@ -109,7 +130,6 @@ pub const InnerPlaintextError = error{
 ///
 /// Zero-copy: returns a subslice of `inner`.
 pub fn stripInnerPadding(inner: []const u8) InnerPlaintextError!InnerPlaintext {
-    // Scan backwards for the first non-zero byte.
     var i = inner.len;
     while (i > 0) {
         i -= 1;
@@ -155,15 +175,15 @@ test "parseHeader: valid plaintext record" {
     const buf = [_]u8{ 22, 0x03, 0x03, 0x00, 0x64 } ++ [_]u8{0} ** 100;
     const h = try parseHeader(&buf);
     try testing.expectEqual(ContentType.handshake, h.content_type);
-    try testing.expectEqual(@as(u16, 0x0303), h.legacy_version);
-    try testing.expectEqual(@as(u16, 100), h.length);
+    try testing.expectEqual(@as(u16, 0x0303), h.legacyVersion());
+    try testing.expectEqual(@as(u16, 100), h.length());
 }
 
 test "parseHeader: application_data record (TLSCiphertext)" {
     const buf = [_]u8{ 23, 0x03, 0x03, 0x00, 0x10 } ++ [_]u8{0} ** 16;
     const h = try parseHeader(&buf);
     try testing.expectEqual(ContentType.application_data, h.content_type);
-    try testing.expectEqual(@as(u16, 16), h.length);
+    try testing.expectEqual(@as(u16, 16), h.length());
 }
 
 test "parseHeader: buffer too short" {
@@ -175,7 +195,7 @@ test "parseHeader: exactly 5 bytes (header only, no fragment)" {
     const buf = [_]u8{ 21, 0x03, 0x03, 0x00, 0x00 };
     const h = try parseHeader(&buf);
     try testing.expectEqual(ContentType.alert, h.content_type);
-    try testing.expectEqual(@as(u16, 0), h.length);
+    try testing.expectEqual(@as(u16, 0), h.length());
 }
 
 // RFC 8446 §5.2 — max ciphertext length is 2^14 + 256
@@ -183,7 +203,7 @@ test "parseHeader: max valid length" {
     const len: u16 = max_ciphertext_len;
     const buf = [_]u8{ 23, 0x03, 0x03, @intCast(len >> 8), @intCast(len & 0xff) };
     const h = try parseHeader(&buf);
-    try testing.expectEqual(@as(u16, max_ciphertext_len), h.length);
+    try testing.expectEqual(@as(u16, max_ciphertext_len), h.length());
 }
 
 test "parseHeader: length exceeds max" {
@@ -197,8 +217,8 @@ test "writeHeader: round-trips with parseHeader" {
     try writeHeader(&buf, .handshake, 512);
     const h = try parseHeader(&buf);
     try testing.expectEqual(ContentType.handshake, h.content_type);
-    try testing.expectEqual(@as(u16, legacy_record_version), h.legacy_version);
-    try testing.expectEqual(@as(u16, 512), h.length);
+    try testing.expectEqual(@as(u16, legacy_record_version), h.legacyVersion());
+    try testing.expectEqual(@as(u16, 512), h.length());
 }
 
 test "writeHeader: buffer too short" {
