@@ -36,7 +36,7 @@ test "construct: seq 0 is just the IV" {
 }
 
 test "construct: seq increments flip the right bytes" {
-    const iv: Iv = .init(@splat(0));
+    const iv: Iv = .zero;
     try testing.expectEqual(Nonce.init(.{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1 }), construct(&iv, 1));
     try testing.expectEqual(Nonce.init(.{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255 }), construct(&iv, 255));
     try testing.expectEqual(Nonce.init(.{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0 }), construct(&iv, 256));
@@ -51,7 +51,7 @@ test "construct: XOR with non-zero IV" {
 }
 
 test "construct: seq max u64 produces expected nonce" {
-    const iv: Iv = .init(@splat(0));
+    const iv: Iv = .zero;
     try testing.expectEqual(
         Nonce.init(.{ 0, 0, 0, 0, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff }),
         construct(&iv, 0xffffffffffffffff),

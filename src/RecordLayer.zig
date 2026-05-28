@@ -117,8 +117,8 @@ pub fn encrypt(self: *RecordLayer, content_type: ContentType, content: []const u
 
 test "encrypt: buffer too short" {
     var rl: RecordLayer = .{
-        .aead = .initAes128Gcm(.init(@splat(0))),
-        .iv = .init(@splat(0)),
+        .aead = .initAes128Gcm(.zero),
+        .iv = .zero,
     };
     var buf: [4]u8 = undefined;
     try testing.expectError(error.BufferTooShort, rl.encrypt(.application_data, "hello", &buf));
@@ -126,8 +126,8 @@ test "encrypt: buffer too short" {
 
 test "encrypt: sequence number overflow" {
     var rl: RecordLayer = .{
-        .aead = .initAes128Gcm(.init(@splat(0))),
-        .iv = .init(@splat(0)),
+        .aead = .initAes128Gcm(.zero),
+        .iv = .zero,
         .seq = std.math.maxInt(u64),
     };
     var buf: [64]u8 = undefined;
@@ -168,8 +168,8 @@ test "encrypt/decrypt: sequence numbers advance" {
 
 test "decrypt: wrong content type" {
     var rl: RecordLayer = .{
-        .aead = .initAes128Gcm(.init(@splat(0))),
-        .iv = .init(@splat(0)),
+        .aead = .initAes128Gcm(.zero),
+        .iv = .zero,
     };
     var buf = [_]u8{ 22, 0x03, 0x03, 0x00, 0x10 } ++ [_]u8{0} ** 16;
     try testing.expectError(error.UnexpectedContentType, rl.decrypt(&buf));
@@ -177,8 +177,8 @@ test "decrypt: wrong content type" {
 
 test "decrypt: payload shorter than tag" {
     var rl: RecordLayer = .{
-        .aead = .initAes128Gcm(.init(@splat(0))),
-        .iv = .init(@splat(0)),
+        .aead = .initAes128Gcm(.zero),
+        .iv = .zero,
     };
     var buf = [_]u8{ 23, 0x03, 0x03, 0x00, 0x04 } ++ [_]u8{0} ** 4;
     try testing.expectError(error.RecordTooShort, rl.decrypt(&buf));
@@ -186,8 +186,8 @@ test "decrypt: payload shorter than tag" {
 
 test "decrypt: sequence number overflow" {
     var rl: RecordLayer = .{
-        .aead = .initAes128Gcm(.init(@splat(0))),
-        .iv = .init(@splat(0)),
+        .aead = .initAes128Gcm(.zero),
+        .iv = .zero,
         .seq = std.math.maxInt(u64),
     };
     var buf = [_]u8{ 23, 0x03, 0x03, 0x00, 0x14 } ++ [_]u8{0} ** 20;
