@@ -14,4 +14,23 @@ pub fn build(b: *std.Build) void {
     const run_tests = b.addRunArtifact(mod_tests);
     const test_step = b.step("test", "Run tests");
     test_step.dependOn(&run_tests.step);
+
+    // Examples
+    const examples = [_][]const u8{
+        "record_protection",
+    };
+    for (examples) |name| {
+        const exe = b.addExecutable(.{
+            .name = name,
+            .root_module = b.createModule(.{
+                .root_source_file = b.path(b.fmt("examples/{s}.zig", .{name})),
+                .target = target,
+                .optimize = optimize,
+                .imports = &.{.{ .name = "ztls", .module = mod }},
+            }),
+        });
+        const run = b.addRunArtifact(exe);
+        const step = b.step(b.fmt("example-{s}", .{name}), b.fmt("Run {s} example", .{name}));
+        step.dependOn(&run.step);
+    }
 }
