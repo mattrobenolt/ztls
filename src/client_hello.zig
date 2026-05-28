@@ -7,6 +7,9 @@
 ///
 /// RFC 8446 §4.1.2
 const std = @import("std");
+const assert = std.debug.assert;
+const testing = std.testing;
+
 const memx = @import("memx.zig");
 const wire = @import("wire.zig");
 const x25519 = @import("x25519.zig");
@@ -98,6 +101,9 @@ pub fn encode(
     public_key: x25519.PublicKey,
     server_name: ?[]const u8,
 ) error{BufferTooShort}![]u8 {
+    // Validate server_name fits in the wire format (RFC 6066 §3: hostname ≤ 253)
+    if (server_name) |name| assert(name.len <= 253);
+
     if (out.len < encodedLen(server_name)) return error.BufferTooShort;
     var w: wire.Writer = .init(out);
 
@@ -111,8 +117,8 @@ pub fn encode(
     w.append(u8, 0x00); // legacy_session_id: empty
 
     // cipher_suites
-    w.append(u16, @intCast(cipher_suites.len * 2));
-    for (cipher_suites) |cs| w.append(u16, @intFromEnum(cs));
+    w.append(u16, cipher_suites.len * 2);
+    for (cipher_suites) |cs| w.append(CipherSuite, cs);
 
     // legacy_compression_methods: null only
     w.append(u8, 0x01);
@@ -123,11 +129,15 @@ pub fn encode(
 
     // server_name (RFC 8446 §4.2, RFC 6066 §3)
     if (server_name) |name| {
-        w.append(u16, 0x0000); // extension type
-        w.append(u16, @intCast(2 + 1 + 2 + name.len)); // extension data length
-        w.append(u16, @intCast(1 + 2 + name.len)); // ServerNameList length
+        const name_len: u16 = @intCast(name.len);
+        const entry_len: u16 = 1 + 2 + name_len; // name_type + name_len field + name
+        const list_len: u16 = entry_len; // one entry in the ServerNameList
+        const ext_data_len: u16 = 2 + entry_len; // list_len field + entry
+        w.append(u16, 0x0000); // extension type: server_name
+        w.append(u16, ext_data_len);
+        w.append(u16, list_len);
         w.append(u8, 0x00); // NameType: host_name
-        w.append(u16, @intCast(name.len));
+        w.append(u16, name_len);
         w.appendSlice(name);
     }
 
@@ -141,19 +151,19 @@ pub fn encode(
     w.append(u16, 0x000a);
     w.append(u16, 4); // extension data length: list_len(2) + group(2)
     w.append(u16, 2); // named_group_list length = 2
-    w.append(u16, @intFromEnum(NamedGroup.x25519));
+    w.append(NamedGroup, .x25519);
 
     // signature_algorithms (RFC 8446 §4.2.3)
     w.append(u16, 0x000d);
-    w.append(u16, @intCast(2 + sig_schemes.len * 2)); // extension data length
-    w.append(u16, @intCast(sig_schemes.len * 2)); // list length
-    for (sig_schemes) |s| w.append(u16, @intFromEnum(s));
+    w.append(u16, 2 + sig_schemes.len * 2); // extension data length
+    w.append(u16, sig_schemes.len * 2); // list length
+    for (sig_schemes) |s| w.append(SignatureScheme, s);
 
     // key_share (RFC 8446 §4.2.8)
     w.append(u16, 0x0033);
     w.append(u16, 2 + 2 + 2 + 32); // extension data length
     w.append(u16, 2 + 2 + 32); // client_shares list length
-    w.append(u16, @intFromEnum(NamedGroup.x25519));
+    w.append(NamedGroup, .x25519);
     w.append(u16, 32); // key_exchange length
     w.appendSlice(&public_key.data);
 
@@ -161,8 +171,6 @@ pub fn encode(
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
-
-const testing = std.testing;
 
 test "encode: size matches encodedLen" {
     var buf: [512]u8 = undefined;

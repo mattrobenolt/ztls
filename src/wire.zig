@@ -14,18 +14,25 @@ pub const Writer = struct {
         return .{ .buf = buf };
     }
 
-    /// Append an integer value in big-endian byte order.
+    /// Append a value in big-endian byte order.
     ///
-    /// Supports any integer type: u8, u16, u24, u32, etc.
+    /// Supports:
+    ///   - Integer types (u8, u16, u24, u32, ...): written big-endian
+    ///   - Enum types: written as their backing integer, big-endian
     /// For byte slices and arrays, use appendSlice instead.
     pub fn append(self: *Writer, comptime T: type, value: T) void {
-        comptime assert(@typeInfo(T) == .int);
-        const n = comptime @divExact(@bitSizeOf(T), 8);
-        assert(self.pos + n <= self.buf.len);
-        inline for (0..n) |i| {
-            self.buf[self.pos + i] = @intCast((value >> ((n - 1 - i) * 8)) & 0xff);
+        switch (@typeInfo(T)) {
+            .int => {
+                const n = comptime @divExact(@bitSizeOf(T), 8);
+                assert(self.pos + n <= self.buf.len);
+                inline for (0..n) |i| {
+                    self.buf[self.pos + i] = @intCast((value >> ((n - 1 - i) * 8)) & 0xff);
+                }
+                self.pos += n;
+            },
+            .@"enum" => |info| self.append(info.tag_type, @intFromEnum(value)),
+            else => @compileError("Writer.append: unsupported type " ++ @typeName(T)),
         }
-        self.pos += n;
     }
 
     /// Append a runtime-length byte slice.
@@ -67,6 +74,14 @@ test "Writer.appendSlice" {
     var w: Writer = .init(&buf);
     w.appendSlice("hello");
     try testing.expectEqualSlices(u8, "hello", w.written());
+}
+
+test "Writer.append: enum" {
+    const E = enum(u16) { foo = 0x001d };
+    var buf: [2]u8 = undefined;
+    var w: Writer = .init(&buf);
+    w.append(E, .foo);
+    try testing.expectEqualSlices(u8, &.{ 0x00, 0x1d }, w.written());
 }
 
 test "Writer: sequential appends" {
