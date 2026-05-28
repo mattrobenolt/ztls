@@ -52,12 +52,6 @@ pub fn decrypt(self: *RecordLayer, buf: []const u8, out: []u8) !record.Decrypted
     self.seq += 1;
 
     // RFC 8446 §5.2: last non-zero byte is the real ContentType.
-    // Fast path: no padding, type byte is last — the common case.
-    if (ct_len > 0 and out[ct_len - 1] != 0) return .{
-        .content_type = @enumFromInt(out[ct_len - 1]),
-        .content = out[0 .. ct_len - 1],
-    };
-    // Slow path: padding present, SIMD scan backwards.
     const i = memx.lastIndexOfNonZero(out[0..ct_len]) orelse return error.InvalidInnerPlaintext;
     return .{
         .content_type = @enumFromInt(out[i]),

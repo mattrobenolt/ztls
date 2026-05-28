@@ -21,10 +21,13 @@ pub inline fn toBytes(comptime T: type, value: T) [@sizeOf(T)]u8 {
 /// remaining prefix. std.mem.lastIndexOfNone compiles to a scalar loop even
 /// at ReleaseFast, so we hand-roll this.
 pub fn lastIndexOfNonZero(buf: []const u8) ?usize {
+    if (buf.len == 0) return null;
+    if (buf[buf.len - 1] != 0) return buf.len - 1;
+
     const Vec = @Vector(16, u8);
     const zero: Vec = @splat(0);
 
-    var i = buf.len;
+    var i = buf.len - 1;
 
     while (i >= 16) {
         i -= 16;
