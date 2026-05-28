@@ -11,9 +11,9 @@ const Sha256 = crypto.hash.sha2.Sha256;
 const Sha384 = crypto.hash.sha2.Sha384;
 const testing = std.testing;
 
+const Aes128GcmKey = @import("aead.zig").Aes128GcmKey;
 const Iv = @import("nonce.zig").Iv;
 const memx = @import("memx.zig");
-const Aes128GcmKey = @import("aead.zig").Aes128GcmKey;
 
 /// TLS_AES_128_GCM_SHA256 and TLS_CHACHA20_POLY1305_SHA256.
 pub const HkdfSha256 = Hkdf(HmacSha256);
@@ -36,6 +36,7 @@ fn Hkdf(comptime Hmac: type) type {
         /// Length of the pseudorandom key and all derived secrets.
         pub const prk_len = H.prk_length;
         pub const Prk = memx.Array(prk_len);
+        const prk_zero = &Prk.zero.data;
 
         comptime {
             assert(prk_len == 32 or prk_len == 48);
@@ -94,21 +95,21 @@ fn Hkdf(comptime Hmac: type) type {
         // uses Transcript-Hash of empty input = Hash("").
         const empty_hash: Prk = blk: {
             @setEvalBranchQuota(100_000);
-            var out: Prk.Data = undefined;
+            var out: Prk = undefined;
             const S = switch (prk_len) {
                 32 => Sha256,
                 48 => Sha384,
                 else => unreachable,
             };
-            S.hash(&.{}, &out, .{});
-            break :blk .init(out);
+            S.hash(&.{}, &out.data, .{});
+            break :blk out;
         };
 
         /// EarlySecret for a full handshake with no PSK.
         /// Salt and IKM are both zero — comptime constant per RFC 8446 §7.1.
         pub const early_secret: Prk = blk: {
             @setEvalBranchQuota(100_000);
-            break :blk .init(H.extract(&Prk.zero.data, &Prk.zero.data));
+            break :blk .init(H.extract(prk_zero, prk_zero));
         };
 
         /// RFC 8446 §7.1 — Derive-Secret.
@@ -135,7 +136,7 @@ fn Hkdf(comptime Hmac: type) type {
         /// No new key material at this stage; IKM is zero.
         pub fn masterSecret(handshake: Prk) Prk {
             const salt = deriveSecret(handshake, "derived", &empty_hash);
-            return .init(H.extract(&salt.data, &Prk.zero.data));
+            return .init(H.extract(&salt.data, prk_zero));
         }
 
         // RFC 8446 §7.1 — traffic secrets from HandshakeSecret.
@@ -195,7 +196,7 @@ const dhe_rfc8448: SharedSecret = .init(.{
     0xd4, 0x62, 0x72, 0x90, 0x0f, 0x89, 0x49, 0x2d,
 });
 
-const transcript_hs_rfc8448 = HkdfSha256.Prk.init(.{
+const transcript_hs_rfc8448: HkdfSha256.Prk = .init(.{
     0x86, 0x0c, 0x06, 0xed, 0xc0, 0x78, 0x58, 0xee,
     0x8e, 0x78, 0xf0, 0xe7, 0x42, 0x8c, 0x58, 0xed,
     0xd6, 0xb4, 0x3f, 0x2c, 0xa3, 0xe6, 0xe9, 0x5f,
@@ -203,13 +204,13 @@ const transcript_hs_rfc8448 = HkdfSha256.Prk.init(.{
 });
 
 test "HkdfSha256.trafficKey: RFC 8448 §3 server handshake" {
-    const secret = HkdfSha256.Prk.init(.{
+    const secret: HkdfSha256.Prk = .init(.{
         0xfe, 0x92, 0x7a, 0xe2, 0x71, 0x31, 0x2e, 0x8b,
         0xf0, 0x27, 0x5b, 0x58, 0x1c, 0x54, 0xee, 0xf0,
         0x20, 0x45, 0x0d, 0xc4, 0xec, 0xff, 0xaa, 0x05,
         0xa1, 0xa3, 0x5d, 0x27, 0x51, 0x8e, 0x78, 0x03,
     });
-    const key: Aes128GcmKey = HkdfSha256.trafficKey(Aes128GcmKey, secret);
+    const key = HkdfSha256.trafficKey(Aes128GcmKey, secret);
     try testing.expectEqualSlices(u8, &.{
         0x27, 0xc6, 0xbd, 0xc0, 0xa3, 0xdc, 0xea, 0x39,
         0xa4, 0x73, 0x26, 0xd7, 0x9b, 0xc9, 0xe4, 0xee,
@@ -217,7 +218,7 @@ test "HkdfSha256.trafficKey: RFC 8448 §3 server handshake" {
 }
 
 test "HkdfSha256.trafficIv: RFC 8448 §3 server handshake" {
-    const secret = HkdfSha256.Prk.init(.{
+    const secret: HkdfSha256.Prk = .init(.{
         0xfe, 0x92, 0x7a, 0xe2, 0x71, 0x31, 0x2e, 0x8b,
         0xf0, 0x27, 0x5b, 0x58, 0x1c, 0x54, 0xee, 0xf0,
         0x20, 0x45, 0x0d, 0xc4, 0xec, 0xff, 0xaa, 0x05,
