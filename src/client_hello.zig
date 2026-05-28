@@ -7,6 +7,7 @@
 ///
 /// RFC 8446 §4.1.2
 const std = @import("std");
+const assert = std.debug.assert;
 const testing = std.testing;
 
 const memx = @import("memx.zig");
@@ -67,17 +68,19 @@ const ext_supported_groups_len = 2 + 2 + 2 + 2;
 const ext_sig_algs_len = 2 + 2 + 2 + sig_schemes.len * 2;
 const ext_key_share_len = 2 + 2 + 2 + 2 + 2 + 32;
 
-fn sniExtLen(name: []const u8) usize {
-    return 2 + 2 + 2 + 1 + 2 + name.len;
+fn sniExtLen(name: []const u8) u16 {
+    return 2 + 2 + 2 + 1 + 2 + @as(u16, @intCast(name.len));
 }
 
-fn extensionsLen(server_name: ?[]const u8) usize {
-    const sni = if (server_name) |n| sniExtLen(n) else 0;
-    return sni +
+fn extensionsLen(server_name: ?[]const u8) u16 {
+    const sni: u16 = if (server_name) |n| sniExtLen(n) else 0;
+    const total = sni +
         ext_supported_versions_len +
         ext_supported_groups_len +
         ext_sig_algs_len +
         ext_key_share_len;
+    assert(total <= std.math.maxInt(u16));
+    return @intCast(total);
 }
 
 /// Returns the total encoded length for the given parameters.
@@ -124,7 +127,7 @@ pub fn encode(
     w.append(u8, 0x00);
 
     // extensions
-    w.append(u16, @intCast(extensionsLen(server_name)));
+    w.append(u16, extensionsLen(server_name));
 
     // server_name (RFC 8446 §4.2, RFC 6066 §3)
     if (server_name) |name| {
