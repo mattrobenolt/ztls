@@ -7,8 +7,8 @@
 ///
 /// RFC 8446 §4.1.2
 const std = @import("std");
-const assert = std.debug.assert;
 const memx = @import("memx.zig");
+const wire = @import("wire.zig");
 const x25519 = @import("x25519.zig");
 
 pub const Random = memx.Array(32);
@@ -60,13 +60,12 @@ const body_fixed_len =
     2 + // legacy_compression_methods: length(1) + null(1)
     2; // extensions length field
 
-const ext_supported_versions_len = 2 + 2 + 1 + 2; // type + ext_len + list_len + TLS13
-const ext_supported_groups_len = 2 + 2 + 2 + 2; // type + ext_len + list_len + x25519
-const ext_sig_algs_len = 2 + 2 + 2 + sig_schemes.len * 2; // type + ext_len + list_len + schemes
-const ext_key_share_len = 2 + 2 + 2 + 2 + 2 + 32; // type + ext_len + client_shares_len + group + key_len + key
+const ext_supported_versions_len = 2 + 2 + 1 + 2;
+const ext_supported_groups_len = 2 + 2 + 2 + 2;
+const ext_sig_algs_len = 2 + 2 + 2 + sig_schemes.len * 2;
+const ext_key_share_len = 2 + 2 + 2 + 2 + 2 + 32;
 
 fn sniExtLen(name: []const u8) usize {
-    // type(2) + ext_len(2) + list_len(2) + name_type(1) + name_len(2) + name
     return 2 + 2 + 2 + 1 + 2 + name.len;
 }
 
@@ -99,90 +98,66 @@ pub fn encode(
     public_key: x25519.PublicKey,
     server_name: ?[]const u8,
 ) error{BufferTooShort}![]u8 {
-    const total = encodedLen(server_name);
-    if (out.len < total) return error.BufferTooShort;
+    if (out.len < encodedLen(server_name)) return error.BufferTooShort;
+    var w: wire.Writer = .init(out);
 
-    var pos: usize = 0;
+    // Handshake header (RFC 8446 §4)
+    w.append(u8, 0x01); // HandshakeType.client_hello
+    w.append(u24, @intCast(body_fixed_len + extensionsLen(server_name)));
 
-    // ── Handshake header (RFC 8446 §4) ──────────────────────────────────────
-    out[pos] = 0x01; // HandshakeType.client_hello
-    pos += 1;
-    const body = body_fixed_len + extensionsLen(server_name);
-    out[pos] = @intCast((body >> 16) & 0xff);
-    out[pos + 1] = @intCast((body >> 8) & 0xff);
-    out[pos + 2] = @intCast(body & 0xff);
-    pos += 3;
+    // ClientHello body (RFC 8446 §4.1.2)
+    w.append(u16, legacy_version);
+    w.appendSlice(&random.data);
+    w.append(u8, 0x00); // legacy_session_id: empty
 
-    // ── ClientHello body (RFC 8446 §4.1.2) ──────────────────────────────────
-    out[pos..][0..2].* = memx.toBytes(u16, legacy_version);
-    pos += 2;
+    // cipher_suites
+    w.append(u16, @intCast(cipher_suites.len * 2));
+    for (cipher_suites) |cs| w.append(u16, @intFromEnum(cs));
 
-    out[pos..][0..32].* = random.data;
-    pos += 32;
+    // legacy_compression_methods: null only
+    w.append(u8, 0x01);
+    w.append(u8, 0x00);
 
-    out[pos] = 0x00; // legacy_session_id: empty
-    pos += 1;
+    // extensions
+    w.append(u16, @intCast(extensionsLen(server_name)));
 
-    out[pos..][0..2].* = memx.toBytes(u16, @intCast(cipher_suites.len * 2));
-    pos += 2;
-    for (cipher_suites) |cs| {
-        out[pos..][0..2].* = memx.toBytes(u16, @intFromEnum(cs));
-        pos += 2;
-    }
-
-    out[pos] = 0x01; // legacy_compression_methods length
-    out[pos + 1] = 0x00; // null compression
-    pos += 2;
-
-    out[pos..][0..2].* = memx.toBytes(u16, @intCast(extensionsLen(server_name)));
-    pos += 2;
-
-    // ── server_name (RFC 8446 §4.2, RFC 6066 §3) ────────────────────────────
+    // server_name (RFC 8446 §4.2, RFC 6066 §3)
     if (server_name) |name| {
-        out[pos..][0..2].* = memx.toBytes(u16, 0x0000);
-        out[pos + 2..][0..2].* = memx.toBytes(u16, @intCast(2 + 1 + 2 + name.len));
-        out[pos + 4..][0..2].* = memx.toBytes(u16, @intCast(1 + 2 + name.len));
-        out[pos + 6] = 0x00; // NameType: host_name
-        out[pos + 7..][0..2].* = memx.toBytes(u16, @intCast(name.len));
-        @memcpy(out[pos + 9 ..][0..name.len], name);
-        pos += sniExtLen(name);
+        w.append(u16, 0x0000); // extension type
+        w.append(u16, @intCast(2 + 1 + 2 + name.len)); // extension data length
+        w.append(u16, @intCast(1 + 2 + name.len)); // ServerNameList length
+        w.append(u8, 0x00); // NameType: host_name
+        w.append(u16, @intCast(name.len));
+        w.appendSlice(name);
     }
 
-    // ── supported_versions (RFC 8446 §4.2.1) ────────────────────────────────
-    out[pos..][0..2].* = memx.toBytes(u16, 0x002b);
-    out[pos + 2..][0..2].* = memx.toBytes(u16, 3);
-    out[pos + 4] = 0x02;
-    out[pos + 5..][0..2].* = memx.toBytes(u16, 0x0304);
-    pos += ext_supported_versions_len;
+    // supported_versions (RFC 8446 §4.2.1)
+    w.append(u16, 0x002b);
+    w.append(u16, 3); // extension data length: list_len(1) + version(2)
+    w.append(u8, 0x02); // versions list length = 2
+    w.append(u16, 0x0304); // TLS 1.3
 
-    // ── supported_groups (RFC 8446 §4.2.7) ──────────────────────────────────
-    out[pos..][0..2].* = memx.toBytes(u16, 0x000a);
-    out[pos + 2..][0..2].* = memx.toBytes(u16, 4);
-    out[pos + 4..][0..2].* = memx.toBytes(u16, 2);
-    out[pos + 6..][0..2].* = memx.toBytes(u16, @intFromEnum(NamedGroup.x25519));
-    pos += ext_supported_groups_len;
+    // supported_groups (RFC 8446 §4.2.7)
+    w.append(u16, 0x000a);
+    w.append(u16, 4); // extension data length: list_len(2) + group(2)
+    w.append(u16, 2); // named_group_list length = 2
+    w.append(u16, @intFromEnum(NamedGroup.x25519));
 
-    // ── signature_algorithms (RFC 8446 §4.2.3) ──────────────────────────────
-    out[pos..][0..2].* = memx.toBytes(u16, 0x000d);
-    out[pos + 2..][0..2].* = memx.toBytes(u16, @intCast(2 + sig_schemes.len * 2));
-    out[pos + 4..][0..2].* = memx.toBytes(u16, @intCast(sig_schemes.len * 2));
-    pos += 6;
-    for (sig_schemes) |s| {
-        out[pos..][0..2].* = memx.toBytes(u16, @intFromEnum(s));
-        pos += 2;
-    }
+    // signature_algorithms (RFC 8446 §4.2.3)
+    w.append(u16, 0x000d);
+    w.append(u16, @intCast(2 + sig_schemes.len * 2)); // extension data length
+    w.append(u16, @intCast(sig_schemes.len * 2)); // list length
+    for (sig_schemes) |s| w.append(u16, @intFromEnum(s));
 
-    // ── key_share (RFC 8446 §4.2.8) ─────────────────────────────────────────
-    out[pos..][0..2].* = memx.toBytes(u16, 0x0033);
-    out[pos + 2..][0..2].* = memx.toBytes(u16, 2 + 2 + 2 + 32);
-    out[pos + 4..][0..2].* = memx.toBytes(u16, 2 + 2 + 32);
-    out[pos + 6..][0..2].* = memx.toBytes(u16, @intFromEnum(NamedGroup.x25519));
-    out[pos + 8..][0..2].* = memx.toBytes(u16, 32);
-    out[pos + 10..][0..32].* = public_key.data;
-    pos += ext_key_share_len;
+    // key_share (RFC 8446 §4.2.8)
+    w.append(u16, 0x0033);
+    w.append(u16, 2 + 2 + 2 + 32); // extension data length
+    w.append(u16, 2 + 2 + 32); // client_shares list length
+    w.append(u16, @intFromEnum(NamedGroup.x25519));
+    w.append(u16, 32); // key_exchange length
+    w.appendSlice(&public_key.data);
 
-    assert(pos == total);
-    return out[0..total];
+    return w.written();
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
