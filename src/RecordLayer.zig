@@ -44,20 +44,20 @@ pub fn decrypt(self: *RecordLayer, buf: []u8) !record.DecryptedRecord {
 
     const ct_len = payload_len - tag_len;
     const payload = buf[record.header_len..][0..payload_len];
-    const ciphertext = payload[0..ct_len];
+    const inner = payload[0..ct_len];
     const tag: *const Tag = payload[ct_len..][0..tag_len];
 
     const npub = construct(&self.iv, self.seq);
-    // Decrypt in place: ciphertext and plaintext occupy the same slice.
-    try self.aead.decrypt(ciphertext, ciphertext, tag, buf[0..record.header_len], &npub);
+    // Decrypt in place: inner holds ciphertext on entry, plaintext on exit.
+    try self.aead.decrypt(inner, inner, tag, buf[0..record.header_len], &npub);
 
     self.seq += 1;
 
     // RFC 8446 §5.2: last non-zero byte is the real ContentType.
-    const i = memx.lastIndexOfNonZero(ciphertext) orelse return error.InvalidInnerPlaintext;
+    const i = memx.lastIndexOfNonZero(inner) orelse return error.InvalidInnerPlaintext;
     return .{
-        .content_type = @enumFromInt(ciphertext[i]),
-        .content = ciphertext[0..i],
+        .content_type = @enumFromInt(inner[i]),
+        .content = inner[0..i],
     };
 }
 
