@@ -91,15 +91,16 @@ test suite covers something we implement, we run it. No exceptions.
 
 ## Crypto
 
-We leverage libcrypto (OpenSSL) for:
-- AEAD: AES-128-GCM, AES-256-GCM, ChaCha20-Poly1305
-- Key exchange: X25519, P-256 ECDH
-- HKDF (or via zig stdlib `std.crypto.kdf.hkdf`)
-- Signature verification (ECDSA, RSA-PSS for cert chains)
+We use `std.crypto` throughout. Do not reach for libcrypto unless stdlib
+genuinely can't cover the use case.
 
-Zig stdlib (`std.crypto`) is viable for symmetric primitives and HKDF. The
-binding decision per primitive should be made deliberately and documented in
-`DESIGN.md`. Don't mix sources for the same primitive.
+Current stdlib coverage:
+- AEAD: `std.crypto.aead.aes_gcm`, `std.crypto.aead.chacha_poly`
+- HKDF: `std.crypto.kdf.hkdf`
+- Key exchange: `std.crypto.dh.X25519`
+
+RSA cert verification is the one open question. Decision deferred —
+ECDSA-only certs are fine for now. See `DESIGN.md`.
 
 Do not implement your own crypto. Full stop.
 

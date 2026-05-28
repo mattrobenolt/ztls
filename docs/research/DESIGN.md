@@ -201,128 +201,64 @@ The engine has no threads, no callbacks, no I/O. It's a struct you poke.
 - Owns the read/write buffers
 - Drives the state machine loop
 
-### Engine API Shape (Zig sketch)
+### What We've Built (Layer 0 + Layer 1)
 
-The core insight from BearSSL: the engine contains no buffers beyond its
-internal state. Callers pass slices everywhere. The question is whether we
-follow BearSSL's buf()/ack() pattern exactly, or do something more Zig-natural.
-
-BearSSL's pattern works great in C because you need pointer stability. In Zig,
-we can be more slice-oriented. Rough sketch:
-
-```zig
-pub const Engine = struct {
-    // Internal state — all fixed-size, no heap
-    state: HandshakeState,
-    role: Role,  // .client or .server
-
-    // Crypto state (libcrypto handles via EVP_AEAD_CTX etc.)
-    // These are fixed-size C structs embedded directly
-    read_key: AeadCtx,
-    write_key: AeadCtx,
-    read_seq: u64,
-    write_seq: u64,
-
-    // HKDF/transcript state
-    transcript: TranscriptHash,
-    // ... key schedule secrets ...
-
-    pub const Role = enum { client, server };
-
-    pub const Status = packed struct {
-        /// Engine has TLS records ready to be sent over the wire
-        send_records: bool,
-        /// Engine can accept TLS records from the wire
-        recv_records: bool,
-        /// Engine can accept plaintext to encrypt and send
-        send_data: bool,
-        /// Engine has plaintext available for the application to read
-        recv_data: bool,
-        /// Handshake is complete
-        connected: bool,
-        /// Fatal error — engine is dead
-        closed: bool,
-    };
-
-    /// Initialize a client engine. No allocation. Config is caller-owned.
-    pub fn initClient(config: *const ClientConfig) Engine;
-    pub fn initServer(config: *const ServerConfig) Engine;
-
-    /// What does the engine need right now?
-    pub fn status(self: *const Engine) Status;
-
-    /// Feed raw bytes from the network into the engine.
-    /// Returns how many bytes were consumed.
-    /// Call status() after to see what changed.
-    pub fn feedRecords(self: *Engine, data: []const u8) Error!usize;
-
-    /// Copy outgoing TLS records into buf. Returns bytes written.
-    /// Call repeatedly until send_records is false.
-    pub fn drainRecords(self: *Engine, buf: []u8) Error!usize;
-
-    /// Write plaintext application data. Engine will encrypt it into records.
-    /// Only valid when status().send_data is true (i.e., handshake complete).
-    pub fn write(self: *Engine, plaintext: []const u8) Error!usize;
-
-    /// Read decrypted application data into buf.
-    /// Only valid when status().recv_data is true.
-    pub fn read(self: *Engine, buf: []u8) Error!usize;
-
-    /// Initiate close (sends close_notify alert).
-    pub fn close(self: *Engine) void;
-};
+```
+ztls
+├── frame.zig        — wire format: header parse/encode, ContentType, DecryptedRecord
+├── nonce.zig        — per-record nonce: XOR of IV with big-endian seq number
+├── aead.zig         — AEAD wrapper: Aes128Gcm, Aes256Gcm, ChaCha20Poly1305
+├── memx.zig         — stdlib extensions: big-endian readInt/writeInt/toBytes, SIMD scan
+└── RecordLayer.zig  — stateful encrypt/decrypt for one connection direction
 ```
 
-This is a sketch, not a commitment. The internal buffer question needs more
-thought — specifically, whether the engine needs internal staging buffers for
-incomplete records or if the caller is expected to handle that.
+`RecordLayer` is the consumer-facing primitive. One instance per direction
+(read and write). Caller provides all buffers. No allocation, no I/O.
 
-BearSSL's answer: the engine owns two internal buffers (input and output),
-which the caller allocates and hands in at init time. That's probably right for
-us too — you can't parse a record without buffering it somewhere, and making
-the caller responsible for that state is messy.
+```zig
+// Encrypt into caller-provided buffer. Returns the written slice.
+pub fn encrypt(self: *RecordLayer, content_type: ContentType, content: []const u8, out: []u8) ![]u8
 
-So: caller allocates the buffers (fixed-size arrays, probably on stack or as
-part of a connection struct), passes them to `init`. Engine holds slices into
-them. No heap.
+// Decrypt in place. Returns a view into buf — no copy.
+pub fn decrypt(self: *RecordLayer, buf: []u8) !DecryptedRecord
 
-### What libcrypto Gives Us
+// Per-record overhead for buffer sizing: header(5) + type byte(1) + tag(16) = 22
+pub const overhead: usize
+```
 
-Via `<openssl/evp.h>` and friends:
+The higher-level handshake engine (Layer 2+) will own two `RecordLayer`
+instances and drive them once keys are derived from the key schedule.
 
-- `EVP_AEAD_CTX` — AES-128-GCM, AES-256-GCM, ChaCha20-Poly1305
-- `EVP_PKEY_CTX` + X25519 / P-256 — ECDH key generation and shared secret
-- `HMAC` + `EVP_MD` — for HKDF (or `EVP_KDF` directly in newer OpenSSL)
-- `EVP_DigestSign` / `EVP_DigestVerify` — signature verify for certs
-- `X509` parsing — for certificate chain validation
+### Crypto: zig stdlib
 
-The Zig `std.crypto` alternative: Zig 0.14+ has X25519, AES-GCM,
-ChaCha20-Poly1305, and HKDF in stdlib. That's actually a viable path to drop
-libcrypto entirely for the symmetric/KEM stuff. RSA signature verification is
-the hard part that would keep us on libcrypto (or we punt on RSA certs and
-only support ECDSA initially).
+We use `std.crypto` throughout. Zig 0.15 has everything we need for
+the symmetric layer:
 
-Worth deciding: do we start with libcrypto bindings and potentially migrate to
-zig stdlib crypto, or start with zig stdlib and add libcrypto as a fallback?
-The BearSSL philosophy is to own the crypto too, but that's a lot more scope.
+- `std.crypto.aead.aes_gcm` — AES-128-GCM, AES-256-GCM
+- `std.crypto.aead.chacha_poly` — ChaCha20-Poly1305
+- `std.crypto.kdf.hkdf` — HKDF (next up)
+- `std.crypto.dh.X25519` — X25519 key exchange
+
+RSA certificate verification is the one area stdlib may not cover fully.
+Options when we get there: (a) libcrypto just for cert verification,
+(b) ECDSA-only cert support initially and defer RSA. Decision deferred.
 
 ---
 
 ## Build Order
 
-1. Record layer parser — `TLSPlaintext` parse/emit, no crypto, unit tests
-2. AEAD wrapper — thin Zig wrapper around libcrypto EVP_AEAD_CTX (or zig
-   stdlib crypto.aead)
-3. Nonce construction and sequence number tracking
-4. Encrypted record encode/decode (Layer 1 complete)
-5. HKDF key schedule — derive handshake and application secrets
-6. ClientHello construction
-7. ServerHello parsing + key_share extraction
-8. EncryptedExtensions, Certificate, CertificateVerify parsing
-9. Finished message verify/send
-10. Application data read/write
-11. KeyUpdate
-12. Integration test against a real server (e.g., curl's localhost test server)
+- ✅ 1. Record frame parser — wire format parse/emit, no crypto (`frame.zig`)
+- ✅ 2. AEAD wrapper — zig stdlib `std.crypto.aead` (`aead.zig`)
+- ✅ 3. Nonce construction — XOR of IV with seq number (`nonce.zig`)
+- ✅ 4. Encrypted record encode/decode — `RecordLayer.zig` (Layer 1 complete)
+- 5. HKDF key schedule — derive handshake and application secrets
+- 6. ClientHello construction
+- 7. ServerHello parsing + key_share extraction
+- 8. EncryptedExtensions, Certificate, CertificateVerify parsing
+- 9. Finished message verify/send
+- 10. Application data read/write
+- 11. KeyUpdate
+- 12. Integration test against a real server (openssl s_server / s_client)
 
 Start with a test that talks to itself (client + server in the same process,
 piped together) before touching the network.
@@ -381,9 +317,8 @@ Every error path is tested. Fuzzing is not optional.
 
 ## Open Questions
 
-1. **libcrypto vs zig stdlib crypto**: Zig stdlib has enough for symmetric
-   crypto. RSA cert verification is the blocker for going fully libcrypto-free.
-   Could support ECDSA-only initially and stay stdlib.
+1. ~~**libcrypto vs zig stdlib crypto**~~ — resolved: using zig stdlib throughout.
+   RSA cert verification deferred; ECDSA-only initially is fine.
 
 2. **Internal buffer ownership**: Does the engine own its staging buffers
    (caller allocates, engine holds slice), or does the caller pass a fresh
