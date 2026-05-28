@@ -129,6 +129,28 @@ for breaking things that aren't contracted.
 
 ---
 
+## Zig Style
+
+Type annotations go on the left side of the declaration. The right side uses
+`.init()` or `.{}` — never repeat the type name on the right.
+
+```zig
+// correct
+const iv: Iv = .init(@splat(0));
+const key: Aes128GcmKey = .init(@splat(0xab));
+var tag: Tag = undefined;
+
+// wrong
+const iv = Iv.init(@splat(0));
+const key = Aes128GcmKey.init(@splat(0xab));
+```
+
+This applies to all typed values — newtypes, structs, enums. Consistent with
+how Zig struct literals work: `.{}`, `.init()`, `.{ .field = val }` are all
+resolved from the declared type on the left.
+
+---
+
 ## What Not To Do
 
 - Don't add TLS 1.2 support. The scope is TLS 1.3. Period.
