@@ -122,6 +122,16 @@ Key sections for implementation:
 
 ---
 
+## API Stability
+
+We have no public API contract yet. This is pre-alpha implementation work.
+Do not hesitate to change function signatures, rename types, restructure
+modules, or rethink abstractions. The cost of changing things now is zero.
+The cost of not changing them later is high. Move fast and don't apologize
+for breaking things that aren't contracted.
+
+---
+
 ## What Not To Do
 
 - Don't add TLS 1.2 support. The scope is TLS 1.3. Period.
