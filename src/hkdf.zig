@@ -23,6 +23,13 @@ pub const HkdfSha384 = Hkdf(HmacSha384);
 /// Raw ECDH shared secret output.
 /// TODO: replace with a proper typed result from the key exchange layer
 /// (X25519, P-256) once implemented.
+///
+/// TODO: both SharedSecret and Hkdf.Prk are type aliases over byte arrays,
+/// which means the compiler won't catch accidental swaps between them.
+/// Consider wrapping each in a struct (newtype pattern) for real type safety:
+///   const Prk = struct { data: [prk_len]u8 };
+///   const SharedSecret = struct { data: [32]u8 };
+/// Aliases give documentation; structs give safety.
 pub const SharedSecret = [32]u8;
 
 fn Hkdf(comptime Hmac: type) type {
