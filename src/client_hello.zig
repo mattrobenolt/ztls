@@ -7,7 +7,6 @@
 ///
 /// RFC 8446 §4.1.2
 const std = @import("std");
-const assert = std.debug.assert;
 const testing = std.testing;
 
 const memx = @import("memx.zig");
@@ -100,9 +99,9 @@ pub fn encode(
     random: Random,
     public_key: x25519.PublicKey,
     server_name: ?[]const u8,
-) error{BufferTooShort}![]u8 {
-    // Validate server_name fits in the wire format (RFC 6066 §3: hostname ≤ 253)
-    if (server_name) |name| assert(name.len <= 253);
+) error{ BufferTooShort, ServerNameTooLong }![]u8 {
+    // RFC 6066 §3: HostName is a DNS name, max 253 octets.
+    if (server_name) |name| if (name.len > 253) return error.ServerNameTooLong;
 
     if (out.len < encodedLen(server_name)) return error.BufferTooShort;
     var w: wire.Writer = .init(out);
@@ -241,4 +240,10 @@ test "encode: SNI absent when server_name is null" {
 test "encode: buffer too short" {
     var buf: [10]u8 = undefined;
     try testing.expectError(error.BufferTooShort, encode(&buf, .zero, .zero, null));
+}
+
+test "encode: server_name too long" {
+    var buf: [512]u8 = undefined;
+    const long_name = "a" ** 254;
+    try testing.expectError(error.ServerNameTooLong, encode(&buf, .zero, .zero, long_name));
 }
