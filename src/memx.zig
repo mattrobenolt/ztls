@@ -26,7 +26,7 @@ pub fn lastIndexOfNonZero(buf: []const u8) ?usize {
     assert(buf.len > 0);
     if (buf[buf.len - 1] != 0) return buf.len - 1;
 
-    const chunk_len = std.simd.suggestVectorLength(u8) orelse 1;
+    const chunk_len = @min(std.simd.suggestVectorLength(u8) orelse 16, 32);
     const Vec = @Vector(chunk_len, u8);
     const zero: Vec = @splat(0);
 
