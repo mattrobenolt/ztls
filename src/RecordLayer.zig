@@ -2,8 +2,6 @@
 ///
 /// Composes record framing, nonce construction, and AEAD to implement
 /// TLSCiphertext encrypt/decrypt. RFC 8446 §5.2
-///
-/// File-as-struct: const RecordLayer = @import("RecordLayer.zig");
 const std = @import("std");
 const testing = std.testing;
 const Aes128Gcm = std.crypto.aead.aes_gcm.Aes128Gcm;
@@ -11,9 +9,12 @@ const Aes128Gcm = std.crypto.aead.aes_gcm.Aes128Gcm;
 const Aead = @import("aead.zig").Aead;
 const construct = @import("nonce.zig").construct;
 const Iv = @import("aead.zig").Iv;
+const memx = @import("memx.zig");
 const record = @import("record.zig");
 const Tag = @import("aead.zig").Tag;
 const tag_len = @import("aead.zig").tag_len;
+
+const RecordLayer = @This();
 
 aead: Aead,
 iv: Iv,
@@ -26,7 +27,7 @@ seq: u64 = 0,
 /// Sequence number increments only on successful authentication.
 ///
 /// RFC 8446 §5.2
-pub fn decrypt(self: *@This(), buf: []const u8, out: []u8) !record.DecryptedRecord {
+pub fn decrypt(self: *RecordLayer, buf: []const u8, out: []u8) !record.DecryptedRecord {
     if (self.seq == std.math.maxInt(u64)) {
         @branchHint(.cold);
         return error.SequenceNumberOverflow;
@@ -51,7 +52,13 @@ pub fn decrypt(self: *@This(), buf: []const u8, out: []u8) !record.DecryptedReco
     self.seq += 1;
 
     // RFC 8446 §5.2: last non-zero byte is the real ContentType.
-    const i = std.mem.lastIndexOfNone(u8, out[0..ct_len], &.{0}) orelse return error.InvalidInnerPlaintext;
+    // Fast path: no padding, type byte is last — the common case.
+    if (ct_len > 0 and out[ct_len - 1] != 0) return .{
+        .content_type = @enumFromInt(out[ct_len - 1]),
+        .content = out[0 .. ct_len - 1],
+    };
+    // Slow path: padding present, SIMD scan backwards.
+    const i = memx.lastIndexOfNonZero(out[0..ct_len]) orelse return error.InvalidInnerPlaintext;
     return .{
         .content_type = @enumFromInt(out[i]),
         .content = out[0..i],
@@ -61,7 +68,7 @@ pub fn decrypt(self: *@This(), buf: []const u8, out: []u8) !record.DecryptedReco
 // RFC 8446 §5.2 — record protection
 
 test "decrypt: wrong content type" {
-    var rl: @This() = .{
+    var rl: RecordLayer = .{
         .aead = .initAes128Gcm(@splat(0)),
         .iv = @splat(0),
     };
@@ -71,7 +78,7 @@ test "decrypt: wrong content type" {
 }
 
 test "decrypt: payload shorter than tag" {
-    var rl: @This() = .{
+    var rl: RecordLayer = .{
         .aead = .initAes128Gcm(@splat(0)),
         .iv = @splat(0),
     };
@@ -81,7 +88,7 @@ test "decrypt: payload shorter than tag" {
 }
 
 test "decrypt: output buffer too small" {
-    var rl: @This() = .{
+    var rl: RecordLayer = .{
         .aead = .initAes128Gcm(@splat(0)),
         .iv = @splat(0),
     };
@@ -91,7 +98,7 @@ test "decrypt: output buffer too small" {
 }
 
 test "decrypt: sequence number overflow" {
-    var rl: @This() = .{
+    var rl: RecordLayer = .{
         .aead = .initAes128Gcm(@splat(0)),
         .iv = @splat(0),
         .seq = std.math.maxInt(u64),
