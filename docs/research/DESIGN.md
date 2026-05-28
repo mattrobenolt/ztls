@@ -229,11 +229,22 @@ pub const overhead: usize
 The higher-level handshake engine (Layer 2+) will own two `RecordLayer`
 instances and drive them once keys are derived from the key schedule.
 
-### Crypto: zig stdlib
+### Crypto backends
 
-We use `std.crypto` throughout. Zig 0.15 has everything we need for
-the symmetric layer:
+Default backend is `std.crypto` — zero dependencies, pure Zig, works everywhere.
 
+A `libcrypto` backend will also be offered as an opt-in build flag
+(e.g. `-Dcrypto=libcrypto`). OpenSSL's symmetric crypto is extremely
+well-optimized — hardware AES-NI, CLMUL for GCM, hand-rolled assembly —
+and may be measurably faster for throughput-sensitive deployments. The
+tradeoff is linking libcrypto pulls in libc, which is undesirable for
+embedded or minimal targets. Hence opt-in, not default.
+
+The AEAD (and eventually HKDF) layers will dispatch to the right
+implementation at comptime based on the build flag. Both backends
+present the same API surface — swapping is invisible to the caller.
+
+Stdlib coverage for the default backend:
 - `std.crypto.aead.aes_gcm` — AES-128-GCM, AES-256-GCM
 - `std.crypto.aead.chacha_poly` — ChaCha20-Poly1305
 - `std.crypto.kdf.hkdf` — HKDF (next up)

@@ -91,18 +91,14 @@ test suite covers something we implement, we run it. No exceptions.
 
 ## Crypto
 
-We use `std.crypto` throughout. Do not reach for libcrypto unless stdlib
-genuinely can't cover the use case.
+Default backend is `std.crypto` — zero dependencies, pure Zig.
+A `libcrypto` backend will be offered as an opt-in build flag for
+deployments that want OpenSSL's hardware-accelerated primitives.
+Both backends present the same API; the flag is a comptime switch.
 
-Current stdlib coverage:
-- AEAD: `std.crypto.aead.aes_gcm`, `std.crypto.aead.chacha_poly`
-- HKDF: `std.crypto.kdf.hkdf`
-- Key exchange: `std.crypto.dh.X25519`
+Do not reach for libcrypto by default. Do not implement your own crypto.
 
-RSA cert verification is the one open question. Decision deferred —
-ECDSA-only certs are fine for now. See `DESIGN.md`.
-
-Do not implement your own crypto. Full stop.
+See `docs/research/DESIGN.md` for full backend rationale.
 
 ---
 
