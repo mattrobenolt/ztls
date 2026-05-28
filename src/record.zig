@@ -15,9 +15,10 @@
 /// plaintext as TLSInnerPlaintext.
 const std = @import("std");
 const mem = std.mem;
-const memx = @import("memx.zig");
 const testing = std.testing;
 const assert = std.debug.assert;
+
+const memx = @import("memx.zig");
 
 /// RFC 8446 §5.1 — maximum plaintext fragment length.
 pub const max_plaintext_len = 1 << 14; // 16384
@@ -54,7 +55,7 @@ pub const Header = extern struct {
     /// Always 0x0303 on the wire for TLS 1.3. Frozen for middlebox compatibility;
     /// actual version negotiation happens in the supported_versions extension.
     /// Not exposed — no caller should branch on this.
-    legacy_version_be: [2]u8 = .{ 0x03, 0x03 },
+    legacy_version_be: [2]u8 = mem.toBytes(mem.nativeToBig(u16, legacy_record_version)),
     /// Big-endian payload length. Use length() to read as native u16.
     length_be: [2]u8,
 
@@ -68,7 +69,10 @@ pub const Header = extern struct {
     }
 
     pub fn init(content_type: ContentType, len: u16) Header {
-        var h: Header = .{ .content_type = content_type, .length_be = undefined };
+        var h: Header = .{
+            .content_type = content_type,
+            .length_be = undefined,
+        };
         memx.writeInt(u16, &h.length_be, len);
         return h;
     }
@@ -95,8 +99,6 @@ pub fn parseHeader(buf: []const u8) ParseError!*const Header {
     if (h.length() > max_ciphertext_len) return error.RecordTooLarge;
     return h;
 }
-
-
 
 /// Result of stripping TLSInnerPlaintext padding.
 pub const InnerPlaintext = struct {
