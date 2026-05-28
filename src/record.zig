@@ -102,13 +102,7 @@ pub fn parseHeader(buf: []const u8) ParseError!*const Header {
     return h;
 }
 
-/// Write a 5-byte record header into `buf[0..header_len]`.
-///
-/// Always writes legacy_record_version = 0x0303.
-pub fn writeHeader(buf: []u8, content_type: ContentType, len: u16) error{BufferTooShort}!void {
-    if (buf.len < header_len) return error.BufferTooShort;
-    buf[0..header_len].* = mem.toBytes(Header.init(content_type, len));
-}
+
 
 /// Result of stripping TLSInnerPlaintext padding.
 pub const InnerPlaintext = struct {
@@ -210,18 +204,13 @@ test "parseHeader: length exceeds max" {
     try testing.expectError(error.RecordTooLarge, parseHeader(&buf));
 }
 
-test "writeHeader: round-trips with parseHeader" {
+test "Header.init round-trips with parseHeader" {
     var buf: [header_len]u8 = undefined;
-    try writeHeader(&buf, .handshake, 512);
+    buf = mem.toBytes(Header.init(.handshake, 512));
     const h = try parseHeader(&buf);
     try testing.expectEqual(ContentType.handshake, h.content_type);
     try testing.expectEqual(legacy_record_version, h.legacyVersion());
     try testing.expectEqual(@as(u16, 512), h.length());
-}
-
-test "writeHeader: buffer too short" {
-    var buf: [4]u8 = undefined;
-    try testing.expectError(error.BufferTooShort, writeHeader(&buf, .alert, 0));
 }
 
 // RFC 8446 §5.2 — TLSInnerPlaintext padding strip
