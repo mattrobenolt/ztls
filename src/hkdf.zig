@@ -93,21 +93,21 @@ fn Hkdf(comptime Hmac: type) type {
         // uses Transcript-Hash of empty input = Hash("").
         const empty_hash: Prk = blk: {
             @setEvalBranchQuota(100_000);
-            var out: [prk_len]u8 = undefined;
+            var out: Prk.Data = undefined;
             const S = switch (prk_len) {
                 32 => Sha256,
                 48 => Sha384,
                 else => unreachable,
             };
             S.hash(&.{}, &out, .{});
-            break :blk Prk.init(out);
+            break :blk .init(out);
         };
 
         /// EarlySecret for a full handshake with no PSK.
         /// Salt and IKM are both zero — comptime constant per RFC 8446 §7.1.
         pub const early_secret: Prk = blk: {
             @setEvalBranchQuota(100_000);
-            break :blk Prk.init(H.extract(&Prk.zero.data, &Prk.zero.data));
+            break :blk .init(H.extract(&Prk.zero.data, &Prk.zero.data));
         };
 
         /// RFC 8446 §7.1 — Derive-Secret.
@@ -126,7 +126,7 @@ fn Hkdf(comptime Hmac: type) type {
         /// `dhe` is the raw ECDH output (32 bytes for X25519/P-256).
         pub fn handshakeSecret(early: Prk, dhe: *const SharedSecret) Prk {
             const salt = deriveSecret(early, "derived", &empty_hash);
-            return Prk.init(H.extract(&salt.data, &dhe.data));
+            return .init(H.extract(&salt.data, &dhe.data));
         }
 
         /// RFC 8446 §7.1 — MasterSecret.
@@ -134,7 +134,7 @@ fn Hkdf(comptime Hmac: type) type {
         /// No new key material at this stage; IKM is zero.
         pub fn masterSecret(handshake: Prk) Prk {
             const salt = deriveSecret(handshake, "derived", &empty_hash);
-            return Prk.init(H.extract(&salt.data, &Prk.zero.data));
+            return .init(H.extract(&salt.data, &Prk.zero.data));
         }
 
         // RFC 8446 §7.1 — traffic secrets from HandshakeSecret.

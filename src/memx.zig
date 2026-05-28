@@ -12,7 +12,7 @@ const testing = std.testing;
 pub fn Array(comptime len: comptime_int) type {
     return struct {
         const Self = @This();
-        const Data = [len]u8;
+        pub const Data = [len]u8;
 
         data: Data,
 
