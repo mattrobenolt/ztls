@@ -15,17 +15,9 @@
 /// plaintext as TLSInnerPlaintext.
 const std = @import("std");
 const mem = std.mem;
+const memx = @import("memx.zig");
 const testing = std.testing;
 const assert = std.debug.assert;
-
-/// TLS is entirely big-endian. These wrappers drop the endian argument.
-inline fn readInt(comptime T: type, buf: *const [@divExact(@bitSizeOf(T), 8)]u8) T {
-    return mem.readInt(T, buf, .big);
-}
-
-inline fn writeInt(comptime T: type, buf: *[@divExact(@bitSizeOf(T), 8)]u8, value: T) void {
-    mem.writeInt(T, buf, value, .big);
-}
 
 /// RFC 8446 §5.1 — maximum plaintext fragment length.
 pub const max_plaintext_len = 1 << 14; // 16384
@@ -72,18 +64,18 @@ pub const Header = extern struct {
     }
 
     pub inline fn legacyVersion(self: Header) u16 {
-        return readInt(u16, &self.legacy_version_be);
+        return memx.readInt(u16, &self.legacy_version_be);
     }
 
     pub inline fn length(self: Header) u16 {
-        return readInt(u16, &self.length_be);
+        return memx.readInt(u16, &self.length_be);
     }
 
     pub fn init(content_type: ContentType, len: u16) Header {
         var h: Header = undefined;
         h.content_type = content_type;
-        writeInt(u16, &h.legacy_version_be, legacy_record_version);
-        writeInt(u16, &h.length_be, len);
+        memx.writeInt(u16, &h.legacy_version_be, legacy_record_version);
+        memx.writeInt(u16, &h.length_be, len);
         return h;
     }
 };
@@ -97,15 +89,15 @@ pub const ParseError = error{
 
 /// Parse the 5-byte record header from the front of `buf`.
 ///
-/// Returns the parsed header. Use header.length() and header.legacyVersion()
-/// to read the u16 fields in native byte order.
+/// Returns a pointer view into `buf` — no copy. Use header.length() and
+/// header.legacyVersion() to read the u16 fields in native byte order.
 /// The fragment begins at `buf[header_len..]` and is `header.length()`
 /// bytes long — caller ensures that many bytes are available.
 ///
 /// RFC 8446 §5.1, §5.2
-pub fn parseHeader(buf: []const u8) ParseError!Header {
+pub fn parseHeader(buf: []const u8) ParseError!*const Header {
     if (buf.len < header_len) return error.BufferTooShort;
-    const h = mem.bytesToValue(Header, buf[0..header_len]);
+    const h: *const Header = @ptrCast(buf.ptr);
     if (h.length() > max_ciphertext_len) return error.RecordTooLarge;
     return h;
 }
