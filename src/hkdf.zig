@@ -107,8 +107,7 @@ fn Hkdf(comptime Hmac: type) type {
         /// Salt and IKM are both zero — comptime constant per RFC 8446 §7.1.
         pub const early_secret: Prk = blk: {
             @setEvalBranchQuota(100_000);
-            const zero = [_]u8{0} ** prk_len;
-            break :blk Prk.init(H.extract(&zero, &zero));
+            break :blk Prk.init(H.extract(&Prk.zero.data, &Prk.zero.data));
         };
 
         /// RFC 8446 §7.1 — Derive-Secret.
@@ -135,8 +134,7 @@ fn Hkdf(comptime Hmac: type) type {
         /// No new key material at this stage; IKM is zero.
         pub fn masterSecret(handshake: Prk) Prk {
             const salt = deriveSecret(handshake, "derived", &empty_hash);
-            const zero = [_]u8{0} ** prk_len;
-            return Prk.init(H.extract(&salt.data, &zero));
+            return Prk.init(H.extract(&salt.data, &Prk.zero.data));
         }
 
         // RFC 8446 §7.1 — traffic secrets from HandshakeSecret.
