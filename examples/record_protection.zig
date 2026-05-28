@@ -7,16 +7,18 @@ const std = @import("std");
 const print = std.debug.print;
 
 const ztls = @import("ztls");
-const RecordLayer = ztls.RecordLayer;
 
 pub fn main() !void {
     // In a real TLS connection, key and IV are derived from the handshake
     // key schedule. Here we just pick fixed values for demonstration.
-    const key: ztls.aead.Aes128GcmKey = @splat(0xab);
-    const iv: ztls.aead.Iv = @splat(0xcd);
-
-    var sender: RecordLayer = .{ .aead = .initAes128Gcm(key), .iv = iv };
-    var receiver: RecordLayer = .{ .aead = .initAes128Gcm(key), .iv = iv };
+    var sender: ztls.RecordLayer = .{
+        .aead = .initAes128Gcm(@splat(0xab)),
+        .iv = @splat(0xcd),
+    };
+    var receiver: ztls.RecordLayer = .{
+        .aead = .initAes128Gcm(@splat(0xab)),
+        .iv = @splat(0xcd),
+    };
 
     const messages = [_][]const u8{
         "hello from ztls",
@@ -26,7 +28,7 @@ pub fn main() !void {
 
     for (messages) |msg| {
         // Sender: encrypt into a stack-allocated output buffer.
-        var out: [256 + RecordLayer.overhead]u8 = undefined;
+        var out: [256 + ztls.RecordLayer.overhead]u8 = undefined;
         const wire = try sender.encrypt(.application_data, msg, &out);
 
         print("encrypted {} bytes -> {} wire bytes\n", .{ msg.len, wire.len });
