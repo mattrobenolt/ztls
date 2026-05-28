@@ -93,10 +93,8 @@ pub fn encrypt(self: *RecordLayer, content_type: ContentType, content: []const u
 
     // Encrypt the inner plaintext in place, append the tag.
     const inner = out[record.header_len..][0..inner_len];
-    var tag: Tag = undefined;
     const npub = construct(&self.iv, self.seq);
-    self.aead.encrypt(inner, &tag, inner, out[0..record.header_len], &npub);
-    out[record.header_len + inner_len ..][0..tag_len].* = tag;
+    self.aead.encrypt(inner, out[record.header_len + inner_len ..][0..tag_len], inner, out[0..record.header_len], &npub);
 
     self.seq += 1;
     return out[0..total];
