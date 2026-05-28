@@ -33,7 +33,7 @@ fn Hkdf(comptime Hmac: type) type {
         }
 
         /// RFC 8446 §7.1 — HKDF-Extract.
-        pub fn extract(salt: []const u8, ikm: []const u8) Prk {
+        pub inline fn extract(salt: []const u8, ikm: []const u8) Prk {
             return H.extract(salt, ikm);
         }
 
@@ -107,7 +107,7 @@ fn Hkdf(comptime Hmac: type) type {
         ///
         /// Expands `secret` using `label` and a transcript hash as context.
         /// Output is always `prk_len` bytes (the hash output length).
-        pub fn deriveSecret(secret: Prk, comptime label: []const u8, transcript_hash: []const u8) Prk {
+        pub inline fn deriveSecret(secret: Prk, comptime label: []const u8, transcript_hash: []const u8) Prk {
             var out: Prk = undefined;
             expandLabel(&out, label, transcript_hash, secret);
             return out;
@@ -133,33 +133,33 @@ fn Hkdf(comptime Hmac: type) type {
 
         // RFC 8446 §7.1 — traffic secrets from HandshakeSecret.
 
-        pub fn clientHandshakeTrafficSecret(handshake: Prk, transcript_hash: []const u8) Prk {
+        pub inline fn clientHandshakeTrafficSecret(handshake: Prk, transcript_hash: []const u8) Prk {
             return deriveSecret(handshake, "c hs traffic", transcript_hash);
         }
 
-        pub fn serverHandshakeTrafficSecret(handshake: Prk, transcript_hash: []const u8) Prk {
+        pub inline fn serverHandshakeTrafficSecret(handshake: Prk, transcript_hash: []const u8) Prk {
             return deriveSecret(handshake, "s hs traffic", transcript_hash);
         }
 
         // RFC 8446 §7.1 — traffic secrets from MasterSecret.
 
-        pub fn clientApplicationTrafficSecret(master: Prk, transcript_hash: []const u8) Prk {
+        pub inline fn clientApplicationTrafficSecret(master: Prk, transcript_hash: []const u8) Prk {
             return deriveSecret(master, "c ap traffic", transcript_hash);
         }
 
-        pub fn serverApplicationTrafficSecret(master: Prk, transcript_hash: []const u8) Prk {
+        pub inline fn serverApplicationTrafficSecret(master: Prk, transcript_hash: []const u8) Prk {
             return deriveSecret(master, "s ap traffic", transcript_hash);
         }
 
         /// RFC 8446 §7.3 — derive the write key from a traffic secret.
         /// `out.len` must match the AEAD key length for the cipher suite.
-        pub fn trafficKey(prk: Prk, out: []u8) void {
+        pub inline fn trafficKey(prk: Prk, out: []u8) void {
             expandLabel(out, "key", "", prk);
         }
 
         /// RFC 8446 §7.3 — derive the write IV from a traffic secret.
         /// Always 12 bytes for all TLS 1.3 cipher suites.
-        pub fn trafficIv(prk: Prk) Iv {
+        pub inline fn trafficIv(prk: Prk) Iv {
             var iv: Iv = undefined;
             expandLabel(&iv, "iv", "", prk);
             return iv;
