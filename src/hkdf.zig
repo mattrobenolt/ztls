@@ -154,6 +154,7 @@ fn Hkdf(comptime Hmac: type) type {
         /// RFC 8446 §7.3 — derive the write key from a traffic secret.
         /// `out.len` must match the AEAD key length for the cipher suite.
         pub inline fn trafficKey(prk: Prk, out: []u8) void {
+            assert(out.len == 16 or out.len == 32);
             expandLabel(out, "key", "", prk);
         }
 
