@@ -55,7 +55,7 @@ pub const Header = extern struct {
     /// Always 0x0303 on the wire for TLS 1.3. Frozen for middlebox compatibility;
     /// actual version negotiation happens in the supported_versions extension.
     /// Not exposed — no caller should branch on this.
-    legacy_version_be: [2]u8 = mem.toBytes(mem.nativeToBig(u16, legacy_record_version)),
+    legacy_version_be: [2]u8 = memx.toBytes(u16, legacy_record_version),
     /// Big-endian payload length. Use length() to read as native u16.
     length_be: [2]u8,
 
