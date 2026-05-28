@@ -32,7 +32,7 @@ pub const header_len = 5;
 
 /// RFC 8446 §5.1 — legacy_record_version is fixed at 0x0303 (TLS 1.2)
 /// for all TLS 1.3 records after the initial ClientHello.
-pub const legacy_record_version: u16 = 0x0303;
+const legacy_record_version: u16 = 0x0303;
 
 /// RFC 8446 Appendix B.1
 pub const ContentType = enum(u8) {
