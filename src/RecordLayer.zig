@@ -50,16 +50,12 @@ pub fn decrypt(self: *@This(), buf: []const u8, out: []u8) !record.DecryptedReco
 
     self.seq += 1;
 
-    // RFC 8446 §5.2: scan back for last non-zero byte — that's the real ContentType.
-    var i = ct_len;
-    while (i > 0) {
-        i -= 1;
-        if (out[i] != 0) return .{
-            .content_type = @enumFromInt(out[i]),
-            .content = out[0..i],
-        };
-    }
-    return error.InvalidInnerPlaintext;
+    // RFC 8446 §5.2: last non-zero byte is the real ContentType.
+    const i = std.mem.lastIndexOfNone(u8, out[0..ct_len], &.{0}) orelse return error.InvalidInnerPlaintext;
+    return .{
+        .content_type = @enumFromInt(out[i]),
+        .content = out[0..i],
+    };
 }
 
 // RFC 8446 §5.2 — record protection
