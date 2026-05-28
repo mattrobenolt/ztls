@@ -19,7 +19,7 @@ pub const HkdfSha256 = Hkdf(HmacSha256);
 /// TLS_AES_256_GCM_SHA384.
 pub const HkdfSha384 = Hkdf(HmacSha384);
 
-pub fn Hkdf(comptime Hmac: type) type {
+fn Hkdf(comptime Hmac: type) type {
     const H = crypto.kdf.hkdf.Hkdf(Hmac);
 
     return struct {
