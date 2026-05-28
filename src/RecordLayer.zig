@@ -84,17 +84,20 @@ pub fn encrypt(self: *RecordLayer, content_type: ContentType, content: []const u
     const total = record.header_len + inner_len + tag_len;
     if (out.len < total) return error.BufferTooShort;
 
+    const hdr = out[0..record.header_len];
+    const inner = out[record.header_len..][0..inner_len];
+    const out_tag = out[record.header_len + inner_len ..][0..tag_len];
+
     // Write the record header: application_data, length = inner_len + tag_len.
-    out[0..record.header_len].* = std.mem.toBytes(Header.init(.application_data, @intCast(inner_len + tag_len)));
+    hdr.* = std.mem.toBytes(Header.init(.application_data, @intCast(inner_len + tag_len)));
 
     // Write TLSInnerPlaintext: content || real ContentType byte.
-    @memcpy(out[record.header_len..][0..content.len], content);
-    out[record.header_len + content.len] = @intFromEnum(content_type);
+    @memcpy(inner[0..content.len], content);
+    inner[content.len] = @intFromEnum(content_type);
 
     // Encrypt the inner plaintext in place, append the tag.
-    const inner = out[record.header_len..][0..inner_len];
     const npub = construct(&self.iv, self.seq);
-    self.aead.encrypt(inner, out[record.header_len + inner_len ..][0..tag_len], inner, out[0..record.header_len], &npub);
+    self.aead.encrypt(inner, out_tag, inner, hdr, &npub);
 
     self.seq += 1;
     return out[0..total];
