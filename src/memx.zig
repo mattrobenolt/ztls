@@ -6,6 +6,22 @@ const mem = std.mem;
 const assert = std.debug.assert;
 const testing = std.testing;
 
+/// A named, fixed-size byte array. Wraps [len]u8 as a distinct type so that
+/// semantically different values (e.g. Prk vs SharedSecret) cannot be
+/// accidentally substituted for one another at compile time.
+pub fn Array(comptime len: comptime_int) type {
+    return struct {
+        const Self = @This();
+        const Data = [len]u8;
+
+        data: Data,
+
+        pub inline fn init(data: Data) Self {
+            return .{ .data = data };
+        }
+    };
+}
+
 pub inline fn readInt(comptime T: type, buf: *const [@divExact(@bitSizeOf(T), 8)]u8) T {
     return mem.readInt(T, buf, .big);
 }

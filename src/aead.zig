@@ -18,6 +18,7 @@ const testing = std.testing;
 
 const construct = @import("nonce.zig").construct;
 pub const Iv = @import("nonce.zig").Iv;
+const memx = @import("memx.zig");
 const Nonce = @import("nonce.zig").Nonce;
 
 // Verify our assumptions about the stdlib types at compile time.
@@ -32,11 +33,11 @@ comptime {
 
 /// Authentication tag — 16 bytes for all TLS 1.3 ciphers.
 pub const tag_len = 16;
-pub const Tag = [tag_len]u8;
+pub const Tag = memx.Array(tag_len);
 
-pub const Aes128GcmKey = [Aes128Gcm.key_length]u8;
-pub const Aes256GcmKey = [Aes256Gcm.key_length]u8;
-pub const ChaCha20Poly1305Key = [ChaCha20Poly1305.key_length]u8;
+pub const Aes128GcmKey = memx.Array(Aes128Gcm.key_length);
+pub const Aes256GcmKey = memx.Array(Aes256Gcm.key_length);
+pub const ChaCha20Poly1305Key = memx.Array(ChaCha20Poly1305.key_length);
 
 /// A cipher context holding the key for one direction of a TLS connection.
 /// Construct with Aead.init*(), then call encrypt/decrypt per record.
@@ -69,9 +70,9 @@ pub const Aead = union(enum) {
         npub: *const Nonce,
     ) void {
         switch (self) {
-            .aes128_gcm => |key| Aes128Gcm.encrypt(ciphertext, tag, plaintext, ad, npub.*, key),
-            .aes256_gcm => |key| Aes256Gcm.encrypt(ciphertext, tag, plaintext, ad, npub.*, key),
-            .chacha20_poly1305 => |key| ChaCha20Poly1305.encrypt(ciphertext, tag, plaintext, ad, npub.*, key),
+            .aes128_gcm => |key| Aes128Gcm.encrypt(ciphertext, &tag.data, plaintext, ad, npub.data, key.data),
+            .aes256_gcm => |key| Aes256Gcm.encrypt(ciphertext, &tag.data, plaintext, ad, npub.data, key.data),
+            .chacha20_poly1305 => |key| ChaCha20Poly1305.encrypt(ciphertext, &tag.data, plaintext, ad, npub.data, key.data),
         }
     }
 
@@ -87,9 +88,9 @@ pub const Aead = union(enum) {
         npub: *const Nonce,
     ) Error!void {
         switch (self) {
-            .aes128_gcm => |key| try Aes128Gcm.decrypt(plaintext, ciphertext, tag.*, ad, npub.*, key),
-            .aes256_gcm => |key| try Aes256Gcm.decrypt(plaintext, ciphertext, tag.*, ad, npub.*, key),
-            .chacha20_poly1305 => |key| try ChaCha20Poly1305.decrypt(plaintext, ciphertext, tag.*, ad, npub.*, key),
+            .aes128_gcm => |key| try Aes128Gcm.decrypt(plaintext, ciphertext, tag.data, ad, npub.data, key.data),
+            .aes256_gcm => |key| try Aes256Gcm.decrypt(plaintext, ciphertext, tag.data, ad, npub.data, key.data),
+            .chacha20_poly1305 => |key| try ChaCha20Poly1305.decrypt(plaintext, ciphertext, tag.data, ad, npub.data, key.data),
         }
     }
 };
@@ -97,8 +98,8 @@ pub const Aead = union(enum) {
 // RFC 8446 §9.1 — mandatory cipher suites
 
 test "Aes128Gcm: encrypt/decrypt round-trip" {
-    const key: Aes128GcmKey = @splat(0xab);
-    const iv: Iv = @splat(0xcd);
+    const key: Aes128GcmKey = .init(@splat(0xab));
+    const iv: Iv = .init(@splat(0xcd));
     const npub = construct(&iv, 0);
     const ad = "header";
     const plaintext = "hello world";
@@ -114,8 +115,8 @@ test "Aes128Gcm: encrypt/decrypt round-trip" {
 }
 
 test "Aes256Gcm: encrypt/decrypt round-trip" {
-    const key: Aes256GcmKey = @splat(0xab);
-    const iv: Iv = @splat(0xcd);
+    const key: Aes256GcmKey = .init(@splat(0xab));
+    const iv: Iv = .init(@splat(0xcd));
     const npub = construct(&iv, 0);
     const ad = "header";
     const plaintext = "hello world";
@@ -131,8 +132,8 @@ test "Aes256Gcm: encrypt/decrypt round-trip" {
 }
 
 test "ChaCha20Poly1305: encrypt/decrypt round-trip" {
-    const key: ChaCha20Poly1305Key = @splat(0xab);
-    const iv: Iv = @splat(0xcd);
+    const key: ChaCha20Poly1305Key = .init(@splat(0xab));
+    const iv: Iv = .init(@splat(0xcd));
     const npub = construct(&iv, 0);
     const ad = "header";
     const plaintext = "hello world";
@@ -148,8 +149,8 @@ test "ChaCha20Poly1305: encrypt/decrypt round-trip" {
 }
 
 test "decrypt: authentication failure on tampered ciphertext" {
-    const key: Aes128GcmKey = @splat(0x01);
-    const iv: Iv = @splat(0x02);
+    const key: Aes128GcmKey = .init(@splat(0x01));
+    const iv: Iv = .init(@splat(0x02));
     const npub = construct(&iv, 0);
     const ad = "header";
     const plaintext = "secret";
@@ -159,14 +160,14 @@ test "decrypt: authentication failure on tampered ciphertext" {
     const aead: Aead = .initAes128Gcm(key);
     aead.encrypt(&ciphertext, &tag, plaintext, ad, &npub);
 
-    ciphertext[0] ^= 0xff; // tamper
+    ciphertext[0] ^= 0xff;
     var decrypted: [plaintext.len]u8 = undefined;
     try testing.expectError(error.AuthenticationFailed, aead.decrypt(&decrypted, &ciphertext, &tag, ad, &npub));
 }
 
 test "decrypt: authentication failure on tampered tag" {
-    const key: Aes128GcmKey = @splat(0x01);
-    const iv: Iv = @splat(0x02);
+    const key: Aes128GcmKey = .init(@splat(0x01));
+    const iv: Iv = .init(@splat(0x02));
     const npub = construct(&iv, 0);
     const ad = "header";
     const plaintext = "secret";
@@ -176,14 +177,14 @@ test "decrypt: authentication failure on tampered tag" {
     const aead: Aead = .initAes128Gcm(key);
     aead.encrypt(&ciphertext, &tag, plaintext, ad, &npub);
 
-    tag[0] ^= 0xff; // tamper
+    tag.data[0] ^= 0xff;
     var decrypted: [plaintext.len]u8 = undefined;
     try testing.expectError(error.AuthenticationFailed, aead.decrypt(&decrypted, &ciphertext, &tag, ad, &npub));
 }
 
 test "decrypt: authentication failure on tampered ad" {
-    const key: Aes128GcmKey = @splat(0x01);
-    const iv: Iv = @splat(0x02);
+    const key: Aes128GcmKey = .init(@splat(0x01));
+    const iv: Iv = .init(@splat(0x02));
     const npub = construct(&iv, 0);
     const plaintext = "secret";
 
