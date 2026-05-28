@@ -18,6 +18,15 @@ const mem = std.mem;
 const testing = std.testing;
 const assert = std.debug.assert;
 
+/// TLS is entirely big-endian. These wrappers drop the endian argument.
+inline fn readInt(comptime T: type, buf: *const [@divExact(@bitSizeOf(T), 8)]u8) T {
+    return mem.readInt(T, buf, .big);
+}
+
+inline fn writeInt(comptime T: type, buf: *[@divExact(@bitSizeOf(T), 8)]u8, value: T) void {
+    mem.writeInt(T, buf, value, .big);
+}
+
 /// RFC 8446 §5.1 — maximum plaintext fragment length.
 pub const max_plaintext_len = 1 << 14; // 16384
 
@@ -63,18 +72,18 @@ pub const Header = extern struct {
     }
 
     pub inline fn legacyVersion(self: Header) u16 {
-        return mem.readInt(u16, &self.legacy_version_be, .big);
+        return readInt(u16, &self.legacy_version_be);
     }
 
     pub inline fn length(self: Header) u16 {
-        return mem.readInt(u16, &self.length_be, .big);
+        return readInt(u16, &self.length_be);
     }
 
     pub fn init(content_type: ContentType, len: u16) Header {
         var h: Header = undefined;
         h.content_type = content_type;
-        mem.writeInt(u16, &h.legacy_version_be, legacy_record_version, .big);
-        mem.writeInt(u16, &h.length_be, len, .big);
+        writeInt(u16, &h.legacy_version_be, legacy_record_version);
+        writeInt(u16, &h.length_be, len);
         return h;
     }
 };
@@ -214,7 +223,7 @@ test "writeHeader: round-trips with parseHeader" {
     try writeHeader(&buf, .handshake, 512);
     const h = try parseHeader(&buf);
     try testing.expectEqual(ContentType.handshake, h.content_type);
-    try testing.expectEqual(@as(u16, legacy_record_version), h.legacyVersion());
+    try testing.expectEqual(legacy_record_version, h.legacyVersion());
     try testing.expectEqual(@as(u16, 512), h.length());
 }
 
