@@ -22,7 +22,7 @@ pub const ParseError = error{
 /// a trust bundle.
 ///
 /// RFC 8446 §4.4.2
-pub fn parse(
+fn parse(
     msg: []const u8,
     bundle: ?*const Certificate.Bundle,
     now_sec: i64,
@@ -67,6 +67,27 @@ pub fn parse(
     return leaf_pub_key orelse error.EmptyCertificateList;
 }
 
+pub const AuthError = ParseError || VerifyError;
+
+/// Parse and authenticate the server's Certificate and CertificateVerify.
+///
+/// `cert_msg` must remain alive for the duration of this call — the public
+/// key is read directly from it. `cv_msg` is the decrypted CertificateVerify
+/// message. `transcript_hash` covers all messages up to and including
+/// Certificate.
+///
+/// RFC 8446 §4.4.2, §4.4.3
+pub fn authenticate(
+    cert_msg: []const u8,
+    cv_msg: []const u8,
+    transcript_hash: []const u8,
+    bundle: ?*const Certificate.Bundle,
+    now_sec: i64,
+) AuthError!void {
+    const pub_key = try parse(cert_msg, bundle, now_sec);
+    try verifySignature(cv_msg, pub_key, transcript_hash);
+}
+
 const server_context = " " ** 64 ++ "TLS 1.3, server CertificateVerify\x00";
 
 pub const VerifyError = error{
@@ -93,7 +114,7 @@ pub const VerifyError = error{
 /// `transcript_hash` covers all messages up to and including Certificate.
 ///
 /// RFC 8446 §4.4.3
-pub fn verifySignature(
+fn verifySignature(
     msg: []const u8,
     pub_key: []const u8,
     transcript_hash: []const u8,

@@ -59,7 +59,10 @@ pub fn main() !void {
 
     var ch_buf: [512]u8 = undefined;
     const client_hello = try ztls.client_hello.encode(
-        &ch_buf, random, .init(client_kp.public_key), "server",
+        &ch_buf,
+        random,
+        .init(client_kp.public_key),
+        "server",
     );
     print("[client] ClientHello:          {} bytes\n", .{client_hello.len});
 
@@ -85,7 +88,7 @@ pub fn main() !void {
 
     // ── Key Schedule ─────────────────────────────────────────────────────────
 
-    const dhe = try ztls.x25519.sharedSecret(.init(client_kp.secret_key), server_public_key);
+    const dhe = try ztls.x25519.sharedSecret(client_kp.secret_key, server_public_key);
     const handshake_secret = hkdf.handshakeSecret(hkdf.early_secret, &dhe);
 
     // Transcript hash: SHA-256(ClientHello || ServerHello) from RFC 8448 §3
@@ -103,18 +106,9 @@ pub fn main() !void {
 
     // ── Handshake RecordLayers ────────────────────────────────────────────────
 
-    var server_tx: ztls.RecordLayer = .{
-        .aead = .{ .aes128_gcm = hkdf.trafficKey(.aes128_gcm, server_hs_secret) },
-        .iv = hkdf.trafficIv(server_hs_secret),
-    };
-    var client_rx: ztls.RecordLayer = .{
-        .aead = .{ .aes128_gcm = hkdf.trafficKey(.aes128_gcm, server_hs_secret) },
-        .iv = hkdf.trafficIv(server_hs_secret),
-    };
-    var client_tx: ztls.RecordLayer = .{
-        .aead = .{ .aes128_gcm = hkdf.trafficKey(.aes128_gcm, client_hs_secret) },
-        .iv = hkdf.trafficIv(client_hs_secret),
-    };
+    var server_tx = hkdf.makeRecordLayer(.aes128_gcm, server_hs_secret);
+    var client_rx = hkdf.makeRecordLayer(.aes128_gcm, server_hs_secret);
+    var client_tx = hkdf.makeRecordLayer(.aes128_gcm, client_hs_secret);
 
     print("[both]   handshake keys ready\n\n", .{});
 
@@ -154,25 +148,23 @@ pub fn main() !void {
         var cert_dec_buf: [1200]u8 = undefined;
         @memcpy(cert_dec_buf[0..cert_wire.len], cert_wire);
         const cert_dec = try client_rx.decrypt(cert_dec_buf[0..cert_wire.len]);
-        const pub_key = try ztls.certificate.parse(cert_dec.content, null, 0);
-        print("[server] Certificate:          {} wire bytes → pub_key {} bytes\n", .{ cert_wire.len, pub_key.len });
+        print("[server] Certificate:          {} wire bytes\n", .{cert_wire.len});
 
         // ── CertificateVerify ─────────────────────────────────────────────────
 
-        // Sign over SHA-256("test transcript") — matches our fixture signature
         const cv_sig = fixture_cv_sig;
-        const cv_body_len = 2 + 2 + cv_sig.len;
+        
         var cv_plaintext_buf: [256]u8 = undefined;
         var cw: ztls.wire.Writer = .init(&cv_plaintext_buf);
         cw.append(u8, 0x0f);
-        cw.append(u24, @intCast(cv_body_len));
+        cw.append(u24, @intCast(2 + 2 + cv_sig.len));
         cw.append(u16, 0x0403); // ecdsa_secp256r1_sha256
         cw.append(u16, @intCast(cv_sig.len));
         cw.appendSlice(cv_sig);
-        const cv_plaintext = cw.written();
+        
 
         var cv_wire_buf: [512]u8 = undefined;
-        const cv_wire = try server_tx.encrypt(.handshake, cv_plaintext, &cv_wire_buf);
+        const cv_wire = try server_tx.encrypt(.handshake, cw.written(), &cv_wire_buf);
 
         var cv_dec_buf: [512]u8 = undefined;
         @memcpy(cv_dec_buf[0..cv_wire.len], cv_wire);
@@ -180,8 +172,8 @@ pub fn main() !void {
 
         var transcript_hash: [32]u8 = undefined;
         crypto.hash.sha2.Sha256.hash("test transcript", &transcript_hash, .{});
-        try ztls.certificate.verifySignature(cv_dec.content, pub_key, &transcript_hash);
-        print("[server] CertificateVerify:    {} wire bytes → signature valid\n", .{cv_wire.len});
+        try ztls.certificate.authenticate(cert_dec.content, cv_dec.content, &transcript_hash, null, 0);
+        print("[server] CertificateVerify:    {} wire bytes → authenticated\n", .{cv_wire.len});
     }
 
     // ── Server Finished ───────────────────────────────────────────────────────

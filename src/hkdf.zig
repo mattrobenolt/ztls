@@ -14,6 +14,7 @@ const testing = std.testing;
 const aead = @import("aead.zig");
 const Iv = @import("nonce.zig").Iv;
 const memx = @import("memx.zig");
+const RecordLayer = @import("RecordLayer.zig");
 
 /// TLS_AES_128_GCM_SHA256 and TLS_CHACHA20_POLY1305_SHA256.
 pub const HkdfSha256 = Hkdf(HmacSha256);
@@ -157,6 +158,15 @@ fn Hkdf(comptime Hmac: type) type {
 
         pub inline fn serverApplicationTrafficSecret(master: Prk, transcript_hash: *const Prk) Prk {
             return deriveSecret(master, "s ap traffic", transcript_hash);
+        }
+
+        /// Derive both the write key and IV from a traffic secret and return
+        /// a ready-to-use RecordLayer.
+        pub fn makeRecordLayer(comptime key: aead.Keys, prk: Prk) RecordLayer {
+            return .{
+                .aead = @unionInit(aead.Aead, @tagName(key), trafficKey(key, prk)),
+                .iv = trafficIv(prk),
+            };
         }
 
         /// RFC 8446 §4.4.4 — derive the finished key from a traffic secret.

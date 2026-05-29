@@ -17,6 +17,6 @@ pub const SecretKey = memx.Array(X25519.secret_length);
 /// The result feeds directly into hkdf.handshakeSecret as the DHE input.
 ///
 /// RFC 8446 §7.4.2
-pub fn sharedSecret(secret_key: SecretKey, peer_public_key: PublicKey) !hkdf.SharedSecret {
-    return .init(try X25519.scalarmult(secret_key.data, peer_public_key.data));
+pub fn sharedSecret(secret_key: [X25519.secret_length]u8, peer_public_key: PublicKey) !hkdf.SharedSecret {
+    return .init(try X25519.scalarmult(secret_key, peer_public_key.data));
 }
