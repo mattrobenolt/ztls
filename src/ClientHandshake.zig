@@ -68,6 +68,14 @@ pub const HandshakeReader = struct {
 pub const HandshakeKeys = struct {
     rx: RecordLayer,
     tx: RecordLayer,
+
+    /// Application-traffic RecordLayers plus the encoded client Finished
+    /// plaintext (a slice into the caller's buffer).
+    pub const WithFinished = struct {
+        finished: []const u8,
+        rx: RecordLayer,
+        tx: RecordLayer,
+    };
 };
 
 /// RFC 8446 Appendix A.1 — client state machine, trimmed to the flows we
@@ -79,6 +87,8 @@ pub const State = enum {
     wait_cert,
     wait_cv,
     wait_finished,
+    /// Server flight verified; client must send its Finished next.
+    send_finished,
     connected,
 };
 
@@ -144,6 +154,33 @@ const Suite = union(enum) {
             .sha256 => |*s| {
                 const th = s.transcript.peek();
                 try finished.verify(finished_msg, &s.server_finished_key.data, &th);
+            },
+        }
+    }
+
+    /// RFC 8446 §4.4.4, §7.1 — encode the client Finished and derive the
+    /// application-traffic RecordLayers. Both use one transcript snapshot taken
+    /// through the server Finished (the Master Secret point); the client
+    /// Finished is absorbed afterward. The plaintext Finished is written to
+    /// `out`; rx/tx are application-keyed.
+    fn finishHandshake(self: *Suite, out: []u8) error{BufferTooShort}!HandshakeKeys.WithFinished {
+        switch (self.*) {
+            .sha256 => |*s| {
+                const H = hkdf.HkdfSha256;
+                const th = s.transcript.peek(); // through server Finished
+                const fin = try finished.encode(out, &s.client_finished_key.data, &th);
+
+                const master = H.masterSecret(s.handshake_secret);
+                const client_ap = H.clientApplicationTrafficSecret(master, &.init(th));
+                const server_ap = H.serverApplicationTrafficSecret(master, &.init(th));
+
+                s.transcript.update(fin); // client Finished now part of the transcript
+
+                return .{
+                    .finished = fin,
+                    .tx = H.makeRecordLayer(.aes128_gcm, client_ap),
+                    .rx = H.makeRecordLayer(.aes128_gcm, server_ap),
+                };
             },
         }
     }
@@ -278,12 +315,40 @@ pub fn processFlight(
             if (msg.type != .finished) return error.UnexpectedMessage;
             try self.suite.verifyServerFinished(msg.raw);
             self.suite.update(msg.raw);
-            self.state = .connected;
-            continue :flight self.state;
+            self.state = .send_finished;
+            // Server flight is done; the client sends its Finished via
+            // clientFinished(). Stop driving the switch.
+            return;
         },
-        .connected => {},
         else => return error.UnexpectedMessage,
     }
+}
+
+pub const ClientFinishedError = error{ BufferTooShort, SequenceNumberOverflow };
+
+/// Produce the client Finished as a wire-ready (encrypted) record and promote
+/// to application traffic keys. RFC 8446 §4.4.4, §7.1. Advances
+/// send_finished -> connected.
+///
+/// The Finished is encrypted under the still-active handshake-traffic key, then
+/// rx/tx are swapped to application-traffic keys. After this returns, both
+/// directions carry application data. `out` receives the encrypted record and
+/// the returned slice is the bytes to send.
+pub fn clientFinished(self: *ClientHandshake, out: []u8) ClientFinishedError![]const u8 {
+    assert(self.state == .send_finished);
+
+    // Plaintext Finished: 4-byte handshake header + verify_data. verify_data
+    // is one hash digest: 32 bytes (SHA-256) or 48 (SHA-384).
+    var fin_buf: [4 + 48]u8 = undefined;
+    const keys = try self.suite.finishHandshake(&fin_buf);
+
+    // Encrypt under the handshake-traffic key that is still installed, then
+    // promote: the Finished is the last handshake-protected message.
+    const record = try self.tx.encrypt(.handshake, keys.finished, out);
+    self.tx = keys.tx;
+    self.rx = keys.rx;
+    self.state = .connected;
+    return record;
 }
 
 // RFC 8448 §3 raw handshake messages (4-byte handshake header included, no
@@ -428,7 +493,49 @@ test "processFlight: RFC 8448 §3 full server flight to connected" {
     try hs.processServerHello(&rfc8448_server_hello);
 
     try hs.processFlight(rfc8448_server_flight, null, 0);
+    try testing.expectEqual(.send_finished, hs.state);
+}
+
+// RFC 8448 §3 client Finished handshake message (verify_data over the
+// transcript through the server Finished).
+const rfc8448_client_finished = [_]u8{
+    0x14, 0x00, 0x00, 0x20, 0xa8, 0xec, 0x43, 0x6d,
+    0x67, 0x76, 0x34, 0xae, 0x52, 0x5a, 0xc1, 0xfc,
+    0xeb, 0xe1, 0x1a, 0x03, 0x9e, 0xc1, 0x76, 0x94,
+    0xfa, 0xc6, 0xe9, 0x85, 0x27, 0xb6, 0x42, 0xf2,
+    0xed, 0xd5, 0xce, 0x61,
+};
+
+// RFC 8446 §4.4.4, §7.1 — client Finished + application-key upgrade.
+// Capture the client handshake-traffic layer before clientFinished swaps it,
+// use it to decrypt the emitted record, and check the plaintext against the
+// RFC 8448 §3 client Finished. Also check rx is now the §3 server application
+// write key.
+test "clientFinished: RFC 8448 §3 emits Finished and upgrades to app keys" {
+    var hs: ClientHandshake = .init(rfc8448_client_secret_key);
+    hs.suite.update(&rfc8448_client_hello);
+    hs.state = .wait_sh;
+    try hs.processServerHello(&rfc8448_server_hello);
+    try hs.processFlight(rfc8448_server_flight, null, 0);
+
+    // Mirror of the encryptor: client handshake-traffic key at seq 0.
+    var peer = hs.tx;
+
+    var out: [128]u8 = undefined;
+    const record = try hs.clientFinished(&out);
     try testing.expectEqual(.connected, hs.state);
+
+    var dec_buf: [128]u8 = undefined;
+    @memcpy(dec_buf[0..record.len], record);
+    const dec = try peer.decrypt(dec_buf[0..record.len]);
+    try testing.expectEqual(.handshake, dec.content_type);
+    try testing.expectEqualSlices(u8, &rfc8448_client_finished, dec.content);
+
+    // rx is now the server application write key (RFC 8448 §3).
+    try testing.expectEqualSlices(u8, &.{
+        0x9f, 0x02, 0x28, 0x3b, 0x6c, 0x9c, 0x07, 0xef,
+        0xc2, 0x6b, 0xb9, 0xf2, 0xac, 0x92, 0xe3, 0x56,
+    }, &hs.rx.aead.aes128_gcm.data);
 }
 
 // Handshake-message iterator over a coalesced payload.
