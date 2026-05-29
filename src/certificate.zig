@@ -213,7 +213,7 @@ test "verifySignature: wrong transcript hash" {
     var cert_buf: [1024]u8 = undefined;
     const pub_key = try parse(buildCertMsg(&cert_buf, fixture_cert_der), null, 0);
     var cv_buf: [512]u8 = undefined;
-    const bad_hash = [_]u8{0} ** 32;
+    const bad_hash: [32]u8 = @splat(0);
     try testing.expectError(error.SignatureVerificationFailed, verifySignature(buildCvMsg(&cv_buf, fixture_cv_sig), pub_key, &bad_hash));
 }
 
