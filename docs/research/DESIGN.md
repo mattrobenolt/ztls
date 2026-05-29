@@ -201,33 +201,44 @@ The engine has no threads, no callbacks, no I/O. It's a struct you poke.
 - Owns the read/write buffers
 - Drives the state machine loop
 
-### What We've Built (Layer 0 + Layer 1)
+### What We've Built
 
 ```
 ztls
-├── frame.zig        — wire format: header parse/encode, ContentType, DecryptedRecord
-├── nonce.zig        — per-record nonce: XOR of IV with big-endian seq number
-├── aead.zig         — AEAD wrapper: Aes128Gcm, Aes256Gcm, ChaCha20Poly1305
-├── memx.zig         — stdlib extensions: big-endian readInt/writeInt/toBytes, SIMD scan
-└── RecordLayer.zig  — stateful encrypt/decrypt for one connection direction
+├── frame.zig                — wire format: header parse/encode, ContentType, DecryptedRecord
+├── nonce.zig                — per-record nonce: XOR of IV with big-endian seq number
+├── aead.zig                 — AEAD wrapper: Keys enum, Aead union, encrypt/decrypt
+├── memx.zig                 — stdlib extensions: big-endian int helpers, SIMD scan
+├── wire.zig                 — Writer/Reader for TLS wire format encoding/decoding
+├── RecordLayer.zig          — stateful encrypt/decrypt for one connection direction
+├── hkdf.zig                 — HKDF key schedule: early/handshake/master secrets, traffic keys
+├── x25519.zig               — X25519 key exchange, sharedSecret
+├── client_hello.zig         — ClientHello encoding
+├── server_hello.zig         — ServerHello parsing
+├── encrypted_extensions.zig — EncryptedExtensions parsing
+├── certificate.zig          — Certificate + CertificateVerify: authenticate()
+├── finished.zig             — Finished: verify and encode
+└── root.zig                 — public API surface, CipherSuite
 ```
 
-`RecordLayer` is the consumer-facing primitive. One instance per direction
-(read and write). Caller provides all buffers. No allocation, no I/O.
+Key consumer-facing primitives:
 
 ```zig
-// Encrypt into caller-provided buffer. Returns the written slice.
-pub fn encrypt(self: *RecordLayer, content_type: ContentType, content: []const u8, out: []u8) ![]u8
+// RecordLayer: one per direction, caller provides buffers
+var rl = hkdf.makeRecordLayer(.aes128_gcm, traffic_secret);
+const wire = try rl.encrypt(.application_data, plaintext, &out);
+const dec  = try rl.decrypt(wire);
 
-// Decrypt in place. Returns a view into buf — no copy.
-pub fn decrypt(self: *RecordLayer, buf: []u8) !DecryptedRecord
+// Certificate authentication
+try ztls.certificate.authenticate(cert_msg, cv_msg, transcript_hash, bundle, now_sec);
 
-// Per-record overhead for buffer sizing: header(5) + type byte(1) + tag(16) = 22
-pub const overhead: usize
+// Finished
+try ztls.finished.verify(msg, &finished_key.data, &transcript_hash);
+const finished_msg = try ztls.finished.encode(&buf, &finished_key.data, &transcript_hash);
 ```
 
-The higher-level handshake engine (Layer 2+) will own two `RecordLayer`
-instances and drive them once keys are derived from the key schedule.
+What remains: a handshake state machine that owns the transcript hash,
+drives the message flow, and hands off to RecordLayer for application data.
 
 ### Crypto backends
 
@@ -277,10 +288,9 @@ Options when we get there: (a) libcrypto just for cert verification,
 - ✅ 5. HKDF key schedule — `hkdf.zig`, full ladder + traffic secrets, RFC 8448 §3 vectors
 - ✅ 6. ClientHello construction — `client_hello.zig`, `wire.zig` Writer, `x25519.zig`
 - ✅ 7. ServerHello parsing + key_share extraction — `server_hello.zig`, `wire.zig` Reader
-- 7. ServerHello parsing + key_share extraction
-- 8. EncryptedExtensions, Certificate, CertificateVerify parsing
-- 9. Finished message verify/send
-- 10. Application data read/write
+- ✅ 8. EncryptedExtensions, Certificate, CertificateVerify — `encrypted_extensions.zig`, `certificate.zig`
+- ✅ 9. Finished message verify/send — `finished.zig`
+- 10. Application data read/write (post-handshake state machine)
 - 11. KeyUpdate
 - 12. Integration test against a real server (openssl s_server / s_client)
 
