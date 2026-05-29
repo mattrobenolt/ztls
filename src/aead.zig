@@ -42,6 +42,14 @@ pub const ChaCha20Poly1305Key = memx.Array(ChaCha20Poly1305.key_length);
 /// The set of supported AEAD cipher suites, derived from the Aead union tag.
 pub const Keys = std.meta.Tag(Aead);
 
+fn cipherFor(comptime tag: Keys) type {
+    return switch (tag) {
+        .aes128_gcm => Aes128Gcm,
+        .aes256_gcm => Aes256Gcm,
+        .chacha20_poly1305 => ChaCha20Poly1305,
+    };
+}
+
 /// A cipher context holding the key for one direction of a TLS connection.
 /// Construct with Aead.init*(), then call encrypt/decrypt per record.
 pub const Aead = union(enum) {
@@ -61,9 +69,7 @@ pub const Aead = union(enum) {
         npub: *const Nonce,
     ) void {
         switch (self) {
-            .aes128_gcm => |key| Aes128Gcm.encrypt(ciphertext, &tag.data, plaintext, ad, npub.data, key.data),
-            .aes256_gcm => |key| Aes256Gcm.encrypt(ciphertext, &tag.data, plaintext, ad, npub.data, key.data),
-            .chacha20_poly1305 => |key| ChaCha20Poly1305.encrypt(ciphertext, &tag.data, plaintext, ad, npub.data, key.data),
+            inline else => |key, t| cipherFor(t).encrypt(ciphertext, &tag.data, plaintext, ad, npub.data, key.data),
         }
     }
 
@@ -79,9 +85,7 @@ pub const Aead = union(enum) {
         npub: *const Nonce,
     ) Error!void {
         switch (self) {
-            .aes128_gcm => |key| try Aes128Gcm.decrypt(plaintext, ciphertext, tag.data, ad, npub.data, key.data),
-            .aes256_gcm => |key| try Aes256Gcm.decrypt(plaintext, ciphertext, tag.data, ad, npub.data, key.data),
-            .chacha20_poly1305 => |key| try ChaCha20Poly1305.decrypt(plaintext, ciphertext, tag.data, ad, npub.data, key.data),
+            inline else => |key, t| try cipherFor(t).decrypt(plaintext, ciphertext, tag.data, ad, npub.data, key.data),
         }
     }
 };
