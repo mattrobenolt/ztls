@@ -48,6 +48,59 @@ pub const Writer = struct {
     }
 };
 
+/// A forward-only reader over a caller-owned byte slice.
+///
+/// Returns `error.UnexpectedEof` if a read would go past the end of the buffer.
+/// At the handshake message level this always indicates a protocol error, since
+/// `RecordLayer.decrypt` guarantees a complete decrypted payload.
+pub const Reader = struct {
+    buf: []const u8,
+    pos: usize = 0,
+
+    pub fn init(buf: []const u8) Reader {
+        return .{ .buf = buf };
+    }
+
+    /// Read a value of type T from the buffer in big-endian byte order.
+    ///
+    /// Supports integer and enum types.
+    pub fn read(self: *Reader, comptime T: type) error{UnexpectedEof}!T {
+        switch (@typeInfo(T)) {
+            .int => {
+                const n = comptime @divExact(@bitSizeOf(T), 8);
+                if (self.pos + n > self.buf.len) return error.UnexpectedEof;
+                var value: u64 = 0;
+                inline for (0..n) |i| {
+                    value = (value << 8) | self.buf[self.pos + i];
+                }
+                self.pos += n;
+                return @intCast(value);
+            },
+            .@"enum" => |info| return @enumFromInt(try self.read(info.tag_type)),
+            else => @compileError("Reader.read: unsupported type " ++ @typeName(T)),
+        }
+    }
+
+    /// Return a zero-copy slice of `n` bytes and advance.
+    pub fn readSlice(self: *Reader, n: usize) error{UnexpectedEof}![]const u8 {
+        if (self.pos + n > self.buf.len) return error.UnexpectedEof;
+        const s = self.buf[self.pos..][0..n];
+        self.pos += n;
+        return s;
+    }
+
+    /// Skip `n` bytes.
+    pub fn skip(self: *Reader, n: usize) error{UnexpectedEof}!void {
+        if (self.pos + n > self.buf.len) return error.UnexpectedEof;
+        self.pos += n;
+    }
+
+    /// Return unread bytes remaining in the buffer.
+    pub fn remaining(self: *const Reader) []const u8 {
+        return self.buf[self.pos..];
+    }
+};
+
 test "Writer.append: u8" {
     var buf: [4]u8 = undefined;
     var w: Writer = .init(&buf);
@@ -82,6 +135,36 @@ test "Writer.append: enum" {
     var w: Writer = .init(&buf);
     w.append(E, .foo);
     try testing.expectEqualSlices(u8, &.{ 0x00, 0x1d }, w.written());
+}
+
+test "Reader.read: u8" {
+    var r: Reader = .init(&.{ 0xab, 0xcd });
+    try testing.expectEqual(@as(u8, 0xab), try r.read(u8));
+    try testing.expectEqual(@as(u8, 0xcd), try r.read(u8));
+}
+
+test "Reader.read: u16 big-endian" {
+    var r: Reader = .init(&.{ 0x03, 0x04 });
+    try testing.expectEqual(@as(u16, 0x0304), try r.read(u16));
+}
+
+test "Reader.read: enum" {
+    const E = enum(u16) { foo = 0x001d };
+    var r: Reader = .init(&.{ 0x00, 0x1d });
+    try testing.expectEqual(E.foo, try r.read(E));
+}
+
+test "Reader.readSlice: zero-copy" {
+    const buf = [_]u8{ 0x01, 0x02, 0x03 };
+    var r: Reader = .init(&buf);
+    const s = try r.readSlice(2);
+    try testing.expectEqualSlices(u8, &.{ 0x01, 0x02 }, s);
+    try testing.expectEqual(@as(usize, 1), r.remaining().len);
+}
+
+test "Reader.read: UnexpectedEof" {
+    var r: Reader = .init(&.{0x01});
+    try testing.expectError(error.UnexpectedEof, r.read(u16));
 }
 
 test "Writer: sequential appends" {
