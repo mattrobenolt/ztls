@@ -4,13 +4,13 @@
 const std = @import("std");
 const testing = std.testing;
 
-const root = @import("root.zig");
+const CipherSuite = @import("root.zig").CipherSuite;
 const wire = @import("wire.zig");
 const x25519 = @import("x25519.zig");
 
 pub const ServerHello = struct {
     /// The negotiated cipher suite. Determines which HKDF hash to use.
-    cipher_suite: root.CipherSuite,
+    cipher_suite: CipherSuite,
     /// Server's ephemeral X25519 public key from the key_share extension.
     server_public_key: x25519.PublicKey,
 };
@@ -19,6 +19,8 @@ pub const ParseError = error{
     UnexpectedEof,
     /// Handshake type byte is not server_hello (0x02).
     InvalidHandshakeType,
+    /// A field contained an unrecognised enum value.
+    InvalidEnumTag,
     /// supported_versions extension does not include TLS 1.3 (0x0304).
     UnsupportedTlsVersion,
     /// key_share extension uses a group other than x25519, or wrong key length.
@@ -48,7 +50,7 @@ pub fn parse(msg: []const u8) ParseError!ServerHello {
     const session_id_len = try r.read(u8);
     try r.skip(session_id_len); // legacy_session_id_echo
 
-    const cipher_suite = try r.read(root.CipherSuite);
+    const cipher_suite = try r.read(CipherSuite);
     try r.skip(1); // legacy_compression_method
 
     // Extensions
@@ -106,7 +108,7 @@ const server_hello_rfc8448: []const u8 = &.{
 
 test "parse: RFC 8448 §3 ServerHello" {
     const sh = try parse(server_hello_rfc8448);
-    try testing.expectEqual(root.CipherSuite.aes_128_gcm_sha256, sh.cipher_suite);
+    try testing.expectEqual(.aes_128_gcm_sha256, sh.cipher_suite);
     try testing.expectEqualSlices(u8, &.{
         0xc9, 0x82, 0x88, 0x76, 0x11, 0x20, 0x95, 0xfe,
         0x66, 0x76, 0x2b, 0xdb, 0xf7, 0xc6, 0x72, 0xe1,

@@ -64,7 +64,7 @@ pub const Reader = struct {
     /// Read a value of type T from the buffer in big-endian byte order.
     ///
     /// Supports integer and enum types.
-    pub fn read(self: *Reader, comptime T: type) error{UnexpectedEof}!T {
+    pub fn read(self: *Reader, comptime T: type) !T {
         switch (@typeInfo(T)) {
             .int => {
                 const n = comptime @divExact(@bitSizeOf(T), 8);
@@ -77,7 +77,7 @@ pub const Reader = struct {
                 assert(value <= std.math.maxInt(T));
                 return @intCast(value);
             },
-            .@"enum" => |info| return @enumFromInt(try self.read(info.tag_type)),
+            .@"enum" => |info| return std.meta.intToEnum(T, try self.read(info.tag_type)) catch return error.InvalidEnumTag,
             else => @compileError("Reader.read: unsupported type " ++ @typeName(T)),
         }
     }
