@@ -39,20 +39,24 @@ pub const Aes128GcmKey = memx.Array(Aes128Gcm.key_length);
 pub const Aes256GcmKey = memx.Array(Aes256Gcm.key_length);
 pub const ChaCha20Poly1305Key = memx.Array(ChaCha20Poly1305.key_length);
 
-/// The set of supported AEAD cipher suites, derived from the Aead union tag.
-pub const Keys = std.meta.Tag(Aead);
+/// The set of supported AEAD cipher suites.
+pub const Keys = enum {
+    aes128_gcm,
+    aes256_gcm,
+    chacha20_poly1305,
 
-fn cipherFor(comptime tag: Keys) type {
-    return switch (tag) {
-        .aes128_gcm => Aes128Gcm,
-        .aes256_gcm => Aes256Gcm,
-        .chacha20_poly1305 => ChaCha20Poly1305,
-    };
-}
+    fn toCipher(comptime tag: Keys) type {
+        return switch (tag) {
+            .aes128_gcm => Aes128Gcm,
+            .aes256_gcm => Aes256Gcm,
+            .chacha20_poly1305 => ChaCha20Poly1305,
+        };
+    }
+};
 
 /// A cipher context holding the key for one direction of a TLS connection.
 /// Construct with Aead.init*(), then call encrypt/decrypt per record.
-pub const Aead = union(enum) {
+pub const Aead = union(Keys) {
     aes128_gcm: Aes128GcmKey,
     aes256_gcm: Aes256GcmKey,
     chacha20_poly1305: ChaCha20Poly1305Key,
@@ -69,7 +73,10 @@ pub const Aead = union(enum) {
         npub: *const Nonce,
     ) void {
         switch (self) {
-            inline else => |key, t| cipherFor(t).encrypt(ciphertext, &tag.data, plaintext, ad, npub.data, key.data),
+            inline else => |key, t| {
+                const C = t.toCipher();
+                C.encrypt(ciphertext, &tag.data, plaintext, ad, npub.data, key.data);
+            },
         }
     }
 
@@ -85,7 +92,10 @@ pub const Aead = union(enum) {
         npub: *const Nonce,
     ) Error!void {
         switch (self) {
-            inline else => |key, t| try cipherFor(t).decrypt(plaintext, ciphertext, tag.data, ad, npub.data, key.data),
+            inline else => |key, t| {
+                const C = t.toCipher();
+                try C.decrypt(plaintext, ciphertext, tag.data, ad, npub.data, key.data);
+            },
         }
     }
 };
