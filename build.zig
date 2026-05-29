@@ -16,6 +16,7 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&run_tests.step);
 
     const examples = [_][]const u8{
+        "full_handshake",
         "handshake_keys",
         "key_schedule",
         "record_protection",
