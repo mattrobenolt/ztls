@@ -35,37 +35,29 @@ const SignatureScheme = enum(u16) {
 /// RFC 8446 Appendix B.4 — CipherSuite values.
 const CipherSuite = enum(u16) {
     aes_128_gcm_sha256 = 0x1301,
-    aes_256_gcm_sha384 = 0x1302,
     chacha20_poly1305_sha256 = 0x1303,
+    aes_256_gcm_sha384 = 0x1302,
 };
 
-const cipher_suites = [_]CipherSuite{
-    .aes_128_gcm_sha256,
-    .chacha20_poly1305_sha256,
-    .aes_256_gcm_sha384,
-};
 
-const sig_schemes = [_]SignatureScheme{
-    .ecdsa_secp256r1_sha256,
-    .ecdsa_secp384r1_sha384,
-    .rsa_pss_rsae_sha256,
-    .rsa_pss_rsae_sha384,
-};
 
 // ── Size calculations ────────────────────────────────────────────────────────
 
 const handshake_header_len = 4; // type(1) + length(3)
+const cipher_suite_count = std.meta.tags(CipherSuite).len;
+const sig_scheme_count = std.meta.tags(SignatureScheme).len;
+
 const body_fixed_len =
     2 + // legacy_version
     32 + // random
     1 + // legacy_session_id length (always 0x00)
-    2 + cipher_suites.len * 2 + // cipher_suites length + suites
+    2 + cipher_suite_count * 2 + // cipher_suites length + suites
     2 + // legacy_compression_methods: length(1) + null(1)
     2; // extensions length field
 
 const ext_supported_versions_len = 2 + 2 + 1 + 2;
 const ext_supported_groups_len = 2 + 2 + 2 + 2;
-const ext_sig_algs_len = 2 + 2 + 2 + sig_schemes.len * 2;
+const ext_sig_algs_len = 2 + 2 + 2 + sig_scheme_count * 2;
 const ext_key_share_len = 2 + 2 + 2 + 2 + 2 + 32;
 
 fn sniExtLen(name: []const u8) u16 {
@@ -119,8 +111,8 @@ pub fn encode(
     w.append(u8, 0x00); // legacy_session_id: empty
 
     // cipher_suites
-    w.append(u16, cipher_suites.len * 2);
-    inline for (cipher_suites) |cs| w.append(CipherSuite, cs);
+    w.append(u16, cipher_suite_count * 2);
+    inline for (std.meta.tags(CipherSuite)) |cs| w.append(CipherSuite, cs);
 
     // legacy_compression_methods: null only
     w.append(u8, 0x01);
@@ -157,9 +149,9 @@ pub fn encode(
 
     // signature_algorithms (RFC 8446 §4.2.3)
     w.append(u16, 0x000d);
-    w.append(u16, 2 + sig_schemes.len * 2); // extension data length
-    w.append(u16, sig_schemes.len * 2); // list length
-    inline for (sig_schemes) |s| w.append(SignatureScheme, s);
+    w.append(u16, 2 + sig_scheme_count * 2); // extension data length
+    w.append(u16, sig_scheme_count * 2); // list length
+    inline for (std.meta.tags(SignatureScheme)) |s| w.append(SignatureScheme, s);
 
     // key_share (RFC 8446 §4.2.8)
     w.append(u16, 0x0033);
