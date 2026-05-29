@@ -37,6 +37,7 @@ const sig_scheme_count = std.meta.tags(SignatureScheme).len;
 
 const handshake_header_len = 4;
 const ext_header_len = 2 + 2; // extension type + data length field
+const sni_overhead = 2 + 1 + 2; // ServerNameList length + NameType + name length field
 
 const body_fixed_len =
     2 + // legacy_version
@@ -52,7 +53,7 @@ const ext_sig_algs_len = ext_header_len + 2 + sig_scheme_count * 2;
 const ext_key_share_len = ext_header_len + 2 + 2 + 2 + 32;
 
 fn sniExtLen(name: []const u8) u16 {
-    return ext_header_len + 2 + 1 + 2 + @as(u16, @intCast(name.len));
+    return ext_header_len + sni_overhead + @as(u16, @intCast(name.len));
 }
 
 fn extensionsLen(server_name: ?[]const u8) u16 {
@@ -106,9 +107,9 @@ pub fn encode(
     // server_name (RFC 8446 §4.2, RFC 6066 §3)
     if (server_name) |name| {
         const name_len: u16 = @intCast(name.len);
-        const entry_len: u16 = 1 + 2 + name_len;
+        const entry_len: u16 = 1 + 2 + name_len; // NameType + name length field + name
         const list_len: u16 = entry_len;
-        const ext_data_len: u16 = 2 + entry_len;
+        const ext_data_len: u16 = 2 + entry_len; // ServerNameList length field + entry
         w.append(u16, 0x0000);
         w.append(u16, ext_data_len);
         w.append(u16, list_len);
