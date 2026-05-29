@@ -106,11 +106,11 @@ pub fn main() !void {
     // ── RecordLayer round-trip ───────────────────────────────────────────────
 
     var server_tx: ztls.RecordLayer = .{
-        .aead = .initAes128Gcm(server_key),
+        .aead = .{ .aes128_gcm = server_key },
         .iv = server_iv,
     };
     var client_rx: ztls.RecordLayer = .{
-        .aead = .initAes128Gcm(server_key),
+        .aead = .{ .aes128_gcm = server_key },
         .iv = server_iv,
     };
 

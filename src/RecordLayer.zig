@@ -117,7 +117,7 @@ pub fn encrypt(self: *RecordLayer, content_type: ContentType, content: []const u
 
 test "encrypt: buffer too short" {
     var rl: RecordLayer = .{
-        .aead = .initAes128Gcm(.zero),
+        .aead = .{ .aes128_gcm = .zero },
         .iv = .zero,
     };
     var buf: [4]u8 = undefined;
@@ -126,7 +126,7 @@ test "encrypt: buffer too short" {
 
 test "encrypt: sequence number overflow" {
     var rl: RecordLayer = .{
-        .aead = .initAes128Gcm(.zero),
+        .aead = .{ .aes128_gcm = .zero },
         .iv = .zero,
         .seq = std.math.maxInt(u64),
     };
@@ -137,8 +137,8 @@ test "encrypt: sequence number overflow" {
 test "encrypt/decrypt: round-trip" {
     const key: Aes128GcmKey = .init(@splat(0xab));
     const iv: Iv = .init(@splat(0xcd));
-    var tx: RecordLayer = .{ .aead = .initAes128Gcm(key), .iv = iv };
-    var rx: RecordLayer = .{ .aead = .initAes128Gcm(key), .iv = iv };
+    var tx: RecordLayer = .{ .aead = .{ .aes128_gcm = key }, .iv = iv };
+    var rx: RecordLayer = .{ .aead = .{ .aes128_gcm = key }, .iv = iv };
 
     const plaintext = "hello, ztls";
     var buf: [frame.header_len + plaintext.len + 1 + tag_len]u8 = undefined;
@@ -153,8 +153,8 @@ test "encrypt/decrypt: round-trip" {
 test "encrypt/decrypt: sequence numbers advance" {
     const key: Aes128GcmKey = .init(@splat(0x01));
     const iv: Iv = .init(@splat(0x02));
-    var tx: RecordLayer = .{ .aead = .initAes128Gcm(key), .iv = iv };
-    var rx: RecordLayer = .{ .aead = .initAes128Gcm(key), .iv = iv };
+    var tx: RecordLayer = .{ .aead = .{ .aes128_gcm = key }, .iv = iv };
+    var rx: RecordLayer = .{ .aead = .{ .aes128_gcm = key }, .iv = iv };
 
     var buf: [frame.header_len + 5 + 1 + tag_len]u8 = undefined;
 
@@ -168,7 +168,7 @@ test "encrypt/decrypt: sequence numbers advance" {
 
 test "decrypt: wrong content type" {
     var rl: RecordLayer = .{
-        .aead = .initAes128Gcm(.zero),
+        .aead = .{ .aes128_gcm = .zero },
         .iv = .zero,
     };
     var buf = [_]u8{ 22, 0x03, 0x03, 0x00, 0x10 } ++ [_]u8{0} ** 16;
@@ -177,7 +177,7 @@ test "decrypt: wrong content type" {
 
 test "decrypt: payload shorter than tag" {
     var rl: RecordLayer = .{
-        .aead = .initAes128Gcm(.zero),
+        .aead = .{ .aes128_gcm = .zero },
         .iv = .zero,
     };
     var buf = [_]u8{ 23, 0x03, 0x03, 0x00, 0x04 } ++ [_]u8{0} ** 4;
@@ -186,7 +186,7 @@ test "decrypt: payload shorter than tag" {
 
 test "decrypt: sequence number overflow" {
     var rl: RecordLayer = .{
-        .aead = .initAes128Gcm(.zero),
+        .aead = .{ .aes128_gcm = .zero },
         .iv = .zero,
         .seq = std.math.maxInt(u64),
     };

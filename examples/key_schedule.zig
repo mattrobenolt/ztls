@@ -62,11 +62,11 @@ pub fn main() !void {
 
     // Wire up RecordLayers with derived keys.
     var server_tx: RecordLayer = .{
-        .aead = .initAes128Gcm(server_write_key),
+        .aead = .{ .aes128_gcm = server_write_key },
         .iv = server_write_iv,
     };
     var client_rx: RecordLayer = .{
-        .aead = .initAes128Gcm(server_write_key),
+        .aead = .{ .aes128_gcm = server_write_key },
         .iv = server_write_iv,
     };
 

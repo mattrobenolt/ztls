@@ -161,8 +161,8 @@ fn Hkdf(comptime Hmac: type) type {
 
         /// RFC 8446 §7.3 — derive the write key from a traffic secret.
         /// `out.len` must match the AEAD key length for the cipher suite.
-        pub inline fn trafficKey(comptime key: aead.Keys, prk: Prk) std.meta.TagPayload(aead.Aead, key) {
-            var out: std.meta.TagPayload(aead.Aead, key) = undefined;
+        pub inline fn trafficKey(comptime key: aead.Keys, prk: Prk) @FieldType(aead.Aead, @tagName(key)) {
+            var out: @FieldType(aead.Aead, @tagName(key)) = undefined;
             expandLabel(&out.data, "key", "", prk);
             return out;
         }

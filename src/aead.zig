@@ -39,24 +39,15 @@ pub const Aes128GcmKey = memx.Array(Aes128Gcm.key_length);
 pub const Aes256GcmKey = memx.Array(Aes256Gcm.key_length);
 pub const ChaCha20Poly1305Key = memx.Array(ChaCha20Poly1305.key_length);
 
+/// The set of supported AEAD cipher suites, derived from the Aead union tag.
+pub const Keys = std.meta.Tag(Aead);
+
 /// A cipher context holding the key for one direction of a TLS connection.
 /// Construct with Aead.init*(), then call encrypt/decrypt per record.
 pub const Aead = union(enum) {
     aes128_gcm: Aes128GcmKey,
     aes256_gcm: Aes256GcmKey,
     chacha20_poly1305: ChaCha20Poly1305Key,
-
-    pub fn initAes128Gcm(key: Aes128GcmKey) Aead {
-        return .{ .aes128_gcm = key };
-    }
-
-    pub fn initAes256Gcm(key: Aes256GcmKey) Aead {
-        return .{ .aes256_gcm = key };
-    }
-
-    pub fn initChaCha20Poly1305(key: ChaCha20Poly1305Key) Aead {
-        return .{ .chacha20_poly1305 = key };
-    }
 
     /// Encrypt `plaintext` into `ciphertext` and write the authentication tag.
     /// `ciphertext` must be the same length as `plaintext`.
@@ -95,9 +86,6 @@ pub const Aead = union(enum) {
     }
 };
 
-/// The set of supported AEAD cipher suites, derived from the Aead union tag.
-pub const Keys = std.meta.Tag(Aead);
-
 // RFC 8446 §9.1 — mandatory cipher suites
 
 test "Aes128Gcm: encrypt/decrypt round-trip" {
@@ -109,7 +97,7 @@ test "Aes128Gcm: encrypt/decrypt round-trip" {
 
     var ciphertext: [plaintext.len]u8 = undefined;
     var tag: Tag = undefined;
-    const aead: Aead = .initAes128Gcm(key);
+    const aead: Aead = .{ .aes128_gcm = key };
     aead.encrypt(&ciphertext, &tag, plaintext, ad, &npub);
 
     var decrypted: [plaintext.len]u8 = undefined;
@@ -126,7 +114,7 @@ test "Aes256Gcm: encrypt/decrypt round-trip" {
 
     var ciphertext: [plaintext.len]u8 = undefined;
     var tag: Tag = undefined;
-    const aead: Aead = .initAes256Gcm(key);
+    const aead: Aead = .{ .aes256_gcm = key };
     aead.encrypt(&ciphertext, &tag, plaintext, ad, &npub);
 
     var decrypted: [plaintext.len]u8 = undefined;
@@ -143,7 +131,7 @@ test "ChaCha20Poly1305: encrypt/decrypt round-trip" {
 
     var ciphertext: [plaintext.len]u8 = undefined;
     var tag: Tag = undefined;
-    const aead: Aead = .initChaCha20Poly1305(key);
+    const aead: Aead = .{ .chacha20_poly1305 = key };
     aead.encrypt(&ciphertext, &tag, plaintext, ad, &npub);
 
     var decrypted: [plaintext.len]u8 = undefined;
@@ -160,7 +148,7 @@ test "decrypt: authentication failure on tampered ciphertext" {
 
     var ciphertext: [plaintext.len]u8 = undefined;
     var tag: Tag = undefined;
-    const aead: Aead = .initAes128Gcm(key);
+    const aead: Aead = .{ .aes128_gcm = key };
     aead.encrypt(&ciphertext, &tag, plaintext, ad, &npub);
 
     ciphertext[0] ^= 0xff;
@@ -177,7 +165,7 @@ test "decrypt: authentication failure on tampered tag" {
 
     var ciphertext: [plaintext.len]u8 = undefined;
     var tag: Tag = undefined;
-    const aead: Aead = .initAes128Gcm(key);
+    const aead: Aead = .{ .aes128_gcm = key };
     aead.encrypt(&ciphertext, &tag, plaintext, ad, &npub);
 
     tag.data[0] ^= 0xff;
@@ -193,7 +181,7 @@ test "decrypt: authentication failure on tampered ad" {
 
     var ciphertext: [plaintext.len]u8 = undefined;
     var tag: Tag = undefined;
-    const aead: Aead = .initAes128Gcm(key);
+    const aead: Aead = .{ .aes128_gcm = key };
     aead.encrypt(&ciphertext, &tag, plaintext, "header", &npub);
 
     var decrypted: [plaintext.len]u8 = undefined;
