@@ -2,6 +2,15 @@
 default:
     @just --list
 
+[doc("Run unit tests")]
+[group("test")]
+test:
+    zig build test --summary all
+
+[doc("Run example program")]
+example EXAMPLE *ARGS:
+    zig build example-{{ EXAMPLE }} -- {{ ARGS }}
+
 [doc("Generate test key and self-signed ECDSA P-256 certificate")]
 [group("fixtures")]
 gen-cert:
