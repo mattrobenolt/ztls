@@ -95,6 +95,9 @@ pub const Aead = union(enum) {
     }
 };
 
+/// The set of supported AEAD cipher suites, derived from the Aead union tag.
+pub const Keys = std.meta.Tag(Aead);
+
 // RFC 8446 §9.1 — mandatory cipher suites
 
 test "Aes128Gcm: encrypt/decrypt round-trip" {

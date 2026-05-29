@@ -93,9 +93,9 @@ pub fn main() !void {
 
     // ── RecordLayer keys ─────────────────────────────────────────────────────
 
-    const server_key = hkdf.trafficKey(ztls.aead.Aes128GcmKey, server_hs_secret);
+    const server_key = hkdf.trafficKey(.aes128_gcm, server_hs_secret);
     const server_iv = hkdf.trafficIv(server_hs_secret);
-    const client_key = hkdf.trafficKey(ztls.aead.Aes128GcmKey, client_hs_secret);
+    const client_key = hkdf.trafficKey(.aes128_gcm, client_hs_secret);
     const client_iv = hkdf.trafficIv(client_hs_secret);
 
     print("\nserver_write_key: {x}\n", .{server_key.data});

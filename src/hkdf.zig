@@ -11,7 +11,7 @@ const Sha256 = crypto.hash.sha2.Sha256;
 const Sha384 = crypto.hash.sha2.Sha384;
 const testing = std.testing;
 
-const Aes128GcmKey = @import("aead.zig").Aes128GcmKey;
+const aead = @import("aead.zig");
 const Iv = @import("nonce.zig").Iv;
 const memx = @import("memx.zig");
 
@@ -161,9 +161,8 @@ fn Hkdf(comptime Hmac: type) type {
 
         /// RFC 8446 §7.3 — derive the write key from a traffic secret.
         /// `out.len` must match the AEAD key length for the cipher suite.
-        pub inline fn trafficKey(comptime KeyType: type, prk: Prk) KeyType {
-            comptime assert(@sizeOf(KeyType) == 16 or @sizeOf(KeyType) == 32);
-            var out: KeyType = undefined;
+        pub inline fn trafficKey(comptime key: aead.Keys, prk: Prk) std.meta.TagPayload(aead.Aead, key) {
+            var out: std.meta.TagPayload(aead.Aead, key) = undefined;
             expandLabel(&out.data, "key", "", prk);
             return out;
         }
@@ -210,7 +209,7 @@ test "HkdfSha256.trafficKey: RFC 8448 §3 server handshake" {
         0x20, 0x45, 0x0d, 0xc4, 0xec, 0xff, 0xaa, 0x05,
         0xa1, 0xa3, 0x5d, 0x27, 0x51, 0x8e, 0x78, 0x03,
     });
-    const key = HkdfSha256.trafficKey(Aes128GcmKey, secret);
+    const key = HkdfSha256.trafficKey(.aes128_gcm, secret);
     try testing.expectEqualSlices(u8, &.{
         0x27, 0xc6, 0xbd, 0xc0, 0xa3, 0xdc, 0xea, 0x39,
         0xa4, 0x73, 0x26, 0xd7, 0x9b, 0xc9, 0xe4, 0xee,
