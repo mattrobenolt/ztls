@@ -11,42 +11,21 @@ pub const ParseError = error{
     UnexpectedEof,
     InvalidHandshakeType,
     EmptyCertificateList,
-    CertificatePublicKeyInvalid,
 } || Certificate.ParseError || Certificate.Parsed.VerifyError;
 
-/// The server's public key extracted from the leaf certificate.
-/// Held for CertificateVerify validation.
-pub const CertificatePublicKey = struct {
-    algo: Certificate.AlgorithmCategory,
-    /// Sized to hold the largest practical public key: RSA-4096 (~512 bytes
-    /// modulus + ASN.1 overhead). ECDSA keys are much smaller (65-97 bytes).
-    /// 632 gives a total struct size of 640 bytes (10 cache lines).
-    buf: [632]u8,
-    len: u32,
 
-    pub fn init(algo: Certificate.Parsed.PubKeyAlgo, pub_key: []const u8) error{CertificatePublicKeyInvalid}!CertificatePublicKey {
-        var cpk: CertificatePublicKey = undefined;
-        if (pub_key.len > cpk.buf.len) return error.CertificatePublicKeyInvalid;
-        cpk.algo = @as(Certificate.AlgorithmCategory, algo);
-        @memcpy(cpk.buf[0..pub_key.len], pub_key);
-        cpk.len = @intCast(pub_key.len);
-        return cpk;
-    }
-
-    pub fn slice(self: *const CertificatePublicKey) []const u8 {
-        return self.buf[0..self.len];
-    }
-};
 
 /// Parse a Certificate handshake message and extract the leaf certificate
-/// public key. Optionally validates the chain against a trust bundle.
+/// public key as a slice into `msg`. The caller must keep `msg` alive until
+/// CertificateVerify has been verified. Optionally validates the chain against
+/// a trust bundle.
 ///
 /// RFC 8446 §4.4.2
 pub fn parse(
     msg: []const u8,
     bundle: ?*const Certificate.Bundle,
     now_sec: i64,
-) ParseError!CertificatePublicKey {
+) ParseError![]const u8 {
     var r: wire.Reader = .init(msg);
 
     const handshake_type = try r.read(u8);
@@ -63,7 +42,7 @@ pub fn parse(
 
     const list_end = r.pos + list_len;
     var cert_index: usize = 0;
-    var leaf_pub_key: ?CertificatePublicKey = null;
+    var leaf_pub_key: ?[]const u8 = null;
     var prev_parsed: ?Certificate.Parsed = null;
 
     while (r.pos < list_end) {
@@ -83,12 +62,12 @@ pub fn parse(
 
         if (cert_index == 0) {
             // Leaf certificate — extract the public key.
-            leaf_pub_key = try CertificatePublicKey.init(parsed.pub_key_algo, parsed.pubKey());
-        }
+            leaf_pub_key = parsed.pubKey();
 
-        if (bundle) |_| {
-            if (cert_index == 0 and prev_parsed != null) {
-                try prev_parsed.?.verify(parsed, now_sec);
+            if (bundle != null) {
+                if (prev_parsed) |prev| {
+                    try prev.verify(parsed, now_sec);
+                }
             }
         }
 

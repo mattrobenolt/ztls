@@ -6,7 +6,7 @@ const crypto = std.crypto;
 const Certificate = std.crypto.Certificate;
 const testing = std.testing;
 
-const certificate = @import("certificate.zig");
+
 const wire = @import("wire.zig");
 
 /// The context string prepended to the transcript hash when signing.
@@ -37,9 +37,11 @@ pub const VerifyError = error{
 /// including the Certificate message, before this message is fed in.
 ///
 /// RFC 8446 §4.4.3
+/// `pub_key` is a slice into the caller's Certificate message buffer.
+/// It must remain valid for the duration of this call.
 pub fn verify(
     msg: []const u8,
-    pub_key: *const certificate.CertificatePublicKey,
+    pub_key: []const u8,
     transcript_hash: []const u8,
 ) VerifyError!void {
     var r: wire.Reader = .init(msg);
@@ -52,7 +54,7 @@ pub fn verify(
     const sig_len = try r.read(u16);
     const sig = try r.readSlice(sig_len);
 
-    const key = pub_key.slice();
+    const key = pub_key;
 
     switch (scheme) {
         inline .ecdsa_secp256r1_sha256,
