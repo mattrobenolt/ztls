@@ -55,7 +55,6 @@ pub const Keys = enum {
 };
 
 /// A cipher context holding the key for one direction of a TLS connection.
-/// Construct with Aead.init*(), then call encrypt/decrypt per record.
 pub const Aead = union(Keys) {
     aes128_gcm: Aes128GcmKey,
     aes256_gcm: Aes256GcmKey,
