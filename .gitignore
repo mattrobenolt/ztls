@@ -3,4 +3,3 @@
 zig-out/
 *.o
 *.asm
-tests/fixtures/server.key
