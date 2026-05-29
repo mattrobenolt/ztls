@@ -6,16 +6,19 @@
 /// RFC 8446 §4.4.1
 const std = @import("std");
 const testing = std.testing;
+const sha2 = std.crypto.hash.sha2;
 
-pub const Sha256Transcript = Transcript(std.crypto.hash.sha2.Sha256);
-pub const Sha384Transcript = Transcript(std.crypto.hash.sha2.Sha384);
+pub const Sha256Transcript = Transcript(sha2.Sha256);
+pub const Sha384Transcript = Transcript(sha2.Sha384);
 
 fn Transcript(comptime Hash: type) type {
     return struct {
         const Self = @This();
         pub const digest_length = Hash.digest_length;
 
-        hash: Hash = Hash.init(.{}),
+        const Digest = [digest_length]u8;
+
+        hash: Hash = .init(.{}),
 
         /// Feed a handshake message into the transcript.
         /// `msg` must include the 4-byte handshake header (type + uint24 length).
@@ -24,9 +27,8 @@ fn Transcript(comptime Hash: type) type {
         }
 
         /// Return the current transcript hash without consuming the state.
-        pub fn digest(self: Self) [digest_length]u8 {
-            var h = self.hash; // copy — value semantics
-            return h.finalResult();
+        pub fn digest(self: Self) Digest {
+            return self.hash.peek();
         }
     };
 }
