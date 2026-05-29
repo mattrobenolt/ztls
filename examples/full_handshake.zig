@@ -153,7 +153,7 @@ pub fn main() !void {
         // ── CertificateVerify ─────────────────────────────────────────────────
 
         const cv_sig = fixture_cv_sig;
-        
+
         var cv_plaintext_buf: [256]u8 = undefined;
         var cw: ztls.wire.Writer = .init(&cv_plaintext_buf);
         cw.append(u8, 0x0f);
@@ -161,7 +161,6 @@ pub fn main() !void {
         cw.append(u16, 0x0403); // ecdsa_secp256r1_sha256
         cw.append(u16, @intCast(cv_sig.len));
         cw.appendSlice(cv_sig);
-        
 
         var cv_wire_buf: [512]u8 = undefined;
         const cv_wire = try server_tx.encrypt(.handshake, cw.written(), &cv_wire_buf);
@@ -215,18 +214,10 @@ pub fn main() !void {
         0x00, 0x0e, 0xaa, 0xda, 0x3d, 0xaa, 0xe4, 0x77,
         0x7a, 0x76, 0x86, 0xc9, 0xff, 0x83, 0xdf, 0x13,
     });
-    const client_ap_secret = hkdf.clientApplicationTrafficSecret(master_secret, &app_transcript);
-    const server_ap_secret = hkdf.serverApplicationTrafficSecret(master_secret, &app_transcript);
+    const server_ap_secret = hkdf.clientApplicationTrafficSecret(master_secret, &app_transcript);
 
-    var app_server_tx: ztls.RecordLayer = .{
-        .aead = .{ .aes128_gcm = hkdf.trafficKey(.aes128_gcm, server_ap_secret) },
-        .iv = hkdf.trafficIv(server_ap_secret),
-    };
-    var app_client_rx: ztls.RecordLayer = .{
-        .aead = .{ .aes128_gcm = hkdf.trafficKey(.aes128_gcm, server_ap_secret) },
-        .iv = hkdf.trafficIv(server_ap_secret),
-    };
-    _ = client_ap_secret;
+    var app_server_tx = hkdf.makeRecordLayer(.aes128_gcm, server_ap_secret);
+    var app_client_rx = hkdf.makeRecordLayer(.aes128_gcm, server_ap_secret);
 
     print("=== application data ===\n\n", .{});
 
