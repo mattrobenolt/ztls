@@ -42,6 +42,15 @@ pub const Writer = struct {
         self.pos += data.len;
     }
 
+    /// Reserve `n` bytes in the buffer and return a pointer to them.
+    /// The caller writes directly into the returned pointer.
+    pub fn reserve(self: *Writer, comptime n: usize) *[n]u8 {
+        assert(self.pos + n <= self.buf.len);
+        const ptr = self.buf[self.pos..][0..n];
+        self.pos += n;
+        return ptr;
+    }
+
     /// Return the slice of bytes written so far.
     pub fn written(self: *const Writer) []u8 {
         return self.buf[0..self.pos];
@@ -169,6 +178,16 @@ test "Reader.readSlice: zero-copy" {
 test "Reader.read: UnexpectedEof" {
     var r: Reader = .init(&.{0x01});
     try testing.expectError(error.UnexpectedEof, r.read(u16));
+}
+
+test "Writer.reserve: write directly into buffer" {
+    var buf: [4]u8 = undefined;
+    var w: Writer = .init(&buf);
+    w.append(u8, 0x01);
+    const slot = w.reserve(2);
+    slot.* = .{ 0x02, 0x03 };
+    w.append(u8, 0x04);
+    try testing.expectEqualSlices(u8, &.{ 0x01, 0x02, 0x03, 0x04 }, w.written());
 }
 
 test "Writer: sequential appends" {

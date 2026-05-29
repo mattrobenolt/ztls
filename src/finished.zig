@@ -2,9 +2,8 @@
 ///
 /// RFC 8446 §4.4.4
 const std = @import("std");
-const sha2 = std.crypto.auth.hmac.sha2;
-const HmacSha256 = sha2.HmacSha256;
-const HmacSha384 = sha2.HmacSha384;
+const crypto = std.crypto;
+const HmacSha256 = crypto.auth.hmac.sha2.HmacSha256;
 const testing = std.testing;
 
 const wire = @import("wire.zig");
@@ -14,6 +13,8 @@ pub const VerifyError = error{
     InvalidHandshakeType,
     InvalidVerifyData,
 };
+
+const Digest = [HmacSha256.mac_length]u8;
 
 /// Verify a server Finished handshake message.
 ///
@@ -34,11 +35,11 @@ pub fn verify(
     const verify_data = r.remaining();
 
     // Recompute: HMAC(finished_key, transcript_hash)
-    var expected: [HmacSha256.mac_length]u8 = undefined;
+    var expected: Digest = undefined;
     HmacSha256.create(&expected, transcript_hash, finished_key);
 
     if (verify_data.len != expected.len) return error.InvalidVerifyData;
-    if (!std.crypto.timing_safe.eql([HmacSha256.mac_length]u8, verify_data[0..HmacSha256.mac_length].*, expected))
+    if (!crypto.timing_safe.eql(Digest, verify_data[0..HmacSha256.mac_length].*, expected))
         return error.InvalidVerifyData;
 }
 
@@ -54,17 +55,13 @@ pub fn encode(
     finished_key: []const u8,
     transcript_hash: []const u8,
 ) error{BufferTooShort}![]u8 {
-    const mac_len = HmacSha256.mac_length;
-    const total = 4 + mac_len; // header(4) + verify_data(32)
+    const total = 4 + HmacSha256.mac_length; // header(4) + verify_data(32)
     if (out.len < total) return error.BufferTooShort;
-
-    var mac: [mac_len]u8 = undefined;
-    HmacSha256.create(&mac, transcript_hash, finished_key);
 
     var w: wire.Writer = .init(out);
     w.append(u8, 0x14); // Finished
-    w.append(u24, mac_len);
-    w.appendSlice(&mac);
+    w.append(u24, HmacSha256.mac_length);
+    HmacSha256.create(w.reserve(HmacSha256.mac_length), transcript_hash, finished_key);
     return w.written();
 }
 
