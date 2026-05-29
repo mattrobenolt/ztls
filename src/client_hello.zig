@@ -36,6 +36,8 @@ const cipher_suite_count = std.meta.tags(CipherSuite).len;
 const sig_scheme_count = std.meta.tags(SignatureScheme).len;
 
 const handshake_header_len = 4;
+const ext_header_len = 2 + 2; // extension type + data length field
+
 const body_fixed_len =
     2 + // legacy_version
     32 + // random
@@ -44,13 +46,13 @@ const body_fixed_len =
     2 + // legacy_compression_methods
     2; // extensions length
 
-const ext_supported_versions_len = 2 + 2 + 1 + 2;
-const ext_supported_groups_len = 2 + 2 + 2 + 2;
-const ext_sig_algs_len = 2 + 2 + 2 + sig_scheme_count * 2;
-const ext_key_share_len = 2 + 2 + 2 + 2 + 2 + 32;
+const ext_supported_versions_len = ext_header_len + 1 + 2;
+const ext_supported_groups_len = ext_header_len + 2 + 2;
+const ext_sig_algs_len = ext_header_len + 2 + sig_scheme_count * 2;
+const ext_key_share_len = ext_header_len + 2 + 2 + 2 + 32;
 
 fn sniExtLen(name: []const u8) u16 {
-    return 2 + 2 + 2 + 1 + 2 + @as(u16, @intCast(name.len));
+    return ext_header_len + 2 + 1 + 2 + @as(u16, @intCast(name.len));
 }
 
 fn extensionsLen(server_name: ?[]const u8) u16 {
