@@ -69,6 +69,97 @@ pub fn parse(
     return leaf_pub_key orelse error.EmptyCertificateList;
 }
 
+// ── Tests ───────────────────────────────────────────────────────────────────
+//
+// Fixtures generated with: just gen-fixtures
+// Transcript hash: SHA-256("test transcript")
+
+const fixture_cert_der = @embedFile("test_fixtures/server.crt.der");
+const fixture_cv_sig = @embedFile("test_fixtures/cv.sig");
+
+/// Build a Certificate handshake message wrapping the given DER bytes.
+fn buildCertMsg(buf: []u8, cert_der: []const u8) []u8 {
+    var w: wire.Writer = .init(buf);
+    const entry_len = cert_der.len + 2; // cert + extensions len field
+    const list_len = 3 + entry_len; // uint24 cert len + cert + extensions
+    const body_len = 1 + 3 + list_len; // ctx len + list len field + list
+    w.append(u8, 0x0b); // Certificate
+    w.append(u24, @intCast(body_len));
+    w.append(u8, 0x00); // certificate_request_context: empty
+    w.append(u24, @intCast(list_len));
+    w.append(u24, @intCast(cert_der.len));
+    w.appendSlice(cert_der);
+    w.append(u16, 0x0000); // no cert extensions
+    return w.written();
+}
+
+/// Build a CertificateVerify handshake message for ecdsa_secp256r1_sha256.
+fn buildCvMsg(buf: []u8, sig: []const u8) []u8 {
+    var w: wire.Writer = .init(buf);
+    const body_len = 2 + 2 + sig.len; // scheme + sig_len + sig
+    w.append(u8, 0x0f); // CertificateVerify
+    w.append(u24, @intCast(body_len));
+    w.append(u16, 0x0403); // ecdsa_secp256r1_sha256
+    w.append(u16, @intCast(sig.len));
+    w.appendSlice(sig);
+    return w.written();
+}
+
+/// SHA-256("test transcript") — matches what just gen-fixtures signs over.
+const test_transcript_hash = blk: {
+    @setEvalBranchQuota(100_000);
+    var out: [32]u8 = undefined;
+    crypto.hash.sha2.Sha256.hash("test transcript", &out, .{});
+    break :blk out;
+};
+
+test "parse: extracts public key from ECDSA P-256 certificate" {
+    var buf: [1024]u8 = undefined;
+    const msg = buildCertMsg(&buf, fixture_cert_der);
+    const pub_key = try parse(msg, null, 0);
+    try testing.expect(pub_key.len > 0);
+}
+
+test "parse: wrong handshake type" {
+    var buf: [1024]u8 = undefined;
+    const msg = buildCertMsg(&buf, fixture_cert_der);
+    var bad = buf[0..msg.len];
+    bad[0] = 0x01;
+    try testing.expectError(error.InvalidHandshakeType, parse(bad, null, 0));
+}
+
+test "verifySignature: valid ECDSA P-256 signature" {
+    var cert_buf: [1024]u8 = undefined;
+    const cert_msg = buildCertMsg(&cert_buf, fixture_cert_der);
+    const pub_key = try parse(cert_msg, null, 0);
+
+    var cv_buf: [512]u8 = undefined;
+    const cv_msg = buildCvMsg(&cv_buf, fixture_cv_sig);
+    try verifySignature(cv_msg, pub_key, &test_transcript_hash);
+}
+
+test "verifySignature: wrong transcript hash fails" {
+    var cert_buf: [1024]u8 = undefined;
+    const cert_msg = buildCertMsg(&cert_buf, fixture_cert_der);
+    const pub_key = try parse(cert_msg, null, 0);
+
+    var cv_buf: [512]u8 = undefined;
+    const cv_msg = buildCvMsg(&cv_buf, fixture_cv_sig);
+    const bad_hash = [_]u8{0} ** 32;
+    try testing.expectError(error.SignatureVerificationFailed, verifySignature(cv_msg, pub_key, &bad_hash));
+}
+
+test "verifySignature: wrong handshake type" {
+    var cert_buf: [1024]u8 = undefined;
+    const cert_msg = buildCertMsg(&cert_buf, fixture_cert_der);
+    const pub_key = try parse(cert_msg, null, 0);
+
+    var cv_buf: [512]u8 = undefined;
+    var cv_msg = buildCvMsg(&cv_buf, fixture_cv_sig);
+    cv_msg[0] = 0x01;
+    try testing.expectError(error.InvalidHandshakeType, verifySignature(cv_msg, pub_key, &test_transcript_hash));
+}
+
 /// The context string prepended to the transcript hash. RFC 8446 §4.4.3
 const server_context = " " ** 64 ++ "TLS 1.3, server CertificateVerify\x00";
 
