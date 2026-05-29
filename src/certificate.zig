@@ -4,6 +4,7 @@
 const std = @import("std");
 const Certificate = std.crypto.Certificate;
 const testing = std.testing;
+
 const wire = @import("wire.zig");
 
 pub const ParseError = error{
@@ -17,6 +18,8 @@ pub const ParseError = error{
 /// Held for CertificateVerify validation.
 pub const CertificatePublicKey = struct {
     algo: Certificate.AlgorithmCategory,
+    /// Sized to hold the largest practical public key: RSA-4096 (~512 bytes
+    /// modulus + ASN.1 overhead). ECDSA keys are much smaller (65-97 bytes).
     buf: [600]u8,
     len: u32,
 
@@ -82,11 +85,10 @@ pub fn parse(
             leaf_pub_key = try CertificatePublicKey.init(parsed.pub_key_algo, parsed.pubKey());
         }
 
-        if (bundle) |b| {
+        if (bundle) |_| {
             if (cert_index == 0 and prev_parsed != null) {
                 try prev_parsed.?.verify(parsed, now_sec);
             }
-            _ = b;
         }
 
         prev_parsed = parsed;
