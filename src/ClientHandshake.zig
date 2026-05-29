@@ -8,12 +8,16 @@ const assert = std.debug.assert;
 const Sha256 = std.crypto.hash.sha2.Sha256;
 const testing = std.testing;
 
+const certificate = @import("certificate.zig");
+const encrypted_extensions = @import("encrypted_extensions.zig");
+const finished = @import("finished.zig");
 const hkdf = @import("hkdf.zig");
 const SharedSecret = hkdf.SharedSecret;
 const RecordLayer = @import("RecordLayer.zig");
 const server_hello = @import("server_hello.zig");
 const wire = @import("wire.zig");
 const x25519 = @import("x25519.zig");
+const Bundle = std.crypto.Certificate.Bundle;
 
 const ClientHandshake = @This();
 
@@ -107,10 +111,41 @@ const Suite = union(enum) {
     /// Returns a concrete digest for now so chunk-1 tests can check it against
     /// RFC 8448. Once key-schedule derivation moves into the arm, the digest
     /// stops escaping and this becomes internal.
-    fn transcriptHash(self: Suite) [Sha256.digest_length]u8 {
-        return switch (self) {
-            .sha256 => |s| s.transcript.peek(),
+    fn transcriptHash(self: *const Suite) [Sha256.digest_length]u8 {
+        return switch (self.*) {
+            .sha256 => |*s| s.transcript.peek(),
         };
+    }
+
+    /// RFC 8446 §4.4.3 — authenticate the server's Certificate and
+    /// CertificateVerify. Snapshots the transcript through Certificate (the
+    /// state before CV is absorbed) and verifies the CV signature against it.
+    /// The digest stays inside the arm.
+    fn authenticateCertificate(
+        self: *const Suite,
+        cert_msg: []const u8,
+        cv_msg: []const u8,
+        bundle: ?*const Bundle,
+        now_sec: i64,
+    ) certificate.AuthError!void {
+        switch (self.*) {
+            .sha256 => |*s| {
+                const th = s.transcript.peek();
+                try certificate.authenticate(cert_msg, cv_msg, &th, bundle, now_sec);
+            },
+        }
+    }
+
+    /// RFC 8446 §4.4.4 — verify the server's Finished MAC. Snapshots the
+    /// transcript through CertificateVerify (the state before Finished is
+    /// absorbed) and checks the MAC with the retained server finished key.
+    fn verifyServerFinished(self: *const Suite, finished_msg: []const u8) finished.VerifyError!void {
+        switch (self.*) {
+            .sha256 => |*s| {
+                const th = s.transcript.peek();
+                try finished.verify(finished_msg, &s.server_finished_key.data, &th);
+            },
+        }
     }
 
     /// RFC 8446 §7.1 — mix the DHE shared secret into the key schedule and
@@ -182,6 +217,73 @@ pub fn processServerHello(self: *ClientHandshake, msg: []const u8) ServerHelloEr
     self.rx = keys.rx;
     self.tx = keys.tx;
     self.state = .wait_ee;
+}
+
+pub const FlightError = error{ UnexpectedMessage, UnexpectedEof } ||
+    encrypted_extensions.ParseError ||
+    certificate.AuthError ||
+    finished.VerifyError;
+
+/// Process the server's encrypted flight: EncryptedExtensions, Certificate,
+/// CertificateVerify, Finished. `payload` is the decrypted handshake content,
+/// commonly carrying all four messages coalesced in one record.
+///
+/// Each message is absorbed into the transcript, and the two verifications run
+/// against the transcript snapshotted *before* the message they cover is
+/// absorbed (CV signature: through Certificate; Finished MAC: through CV).
+/// RFC 8446 §4.3-§4.4. Advances wait_ee -> connected.
+///
+/// Cross-record reassembly is not yet supported: the whole flight must arrive
+/// in one payload.
+pub fn processFlight(
+    self: *ClientHandshake,
+    payload: []const u8,
+    bundle: ?*const Bundle,
+    now_sec: i64,
+) FlightError!void {
+    var cert_msg: ?[]const u8 = null;
+    var hr: HandshakeReader = .init(payload);
+    // State drives the loop: each prong consumes one message, advances
+    // self.state, and re-enters on it. self.state persists progress for
+    // resumption when the payload drains mid-flight (orelse return).
+    flight: switch (self.state) {
+        .wait_ee => {
+            const msg = try hr.next() orelse return;
+            if (msg.type != .encrypted_extensions) return error.UnexpectedMessage;
+            try encrypted_extensions.parse(msg.raw);
+            self.suite.update(msg.raw);
+            self.state = .wait_cert;
+            continue :flight self.state;
+        },
+        .wait_cert => {
+            const msg = try hr.next() orelse return;
+            if (msg.type != .certificate) return error.UnexpectedMessage;
+            self.suite.update(msg.raw);
+            cert_msg = msg.raw; // held until CertificateVerify arrives
+            self.state = .wait_cv;
+            continue :flight self.state;
+        },
+        .wait_cv => {
+            const msg = try hr.next() orelse return;
+            if (msg.type != .certificate_verify) return error.UnexpectedMessage;
+            // Non-null guaranteed: wait_cv is only reachable after wait_cert
+            // stored the Certificate message.
+            try self.suite.authenticateCertificate(cert_msg.?, msg.raw, bundle, now_sec);
+            self.suite.update(msg.raw);
+            self.state = .wait_finished;
+            continue :flight self.state;
+        },
+        .wait_finished => {
+            const msg = try hr.next() orelse return;
+            if (msg.type != .finished) return error.UnexpectedMessage;
+            try self.suite.verifyServerFinished(msg.raw);
+            self.suite.update(msg.raw);
+            self.state = .connected;
+            continue :flight self.state;
+        },
+        .connected => {},
+        else => return error.UnexpectedMessage,
+    }
 }
 
 // RFC 8448 §3 raw handshake messages (4-byte handshake header included, no
@@ -307,6 +409,26 @@ test "processServerHello: RFC 8448 §3 installs server handshake keys" {
         0x3f, 0xce, 0x51, 0x60, 0x09, 0xc2, 0x17, 0x27,
         0xd0, 0xf2, 0xe4, 0xe8, 0x6e, 0xe4, 0x03, 0xbc,
     }, &hs.rx.aead.aes128_gcm.data);
+}
+
+// RFC 8448 §3 server flight: EncryptedExtensions || Certificate ||
+// CertificateVerify || Finished, decrypted plaintext, extracted from the trace.
+const rfc8448_server_flight = @embedFile("test_fixtures/rfc8448_server_flight.bin");
+
+// RFC 8446 §4.3-§4.4 — the full encrypted flight driven by the live transcript.
+// One call exercises EncryptedExtensions parsing, RSA-PSS CertificateVerify
+// over the through-Certificate transcript, and the server Finished MAC over the
+// through-CertificateVerify transcript — all against genuine RFC 8448 §3 bytes.
+// bundle=null skips chain anchoring; the CV signature check still runs and
+// passes because §3's cert and CV are internally consistent.
+test "processFlight: RFC 8448 §3 full server flight to connected" {
+    var hs: ClientHandshake = .init(rfc8448_client_secret_key);
+    hs.suite.update(&rfc8448_client_hello);
+    hs.state = .wait_sh;
+    try hs.processServerHello(&rfc8448_server_hello);
+
+    try hs.processFlight(rfc8448_server_flight, null, 0);
+    try testing.expectEqual(.connected, hs.state);
 }
 
 // Handshake-message iterator over a coalesced payload.
