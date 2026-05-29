@@ -8,6 +8,7 @@ test:
     zig build test --summary all
 
 [doc("Run example program")]
+[group("demo")]
 example EXAMPLE *ARGS:
     zig build example-{{ EXAMPLE }} -- {{ ARGS }}
 

@@ -2,8 +2,9 @@
 ///
 /// RFC 8446 §4.4.4
 const std = @import("std");
-const HmacSha256 = std.crypto.auth.hmac.sha2.HmacSha256;
-const HmacSha384 = std.crypto.auth.hmac.sha2.HmacSha384;
+const sha2 = std.crypto.auth.hmac.sha2;
+const HmacSha256 = sha2.HmacSha256;
+const HmacSha384 = sha2.HmacSha384;
 const testing = std.testing;
 
 const wire = @import("wire.zig");
@@ -36,7 +37,9 @@ pub fn verify(
     var expected: [HmacSha256.mac_length]u8 = undefined;
     HmacSha256.create(&expected, transcript_hash, finished_key);
 
-    if (!std.mem.eql(u8, verify_data, &expected)) return error.InvalidVerifyData;
+    if (verify_data.len != expected.len) return error.InvalidVerifyData;
+    if (!std.crypto.timing_safe.eql([HmacSha256.mac_length]u8, verify_data[0..HmacSha256.mac_length].*, expected))
+        return error.InvalidVerifyData;
 }
 
 /// Encode a client Finished handshake message into `out`.
@@ -92,10 +95,14 @@ const server_transcript_hash: [32]u8 = .{
 
 const finished_msg: [36]u8 = .{
     0x14, 0x00, 0x00, 0x20,
-    0x9b, 0x9b, 0x14, 0x1d, 0x90, 0x63, 0x37, 0xfb,
-    0xd2, 0xcb, 0xdc, 0xe7, 0x1d, 0xf4, 0xde, 0xda,
-    0x4a, 0xb4, 0x2c, 0x30, 0x95, 0x72, 0xcb, 0x7f,
-    0xff, 0xee, 0x54, 0x54, 0xb7, 0x8f, 0x07, 0x18,
+    0x9b, 0x9b, 0x14, 0x1d,
+    0x90, 0x63, 0x37, 0xfb,
+    0xd2, 0xcb, 0xdc, 0xe7,
+    0x1d, 0xf4, 0xde, 0xda,
+    0x4a, 0xb4, 0x2c, 0x30,
+    0x95, 0x72, 0xcb, 0x7f,
+    0xff, 0xee, 0x54, 0x54,
+    0xb7, 0x8f, 0x07, 0x18,
 };
 
 test "verify: wrong verify_data" {
