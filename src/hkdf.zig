@@ -159,8 +159,14 @@ fn Hkdf(comptime Hmac: type) type {
             return deriveSecret(master, "s ap traffic", transcript_hash);
         }
 
+        /// RFC 8446 §4.4.4 — derive the finished key from a traffic secret.
+        pub inline fn finishedKey(prk: Prk) Prk {
+            var out: Prk = undefined;
+            expandLabel(&out.data, "finished", "", prk);
+            return out;
+        }
+
         /// RFC 8446 §7.3 — derive the write key from a traffic secret.
-        /// `out.len` must match the AEAD key length for the cipher suite.
         pub inline fn trafficKey(comptime key: aead.Keys, prk: Prk) @FieldType(aead.Aead, @tagName(key)) {
             var out: @FieldType(aead.Aead, @tagName(key)) = undefined;
             expandLabel(&out.data, "key", "", prk);
@@ -273,6 +279,23 @@ test "HkdfSha256.clientHandshakeTrafficSecret: RFC 8448 §3" {
         0x3b, 0x1a, 0x95, 0x07, 0x38, 0xf5, 0x2e, 0x96,
         0x00, 0x74, 0x6a, 0x0e, 0x27, 0xa5, 0x5a, 0x21,
     }, &secret.data);
+}
+
+test "HkdfSha256.finishedKey: RFC 8448 §3 server" {
+    // server_handshake_traffic_secret
+    const secret: HkdfSha256.Prk = .init(.{
+        0xb6, 0x7b, 0x7d, 0x69, 0x0c, 0xc1, 0x6c, 0x4e,
+        0x75, 0xe5, 0x42, 0x13, 0xcb, 0x2d, 0x37, 0xb4,
+        0xe9, 0xc9, 0x12, 0xbc, 0xde, 0xd9, 0x10, 0x5d,
+        0x42, 0xbe, 0xfd, 0x59, 0xd3, 0x91, 0xad, 0x38,
+    });
+    const fk = HkdfSha256.finishedKey(secret);
+    try testing.expectEqualSlices(u8, &.{
+        0x00, 0x8d, 0x3b, 0x66, 0xf8, 0x16, 0xea, 0x55,
+        0x9f, 0x96, 0xb5, 0x37, 0xe8, 0x85, 0xc3, 0x1f,
+        0xc0, 0x68, 0xbf, 0x49, 0x2c, 0x65, 0x2f, 0x01,
+        0xf2, 0x88, 0xa1, 0xd8, 0xcd, 0xc1, 0x9f, 0xc8,
+    }, &fk.data);
 }
 
 test "HkdfSha256.serverHandshakeTrafficSecret: RFC 8448 §3" {
