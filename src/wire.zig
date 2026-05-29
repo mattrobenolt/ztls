@@ -74,6 +74,7 @@ pub const Reader = struct {
                     value = (value << 8) | self.buf[self.pos + i];
                 }
                 self.pos += n;
+                assert(value <= std.math.maxInt(T));
                 return @intCast(value);
             },
             .@"enum" => |info| return @enumFromInt(try self.read(info.tag_type)),
