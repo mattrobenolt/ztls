@@ -33,6 +33,7 @@
         {
           devShells.default = pkgs.mkShell {
             packages = with pkgs; [
+              just
               openssl
               pkg-config
               zig_0_15

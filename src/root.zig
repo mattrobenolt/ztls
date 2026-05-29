@@ -6,7 +6,6 @@ pub const hkdf = @import("hkdf.zig");
 pub const nonce = @import("nonce.zig");
 pub const RecordLayer = @import("RecordLayer.zig");
 pub const certificate = @import("certificate.zig");
-pub const certificate_verify = @import("certificate_verify.zig");
 pub const encrypted_extensions = @import("encrypted_extensions.zig");
 pub const server_hello = @import("server_hello.zig");
 pub const wire = @import("wire.zig");
