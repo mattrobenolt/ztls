@@ -77,7 +77,10 @@ pub const Reader = struct {
                 assert(value <= std.math.maxInt(T));
                 return @intCast(value);
             },
-            .@"enum" => |info| return std.meta.intToEnum(T, try self.read(info.tag_type)) catch return error.InvalidEnumTag,
+            .@"enum" => |info| {
+                const tag = try self.read(info.tag_type);
+                return std.enums.fromInt(T, tag) orelse return error.InvalidEnumTag;
+            },
             else => @compileError("Reader.read: unsupported type " ++ @typeName(T)),
         }
     }
