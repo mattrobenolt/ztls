@@ -5,6 +5,7 @@ const std = @import("std");
 const assert = std.debug.assert;
 const testing = std.testing;
 
+const CipherSuite = @import("root.zig").CipherSuite;
 const memx = @import("memx.zig");
 const wire = @import("wire.zig");
 const x25519 = @import("x25519.zig");
@@ -23,13 +24,6 @@ const SignatureScheme = enum(u16) {
     ecdsa_secp384r1_sha384 = 0x0503,
     rsa_pss_rsae_sha256 = 0x0804,
     rsa_pss_rsae_sha384 = 0x0805,
-};
-
-/// RFC 8446 Appendix B.4
-const CipherSuite = enum(u16) {
-    aes_128_gcm_sha256 = 0x1301,
-    chacha20_poly1305_sha256 = 0x1303,
-    aes_256_gcm_sha384 = 0x1302,
 };
 
 const cipher_suite_count = std.meta.tags(CipherSuite).len;
