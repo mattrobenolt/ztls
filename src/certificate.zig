@@ -20,7 +20,8 @@ pub const CertificatePublicKey = struct {
     algo: Certificate.AlgorithmCategory,
     /// Sized to hold the largest practical public key: RSA-4096 (~512 bytes
     /// modulus + ASN.1 overhead). ECDSA keys are much smaller (65-97 bytes).
-    buf: [600]u8,
+    /// 632 gives a total struct size of 640 bytes (10 cache lines).
+    buf: [632]u8,
     len: u32,
 
     pub fn init(algo: Certificate.Parsed.PubKeyAlgo, pub_key: []const u8) error{CertificatePublicKeyInvalid}!CertificatePublicKey {
