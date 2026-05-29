@@ -109,29 +109,29 @@ test "lastIndexOfNonZero: non-zero in scalar tail" {
 }
 
 test "lastIndexOfNonZero: exactly chunk_len bytes, non-zero at start" {
-    var buf = [_]u8{0} ** vector_chunk_len;
+    var buf: [vector_chunk_len]u8 = @splat(0);
     buf[0] = 0xab;
     try testing.expectEqual(@as(?usize, 0), lastIndexOfNonZero(&buf));
 }
 
 test "lastIndexOfNonZero: exactly chunk_len bytes, all zeros" {
-    const buf = [_]u8{0} ** vector_chunk_len;
+    var buf: [vector_chunk_len]u8 = @splat(0);
     try testing.expectEqual(@as(?usize, null), lastIndexOfNonZero(&buf));
 }
 
 test "lastIndexOfNonZero: large buffer, non-zero in first chunk" {
-    var buf = [_]u8{0} ** (vector_chunk_len * 4);
+    var buf: [vector_chunk_len * 4]u8 = @splat(0);
     buf[1] = 0xab; // in the first chunk, not last byte
     try testing.expectEqual(@as(?usize, 1), lastIndexOfNonZero(&buf));
 }
 
 test "lastIndexOfNonZero: large buffer, non-zero in middle chunk" {
-    var buf = [_]u8{0} ** (vector_chunk_len * 4);
+    var buf: [vector_chunk_len * 4]u8 = @splat(0);
     buf[vector_chunk_len + 3] = 0xab;
     try testing.expectEqual(@as(?usize, vector_chunk_len + 3), lastIndexOfNonZero(&buf));
 }
 
 test "lastIndexOfNonZero: large buffer, all zeros" {
-    const buf = [_]u8{0} ** (vector_chunk_len * 4);
+    var buf: [vector_chunk_len * 4]u8 = @splat(0);
     try testing.expectEqual(@as(?usize, null), lastIndexOfNonZero(&buf));
 }
