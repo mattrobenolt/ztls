@@ -15,8 +15,8 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Run tests");
     test_step.dependOn(&run_tests.step);
 
-    // Examples
     const examples = [_][]const u8{
+        "handshake_keys",
         "key_schedule",
         "record_protection",
     };
