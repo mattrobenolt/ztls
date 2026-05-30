@@ -11,6 +11,7 @@ const testing = std.testing;
 const certificate = @import("certificate.zig");
 const encrypted_extensions = @import("encrypted_extensions.zig");
 const finished = @import("finished.zig");
+const frame = @import("frame.zig");
 const hkdf = @import("hkdf.zig");
 const SharedSecret = hkdf.SharedSecret;
 const RecordLayer = @import("RecordLayer.zig");
@@ -54,11 +55,11 @@ pub const HandshakeReader = struct {
     /// (cross-record reassembly is not yet supported).
     pub fn next(self: *HandshakeReader) error{UnexpectedEof}!?Message {
         if (self.r.remaining().len == 0) return null;
-        const start = self.r.pos;
+        const begin = self.r.pos;
         const msg_type = try self.r.read(u8);
         const len = try self.r.read(u24);
         _ = try self.r.readSlice(len);
-        return .{ .type = @enumFromInt(msg_type), .raw = self.r.buf[start..self.r.pos] };
+        return .{ .type = @enumFromInt(msg_type), .raw = self.r.buf[begin..self.r.pos] };
     }
 };
 
@@ -223,6 +224,10 @@ client_secret_key: [32]u8,
 /// Handshake-traffic RecordLayers, installed by processServerHello.
 rx: RecordLayer = undefined,
 tx: RecordLayer = undefined,
+/// Certificate validation policy, applied during the server flight. Defaults
+/// to no chain anchoring (signature-only). Set before driving the handshake.
+bundle: ?*const Bundle = null,
+now_sec: i64 = 0,
 
 /// Start a client handshake with our ephemeral X25519 private key. The
 /// negotiated suite is hardcoded to SHA-256 for now; true suite selection
@@ -233,6 +238,62 @@ pub fn init(client_secret_key: [32]u8) ClientHandshake {
         .suite = .{ .sha256 = .{ .transcript = .init(.{}) } },
         .client_secret_key = client_secret_key,
     };
+}
+
+/// Record the ClientHello we sent: absorb it into the transcript and advance
+/// start -> wait_sh. The caller encodes ClientHello (via client_hello.encode)
+/// using the keypair whose secret was passed to init.
+pub fn start(self: *ClientHandshake, client_hello_msg: []const u8) void {
+    assert(self.state == .start);
+    self.suite.update(client_hello_msg);
+    self.state = .wait_sh;
+}
+
+/// What the caller should do after feeding a record to processRecord.
+pub const Progress = struct {
+    /// Bytes to write to the transport. Empty unless a record was produced.
+    to_send: []const u8 = &.{},
+    /// True once the handshake completes and application keys are installed.
+    done: bool = false,
+};
+
+pub const ProcessError = frame.ParseError || RecordLayer.DecryptError ||
+    ServerHelloError || FlightError || ClientFinishedError ||
+    error{ IncompleteRecord, UnexpectedRecord };
+
+/// Drive the handshake with one complete TLS record. `record` is the full
+/// wire record (header + fragment) and is decrypted in place when encrypted;
+/// `out` receives any record we need to send back (the client Finished).
+///
+/// Returns the bytes to send and whether the handshake is complete. When the
+/// server's flight finishes, the client Finished is emitted automatically and
+/// rx/tx are promoted to application keys. After done, do not call again —
+/// use rx/tx directly for application data. RFC 8446 §5.
+pub fn processRecord(self: *ClientHandshake, record: []u8, out: []u8) ProcessError!Progress {
+    const hdr = try frame.parseHeader(record);
+    if (record.len < frame.header_len + hdr.length()) return error.IncompleteRecord;
+
+    switch (hdr.content_type) {
+        // RFC 8446 §D.4 — middlebox-compat ChangeCipherSpec, silently dropped.
+        .change_cipher_spec => return .{},
+        // ServerHello is the only handshake message that arrives unencrypted.
+        .handshake => {
+            if (self.state != .wait_sh) return error.UnexpectedRecord;
+            try self.processServerHello(record[frame.header_len..][0..hdr.length()]);
+            return .{};
+        },
+        // Encrypted records: decrypt with rx, then feed the server flight.
+        .application_data => {
+            const dec = try self.rx.decrypt(record);
+            if (dec.content_type != .handshake) return error.UnexpectedRecord;
+            try self.processFlight(dec.content, self.bundle, self.now_sec);
+            if (self.state == .send_finished) {
+                return .{ .to_send = try self.clientFinished(out), .done = true };
+            }
+            return .{};
+        },
+        else => return error.UnexpectedRecord,
+    }
 }
 
 pub const ServerHelloError = server_hello.ParseError || error{
@@ -463,9 +524,7 @@ const rfc8448_client_secret_key = [_]u8{
 // integration (not just isolated derivation from a literal shared secret).
 test "processServerHello: RFC 8448 §3 installs server handshake keys" {
     var hs: ClientHandshake = .init(rfc8448_client_secret_key);
-    // Stand in for start(): we have sent ClientHello and await ServerHello.
-    hs.suite.update(&rfc8448_client_hello);
-    hs.state = .wait_sh;
+    hs.start(&rfc8448_client_hello);
 
     try hs.processServerHello(&rfc8448_server_hello);
 
@@ -488,8 +547,7 @@ const rfc8448_server_flight = @embedFile("test_fixtures/rfc8448_server_flight.bi
 // passes because §3's cert and CV are internally consistent.
 test "processFlight: RFC 8448 §3 full server flight to connected" {
     var hs: ClientHandshake = .init(rfc8448_client_secret_key);
-    hs.suite.update(&rfc8448_client_hello);
-    hs.state = .wait_sh;
+    hs.start(&rfc8448_client_hello);
     try hs.processServerHello(&rfc8448_server_hello);
 
     try hs.processFlight(rfc8448_server_flight, null, 0);
@@ -513,8 +571,7 @@ const rfc8448_client_finished = [_]u8{
 // write key.
 test "clientFinished: RFC 8448 §3 emits Finished and upgrades to app keys" {
     var hs: ClientHandshake = .init(rfc8448_client_secret_key);
-    hs.suite.update(&rfc8448_client_hello);
-    hs.state = .wait_sh;
+    hs.start(&rfc8448_client_hello);
     try hs.processServerHello(&rfc8448_server_hello);
     try hs.processFlight(rfc8448_server_flight, null, 0);
 
@@ -536,6 +593,49 @@ test "clientFinished: RFC 8448 §3 emits Finished and upgrades to app keys" {
         0x9f, 0x02, 0x28, 0x3b, 0x6c, 0x9c, 0x07, 0xef,
         0xc2, 0x6b, 0xb9, 0xf2, 0xac, 0x92, 0xe3, 0x56,
     }, &hs.rx.aead.aes128_gcm.data);
+}
+
+// RFC 8448 §3 encrypted server flight as a complete wire record (TLSCiphertext).
+const rfc8448_server_flight_record = @embedFile("test_fixtures/rfc8448_server_flight_record.bin");
+
+// RFC 8446 §5 — the full driver path: pump real wire records through
+// processRecord (plaintext ServerHello, a ChangeCipherSpec to discard, then the
+// encrypted flight) and confirm it auto-emits the client Finished and reports
+// done. The emitted record decrypts to the RFC 8448 §3 client Finished.
+test "processRecord: drives RFC 8448 §3 handshake to done" {
+    var hs: ClientHandshake = .init(rfc8448_client_secret_key);
+    hs.start(&rfc8448_client_hello);
+
+    var out: [256]u8 = undefined;
+
+    // ServerHello as a plaintext handshake record (header + 90-byte body).
+    var sh_record = [_]u8{ 0x16, 0x03, 0x03, 0x00, 0x5a } ++ rfc8448_server_hello;
+    const p_sh = try hs.processRecord(&sh_record, &out);
+    try testing.expect(!p_sh.done);
+    try testing.expectEqual(@as(usize, 0), p_sh.to_send.len);
+    try testing.expectEqual(.wait_ee, hs.state);
+
+    // Mirror of the client handshake-traffic encryptor (seq 0), captured before
+    // clientFinished swaps tx to the application key.
+    var peer = hs.tx;
+
+    // ChangeCipherSpec — middlebox compat, discarded (RFC 8446 §D.4).
+    var ccs = [_]u8{ 0x14, 0x03, 0x03, 0x00, 0x01, 0x01 };
+    const p_ccs = try hs.processRecord(&ccs, &out);
+    try testing.expect(!p_ccs.done);
+    try testing.expectEqual(.wait_ee, hs.state);
+
+    // Encrypted server flight: completes the handshake and emits client Finished.
+    var flight = rfc8448_server_flight_record.*;
+    const p_fin = try hs.processRecord(flight[0..], &out);
+    try testing.expect(p_fin.done);
+    try testing.expectEqual(.connected, hs.state);
+
+    var dec_buf: [128]u8 = undefined;
+    @memcpy(dec_buf[0..p_fin.to_send.len], p_fin.to_send);
+    const dec = try peer.decrypt(dec_buf[0..p_fin.to_send.len]);
+    try testing.expectEqual(.handshake, dec.content_type);
+    try testing.expectEqualSlices(u8, &rfc8448_client_finished, dec.content);
 }
 
 // Handshake-message iterator over a coalesced payload.

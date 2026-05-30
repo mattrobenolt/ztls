@@ -7,6 +7,7 @@ const testing = std.testing;
 const Aes128Gcm = std.crypto.aead.aes_gcm.Aes128Gcm;
 
 const Aead = @import("aead.zig").Aead;
+const AeadError = @import("aead.zig").Error;
 const Aes128GcmKey = @import("aead.zig").Aes128GcmKey;
 const construct = @import("nonce.zig").construct;
 const frame = @import("frame.zig");
@@ -28,6 +29,13 @@ aead: Aead,
 iv: Iv,
 seq: u64 = 0,
 
+pub const DecryptError = frame.ParseError || AeadError || error{
+    UnexpectedContentType,
+    RecordTooShort,
+    SequenceNumberOverflow,
+    InvalidInnerPlaintext,
+};
+
 /// Decrypt a TLSCiphertext record in place.
 ///
 /// `buf` must contain the full record as received from the wire
@@ -38,7 +46,7 @@ seq: u64 = 0,
 /// Sequence number increments only on successful authentication.
 ///
 /// RFC 8446 §5.2
-pub fn decrypt(self: *RecordLayer, buf: []u8) !DecryptedRecord {
+pub fn decrypt(self: *RecordLayer, buf: []u8) DecryptError!DecryptedRecord {
     if (self.seq == std.math.maxInt(u64)) {
         @branchHint(.cold);
         return error.SequenceNumberOverflow;
