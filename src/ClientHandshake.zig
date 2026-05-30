@@ -18,7 +18,6 @@ const RecordLayer = @import("RecordLayer.zig");
 const server_hello = @import("server_hello.zig");
 const wire = @import("wire.zig");
 const x25519 = @import("x25519.zig");
-const Bundle = std.crypto.Certificate.Bundle;
 
 const ClientHandshake = @This();
 
@@ -136,13 +135,12 @@ const Suite = union(enum) {
         self: *const Suite,
         cert_msg: []const u8,
         cv_msg: []const u8,
-        bundle: ?*const Bundle,
-        now_sec: i64,
+        policy: certificate.Policy,
     ) certificate.AuthError!void {
         switch (self.*) {
             .sha256 => |*s| {
                 const th = s.transcript.peek();
-                try certificate.authenticate(cert_msg, cv_msg, &th, bundle, now_sec);
+                try certificate.authenticate(cert_msg, cv_msg, &th, policy);
             },
         }
     }
@@ -226,8 +224,7 @@ rx: RecordLayer = undefined,
 tx: RecordLayer = undefined,
 /// Certificate validation policy, applied during the server flight. Defaults
 /// to no chain anchoring (signature-only). Set before driving the handshake.
-bundle: ?*const Bundle = null,
-now_sec: i64 = 0,
+policy: certificate.Policy = .{},
 
 /// Start a client handshake with our ephemeral X25519 private key. The
 /// negotiated suite is hardcoded to SHA-256 for now; true suite selection
@@ -286,7 +283,7 @@ pub fn processRecord(self: *ClientHandshake, record: []u8, out: []u8) ProcessErr
         .application_data => {
             const dec = try self.rx.decrypt(record);
             if (dec.content_type != .handshake) return error.UnexpectedRecord;
-            try self.processFlight(dec.content, self.bundle, self.now_sec);
+            try self.processFlight(dec.content, self.policy);
             if (self.state == .send_finished) {
                 return .{ .to_send = try self.clientFinished(out), .done = true };
             }
@@ -336,8 +333,7 @@ pub const FlightError = error{ UnexpectedMessage, UnexpectedEof } ||
 pub fn processFlight(
     self: *ClientHandshake,
     payload: []const u8,
-    bundle: ?*const Bundle,
-    now_sec: i64,
+    policy: certificate.Policy,
 ) FlightError!void {
     var cert_msg: ?[]const u8 = null;
     var hr: HandshakeReader = .init(payload);
@@ -366,7 +362,7 @@ pub fn processFlight(
             if (msg.type != .certificate_verify) return error.UnexpectedMessage;
             // Non-null guaranteed: wait_cv is only reachable after wait_cert
             // stored the Certificate message.
-            try self.suite.authenticateCertificate(cert_msg.?, msg.raw, bundle, now_sec);
+            try self.suite.authenticateCertificate(cert_msg.?, msg.raw, policy);
             self.suite.update(msg.raw);
             self.state = .wait_finished;
             continue :flight self.state;
@@ -543,14 +539,14 @@ const rfc8448_server_flight = @embedFile("test_fixtures/rfc8448_server_flight.bi
 // One call exercises EncryptedExtensions parsing, RSA-PSS CertificateVerify
 // over the through-Certificate transcript, and the server Finished MAC over the
 // through-CertificateVerify transcript — all against genuine RFC 8448 §3 bytes.
-// bundle=null skips chain anchoring; the CV signature check still runs and
-// passes because §3's cert and CV are internally consistent.
+// The default policy (.{}) skips chain anchoring; the CV signature check still
+// runs and passes because §3's cert and CV are internally consistent.
 test "processFlight: RFC 8448 §3 full server flight to connected" {
     var hs: ClientHandshake = .init(rfc8448_client_secret_key);
     hs.start(&rfc8448_client_hello);
     try hs.processServerHello(&rfc8448_server_hello);
 
-    try hs.processFlight(rfc8448_server_flight, null, 0);
+    try hs.processFlight(rfc8448_server_flight, .{});
     try testing.expectEqual(.send_finished, hs.state);
 }
 
@@ -573,7 +569,7 @@ test "clientFinished: RFC 8448 §3 emits Finished and upgrades to app keys" {
     var hs: ClientHandshake = .init(rfc8448_client_secret_key);
     hs.start(&rfc8448_client_hello);
     try hs.processServerHello(&rfc8448_server_hello);
-    try hs.processFlight(rfc8448_server_flight, null, 0);
+    try hs.processFlight(rfc8448_server_flight, .{});
 
     // Mirror of the encryptor: client handshake-traffic key at seq 0.
     var peer = hs.tx;

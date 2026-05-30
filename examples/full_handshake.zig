@@ -171,7 +171,7 @@ pub fn main() !void {
 
         var transcript_hash: [32]u8 = undefined;
         crypto.hash.sha2.Sha256.hash("test transcript", &transcript_hash, .{});
-        try ztls.certificate.authenticate(cert_dec.content, cv_dec.content, &transcript_hash, null, 0);
+        try ztls.certificate.authenticate(cert_dec.content, cv_dec.content, &transcript_hash, .{});
         print("[server] CertificateVerify:    {} wire bytes → authenticated\n", .{cv_wire.len});
     }
 

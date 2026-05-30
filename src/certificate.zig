@@ -16,17 +16,23 @@ pub const ParseError = error{
     EmptyCertificateList,
 } || Certificate.ParseError || Certificate.Parsed.VerifyError;
 
+/// Certificate validation policy.
+pub const Policy = struct {
+    /// Trust anchors for chain validation. null = signature-only, no chain
+    /// anchoring (the leaf public key is still extracted and the CV signature
+    /// still verified).
+    bundle: ?*const Certificate.Bundle = null,
+    /// Current time in seconds since the Unix epoch, for validity checks.
+    now_sec: i64 = 0,
+};
+
 /// Parse a Certificate handshake message and extract the leaf certificate
 /// public key as a slice into `msg`. The caller must keep `msg` alive until
 /// verifySignature has been called. Optionally validates the chain against
-/// a trust bundle.
+/// the policy's trust bundle.
 ///
 /// RFC 8446 §4.4.2
-fn parse(
-    msg: []const u8,
-    bundle: ?*const Certificate.Bundle,
-    now_sec: i64,
-) ParseError![]const u8 {
+fn parse(msg: []const u8, policy: Policy) ParseError![]const u8 {
     var r: wire.Reader = .init(msg);
 
     const handshake_type = try r.read(u8);
@@ -55,8 +61,8 @@ fn parse(
 
         if (cert_index == 0) {
             leaf_pub_key = parsed.pubKey();
-            if (bundle != null) {
-                if (prev_parsed) |prev| try prev.verify(parsed, now_sec);
+            if (policy.bundle != null) {
+                if (prev_parsed) |prev| try prev.verify(parsed, policy.now_sec);
             }
         }
 
@@ -81,10 +87,9 @@ pub fn authenticate(
     cert_msg: []const u8,
     cv_msg: []const u8,
     transcript_hash: []const u8,
-    bundle: ?*const Certificate.Bundle,
-    now_sec: i64,
+    policy: Policy,
 ) AuthError!void {
-    const pub_key = try parse(cert_msg, bundle, now_sec);
+    const pub_key = try parse(cert_msg, policy);
     try verifySignature(cv_msg, pub_key, transcript_hash);
 }
 
@@ -212,7 +217,7 @@ const test_transcript_hash = blk: {
 
 test "parse: extracts public key from ECDSA P-256 certificate" {
     var buf: [1024]u8 = undefined;
-    const pub_key = try parse(buildCertMsg(&buf, fixture_cert_der), null, 0);
+    const pub_key = try parse(buildCertMsg(&buf, fixture_cert_der), .{});
     try testing.expect(pub_key.len > 0);
 }
 
@@ -220,19 +225,19 @@ test "parse: wrong handshake type" {
     var buf: [1024]u8 = undefined;
     var msg = buildCertMsg(&buf, fixture_cert_der);
     msg[0] = 0x01;
-    try testing.expectError(error.InvalidHandshakeType, parse(msg, null, 0));
+    try testing.expectError(error.InvalidHandshakeType, parse(msg, .{}));
 }
 
 test "verifySignature: valid ECDSA P-256 signature" {
     var cert_buf: [1024]u8 = undefined;
-    const pub_key = try parse(buildCertMsg(&cert_buf, fixture_cert_der), null, 0);
+    const pub_key = try parse(buildCertMsg(&cert_buf, fixture_cert_der), .{});
     var cv_buf: [512]u8 = undefined;
     try verifySignature(buildCvMsg(&cv_buf, fixture_cv_sig), pub_key, &test_transcript_hash);
 }
 
 test "verifySignature: wrong transcript hash" {
     var cert_buf: [1024]u8 = undefined;
-    const pub_key = try parse(buildCertMsg(&cert_buf, fixture_cert_der), null, 0);
+    const pub_key = try parse(buildCertMsg(&cert_buf, fixture_cert_der), .{});
     var cv_buf: [512]u8 = undefined;
     const bad_hash: [32]u8 = @splat(0);
     try testing.expectError(error.SignatureVerificationFailed, verifySignature(buildCvMsg(&cv_buf, fixture_cv_sig), pub_key, &bad_hash));
@@ -240,7 +245,7 @@ test "verifySignature: wrong transcript hash" {
 
 test "verifySignature: wrong handshake type" {
     var cert_buf: [1024]u8 = undefined;
-    const pub_key = try parse(buildCertMsg(&cert_buf, fixture_cert_der), null, 0);
+    const pub_key = try parse(buildCertMsg(&cert_buf, fixture_cert_der), .{});
     var cv_buf: [512]u8 = undefined;
     var cv_msg = buildCvMsg(&cv_buf, fixture_cv_sig);
     cv_msg[0] = 0x01;
