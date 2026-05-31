@@ -324,9 +324,11 @@ no I/O.
 - ✅ 18. X.509 policy: caller-owned trust bundle, validity time, hostname verification
 - ✅ 19. ALPN ClientHello offer + EncryptedExtensions selection validation
 - ◐ 20. HelloRetryRequest: detected and rejected cleanly; retry path remains future work
+- ◐ 21. NewSessionTicket: parsed and ignored; PSK/session resumption remains future work
 
-Next correctness targets: full HelloRetryRequest retry support, server-side
-ztls, and fuller external conformance suites.
+Next correctness targets: server-side ztls, fuller external conformance suites,
+and longer-horizon PSK/session resumption work. Full HelloRetryRequest retry
+support only matters once ztls offers more than X25519 or implements cookie retry.
 
 ---
 
