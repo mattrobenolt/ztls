@@ -3,7 +3,7 @@
 /// RFC 8446 §4.4.2, §4.4.3
 const std = @import("std");
 const crypto = std.crypto;
-const Certificate = crypto.Certificate;
+const Certificate = @import("cryptox/Certificate.zig");
 const ecdsa = crypto.sign.ecdsa;
 const sha2 = crypto.hash.sha2;
 const testing = std.testing;
@@ -210,6 +210,18 @@ test "parse: wrong handshake type" {
     try testing.expectError(error.InvalidHandshakeType, parse(msg, .{}));
 }
 
+test "parse: malformed DER length is rejected, not crashed" {
+    const msg = [_]u8{
+        0x0b, 0x00, 0x00, 0x0d, // Certificate, length 13
+        0x00, // context length
+        0x00, 0x00, 0x09, // certificate_list length
+        0x00, 0x00, 0x05, // cert length
+        0x30, 0x82, 0x01, 0xd3, 0x00, // SEQUENCE claims 467 content bytes, has 1
+        0x00, 0x00, // extensions length
+    };
+    try testing.expectError(error.CertificateFieldHasInvalidLength, parse(&msg, .{}));
+}
+
 test "verifySignature: valid ECDSA P-256 signature" {
     var cert_buf: [1024]u8 = undefined;
     const pub_key = try parse(buildCertMsg(&cert_buf, fixture_cert_der), .{});
@@ -232,4 +244,16 @@ test "verifySignature: wrong handshake type" {
     var cv_msg = buildCvMsg(&cv_buf, fixture_cv_sig);
     cv_msg[0] = 0x01;
     try testing.expectError(error.InvalidHandshakeType, verifySignature(cv_msg, pub_key, &test_transcript_hash));
+}
+
+// Fuzz target: parse must reject arbitrary Certificate bytes with an error,
+// never crash. Exercises our framing plus cryptox.Certificate's X.509 parser.
+// Run with `zig build test --fuzz`.
+fn fuzzParse(_: void, input: []const u8) anyerror!void {
+    _ = parse(input, .{}) catch {};
+}
+
+test "fuzz: parse handles arbitrary input" {
+    var buf: [1024]u8 = undefined;
+    try testing.fuzz({}, fuzzParse, .{ .corpus = &.{buildCertMsg(&buf, fixture_cert_der)} });
 }

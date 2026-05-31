@@ -4,14 +4,18 @@
 //! Copyright (c) Zig contributors
 //! Source: https://github.com/ziglang/zig/blob/0.15.2/lib/std/crypto/Certificate.zig
 //!
-//! Local mechanical vendoring changes:
+//! Local changes:
 //! - Import std as a package module (`@import("std")`) instead of std-internal path.
 //! - Alias Bundle to std.crypto.Certificate.Bundle instead of vendoring OS trust-store code.
+//! - Bounds-check DER element parsing so malformed certificate lengths return
+//!   CertificateFieldHasInvalidLength instead of panicking on out-of-bounds access.
 
 buffer: []const u8,
 index: u32,
 
-/// Bundle remains std-owned; ztls vendors only the parser/verification code.
+/// Vendored parser from Zig 0.15.2 std.crypto.Certificate.
+/// Bundle remains std-owned; ztls vendors only the parser/verification code to
+/// patch malformed-DER bounds checks before upstream Zig ships the fix.
 pub const Bundle = std.crypto.Certificate.Bundle;
 
 pub const Version = enum { v1, v2, v3 };
@@ -892,23 +896,27 @@ pub const der = struct {
         pub const ParseError = error{CertificateFieldHasInvalidLength};
 
         pub fn parse(bytes: []const u8, index: u32) Element.ParseError!Element {
-            var i = index;
+            var i: usize = index;
+            if (i >= bytes.len) return error.CertificateFieldHasInvalidLength;
             const identifier: Identifier = @bitCast(bytes[i]);
             i += 1;
+            if (i >= bytes.len) return error.CertificateFieldHasInvalidLength;
             const size_byte = bytes[i];
             i += 1;
             if ((size_byte >> 7) == 0) {
+                const end = i + size_byte;
+                if (end > bytes.len or end > std.math.maxInt(u32)) return error.CertificateFieldHasInvalidLength;
                 return .{
                     .identifier = identifier,
                     .slice = .{
-                        .start = i,
-                        .end = i + size_byte,
+                        .start = @intCast(i),
+                        .end = @intCast(end),
                     },
                 };
             }
 
             const len_size: u7 = @truncate(size_byte);
-            if (len_size > @sizeOf(u32)) {
+            if (len_size > @sizeOf(u32) or i + len_size > bytes.len) {
                 return error.CertificateFieldHasInvalidLength;
             }
 
@@ -918,11 +926,13 @@ pub const der = struct {
                 long_form_size = (long_form_size << 8) | bytes[i];
             }
 
+            const end = i + long_form_size;
+            if (end > bytes.len or end > std.math.maxInt(u32)) return error.CertificateFieldHasInvalidLength;
             return .{
                 .identifier = identifier,
                 .slice = .{
-                    .start = i,
-                    .end = i + long_form_size,
+                    .start = @intCast(i),
+                    .end = @intCast(end),
                 },
             };
         }
