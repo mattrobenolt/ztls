@@ -216,29 +216,43 @@ ztls
 ├── client_hello.zig         — ClientHello encoding
 ├── server_hello.zig         — ServerHello parsing
 ├── encrypted_extensions.zig — EncryptedExtensions parsing
-├── certificate.zig          — Certificate + CertificateVerify: authenticate()
-├── finished.zig             — Finished: verify and encode
+├── certificate.zig          — Certificate + CertificateVerify parsing/signature verification
+├── cryptox/Certificate.zig  — Zig std-derived X.509 parser with DER bounds fix
+├── finished.zig             — Finished: hash-parameterized verify and encode
+├── ClientHandshake.zig      — client TLS 1.3 state machine + public connection API
+├── RecordBuffer.zig         — I/O-agnostic stream-to-record framing helper
 └── root.zig                 — public API surface, CipherSuite
 ```
 
 Key consumer-facing primitives:
 
 ```zig
-// RecordLayer: one per direction, caller provides buffers
-var rl = hkdf.makeRecordLayer(.aes128_gcm, traffic_secret);
+// High-level client connection API: caller owns buffers and transport.
+var hs: ztls.ClientHandshake = .init(keypair);
+const client_hello_wire = try hs.start(&out, random, "example.com");
+// write client_hello_wire to the transport, then:
+hs.completeWrite();
+
+while (!hs.isConnected()) {
+    const ev = try hs.handleRecord(record, &out);
+    if (ev == .write) {
+        // write ev.write to the transport
+        hs.completeWrite();
+    }
+}
+
+const app_wire = try hs.sendApplicationData(plaintext, &out);
+hs.completeWrite();
+
+// Low-level record layer remains available for callers that need it.
+var rl = hkdf.makeRecordLayer(.{ .aes128_gcm = key }, traffic_secret);
 const wire = try rl.encrypt(.application_data, plaintext, &out);
-const dec  = try rl.decrypt(wire);
-
-// Certificate authentication
-try ztls.certificate.authenticate(cert_msg, cv_msg, transcript_hash, bundle, now_sec);
-
-// Finished
-try ztls.finished.verify(msg, &finished_key.data, &transcript_hash);
-const finished_msg = try ztls.finished.encode(&buf, &finished_key.data, &transcript_hash);
+const dec = try rl.decrypt(wire);
 ```
 
-What remains: a handshake state machine that owns the transcript hash,
-drives the message flow, and hands off to RecordLayer for application data.
+The state machine owns the transcript, handshake key schedule, post-handshake
+KeyUpdate receive path, and pending-write invariant. It still does no allocation
+and no I/O; callers provide all storage and decide how bytes move.
 
 ### Crypto backends
 
@@ -270,12 +284,12 @@ present the same API surface — swapping is invisible to the caller.
 Stdlib coverage for the default backend:
 - `std.crypto.aead.aes_gcm` — AES-128-GCM, AES-256-GCM
 - `std.crypto.aead.chacha_poly` — ChaCha20-Poly1305
-- `std.crypto.kdf.hkdf` — HKDF (next up)
+- `std.crypto.kdf.hkdf` — HKDF-SHA256 and HKDF-SHA384
 - `std.crypto.dh.X25519` — X25519 key exchange
+- `std.crypto.Certificate`-derived parser in `cryptox/` — X.509 public-key extraction and certificate signature verification, with a local DER bounds fix until upstream Zig carries it.
 
-RSA certificate verification is the one area stdlib may not cover fully.
-Options when we get there: (a) libcrypto just for cert verification,
-(b) ECDSA-only cert support initially and defer RSA. Decision deferred.
+Full X.509 path validation and hostname verification are still deferred; the
+current Policy.bundle hook is the seam.
 
 ---
 
@@ -290,12 +304,16 @@ Options when we get there: (a) libcrypto just for cert verification,
 - ✅ 7. ServerHello parsing + key_share extraction — `server_hello.zig`, `wire.zig` Reader
 - ✅ 8. EncryptedExtensions, Certificate, CertificateVerify — `encrypted_extensions.zig`, `certificate.zig`
 - ✅ 9. Finished message verify/send — `finished.zig`
-- 10. Application data read/write (post-handshake state machine)
-- 11. KeyUpdate
-- 12. Integration test against a real server (openssl s_server / s_client)
+- ✅ 10. Application data read/write (post-handshake state machine)
+- ✅ 11. KeyUpdate
+- ✅ 12. Integration test against a real server (`openssl s_server`)
+- ✅ 13. Cipher-suite agility: AES-128-GCM/SHA256, AES-256-GCM/SHA384, ChaCha20-Poly1305/SHA256
+- ✅ 14. Parser fuzzing baseline + malformed-DER regression guard
+- ✅ 15. Initial performance harness (`zig build bench`, record/framing benchmarks)
 
-Start with a test that talks to itself (client + server in the same process,
-piped together) before touching the network.
+Next correctness targets: cross-record handshake-message reassembly, proper TLS
+alerts, X.509 path/hostname validation, and HelloRetryRequest. Server-side ztls
+is still future work.
 
 ---
 
@@ -310,11 +328,15 @@ Every error path is tested. Fuzzing is not optional.
 
 - Record layer: parse/emit round-trips, length edge cases, truncated input,
   oversized records. Cite §5.1.
-- AEAD: encrypt/decrypt, bad auth tag, nonce reuse detection. Use Wycheproof
-  test vectors (JSON) for AES-GCM, ChaCha20-Poly1305, HKDF, X25519.
-- Key schedule: derive expected secrets against known-good vectors from RFC 8446
-  Appendix B test vectors and from tlsfuzzer's known-answer tests.
+- AEAD: encrypt/decrypt, bad auth tag, nonce reuse detection. Wycheproof is
+  useful for backend assurance, especially once libcrypto exists, but current
+  std.crypto-only AEAD tests mostly validate std rather than ztls.
+- Key schedule: derive expected secrets against RFC 8448 where available and
+  independent vectors where RFC 8448 has no trace (e.g. SHA-384 suite support).
 - Handshake parsing: valid and malformed messages for every handshake type.
+- Fuzz targets: parser/state-machine byte surfaces (`server_hello.parse`,
+  Certificate parsing, HandshakeReader, decrypted processFlight) must reject
+  arbitrary bytes without panics. Run with `zig build test --fuzz --webui=127.0.0.1:<port>` on Linux.
 
 ### Integration Tests
 
@@ -341,11 +363,14 @@ Every error path is tested. Fuzzing is not optional.
 
 ### Benchmarks
 
-- Benchmark record encode and decode throughput (bytes/sec).
-- Benchmark full handshake round-trips.
-- Compare against OpenSSL and BearSSL at equivalent cipher suite.
-- Check generated asm for hot paths (record AEAD, nonce XOR, header parse).
-  Use `zig build -Doptimize=ReleaseFast` and inspect via `objdump -d`.
+See `docs/research/PERFORMANCE.md` for the benchmark plan and prior-art notes.
+Current harness:
+
+- `zig build bench` — wall-time CSV-ish rows for record protection and framing.
+- `zig build bench-bin` — installs `zig-out/bin/record_protection_bench` for perf/callgrind.
+- `record_protection_bench --list` / `--filter <substring>` — isolate scenarios.
+
+Next benchmark target: deterministic client handshake replay with RFC 8448 / OpenSSL fixture bytes.
 
 ---
 
