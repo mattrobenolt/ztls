@@ -11,8 +11,9 @@
 //! finale round-trips a message through them to show they are live.
 const std = @import("std");
 const print = std.debug.print;
-const ztls = @import("ztls");
+
 const txtar = @import("txtar");
+const ztls = @import("ztls");
 
 // RFC 8448 §3 client ephemeral X25519 keypair. We replay the fixed §3
 // ClientHello via injectClientHello, so the public key here is unused, but
@@ -90,7 +91,7 @@ fn fixture(alloc: std.mem.Allocator, name: []const u8, out: []u8) ![]u8 {
     defer archive.deinit(alloc);
     for (archive.files) |f| {
         if (!std.mem.eql(u8, f.name, name)) continue;
-        const b64 = std.mem.trimRight(u8, f.data, "\n");
+        const b64 = std.mem.trimEnd(u8, f.data, "\n");
         const n = try std.base64.standard.Decoder.calcSizeForSlice(b64);
         try std.base64.standard.Decoder.decode(out[0..n], b64);
         return out[0..n];

@@ -14,7 +14,7 @@ pub fn main() !void {
     // ── X25519 key exchange ──────────────────────────────────────────────────
 
     // Use the RFC 8448 §3 client private key for deterministic output.
-    const kp = ztls.x25519.KeyPair{
+    const kp: ztls.x25519.KeyPair = .{
         .secret_key = .{
             0x49, 0xaf, 0x42, 0xba, 0x7f, 0x79, 0x94, 0x85,
             0x2d, 0x71, 0x3e, 0xf2, 0x78, 0x4b, 0xcb, 0xca,

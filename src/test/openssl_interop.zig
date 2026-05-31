@@ -15,7 +15,7 @@ const mem = std.mem;
 const testing = std.testing;
 const Allocator = mem.Allocator;
 const Child = std.process.Child;
-const Thread = std.Thread;
+const sleep = std.Thread.sleep;
 const crypto = std.crypto;
 const net = std.net;
 const heap = std.heap;
@@ -103,7 +103,7 @@ fn connectWithRetry(port: u16) !net.Stream {
     var attempts: usize = 0;
     while (attempts < 100) : (attempts += 1) {
         return net.tcpConnectToAddress(addr) catch {
-            Thread.sleep(20 * std.time.ns_per_ms);
+            sleep(20 * std.time.ns_per_ms);
             continue;
         };
     }
@@ -140,8 +140,8 @@ fn interop(stream: net.Stream) !void {
                 try stream.writeAll(w);
                 hs.completeWrite();
             },
-            .none => {},
             .application_data, .closed => return error.UnexpectedDuringHandshake,
+            .none => {},
         };
     }
     print("[interop] handshake completed against openssl s_server\n", .{});

@@ -18,13 +18,14 @@
 //! `storage` must be at least `min_storage` bytes so any single record fits.
 const std = @import("std");
 const assert = std.debug.assert;
+const testing = std.testing;
+
 const frame = @import("frame.zig");
-
-const RecordBuffer = @This();
-
 /// Smallest storage that guarantees any one record fits: a full-size wire
 /// record (header + maximum ciphertext).
 pub const min_storage = frame.max_wire_record_len;
+
+const RecordBuffer = @This();
 
 /// A comfortable default: room for a partial record plus a full one, so a read
 /// that straddles a record boundary still makes progress without thrashing.
@@ -76,12 +77,11 @@ pub fn next(self: *RecordBuffer) error{RecordTooLarge}!?[]u8 {
 /// Move unconsumed bytes to the front so `writable()` is maximally contiguous.
 fn compact(self: *RecordBuffer) void {
     if (self.pos == 0) return;
-    std.mem.copyForwards(u8, self.storage[0..], self.storage[self.pos..self.filled]);
+    const unconsumed = self.storage[self.pos..self.filled];
+    @memmove(self.storage[0..unconsumed.len], unconsumed);
     self.filled -= self.pos;
     self.pos = 0;
 }
-
-const testing = std.testing;
 
 // RFC 8446 §5.1 — records split and coalesce arbitrarily on the wire.
 test "next: two records coalesced in one fill" {
