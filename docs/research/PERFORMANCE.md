@@ -95,6 +95,9 @@ named benchmarks instead of stuffing everything into one timing loop.
 The devshell includes Linux-only `perf` and `valgrind`/`callgrind_annotate`.
 Use wall-time benchmark output to choose a suspicious scenario, then profile the
 compiled benchmark binary rather than adding timing probes to library code.
+Containerized Linux may expose only a subset of perf events; if hardware cycles
+show as unsupported, use callgrind for instruction counts or rerun on bare
+metal.
 
 Typical local flow:
 
