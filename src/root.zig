@@ -1,5 +1,6 @@
 const std = @import("std");
 
+pub const alert = @import("alert.zig");
 pub const aead = @import("aead.zig");
 pub const client_hello = @import("client_hello.zig");
 pub const ClientHandshake = @import("ClientHandshake.zig");

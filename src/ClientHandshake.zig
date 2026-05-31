@@ -11,6 +11,7 @@ const testing = std.testing;
 const mem = std.mem;
 const base64 = std.base64.standard.Decoder;
 
+const alert = @import("alert.zig");
 const aead = @import("aead.zig");
 const certificate = @import("certificate.zig");
 const client_hello = @import("client_hello.zig");
@@ -352,7 +353,7 @@ pub const Event = union(enum) {
     write: []const u8,
     /// Handled internally; nothing for the caller to do.
     none,
-    /// The peer sent an alert (treated as connection close for now).
+    /// The peer sent close_notify.
     closed,
 };
 
@@ -393,8 +394,8 @@ pub fn sendApplicationData(self: *ClientHandshake, plaintext: []const u8, out: [
 }
 
 pub const ProcessError = frame.ParseError || RecordLayer.DecryptError ||
-    ServerHelloError || FlightError || SendError ||
-    error{ IncompleteRecord, UnexpectedRecord };
+    ServerHelloError || FlightError || SendError || alert.ParseError ||
+    error{ IncompleteRecord, UnexpectedRecord, PeerAlert };
 
 // Handshake-phase inbound: drive the flight from one record, returning the
 // client Finished to send when the flight completes, else null.
@@ -416,10 +417,24 @@ fn processHandshakeRecord(self: *ClientHandshake, record: []u8, out: []u8) Proce
         .application_data => {
             if (self.state == .start or self.state == .wait_sh) return error.UnexpectedRecord;
             const dec = try self.rx.decrypt(record);
-            if (dec.content_type != .handshake) return error.UnexpectedRecord;
-            try self.processFlight(dec.content, self.policy);
-            if (self.state == .send_finished) return try self.clientFinished(out);
-            return null;
+            switch (dec.content_type) {
+                .handshake => {
+                    try self.processFlight(dec.content, self.policy);
+                    if (self.state == .send_finished) return try self.clientFinished(out);
+                    return null;
+                },
+                .alert => {
+                    const a = try alert.parse(dec.content);
+                    if (a.isCloseNotify()) return null;
+                    return error.PeerAlert;
+                },
+                else => return error.UnexpectedRecord,
+            }
+        },
+        .alert => {
+            const a = try alert.parse(record[frame.header_len..][0..hdr.length()]);
+            if (a.isCloseNotify()) return null;
+            return error.PeerAlert;
         },
         else => return error.UnexpectedRecord,
     }
@@ -562,8 +577,8 @@ pub fn clientFinished(self: *ClientHandshake, out: []u8) SendError![]const u8 {
 /// maxUselessRecords. Reset by application data.
 const max_post_handshake_messages = 16;
 
-pub const ReceiveError = RecordLayer.DecryptError || SendError ||
-    error{ UnexpectedEof, UnexpectedRecord, UnexpectedMessage, IllegalParameter, TooManyKeyUpdates };
+pub const ReceiveError = RecordLayer.DecryptError || SendError || alert.ParseError ||
+    error{ UnexpectedEof, UnexpectedRecord, UnexpectedMessage, IllegalParameter, TooManyKeyUpdates, PeerAlert };
 
 // Connected-phase inbound: the engine owns the receive path so post-handshake
 // control messages (KeyUpdate) are routed and answered correctly and the flood
@@ -608,9 +623,11 @@ fn receiveConnected(self: *ClientHandshake, record: []u8, out: []u8) ReceiveErro
             if (respond) return .{ .write = try self.sendKeyUpdate(out, .update_not_requested) };
             return .none;
         },
-        // Minimal: any alert ends the connection. Proper alert parsing (level,
-        // description) is deferred.
-        .alert => return .closed,
+        .alert => {
+            const a = try alert.parse(dec.content);
+            if (a.isCloseNotify()) return .closed;
+            return error.PeerAlert;
+        },
         else => return error.UnexpectedRecord,
     }
 }
@@ -975,6 +992,36 @@ test "handleRecord: KeyUpdate not at record boundary is rejected" {
     @memcpy(rx_buf[0..wire_rec.len], wire_rec);
     var out: [64]u8 = undefined;
     try testing.expectError(error.UnexpectedMessage, hs.handleRecord(rx_buf[0..wire_rec.len], &out));
+}
+
+// RFC 8446 §6.1 — close_notify is the only alert that cleanly closes.
+test "handleRecord: close_notify returns closed" {
+    var hs = try rfc8448ConnectedClient();
+    var server_tx = hs.rx;
+
+    const close_notify = [_]u8{ 0x01, 0x00 }; // warning, close_notify
+    var buf: [64]u8 = undefined;
+    const wire_rec = try server_tx.encrypt(.alert, &close_notify, &buf);
+
+    var rx_buf: [64]u8 = undefined;
+    @memcpy(rx_buf[0..wire_rec.len], wire_rec);
+    var out: [64]u8 = undefined;
+    try testing.expectEqual(Event.closed, try hs.handleRecord(rx_buf[0..wire_rec.len], &out));
+}
+
+// RFC 8446 §6.2 — fatal alerts abort; they are not clean close_notify.
+test "handleRecord: fatal alert returns PeerAlert" {
+    var hs = try rfc8448ConnectedClient();
+    var server_tx = hs.rx;
+
+    const fatal = [_]u8{ 0x02, 0x0a }; // fatal, unexpected_message
+    var buf: [64]u8 = undefined;
+    const wire_rec = try server_tx.encrypt(.alert, &fatal, &buf);
+
+    var rx_buf: [64]u8 = undefined;
+    @memcpy(rx_buf[0..wire_rec.len], wire_rec);
+    var out: [64]u8 = undefined;
+    try testing.expectError(error.PeerAlert, hs.handleRecord(rx_buf[0..wire_rec.len], &out));
 }
 
 test "handleRecord: KeyUpdate flood is rejected" {
