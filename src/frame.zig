@@ -193,8 +193,6 @@ test "writeInnerPlaintext: with padding" {
     try testing.expectEqualSlices(u8, &[_]u8{ 0xab, 22, 0, 0, 0, 0 }, buf[0..n]);
 }
 
-
-
 test "writeInnerPlaintext: buffer too short" {
     var buf: [2]u8 = undefined;
     const content = [_]u8{ 1, 2, 3 };
