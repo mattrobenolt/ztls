@@ -24,12 +24,20 @@ const ClientHandshake = @This();
 /// RFC 8446 §4 — handshake message type. Open enum: unrecognized values pass
 /// through the reader untouched; the state machine decides what is unexpected.
 pub const HandshakeType = enum(u8) {
+    new_session_ticket = 0x04,
     server_hello = 0x02,
     encrypted_extensions = 0x08,
     certificate = 0x0b,
     certificate_verify = 0x0f,
     finished = 0x14,
+    key_update = 0x18,
     _,
+};
+
+/// RFC 8446 §4.6.3 — whether the KeyUpdate recipient must respond with its own.
+pub const KeyUpdateRequest = enum(u8) {
+    update_not_requested = 0,
+    update_requested = 1,
 };
 
 /// Iterates the handshake messages packed into one (decrypted) record payload.
@@ -251,6 +259,9 @@ tx: RecordLayer = undefined,
 /// Certificate validation policy, applied during the server flight. Defaults
 /// to no chain anchoring (signature-only). Set before driving the handshake.
 policy: certificate.Policy = .{},
+/// Consecutive post-handshake messages seen with no intervening application
+/// data; reset by application data. Bounds KeyUpdate-flood DoS.
+post_handshake_count: u8 = 0,
 
 /// Start a client handshake with our ephemeral X25519 private key. The
 /// negotiated suite is hardcoded to SHA-256 for now; true suite selection
@@ -273,7 +284,7 @@ pub fn start(self: *ClientHandshake, client_hello_msg: []const u8) void {
 }
 
 pub const ProcessError = frame.ParseError || RecordLayer.DecryptError ||
-    ServerHelloError || FlightError || ClientFinishedError ||
+    ServerHelloError || FlightError || SendError ||
     error{ IncompleteRecord, UnexpectedRecord };
 
 /// Drive the handshake with one complete TLS record. `record` is the full
@@ -398,7 +409,8 @@ pub fn processFlight(
     }
 }
 
-pub const ClientFinishedError = error{ BufferTooShort, SequenceNumberOverflow };
+/// Errors from encrypting an outbound record into the caller's buffer.
+pub const SendError = error{ BufferTooShort, SequenceNumberOverflow };
 
 /// Produce the client Finished as a wire-ready (encrypted) record and promote
 /// to application traffic keys. RFC 8446 §4.4.4, §7.1. Advances
@@ -408,7 +420,7 @@ pub const ClientFinishedError = error{ BufferTooShort, SequenceNumberOverflow };
 /// rx/tx are swapped to application-traffic keys. After this returns, both
 /// directions carry application data. `out` receives the encrypted record and
 /// the returned slice is the bytes to send.
-pub fn clientFinished(self: *ClientHandshake, out: []u8) ClientFinishedError![]const u8 {
+pub fn clientFinished(self: *ClientHandshake, out: []u8) SendError![]const u8 {
     assert(self.state == .send_finished);
 
     // Plaintext Finished: 4-byte handshake header + verify_data. verify_data
@@ -423,6 +435,89 @@ pub fn clientFinished(self: *ClientHandshake, out: []u8) ClientFinishedError![]c
     self.rx = keys.rx;
     self.state = .connected;
     return record;
+}
+
+/// Max consecutive post-handshake messages with no intervening application
+/// data before we treat the peer as flooding us (RFC 8446 §4.6.3 allows
+/// either side to force updates; an unbounded stream is a DoS). Mirrors Go's
+/// maxUselessRecords. Reset by application data.
+const max_post_handshake_messages = 16;
+
+/// What a received post-handshake record yielded.
+pub const Received = union(enum) {
+    /// Decrypted application data (a slice into the caller's record buffer).
+    application_data: []const u8,
+    /// An encrypted record to transmit (a KeyUpdate response), written to `out`.
+    send: []const u8,
+    /// A control message was handled internally; nothing for the caller to do.
+    none,
+    /// The peer sent an alert (treated as connection close for now).
+    closed,
+};
+
+pub const ReceiveError = RecordLayer.DecryptError || SendError ||
+    error{ UnexpectedEof, UnexpectedRecord, UnexpectedMessage, IllegalParameter, TooManyKeyUpdates };
+
+/// Process one inbound record during the connected phase. The engine owns the
+/// receive path so post-handshake control messages (KeyUpdate) are routed and
+/// answered correctly and the flood counter sees the full record stream.
+/// RFC 8446 §4.6.3, §7.2.
+///
+/// Decrypts with rx and dispatches on the inner content type: application data
+/// is returned to the caller; a requested KeyUpdate is answered with our own
+/// (encrypted under the old key, then our send key ratchets) and the receive
+/// key ratchets after the KeyUpdate is consumed.
+pub fn receive(self: *ClientHandshake, record: []u8, out: []u8) ReceiveError!Received {
+    assert(self.state == .connected);
+    const dec = try self.rx.decrypt(record);
+    switch (dec.content_type) {
+        .application_data => {
+            self.post_handshake_count = 0;
+            return .{ .application_data = dec.content };
+        },
+        .handshake => {
+            var respond = false;
+            var hr: HandshakeReader = .init(dec.content);
+            while (try hr.next()) |msg| {
+                self.post_handshake_count +|= 1;
+                if (self.post_handshake_count > max_post_handshake_messages) return error.TooManyKeyUpdates;
+                switch (msg.type) {
+                    .key_update => {
+                        if (try parseKeyUpdate(msg.raw) == .update_requested) respond = true;
+                        // Ratchet the receive key only after consuming the
+                        // KeyUpdate (RFC 8446 §4.6.3).
+                        self.rx = self.suite.ratchetServerKey();
+                    },
+                    .new_session_ticket => {}, // not yet used
+                    else => return error.UnexpectedMessage,
+                }
+            }
+            // One response covers any number of update_requested KeyUpdates.
+            if (respond) return .{ .send = try self.sendKeyUpdate(out, .update_not_requested) };
+            return .none;
+        },
+        // Minimal: any alert ends the connection. Proper alert parsing (level,
+        // description) is deferred.
+        .alert => return .closed,
+        else => return error.UnexpectedRecord,
+    }
+}
+
+/// Send a KeyUpdate. Encrypts the message under the current (old) send key,
+/// then ratchets our send key so subsequent records use the next generation
+/// (RFC 8446 §4.6.3, §7.2). `request` asks the peer to update in return.
+pub fn sendKeyUpdate(self: *ClientHandshake, out: []u8, request: KeyUpdateRequest) SendError![]const u8 {
+    assert(self.state == .connected);
+    const msg = [_]u8{ @intFromEnum(HandshakeType.key_update), 0x00, 0x00, 0x01, @intFromEnum(request) };
+    const record = try self.tx.encrypt(.handshake, &msg, out);
+    self.tx = self.suite.ratchetClientKey();
+    return record;
+}
+
+/// Parse a KeyUpdate handshake message (4-byte header + 1-byte request).
+fn parseKeyUpdate(msg: []const u8) error{ UnexpectedEof, IllegalParameter }!KeyUpdateRequest {
+    if (msg.len != 5) return error.UnexpectedEof; // header(4) + request(1)
+    return std.enums.fromInt(KeyUpdateRequest, msg[4]) orelse error.IllegalParameter;
 }
 
 // RFC 8448 §3 raw handshake messages (4-byte handshake header included, no
@@ -625,6 +720,100 @@ test "ratchetClientKey: RFC 8446 §7.2 next application write key" {
         0x38, 0x79, 0xd8, 0x2f, 0x5f, 0x14, 0x05, 0x6e,
         0x62, 0x3f, 0x2c, 0xe5, 0xbf, 0xc6, 0x6f, 0xce,
     }, &rl.aead.aes128_gcm.data);
+}
+
+// Drive the RFC 8448 §3 handshake to connected; rx/tx carry application keys.
+fn rfc8448ConnectedClient() !ClientHandshake {
+    var hs: ClientHandshake = .init(rfc8448_client_secret_key);
+    hs.start(&rfc8448_client_hello);
+    try hs.processServerHello(&rfc8448_server_hello);
+    try hs.processFlight(rfc8448_server_flight, .{});
+    var out: [128]u8 = undefined;
+    _ = try hs.clientFinished(&out);
+    return hs;
+}
+
+test "receive: application data returns plaintext and resets the flood counter" {
+    var hs = try rfc8448ConnectedClient();
+    hs.post_handshake_count = 5; // pretend we saw some control messages
+
+    // The server's sending layer mirrors our rx (server app key, seq 0).
+    var server_tx = hs.rx;
+    var rec_buf: [128]u8 = undefined;
+    const app_record = try server_tx.encrypt(.application_data, "ping", &rec_buf);
+
+    var rx_buf: [128]u8 = undefined;
+    @memcpy(rx_buf[0..app_record.len], app_record);
+    var out: [64]u8 = undefined;
+    const ev = try hs.receive(rx_buf[0..app_record.len], &out);
+    try testing.expectEqualSlices(u8, "ping", ev.application_data);
+    try testing.expectEqual(@as(u8, 0), hs.post_handshake_count);
+}
+
+// RFC 8446 §4.6.3 — a server KeyUpdate(update_requested) must ratchet our
+// receive key and elicit our own KeyUpdate(update_not_requested), encrypted
+// under the old send key.
+test "receive: server KeyUpdate(update_requested) ratchets rx and responds" {
+    var hs = try rfc8448ConnectedClient();
+
+    // Server's sending layer (mirrors our rx at seq 0) and our pre-ratchet
+    // send-key mirror to decrypt the response. Capture the server's secret_0
+    // before receive() ratchets our rx, so we can advance it independently.
+    const server_secret_0 = hs.suite.sha256.server_app_secret;
+    var server_tx = hs.rx;
+    var client_send_mirror = hs.tx;
+
+    const ku = [_]u8{ 0x18, 0x00, 0x00, 0x01, 0x01 }; // KeyUpdate(update_requested)
+    var ku_buf: [64]u8 = undefined;
+    const ku_wire = try server_tx.encrypt(.handshake, &ku, &ku_buf);
+
+    var rx_buf: [64]u8 = undefined;
+    @memcpy(rx_buf[0..ku_wire.len], ku_wire);
+    var out: [64]u8 = undefined;
+    const ev = try hs.receive(rx_buf[0..ku_wire.len], &out);
+
+    // We responded with our own KeyUpdate, encrypted under the OLD send key.
+    const resp = ev.send;
+    var resp_buf: [64]u8 = undefined;
+    @memcpy(resp_buf[0..resp.len], resp);
+    const dec = try client_send_mirror.decrypt(resp_buf[0..resp.len]);
+    try testing.expectEqual(.handshake, dec.content_type);
+    try testing.expectEqualSlices(u8, &.{ 0x18, 0x00, 0x00, 0x01, 0x00 }, dec.content);
+
+    // rx ratcheted: a following server record under the next key decrypts.
+    // Advance the server's send secret independently (in lockstep with our rx).
+    const H = hkdf.HkdfSha256;
+    const server_secret_1 = H.nextTrafficSecret(server_secret_0);
+    var server_tx_1 = H.makeRecordLayer(.aes128_gcm, server_secret_1);
+    var app_buf: [64]u8 = undefined;
+    const app_wire = try server_tx_1.encrypt(.application_data, "after", &app_buf);
+    var app_rx: [64]u8 = undefined;
+    @memcpy(app_rx[0..app_wire.len], app_wire);
+    const ev2 = try hs.receive(app_rx[0..app_wire.len], &out);
+    try testing.expectEqualSlices(u8, "after", ev2.application_data);
+}
+
+test "receive: KeyUpdate flood is rejected" {
+    var hs = try rfc8448ConnectedClient();
+    var out: [64]u8 = undefined;
+
+    // Each iteration sends one KeyUpdate(update_not_requested) record. The
+    // server advances its send key after each, in lockstep with our rx ratchet;
+    // track the server's secret independently of hs.
+    const H = hkdf.HkdfSha256;
+    var server_secret = hs.suite.sha256.server_app_secret;
+    var i: usize = 0;
+    const result = while (i < max_post_handshake_messages + 1) : (i += 1) {
+        var server_tx = H.makeRecordLayer(.aes128_gcm, server_secret);
+        const ku = [_]u8{ 0x18, 0x00, 0x00, 0x01, 0x00 };
+        var ku_buf: [64]u8 = undefined;
+        const ku_wire = try server_tx.encrypt(.handshake, &ku, &ku_buf);
+        var rx_buf: [64]u8 = undefined;
+        @memcpy(rx_buf[0..ku_wire.len], ku_wire);
+        server_secret = H.nextTrafficSecret(server_secret);
+        _ = hs.receive(rx_buf[0..ku_wire.len], &out) catch |e| break e;
+    } else error.NoError;
+    try testing.expectEqual(error.TooManyKeyUpdates, result);
 }
 
 // RFC 8448 §3 encrypted server flight as a complete wire record (TLSCiphertext).
