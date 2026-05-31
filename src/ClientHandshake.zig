@@ -10,6 +10,7 @@ const testing = std.testing;
 const mem = std.mem;
 const base64 = std.base64.standard.Decoder;
 
+const aead = @import("aead.zig");
 const certificate = @import("certificate.zig");
 const client_hello = @import("client_hello.zig");
 const encrypted_extensions = @import("encrypted_extensions.zig");
@@ -112,6 +113,9 @@ pub const State = enum {
 const Suite = union(enum) {
     sha256: struct {
         transcript: Sha256,
+        // The negotiated AEAD (SHA-256 covers both AES-128-GCM and
+        // ChaCha20-Poly1305); set from the cipher suite at ServerHello.
+        aead: aead.Keys = .aes128_gcm,
         handshake_secret: hkdf.HkdfSha256.Prk = undefined,
         client_finished_key: hkdf.HkdfSha256.Prk = undefined,
         server_finished_key: hkdf.HkdfSha256.Prk = undefined,
@@ -191,8 +195,8 @@ const Suite = union(enum) {
 
                 return .{
                     .finished = fin,
-                    .tx = H.makeRecordLayer(.aes128_gcm, s.client_app_secret),
-                    .rx = H.makeRecordLayer(.aes128_gcm, s.server_app_secret),
+                    .tx = H.makeRecordLayer(s.aead, s.client_app_secret),
+                    .rx = H.makeRecordLayer(s.aead, s.server_app_secret),
                 };
             },
         }
@@ -204,7 +208,7 @@ const Suite = union(enum) {
         switch (self.*) {
             .sha256 => |*s| {
                 s.client_app_secret = hkdf.HkdfSha256.nextTrafficSecret(s.client_app_secret);
-                return hkdf.HkdfSha256.makeRecordLayer(.aes128_gcm, s.client_app_secret);
+                return hkdf.HkdfSha256.makeRecordLayer(s.aead, s.client_app_secret);
             },
         }
     }
@@ -215,7 +219,7 @@ const Suite = union(enum) {
         switch (self.*) {
             .sha256 => |*s| {
                 s.server_app_secret = hkdf.HkdfSha256.nextTrafficSecret(s.server_app_secret);
-                return hkdf.HkdfSha256.makeRecordLayer(.aes128_gcm, s.server_app_secret);
+                return hkdf.HkdfSha256.makeRecordLayer(s.aead, s.server_app_secret);
             },
         }
     }
@@ -242,8 +246,8 @@ const Suite = union(enum) {
                 s.server_finished_key = H.finishedKey(server_secret);
 
                 return .{
-                    .rx = H.makeRecordLayer(.aes128_gcm, server_secret),
-                    .tx = H.makeRecordLayer(.aes128_gcm, client_secret),
+                    .rx = H.makeRecordLayer(s.aead, server_secret),
+                    .tx = H.makeRecordLayer(s.aead, client_secret),
                 };
             },
         }
@@ -417,7 +421,13 @@ pub const ServerHelloError = server_hello.ParseError || error{
 pub fn processServerHello(self: *ClientHandshake, msg: []const u8) ServerHelloError!void {
     assert(self.state == .wait_sh);
     const sh = try server_hello.parse(msg);
-    if (sh.cipher_suite != .aes_128_gcm_sha256) return error.UnsupportedCipherSuite;
+    // Both SHA-256 suites use the sha256 arm; only the AEAD differs. SHA-384
+    // (aes_256_gcm_sha384) needs the second arm — not yet supported.
+    self.suite.sha256.aead = switch (sh.cipher_suite) {
+        .aes_128_gcm_sha256 => .aes128_gcm,
+        .chacha20_poly1305_sha256 => .chacha20_poly1305,
+        .aes_256_gcm_sha384 => return error.UnsupportedCipherSuite,
+    };
 
     self.suite.update(msg); // transcript now covers ClientHello || ServerHello
     const dhe = try x25519.sharedSecret(self.keypair.secret_key, sh.server_public_key);

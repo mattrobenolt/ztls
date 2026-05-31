@@ -10,84 +10,109 @@
 //! openssl's CertificateVerify against the presented leaf key but do not anchor
 //! to a trust store.
 const std = @import("std");
+const fs = std.fs;
+const mem = std.mem;
+const testing = std.testing;
+const Allocator = mem.Allocator;
+const Child = std.process.Child;
+const Thread = std.Thread;
+const crypto = std.crypto;
+const net = std.net;
+const heap = std.heap;
+const print = std.debug.print;
 
 const ztls = @import("ztls");
 
-const port = 14433;
+const base_port = 14433;
 const host = "127.0.0.1";
 
+// Suites the client supports today, each validated end-to-end against openssl.
+const suites = [_][]const u8{
+    "TLS_AES_128_GCM_SHA256",
+    "TLS_CHACHA20_POLY1305_SHA256",
+};
+
+var debug_allocator: heap.DebugAllocator(.{}) = .init;
+
 pub fn main() !void {
-    var gpa: std.heap.DebugAllocator(.{}) = .init;
-    defer _ = gpa.deinit();
-    const alloc = gpa.allocator();
+    defer _ = debug_allocator.deinit();
+    const gpa = debug_allocator.allocator();
 
-    var tmp = std.testing.tmpDir(.{});
+    var arena_allocator: heap.ArenaAllocator = .init(gpa);
+    defer arena_allocator.deinit();
+    const arena = arena_allocator.allocator();
+
+    var tmp = testing.tmpDir(.{});
     defer tmp.cleanup();
-    const dir = try tmp.dir.realpathAlloc(alloc, ".");
-    defer alloc.free(dir);
-    const cert_path = try std.fs.path.join(alloc, &.{ dir, "cert.pem" });
-    defer alloc.free(cert_path);
-    const key_path = try std.fs.path.join(alloc, &.{ dir, "key.pem" });
-    defer alloc.free(key_path);
+    const dir = try tmp.dir.realpathAlloc(arena, ".");
+    const cert_path = try fs.path.join(arena, &.{ dir, "cert.pem" });
+    const key_path = try fs.path.join(arena, &.{ dir, "key.pem" });
 
-    try genCert(alloc, cert_path, key_path);
+    try genCert(gpa, cert_path, key_path);
 
-    var server = try startServer(alloc, cert_path, key_path);
+    // A fresh port per suite avoids TIME_WAIT rebinding races between runs.
+    for (suites, 0..) |suite, i| {
+        try runSuite(arena, cert_path, key_path, suite, base_port + @as(u16, @intCast(i)));
+    }
+}
+
+fn runSuite(arena: Allocator, cert_path: []const u8, key_path: []const u8, suite: []const u8, port: u16) !void {
+    var server = try startServer(arena, cert_path, key_path, suite, port);
     defer _ = server.kill() catch {};
-
-    const stream = try connectWithRetry();
+    const stream = try connectWithRetry(port);
     defer stream.close();
-
+    print("[interop] {s}\n", .{suite});
     try interop(stream);
 }
 
-fn genCert(alloc: std.mem.Allocator, cert_path: []const u8, key_path: []const u8) !void {
-    var child = std.process.Child.init(&.{
+fn genCert(arena: Allocator, cert_path: []const u8, key_path: []const u8) !void {
+    var child = Child.init(&.{
         "openssl",                 "req",     "-x509",
         "-newkey",                 "ec",      "-pkeyopt",
         "ec_paramgen_curve:P-256", "-keyout", key_path,
         "-out",                    cert_path, "-days",
         "1",                       "-nodes",  "-subj",
         "/CN=localhost",
-    }, alloc);
+    }, arena);
     child.stdout_behavior = .Ignore;
     child.stderr_behavior = .Ignore;
     const term = try child.spawnAndWait();
     if (term != .Exited or term.Exited != 0) return error.CertGenFailed;
 }
 
-fn startServer(alloc: std.mem.Allocator, cert_path: []const u8, key_path: []const u8) !std.process.Child {
-    var child = std.process.Child.init(&.{
-        "openssl",                             "s_server",
-        "-tls1_3",                             "-ciphersuites",
-        "TLS_AES_128_GCM_SHA256",              "-key",
-        key_path,                              "-cert",
-        cert_path,                             "-port",
-        std.fmt.comptimePrint("{d}", .{port}), "-www",
+fn startServer(arena: Allocator, cert_path: []const u8, key_path: []const u8, suite: []const u8, port: u16) !Child {
+    const port_str = try std.fmt.allocPrint(arena, "{d}", .{port});
+    var child = Child.init(&.{
+        "openssl", "s_server",
+        "-tls1_3", "-ciphersuites",
+        suite,     "-key",
+        key_path,  "-cert",
+        cert_path, "-port",
+        port_str,  "-www",
         "-quiet",
-    }, alloc);
+    }, arena);
     child.stdout_behavior = .Ignore;
     child.stderr_behavior = .Ignore;
     try child.spawn();
     return child;
 }
 
-fn connectWithRetry() !std.net.Stream {
-    const addr = try std.net.Address.parseIp(host, port);
+fn connectWithRetry(port: u16) !net.Stream {
+    const addr: net.Address = try .parseIp(host, port);
     var attempts: usize = 0;
     while (attempts < 100) : (attempts += 1) {
-        return std.net.tcpConnectToAddress(addr) catch {
-            std.Thread.sleep(20 * std.time.ns_per_ms);
+        return net.tcpConnectToAddress(addr) catch {
+            Thread.sleep(20 * std.time.ns_per_ms);
             continue;
         };
     }
     return error.ServerNeverCameUp;
 }
 
-fn interop(stream: std.net.Stream) !void {
-    const kp = ztls.x25519.KeyPair.generate();
+fn interop(stream: net.Stream) !void {
+    const kp: ztls.x25519.KeyPair = .generate();
     var random: ztls.client_hello.Random = undefined;
-    std.crypto.random.bytes(&random.data);
+    crypto.random.bytes(&random.data);
 
     var hs: ztls.ClientHandshake = .init(kp);
 
@@ -118,7 +143,7 @@ fn interop(stream: std.net.Stream) !void {
             .application_data, .closed => return error.UnexpectedDuringHandshake,
         };
     }
-    std.debug.print("[interop] handshake completed against openssl s_server\n", .{});
+    print("[interop] handshake completed against openssl s_server\n", .{});
 
     // Request the s_server status page and read the response.
     try stream.writeAll(try hs.sendApplicationData("GET / HTTP/1.0\r\n\r\n", &out));
@@ -129,8 +154,8 @@ fn interop(stream: std.net.Stream) !void {
         if (n == 0) break; // peer closed the TCP connection
         rb.advance(n);
         while (try rb.next()) |record| switch (try hs.handleRecord(record, &out)) {
-            .application_data => |data| if (std.mem.startsWith(u8, data, "HTTP/1.0 200")) {
-                std.debug.print("[interop] decrypted s_server HTTP response — OK\n", .{});
+            .application_data => |data| if (mem.startsWith(u8, data, "HTTP/1.0 200")) {
+                print("[interop] decrypted s_server HTTP response — OK\n", .{});
                 return;
             },
             .write => |w| { // e.g. a KeyUpdate response

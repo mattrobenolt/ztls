@@ -170,10 +170,14 @@ fn Hkdf(comptime Hmac: type) type {
         }
 
         /// Derive both the write key and IV from a traffic secret and return
-        /// a ready-to-use RecordLayer.
-        pub fn makeRecordLayer(comptime key: aead.Keys, prk: Prk) RecordLayer {
+        /// a ready-to-use RecordLayer. `key` selects the AEAD at runtime (the
+        /// negotiated cipher suite), so a single arm serves all suites of its
+        /// hash (e.g. SHA-256 covers AES-128-GCM and ChaCha20-Poly1305).
+        pub fn makeRecordLayer(key: aead.Keys, prk: Prk) RecordLayer {
             return .{
-                .aead = @unionInit(aead.Aead, @tagName(key), trafficKey(key, prk)),
+                .aead = switch (key) {
+                    inline else => |k| @unionInit(aead.Aead, @tagName(k), trafficKey(k, prk)),
+                },
                 .iv = trafficIv(prk),
             };
         }
