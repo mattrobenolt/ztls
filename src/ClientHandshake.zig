@@ -63,14 +63,23 @@ pub const HandshakeReader = struct {
         return .{ .r = .init(buf) };
     }
 
-    /// Return the next handshake message, or null when the payload is drained.
-    /// Errors if a message header or body runs past the end of the buffer
-    /// (cross-record reassembly is not yet supported).
+    /// Return the next complete handshake message, or null when the payload is
+    /// drained. On UnexpectedEof, `r.pos` is restored to the start of the
+    /// partial message so the caller can retain exactly the unfinished suffix
+    /// for cross-record reassembly.
     pub fn next(self: *HandshakeReader) error{UnexpectedEof}!?Message {
         if (self.r.remaining().len == 0) return null;
         const begin = self.r.pos;
+        if (self.r.remaining().len < 4) {
+            self.r.pos = begin;
+            return error.UnexpectedEof;
+        }
         const msg_type = try self.r.read(u8);
         const len = try self.r.read(u24);
+        if (self.r.remaining().len < len) {
+            self.r.pos = begin;
+            return error.UnexpectedEof;
+        }
         _ = try self.r.readSlice(len);
         return .{ .type = @enumFromInt(msg_type), .raw = self.r.buf[begin..self.r.pos] };
     }
@@ -290,6 +299,10 @@ policy: certificate.Policy = .{},
 /// openssl sends each flight message in its own record). Sized for RSA-4096.
 leaf_pub_key: [max_leaf_pub_key]u8 = undefined,
 leaf_pub_key_len: usize = 0,
+/// Optional caller-owned storage for a handshake message that spans encrypted
+/// records. Empty means spanning messages are rejected with UnexpectedEof.
+handshake_buf: []u8 = &.{},
+handshake_len: usize = 0,
 /// Consecutive post-handshake messages seen with no intervening application
 /// data; reset by application data. Bounds KeyUpdate-flood DoS.
 post_handshake_count: u8 = 0,
@@ -314,6 +327,15 @@ pub fn completeWrite(self: *ClientHandshake) void {
 }
 
 pub const StartError = error{ BufferTooShort, ServerNameTooLong };
+
+/// Provide caller-owned storage for reassembling handshake messages that span
+/// encrypted records (large certificate chains, fragmented flights). Without
+/// this, a spanning message is rejected with UnexpectedEof. The storage must
+/// live at least until the handshake completes.
+pub fn useHandshakeBuffer(self: *ClientHandshake, storage: []u8) void {
+    assert(self.handshake_len == 0);
+    self.handshake_buf = storage;
+}
 
 /// Begin the handshake: encode a ClientHello (from the init keypair's public
 /// key), frame it as a plaintext record into `out`, absorb it into the
@@ -472,7 +494,7 @@ pub fn processServerHello(self: *ClientHandshake, msg: []const u8) ServerHelloEr
 /// (~525-byte DER) with margin; ECDSA P-256/P-384 are far smaller.
 const max_leaf_pub_key = 1024;
 
-pub const FlightError = error{ UnexpectedMessage, UnexpectedEof, CertificateKeyTooLarge } ||
+pub const FlightError = error{ UnexpectedMessage, UnexpectedEof, CertificateKeyTooLarge, HandshakeBufferTooShort } ||
     encrypted_extensions.ParseError ||
     certificate.AuthError ||
     finished.VerifyError;
@@ -495,21 +517,58 @@ pub fn processFlight(
     payload: []const u8,
     policy: certificate.Policy,
 ) FlightError!void {
+    if (self.handshake_len != 0) {
+        try self.appendHandshakeFragment(payload);
+        return self.processFlightBuffer(policy);
+    }
+    return self.processFlightBytes(payload, policy);
+}
+
+fn processFlightBytes(self: *ClientHandshake, payload: []const u8, policy: certificate.Policy) FlightError!void {
     var hr: HandshakeReader = .init(payload);
-    // State drives the loop: each prong consumes one message, advances
-    // self.state, and re-enters on it. self.state persists progress for
-    // resumption when the payload drains mid-flight (orelse return).
-    flight: switch (self.state) {
+    while (true) {
+        const msg = hr.next() catch |err| switch (err) {
+            error.UnexpectedEof => {
+                try self.stashHandshakeFragment(payload[hr.r.pos..]);
+                return;
+            },
+        } orelse return;
+        try self.processFlightMessage(msg, policy);
+        if (self.state == .send_finished) return;
+    }
+}
+
+fn processFlightBuffer(self: *ClientHandshake, policy: certificate.Policy) FlightError!void {
+    var hr: HandshakeReader = .init(self.handshake_buf[0..self.handshake_len]);
+    while (true) {
+        const msg = hr.next() catch |err| switch (err) {
+            error.UnexpectedEof => {
+                const partial = self.handshake_buf[hr.r.pos..self.handshake_len];
+                @memmove(self.handshake_buf[0..partial.len], partial);
+                self.handshake_len = partial.len;
+                return;
+            },
+        } orelse {
+            self.handshake_len = 0;
+            return;
+        };
+        try self.processFlightMessage(msg, policy);
+        if (self.state == .send_finished) {
+            self.handshake_len = 0;
+            return;
+        }
+    }
+}
+
+fn processFlightMessage(self: *ClientHandshake, msg: HandshakeReader.Message, policy: certificate.Policy) FlightError!void {
+    switch (self.state) {
         .wait_ee => {
-            const msg = try hr.next() orelse return;
             if (msg.type != .encrypted_extensions) return error.UnexpectedMessage;
             try encrypted_extensions.parse(msg.raw);
             self.suite.update(msg.raw);
             self.state = .wait_cert;
-            continue :flight self.state;
         },
         .wait_cert => {
-            const msg = try hr.next() orelse return;
             if (msg.type != .certificate) return error.UnexpectedMessage;
             // Extract and copy the leaf public key now; it must survive until
             // CertificateVerify, which may arrive in a later record.
@@ -519,28 +578,34 @@ pub fn processFlight(
             self.leaf_pub_key_len = pk.len;
             self.suite.update(msg.raw);
             self.state = .wait_cv;
-            continue :flight self.state;
         },
         .wait_cv => {
-            const msg = try hr.next() orelse return;
             if (msg.type != .certificate_verify) return error.UnexpectedMessage;
             try self.suite.verifyCertificate(msg.raw, self.leaf_pub_key[0..self.leaf_pub_key_len]);
             self.suite.update(msg.raw);
             self.state = .wait_finished;
-            continue :flight self.state;
         },
         .wait_finished => {
-            const msg = try hr.next() orelse return;
             if (msg.type != .finished) return error.UnexpectedMessage;
             try self.suite.verifyServerFinished(msg.raw);
             self.suite.update(msg.raw);
             self.state = .send_finished;
-            // Server flight is done; the client sends its Finished via
-            // clientFinished(). Stop driving the switch.
-            return;
         },
         else => return error.UnexpectedMessage,
     }
+}
+
+fn appendHandshakeFragment(self: *ClientHandshake, payload: []const u8) FlightError!void {
+    if (self.handshake_len + payload.len > self.handshake_buf.len) return error.HandshakeBufferTooShort;
+    @memcpy(self.handshake_buf[self.handshake_len..][0..payload.len], payload);
+    self.handshake_len += payload.len;
+}
+
+fn stashHandshakeFragment(self: *ClientHandshake, fragment: []const u8) FlightError!void {
+    if (self.handshake_buf.len == 0) return error.UnexpectedEof;
+    if (fragment.len > self.handshake_buf.len) return error.HandshakeBufferTooShort;
+    @memcpy(self.handshake_buf[0..fragment.len], fragment);
+    self.handshake_len = fragment.len;
 }
 
 /// Errors from encrypting an outbound record into the caller's buffer.
@@ -829,6 +894,34 @@ test "processFlight: RFC 8448 §3 full server flight to connected" {
 // openssl s_server sends each flight message in its own record, so processFlight
 // is called once per message with state persisting across calls. The leaf
 // public key extracted at Certificate must survive to CertificateVerify.
+test "processFlight: handshake message spanning records needs buffer" {
+    var hs: ClientHandshake = .init(rfc8448_client_keypair);
+    hs.injectClientHello(&rfc8448_client_hello);
+    try hs.processServerHello(&rfc8448_server_hello);
+
+    var flight_buf: [1024]u8 = undefined;
+    const flight = rfc8448Fixture("server_flight.b64", &flight_buf);
+    try testing.expectError(error.UnexpectedEof, hs.processFlight(flight[0..2], .{}));
+}
+
+// RFC 8446 §5.1 — handshake messages MAY be split across records. Caller-owned
+// reassembly storage keeps ztls allocation-free while supporting large flights.
+test "processFlight: reassembles handshake message split across records" {
+    var hs: ClientHandshake = .init(rfc8448_client_keypair);
+    var reassembly: [1024]u8 = undefined;
+    hs.useHandshakeBuffer(&reassembly);
+    hs.injectClientHello(&rfc8448_client_hello);
+    try hs.processServerHello(&rfc8448_server_hello);
+
+    var flight_buf: [1024]u8 = undefined;
+    const flight = rfc8448Fixture("server_flight.b64", &flight_buf);
+    try hs.processFlight(flight[0..2], .{});
+    try testing.expectEqual(@as(usize, 2), hs.handshake_len);
+    try hs.processFlight(flight[2..], .{});
+    try testing.expectEqual(@as(usize, 0), hs.handshake_len);
+    try testing.expectEqual(.send_finished, hs.state);
+}
+
 test "processFlight: RFC 8448 §3 flight split one message per record" {
     var hs: ClientHandshake = .init(rfc8448_client_keypair);
     hs.injectClientHello(&rfc8448_client_hello);
