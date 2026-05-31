@@ -21,12 +21,21 @@ pub const ParseError = error{
     InvalidHandshakeType,
     /// A field contained an unrecognised enum value.
     InvalidEnumTag,
+    /// Server selected HelloRetryRequest; ztls does not implement the retry path yet.
+    HelloRetryRequest,
     /// supported_versions extension does not include TLS 1.3 (0x0304).
     UnsupportedTlsVersion,
     /// key_share extension uses a group other than x25519, or wrong key length.
     UnsupportedKeyShareGroup,
     /// A required extension (supported_versions or key_share) was absent.
     MissingExtension,
+};
+
+const hello_retry_request_random = [_]u8{
+    0xcf, 0x21, 0xad, 0x74, 0xe5, 0x9a, 0x61, 0x11,
+    0xbe, 0x1d, 0x8c, 0x02, 0x1e, 0x65, 0xb8, 0x91,
+    0xc2, 0xa2, 0x11, 0x16, 0x7a, 0xbb, 0x8c, 0x5e,
+    0x07, 0x9e, 0x09, 0xe2, 0xc8, 0xa8, 0x33, 0x9c,
 };
 
 /// Parse a ServerHello handshake message.
@@ -43,9 +52,13 @@ pub fn parse(msg: []const u8) ParseError!ServerHello {
     if (handshake_type != 0x02) return error.InvalidHandshakeType;
     try r.skip(3); // body length — we trust the record layer
 
-    // ServerHello body (RFC 8446 §4.1.3)
+    // ServerHello body (RFC 8446 §4.1.3). HelloRetryRequest is encoded as a
+    // ServerHello with a fixed Random value; detect it explicitly so callers
+    // get a clean unsupported-feature error instead of a misleading key_share
+    // parse failure. RFC 8446 §4.1.3.
     try r.skip(2); // legacy_version
-    try r.skip(32); // random
+    const random = try r.readSlice(32);
+    if (std.mem.eql(u8, random, &hello_retry_request_random)) return error.HelloRetryRequest;
 
     const session_id_len = try r.read(u8);
     try r.skip(session_id_len); // legacy_session_id_echo
@@ -125,6 +138,12 @@ test "parse: wrong handshake type" {
 
 test "parse: truncated message" {
     try testing.expectError(error.UnexpectedEof, parse(server_hello_rfc8448[0..43]));
+}
+
+test "parse: rejects HelloRetryRequest" {
+    var msg = server_hello_rfc8448[0..server_hello_rfc8448.len].*;
+    @memcpy(msg[6..][0..32], &hello_retry_request_random);
+    try testing.expectError(error.HelloRetryRequest, parse(&msg));
 }
 
 test "parse: missing extensions" {
