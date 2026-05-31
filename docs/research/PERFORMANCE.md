@@ -89,3 +89,22 @@ The first `zig build bench` should be deliberately boring:
 
 After that exists, add handshake replay and parser/framing scenarios as separate
 named benchmarks instead of stuffing everything into one timing loop.
+
+## Profiling tools
+
+The devshell includes Linux-only `perf` and `valgrind`/`callgrind_annotate`.
+Use wall-time benchmark output to choose a suspicious scenario, then profile the
+compiled benchmark binary rather than adding timing probes to library code.
+
+Typical local flow:
+
+```sh
+zig build bench
+perf record --call-graph dwarf ./zig-out/bin/record_protection_bench
+perf report
+```
+
+For instruction counts, prefer a smaller filtered benchmark mode before running
+callgrind over the full suite; callgrind is deterministic but slow. The current
+harness does not yet expose filtering, so adding `--filter`/`--suite` flags is
+the next step before serious instruction-count tracking.

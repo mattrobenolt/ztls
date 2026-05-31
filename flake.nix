@@ -29,20 +29,29 @@
             inherit system;
             overlays = [ mattware.overlays.default ];
           };
+          inherit (pkgs) lib stdenv;
         in
         {
           devShells.default = pkgs.mkShell {
-            packages = with pkgs; [
-              just
-              openssl
-              pkg-config
-              python3
-              txtar
-              zig_0_15
-              zigdoc
-              ziglint
-              zls_0_15
-            ];
+            packages =
+              (with pkgs; [
+                just
+                openssl
+                pkg-config
+                python3
+                txtar
+                zig_0_15
+                zigdoc
+                ziglint
+                zls_0_15
+              ])
+              ++ lib.optionals stdenv.isLinux (
+                with pkgs;
+                [
+                  perf
+                  valgrind
+                ]
+              );
 
             shellHook = ''
               unset NIX_CFLAGS_COMPILE
