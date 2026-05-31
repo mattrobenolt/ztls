@@ -306,6 +306,10 @@ handshake_len: usize = 0,
 /// Consecutive post-handshake messages seen with no intervening application
 /// data; reset by application data. Bounds KeyUpdate-flood DoS.
 post_handshake_count: u8 = 0,
+/// ALPN protocols offered in ClientHello. Caller-owned, must live until start().
+alpn_protocols: client_hello.AlpnProtocols = &.{},
+selected_alpn: [255]u8 = undefined,
+selected_alpn_len: u8 = 0,
 
 /// Start a client handshake with our ephemeral X25519 keypair. The negotiated
 /// suite is hardcoded to SHA-256 for now; true suite selection (and re-hashing
@@ -326,7 +330,7 @@ pub fn completeWrite(self: *ClientHandshake) void {
     self.pending_write = false;
 }
 
-pub const StartError = error{ BufferTooShort, ServerNameTooLong };
+pub const StartError = error{ BufferTooShort, ServerNameTooLong } || client_hello.AlpnError;
 
 /// Provide caller-owned storage for reassembling handshake messages that span
 /// encrypted records (large certificate chains, fragmented flights). Without
@@ -335,6 +339,20 @@ pub const StartError = error{ BufferTooShort, ServerNameTooLong };
 pub fn useHandshakeBuffer(self: *ClientHandshake, storage: []u8) void {
     assert(self.handshake_len == 0);
     self.handshake_buf = storage;
+}
+
+/// Offer ALPN protocols in ClientHello. Each protocol must be 1..255 bytes.
+/// The slice is caller-owned and only needs to live until start() encodes it.
+pub fn offerAlpn(self: *ClientHandshake, protocols: client_hello.AlpnProtocols) void {
+    assert(self.state == .start);
+    self.alpn_protocols = protocols;
+}
+
+/// The ALPN protocol selected by the server, if any. Stable after the
+/// EncryptedExtensions message is processed.
+pub fn selectedAlpnProtocol(self: *const ClientHandshake) ?[]const u8 {
+    if (self.selected_alpn_len == 0) return null;
+    return self.selected_alpn[0..self.selected_alpn_len];
 }
 
 /// Begin the handshake: encode a ClientHello (from the init keypair's public
@@ -350,7 +368,7 @@ pub fn start(
     assert(self.state == .start);
     if (out.len < frame.header_len) return error.BufferTooShort;
     if (self.policy.host_name == null) self.policy.host_name = server_name;
-    const ch = try client_hello.encode(out[frame.header_len..], random, .init(self.keypair.public_key), server_name);
+    const ch = try client_hello.encode(out[frame.header_len..], random, .init(self.keypair.public_key), server_name, self.alpn_protocols);
     out[0..frame.header_len].* = mem.toBytes(frame.Header.init(.handshake, @intCast(ch.len)));
     self.injectClientHello(ch);
     self.pending_write = true;
@@ -592,7 +610,11 @@ fn processFlightMessage(self: *ClientHandshake, msg: HandshakeReader.Message, po
     switch (self.state) {
         .wait_ee => {
             if (msg.type != .encrypted_extensions) return error.UnexpectedMessage;
-            try encrypted_extensions.parse(msg.raw);
+            const ee = try encrypted_extensions.parse(msg.raw, self.alpn_protocols);
+            if (ee.alpn_protocol) |protocol| {
+                @memcpy(self.selected_alpn[0..protocol.len], protocol);
+                self.selected_alpn_len = @intCast(protocol.len);
+            }
             self.suite.update(msg.raw);
             self.state = .wait_cert;
         },
@@ -909,6 +931,38 @@ fn rfc8448Fixture(name: []const u8, out: []u8) []u8 {
 // through-CertificateVerify transcript — all against genuine RFC 8448 §3 bytes.
 // The default policy (.{}) skips chain anchoring; the CV signature check still
 // runs and passes because §3's cert and CV are internally consistent.
+test "processFlight: stores selected ALPN" {
+    var hs: ClientHandshake = .init(rfc8448_client_keypair);
+    hs.offerAlpn(&.{ "h2", "http/1.1" });
+    hs.injectClientHello(&rfc8448_client_hello);
+    try hs.processServerHello(&rfc8448_server_hello);
+
+    const ee = [_]u8{
+        0x08, 0x00, 0x00, 0x0b,
+        0x00, 0x09, 0x00, 0x10,
+        0x00, 0x05, 0x00, 0x03,
+        0x02, 'h',  '2',
+    };
+    try hs.processFlight(&ee, .{});
+    try testing.expectEqualStrings("h2", hs.selectedAlpnProtocol().?);
+    try testing.expectEqual(.wait_cert, hs.state);
+}
+
+test "processFlight: rejects unoffered ALPN" {
+    var hs: ClientHandshake = .init(rfc8448_client_keypair);
+    hs.offerAlpn(&.{"http/1.1"});
+    hs.injectClientHello(&rfc8448_client_hello);
+    try hs.processServerHello(&rfc8448_server_hello);
+
+    const ee = [_]u8{
+        0x08, 0x00, 0x00, 0x0b,
+        0x00, 0x09, 0x00, 0x10,
+        0x00, 0x05, 0x00, 0x03,
+        0x02, 'h',  '2',
+    };
+    try testing.expectError(error.UnofferedAlpnProtocol, hs.processFlight(&ee, .{}));
+}
+
 test "processFlight: RFC 8448 §3 full server flight to connected" {
     var hs: ClientHandshake = .init(rfc8448_client_keypair);
     hs.injectClientHello(&rfc8448_client_hello);

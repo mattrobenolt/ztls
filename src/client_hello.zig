@@ -46,13 +46,35 @@ const ext_supported_groups_len = ext_header_len + 2 + 2;
 const ext_sig_algs_len = ext_header_len + 2 + sig_scheme_count * 2;
 const ext_key_share_len = ext_header_len + 2 + 2 + 2 + 32;
 
+pub const AlpnProtocols = []const []const u8;
+
+pub const AlpnError = error{ TooManyAlpnBytes, EmptyAlpnProtocol, AlpnProtocolTooLong };
+
+fn alpnExtDataLen(protocols: AlpnProtocols) AlpnError!u16 {
+    var list_len: usize = 0;
+    for (protocols) |protocol| {
+        if (protocol.len == 0) return error.EmptyAlpnProtocol;
+        if (protocol.len > 255) return error.AlpnProtocolTooLong;
+        list_len += 1 + protocol.len;
+    }
+    if (list_len > std.math.maxInt(u16) - 2) return error.TooManyAlpnBytes;
+    return @intCast(2 + list_len);
+}
+
+fn alpnExtLen(protocols: AlpnProtocols) AlpnError!u16 {
+    const data_len = try alpnExtDataLen(protocols);
+    return ext_header_len + data_len;
+}
+
 fn sniExtLen(name: []const u8) u16 {
     return ext_header_len + sni_overhead + @as(u16, @intCast(name.len));
 }
 
-fn extensionsLen(server_name: ?[]const u8) u16 {
+fn extensionsLen(server_name: ?[]const u8, alpn_protocols: AlpnProtocols) AlpnError!u16 {
     const sni: u16 = if (server_name) |n| sniExtLen(n) else 0;
+    const alpn: u16 = if (alpn_protocols.len == 0) 0 else try alpnExtLen(alpn_protocols);
     const total = sni +
+        alpn +
         ext_supported_versions_len +
         ext_supported_groups_len +
         ext_sig_algs_len +
@@ -61,8 +83,8 @@ fn extensionsLen(server_name: ?[]const u8) u16 {
     return @intCast(total);
 }
 
-pub fn encodedLen(server_name: ?[]const u8) usize {
-    return handshake_header_len + body_fixed_len + extensionsLen(server_name);
+pub fn encodedLen(server_name: ?[]const u8, alpn_protocols: AlpnProtocols) AlpnError!usize {
+    return handshake_header_len + body_fixed_len + try extensionsLen(server_name, alpn_protocols);
 }
 
 /// Encode a ClientHello handshake message into `out`.
@@ -77,16 +99,19 @@ pub fn encode(
     random: Random,
     public_key: x25519.PublicKey,
     server_name: ?[]const u8,
-) error{ BufferTooShort, ServerNameTooLong }![]u8 {
+    alpn_protocols: AlpnProtocols,
+) (error{ BufferTooShort, ServerNameTooLong } || AlpnError)![]u8 {
     // RFC 6066 §3: HostName is a DNS name, max 253 octets.
     if (server_name) |name| if (name.len > 253) return error.ServerNameTooLong;
-    if (out.len < encodedLen(server_name)) return error.BufferTooShort;
+    const ext_len = try extensionsLen(server_name, alpn_protocols);
+    const encoded_len = handshake_header_len + body_fixed_len + ext_len;
+    if (out.len < encoded_len) return error.BufferTooShort;
 
     var w: wire.Writer = .init(out);
 
     // Handshake header (RFC 8446 §4)
     w.append(u8, 0x01); // client_hello
-    w.append(u24, @intCast(body_fixed_len + extensionsLen(server_name)));
+    w.append(u24, @intCast(body_fixed_len + ext_len));
 
     // ClientHello body (RFC 8446 §4.1.2)
     w.append(u16, legacy_version);
@@ -96,7 +121,7 @@ pub fn encode(
     inline for (std.meta.tags(CipherSuite)) |cs| w.append(CipherSuite, cs);
     w.append(u8, 0x01); // legacy_compression_methods length
     w.append(u8, 0x00); // no compression
-    w.append(u16, extensionsLen(server_name));
+    w.append(u16, ext_len);
 
     // server_name (RFC 8446 §4.2, RFC 6066 §3)
     if (server_name) |name| {
@@ -110,6 +135,18 @@ pub fn encode(
         w.append(u8, 0x00); // NameType: host_name
         w.append(u16, name_len);
         w.appendSlice(name);
+    }
+
+    // application_layer_protocol_negotiation (RFC 7301 §3.1)
+    if (alpn_protocols.len != 0) {
+        const ext_data_len = try alpnExtDataLen(alpn_protocols);
+        w.append(u16, 0x0010);
+        w.append(u16, ext_data_len);
+        w.append(u16, ext_data_len - 2);
+        for (alpn_protocols) |protocol| {
+            w.append(u8, @intCast(protocol.len));
+            w.appendSlice(protocol);
+        }
     }
 
     // supported_versions (RFC 8446 §4.2.1)
@@ -143,13 +180,13 @@ pub fn encode(
 
 test "encode: size matches encodedLen" {
     var buf: [512]u8 = undefined;
-    const encoded = try encode(&buf, .zero, .zero, "server");
-    try testing.expectEqual(encodedLen("server"), encoded.len);
+    const encoded = try encode(&buf, .zero, .zero, "server", &.{});
+    try testing.expectEqual(try encodedLen("server", &.{}), encoded.len);
 }
 
 test "encode: handshake type and legacy version" {
     var buf: [512]u8 = undefined;
-    const encoded = try encode(&buf, .zero, .zero, null);
+    const encoded = try encode(&buf, .zero, .zero, null, &.{});
     try testing.expectEqual(@as(u8, 0x01), encoded[0]);
     try testing.expectEqual(@as(u8, 0x03), encoded[4]);
     try testing.expectEqual(@as(u8, 0x03), encoded[5]);
@@ -157,7 +194,7 @@ test "encode: handshake type and legacy version" {
 
 test "encode: cipher suites" {
     var buf: [512]u8 = undefined;
-    const encoded = try encode(&buf, .zero, .zero, null);
+    const encoded = try encode(&buf, .zero, .zero, null, &.{});
     const cs_offset = 39; // header(4) + version(2) + random(32) + session_id(1)
     try testing.expectEqualSlices(u8, &.{ 0x00, 0x06 }, encoded[cs_offset..][0..2]);
     try testing.expectEqualSlices(u8, &.{ 0x13, 0x01 }, encoded[cs_offset + 2 ..][0..2]);
@@ -173,7 +210,7 @@ test "encode: key_share contains public key" {
         0x54, 0x13, 0x69, 0x1e, 0x52, 0x9a, 0xaf, 0x2c,
     });
     var buf: [512]u8 = undefined;
-    const encoded = try encode(&buf, .zero, key, null);
+    const encoded = try encode(&buf, .zero, key, null, &.{});
     var found = false;
     var i: usize = 0;
     while (i + 1 < encoded.len) : (i += 1) {
@@ -188,7 +225,7 @@ test "encode: key_share contains public key" {
 
 test "encode: SNI present when server_name set" {
     var buf: [512]u8 = undefined;
-    const encoded = try encode(&buf, .zero, .zero, "example.com");
+    const encoded = try encode(&buf, .zero, .zero, "example.com", &.{});
     var found = false;
     var i: usize = 0;
     while (i + 1 < encoded.len) : (i += 1) {
@@ -202,18 +239,39 @@ test "encode: SNI present when server_name set" {
 
 test "encode: SNI absent when server_name is null" {
     var buf: [512]u8 = undefined;
-    const with = try encode(&buf, .zero, .zero, "example.com");
-    const without = try encode(&buf, .zero, .zero, null);
+    const with = try encode(&buf, .zero, .zero, "example.com", &.{});
+    const without = try encode(&buf, .zero, .zero, null, &.{});
     try testing.expect(with.len > without.len);
+}
+
+test "encode: ALPN present when protocols set" {
+    var buf: [512]u8 = undefined;
+    const encoded = try encode(&buf, .zero, .zero, null, &.{ "h2", "http/1.1" });
+    var found = false;
+    var i: usize = 0;
+    while (i + 1 < encoded.len) : (i += 1) {
+        if (encoded[i] == 0x00 and encoded[i + 1] == 0x10) {
+            try testing.expectEqualSlices(u8, &.{ 0x00, 0x0e, 0x00, 0x0c, 0x02, 'h', '2', 0x08 }, encoded[i + 2 ..][0..8]);
+            found = true;
+            break;
+        }
+    }
+    try testing.expect(found);
+}
+
+test "encode: rejects invalid ALPN protocols" {
+    var buf: [512]u8 = undefined;
+    try testing.expectError(error.EmptyAlpnProtocol, encode(&buf, .zero, .zero, null, &.{""}));
+    try testing.expectError(error.AlpnProtocolTooLong, encode(&buf, .zero, .zero, null, &.{"a" ** 256}));
 }
 
 test "encode: buffer too short" {
     var buf: [10]u8 = undefined;
-    try testing.expectError(error.BufferTooShort, encode(&buf, .zero, .zero, null));
+    try testing.expectError(error.BufferTooShort, encode(&buf, .zero, .zero, null, &.{}));
 }
 
 test "encode: server_name too long" {
     var buf: [512]u8 = undefined;
     const long_name = "a" ** 254;
-    try testing.expectError(error.ServerNameTooLong, encode(&buf, .zero, .zero, long_name));
+    try testing.expectError(error.ServerNameTooLong, encode(&buf, .zero, .zero, long_name, &.{}));
 }

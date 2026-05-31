@@ -44,6 +44,7 @@ pub fn main() !void {
         random,
         .init(kp.public_key),
         "server",
+        &.{},
     );
     print("ClientHello: {} bytes\n", .{client_hello.len});
 

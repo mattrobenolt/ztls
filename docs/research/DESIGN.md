@@ -231,6 +231,7 @@ Key consumer-facing primitives:
 var hs: ztls.ClientHandshake = .init(keypair);
 var reassembly: [32 * 1024]u8 = undefined;
 hs.useHandshakeBuffer(&reassembly); // optional; supports handshake messages spanning records
+hs.offerAlpn(&.{ "h2", "http/1.1" }); // optional; copied into ClientHello
 
 const client_hello_wire = try hs.start(&out, random, "example.com");
 // write client_hello_wire to the transport, then:
@@ -244,6 +245,7 @@ while (!hs.isConnected()) {
     }
 }
 
+const selected_alpn = hs.selectedAlpnProtocol();
 const app_wire = try hs.sendApplicationData(plaintext, &out);
 hs.completeWrite();
 
@@ -404,5 +406,8 @@ Next benchmark target: add comparison/profiling workflows around the replay and 
    Option (c) is most flexible and keeps scope tight. Mandatory for security
    but not for the protocol machinery itself.
 
-6. **SNI and ALPN**: These are just extensions in ClientHello/EncryptedExtensions.
-   Should be supported from the start since basically everyone needs them.
+6. **SNI and ALPN**: SNI is supported and also seeds hostname verification by
+   default. ALPN is supported through caller-owned offered protocol slices;
+   ztls encodes ClientHello, validates the server's EncryptedExtensions
+   selection against the offered list, and copies the selected protocol into
+   `ClientHandshake` so the result does not borrow the decrypted record buffer.
