@@ -97,34 +97,37 @@ pub fn main() !void {
     const server_flight_record = try fixture(fba.allocator(), "server_flight_record.b64", &flight_buf);
 
     var hs: ztls.ClientHandshake = .init(client_secret_key);
-    hs.start(&client_hello);
-    print("[client] ClientHello sent ({} bytes)        → state={s}\n", .{ client_hello.len, @tagName(hs.state) });
+    // We replay the fixed §3 ClientHello (so the transcript matches the trace),
+    // so inject it rather than encoding a fresh one via start().
+    hs.injectClientHello(&client_hello);
+    print("[client] ClientHello sent ({} bytes)          → state={s}\n", .{ client_hello.len, @tagName(hs.state) });
 
     var out: [256]u8 = undefined;
 
+    // Each server record goes through the one inbound entry point, handleRecord.
     var sh = server_hello_record;
-    _ = try hs.processRecord(&sh, &out);
-    print("[server] ServerHello                        → state={s}\n", .{@tagName(hs.state)});
+    _ = try hs.handleRecord(&sh, &out);
+    print("[server] ServerHello                          → state={s}\n", .{@tagName(hs.state)});
 
     var ccs = ccs_record;
-    _ = try hs.processRecord(&ccs, &out);
-    print("[server] ChangeCipherSpec (discarded)       → state={s}\n", .{@tagName(hs.state)});
+    _ = try hs.handleRecord(&ccs, &out);
+    print("[server] ChangeCipherSpec (discarded)         → state={s}\n", .{@tagName(hs.state)});
 
-    const client_finished = (try hs.processRecord(server_flight_record, &out)) orelse return error.NoFinished;
+    const ev = try hs.handleRecord(server_flight_record, &out);
     print("[server] EncryptedExtensions/Cert/CV/Finished → state={s}\n", .{@tagName(hs.state)});
-    print("[client] Finished sent ({} wire bytes)\n", .{client_finished.len});
+    print("[client] Finished sent ({} wire bytes)\n", .{ev.write.len});
 
-    if (hs.state != .connected) return error.HandshakeIncomplete;
+    if (!hs.isConnected()) return error.HandshakeIncomplete;
     print("\n=== handshake complete — application keys installed ===\n\n", .{});
 
-    // Application data round-trip with the negotiated keys. tx is our client
-    // application write key; mirror it to stand in for the peer's read side.
+    // Application data round-trip with the negotiated keys. Capture a mirror of
+    // our send layer to stand in for the peer's read side.
     var peer = hs.tx;
 
     const message = "Hello from ztls!";
     var app_out: [128]u8 = undefined;
-    const record = try hs.tx.encrypt(.application_data, message, &app_out);
-    print("[client] encrypted {} bytes                  → {} wire bytes\n", .{ message.len, record.len });
+    const record = try hs.sendApplicationData(message, &app_out);
+    print("[client] encrypted {} bytes                    → {} wire bytes\n", .{ message.len, record.len });
 
     var dec_buf: [128]u8 = undefined;
     @memcpy(dec_buf[0..record.len], record);

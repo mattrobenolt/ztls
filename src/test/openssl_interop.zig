@@ -10,6 +10,7 @@
 //! openssl's CertificateVerify against the presented leaf key but do not anchor
 //! to a trust store.
 const std = @import("std");
+
 const ztls = @import("ztls");
 
 const port = 14433;
@@ -83,86 +84,53 @@ fn connectWithRetry() !std.net.Stream {
     return error.ServerNeverCameUp;
 }
 
-const Reader = struct {
-    stream: std.net.Stream,
-    buf: [2 * ztls.frame.max_ciphertext_len]u8 = undefined,
-    pos: usize = 0, // start of unconsumed data
-    filled: usize = 0, // end of valid data
-
-    /// Return one complete TLS record (header + fragment) as a mutable slice
-    /// into `buf`, reading from the socket as needed. The slice stays valid
-    /// until the next call (the caller decrypts it in place before then).
-    fn next(self: *Reader) ![]u8 {
-        while (true) {
-            const avail = self.buf[self.pos..self.filled];
-            if (avail.len >= ztls.frame.header_len) {
-                const hdr = try ztls.frame.parseHeader(avail);
-                const total = ztls.frame.header_len + hdr.length();
-                if (avail.len >= total) {
-                    defer self.pos += total;
-                    return avail[0..total];
-                }
-            }
-            // Need more data. Compact the unconsumed tail to the front first —
-            // the previously returned record (before pos) is done with.
-            if (self.pos > 0) {
-                std.mem.copyForwards(u8, self.buf[0..], self.buf[self.pos..self.filled]);
-                self.filled -= self.pos;
-                self.pos = 0;
-            }
-            const n = try self.stream.read(self.buf[self.filled..]);
-            if (n == 0) return error.ServerClosed;
-            self.filled += n;
-        }
-    }
-};
-
 fn interop(stream: std.net.Stream) !void {
     const kp = ztls.x25519.KeyPair.generate();
     var random: ztls.client_hello.Random = undefined;
     std.crypto.random.bytes(&random.data);
 
-    // Encode ClientHello and frame it as a plaintext handshake record.
-    var ch_buf: [512]u8 = undefined;
-    const ch = try ztls.client_hello.encode(&ch_buf, random, .init(kp.public_key), "localhost");
-
-    var ch_rec: [512 + ztls.frame.header_len]u8 = undefined;
-    ch_rec[0..ztls.frame.header_len].* = std.mem.toBytes(ztls.frame.Header.init(.handshake, @intCast(ch.len)));
-    @memcpy(ch_rec[ztls.frame.header_len..][0..ch.len], ch);
-    try stream.writeAll(ch_rec[0 .. ztls.frame.header_len + ch.len]);
-
     var hs: ztls.ClientHandshake = .init(kp.secret_key);
-    hs.start(ch);
 
-    var reader: Reader = .{ .stream = stream };
-    var out: [512]u8 = undefined;
+    // `out` holds records we emit (ClientHello, Finished, app data); the engine
+    // owns framing, so we just write what it returns. `storage` backs the
+    // record-framing buffer that turns the byte stream into whole records.
+    var out: [1024]u8 = undefined;
+    var storage: [ztls.RecordBuffer.recommended_storage]u8 = undefined;
+    var rb: ztls.RecordBuffer = .init(&storage);
 
-    // Handshake: feed records until the engine reports connected.
-    while (hs.state != .connected) {
-        const record = try reader.next();
-        if (try hs.processRecord(record, &out)) |to_send| try stream.writeAll(to_send);
+    // ClientHello.
+    try stream.writeAll(try hs.start(&out, .init(kp.public_key), random, "localhost"));
+
+    // Drive the handshake: read bytes, pull whole records, feed the engine,
+    // send whatever it hands back.
+    while (!hs.isConnected()) {
+        const n = try stream.read(rb.writable());
+        if (n == 0) return error.ServerClosed;
+        rb.advance(n);
+        while (try rb.next()) |record| switch (try hs.handleRecord(record, &out)) {
+            .write => |w| try stream.writeAll(w),
+            .none => {},
+            .application_data, .closed => return error.UnexpectedDuringHandshake,
+        };
     }
     std.debug.print("[interop] handshake completed against openssl s_server\n", .{});
 
-    // Application data: request the s_server status page and read the response.
-    const request = "GET / HTTP/1.0\r\n\r\n";
-    var req_rec: [request.len + ztls.RecordLayer.overhead]u8 = undefined;
-    try stream.writeAll(try hs.tx.encrypt(.application_data, request, &req_rec));
+    // Request the s_server status page and read the response.
+    try stream.writeAll(try hs.sendApplicationData("GET / HTTP/1.0\r\n\r\n", &out));
 
-    var got_http = false;
-    while (!got_http) {
-        const record = reader.next() catch |e| switch (e) {
-            error.ServerClosed => break,
-            else => return e,
-        };
-        switch (try hs.receive(record, &out)) {
-            .application_data => |data| {
-                if (std.mem.startsWith(u8, data, "HTTP/1.0 200")) got_http = true;
+    while (true) {
+        const n = stream.read(rb.writable()) catch break;
+        if (n == 0) break;
+        rb.advance(n);
+        while (try rb.next()) |record| switch (try hs.handleRecord(record, &out)) {
+            .application_data => |data| if (std.mem.startsWith(u8, data, "HTTP/1.0 200")) {
+                std.debug.print("[interop] decrypted s_server HTTP response — OK\n", .{});
+                return;
             },
+            .write => |w| try stream.writeAll(w), // e.g. a KeyUpdate response
+            .none => {},
             .closed => break,
-            .none, .send => {}, // NewSessionTicket etc.
-        }
+        };
     }
-    if (!got_http) return error.NoHttpResponse;
-    std.debug.print("[interop] decrypted s_server HTTP response — OK\n", .{});
+    return error.NoHttpResponse;
 }
