@@ -44,6 +44,24 @@ pub fn build(b: *std.Build) void {
     const interop_step = b.step("test-openssl", "Run the openssl s_server interop test");
     interop_step.dependOn(&run_interop.step);
 
+    const bench_mod = b.addModule("ztls_bench", .{
+        .root_source_file = b.path("src/root.zig"),
+        .target = target,
+        .optimize = .ReleaseFast,
+    });
+    const bench_exe = b.addExecutable(.{
+        .name = "record_protection_bench",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("bench/record_protection.zig"),
+            .target = target,
+            .optimize = .ReleaseFast,
+            .imports = &.{.{ .name = "ztls", .module = bench_mod }},
+        }),
+    });
+    const run_bench = b.addRunArtifact(bench_exe);
+    const bench_step = b.step("bench", "Run performance benchmarks");
+    bench_step.dependOn(&run_bench.step);
+
     const examples = [_][]const u8{
         "full_handshake",
         "handshake_keys",
