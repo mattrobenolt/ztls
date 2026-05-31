@@ -12,12 +12,12 @@ pub fn main() !void {
     // In a real TLS connection, key and IV are derived from the handshake
     // key schedule. Here we just pick fixed values for demonstration.
     var sender: ztls.RecordLayer = .{
-        .aead = .{ .aes128_gcm = @splat(0xab) },
-        .iv = @splat(0xcd),
+        .aead = .{ .aes128_gcm = .init(@splat(0xab)) },
+        .iv = .init(@splat(0xcd)),
     };
     var receiver: ztls.RecordLayer = .{
-        .aead = .{ .aes128_gcm = @splat(0xab) },
-        .iv = @splat(0xcd),
+        .aead = .{ .aes128_gcm = .init(@splat(0xab)) },
+        .iv = .init(@splat(0xcd)),
     };
 
     const messages = [_][]const u8{
