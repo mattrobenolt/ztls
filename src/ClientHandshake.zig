@@ -483,6 +483,12 @@ pub fn receive(self: *ClientHandshake, record: []u8, out: []u8) ReceiveError!Rec
                 if (self.post_handshake_count > max_post_handshake_messages) return error.TooManyKeyUpdates;
                 switch (msg.type) {
                     .key_update => {
+                        // RFC 8446 §5.1: a message immediately preceding a key
+                        // change MUST align with a record boundary. A KeyUpdate
+                        // sharing its record with anything that follows would be
+                        // protected under a different key epoch than it implies.
+                        // Reject before ratcheting (cf. Go CVE-2026-32283).
+                        if (hr.r.remaining().len != 0) return error.UnexpectedMessage;
                         if (try parseKeyUpdate(msg.raw) == .update_requested) respond = true;
                         // Ratchet the receive key only after consuming the
                         // KeyUpdate (RFC 8446 §4.6.3).
@@ -791,6 +797,23 @@ test "receive: server KeyUpdate(update_requested) ratchets rx and responds" {
     @memcpy(app_rx[0..app_wire.len], app_wire);
     const ev2 = try hs.receive(app_rx[0..app_wire.len], &out);
     try testing.expectEqualSlices(u8, "after", ev2.application_data);
+}
+
+// RFC 8446 §5.1 — a KeyUpdate must end at a record boundary. Two KeyUpdates
+// coalesced in one record is illegal (cf. Go CVE-2026-32283).
+test "receive: KeyUpdate not at record boundary is rejected" {
+    var hs = try rfc8448ConnectedClient();
+    var server_tx = hs.rx;
+
+    // [KeyUpdate][KeyUpdate] in one record.
+    const two_kus = [_]u8{ 0x18, 0x00, 0x00, 0x01, 0x00 } ++ [_]u8{ 0x18, 0x00, 0x00, 0x01, 0x00 };
+    var buf: [64]u8 = undefined;
+    const wire_rec = try server_tx.encrypt(.handshake, &two_kus, &buf);
+
+    var rx_buf: [64]u8 = undefined;
+    @memcpy(rx_buf[0..wire_rec.len], wire_rec);
+    var out: [64]u8 = undefined;
+    try testing.expectError(error.UnexpectedMessage, hs.receive(rx_buf[0..wire_rec.len], &out));
 }
 
 test "receive: KeyUpdate flood is rejected" {
