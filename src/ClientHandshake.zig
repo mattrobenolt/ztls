@@ -6,6 +6,7 @@
 const std = @import("std");
 const assert = std.debug.assert;
 const Sha256 = std.crypto.hash.sha2.Sha256;
+const Sha384 = std.crypto.hash.sha2.Sha384;
 const testing = std.testing;
 const mem = std.mem;
 const base64 = std.base64.standard.Decoder;
@@ -110,40 +111,45 @@ pub const State = enum {
 ///
 /// Only the SHA-256 suite exists today. SHA-384 becomes a second arm carrying
 /// Sha384 + HkdfSha384.Prk-sized fields; all callers switch in one place.
-const Suite = union(enum) {
-    sha256: struct {
-        transcript: Sha256,
-        // The negotiated AEAD (SHA-256 covers both AES-128-GCM and
-        // ChaCha20-Poly1305); set from the cipher suite at ServerHello.
+/// Per-hash handshake state, generic over the HKDF and transcript-hash types.
+/// Carries every secret whose size depends on the negotiated hash (Prk is 32
+/// bytes for SHA-256, 48 for SHA-384), sealing the size polymorphism in the arm.
+fn HashArm(comptime Hkdf_: type, comptime Hash: type) type {
+    return struct {
+        transcript: Hash,
+        // The negotiated AEAD; set from the cipher suite at ServerHello.
         aead: aead.Keys = .aes128_gcm,
-        handshake_secret: hkdf.HkdfSha256.Prk = undefined,
-        client_finished_key: hkdf.HkdfSha256.Prk = undefined,
-        server_finished_key: hkdf.HkdfSha256.Prk = undefined,
+        handshake_secret: Hkdf_.Prk = undefined,
+        client_finished_key: Hkdf_.Prk = undefined,
+        server_finished_key: Hkdf_.Prk = undefined,
         // Application traffic secrets, retained after the handshake so KeyUpdate
         // can ratchet them (RFC 8446 §7.2).
-        client_app_secret: hkdf.HkdfSha256.Prk = undefined,
-        server_app_secret: hkdf.HkdfSha256.Prk = undefined,
-    },
+        client_app_secret: Hkdf_.Prk = undefined,
+        server_app_secret: Hkdf_.Prk = undefined,
+
+        const Hkdf = Hkdf_;
+    };
+}
+
+const Suite = union(enum) {
+    /// Pre-ServerHello: the negotiated hash isn't known yet, so run both
+    /// transcript hashes and keep the one the chosen suite uses. RFC 8446
+    /// §4.4.1 permits deferring the transcript until the hash is selected.
+    buffering: struct { sha256: Sha256, sha384: Sha384 },
+    sha256: HashArm(hkdf.HkdfSha256, Sha256),
+    sha384: HashArm(hkdf.HkdfSha384, Sha384),
 
     /// Feed one handshake message (4-byte header + body, no record framing)
-    /// into the running transcript hash. RFC 8446 §4.4.1.
+    /// into the running transcript hash. RFC 8446 §4.4.1. While buffering
+    /// (before the suite is chosen) both candidate hashes are fed.
     fn update(self: *Suite, msg: []const u8) void {
         switch (self.*) {
-            .sha256 => |*s| s.transcript.update(msg),
+            .buffering => |*b| {
+                b.sha256.update(msg);
+                b.sha384.update(msg);
+            },
+            inline .sha256, .sha384 => |*s| s.transcript.update(msg),
         }
-    }
-
-    /// Snapshot the transcript without disturbing the running hash. peek()
-    /// copies the hasher by value and finalizes the copy, so the live hash
-    /// keeps absorbing.
-    ///
-    /// Returns a concrete digest for now so chunk-1 tests can check it against
-    /// RFC 8448. Once key-schedule derivation moves into the arm, the digest
-    /// stops escaping and this becomes internal.
-    fn transcriptHash(self: *const Suite) [Sha256.digest_length]u8 {
-        return switch (self.*) {
-            .sha256 => |*s| s.transcript.peek(),
-        };
     }
 
     /// RFC 8446 §4.4.3 — verify the CertificateVerify signature against the
@@ -156,7 +162,8 @@ const Suite = union(enum) {
         pub_key: []const u8,
     ) certificate.VerifyError!void {
         switch (self.*) {
-            .sha256 => |*s| {
+            .buffering => unreachable,
+            inline .sha256, .sha384 => |*s| {
                 const th = s.transcript.peek();
                 try certificate.verifySignature(cv_msg, pub_key, &th);
             },
@@ -168,9 +175,10 @@ const Suite = union(enum) {
     /// absorbed) and checks the MAC with the retained server finished key.
     fn verifyServerFinished(self: *const Suite, finished_msg: []const u8) finished.VerifyError!void {
         switch (self.*) {
-            .sha256 => |*s| {
+            .buffering => unreachable,
+            inline .sha256, .sha384 => |*s| {
                 const th = s.transcript.peek();
-                try finished.verify(finished_msg, &s.server_finished_key.data, &th);
+                try finished.verify(@TypeOf(s.transcript), finished_msg, &s.server_finished_key.data, &th);
             },
         }
     }
@@ -182,10 +190,11 @@ const Suite = union(enum) {
     /// `out`; rx/tx are application-keyed.
     fn finishHandshake(self: *Suite, out: []u8) error{BufferTooShort}!HandshakeKeys.WithFinished {
         switch (self.*) {
-            .sha256 => |*s| {
-                const H = hkdf.HkdfSha256;
+            .buffering => unreachable,
+            inline .sha256, .sha384 => |*s| {
+                const H = @TypeOf(s.*).Hkdf;
                 const th = s.transcript.peek(); // through server Finished
-                const fin = try finished.encode(out, &s.client_finished_key.data, &th);
+                const fin = try finished.encode(@TypeOf(s.transcript), out, &s.client_finished_key.data, &th);
 
                 const master = H.masterSecret(s.handshake_secret);
                 s.client_app_secret = H.clientApplicationTrafficSecret(master, &.init(th));
@@ -206,9 +215,11 @@ const Suite = union(enum) {
     /// the fresh RecordLayer (sequence number reset to 0).
     fn ratchetClientKey(self: *Suite) RecordLayer {
         switch (self.*) {
-            .sha256 => |*s| {
-                s.client_app_secret = hkdf.HkdfSha256.nextTrafficSecret(s.client_app_secret);
-                return hkdf.HkdfSha256.makeRecordLayer(s.aead, s.client_app_secret);
+            .buffering => unreachable,
+            inline .sha256, .sha384 => |*s| {
+                const H = @TypeOf(s.*).Hkdf;
+                s.client_app_secret = H.nextTrafficSecret(s.client_app_secret);
+                return H.makeRecordLayer(s.aead, s.client_app_secret);
             },
         }
     }
@@ -217,9 +228,11 @@ const Suite = union(enum) {
     /// return the fresh RecordLayer (sequence number reset to 0).
     fn ratchetServerKey(self: *Suite) RecordLayer {
         switch (self.*) {
-            .sha256 => |*s| {
-                s.server_app_secret = hkdf.HkdfSha256.nextTrafficSecret(s.server_app_secret);
-                return hkdf.HkdfSha256.makeRecordLayer(s.aead, s.server_app_secret);
+            .buffering => unreachable,
+            inline .sha256, .sha384 => |*s| {
+                const H = @TypeOf(s.*).Hkdf;
+                s.server_app_secret = H.nextTrafficSecret(s.server_app_secret);
+                return H.makeRecordLayer(s.aead, s.server_app_secret);
             },
         }
     }
@@ -234,8 +247,9 @@ const Suite = union(enum) {
     /// finished keys are retained in the arm; the RecordLayers are returned.
     fn deriveHandshakeKeys(self: *Suite, dhe: *const SharedSecret) HandshakeKeys {
         switch (self.*) {
-            .sha256 => |*s| {
-                const H = hkdf.HkdfSha256;
+            .buffering => unreachable,
+            inline .sha256, .sha384 => |*s| {
+                const H = @TypeOf(s.*).Hkdf;
                 s.handshake_secret = H.handshakeSecret(H.early_secret, dhe);
 
                 const th = s.transcript.peek();
@@ -285,7 +299,8 @@ post_handshake_count: u8 = 0,
 pub fn init(keypair: x25519.KeyPair) ClientHandshake {
     return .{
         .state = .start,
-        .suite = .{ .sha256 = .{ .transcript = .init(.{}) } },
+        // Hash unknown until ServerHello: run both candidate transcripts.
+        .suite = .{ .buffering = .{ .sha256 = .init(.{}), .sha384 = .init(.{}) } },
         .keypair = keypair,
     };
 }
@@ -421,12 +436,13 @@ pub const ServerHelloError = server_hello.ParseError || error{
 pub fn processServerHello(self: *ClientHandshake, msg: []const u8) ServerHelloError!void {
     assert(self.state == .wait_sh);
     const sh = try server_hello.parse(msg);
-    // Both SHA-256 suites use the sha256 arm; only the AEAD differs. SHA-384
-    // (aes_256_gcm_sha384) needs the second arm — not yet supported.
-    self.suite.sha256.aead = switch (sh.cipher_suite) {
-        .aes_128_gcm_sha256 => .aes128_gcm,
-        .chacha20_poly1305_sha256 => .chacha20_poly1305,
-        .aes_256_gcm_sha384 => return error.UnsupportedCipherSuite,
+    // Collapse the dual transcript to the negotiated hash's arm, carrying over
+    // the hasher that already absorbed ClientHello.
+    const b = self.suite.buffering;
+    self.suite = switch (sh.cipher_suite) {
+        .aes_128_gcm_sha256 => .{ .sha256 = .{ .transcript = b.sha256, .aead = .aes128_gcm } },
+        .chacha20_poly1305_sha256 => .{ .sha256 = .{ .transcript = b.sha256, .aead = .chacha20_poly1305 } },
+        .aes_256_gcm_sha384 => .{ .sha384 = .{ .transcript = b.sha384, .aead = .aes256_gcm } },
     };
 
     self.suite.update(msg); // transcript now covers ClientHello || ServerHello
@@ -672,12 +688,14 @@ test "transcript hash: RFC 8448 §3 ClientHello || ServerHello" {
     hs.suite.update(&rfc8448_client_hello);
     hs.suite.update(&rfc8448_server_hello);
 
+    // Still buffering (no ServerHello processed); check the SHA-256 candidate.
+    const th = hs.suite.buffering.sha256.peek();
     try testing.expectEqualSlices(u8, &.{
         0x86, 0x0c, 0x06, 0xed, 0xc0, 0x78, 0x58, 0xee,
         0x8e, 0x78, 0xf0, 0xe7, 0x42, 0x8c, 0x58, 0xed,
         0xd6, 0xb4, 0x3f, 0x2c, 0xa3, 0xe6, 0xe9, 0x5f,
         0x02, 0xed, 0x06, 0x3c, 0xf0, 0xe1, 0xca, 0xd8,
-    }, &hs.suite.transcriptHash());
+    }, &th);
 }
 
 // RFC 8446 §7.1 — handshake key schedule driven by the live transcript.
@@ -694,6 +712,9 @@ test "deriveHandshakeKeys: RFC 8448 §3 server handshake key/iv/finished" {
     var hs: ClientHandshake = .init(.{ .secret_key = @splat(0), .public_key = @splat(0) });
     hs.suite.update(&rfc8448_client_hello);
     hs.suite.update(&rfc8448_server_hello);
+    // Collapse to the SHA-256 arm (as processServerHello would for this suite).
+    const b = hs.suite.buffering;
+    hs.suite = .{ .sha256 = .{ .transcript = b.sha256, .aead = .aes128_gcm } };
 
     const keys = hs.suite.deriveHandshakeKeys(&dhe);
 

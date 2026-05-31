@@ -30,6 +30,7 @@ const host = "127.0.0.1";
 const suites = [_][]const u8{
     "TLS_AES_128_GCM_SHA256",
     "TLS_CHACHA20_POLY1305_SHA256",
+    "TLS_AES_256_GCM_SHA384",
 };
 
 var debug_allocator: heap.DebugAllocator(.{}) = .init;

@@ -3,7 +3,7 @@
 /// RFC 8446 §4.4.4
 const std = @import("std");
 const crypto = std.crypto;
-const HmacSha256 = crypto.auth.hmac.sha2.HmacSha256;
+const Sha256 = crypto.hash.sha2.Sha256;
 const testing = std.testing;
 
 const wire = @import("wire.zig");
@@ -14,20 +14,20 @@ pub const VerifyError = error{
     InvalidVerifyData,
 };
 
-const Digest = [HmacSha256.mac_length]u8;
-
-/// Verify a server Finished handshake message.
-///
-/// `finished_key` is derived from the server handshake traffic secret via
-/// hkdf.finishedKey(). `transcript_hash` covers all messages up to and
-/// including CertificateVerify.
-///
-/// RFC 8446 §4.4.4
+/// Verify a server Finished handshake message under the negotiated transcript
+/// hash. `finished_key` is derived from the server handshake traffic secret via
+/// hkdf.finishedKey(); `transcript_hash` covers all messages up to and
+/// including CertificateVerify. The verify_data length is the hash's output
+/// (32 bytes SHA-256, 48 SHA-384). RFC 8446 §4.4.4
 pub fn verify(
+    comptime Hash: type,
     msg: []const u8,
     finished_key: []const u8,
     transcript_hash: []const u8,
 ) VerifyError!void {
+    const Hmac = crypto.auth.hmac.Hmac(Hash);
+    const Digest = [Hmac.mac_length]u8;
+
     var r: wire.Reader = .init(msg);
     const handshake_type = try r.read(u8);
     if (handshake_type != 0x14) return error.InvalidHandshakeType;
@@ -36,32 +36,31 @@ pub fn verify(
 
     // Recompute: HMAC(finished_key, transcript_hash)
     var expected: Digest = undefined;
-    HmacSha256.create(&expected, transcript_hash, finished_key);
+    Hmac.create(&expected, transcript_hash, finished_key);
 
     if (verify_data.len != expected.len) return error.InvalidVerifyData;
-    if (!crypto.timing_safe.eql(Digest, verify_data[0..HmacSha256.mac_length].*, expected))
+    if (!crypto.timing_safe.eql(Digest, verify_data[0..Hmac.mac_length].*, expected))
         return error.InvalidVerifyData;
 }
 
-/// Encode a client Finished handshake message into `out`.
-///
-/// `finished_key` is derived from the client handshake traffic secret via
-/// hkdf.finishedKey(). `transcript_hash` covers all messages up to and
-/// including the server's Finished.
-///
-/// RFC 8446 §4.4.4
+/// Encode a client Finished handshake message into `out` under the negotiated
+/// transcript hash. `finished_key` is derived from the client handshake traffic
+/// secret via hkdf.finishedKey(); `transcript_hash` covers all messages up to
+/// and including the server's Finished. RFC 8446 §4.4.4
 pub fn encode(
+    comptime Hash: type,
     out: []u8,
     finished_key: []const u8,
     transcript_hash: []const u8,
 ) error{BufferTooShort}![]u8 {
-    const total = 4 + HmacSha256.mac_length; // header(4) + verify_data(32)
+    const Hmac = crypto.auth.hmac.Hmac(Hash);
+    const total = 4 + Hmac.mac_length; // header(4) + verify_data
     if (out.len < total) return error.BufferTooShort;
 
     var w: wire.Writer = .init(out);
     w.append(u8, 0x14); // Finished
-    w.append(u24, HmacSha256.mac_length);
-    HmacSha256.create(w.reserve(HmacSha256.mac_length), transcript_hash, finished_key);
+    w.append(u24, Hmac.mac_length);
+    Hmac.create(w.reserve(Hmac.mac_length), transcript_hash, finished_key);
     return w.written();
 }
 
@@ -105,19 +104,19 @@ const finished_msg: [36]u8 = .{
 test "verify: wrong verify_data" {
     var bad = finished_msg;
     bad[4] ^= 0xff;
-    try testing.expectError(error.InvalidVerifyData, verify(&bad, &server_finished_key, &server_transcript_hash));
+    try testing.expectError(error.InvalidVerifyData, verify(Sha256, &bad, &server_finished_key, &server_transcript_hash));
 }
 
 test "verify: wrong handshake type" {
     var bad = finished_msg;
     bad[0] = 0x01;
-    try testing.expectError(error.InvalidHandshakeType, verify(&bad, &server_finished_key, &server_transcript_hash));
+    try testing.expectError(error.InvalidHandshakeType, verify(Sha256, &bad, &server_finished_key, &server_transcript_hash));
 }
 
 test "encode then verify round-trip" {
     const key = server_finished_key;
     const hash = server_transcript_hash;
     var buf: [64]u8 = undefined;
-    const msg = try encode(&buf, &key, &hash);
-    try verify(msg, &key, &hash);
+    const msg = try encode(Sha256, &buf, &key, &hash);
+    try verify(Sha256, msg, &key, &hash);
 }
