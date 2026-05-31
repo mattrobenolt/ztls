@@ -12,6 +12,7 @@
 const std = @import("std");
 const print = std.debug.print;
 const ztls = @import("ztls");
+const txtar = @import("txtar");
 
 // RFC 8448 §3 client ephemeral X25519 private key.
 const client_secret_key = [_]u8{
@@ -70,12 +71,30 @@ const server_hello_record = [_]u8{ 0x16, 0x03, 0x03, 0x00, 0x5a } ++ [_]u8{
 // Middlebox-compatibility ChangeCipherSpec record (RFC 8446 §D.4).
 const ccs_record = [_]u8{ 0x14, 0x03, 0x03, 0x00, 0x01, 0x01 };
 
-// RFC 8448 §3 encrypted server flight (EE + Certificate + CertificateVerify +
-// Finished) as a complete TLSCiphertext wire record.
-const server_flight_record = @embedFile("test_fixtures/rfc8448_server_flight_record.bin").*;
+// RFC 8448 §3 fixtures, base64 inside a txtar archive (decoded at startup).
+const rfc8448_archive = @embedFile("test_fixtures/rfc8448.txtar");
+
+// Decode a base64 archive entry into `out`, returning the decoded slice.
+fn fixture(alloc: std.mem.Allocator, name: []const u8, out: []u8) ![]u8 {
+    var archive = try txtar.parse(alloc, rfc8448_archive);
+    defer archive.deinit(alloc);
+    for (archive.files) |f| {
+        if (!std.mem.eql(u8, f.name, name)) continue;
+        const b64 = std.mem.trimRight(u8, f.data, "\n");
+        const n = try std.base64.standard.Decoder.calcSizeForSlice(b64);
+        try std.base64.standard.Decoder.decode(out[0..n], b64);
+        return out[0..n];
+    }
+    return error.FixtureNotFound;
+}
 
 pub fn main() !void {
     print("=== TLS 1.3 client handshake (RFC 8448 §3) ===\n\n", .{});
+
+    var fixture_buf: [8192]u8 = undefined;
+    var fba: std.heap.FixedBufferAllocator = .init(&fixture_buf);
+    var flight_buf: [1024]u8 = undefined;
+    const server_flight_record = try fixture(fba.allocator(), "server_flight_record.b64", &flight_buf);
 
     var hs: ztls.ClientHandshake = .init(client_secret_key);
     hs.start(&client_hello);
@@ -91,8 +110,7 @@ pub fn main() !void {
     _ = try hs.processRecord(&ccs, &out);
     print("[server] ChangeCipherSpec (discarded)       → state={s}\n", .{@tagName(hs.state)});
 
-    var flight = server_flight_record;
-    const client_finished = (try hs.processRecord(flight[0..], &out)) orelse return error.NoFinished;
+    const client_finished = (try hs.processRecord(server_flight_record, &out)) orelse return error.NoFinished;
     print("[server] EncryptedExtensions/Cert/CV/Finished → state={s}\n", .{@tagName(hs.state)});
     print("[client] Finished sent ({} wire bytes)\n", .{client_finished.len});
 

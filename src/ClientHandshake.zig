@@ -7,6 +7,8 @@ const std = @import("std");
 const assert = std.debug.assert;
 const Sha256 = std.crypto.hash.sha2.Sha256;
 const testing = std.testing;
+const mem = std.mem;
+const base64 = std.base64.standard.Decoder;
 
 const certificate = @import("certificate.zig");
 const encrypted_extensions = @import("encrypted_extensions.zig");
@@ -661,9 +663,27 @@ test "processServerHello: RFC 8448 §3 installs server handshake keys" {
     }, &hs.rx.aead.aes128_gcm.data);
 }
 
-// RFC 8448 §3 server flight: EncryptedExtensions || Certificate ||
-// CertificateVerify || Finished, decrypted plaintext, extracted from the trace.
-const rfc8448_server_flight = @embedFile("test_fixtures/rfc8448_server_flight.bin");
+// RFC 8448 §3 vectors, base64-encoded inside a txtar archive (decoded at test
+// time): server_flight.b64 = EE||Cert||CV||Finished plaintext;
+// server_flight_record.b64 = the same flight as an encrypted wire record.
+const rfc8448_archive = @embedFile("test_fixtures/rfc8448.txtar");
+
+// Decode a base64 entry from the embedded RFC 8448 archive into `out`.
+// Test-only — the txtar import lives inside the function so the public ztls
+// module never requires the dependency.
+fn rfc8448Fixture(name: []const u8, out: []u8) []u8 {
+    const txtar = @import("txtar");
+    var archive = txtar.parse(testing.allocator, rfc8448_archive) catch unreachable;
+    defer archive.deinit(testing.allocator);
+    for (archive.files) |f| {
+        if (!mem.eql(u8, f.name, name)) continue;
+        const b64 = mem.trimRight(u8, f.data, "\n");
+        const n = base64.calcSizeForSlice(b64) catch unreachable;
+        base64.decode(out[0..n], b64) catch unreachable;
+        return out[0..n];
+    }
+    unreachable;
+}
 
 // RFC 8446 §4.3-§4.4 — the full encrypted flight driven by the live transcript.
 // One call exercises EncryptedExtensions parsing, RSA-PSS CertificateVerify
@@ -676,7 +696,8 @@ test "processFlight: RFC 8448 §3 full server flight to connected" {
     hs.start(&rfc8448_client_hello);
     try hs.processServerHello(&rfc8448_server_hello);
 
-    try hs.processFlight(rfc8448_server_flight, .{});
+    var flight_buf: [1024]u8 = undefined;
+    try hs.processFlight(rfc8448Fixture("server_flight.b64", &flight_buf), .{});
     try testing.expectEqual(.send_finished, hs.state);
 }
 
@@ -688,7 +709,8 @@ test "processFlight: RFC 8448 §3 flight split one message per record" {
     hs.start(&rfc8448_client_hello);
     try hs.processServerHello(&rfc8448_server_hello);
 
-    var hr: HandshakeReader = .init(rfc8448_server_flight);
+    var flight_buf: [1024]u8 = undefined;
+    var hr: HandshakeReader = .init(rfc8448Fixture("server_flight.b64", &flight_buf));
     while (try hr.next()) |msg| {
         try hs.processFlight(msg.raw, .{});
     }
@@ -714,7 +736,8 @@ test "clientFinished: RFC 8448 §3 emits Finished and upgrades to app keys" {
     var hs: ClientHandshake = .init(rfc8448_client_secret_key);
     hs.start(&rfc8448_client_hello);
     try hs.processServerHello(&rfc8448_server_hello);
-    try hs.processFlight(rfc8448_server_flight, .{});
+    var flight_buf: [1024]u8 = undefined;
+    try hs.processFlight(rfc8448Fixture("server_flight.b64", &flight_buf), .{});
 
     // Mirror of the encryptor: client handshake-traffic key at seq 0.
     var peer = hs.tx;
@@ -744,7 +767,8 @@ test "ratchetClientKey: RFC 8446 §7.2 next application write key" {
     var hs: ClientHandshake = .init(rfc8448_client_secret_key);
     hs.start(&rfc8448_client_hello);
     try hs.processServerHello(&rfc8448_server_hello);
-    try hs.processFlight(rfc8448_server_flight, .{});
+    var flight_buf: [1024]u8 = undefined;
+    try hs.processFlight(rfc8448Fixture("server_flight.b64", &flight_buf), .{});
     var out: [128]u8 = undefined;
     _ = try hs.clientFinished(&out);
 
@@ -760,7 +784,8 @@ fn rfc8448ConnectedClient() !ClientHandshake {
     var hs: ClientHandshake = .init(rfc8448_client_secret_key);
     hs.start(&rfc8448_client_hello);
     try hs.processServerHello(&rfc8448_server_hello);
-    try hs.processFlight(rfc8448_server_flight, .{});
+    var flight_buf: [1024]u8 = undefined;
+    try hs.processFlight(rfc8448Fixture("server_flight.b64", &flight_buf), .{});
     var out: [128]u8 = undefined;
     _ = try hs.clientFinished(&out);
     return hs;
@@ -866,9 +891,6 @@ test "receive: KeyUpdate flood is rejected" {
     try testing.expectEqual(error.TooManyKeyUpdates, result);
 }
 
-// RFC 8448 §3 encrypted server flight as a complete wire record (TLSCiphertext).
-const rfc8448_server_flight_record = @embedFile("test_fixtures/rfc8448_server_flight_record.bin");
-
 // RFC 8446 §5 — the full driver path: pump real wire records through
 // processRecord (plaintext ServerHello, a ChangeCipherSpec to discard, then the
 // encrypted flight) and confirm it auto-emits the client Finished and reports
@@ -894,8 +916,9 @@ test "processRecord: drives RFC 8448 §3 handshake to done" {
     try testing.expectEqual(.wait_ee, hs.state);
 
     // Encrypted server flight: completes the handshake and emits client Finished.
-    var flight = rfc8448_server_flight_record.*;
-    const to_send = (try hs.processRecord(flight[0..], &out)).?;
+    var flight_buf: [1024]u8 = undefined;
+    const flight = rfc8448Fixture("server_flight_record.b64", &flight_buf);
+    const to_send = (try hs.processRecord(flight, &out)).?;
     try testing.expectEqual(.connected, hs.state);
 
     var dec_buf: [128]u8 = undefined;

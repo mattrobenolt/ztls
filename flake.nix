@@ -37,6 +37,7 @@
               openssl
               pkg-config
               python3
+              txtar
               zig_0_15
               zigdoc
               ziglint

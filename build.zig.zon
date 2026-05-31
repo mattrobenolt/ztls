@@ -3,7 +3,15 @@
     .version = "0.0.0",
     .fingerprint = 0x767a5b455ec37148,
     .minimum_zig_version = "0.15.2",
-    .dependencies = .{},
+    .dependencies = .{
+        // Test-only: decodes the RFC 8448 fixture archive. Lazy so consumers
+        // of the library never fetch it.
+        .txtar = .{
+            .url = "git+https://github.com/mattrobenolt/txtar#85c27385a0c14a1129a653af363a334266d48734",
+            .hash = "txtar-0.1.0-RyJLBJ5rAABCV5lD0YSt048wd3l9Nk9a4_TnEnm0MZ9P",
+            .lazy = true,
+        },
+    },
     .paths = .{
         "build.zig",
         "build.zig.zon",
