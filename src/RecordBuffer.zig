@@ -24,7 +24,7 @@ const RecordBuffer = @This();
 
 /// Smallest storage that guarantees any one record fits: a full-size wire
 /// record (header + maximum ciphertext).
-pub const min_storage = frame.header_len + frame.max_ciphertext_len;
+pub const min_storage = frame.max_wire_record_len;
 
 /// A comfortable default: room for a partial record plus a full one, so a read
 /// that straddles a record boundary still makes progress without thrashing.

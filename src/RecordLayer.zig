@@ -36,6 +36,16 @@ pub const DecryptError = frame.ParseError || AeadError || error{
     InvalidInnerPlaintext,
 };
 
+pub const EncryptError = error{
+    /// `out` is smaller than the resulting record.
+    BufferTooShort,
+    /// 2^64 records sent on this layer (RFC 8446 §5.5).
+    SequenceNumberOverflow,
+    /// `content` exceeds the per-record plaintext limit (RFC 8446 §5.2); the
+    /// caller must fragment into multiple records.
+    PlaintextTooLarge,
+};
+
 /// Decrypt a TLSCiphertext record in place.
 ///
 /// `buf` must contain the full record as received from the wire
@@ -90,11 +100,12 @@ pub fn decrypt(self: *RecordLayer, buf: []u8) DecryptError!DecryptedRecord {
 /// Returns the number of bytes written.
 ///
 /// RFC 8446 §5.2
-pub fn encrypt(self: *RecordLayer, content_type: ContentType, content: []const u8, out: []u8) ![]u8 {
+pub fn encrypt(self: *RecordLayer, content_type: ContentType, content: []const u8, out: []u8) EncryptError![]u8 {
     if (self.seq == std.math.maxInt(u64)) {
         @branchHint(.cold);
         return error.SequenceNumberOverflow;
     }
+    if (content.len > frame.max_plaintext_len) return error.PlaintextTooLarge;
 
     const inner_len = content.len + 1; // content + type byte
     const total = frame.header_len + inner_len + tag_len;

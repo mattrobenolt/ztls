@@ -479,7 +479,7 @@ pub fn processFlight(
 }
 
 /// Errors from encrypting an outbound record into the caller's buffer.
-pub const SendError = error{ BufferTooShort, SequenceNumberOverflow };
+pub const SendError = RecordLayer.EncryptError;
 
 /// Produce the client Finished as a wire-ready (encrypted) record and promote
 /// to application traffic keys. RFC 8446 §4.4.4, §7.1. Advances

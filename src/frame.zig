@@ -30,6 +30,10 @@ pub const max_ciphertext_len = max_plaintext_len + 256; // 16640
 /// Wire size of a record header.
 pub const header_len = 5;
 
+/// Largest a single record can be on the wire: header + maximum ciphertext.
+/// An output buffer of this size always holds any one record we emit.
+pub const max_wire_record_len = header_len + max_ciphertext_len;
+
 /// RFC 8446 §5.1 — legacy_record_version is fixed at 0x0303 (TLS 1.2)
 /// for all TLS 1.3 records after the initial ClientHello.
 const legacy_record_version: u16 = 0x0303;
