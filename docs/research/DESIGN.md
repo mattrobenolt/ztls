@@ -320,11 +320,13 @@ no I/O.
 - ✅ 14. Parser fuzzing baseline + malformed-DER regression guard
 - ✅ 15. Initial performance harness (`zig build bench`, record/framing benchmarks)
 - ✅ 16. Cross-record handshake-message reassembly via caller-owned storage
-- ◐ 17. TLS alert parsing (close_notify vs fatal); alert emission still remains
+- ✅ 17. TLS alert parsing and explicit alert emission
+- ✅ 18. X.509 policy: caller-owned trust bundle, validity time, hostname verification
+- ✅ 19. ALPN ClientHello offer + EncryptedExtensions selection validation
+- ◐ 20. HelloRetryRequest: detected and rejected cleanly; retry path remains future work
 
-Next correctness targets: HelloRetryRequest, server-side ztls, and fuller
-external conformance suites. Outbound alerts, X.509 path/hostname validation,
-and cross-record handshake reassembly are implemented for the current client scope.
+Next correctness targets: full HelloRetryRequest retry support, server-side
+ztls, and fuller external conformance suites.
 
 ---
 
