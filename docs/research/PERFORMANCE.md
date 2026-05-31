@@ -100,6 +100,7 @@ Typical local flow:
 
 ```sh
 zig build bench
+zig build bench-bin
 perf record --call-graph dwarf ./zig-out/bin/record_protection_bench
 perf report
 ```

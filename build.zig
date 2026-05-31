@@ -62,6 +62,10 @@ pub fn build(b: *std.Build) void {
     const bench_step = b.step("bench", "Run performance benchmarks");
     bench_step.dependOn(&run_bench.step);
 
+    const install_bench = b.addInstallArtifact(bench_exe, .{});
+    const bench_bin_step = b.step("bench-bin", "Build the benchmark binary for profiling");
+    bench_bin_step.dependOn(&install_bench.step);
+
     const examples = [_][]const u8{
         "full_handshake",
         "handshake_keys",
