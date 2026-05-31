@@ -89,17 +89,19 @@ fn interop(stream: std.net.Stream) !void {
     var random: ztls.client_hello.Random = undefined;
     std.crypto.random.bytes(&random.data);
 
-    var hs: ztls.ClientHandshake = .init(kp.secret_key);
+    var hs: ztls.ClientHandshake = .init(kp);
 
     // `out` holds records we emit (ClientHello, Finished, app data); the engine
-    // owns framing, so we just write what it returns. `storage` backs the
-    // record-framing buffer that turns the byte stream into whole records.
+    // owns framing, so we just write what it returns and acknowledge with
+    // completeWrite(). `storage` backs the record-framing buffer that turns the
+    // byte stream into whole records.
     var out: [1024]u8 = undefined;
     var storage: [ztls.RecordBuffer.recommended_storage]u8 = undefined;
     var rb: ztls.RecordBuffer = .init(&storage);
 
     // ClientHello.
-    try stream.writeAll(try hs.start(&out, .init(kp.public_key), random, "localhost"));
+    try stream.writeAll(try hs.start(&out, random, "localhost"));
+    hs.completeWrite();
 
     // Drive the handshake: read bytes, pull whole records, feed the engine,
     // send whatever it hands back.
@@ -108,7 +110,10 @@ fn interop(stream: std.net.Stream) !void {
         if (n == 0) return error.ServerClosed;
         rb.advance(n);
         while (try rb.next()) |record| switch (try hs.handleRecord(record, &out)) {
-            .write => |w| try stream.writeAll(w),
+            .write => |w| {
+                try stream.writeAll(w);
+                hs.completeWrite();
+            },
             .none => {},
             .application_data, .closed => return error.UnexpectedDuringHandshake,
         };
@@ -117,19 +122,23 @@ fn interop(stream: std.net.Stream) !void {
 
     // Request the s_server status page and read the response.
     try stream.writeAll(try hs.sendApplicationData("GET / HTTP/1.0\r\n\r\n", &out));
+    hs.completeWrite();
 
     while (true) {
-        const n = stream.read(rb.writable()) catch break;
-        if (n == 0) break;
+        const n = try stream.read(rb.writable());
+        if (n == 0) break; // peer closed the TCP connection
         rb.advance(n);
         while (try rb.next()) |record| switch (try hs.handleRecord(record, &out)) {
             .application_data => |data| if (std.mem.startsWith(u8, data, "HTTP/1.0 200")) {
                 std.debug.print("[interop] decrypted s_server HTTP response — OK\n", .{});
                 return;
             },
-            .write => |w| try stream.writeAll(w), // e.g. a KeyUpdate response
+            .write => |w| { // e.g. a KeyUpdate response
+                try stream.writeAll(w);
+                hs.completeWrite();
+            },
             .none => {},
-            .closed => break,
+            .closed => return error.ServerClosedBeforeResponse,
         };
     }
     return error.NoHttpResponse;

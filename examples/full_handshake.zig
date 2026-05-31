@@ -14,12 +14,22 @@ const print = std.debug.print;
 const ztls = @import("ztls");
 const txtar = @import("txtar");
 
-// RFC 8448 §3 client ephemeral X25519 private key.
-const client_secret_key = [_]u8{
-    0x49, 0xaf, 0x42, 0xba, 0x7f, 0x79, 0x94, 0x85,
-    0x2d, 0x71, 0x3e, 0xf2, 0x78, 0x4b, 0xcb, 0xca,
-    0xa7, 0x91, 0x1d, 0xe2, 0x6a, 0xdc, 0x56, 0x42,
-    0xcb, 0x63, 0x45, 0x40, 0xe7, 0xea, 0x50, 0x05,
+// RFC 8448 §3 client ephemeral X25519 keypair. We replay the fixed §3
+// ClientHello via injectClientHello, so the public key here is unused, but
+// init takes the whole keypair.
+const client_keypair: ztls.x25519.KeyPair = .{
+    .secret_key = .{
+        0x49, 0xaf, 0x42, 0xba, 0x7f, 0x79, 0x94, 0x85,
+        0x2d, 0x71, 0x3e, 0xf2, 0x78, 0x4b, 0xcb, 0xca,
+        0xa7, 0x91, 0x1d, 0xe2, 0x6a, 0xdc, 0x56, 0x42,
+        0xcb, 0x63, 0x45, 0x40, 0xe7, 0xea, 0x50, 0x05,
+    },
+    .public_key = .{
+        0x99, 0x38, 0x1d, 0xe5, 0x60, 0xe4, 0xbd, 0x43,
+        0xd2, 0x3d, 0x8e, 0x43, 0x5a, 0x7d, 0xba, 0xfe,
+        0xb3, 0xc0, 0x6e, 0x51, 0xc1, 0x3c, 0xae, 0x4d,
+        0x54, 0x13, 0x69, 0x1e, 0x52, 0x9a, 0xaf, 0x2c,
+    },
 };
 
 // RFC 8448 §3 ClientHello handshake message (4-byte header + body).
@@ -96,7 +106,7 @@ pub fn main() !void {
     var flight_buf: [1024]u8 = undefined;
     const server_flight_record = try fixture(fba.allocator(), "server_flight_record.b64", &flight_buf);
 
-    var hs: ztls.ClientHandshake = .init(client_secret_key);
+    var hs: ztls.ClientHandshake = .init(client_keypair);
     // We replay the fixed §3 ClientHello (so the transcript matches the trace),
     // so inject it rather than encoding a fresh one via start().
     hs.injectClientHello(&client_hello);
@@ -116,6 +126,7 @@ pub fn main() !void {
     const ev = try hs.handleRecord(server_flight_record, &out);
     print("[server] EncryptedExtensions/Cert/CV/Finished → state={s}\n", .{@tagName(hs.state)});
     print("[client] Finished sent ({} wire bytes)\n", .{ev.write.len});
+    hs.completeWrite(); // acknowledge the Finished was sent
 
     if (!hs.isConnected()) return error.HandshakeIncomplete;
     print("\n=== handshake complete — application keys installed ===\n\n", .{});

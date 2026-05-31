@@ -252,12 +252,17 @@ const Suite = union(enum) {
 
 state: State,
 suite: Suite,
-/// Our ephemeral X25519 private key, used to compute the DHE shared secret
-/// once ServerHello reveals the server's public key.
-client_secret_key: [32]u8,
+/// Our ephemeral X25519 keypair. The secret computes the DHE shared secret
+/// once ServerHello arrives; the public goes into the ClientHello key_share.
+keypair: x25519.KeyPair,
 /// Handshake-traffic RecordLayers, installed by processServerHello.
 rx: RecordLayer = undefined,
 tx: RecordLayer = undefined,
+/// Set when a method hands the caller bytes that MUST be written to the
+/// transport (Finished, KeyUpdate response, application data). Blocks further
+/// engine calls until completeWrite() acknowledges the write — so a dropped
+/// write can't silently desync the connection.
+pending_write: bool = false,
 /// Certificate validation policy, applied during the server flight. Defaults
 /// to no chain anchoring (signature-only). Set before driving the handshake.
 policy: certificate.Policy = .{},
@@ -270,35 +275,42 @@ leaf_pub_key_len: usize = 0,
 /// data; reset by application data. Bounds KeyUpdate-flood DoS.
 post_handshake_count: u8 = 0,
 
-/// Start a client handshake with our ephemeral X25519 private key. The
-/// negotiated suite is hardcoded to SHA-256 for now; true suite selection
-/// (and re-hashing ClientHello under SHA-384) is deferred.
-pub fn init(client_secret_key: [32]u8) ClientHandshake {
+/// Start a client handshake with our ephemeral X25519 keypair. The negotiated
+/// suite is hardcoded to SHA-256 for now; true suite selection (and re-hashing
+/// ClientHello under SHA-384) is deferred.
+pub fn init(keypair: x25519.KeyPair) ClientHandshake {
     return .{
         .state = .start,
         .suite = .{ .sha256 = .{ .transcript = .init(.{}) } },
-        .client_secret_key = client_secret_key,
+        .keypair = keypair,
     };
+}
+
+/// Acknowledge that the bytes from the last engine call were written to the
+/// transport, clearing the pending-write block. Call after writing any
+/// `.write` event or send-method result.
+pub fn completeWrite(self: *ClientHandshake) void {
+    self.pending_write = false;
 }
 
 pub const StartError = error{ BufferTooShort, ServerNameTooLong };
 
-/// Begin the handshake: encode a ClientHello, frame it as a plaintext record
-/// into `out`, absorb it into the transcript, and advance start -> wait_sh.
-/// Returns the wire-ready record to send. `public_key` is the public half of
-/// the keypair whose secret was passed to init. RFC 8446 §4.1.2, §5.1.
+/// Begin the handshake: encode a ClientHello (from the init keypair's public
+/// key), frame it as a plaintext record into `out`, absorb it into the
+/// transcript, and advance start -> wait_sh. Returns the wire-ready record to
+/// send (then completeWrite() once sent). RFC 8446 §4.1.2, §5.1.
 pub fn start(
     self: *ClientHandshake,
     out: []u8,
-    public_key: x25519.PublicKey,
     random: client_hello.Random,
     server_name: ?[]const u8,
 ) StartError![]const u8 {
     assert(self.state == .start);
     if (out.len < frame.header_len) return error.BufferTooShort;
-    const ch = try client_hello.encode(out[frame.header_len..], random, public_key, server_name);
+    const ch = try client_hello.encode(out[frame.header_len..], random, .init(self.keypair.public_key), server_name);
     out[0..frame.header_len].* = mem.toBytes(frame.Header.init(.handshake, @intCast(ch.len)));
     self.injectClientHello(ch);
+    self.pending_write = true;
     return out[0 .. frame.header_len + ch.len];
 }
 
@@ -325,7 +337,7 @@ pub const Event = union(enum) {
     closed,
 };
 
-pub const HandleError = ProcessError || ReceiveError;
+pub const HandleError = ProcessError || ReceiveError || error{PendingWrite};
 
 /// True once the handshake completes and application keys are installed.
 pub fn isConnected(self: *const ClientHandshake) bool {
@@ -340,15 +352,25 @@ pub fn isConnected(self: *const ClientHandshake) bool {
 /// (KeyUpdate), and surfaces a KeyUpdate response as `.write`. `record` is
 /// decrypted in place; `out` receives any record to send. RFC 8446 §5.
 pub fn handleRecord(self: *ClientHandshake, record: []u8, out: []u8) HandleError!Event {
-    if (self.state == .connected) return self.receiveConnected(record, out);
-    const to_send = try self.processHandshakeRecord(record, out);
-    return if (to_send) |bytes| .{ .write = bytes } else .none;
+    if (self.pending_write) return error.PendingWrite;
+    const ev: Event = if (self.state == .connected)
+        try self.receiveConnected(record, out)
+    else if (try self.processHandshakeRecord(record, out)) |bytes|
+        .{ .write = bytes }
+    else
+        .none;
+    if (ev == .write) self.pending_write = true;
+    return ev;
 }
 
-/// Encrypt application data into a wire-ready record. RFC 8446 §5.2.
+/// Encrypt application data into a wire-ready record (then completeWrite() once
+/// sent). RFC 8446 §5.2.
 pub fn sendApplicationData(self: *ClientHandshake, plaintext: []const u8, out: []u8) SendError![]const u8 {
     assert(self.state == .connected);
-    return self.tx.encrypt(.application_data, plaintext, out);
+    if (self.pending_write) return error.PendingWrite;
+    const record = try self.tx.encrypt(.application_data, plaintext, out);
+    self.pending_write = true;
+    return record;
 }
 
 pub const ProcessError = frame.ParseError || RecordLayer.DecryptError ||
@@ -370,8 +392,10 @@ fn processHandshakeRecord(self: *ClientHandshake, record: []u8, out: []u8) Proce
             try self.processServerHello(record[frame.header_len..][0..hdr.length()]);
             return null;
         },
-        // Encrypted records: decrypt with rx, then feed the server flight.
+        // Encrypted records: decrypt with rx, then feed the server flight. rx
+        // isn't installed until ServerHello, so reject app-data before wait_ee.
         .application_data => {
+            if (self.state == .start or self.state == .wait_sh) return error.UnexpectedRecord;
             const dec = try self.rx.decrypt(record);
             if (dec.content_type != .handshake) return error.UnexpectedRecord;
             try self.processFlight(dec.content, self.policy);
@@ -396,7 +420,7 @@ pub fn processServerHello(self: *ClientHandshake, msg: []const u8) ServerHelloEr
     if (sh.cipher_suite != .aes_128_gcm_sha256) return error.UnsupportedCipherSuite;
 
     self.suite.update(msg); // transcript now covers ClientHello || ServerHello
-    const dhe = try x25519.sharedSecret(self.client_secret_key, sh.server_public_key);
+    const dhe = try x25519.sharedSecret(self.keypair.secret_key, sh.server_public_key);
     const keys = self.suite.deriveHandshakeKeys(&dhe);
     self.rx = keys.rx;
     self.tx = keys.tx;
@@ -479,7 +503,7 @@ pub fn processFlight(
 }
 
 /// Errors from encrypting an outbound record into the caller's buffer.
-pub const SendError = RecordLayer.EncryptError;
+pub const SendError = RecordLayer.EncryptError || error{PendingWrite};
 
 /// Produce the client Finished as a wire-ready (encrypted) record and promote
 /// to application traffic keys. RFC 8446 §4.4.4, §7.1. Advances
@@ -570,9 +594,11 @@ fn receiveConnected(self: *ClientHandshake, record: []u8, out: []u8) ReceiveErro
 /// (RFC 8446 §4.6.3, §7.2). `request` asks the peer to update in return.
 pub fn sendKeyUpdate(self: *ClientHandshake, out: []u8, request: KeyUpdateRequest) SendError![]const u8 {
     assert(self.state == .connected);
+    if (self.pending_write) return error.PendingWrite;
     const msg = [_]u8{ @intFromEnum(HandshakeType.key_update), 0x00, 0x00, 0x01, @intFromEnum(request) };
     const record = try self.tx.encrypt(.handshake, &msg, out);
     self.tx = self.suite.ratchetClientKey();
+    self.pending_write = true;
     return record;
 }
 
@@ -632,7 +658,7 @@ const rfc8448_server_hello = [_]u8{
 // SHA-256(ClientHello || ServerHello) =
 //   860c06edc07858ee8e78f0e7428c58edd6b43f2ca3e6e95f02ed063cf0e1cad8
 test "transcript hash: RFC 8448 §3 ClientHello || ServerHello" {
-    var hs: ClientHandshake = .init(@splat(0));
+    var hs: ClientHandshake = .init(.{ .secret_key = @splat(0), .public_key = @splat(0) });
     hs.suite.update(&rfc8448_client_hello);
     hs.suite.update(&rfc8448_server_hello);
 
@@ -655,7 +681,7 @@ test "deriveHandshakeKeys: RFC 8448 §3 server handshake key/iv/finished" {
         0xd4, 0x62, 0x72, 0x90, 0x0f, 0x89, 0x49, 0x2d,
     });
 
-    var hs: ClientHandshake = .init(@splat(0));
+    var hs: ClientHandshake = .init(.{ .secret_key = @splat(0), .public_key = @splat(0) });
     hs.suite.update(&rfc8448_client_hello);
     hs.suite.update(&rfc8448_server_hello);
 
@@ -680,12 +706,21 @@ test "deriveHandshakeKeys: RFC 8448 §3 server handshake key/iv/finished" {
     }, &hs.suite.sha256.server_finished_key.data);
 }
 
-// RFC 8448 §3 client ephemeral X25519 private key.
-const rfc8448_client_secret_key = [_]u8{
-    0x49, 0xaf, 0x42, 0xba, 0x7f, 0x79, 0x94, 0x85,
-    0x2d, 0x71, 0x3e, 0xf2, 0x78, 0x4b, 0xcb, 0xca,
-    0xa7, 0x91, 0x1d, 0xe2, 0x6a, 0xdc, 0x56, 0x42,
-    0xcb, 0x63, 0x45, 0x40, 0xe7, 0xea, 0x50, 0x05,
+// RFC 8448 §3 client ephemeral X25519 keypair (secret + the public from the
+// ClientHello key_share).
+const rfc8448_client_keypair: x25519.KeyPair = .{
+    .secret_key = .{
+        0x49, 0xaf, 0x42, 0xba, 0x7f, 0x79, 0x94, 0x85,
+        0x2d, 0x71, 0x3e, 0xf2, 0x78, 0x4b, 0xcb, 0xca,
+        0xa7, 0x91, 0x1d, 0xe2, 0x6a, 0xdc, 0x56, 0x42,
+        0xcb, 0x63, 0x45, 0x40, 0xe7, 0xea, 0x50, 0x05,
+    },
+    .public_key = .{
+        0x99, 0x38, 0x1d, 0xe5, 0x60, 0xe4, 0xbd, 0x43,
+        0xd2, 0x3d, 0x8e, 0x43, 0x5a, 0x7d, 0xba, 0xfe,
+        0xb3, 0xc0, 0x6e, 0x51, 0xc1, 0x3c, 0xae, 0x4d,
+        0x54, 0x13, 0x69, 0x1e, 0x52, 0x9a, 0xaf, 0x2c,
+    },
 };
 
 // RFC 8446 §4.1.3, §7.1 — ServerHello processing end to end: parse, absorb,
@@ -693,7 +728,7 @@ const rfc8448_client_secret_key = [_]u8{
 // RFC 8448 §3 server handshake write key, proving the X25519 + key-schedule
 // integration (not just isolated derivation from a literal shared secret).
 test "processServerHello: RFC 8448 §3 installs server handshake keys" {
-    var hs: ClientHandshake = .init(rfc8448_client_secret_key);
+    var hs: ClientHandshake = .init(rfc8448_client_keypair);
     hs.injectClientHello(&rfc8448_client_hello);
 
     try hs.processServerHello(&rfc8448_server_hello);
@@ -734,7 +769,7 @@ fn rfc8448Fixture(name: []const u8, out: []u8) []u8 {
 // The default policy (.{}) skips chain anchoring; the CV signature check still
 // runs and passes because §3's cert and CV are internally consistent.
 test "processFlight: RFC 8448 §3 full server flight to connected" {
-    var hs: ClientHandshake = .init(rfc8448_client_secret_key);
+    var hs: ClientHandshake = .init(rfc8448_client_keypair);
     hs.injectClientHello(&rfc8448_client_hello);
     try hs.processServerHello(&rfc8448_server_hello);
 
@@ -747,7 +782,7 @@ test "processFlight: RFC 8448 §3 full server flight to connected" {
 // is called once per message with state persisting across calls. The leaf
 // public key extracted at Certificate must survive to CertificateVerify.
 test "processFlight: RFC 8448 §3 flight split one message per record" {
-    var hs: ClientHandshake = .init(rfc8448_client_secret_key);
+    var hs: ClientHandshake = .init(rfc8448_client_keypair);
     hs.injectClientHello(&rfc8448_client_hello);
     try hs.processServerHello(&rfc8448_server_hello);
 
@@ -775,7 +810,7 @@ const rfc8448_client_finished = [_]u8{
 // RFC 8448 §3 client Finished. Also check rx is now the §3 server application
 // write key.
 test "clientFinished: RFC 8448 §3 emits Finished and upgrades to app keys" {
-    var hs: ClientHandshake = .init(rfc8448_client_secret_key);
+    var hs: ClientHandshake = .init(rfc8448_client_keypair);
     hs.injectClientHello(&rfc8448_client_hello);
     try hs.processServerHello(&rfc8448_server_hello);
     var flight_buf: [1024]u8 = undefined;
@@ -806,7 +841,7 @@ test "clientFinished: RFC 8448 §3 emits Finished and upgrades to app keys" {
 // write key against the independently-computed next key (see the
 // nextTrafficSecret vector in hkdf.zig).
 test "ratchetClientKey: RFC 8446 §7.2 next application write key" {
-    var hs: ClientHandshake = .init(rfc8448_client_secret_key);
+    var hs: ClientHandshake = .init(rfc8448_client_keypair);
     hs.injectClientHello(&rfc8448_client_hello);
     try hs.processServerHello(&rfc8448_server_hello);
     var flight_buf: [1024]u8 = undefined;
@@ -823,7 +858,7 @@ test "ratchetClientKey: RFC 8446 §7.2 next application write key" {
 
 // Drive the RFC 8448 §3 handshake to connected; rx/tx carry application keys.
 fn rfc8448ConnectedClient() !ClientHandshake {
-    var hs: ClientHandshake = .init(rfc8448_client_secret_key);
+    var hs: ClientHandshake = .init(rfc8448_client_keypair);
     hs.injectClientHello(&rfc8448_client_hello);
     try hs.processServerHello(&rfc8448_server_hello);
     var flight_buf: [1024]u8 = undefined;
@@ -879,6 +914,7 @@ test "handleRecord: server KeyUpdate(update_requested) ratchets rx and responds"
     const dec = try client_send_mirror.decrypt(resp_buf[0..resp.len]);
     try testing.expectEqual(.handshake, dec.content_type);
     try testing.expectEqualSlices(u8, &.{ 0x18, 0x00, 0x00, 0x01, 0x00 }, dec.content);
+    hs.completeWrite(); // acknowledge the response was sent
 
     // rx ratcheted: a following server record under the next key decrypts.
     // Advance the server's send secret independently (in lockstep with our rx).
@@ -939,7 +975,7 @@ test "handleRecord: KeyUpdate flood is rejected" {
 // reaches connected. The emitted record decrypts to the RFC 8448 §3 client
 // Finished.
 test "handleRecord: drives RFC 8448 §3 handshake to connected" {
-    var hs: ClientHandshake = .init(rfc8448_client_secret_key);
+    var hs: ClientHandshake = .init(rfc8448_client_keypair);
     hs.injectClientHello(&rfc8448_client_hello);
 
     var out: [256]u8 = undefined;
@@ -969,6 +1005,27 @@ test "handleRecord: drives RFC 8448 §3 handshake to connected" {
     const dec = try peer.decrypt(dec_buf[0..ev.write.len]);
     try testing.expectEqual(.handshake, dec.content_type);
     try testing.expectEqualSlices(u8, &rfc8448_client_finished, dec.content);
+}
+
+// A produced .write must be acknowledged (completeWrite) before the engine
+// will accept another call — so a dropped write can't silently desync.
+test "handleRecord: unacknowledged write blocks further calls" {
+    var hs = try rfc8448ConnectedClient();
+    var out: [128]u8 = undefined;
+    _ = try hs.sendApplicationData("one", &out); // sets pending_write
+    try testing.expectError(error.PendingWrite, hs.sendApplicationData("two", &out));
+    hs.completeWrite();
+    _ = try hs.sendApplicationData("three", &out); // unblocked
+}
+
+// rx isn't installed until ServerHello; an encrypted record arriving in wait_sh
+// must be rejected rather than decrypted with an undefined key.
+test "handleRecord: application_data before ServerHello is rejected" {
+    var hs: ClientHandshake = .init(rfc8448_client_keypair);
+    hs.injectClientHello(&rfc8448_client_hello); // state = wait_sh
+    var rec = [_]u8{ 0x17, 0x03, 0x03, 0x00, 0x05 } ++ [_]u8{0} ** 5;
+    var out: [64]u8 = undefined;
+    try testing.expectError(error.UnexpectedRecord, hs.handleRecord(&rec, &out));
 }
 
 // Handshake-message iterator over a coalesced payload.
