@@ -19,6 +19,12 @@ pub const ParseError = error{
     UnexpectedEof,
     /// Handshake type byte is not server_hello (0x02).
     InvalidHandshakeType,
+    /// Handshake length field does not match the supplied message.
+    InvalidHandshakeLength,
+    /// Extension block or extension length is malformed.
+    InvalidExtensionLength,
+    /// A singleton extension appeared more than once.
+    DuplicateExtension,
     /// A field contained an unrecognised enum value.
     InvalidEnumTag,
     /// Server selected HelloRetryRequest; ztls does not implement the retry path yet.
@@ -50,7 +56,8 @@ pub fn parse(msg: []const u8) ParseError!ServerHello {
     // Handshake header (RFC 8446 §4)
     const handshake_type = try r.read(u8);
     if (handshake_type != 0x02) return error.InvalidHandshakeType;
-    try r.skip(3); // body length — we trust the record layer
+    const body_len = try r.read(u24);
+    if (body_len != msg.len - 4) return error.InvalidHandshakeLength;
 
     // ServerHello body (RFC 8446 §4.1.3). HelloRetryRequest is encoded as a
     // ServerHello with a fixed Random value; detect it explicitly so callers
@@ -68,6 +75,7 @@ pub fn parse(msg: []const u8) ParseError!ServerHello {
 
     // Extensions
     const extensions_len = try r.read(u16);
+    if (extensions_len > msg.len - r.pos) return error.InvalidExtensionLength;
     const extensions_end = r.pos + extensions_len;
 
     var got_supported_versions = false;
@@ -77,26 +85,33 @@ pub fn parse(msg: []const u8) ParseError!ServerHello {
     while (r.pos < extensions_end) {
         const ext_type = try r.read(u16);
         const ext_len = try r.read(u16);
+        if (ext_len > extensions_end - r.pos) return error.InvalidExtensionLength;
 
         switch (ext_type) {
             // supported_versions (RFC 8446 §4.2.1)
             0x002b => {
+                if (got_supported_versions) return error.DuplicateExtension;
+                if (ext_len != 2) return error.InvalidExtensionLength;
                 const version = try r.read(u16);
                 if (version != 0x0304) return error.UnsupportedTlsVersion;
                 got_supported_versions = true;
             },
             // key_share (RFC 8446 §4.2.8)
             0x0033 => {
+                if (got_key_share) return error.DuplicateExtension;
+                const ext_end = r.pos + ext_len;
                 const group = try r.read(u16);
                 if (group != 0x001d) return error.UnsupportedKeyShareGroup; // x25519 only
                 const key_len = try r.read(u16);
                 if (key_len != 32) return error.UnsupportedKeyShareGroup;
                 server_public_key = .init((try r.readSlice(32))[0..32].*);
+                if (r.pos != ext_end) return error.InvalidExtensionLength;
                 got_key_share = true;
             },
             else => try r.skip(ext_len),
         }
     }
+    if (r.pos != extensions_end) return error.InvalidExtensionLength;
 
     if (!got_supported_versions or !got_key_share) return error.MissingExtension;
 
@@ -137,7 +152,7 @@ test "parse: wrong handshake type" {
 }
 
 test "parse: truncated message" {
-    try testing.expectError(error.UnexpectedEof, parse(server_hello_rfc8448[0..43]));
+    try testing.expectError(error.InvalidHandshakeLength, parse(server_hello_rfc8448[0..43]));
 }
 
 test "parse: rejects HelloRetryRequest" {
@@ -159,6 +174,36 @@ test "parse: missing extensions" {
             0x00, 0x00, // extensions: empty
         };
     try testing.expectError(error.MissingExtension, parse(&msg));
+}
+
+test "parse: rejects mismatched handshake length" {
+    var msg = server_hello_rfc8448[0..server_hello_rfc8448.len].*;
+    msg[3] -= 1;
+    try testing.expectError(error.InvalidHandshakeLength, parse(&msg));
+}
+
+test "parse: rejects oversized extensions block" {
+    var msg = server_hello_rfc8448[0..server_hello_rfc8448.len].*;
+    msg[42] = 0xff;
+    msg[43] = 0xff;
+    try testing.expectError(error.InvalidExtensionLength, parse(&msg));
+}
+
+test "parse: rejects duplicate supported_versions" {
+    const msg = server_hello_rfc8448 ++ [_]u8{ 0x00, 0x2b, 0x00, 0x02, 0x03, 0x04 };
+    var dup = msg[0..msg.len].*;
+    dup[3] += 6;
+    dup[43] += 6;
+    try testing.expectError(error.DuplicateExtension, parse(&dup));
+}
+
+test "parse: rejects duplicate key_share" {
+    const key_share = server_hello_rfc8448[44..84];
+    const msg = server_hello_rfc8448 ++ key_share.*;
+    var dup = msg[0..msg.len].*;
+    dup[3] += key_share.len;
+    dup[43] += key_share.len;
+    try testing.expectError(error.DuplicateExtension, parse(&dup));
 }
 
 test "parse: unsupported TLS version" {
