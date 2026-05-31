@@ -405,6 +405,33 @@ pub fn handleRecord(self: *ClientHandshake, record: []u8, out: []u8) HandleError
     return ev;
 }
 
+pub const AlertError = RecordLayer.EncryptError || error{PendingWrite};
+
+/// Encode a TLS alert record (then completeWrite() once sent). Before handshake
+/// keys exist this emits a plaintext alert record; after ServerHello it encrypts
+/// the alert under the current send traffic key. RFC 8446 §6.
+pub fn sendAlert(self: *ClientHandshake, description: alert.Description, out: []u8) AlertError![]const u8 {
+    if (self.pending_write) return error.PendingWrite;
+    var msg: [2]u8 = undefined;
+    const level: alert.Level = if (description == .close_notify) .warning else .fatal;
+    _ = alert.encode(&msg, level, description) catch unreachable;
+
+    const record = switch (self.state) {
+        .start, .wait_sh => plaintextAlert(&msg, out),
+        else => try self.tx.encrypt(.alert, &msg, out),
+    };
+    self.pending_write = true;
+    return record;
+}
+
+fn plaintextAlert(msg: *const [2]u8, out: []u8) error{BufferTooShort}![]u8 {
+    const total = frame.header_len + msg.len;
+    if (out.len < total) return error.BufferTooShort;
+    out[0..frame.header_len].* = mem.toBytes(frame.Header.init(.alert, msg.len));
+    out[frame.header_len..][0..msg.len].* = msg.*;
+    return out[0..total];
+}
+
 /// Encrypt application data into a wire-ready record (then completeWrite() once
 /// sent). RFC 8446 §5.2.
 pub fn sendApplicationData(self: *ClientHandshake, plaintext: []const u8, out: []u8) SendError![]const u8 {
@@ -1088,6 +1115,30 @@ test "handleRecord: KeyUpdate not at record boundary is rejected" {
 }
 
 // RFC 8446 §6.1 — close_notify is the only alert that cleanly closes.
+// RFC 8446 §6 — alerts before handshake protection are plaintext records.
+test "sendAlert: plaintext fatal alert before ServerHello" {
+    var hs: ClientHandshake = .init(rfc8448_client_keypair);
+    var out: [16]u8 = undefined;
+    const rec = try hs.sendAlert(.decode_error, &out);
+    try testing.expectEqualSlices(u8, &.{ 0x15, 0x03, 0x03, 0x00, 0x02, 0x02, 0x32 }, rec);
+    try testing.expectError(error.PendingWrite, hs.sendAlert(.decode_error, &out));
+}
+
+// RFC 8446 §6.1 — close_notify is sent as a warning-level alert.
+test "sendAlert: encrypted close_notify after handshake" {
+    var hs = try rfc8448ConnectedClient();
+    var peer = hs.tx;
+
+    var out: [64]u8 = undefined;
+    const rec = try hs.sendAlert(.close_notify, &out);
+
+    var rec_buf: [64]u8 = undefined;
+    @memcpy(rec_buf[0..rec.len], rec);
+    const dec = try peer.decrypt(rec_buf[0..rec.len]);
+    try testing.expectEqual(frame.ContentType.alert, dec.content_type);
+    try testing.expectEqualSlices(u8, &.{ 0x01, 0x00 }, dec.content);
+}
+
 test "handleRecord: close_notify returns closed" {
     var hs = try rfc8448ConnectedClient();
     var server_tx = hs.rx;
