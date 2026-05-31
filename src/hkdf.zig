@@ -160,6 +160,15 @@ fn Hkdf(comptime Hmac: type) type {
             return deriveSecret(master, "s ap traffic", transcript_hash);
         }
 
+        /// RFC 8446 §7.2 — next-generation application traffic secret.
+        /// application_traffic_secret_N+1 =
+        ///   HKDF-Expand-Label(secret_N, "traffic upd", "", Hash.length)
+        pub inline fn nextTrafficSecret(prk: Prk) Prk {
+            var out: Prk = undefined;
+            expandLabel(&out.data, "traffic upd", "", prk);
+            return out;
+        }
+
         /// Derive both the write key and IV from a traffic secret and return
         /// a ready-to-use RecordLayer.
         pub fn makeRecordLayer(comptime key: aead.Keys, prk: Prk) RecordLayer {
@@ -306,6 +315,26 @@ test "HkdfSha256.finishedKey: RFC 8448 §3 server" {
         0xc0, 0x68, 0xbf, 0x49, 0x2c, 0x65, 0x2f, 0x01,
         0xf2, 0x88, 0xa1, 0xd8, 0xcd, 0xc1, 0x9f, 0xc8,
     }, &fk.data);
+}
+
+// RFC 8446 §7.2 — traffic key update ("traffic upd").
+// RFC 8448 has no KeyUpdate trace, so the expected next secret is computed
+// independently (HKDF-Expand-Label with label "tls13 traffic upd") from the
+// RFC 8448 §3 client_application_traffic_secret_0.
+test "HkdfSha256.nextTrafficSecret: RFC 8446 §7.2" {
+    const s0: HkdfSha256.Prk = .init(.{
+        0x9e, 0x40, 0x64, 0x6c, 0xe7, 0x9a, 0x7f, 0x9d,
+        0xc0, 0x5a, 0xf8, 0x88, 0x9b, 0xce, 0x65, 0x52,
+        0x87, 0x5a, 0xfa, 0x0b, 0x06, 0xdf, 0x00, 0x87,
+        0xf7, 0x92, 0xeb, 0xb7, 0xc1, 0x75, 0x04, 0xa5,
+    });
+    const s1 = HkdfSha256.nextTrafficSecret(s0);
+    try testing.expectEqualSlices(u8, &.{
+        0xfc, 0xdf, 0xcc, 0x72, 0x72, 0x5a, 0xae, 0xe4,
+        0x8b, 0xf6, 0x4e, 0x4f, 0xd8, 0xb7, 0x49, 0xcd,
+        0xbd, 0xba, 0xb3, 0x9d, 0x90, 0xda, 0x0b, 0x26,
+        0xe2, 0x24, 0x5c, 0xa6, 0xea, 0x16, 0x72, 0x07,
+    }, &s1.data);
 }
 
 test "HkdfSha256.serverHandshakeTrafficSecret: RFC 8448 §3" {

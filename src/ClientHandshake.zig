@@ -104,6 +104,10 @@ const Suite = union(enum) {
         handshake_secret: hkdf.HkdfSha256.Prk = undefined,
         client_finished_key: hkdf.HkdfSha256.Prk = undefined,
         server_finished_key: hkdf.HkdfSha256.Prk = undefined,
+        // Application traffic secrets, retained after the handshake so KeyUpdate
+        // can ratchet them (RFC 8446 §7.2).
+        client_app_secret: hkdf.HkdfSha256.Prk = undefined,
+        server_app_secret: hkdf.HkdfSha256.Prk = undefined,
     },
 
     /// Feed one handshake message (4-byte header + body, no record framing)
@@ -170,16 +174,38 @@ const Suite = union(enum) {
                 const fin = try finished.encode(out, &s.client_finished_key.data, &th);
 
                 const master = H.masterSecret(s.handshake_secret);
-                const client_ap = H.clientApplicationTrafficSecret(master, &.init(th));
-                const server_ap = H.serverApplicationTrafficSecret(master, &.init(th));
+                s.client_app_secret = H.clientApplicationTrafficSecret(master, &.init(th));
+                s.server_app_secret = H.serverApplicationTrafficSecret(master, &.init(th));
 
                 s.transcript.update(fin); // client Finished now part of the transcript
 
                 return .{
                     .finished = fin,
-                    .tx = H.makeRecordLayer(.aes128_gcm, client_ap),
-                    .rx = H.makeRecordLayer(.aes128_gcm, server_ap),
+                    .tx = H.makeRecordLayer(.aes128_gcm, s.client_app_secret),
+                    .rx = H.makeRecordLayer(.aes128_gcm, s.server_app_secret),
                 };
+            },
+        }
+    }
+
+    /// RFC 8446 §7.2 — ratchet our sending (client) application key and return
+    /// the fresh RecordLayer (sequence number reset to 0).
+    fn ratchetClientKey(self: *Suite) RecordLayer {
+        switch (self.*) {
+            .sha256 => |*s| {
+                s.client_app_secret = hkdf.HkdfSha256.nextTrafficSecret(s.client_app_secret);
+                return hkdf.HkdfSha256.makeRecordLayer(.aes128_gcm, s.client_app_secret);
+            },
+        }
+    }
+
+    /// RFC 8446 §7.2 — ratchet the peer's sending (server) application key and
+    /// return the fresh RecordLayer (sequence number reset to 0).
+    fn ratchetServerKey(self: *Suite) RecordLayer {
+        switch (self.*) {
+            .sha256 => |*s| {
+                s.server_app_secret = hkdf.HkdfSha256.nextTrafficSecret(s.server_app_secret);
+                return hkdf.HkdfSha256.makeRecordLayer(.aes128_gcm, s.server_app_secret);
             },
         }
     }
@@ -580,6 +606,25 @@ test "clientFinished: RFC 8448 §3 emits Finished and upgrades to app keys" {
         0x9f, 0x02, 0x28, 0x3b, 0x6c, 0x9c, 0x07, 0xef,
         0xc2, 0x6b, 0xb9, 0xf2, 0xac, 0x92, 0xe3, 0x56,
     }, &hs.rx.aead.aes128_gcm.data);
+}
+
+// RFC 8446 §7.2 — KeyUpdate key ratchet. After the handshake, ratchet the
+// client (sending) application key one generation and check the re-derived
+// write key against the independently-computed next key (see the
+// nextTrafficSecret vector in hkdf.zig).
+test "ratchetClientKey: RFC 8446 §7.2 next application write key" {
+    var hs: ClientHandshake = .init(rfc8448_client_secret_key);
+    hs.start(&rfc8448_client_hello);
+    try hs.processServerHello(&rfc8448_server_hello);
+    try hs.processFlight(rfc8448_server_flight, .{});
+    var out: [128]u8 = undefined;
+    _ = try hs.clientFinished(&out);
+
+    const rl = hs.suite.ratchetClientKey();
+    try testing.expectEqualSlices(u8, &.{
+        0x38, 0x79, 0xd8, 0x2f, 0x5f, 0x14, 0x05, 0x6e,
+        0x62, 0x3f, 0x2c, 0xe5, 0xbf, 0xc6, 0x6f, 0xce,
+    }, &rl.aead.aes128_gcm.data);
 }
 
 // RFC 8448 §3 encrypted server flight as a complete wire record (TLSCiphertext).
