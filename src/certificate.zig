@@ -15,7 +15,7 @@ pub const ParseError = error{
     InvalidHandshakeType,
     EmptyCertificateList,
     CertificateIssuerNotFound,
-} || Certificate.ParseError || Certificate.Parsed.VerifyError;
+} || Certificate.ParseError || Certificate.Parsed.VerifyError || Certificate.Parsed.VerifyHostNameError;
 
 /// Certificate validation policy.
 pub const Policy = struct {
@@ -25,6 +25,10 @@ pub const Policy = struct {
     bundle: ?*const Certificate.Bundle = null,
     /// Current time in seconds since the Unix epoch, for validity checks.
     now_sec: i64 = 0,
+    /// DNS name expected in the leaf certificate SAN/CN. null = no hostname
+    /// check. ClientHandshake.start() fills this from its `server_name` when
+    /// unset, so explicit policy values override SNI-derived defaults.
+    host_name: ?[]const u8 = null,
 };
 
 /// Parse a Certificate handshake message and extract the leaf certificate
@@ -60,7 +64,10 @@ pub fn parse(msg: []const u8, policy: Policy) ParseError![]const u8 {
         const cert: Certificate = .{ .buffer = cert_der, .index = 0 };
         const parsed = try cert.parse();
 
-        if (cert_index == 0) leaf_pub_key = parsed.pubKey();
+        if (cert_index == 0) {
+            leaf_pub_key = parsed.pubKey();
+            if (policy.host_name) |host_name| try parsed.verifyHostName(host_name);
+        }
         if (subject_to_verify) |subject| try subject.verify(parsed, policy.now_sec);
         subject_to_verify = parsed;
         cert_index += 1;
@@ -216,6 +223,17 @@ test "parse: wrong handshake type" {
     try testing.expectError(error.InvalidHandshakeType, parse(msg, .{}));
 }
 
+test "parse: validates hostname" {
+    var buf: [1024]u8 = undefined;
+    const pub_key = try parse(buildCertMsg(&buf, fixture_cert_der), .{ .host_name = "test.local" });
+    try testing.expect(pub_key.len > 0);
+}
+
+test "parse: rejects hostname mismatch" {
+    var buf: [1024]u8 = undefined;
+    try testing.expectError(error.CertificateHostMismatch, parse(buildCertMsg(&buf, fixture_cert_der), .{ .host_name = "wrong.local" }));
+}
+
 test "parse: validates leaf against trust bundle" {
     var bundle: Certificate.Bundle = .{};
     defer bundle.deinit(testing.allocator);
@@ -225,6 +243,7 @@ test "parse: validates leaf against trust bundle" {
     const pub_key = try parse(buildCertMsg(&buf, fixture_cert_der), .{
         .bundle = &bundle,
         .now_sec = 1_780_185_600,
+        .host_name = "test.local",
     });
     try testing.expect(pub_key.len > 0);
 }

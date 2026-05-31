@@ -349,6 +349,7 @@ pub fn start(
 ) StartError![]const u8 {
     assert(self.state == .start);
     if (out.len < frame.header_len) return error.BufferTooShort;
+    if (self.policy.host_name == null) self.policy.host_name = server_name;
     const ch = try client_hello.encode(out[frame.header_len..], random, .init(self.keypair.public_key), server_name);
     out[0..frame.header_len].* = mem.toBytes(frame.Header.init(.handshake, @intCast(ch.len)));
     self.injectClientHello(ch);
@@ -1189,6 +1190,23 @@ test "handleRecord: KeyUpdate flood is rejected" {
         _ = hs.handleRecord(rx_buf[0..ku_wire.len], &out) catch |e| break e;
     } else error.NoError;
     try testing.expectEqual(error.TooManyKeyUpdates, result);
+}
+
+test "start: defaults hostname policy from server_name" {
+    var hs: ClientHandshake = .init(rfc8448_client_keypair);
+    var out: [256]u8 = undefined;
+    const random: client_hello.Random = .{ .data = @splat(0xaa) };
+    _ = try hs.start(&out, random, "example.com");
+    try testing.expectEqualStrings("example.com", hs.policy.host_name.?);
+}
+
+test "start: explicit hostname policy overrides server_name" {
+    var hs: ClientHandshake = .init(rfc8448_client_keypair);
+    hs.policy.host_name = "expected.example";
+    var out: [256]u8 = undefined;
+    const random: client_hello.Random = .{ .data = @splat(0xaa) };
+    _ = try hs.start(&out, random, "sni.example");
+    try testing.expectEqualStrings("expected.example", hs.policy.host_name.?);
 }
 
 // RFC 8446 §5 — the full driver path: pump real wire records through

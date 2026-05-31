@@ -1,16 +1,18 @@
 const std = @import("std");
 const assert = std.debug.assert;
-const doNotOptimizeAway = std.mem.doNotOptimizeAway;
+const mem = std.mem;
+const doNotOptimizeAway = mem.doNotOptimizeAway;
 const builtin = @import("builtin");
-const txtar = @import("txtar");
 
-const rfc8448 = @import("rfc8448.zig");
+const txtar = @import("txtar");
 const ztls = @import("ztls");
 const Aead = ztls.aead.Aead;
 const Iv = ztls.aead.Iv;
 const RecordBuffer = ztls.RecordBuffer;
 const RecordLayer = ztls.RecordLayer;
 const frame = ztls.frame;
+
+const rfc8448 = @import("rfc8448.zig");
 
 const sizes = [_]usize{ 16, 1350, 8192, frame.max_plaintext_len };
 const target_bytes: usize = 128 * 1024 * 1024;
@@ -84,6 +86,7 @@ pub fn main() !void {
     try stdout.print("# cpu {s}\n", .{builtin.cpu.model.name});
     try stdout.print("# optimize {s}\n", .{@tagName(builtin.mode)});
     try stdout.print("benchmark,suite,size,iterations,bytes,elapsed_ns,mib_per_sec\n", .{});
+    try stdout.flush();
 
     if (args.list) return listBenchmarks(stdout);
 
@@ -98,6 +101,7 @@ pub fn main() !void {
             header.ns,
             header.mbPerSec(),
         });
+        try stdout.flush();
     }
 
     if (matches(args.filter, "record_buffer_next", "none")) {
@@ -109,6 +113,7 @@ pub fn main() !void {
             records.ns,
             records.mbPerSec(),
         });
+        try stdout.flush();
     }
 
     inline for (.{ Suite.aes_128_gcm_sha256, Suite.aes_256_gcm_sha384, Suite.chacha20_poly1305_sha256 }) |suite| {
@@ -122,6 +127,7 @@ pub fn main() !void {
                 replay.ns,
                 replay.opsPerSec(),
             });
+            try stdout.flush();
         }
     }
 
@@ -137,6 +143,7 @@ pub fn main() !void {
                     enc.ns,
                     enc.mbPerSec(),
                 });
+                try stdout.flush();
             }
 
             if (matches(args.filter, "record_decrypt", suite.name())) {
@@ -149,6 +156,7 @@ pub fn main() !void {
                     dec.ns,
                     dec.mbPerSec(),
                 });
+                try stdout.flush();
             }
         }
     }
@@ -159,11 +167,11 @@ fn parseArgs() !Args {
     var it = std.process.args();
     _ = it.next();
     while (it.next()) |arg| {
-        if (std.mem.eql(u8, arg, "--list")) {
+        if (mem.eql(u8, arg, "--list")) {
             result.list = true;
-        } else if (std.mem.eql(u8, arg, "--filter")) {
+        } else if (mem.eql(u8, arg, "--filter")) {
             result.filter = it.next() orelse return error.MissingFilter;
-        } else if (std.mem.startsWith(u8, arg, "--filter=")) {
+        } else if (mem.startsWith(u8, arg, "--filter=")) {
             result.filter = arg["--filter=".len..];
         } else {
             return error.UnknownArgument;
@@ -238,13 +246,13 @@ fn benchClientHandshakeReplay(comptime suite: Suite, timer: *std.time.Timer) !Re
     }
     const ns = timer.read();
 
-    const bytes_per_replay = rfc8448.client_hello_len + records.len;
+    const bytes_per_replay = try clientHelloLen() + records.len;
     return .{ .bytes = bytes_per_replay * handshake_iterations, .iterations = handshake_iterations, .ns = ns };
 }
 
 fn replayHandshake(records: []const u8, out: []u8) !void {
     var hs: ztls.ClientHandshake = .init(rfc8448.client_keypair);
-    _ = try hs.start(out, rfc8448.client_random, "localhost");
+    _ = try hs.start(out, rfc8448.client_random, rfc8448.replay_host_name);
     hs.completeWrite();
 
     var record_buf: [RecordBuffer.min_storage]u8 = undefined;
@@ -262,12 +270,18 @@ fn replayHandshake(records: []const u8, out: []u8) !void {
     if (!hs.isConnected()) return error.HandshakeIncomplete;
 }
 
-fn fixture(alloc: std.mem.Allocator, name: []const u8, out: []u8) ![]u8 {
+fn clientHelloLen() !usize {
+    var hs: ztls.ClientHandshake = .init(rfc8448.client_keypair);
+    var out: [512]u8 = undefined;
+    return (try hs.start(&out, rfc8448.client_random, rfc8448.replay_host_name)).len;
+}
+
+fn fixture(alloc: mem.Allocator, name: []const u8, out: []u8) ![]u8 {
     var archive = try txtar.parse(alloc, openssl_replay_archive);
     defer archive.deinit(alloc);
     for (archive.files) |f| {
-        if (!std.mem.eql(u8, f.name, name)) continue;
-        const b64 = std.mem.trimEnd(u8, f.data, "\n");
+        if (!mem.eql(u8, f.name, name)) continue;
+        const b64 = mem.trimEnd(u8, f.data, "\n");
         const n = try std.base64.standard.Decoder.calcSizeForSlice(b64);
         try std.base64.standard.Decoder.decode(out[0..n], b64);
         return out[0..n];

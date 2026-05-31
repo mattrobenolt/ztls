@@ -13,6 +13,7 @@ const sleep = std.Thread.sleep;
 const ztls = @import("ztls");
 
 const host = "127.0.0.1";
+const replay_host_name = "test.local";
 const base_port = 15433;
 
 const Suite = struct {
@@ -81,7 +82,7 @@ fn captureSuite(arena: std.mem.Allocator, suite: []const u8, port: u16) ![]u8 {
 
     var hs: ztls.ClientHandshake = .init(client_keypair);
     var out: [1024]u8 = undefined;
-    try stream.writeAll(try hs.start(&out, client_random, "localhost"));
+    try stream.writeAll(try hs.start(&out, client_random, replay_host_name));
     hs.completeWrite();
 
     var storage: [ztls.RecordBuffer.recommended_storage]u8 = undefined;

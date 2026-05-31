@@ -1,6 +1,6 @@
 const ztls = @import("ztls");
 
-pub const client_hello_len = 5 + 196;
+pub const replay_host_name = "test.local";
 
 pub const client_random: ztls.client_hello.Random = .{ .data = .{
     0xcb, 0x34, 0xec, 0xb1, 0xe7, 0x81, 0x63, 0xba,
