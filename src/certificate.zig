@@ -14,6 +14,7 @@ pub const ParseError = error{
     UnexpectedEof,
     InvalidHandshakeType,
     EmptyCertificateList,
+    CertificateIssuerNotFound,
 } || Certificate.ParseError || Certificate.Parsed.VerifyError;
 
 /// Certificate validation policy.
@@ -48,7 +49,7 @@ pub fn parse(msg: []const u8, policy: Policy) ParseError![]const u8 {
     const list_end = r.pos + list_len;
     var cert_index: usize = 0;
     var leaf_pub_key: ?[]const u8 = null;
-    var prev_parsed: ?Certificate.Parsed = null;
+    var subject_to_verify: ?Certificate.Parsed = null;
 
     while (r.pos < list_end) {
         const cert_len = try r.read(u24);
@@ -59,18 +60,23 @@ pub fn parse(msg: []const u8, policy: Policy) ParseError![]const u8 {
         const cert: Certificate = .{ .buffer = cert_der, .index = 0 };
         const parsed = try cert.parse();
 
-        if (cert_index == 0) {
-            leaf_pub_key = parsed.pubKey();
-            if (policy.bundle != null) {
-                if (prev_parsed) |prev| try prev.verify(parsed, policy.now_sec);
-            }
-        }
-
-        prev_parsed = parsed;
+        if (cert_index == 0) leaf_pub_key = parsed.pubKey();
+        if (subject_to_verify) |subject| try subject.verify(parsed, policy.now_sec);
+        subject_to_verify = parsed;
         cert_index += 1;
     }
 
+    if (policy.bundle) |bundle| {
+        try verifyAgainstBundle(bundle, subject_to_verify orelse return error.EmptyCertificateList, policy.now_sec);
+    }
+
     return leaf_pub_key orelse error.EmptyCertificateList;
+}
+
+fn verifyAgainstBundle(bundle: *const Certificate.Bundle, subject: Certificate.Parsed, now_sec: i64) ParseError!void {
+    const issuer_index = bundle.find(subject.issuer()) orelse return error.CertificateIssuerNotFound;
+    const issuer_cert: Certificate = .{ .buffer = bundle.bytes.items, .index = issuer_index };
+    try subject.verify(try issuer_cert.parse(), now_sec);
 }
 
 pub const AuthError = ParseError || VerifyError;
@@ -208,6 +214,28 @@ test "parse: wrong handshake type" {
     var msg = buildCertMsg(&buf, fixture_cert_der);
     msg[0] = 0x01;
     try testing.expectError(error.InvalidHandshakeType, parse(msg, .{}));
+}
+
+test "parse: validates leaf against trust bundle" {
+    var bundle: Certificate.Bundle = .{};
+    defer bundle.deinit(testing.allocator);
+    try bundle.addCertsFromFilePath(testing.allocator, std.fs.cwd(), "tests/fixtures/server.crt");
+
+    var buf: [1024]u8 = undefined;
+    const pub_key = try parse(buildCertMsg(&buf, fixture_cert_der), .{
+        .bundle = &bundle,
+        .now_sec = 1_780_185_600,
+    });
+    try testing.expect(pub_key.len > 0);
+}
+
+test "parse: rejects untrusted leaf when bundle misses issuer" {
+    const bundle: Certificate.Bundle = .{};
+    var buf: [1024]u8 = undefined;
+    try testing.expectError(error.CertificateIssuerNotFound, parse(buildCertMsg(&buf, fixture_cert_der), .{
+        .bundle = &bundle,
+        .now_sec = 1_780_185_600,
+    }));
 }
 
 test "parse: malformed DER length is rejected, not crashed" {
