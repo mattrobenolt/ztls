@@ -246,14 +246,6 @@ pub fn start(self: *ClientHandshake, client_hello_msg: []const u8) void {
     self.state = .wait_sh;
 }
 
-/// What the caller should do after feeding a record to processRecord.
-pub const Progress = struct {
-    /// Bytes to write to the transport. Empty unless a record was produced.
-    to_send: []const u8 = &.{},
-    /// True once the handshake completes and application keys are installed.
-    done: bool = false,
-};
-
 pub const ProcessError = frame.ParseError || RecordLayer.DecryptError ||
     ServerHelloError || FlightError || ClientFinishedError ||
     error{ IncompleteRecord, UnexpectedRecord };
@@ -262,32 +254,31 @@ pub const ProcessError = frame.ParseError || RecordLayer.DecryptError ||
 /// wire record (header + fragment) and is decrypted in place when encrypted;
 /// `out` receives any record we need to send back (the client Finished).
 ///
-/// Returns the bytes to send and whether the handshake is complete. When the
-/// server's flight finishes, the client Finished is emitted automatically and
-/// rx/tx are promoted to application keys. After done, do not call again —
-/// use rx/tx directly for application data. RFC 8446 §5.
-pub fn processRecord(self: *ClientHandshake, record: []u8, out: []u8) ProcessError!Progress {
+/// Returns the bytes to send (written into `out`), or null if this record
+/// produced nothing to send. When the server's flight finishes, the client
+/// Finished is emitted automatically and rx/tx are promoted to application
+/// keys. Completion is `self.state == .connected`; once connected, do not call
+/// again — use rx/tx directly for application data. RFC 8446 §5.
+pub fn processRecord(self: *ClientHandshake, record: []u8, out: []u8) ProcessError!?[]const u8 {
     const hdr = try frame.parseHeader(record);
     if (record.len < frame.header_len + hdr.length()) return error.IncompleteRecord;
 
     switch (hdr.content_type) {
         // RFC 8446 §D.4 — middlebox-compat ChangeCipherSpec, silently dropped.
-        .change_cipher_spec => return .{},
+        .change_cipher_spec => return null,
         // ServerHello is the only handshake message that arrives unencrypted.
         .handshake => {
             if (self.state != .wait_sh) return error.UnexpectedRecord;
             try self.processServerHello(record[frame.header_len..][0..hdr.length()]);
-            return .{};
+            return null;
         },
         // Encrypted records: decrypt with rx, then feed the server flight.
         .application_data => {
             const dec = try self.rx.decrypt(record);
             if (dec.content_type != .handshake) return error.UnexpectedRecord;
             try self.processFlight(dec.content, self.policy);
-            if (self.state == .send_finished) {
-                return .{ .to_send = try self.clientFinished(out), .done = true };
-            }
-            return .{};
+            if (self.state == .send_finished) return try self.clientFinished(out);
+            return null;
         },
         else => return error.UnexpectedRecord,
     }
@@ -606,9 +597,7 @@ test "processRecord: drives RFC 8448 §3 handshake to done" {
 
     // ServerHello as a plaintext handshake record (header + 90-byte body).
     var sh_record = [_]u8{ 0x16, 0x03, 0x03, 0x00, 0x5a } ++ rfc8448_server_hello;
-    const p_sh = try hs.processRecord(&sh_record, &out);
-    try testing.expect(!p_sh.done);
-    try testing.expectEqual(@as(usize, 0), p_sh.to_send.len);
+    try testing.expectEqual(@as(?[]const u8, null), try hs.processRecord(&sh_record, &out));
     try testing.expectEqual(.wait_ee, hs.state);
 
     // Mirror of the client handshake-traffic encryptor (seq 0), captured before
@@ -617,19 +606,17 @@ test "processRecord: drives RFC 8448 §3 handshake to done" {
 
     // ChangeCipherSpec — middlebox compat, discarded (RFC 8446 §D.4).
     var ccs = [_]u8{ 0x14, 0x03, 0x03, 0x00, 0x01, 0x01 };
-    const p_ccs = try hs.processRecord(&ccs, &out);
-    try testing.expect(!p_ccs.done);
+    try testing.expectEqual(@as(?[]const u8, null), try hs.processRecord(&ccs, &out));
     try testing.expectEqual(.wait_ee, hs.state);
 
     // Encrypted server flight: completes the handshake and emits client Finished.
     var flight = rfc8448_server_flight_record.*;
-    const p_fin = try hs.processRecord(flight[0..], &out);
-    try testing.expect(p_fin.done);
+    const to_send = (try hs.processRecord(flight[0..], &out)).?;
     try testing.expectEqual(.connected, hs.state);
 
     var dec_buf: [128]u8 = undefined;
-    @memcpy(dec_buf[0..p_fin.to_send.len], p_fin.to_send);
-    const dec = try peer.decrypt(dec_buf[0..p_fin.to_send.len]);
+    @memcpy(dec_buf[0..to_send.len], to_send);
+    const dec = try peer.decrypt(dec_buf[0..to_send.len]);
     try testing.expectEqual(.handshake, dec.content_type);
     try testing.expectEqualSlices(u8, &rfc8448_client_finished, dec.content);
 }
