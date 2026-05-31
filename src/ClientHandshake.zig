@@ -1224,6 +1224,23 @@ test "handleRecord: fatal alert returns PeerAlert" {
     try testing.expectError(error.PeerAlert, hs.handleRecord(rx_buf[0..wire_rec.len], &out));
 }
 
+test "handleRecord: NewSessionTicket is parsed and ignored" {
+    var hs = try rfc8448ConnectedClient();
+    hs.rx = hs.suite.ratchetServerKey();
+    var out: [128]u8 = undefined;
+    const ticket = [_]u8{
+        0x04, 0x00, 0x00, 0x0f,
+        0x00, 0x00, 0x0e, 0x10,
+        0x12, 0x34, 0x56, 0x78,
+        0x01, 0xaa, 0x00, 0x01,
+        0xbb, 0x00, 0x00,
+    };
+    var wire_buf: [128]u8 = undefined;
+    var server_tx = hs.rx;
+    const record = try server_tx.encrypt(.handshake, &ticket, &wire_buf);
+    try testing.expectEqual(Event.none, try hs.handleRecord(record, &out));
+}
+
 test "handleRecord: malformed NewSessionTicket is rejected" {
     var hs = try rfc8448ConnectedClient();
     hs.rx = hs.suite.ratchetServerKey();
