@@ -49,14 +49,16 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = .ReleaseFast,
     });
+    const bench_root = b.createModule(.{
+        .root_source_file = b.path("bench/record_protection.zig"),
+        .target = target,
+        .optimize = .ReleaseFast,
+        .imports = &.{.{ .name = "ztls", .module = bench_mod }},
+    });
+    if (txtar_mod) |tm| bench_root.addImport("txtar", tm);
     const bench_exe = b.addExecutable(.{
         .name = "record_protection_bench",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("bench/record_protection.zig"),
-            .target = target,
-            .optimize = .ReleaseFast,
-            .imports = &.{.{ .name = "ztls", .module = bench_mod }},
-        }),
+        .root_module = bench_root,
     });
     const run_bench = b.addRunArtifact(bench_exe);
     const bench_step = b.step("bench", "Run performance benchmarks");

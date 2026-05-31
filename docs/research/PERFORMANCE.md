@@ -57,7 +57,8 @@ Start with layers that exist today:
    deterministic client-side handshake. This measures exactly the client work we
    own today: transcript hashing, key schedule, certificate parse, signature
    verify, Finished validation, and client Finished generation. It is not a full
-   client/server benchmark until ztls has a server.
+   client/server benchmark until ztls has a server. Implemented today as
+   `client_handshake_replay,TLS_AES_128_GCM_SHA256`.
 
 4. **Full in-memory connection**
 
@@ -80,15 +81,17 @@ Start with layers that exist today:
 
 ## Initial harness scope
 
-The first `zig build bench` should be deliberately boring:
+The first `zig build bench` is deliberately boring:
 
 - record encrypt/decrypt throughput for all three AEADs at fixed record sizes;
+- record framing/parser rows for cheap non-crypto surfaces;
+- deterministic RFC 8448 client handshake replay;
 - no network;
 - no allocations in library code; benchmark-only scratch allocation is fine;
 - CSV rows written to stdout.
 
-After that exists, add handshake replay and parser/framing scenarios as separate
-named benchmarks instead of stuffing everything into one timing loop.
+Future benchmark additions should stay as separate named rows instead of
+stuffing unrelated work into one timing loop.
 
 ## Profiling tools
 

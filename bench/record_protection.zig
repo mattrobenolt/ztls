@@ -2,7 +2,9 @@ const std = @import("std");
 const assert = std.debug.assert;
 const doNotOptimizeAway = std.mem.doNotOptimizeAway;
 const builtin = @import("builtin");
+const txtar = @import("txtar");
 
+const rfc8448 = @import("rfc8448.zig");
 const ztls = @import("ztls");
 const Aead = ztls.aead.Aead;
 const Iv = ztls.aead.Iv;
@@ -12,6 +14,8 @@ const frame = ztls.frame;
 
 const sizes = [_]usize{ 16, 1350, 8192, frame.max_plaintext_len };
 const target_bytes: usize = 128 * 1024 * 1024;
+const handshake_iterations = 2048;
+const rfc8448_archive = @embedFile("test_fixtures/rfc8448.txtar");
 
 const Suite = enum {
     aes_128_gcm_sha256,
@@ -49,6 +53,11 @@ const Result = struct {
         const mib = @as(f64, @floatFromInt(self.bytes)) / (1024.0 * 1024.0);
         const sec = @as(f64, @floatFromInt(self.ns)) / std.time.ns_per_s;
         return mib / sec;
+    }
+
+    fn opsPerSec(self: Result) f64 {
+        const sec = @as(f64, @floatFromInt(self.ns)) / std.time.ns_per_s;
+        return @as(f64, @floatFromInt(self.iterations)) / sec;
     }
 };
 
@@ -91,6 +100,17 @@ pub fn main() !void {
             records.bytes,
             records.ns,
             records.mbPerSec(),
+        });
+    }
+
+    if (matches(args.filter, "client_handshake_replay", "TLS_AES_128_GCM_SHA256")) {
+        const replay = try benchClientHandshakeReplay(&timer);
+        try stdout.print("client_handshake_replay,TLS_AES_128_GCM_SHA256,{d},{d},{d},{d},{d:.2}\n", .{
+            replay.bytes / replay.iterations,
+            replay.iterations,
+            replay.bytes,
+            replay.ns,
+            replay.opsPerSec(),
         });
     }
 
@@ -149,6 +169,7 @@ fn matches(filter: ?[]const u8, benchmark: []const u8, suite: []const u8) bool {
 fn listBenchmarks(stdout: *std.Io.Writer) !void {
     try stdout.print("parse_header,none\n", .{});
     try stdout.print("record_buffer_next,none\n", .{});
+    try stdout.print("client_handshake_replay,TLS_AES_128_GCM_SHA256\n", .{});
     inline for (.{ Suite.aes_128_gcm_sha256, Suite.aes_256_gcm_sha384, Suite.chacha20_poly1305_sha256 }) |suite| {
         try stdout.print("record_encrypt,{s}\n", .{suite.name()});
         try stdout.print("record_decrypt,{s}\n", .{suite.name()});
@@ -185,6 +206,58 @@ fn benchRecordBuffer(timer: *std.time.Timer) !Result {
     const ns = timer.read();
 
     return .{ .bytes = iterations * record.len, .iterations = iterations, .ns = ns };
+}
+
+fn benchClientHandshakeReplay(timer: *std.time.Timer) !Result {
+    var fixture_scratch: [8192]u8 = undefined;
+    var fba: std.heap.FixedBufferAllocator = .init(&fixture_scratch);
+    var server_flight_buf: [1024]u8 = undefined;
+    const server_flight_record = try fixture(fba.allocator(), "server_flight_record.b64", &server_flight_buf);
+
+    var out: [256]u8 = undefined;
+
+    // Warm up certificate parsing/signature verification and code paths once.
+    try replayHandshake(server_flight_record, &out);
+
+    timer.reset();
+    for (0..handshake_iterations) |_| {
+        try replayHandshake(server_flight_record, &out);
+    }
+    const ns = timer.read();
+
+    const bytes_per_replay = rfc8448.client_hello.len + rfc8448.server_hello_record.len + rfc8448.ccs_record.len + server_flight_record.len;
+    return .{ .bytes = bytes_per_replay * handshake_iterations, .iterations = handshake_iterations, .ns = ns };
+}
+
+fn replayHandshake(server_flight_record: []const u8, out: []u8) !void {
+    var hs: ztls.ClientHandshake = .init(rfc8448.client_keypair);
+    hs.injectClientHello(&rfc8448.client_hello);
+
+    var sh = rfc8448.server_hello_record;
+    _ = try hs.handleRecord(&sh, out);
+
+    var ccs = rfc8448.ccs_record;
+    _ = try hs.handleRecord(&ccs, out);
+
+    var flight: [1024]u8 = undefined;
+    @memcpy(flight[0..server_flight_record.len], server_flight_record);
+    const ev = try hs.handleRecord(flight[0..server_flight_record.len], out);
+    if (ev != .write) return error.MissingClientFinished;
+    hs.completeWrite();
+    if (!hs.isConnected()) return error.HandshakeIncomplete;
+}
+
+fn fixture(alloc: std.mem.Allocator, name: []const u8, out: []u8) ![]u8 {
+    var archive = try txtar.parse(alloc, rfc8448_archive);
+    defer archive.deinit(alloc);
+    for (archive.files) |f| {
+        if (!std.mem.eql(u8, f.name, name)) continue;
+        const b64 = std.mem.trimEnd(u8, f.data, "\n");
+        const n = try std.base64.standard.Decoder.calcSizeForSlice(b64);
+        try std.base64.standard.Decoder.decode(out[0..n], b64);
+        return out[0..n];
+    }
+    return error.FixtureNotFound;
 }
 
 fn benchEncrypt(comptime suite: Suite, comptime size: usize, timer: *std.time.Timer) !Result {

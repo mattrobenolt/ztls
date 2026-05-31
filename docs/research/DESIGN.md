@@ -366,11 +366,11 @@ Every error path is tested. Fuzzing is not optional.
 See `docs/research/PERFORMANCE.md` for the benchmark plan and prior-art notes.
 Current harness:
 
-- `zig build bench` — wall-time CSV-ish rows for record protection and framing.
+- `zig build bench` — wall-time CSV-ish rows for record protection, framing, and RFC 8448 client handshake replay.
 - `zig build bench-bin` — installs `zig-out/bin/record_protection_bench` for perf/callgrind.
 - `record_protection_bench --list` / `--filter <substring>` — isolate scenarios.
 
-Next benchmark target: deterministic client handshake replay with RFC 8448 / OpenSSL fixture bytes.
+Next benchmark target: expand replay coverage beyond RFC 8448 AES-128 to generated OpenSSL traces for all negotiated suites.
 
 ---
 
