@@ -176,19 +176,28 @@ pub fn verifySignature(
 
 const fixture_cert_der = @embedFile("test_fixtures/server.crt.der");
 const fixture_cv_sig = @embedFile("test_fixtures/cv.sig");
+const chain_root_pem = "tests/fixtures/chain/root.crt";
+const chain_leaf_der = @embedFile("test_fixtures/chain/leaf.der");
+const chain_intermediate_der = @embedFile("test_fixtures/chain/intermediate.der");
 
 fn buildCertMsg(buf: []u8, cert_der: []const u8) []u8 {
+    return buildCertChainMsg(buf, &.{cert_der});
+}
+
+fn buildCertChainMsg(buf: []u8, certs_der: []const []const u8) []u8 {
     var w: wire.Writer = .init(buf);
-    const entry_len = cert_der.len + 2;
-    const list_len = 3 + entry_len;
+    var list_len: usize = 0;
+    for (certs_der) |cert_der| list_len += 3 + cert_der.len + 2;
     const body_len = 1 + 3 + list_len;
     w.append(u8, 0x0b);
     w.append(u24, @intCast(body_len));
     w.append(u8, 0x00);
     w.append(u24, @intCast(list_len));
-    w.append(u24, @intCast(cert_der.len));
-    w.appendSlice(cert_der);
-    w.append(u16, 0x0000);
+    for (certs_der) |cert_der| {
+        w.append(u24, @intCast(cert_der.len));
+        w.appendSlice(cert_der);
+        w.append(u16, 0x0000);
+    }
     return w.written();
 }
 
@@ -242,10 +251,50 @@ test "parse: validates leaf against trust bundle" {
     var buf: [1024]u8 = undefined;
     const pub_key = try parse(buildCertMsg(&buf, fixture_cert_der), .{
         .bundle = &bundle,
-        .now_sec = 1_780_185_600,
+        .now_sec = 1_780_300_000,
         .host_name = "test.local",
     });
     try testing.expect(pub_key.len > 0);
+}
+
+test "parse: validates leaf-intermediate-root chain" {
+    var bundle: Certificate.Bundle = .{};
+    defer bundle.deinit(testing.allocator);
+    try bundle.addCertsFromFilePath(testing.allocator, std.fs.cwd(), chain_root_pem);
+
+    var buf: [4096]u8 = undefined;
+    const pub_key = try parse(buildCertChainMsg(&buf, &.{ chain_leaf_der, chain_intermediate_der }), .{
+        .bundle = &bundle,
+        .now_sec = 1_780_300_000,
+        .host_name = "chain.test",
+    });
+    try testing.expect(pub_key.len > 0);
+}
+
+test "parse: rejects chain with missing intermediate" {
+    var bundle: Certificate.Bundle = .{};
+    defer bundle.deinit(testing.allocator);
+    try bundle.addCertsFromFilePath(testing.allocator, std.fs.cwd(), chain_root_pem);
+
+    var buf: [4096]u8 = undefined;
+    try testing.expectError(error.CertificateIssuerNotFound, parse(buildCertChainMsg(&buf, &.{chain_leaf_der}), .{
+        .bundle = &bundle,
+        .now_sec = 1_780_300_000,
+        .host_name = "chain.test",
+    }));
+}
+
+test "parse: rejects chain hostname mismatch" {
+    var bundle: Certificate.Bundle = .{};
+    defer bundle.deinit(testing.allocator);
+    try bundle.addCertsFromFilePath(testing.allocator, std.fs.cwd(), chain_root_pem);
+
+    var buf: [4096]u8 = undefined;
+    try testing.expectError(error.CertificateHostMismatch, parse(buildCertChainMsg(&buf, &.{ chain_leaf_der, chain_intermediate_der }), .{
+        .bundle = &bundle,
+        .now_sec = 1_780_300_000,
+        .host_name = "wrong.chain.test",
+    }));
 }
 
 test "parse: rejects untrusted leaf when bundle misses issuer" {
@@ -253,7 +302,7 @@ test "parse: rejects untrusted leaf when bundle misses issuer" {
     var buf: [1024]u8 = undefined;
     try testing.expectError(error.CertificateIssuerNotFound, parse(buildCertMsg(&buf, fixture_cert_der), .{
         .bundle = &bundle,
-        .now_sec = 1_780_185_600,
+        .now_sec = 1_780_300_000,
     }));
 }
 
