@@ -105,7 +105,12 @@ perf record --call-graph dwarf ./zig-out/bin/record_protection_bench
 perf report
 ```
 
-For instruction counts, prefer a smaller filtered benchmark mode before running
-callgrind over the full suite; callgrind is deterministic but slow. The current
-harness does not yet expose filtering, so adding `--filter`/`--suite` flags is
-the next step before serious instruction-count tracking.
+For instruction counts, use `--filter` to avoid running callgrind over the full
+suite; callgrind is deterministic but slow.
+
+```sh
+zig build bench-bin
+valgrind --tool=callgrind --callgrind-out-file=callgrind.out \
+  ./zig-out/bin/record_protection_bench --filter chacha20
+callgrind_annotate callgrind.out
+```

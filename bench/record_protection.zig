@@ -35,6 +35,11 @@ const Suite = enum {
     }
 };
 
+const Args = struct {
+    filter: ?[]const u8 = null,
+    list: bool = false,
+};
+
 const Result = struct {
     bytes: usize,
     iterations: usize,
@@ -48,6 +53,8 @@ const Result = struct {
 };
 
 pub fn main() !void {
+    const args = try parseArgs();
+
     var stdout_buf: [4096]u8 = undefined;
     var stdout_file = std.fs.File.stdout().writer(&stdout_buf);
     const stdout = &stdout_file.interface;
@@ -61,48 +68,90 @@ pub fn main() !void {
     try stdout.print("# optimize {s}\n", .{@tagName(builtin.mode)});
     try stdout.print("benchmark,suite,size,iterations,bytes,elapsed_ns,mib_per_sec\n", .{});
 
+    if (args.list) return listBenchmarks(stdout);
+
     var timer = try std.time.Timer.start();
 
-    const header = benchParseHeader(&timer);
-    try stdout.print("parse_header,none,{d},{d},{d},{d},{d:.2}\n", .{
-        frame.header_len,
-        header.iterations,
-        header.bytes,
-        header.ns,
-        header.mbPerSec(),
-    });
+    if (matches(args.filter, "parse_header", "none")) {
+        const header = benchParseHeader(&timer);
+        try stdout.print("parse_header,none,{d},{d},{d},{d},{d:.2}\n", .{
+            frame.header_len,
+            header.iterations,
+            header.bytes,
+            header.ns,
+            header.mbPerSec(),
+        });
+    }
 
-    const records = try benchRecordBuffer(&timer);
-    try stdout.print("record_buffer_next,none,{d},{d},{d},{d},{d:.2}\n", .{
-        frame.header_len,
-        records.iterations,
-        records.bytes,
-        records.ns,
-        records.mbPerSec(),
-    });
+    if (matches(args.filter, "record_buffer_next", "none")) {
+        const records = try benchRecordBuffer(&timer);
+        try stdout.print("record_buffer_next,none,{d},{d},{d},{d},{d:.2}\n", .{
+            frame.header_len,
+            records.iterations,
+            records.bytes,
+            records.ns,
+            records.mbPerSec(),
+        });
+    }
 
     inline for (.{ Suite.aes_128_gcm_sha256, Suite.aes_256_gcm_sha384, Suite.chacha20_poly1305_sha256 }) |suite| {
         inline for (sizes) |size| {
-            const enc = try benchEncrypt(suite, size, &timer);
-            try stdout.print("record_encrypt,{s},{d},{d},{d},{d},{d:.2}\n", .{
-                suite.name(),
-                size,
-                enc.iterations,
-                enc.bytes,
-                enc.ns,
-                enc.mbPerSec(),
-            });
+            if (matches(args.filter, "record_encrypt", suite.name())) {
+                const enc = try benchEncrypt(suite, size, &timer);
+                try stdout.print("record_encrypt,{s},{d},{d},{d},{d},{d:.2}\n", .{
+                    suite.name(),
+                    size,
+                    enc.iterations,
+                    enc.bytes,
+                    enc.ns,
+                    enc.mbPerSec(),
+                });
+            }
 
-            const dec = try benchDecrypt(suite, size, &timer);
-            try stdout.print("record_decrypt,{s},{d},{d},{d},{d},{d:.2}\n", .{
-                suite.name(),
-                size,
-                dec.iterations,
-                dec.bytes,
-                dec.ns,
-                dec.mbPerSec(),
-            });
+            if (matches(args.filter, "record_decrypt", suite.name())) {
+                const dec = try benchDecrypt(suite, size, &timer);
+                try stdout.print("record_decrypt,{s},{d},{d},{d},{d},{d:.2}\n", .{
+                    suite.name(),
+                    size,
+                    dec.iterations,
+                    dec.bytes,
+                    dec.ns,
+                    dec.mbPerSec(),
+                });
+            }
         }
+    }
+}
+
+fn parseArgs() !Args {
+    var result: Args = .{};
+    var it = std.process.args();
+    _ = it.next();
+    while (it.next()) |arg| {
+        if (std.mem.eql(u8, arg, "--list")) {
+            result.list = true;
+        } else if (std.mem.eql(u8, arg, "--filter")) {
+            result.filter = it.next() orelse return error.MissingFilter;
+        } else if (std.mem.startsWith(u8, arg, "--filter=")) {
+            result.filter = arg["--filter=".len..];
+        } else {
+            return error.UnknownArgument;
+        }
+    }
+    return result;
+}
+
+fn matches(filter: ?[]const u8, benchmark: []const u8, suite: []const u8) bool {
+    const f = filter orelse return true;
+    return std.ascii.indexOfIgnoreCase(benchmark, f) != null or std.ascii.indexOfIgnoreCase(suite, f) != null;
+}
+
+fn listBenchmarks(stdout: *std.Io.Writer) !void {
+    try stdout.print("parse_header,none\n", .{});
+    try stdout.print("record_buffer_next,none\n", .{});
+    inline for (.{ Suite.aes_128_gcm_sha256, Suite.aes_256_gcm_sha384, Suite.chacha20_poly1305_sha256 }) |suite| {
+        try stdout.print("record_encrypt,{s}\n", .{suite.name()});
+        try stdout.print("record_decrypt,{s}\n", .{suite.name()});
     }
 }
 
