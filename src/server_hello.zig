@@ -44,6 +44,47 @@ const hello_retry_request_random = [_]u8{
     0x07, 0x9e, 0x09, 0xe2, 0xc8, 0xa8, 0x33, 0x9c,
 };
 
+pub const encoded_len = 4 + 2 + 32 + 1 + 2 + 1 + 2 + (4 + 2 + 2 + 32) + (4 + 2);
+
+pub const EncodeError = error{BufferTooShort};
+
+/// Encode a TLS 1.3 ServerHello handshake message. The caller supplies the
+/// legacy_session_id_echo from ClientHello; ztls' client currently sends an
+/// empty one, but the server path needs to echo arbitrary caller-owned bytes.
+/// RFC 8446 §4.1.3.
+pub fn encode(
+    out: []u8,
+    random: [32]u8,
+    session_id_echo: []const u8,
+    cipher_suite: CipherSuite,
+    public_key: x25519.PublicKey,
+) EncodeError![]const u8 {
+    if (session_id_echo.len > 32) return error.BufferTooShort;
+    const len = encoded_len + session_id_echo.len;
+    if (out.len < len) return error.BufferTooShort;
+
+    var w: wire.Writer = .init(out);
+    w.append(u8, 0x02);
+    w.append(u24, @intCast(len - 4));
+    w.append(u16, 0x0303);
+    w.appendSlice(&random);
+    w.append(u8, @intCast(session_id_echo.len));
+    w.appendSlice(session_id_echo);
+    w.append(CipherSuite, cipher_suite);
+    w.append(u8, 0x00);
+
+    w.append(u16, 0x002e); // extensions length
+    w.append(u16, 0x0033); // key_share
+    w.append(u16, 0x0024);
+    w.append(u16, 0x001d); // x25519
+    w.append(u16, 0x0020);
+    w.appendSlice(&public_key.data);
+    w.append(u16, 0x002b); // supported_versions
+    w.append(u16, 0x0002);
+    w.append(u16, 0x0304);
+    return w.written();
+}
+
 /// Parse a ServerHello handshake message.
 ///
 /// `msg` must be the complete handshake message including the 4-byte header
@@ -133,6 +174,31 @@ const server_hello_rfc8448: []const u8 = &.{
     0xc6, 0x72, 0xe1, 0x56, 0xd6, 0xcc, 0x25, 0x3b, 0x83, 0x3d, 0xf1, 0xdd, 0x69,
     0xb1, 0xb0, 0x4e, 0x75, 0x1f, 0x0f, 0x00, 0x2b, 0x00, 0x02, 0x03, 0x04,
 };
+
+test "encode: round trips through parse" {
+    const key: x25519.PublicKey = .init(.{
+        0xc9, 0x82, 0x88, 0x76, 0x11, 0x20, 0x95, 0xfe,
+        0x66, 0x76, 0x2b, 0xdb, 0xf7, 0xc6, 0x72, 0xe1,
+        0x56, 0xd6, 0xcc, 0x25, 0x3b, 0x83, 0x3d, 0xf1,
+        0xdd, 0x69, 0xb1, 0xb0, 0x4e, 0x75, 0x1f, 0x0f,
+    });
+    var out: [128]u8 = undefined;
+    const msg = try encode(&out, [_]u8{0xab} ** 32, &.{}, .aes_128_gcm_sha256, key);
+    try testing.expectEqual(@as(usize, encoded_len), msg.len);
+    const parsed = try parse(msg);
+    try testing.expectEqual(.aes_128_gcm_sha256, parsed.cipher_suite);
+    try testing.expectEqualSlices(u8, &key.data, &parsed.server_public_key.data);
+}
+
+test "encode: echoes session id" {
+    var out: [128]u8 = undefined;
+    const sid = [_]u8{ 1, 2, 3, 4 };
+    const msg = try encode(&out, [_]u8{0xab} ** 32, &sid, .aes_256_gcm_sha384, .zero);
+    try testing.expectEqual(@as(u8, sid.len), msg[38]);
+    try testing.expectEqualSlices(u8, &sid, msg[39..][0..sid.len]);
+    const parsed = try parse(msg);
+    try testing.expectEqual(.aes_256_gcm_sha384, parsed.cipher_suite);
+}
 
 test "parse: RFC 8448 §3 ServerHello" {
     const sh = try parse(server_hello_rfc8448);
