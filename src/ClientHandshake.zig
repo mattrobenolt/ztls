@@ -139,20 +139,19 @@ const Suite = union(enum) {
         };
     }
 
-    /// RFC 8446 §4.4.3 — authenticate the server's Certificate and
-    /// CertificateVerify. Snapshots the transcript through Certificate (the
-    /// state before CV is absorbed) and verifies the CV signature against it.
-    /// The digest stays inside the arm.
-    fn authenticateCertificate(
+    /// RFC 8446 §4.4.3 — verify the CertificateVerify signature against the
+    /// leaf public key (extracted earlier from the Certificate message) and the
+    /// transcript through Certificate (snapshotted here, before CV is
+    /// absorbed). The digest stays inside the arm.
+    fn verifyCertificate(
         self: *const Suite,
-        cert_msg: []const u8,
         cv_msg: []const u8,
-        policy: certificate.Policy,
-    ) certificate.AuthError!void {
+        pub_key: []const u8,
+    ) certificate.VerifyError!void {
         switch (self.*) {
             .sha256 => |*s| {
                 const th = s.transcript.peek();
-                try certificate.authenticate(cert_msg, cv_msg, &th, policy);
+                try certificate.verifySignature(cv_msg, pub_key, &th);
             },
         }
     }
@@ -259,6 +258,11 @@ tx: RecordLayer = undefined,
 /// Certificate validation policy, applied during the server flight. Defaults
 /// to no chain anchoring (signature-only). Set before driving the handshake.
 policy: certificate.Policy = .{},
+/// Leaf public key extracted from the Certificate message, copied here so it
+/// survives until CertificateVerify (which may arrive in a later record —
+/// openssl sends each flight message in its own record). Sized for RSA-4096.
+leaf_pub_key: [max_leaf_pub_key]u8 = undefined,
+leaf_pub_key_len: usize = 0,
 /// Consecutive post-handshake messages seen with no intervening application
 /// data; reset by application data. Bounds KeyUpdate-flood DoS.
 post_handshake_count: u8 = 0,
@@ -342,7 +346,11 @@ pub fn processServerHello(self: *ClientHandshake, msg: []const u8) ServerHelloEr
     self.state = .wait_ee;
 }
 
-pub const FlightError = error{ UnexpectedMessage, UnexpectedEof } ||
+/// Upper bound on a leaf public key we retain across records. Covers RSA-4096
+/// (~525-byte DER) with margin; ECDSA P-256/P-384 are far smaller.
+const max_leaf_pub_key = 1024;
+
+pub const FlightError = error{ UnexpectedMessage, UnexpectedEof, CertificateKeyTooLarge } ||
     encrypted_extensions.ParseError ||
     certificate.AuthError ||
     finished.VerifyError;
@@ -356,14 +364,15 @@ pub const FlightError = error{ UnexpectedMessage, UnexpectedEof } ||
 /// absorbed (CV signature: through Certificate; Finished MAC: through CV).
 /// RFC 8446 §4.3-§4.4. Advances wait_ee -> connected.
 ///
-/// Cross-record reassembly is not yet supported: the whole flight must arrive
-/// in one payload.
+/// The flight may be split across records at message boundaries (openssl sends
+/// one message per record): self.state persists and each call resumes. A
+/// single handshake message must still fit within one payload — message-
+/// spanning-records reassembly is not yet supported.
 pub fn processFlight(
     self: *ClientHandshake,
     payload: []const u8,
     policy: certificate.Policy,
 ) FlightError!void {
-    var cert_msg: ?[]const u8 = null;
     var hr: HandshakeReader = .init(payload);
     // State drives the loop: each prong consumes one message, advances
     // self.state, and re-enters on it. self.state persists progress for
@@ -380,17 +389,20 @@ pub fn processFlight(
         .wait_cert => {
             const msg = try hr.next() orelse return;
             if (msg.type != .certificate) return error.UnexpectedMessage;
+            // Extract and copy the leaf public key now; it must survive until
+            // CertificateVerify, which may arrive in a later record.
+            const pk = try certificate.parse(msg.raw, policy);
+            if (pk.len > self.leaf_pub_key.len) return error.CertificateKeyTooLarge;
+            @memcpy(self.leaf_pub_key[0..pk.len], pk);
+            self.leaf_pub_key_len = pk.len;
             self.suite.update(msg.raw);
-            cert_msg = msg.raw; // held until CertificateVerify arrives
             self.state = .wait_cv;
             continue :flight self.state;
         },
         .wait_cv => {
             const msg = try hr.next() orelse return;
             if (msg.type != .certificate_verify) return error.UnexpectedMessage;
-            // Non-null guaranteed: wait_cv is only reachable after wait_cert
-            // stored the Certificate message.
-            try self.suite.authenticateCertificate(cert_msg.?, msg.raw, policy);
+            try self.suite.verifyCertificate(msg.raw, self.leaf_pub_key[0..self.leaf_pub_key_len]);
             self.suite.update(msg.raw);
             self.state = .wait_finished;
             continue :flight self.state;
@@ -665,6 +677,21 @@ test "processFlight: RFC 8448 §3 full server flight to connected" {
     try hs.processServerHello(&rfc8448_server_hello);
 
     try hs.processFlight(rfc8448_server_flight, .{});
+    try testing.expectEqual(.send_finished, hs.state);
+}
+
+// openssl s_server sends each flight message in its own record, so processFlight
+// is called once per message with state persisting across calls. The leaf
+// public key extracted at Certificate must survive to CertificateVerify.
+test "processFlight: RFC 8448 §3 flight split one message per record" {
+    var hs: ClientHandshake = .init(rfc8448_client_secret_key);
+    hs.start(&rfc8448_client_hello);
+    try hs.processServerHello(&rfc8448_server_hello);
+
+    var hr: HandshakeReader = .init(rfc8448_server_flight);
+    while (try hr.next()) |msg| {
+        try hs.processFlight(msg.raw, .{});
+    }
     try testing.expectEqual(.send_finished, hs.state);
 }
 
