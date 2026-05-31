@@ -229,6 +229,9 @@ Key consumer-facing primitives:
 ```zig
 // High-level client connection API: caller owns buffers and transport.
 var hs: ztls.ClientHandshake = .init(keypair);
+var reassembly: [32 * 1024]u8 = undefined;
+hs.useHandshakeBuffer(&reassembly); // optional; supports handshake messages spanning records
+
 const client_hello_wire = try hs.start(&out, random, "example.com");
 // write client_hello_wire to the transport, then:
 hs.completeWrite();
@@ -251,8 +254,9 @@ const dec = try rl.decrypt(wire);
 ```
 
 The state machine owns the transcript, handshake key schedule, post-handshake
-KeyUpdate receive path, and pending-write invariant. It still does no allocation
-and no I/O; callers provide all storage and decide how bytes move.
+KeyUpdate receive path, optional caller-backed handshake reassembly, and
+pending-write invariant. It still does no allocation and no I/O; callers provide
+all storage and decide how bytes move.
 
 ### Crypto backends
 
@@ -310,10 +314,11 @@ current Policy.bundle hook is the seam.
 - ✅ 13. Cipher-suite agility: AES-128-GCM/SHA256, AES-256-GCM/SHA384, ChaCha20-Poly1305/SHA256
 - ✅ 14. Parser fuzzing baseline + malformed-DER regression guard
 - ✅ 15. Initial performance harness (`zig build bench`, record/framing benchmarks)
+- ✅ 16. Cross-record handshake-message reassembly via caller-owned storage
+- ◐ 17. TLS alert parsing (close_notify vs fatal); alert emission still remains
 
-Next correctness targets: cross-record handshake-message reassembly, proper TLS
-alerts, X.509 path/hostname validation, and HelloRetryRequest. Server-side ztls
-is still future work.
+Next correctness targets: outbound TLS alerts, X.509 path/hostname validation,
+and HelloRetryRequest. Server-side ztls is still future work.
 
 ---
 
