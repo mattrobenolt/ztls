@@ -19,6 +19,7 @@ const encrypted_extensions = @import("encrypted_extensions.zig");
 const finished = @import("finished.zig");
 const frame = @import("frame.zig");
 const hkdf = @import("hkdf.zig");
+const new_session_ticket = @import("new_session_ticket.zig");
 const SharedSecret = hkdf.SharedSecret;
 const RecordLayer = @import("RecordLayer.zig");
 const server_hello = @import("server_hello.zig");
@@ -692,7 +693,7 @@ pub fn clientFinished(self: *ClientHandshake, out: []u8) SendError![]const u8 {
 /// maxUselessRecords. Reset by application data.
 const max_post_handshake_messages = 16;
 
-pub const ReceiveError = RecordLayer.DecryptError || SendError || alert.ParseError ||
+pub const ReceiveError = RecordLayer.DecryptError || SendError || alert.ParseError || new_session_ticket.ParseError ||
     error{ UnexpectedEof, UnexpectedRecord, UnexpectedMessage, IllegalParameter, TooManyKeyUpdates, PeerAlert };
 
 // Connected-phase inbound: the engine owns the receive path so post-handshake
@@ -730,7 +731,7 @@ fn receiveConnected(self: *ClientHandshake, record: []u8, out: []u8) ReceiveErro
                         // KeyUpdate (RFC 8446 §4.6.3).
                         self.rx = self.suite.ratchetServerKey();
                     },
-                    .new_session_ticket => {}, // not yet used
+                    .new_session_ticket => _ = try new_session_ticket.parse(msg.raw), // parsed and ignored until PSK resumption
                     else => return error.UnexpectedMessage,
                 }
             }
@@ -1221,6 +1222,17 @@ test "handleRecord: fatal alert returns PeerAlert" {
     @memcpy(rx_buf[0..wire_rec.len], wire_rec);
     var out: [64]u8 = undefined;
     try testing.expectError(error.PeerAlert, hs.handleRecord(rx_buf[0..wire_rec.len], &out));
+}
+
+test "handleRecord: malformed NewSessionTicket is rejected" {
+    var hs = try rfc8448ConnectedClient();
+    hs.rx = hs.suite.ratchetServerKey();
+    var out: [128]u8 = undefined;
+    const bad_ticket = [_]u8{ 0x04, 0x00, 0x00, 0x00 };
+    var wire_buf: [128]u8 = undefined;
+    var server_tx = hs.rx;
+    const record = try server_tx.encrypt(.handshake, &bad_ticket, &wire_buf);
+    try testing.expectError(error.UnexpectedEof, hs.handleRecord(record, &out));
 }
 
 test "handleRecord: KeyUpdate flood is rejected" {
