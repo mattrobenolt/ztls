@@ -94,6 +94,34 @@ pub fn encodedLen(server_name: ?[]const u8, alpn_protocols: AlpnProtocols) AlpnE
 /// the outer record header.
 ///
 /// RFC 8446 §4.1.2
+pub const ParseError = error{
+    UnexpectedEof,
+    InvalidHandshakeType,
+    InvalidHandshakeLength,
+    InvalidVectorLength,
+    InvalidExtensionLength,
+    InvalidEnumTag,
+    DuplicateExtension,
+    MissingExtension,
+    UnsupportedTlsVersion,
+    UnsupportedKeyShare,
+};
+
+pub const Parsed = struct {
+    cipher_suites: []const u8,
+    server_name: ?[]const u8 = null,
+    alpn_protocols: []const u8 = &.{},
+    public_key: x25519.PublicKey,
+
+    pub fn offersSuite(self: Parsed, suite: CipherSuite) bool {
+        var i: usize = 0;
+        while (i < self.cipher_suites.len) : (i += 2) {
+            if (std.mem.readInt(u16, self.cipher_suites[i..][0..2], .big) == @intFromEnum(suite)) return true;
+        }
+        return false;
+    }
+};
+
 pub fn encode(
     out: []u8,
     random: Random,
@@ -176,6 +204,130 @@ pub fn encode(
     w.appendSlice(&public_key.data);
 
     return w.written();
+}
+
+pub fn parse(msg: []const u8) ParseError!Parsed {
+    var r: wire.Reader = .init(msg);
+    const handshake_type = try r.read(u8);
+    if (handshake_type != 0x01) return error.InvalidHandshakeType;
+    const body_len = try r.read(u24);
+    if (body_len != msg.len - handshake_header_len) return error.InvalidHandshakeLength;
+
+    try r.skip(2); // legacy_version
+    try r.skip(32); // random
+    const session_id_len = try r.read(u8);
+    try r.skip(session_id_len);
+
+    const cipher_suites_len = try r.read(u16);
+    if (cipher_suites_len == 0 or cipher_suites_len % 2 != 0) return error.InvalidVectorLength;
+    const cipher_suites = try r.readSlice(cipher_suites_len);
+
+    const compression_len = try r.read(u8);
+    if (compression_len == 0) return error.InvalidVectorLength;
+    try r.skip(compression_len);
+
+    const extensions_len = try r.read(u16);
+    if (extensions_len > msg.len - r.pos) return error.InvalidExtensionLength;
+    const extensions_end = r.pos + extensions_len;
+
+    var parsed: Parsed = .{ .cipher_suites = cipher_suites, .public_key = undefined };
+    var got_supported_versions = false;
+    var got_key_share = false;
+    var got_server_name = false;
+    var got_alpn = false;
+
+    while (r.pos < extensions_end) {
+        const ext_type = try r.read(u16);
+        const ext_len = try r.read(u16);
+        if (ext_len > extensions_end - r.pos) return error.InvalidExtensionLength;
+        const ext = msg[r.pos..][0..ext_len];
+        r.pos += ext_len;
+
+        switch (ext_type) {
+            0x0000 => {
+                if (got_server_name) return error.DuplicateExtension;
+                parsed.server_name = try parseSni(ext);
+                got_server_name = true;
+            },
+            0x000a => try parseSupportedGroups(ext),
+            0x0010 => {
+                if (got_alpn) return error.DuplicateExtension;
+                parsed.alpn_protocols = try parseAlpn(ext);
+                got_alpn = true;
+            },
+            0x002b => {
+                if (got_supported_versions) return error.DuplicateExtension;
+                try parseSupportedVersions(ext);
+                got_supported_versions = true;
+            },
+            0x0033 => {
+                if (got_key_share) return error.DuplicateExtension;
+                parsed.public_key = try parseKeyShare(ext);
+                got_key_share = true;
+            },
+            else => {},
+        }
+    }
+    if (r.pos != extensions_end) return error.InvalidExtensionLength;
+    if (!got_supported_versions) return error.UnsupportedTlsVersion;
+    if (!got_key_share) return error.MissingExtension;
+    return parsed;
+}
+
+fn parseSni(ext: []const u8) ParseError!?[]const u8 {
+    var r: wire.Reader = .init(ext);
+    const list_len = try r.read(u16);
+    if (list_len != ext.len - 2) return error.InvalidExtensionLength;
+    if (list_len == 0) return null;
+    const name_type = try r.read(u8);
+    const name_len = try r.read(u16);
+    const name = try r.readSlice(name_len);
+    if (r.pos != ext.len) return error.InvalidVectorLength;
+    if (name_type != 0x00) return null;
+    return name;
+}
+
+fn parseAlpn(ext: []const u8) ParseError![]const u8 {
+    var r: wire.Reader = .init(ext);
+    const list_len = try r.read(u16);
+    if (list_len != ext.len - 2) return error.InvalidExtensionLength;
+    return try r.readSlice(list_len);
+}
+
+fn parseSupportedVersions(ext: []const u8) ParseError!void {
+    var r: wire.Reader = .init(ext);
+    const list_len = try r.read(u8);
+    if (list_len != ext.len - 1 or list_len % 2 != 0) return error.InvalidVectorLength;
+    while (r.pos < ext.len) {
+        if (try r.read(u16) == 0x0304) return;
+    }
+    return error.UnsupportedTlsVersion;
+}
+
+fn parseSupportedGroups(ext: []const u8) ParseError!void {
+    var r: wire.Reader = .init(ext);
+    const list_len = try r.read(u16);
+    if (list_len != ext.len - 2 or list_len % 2 != 0) return error.InvalidVectorLength;
+    while (r.pos < ext.len) {
+        if (try r.read(u16) == 0x001d) return;
+    }
+    return error.UnsupportedKeyShare;
+}
+
+fn parseKeyShare(ext: []const u8) ParseError!x25519.PublicKey {
+    var r: wire.Reader = .init(ext);
+    const client_shares_len = try r.read(u16);
+    if (client_shares_len != ext.len - 2) return error.InvalidVectorLength;
+    while (r.pos < ext.len) {
+        const group = try r.read(u16);
+        const key_len = try r.read(u16);
+        const key = try r.readSlice(key_len);
+        if (group == 0x001d) {
+            if (key.len != 32) return error.UnsupportedKeyShare;
+            return .init(key[0..32].*);
+        }
+    }
+    return error.UnsupportedKeyShare;
 }
 
 test "encode: size matches encodedLen" {
@@ -263,6 +415,51 @@ test "encode: rejects invalid ALPN protocols" {
     var buf: [512]u8 = undefined;
     try testing.expectError(error.EmptyAlpnProtocol, encode(&buf, .zero, .zero, null, &.{""}));
     try testing.expectError(error.AlpnProtocolTooLong, encode(&buf, .zero, .zero, null, &.{"a" ** 256}));
+}
+
+test "parse: encoded ClientHello" {
+    const key: x25519.PublicKey = .init(.{
+        0x99, 0x38, 0x1d, 0xe5, 0x60, 0xe4, 0xbd, 0x43,
+        0xd2, 0x3d, 0x8e, 0x43, 0x5a, 0x7d, 0xba, 0xfe,
+        0xb3, 0xc0, 0x6e, 0x51, 0xc1, 0x3c, 0xae, 0x4d,
+        0x54, 0x13, 0x69, 0x1e, 0x52, 0x9a, 0xaf, 0x2c,
+    });
+    var buf: [512]u8 = undefined;
+    const encoded = try encode(&buf, .zero, key, "example.com", &.{ "h2", "http/1.1" });
+    const parsed = try parse(encoded);
+    try testing.expect(parsed.offersSuite(.aes_128_gcm_sha256));
+    try testing.expect(parsed.offersSuite(.aes_256_gcm_sha384));
+    try testing.expect(parsed.offersSuite(.chacha20_poly1305_sha256));
+    try testing.expectEqualStrings("example.com", parsed.server_name.?);
+    try testing.expectEqualSlices(u8, &key.data, &parsed.public_key.data);
+    try testing.expectEqualSlices(u8, &.{ 0x02, 'h', '2', 0x08, 'h', 't', 't', 'p', '/', '1', '.', '1' }, parsed.alpn_protocols);
+}
+
+test "parse: rejects malformed ClientHello" {
+    var buf: [512]u8 = undefined;
+    const encoded = try encode(&buf, .zero, .zero, null, &.{});
+
+    var bad_type: [512]u8 = undefined;
+    @memcpy(bad_type[0..encoded.len], encoded);
+    bad_type[0] = 0x02;
+    try testing.expectError(error.InvalidHandshakeType, parse(bad_type[0..encoded.len]));
+
+    var bad_len: [512]u8 = undefined;
+    @memcpy(bad_len[0..encoded.len], encoded);
+    bad_len[3] -= 1;
+    try testing.expectError(error.InvalidHandshakeLength, parse(bad_len[0..encoded.len]));
+
+    var no_key_share: [512]u8 = undefined;
+    @memcpy(no_key_share[0..encoded.len], encoded);
+    var i: usize = 0;
+    while (i + 1 < encoded.len) : (i += 1) {
+        if (no_key_share[i] == 0x00 and no_key_share[i + 1] == 0x33) {
+            no_key_share[i + 1] = 0x34;
+            break;
+        }
+    }
+    try testing.expect(i + 1 < encoded.len);
+    try testing.expectError(error.MissingExtension, parse(no_key_share[0..encoded.len]));
 }
 
 test "encode: buffer too short" {
