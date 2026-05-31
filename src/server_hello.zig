@@ -149,3 +149,13 @@ test "parse: unsupported TLS version" {
     msg[msg.len - 1] = 0x03;
     try testing.expectError(error.UnsupportedTlsVersion, parse(&msg));
 }
+
+// Fuzz target: parse must reject arbitrary bytes with an error, never crash
+// (no panic/overflow/OOB). Run with `zig build test --fuzz`.
+fn fuzzParse(_: void, input: []const u8) anyerror!void {
+    _ = parse(input) catch {};
+}
+
+test "fuzz: parse handles arbitrary input" {
+    try testing.fuzz({}, fuzzParse, .{ .corpus = &.{server_hello_rfc8448} });
+}

@@ -1085,3 +1085,27 @@ test "HandshakeReader: truncated body is UnexpectedEof" {
     var hr: HandshakeReader = .init(&payload);
     try testing.expectError(error.UnexpectedEof, hr.next());
 }
+
+// Fuzz targets (run with `zig build test --fuzz`): the inbound parsers must
+// reject arbitrary bytes with an error, never crash.
+
+fn fuzzHandshakeReader(_: void, input: []const u8) anyerror!void {
+    var hr: HandshakeReader = .init(input);
+    while (hr.next() catch return) |_| {}
+}
+
+test "fuzz: HandshakeReader handles arbitrary input" {
+    try testing.fuzz({}, fuzzHandshakeReader, .{});
+}
+
+// Drive an arbitrary decrypted flight through the state machine from wait_ee.
+fn fuzzProcessFlight(_: void, input: []const u8) anyerror!void {
+    var hs: ClientHandshake = .init(rfc8448_client_keypair);
+    hs.injectClientHello(&rfc8448_client_hello);
+    hs.processServerHello(&rfc8448_server_hello) catch return;
+    _ = hs.processFlight(input, .{}) catch {};
+}
+
+test "fuzz: processFlight handles arbitrary decrypted bytes" {
+    try testing.fuzz({}, fuzzProcessFlight, .{});
+}
