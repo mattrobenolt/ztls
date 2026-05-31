@@ -2,13 +2,13 @@
 //!
 //! This is an I/O harness, not part of the no-I/O library. It spawns openssl
 //! s_server with a freshly generated P-256 cert, drives a real handshake
-//! (client_hello.encode → processRecord loop), then fetches the s_server status
+//! (ClientHandshake.start → handleRecord loop), negotiates ALPN, then fetches the s_server status
 //! page over the negotiated keys. Run with: `zig build test-openssl`.
 //!
-//! Forces TLS_AES_128_GCM_SHA256 (the only suite the client supports today).
-//! Certificate validation is signature-only (default policy): we verify
-//! openssl's CertificateVerify against the presented leaf key but do not anchor
-//! to a trust store.
+//! Loops over every mandatory TLS 1.3 cipher suite ztls supports. Certificate
+//! validation verifies the presented leaf hostname by default, and verifies
+//! openssl's CertificateVerify against that leaf key, but does not anchor to a
+//! trust store in this I/O harness.
 const std = @import("std");
 const fs = std.fs;
 const mem = std.mem;
@@ -25,6 +25,7 @@ const ztls = @import("ztls");
 
 const base_port = 14433;
 const host = "127.0.0.1";
+const alpn_protocol = "http/1.1";
 
 // Suites the client supports today, each validated end-to-end against openssl.
 const suites = [_][]const u8{
@@ -90,6 +91,7 @@ fn startServer(arena: Allocator, cert_path: []const u8, key_path: []const u8, su
         key_path,  "-cert",
         cert_path, "-port",
         port_str,  "-www",
+        "-alpn",   alpn_protocol,
         "-quiet",
     }, arena);
     child.stdout_behavior = .Ignore;
@@ -116,6 +118,7 @@ fn interop(stream: net.Stream) !void {
     crypto.random.bytes(&random.data);
 
     var hs: ztls.ClientHandshake = .init(kp);
+    hs.offerAlpn(&.{alpn_protocol});
 
     // `out` holds records we emit (ClientHello, Finished, app data); the engine
     // owns framing, so we just write what it returns and acknowledge with
@@ -144,7 +147,8 @@ fn interop(stream: net.Stream) !void {
             .none => {},
         };
     }
-    print("[interop] handshake completed against openssl s_server\n", .{});
+    try testing.expectEqualStrings(alpn_protocol, hs.selectedAlpnProtocol().?);
+    print("[interop] handshake completed against openssl s_server; ALPN={s}\n", .{hs.selectedAlpnProtocol().?});
 
     // Request the s_server status page and read the response.
     try stream.writeAll(try hs.sendApplicationData("GET / HTTP/1.0\r\n\r\n", &out));
