@@ -292,8 +292,11 @@ Stdlib coverage for the default backend:
 - `std.crypto.dh.X25519` — X25519 key exchange
 - `std.crypto.Certificate`-derived parser in `cryptox/` — X.509 public-key extraction and certificate signature verification, with a local DER bounds fix until upstream Zig carries it.
 
-Full X.509 path validation and hostname verification are still deferred; the
-current Policy.bundle hook is the seam.
+X.509 validation uses caller-owned policy: `Policy.bundle` anchors the parsed
+chain to a trust root, `Policy.now_sec` checks validity periods, and
+`Policy.host_name` verifies the leaf SAN/CN. Loading OS trust stores remains a
+caller/wrapper responsibility because ztls library code does no allocation and
+no I/O.
 
 ---
 
@@ -317,8 +320,9 @@ current Policy.bundle hook is the seam.
 - ✅ 16. Cross-record handshake-message reassembly via caller-owned storage
 - ◐ 17. TLS alert parsing (close_notify vs fatal); alert emission still remains
 
-Next correctness targets: outbound TLS alerts, X.509 path/hostname validation,
-and HelloRetryRequest. Server-side ztls is still future work.
+Next correctness targets: HelloRetryRequest, server-side ztls, and fuller
+external conformance suites. Outbound alerts, X.509 path/hostname validation,
+and cross-record handshake reassembly are implemented for the current client scope.
 
 ---
 
