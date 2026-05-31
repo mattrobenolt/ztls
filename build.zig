@@ -15,6 +15,21 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Run tests");
     test_step.dependOn(&run_tests.step);
 
+    // Interop harness: drives the client against openssl s_server. Kept out of
+    // the unit `test` step since it needs openssl and the network.
+    const interop_exe = b.addExecutable(.{
+        .name = "openssl_interop",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/test/openssl_interop.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{.{ .name = "ztls", .module = mod }},
+        }),
+    });
+    const run_interop = b.addRunArtifact(interop_exe);
+    const interop_step = b.step("test-openssl", "Run the openssl s_server interop test");
+    interop_step.dependOn(&run_interop.step);
+
     const examples = [_][]const u8{
         "full_handshake",
         "handshake_keys",
