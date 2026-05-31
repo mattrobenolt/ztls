@@ -53,12 +53,12 @@ Start with layers that exist today:
 
 3. **Client handshake replay**
 
-   Use RFC 8448 / OpenSSL fixture bytes to drive `ClientHandshake` through a
-   deterministic client-side handshake. This measures exactly the client work we
-   own today: transcript hashing, key schedule, certificate parse, signature
-   verify, Finished validation, and client Finished generation. It is not a full
-   client/server benchmark until ztls has a server. Implemented today as
-   `client_handshake_replay,TLS_AES_128_GCM_SHA256`.
+   Use RFC 8448 / generated OpenSSL fixture bytes to drive `ClientHandshake`
+   through a deterministic client-side handshake. This measures exactly the
+   client work we own today: transcript hashing, key schedule, certificate
+   parse, signature verify, Finished validation, and client Finished generation.
+   It is not a full client/server benchmark until ztls has a server.
+   Implemented today for all three mandatory suites as `client_handshake_replay`.
 
 4. **Full in-memory connection**
 
@@ -85,7 +85,7 @@ The first `zig build bench` is deliberately boring:
 
 - record encrypt/decrypt throughput for all three AEADs at fixed record sizes;
 - record framing/parser rows for cheap non-crypto surfaces;
-- deterministic RFC 8448 client handshake replay;
+- deterministic generated-OpenSSL client handshake replay for all three suites;
 - no network;
 - no allocations in library code; benchmark-only scratch allocation is fine;
 - CSV rows written to stdout.

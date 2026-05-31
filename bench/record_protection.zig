@@ -14,8 +14,8 @@ const frame = ztls.frame;
 
 const sizes = [_]usize{ 16, 1350, 8192, frame.max_plaintext_len };
 const target_bytes: usize = 128 * 1024 * 1024;
-const handshake_iterations = 2048;
-const rfc8448_archive = @embedFile("test_fixtures/rfc8448.txtar");
+const handshake_iterations = 256;
+const openssl_replay_archive = @embedFile("test_fixtures/openssl_replay.txtar");
 
 const Suite = enum {
     aes_128_gcm_sha256,
@@ -27,6 +27,14 @@ const Suite = enum {
             .aes_128_gcm_sha256 => "TLS_AES_128_GCM_SHA256",
             .aes_256_gcm_sha384 => "TLS_AES_256_GCM_SHA384",
             .chacha20_poly1305_sha256 => "TLS_CHACHA20_POLY1305_SHA256",
+        };
+    }
+
+    fn fixtureName(self: Suite) []const u8 {
+        return switch (self) {
+            .aes_128_gcm_sha256 => "aes128.records.b64",
+            .aes_256_gcm_sha384 => "aes256.records.b64",
+            .chacha20_poly1305_sha256 => "chacha20.records.b64",
         };
     }
 
@@ -103,15 +111,18 @@ pub fn main() !void {
         });
     }
 
-    if (matches(args.filter, "client_handshake_replay", "TLS_AES_128_GCM_SHA256")) {
-        const replay = try benchClientHandshakeReplay(&timer);
-        try stdout.print("client_handshake_replay,TLS_AES_128_GCM_SHA256,{d},{d},{d},{d},{d:.2}\n", .{
-            replay.bytes / replay.iterations,
-            replay.iterations,
-            replay.bytes,
-            replay.ns,
-            replay.opsPerSec(),
-        });
+    inline for (.{ Suite.aes_128_gcm_sha256, Suite.aes_256_gcm_sha384, Suite.chacha20_poly1305_sha256 }) |suite| {
+        if (matches(args.filter, "client_handshake_replay", suite.name())) {
+            const replay = try benchClientHandshakeReplay(suite, &timer);
+            try stdout.print("client_handshake_replay,{s},{d},{d},{d},{d},{d:.2}\n", .{
+                suite.name(),
+                replay.bytes / replay.iterations,
+                replay.iterations,
+                replay.bytes,
+                replay.ns,
+                replay.opsPerSec(),
+            });
+        }
     }
 
     inline for (.{ Suite.aes_128_gcm_sha256, Suite.aes_256_gcm_sha384, Suite.chacha20_poly1305_sha256 }) |suite| {
@@ -169,7 +180,9 @@ fn matches(filter: ?[]const u8, benchmark: []const u8, suite: []const u8) bool {
 fn listBenchmarks(stdout: *std.Io.Writer) !void {
     try stdout.print("parse_header,none\n", .{});
     try stdout.print("record_buffer_next,none\n", .{});
-    try stdout.print("client_handshake_replay,TLS_AES_128_GCM_SHA256\n", .{});
+    inline for (.{ Suite.aes_128_gcm_sha256, Suite.aes_256_gcm_sha384, Suite.chacha20_poly1305_sha256 }) |suite| {
+        try stdout.print("client_handshake_replay,{s}\n", .{suite.name()});
+    }
     inline for (.{ Suite.aes_128_gcm_sha256, Suite.aes_256_gcm_sha384, Suite.chacha20_poly1305_sha256 }) |suite| {
         try stdout.print("record_encrypt,{s}\n", .{suite.name()});
         try stdout.print("record_decrypt,{s}\n", .{suite.name()});
@@ -208,47 +221,49 @@ fn benchRecordBuffer(timer: *std.time.Timer) !Result {
     return .{ .bytes = iterations * record.len, .iterations = iterations, .ns = ns };
 }
 
-fn benchClientHandshakeReplay(timer: *std.time.Timer) !Result {
+fn benchClientHandshakeReplay(comptime suite: Suite, timer: *std.time.Timer) !Result {
     var fixture_scratch: [8192]u8 = undefined;
     var fba: std.heap.FixedBufferAllocator = .init(&fixture_scratch);
-    var server_flight_buf: [1024]u8 = undefined;
-    const server_flight_record = try fixture(fba.allocator(), "server_flight_record.b64", &server_flight_buf);
+    var records_buf: [2048]u8 = undefined;
+    const records = try fixture(fba.allocator(), suite.fixtureName(), &records_buf);
 
-    var out: [256]u8 = undefined;
+    var out: [1024]u8 = undefined;
 
     // Warm up certificate parsing/signature verification and code paths once.
-    try replayHandshake(server_flight_record, &out);
+    try replayHandshake(records, &out);
 
     timer.reset();
     for (0..handshake_iterations) |_| {
-        try replayHandshake(server_flight_record, &out);
+        try replayHandshake(records, &out);
     }
     const ns = timer.read();
 
-    const bytes_per_replay = rfc8448.client_hello.len + rfc8448.server_hello_record.len + rfc8448.ccs_record.len + server_flight_record.len;
+    const bytes_per_replay = rfc8448.client_hello_len + records.len;
     return .{ .bytes = bytes_per_replay * handshake_iterations, .iterations = handshake_iterations, .ns = ns };
 }
 
-fn replayHandshake(server_flight_record: []const u8, out: []u8) !void {
+fn replayHandshake(records: []const u8, out: []u8) !void {
     var hs: ztls.ClientHandshake = .init(rfc8448.client_keypair);
-    hs.injectClientHello(&rfc8448.client_hello);
-
-    var sh = rfc8448.server_hello_record;
-    _ = try hs.handleRecord(&sh, out);
-
-    var ccs = rfc8448.ccs_record;
-    _ = try hs.handleRecord(&ccs, out);
-
-    var flight: [1024]u8 = undefined;
-    @memcpy(flight[0..server_flight_record.len], server_flight_record);
-    const ev = try hs.handleRecord(flight[0..server_flight_record.len], out);
-    if (ev != .write) return error.MissingClientFinished;
+    _ = try hs.start(out, rfc8448.client_random, "localhost");
     hs.completeWrite();
+
+    var record_buf: [RecordBuffer.min_storage]u8 = undefined;
+    @memcpy(record_buf[0..records.len], records);
+    var rb: RecordBuffer = .init(&record_buf);
+    rb.advance(records.len);
+
+    while (try rb.next()) |record| {
+        switch (try hs.handleRecord(record, out)) {
+            .write => hs.completeWrite(),
+            .none => {},
+            .application_data, .closed => return error.UnexpectedDuringHandshake,
+        }
+    }
     if (!hs.isConnected()) return error.HandshakeIncomplete;
 }
 
 fn fixture(alloc: std.mem.Allocator, name: []const u8, out: []u8) ![]u8 {
-    var archive = try txtar.parse(alloc, rfc8448_archive);
+    var archive = try txtar.parse(alloc, openssl_replay_archive);
     defer archive.deinit(alloc);
     for (archive.files) |f| {
         if (!std.mem.eql(u8, f.name, name)) continue;
