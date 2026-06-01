@@ -40,9 +40,10 @@ Start with layers that exist today:
    - TLS_AES_256_GCM_SHA384
    - TLS_CHACHA20_POLY1305_SHA256
 
-   Use realistic record sizes: 16 bytes, 1350 bytes, 8192 bytes, and 16384
-   bytes. BoringSSL uses similar chunk-size sweeps because small records measure
-   per-record overhead while large records measure primitive throughput.
+   Use realistic record sizes: 16 bytes, 128 bytes, 1350 bytes, 8192 bytes,
+   and 16384 bytes. BoringSSL uses similar chunk-size sweeps because small
+   records measure per-record overhead while large records measure primitive
+   throughput.
 
 2. **Parser/framing throughput**
 
@@ -62,9 +63,12 @@ Start with layers that exist today:
 
 4. **Full in-memory connection**
 
-   Once a ztls server exists, add rustls-style scenario benchmarks: full
-   handshake, resumed handshake if implemented, and transfer of 1 MiB over an
-   in-memory transport. Measure client and server sides separately.
+   ztls now has a server-side skeleton, so `zig build bench` includes
+   rustls-style no-I/O scenarios over in-memory client/server state machines:
+   full authenticated handshake, client-to-server application data,
+   server-to-client application data, and ping/pong small-record loops. These
+   rows are still ztls-only; comparable OpenSSL/rustls harnesses are separate
+   follow-up work.
 
 ## Methodology
 
@@ -86,12 +90,15 @@ The first `zig build bench` is deliberately boring:
 - record encrypt/decrypt throughput for all three AEADs at fixed record sizes;
 - record framing/parser rows for cheap non-crypto surfaces;
 - deterministic generated-OpenSSL client handshake replay for all three suites;
+- ztls in-memory authenticated client/server handshake and app-data rows;
 - no network;
 - no allocations in library code; benchmark-only scratch allocation is fine;
 - CSV rows written to stdout.
 
 Future benchmark additions should stay as separate named rows instead of
-stuffing unrelated work into one timing loop.
+stuffing unrelated work into one timing loop. The current full-suite target is
+small enough for routine checks; use `--filter`/`bench-bin` for profiling-grade
+single-scenario runs.
 
 ## Profiling tools
 

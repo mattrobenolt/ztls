@@ -74,6 +74,7 @@ pub fn build(b: *std.Build) void {
         .root_module = bench_root,
     });
     const run_bench = b.addRunArtifact(bench_exe);
+    if (b.args) |args| run_bench.addArgs(args);
     const bench_step = b.step("bench", "Run performance benchmarks");
     bench_step.dependOn(&run_bench.step);
 

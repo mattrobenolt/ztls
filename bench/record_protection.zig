@@ -14,10 +14,14 @@ const frame = ztls.frame;
 
 const rfc8448 = @import("rfc8448.zig");
 
-const sizes = [_]usize{ 16, 1350, 8192, frame.max_plaintext_len };
-const target_bytes: usize = 128 * 1024 * 1024;
+const sizes = [_]usize{ 16, 128, 1350, 8192, frame.max_plaintext_len };
+const target_bytes: usize = 16 * 1024 * 1024;
 const handshake_iterations = 256;
+const ztls_handshake_iterations = 64;
 const openssl_replay_archive = @embedFile("test_fixtures/openssl_replay.txtar");
+const server_cert_der = @embedFile("test_fixtures/server-ecdsa/server.der");
+const server_scalar = @embedFile("test_fixtures/server-ecdsa/scalar.bin");
+const EcdsaP256Sha256 = std.crypto.sign.ecdsa.EcdsaP256Sha256;
 
 const Suite = enum {
     aes_128_gcm_sha256,
@@ -45,6 +49,14 @@ const Suite = enum {
             .aes_128_gcm_sha256 => .{ .aes128_gcm = .init(@splat(0x11)) },
             .aes_256_gcm_sha384 => .{ .aes256_gcm = .init(@splat(0x22)) },
             .chacha20_poly1305_sha256 => .{ .chacha20_poly1305 = .init(@splat(0x33)) },
+        };
+    }
+
+    fn cipherSuite(self: Suite) ztls.CipherSuite {
+        return switch (self) {
+            .aes_128_gcm_sha256 => .aes_128_gcm_sha256,
+            .aes_256_gcm_sha384 => .aes_256_gcm_sha384,
+            .chacha20_poly1305_sha256 => .chacha20_poly1305_sha256,
         };
     }
 };
@@ -129,6 +141,19 @@ pub fn main() !void {
             });
             try stdout.flush();
         }
+
+        if (matches(args.filter, "ztls_handshake", suite.name())) {
+            const full = try benchZtlsHandshake(suite, &timer);
+            try stdout.print("ztls_handshake,{s},{d},{d},{d},{d},{d:.2}\n", .{
+                suite.name(),
+                full.bytes / full.iterations,
+                full.iterations,
+                full.bytes,
+                full.ns,
+                full.opsPerSec(),
+            });
+            try stdout.flush();
+        }
     }
 
     inline for (.{ Suite.aes_128_gcm_sha256, Suite.aes_256_gcm_sha384, Suite.chacha20_poly1305_sha256 }) |suite| {
@@ -155,6 +180,45 @@ pub fn main() !void {
                     dec.bytes,
                     dec.ns,
                     dec.mbPerSec(),
+                });
+                try stdout.flush();
+            }
+
+            if (matches(args.filter, "ztls_app_client_to_server", suite.name())) {
+                const c2s = try benchZtlsAppData(suite, size, .client_to_server, &timer);
+                try stdout.print("ztls_app_client_to_server,{s},{d},{d},{d},{d},{d:.2}\n", .{
+                    suite.name(),
+                    size,
+                    c2s.iterations,
+                    c2s.bytes,
+                    c2s.ns,
+                    c2s.mbPerSec(),
+                });
+                try stdout.flush();
+            }
+
+            if (matches(args.filter, "ztls_app_server_to_client", suite.name())) {
+                const s2c = try benchZtlsAppData(suite, size, .server_to_client, &timer);
+                try stdout.print("ztls_app_server_to_client,{s},{d},{d},{d},{d},{d:.2}\n", .{
+                    suite.name(),
+                    size,
+                    s2c.iterations,
+                    s2c.bytes,
+                    s2c.ns,
+                    s2c.mbPerSec(),
+                });
+                try stdout.flush();
+            }
+
+            if (matches(args.filter, "ztls_app_ping_pong", suite.name())) {
+                const ping_pong = try benchZtlsPingPong(suite, size, &timer);
+                try stdout.print("ztls_app_ping_pong,{s},{d},{d},{d},{d},{d:.2}\n", .{
+                    suite.name(),
+                    size,
+                    ping_pong.iterations,
+                    ping_pong.bytes,
+                    ping_pong.ns,
+                    ping_pong.mbPerSec(),
                 });
                 try stdout.flush();
             }
@@ -190,10 +254,14 @@ fn listBenchmarks(stdout: *std.Io.Writer) !void {
     try stdout.print("record_buffer_next,none\n", .{});
     inline for (.{ Suite.aes_128_gcm_sha256, Suite.aes_256_gcm_sha384, Suite.chacha20_poly1305_sha256 }) |suite| {
         try stdout.print("client_handshake_replay,{s}\n", .{suite.name()});
+        try stdout.print("ztls_handshake,{s}\n", .{suite.name()});
     }
     inline for (.{ Suite.aes_128_gcm_sha256, Suite.aes_256_gcm_sha384, Suite.chacha20_poly1305_sha256 }) |suite| {
         try stdout.print("record_encrypt,{s}\n", .{suite.name()});
         try stdout.print("record_decrypt,{s}\n", .{suite.name()});
+        try stdout.print("ztls_app_client_to_server,{s}\n", .{suite.name()});
+        try stdout.print("ztls_app_server_to_client,{s}\n", .{suite.name()});
+        try stdout.print("ztls_app_ping_pong,{s}\n", .{suite.name()});
     }
 }
 
@@ -340,4 +408,134 @@ fn benchDecrypt(comptime suite: Suite, comptime size: usize, timer: *std.time.Ti
     const ns = timer.read();
 
     return .{ .bytes = iterations * size, .iterations = iterations, .ns = ns };
+}
+
+const Direction = enum { client_to_server, server_to_client };
+
+const BenchSigner = struct {
+    keypair: EcdsaP256Sha256.KeyPair,
+
+    fn sign(context: *anyopaque, msg: []const u8, out: []u8) ztls.ServerHandshake.SignError![]const u8 {
+        const self: *BenchSigner = @ptrCast(@alignCast(context));
+        const sig = self.keypair.sign(msg, null) catch |err| switch (err) {
+            error.IdentityElement => return error.IdentityElement,
+            error.NonCanonical => return error.NonCanonical,
+        };
+        var der: [EcdsaP256Sha256.Signature.der_encoded_length_max]u8 = undefined;
+        const encoded = sig.toDer(&der);
+        if (out.len < encoded.len) return error.BufferTooShort;
+        @memcpy(out[0..encoded.len], encoded);
+        return out[0..encoded.len];
+    }
+};
+
+fn deterministicClientKeypair() !ztls.x25519.KeyPair {
+    return try ztls.x25519.KeyPair.generateDeterministic([_]u8{0x11} ** 32);
+}
+
+fn deterministicServerKeypair() !ztls.x25519.KeyPair {
+    return try ztls.x25519.KeyPair.generateDeterministic([_]u8{0x22} ** 32);
+}
+
+fn deterministicSigner() !BenchSigner {
+    const sk = try EcdsaP256Sha256.SecretKey.fromBytes(server_scalar[0..32].*);
+    return .{ .keypair = try EcdsaP256Sha256.KeyPair.fromSecretKey(sk) };
+}
+
+fn signerApi(signer: *BenchSigner) ztls.ServerHandshake.Signer {
+    return .{ .scheme = .ecdsa_secp256r1_sha256, .context = signer, .sign = BenchSigner.sign };
+}
+
+fn connectPair(comptime suite: Suite) !struct { client: ztls.ClientHandshake, server: ztls.ServerHandshake } {
+    var client: ztls.ClientHandshake = .init(try deterministicClientKeypair());
+    client.policy.host_name = "ztls.server.test";
+    var client_out: [4096]u8 = undefined;
+    const ch_record = try client.start(&client_out, rfc8448.client_random, "ztls.server.test");
+    client.completeWrite();
+
+    var server: ztls.ServerHandshake = .init(try deterministicServerKeypair());
+    const suites = [_]ztls.CipherSuite{suite.cipherSuite()};
+    server.supportSuites(&suites);
+    var server_out: [8192]u8 = undefined;
+    const sh_record = try server.acceptClientHello(ch_record, rfc8448.client_random, &server_out);
+    try client.processServerHello(sh_record[ztls.frame.header_len..]);
+
+    var signer = try deterministicSigner();
+    var plaintext: [8192]u8 = undefined;
+    const flight_record = try server.sendAuthenticatedFlight(&.{server_cert_der}, signerApi(&signer), &plaintext, &server_out);
+    const ev = try client.handleRecord(server_out[0..flight_record.len], &client_out);
+    const client_finished = switch (ev) {
+        .write => |w| w,
+        else => return error.UnexpectedEvent,
+    };
+    try server.processClientFinished(client_out[0..client_finished.len]);
+    client.completeWrite();
+    if (!client.isConnected() or !server.isConnected()) return error.HandshakeIncomplete;
+    return .{ .client = client, .server = server };
+}
+
+fn benchZtlsHandshake(comptime suite: Suite, timer: *std.time.Timer) !Result {
+    try doZtlsHandshake(suite);
+
+    timer.reset();
+    for (0..ztls_handshake_iterations) |_| try doZtlsHandshake(suite);
+    const ns = timer.read();
+
+    return .{ .bytes = ztls_handshake_iterations, .iterations = ztls_handshake_iterations, .ns = ns };
+}
+
+fn doZtlsHandshake(comptime suite: Suite) !void {
+    var pair = try connectPair(suite);
+    doNotOptimizeAway(&pair.client);
+    doNotOptimizeAway(&pair.server);
+}
+
+fn benchZtlsAppData(comptime suite: Suite, comptime size: usize, comptime direction: Direction, timer: *std.time.Timer) !Result {
+    const iterations = @max(256, target_bytes / size);
+    var pair = try connectPair(suite);
+    var payload: [size]u8 = @splat(0xa5);
+    var wire: [RecordLayer.overhead + size]u8 = undefined;
+    var out: [RecordLayer.overhead + size]u8 = undefined;
+
+    timer.reset();
+    for (0..iterations) |_| switch (direction) {
+        .client_to_server => {
+            const record = try pair.client.sendApplicationData(&payload, &wire);
+            pair.client.completeWrite();
+            const plain = try pair.server.receiveApplicationData(wire[0..record.len]);
+            doNotOptimizeAway(plain.ptr);
+        },
+        .server_to_client => {
+            const record = try pair.server.sendApplicationData(&payload, &wire);
+            const ev = try pair.client.handleRecord(wire[0..record.len], &out);
+            doNotOptimizeAway(ev.application_data.ptr);
+        },
+    };
+    const ns = timer.read();
+
+    return .{ .bytes = iterations * size, .iterations = iterations, .ns = ns };
+}
+
+fn benchZtlsPingPong(comptime suite: Suite, comptime size: usize, timer: *std.time.Timer) !Result {
+    const iterations = @max(256, target_bytes / (size * 2));
+    var pair = try connectPair(suite);
+    var payload: [size]u8 = @splat(0x5a);
+    var client_wire: [RecordLayer.overhead + size]u8 = undefined;
+    var server_wire: [RecordLayer.overhead + size]u8 = undefined;
+    var client_out: [RecordLayer.overhead + size]u8 = undefined;
+
+    timer.reset();
+    for (0..iterations) |_| {
+        const c = try pair.client.sendApplicationData(&payload, &client_wire);
+        pair.client.completeWrite();
+        const got = try pair.server.receiveApplicationData(client_wire[0..c.len]);
+        doNotOptimizeAway(got.ptr);
+
+        const s = try pair.server.sendApplicationData(&payload, &server_wire);
+        const ev = try pair.client.handleRecord(server_wire[0..s.len], &client_out);
+        doNotOptimizeAway(ev.application_data.ptr);
+    }
+    const ns = timer.read();
+
+    return .{ .bytes = iterations * size * 2, .iterations = iterations, .ns = ns };
 }
