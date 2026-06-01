@@ -177,7 +177,7 @@ pub fn acceptClientHello(
     self.suite = suite;
     self.selected_alpn = ch.selectAlpn(self.alpn_protocols);
 
-    const sh = try server_hello.encode(out[frame.header_len..], random.data, &.{}, suite, .init(self.keypair.public_key));
+    const sh = try server_hello.encode(out[frame.header_len..], random.data, ch.legacy_session_id, suite, .init(self.keypair.public_key));
     out[0..frame.header_len].* = mem.toBytes(frame.Header.init(.handshake, @intCast(sh.len)));
 
     try self.installHandshakeKeys(suite, ch_msg, sh, ch.public_key);
@@ -378,6 +378,19 @@ fn handleWaitClientHello(self: *ServerHandshake, record: []u8, random: client_he
 }
 
 fn handleWaitClientFinished(self: *ServerHandshake, record: []u8) HandleError!Event {
+    const hdr = try frame.parseHeader(record);
+    if (record.len < frame.header_len + hdr.length()) return error.IncompleteRecord;
+    switch (hdr.content_type) {
+        .change_cipher_spec => return .none, // RFC 8446 §D.4 — middlebox compat, silently discarded.
+        .alert => {
+            const a = try alert.parse(record[frame.header_len..][0..hdr.length()]);
+            if (a.isCloseNotify()) return .closed;
+            return error.PeerAlert;
+        },
+        .application_data => {},
+        else => return error.UnexpectedRecord,
+    }
+
     const dec = try self.rx.decrypt(record);
     switch (dec.content_type) {
         .handshake => {

@@ -66,6 +66,19 @@ pub fn build(b: *std.Build) void {
     const interop_step = b.step("test-openssl", "Run the openssl s_server interop test");
     interop_step.dependOn(&run_interop.step);
 
+    const server_interop_exe = b.addExecutable(.{
+        .name = "openssl_server_interop",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/test/openssl_server_interop.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{.{ .name = "ztls", .module = mod }},
+        }),
+    });
+    const run_server_interop = b.addRunArtifact(server_interop_exe);
+    const server_interop_step = b.step("test-openssl-server", "Run the openssl s_client interop test");
+    server_interop_step.dependOn(&run_server_interop.step);
+
     const replay_fixtures_exe = b.addExecutable(.{
         .name = "generate_replay_fixtures",
         .root_module = b.createModule(.{

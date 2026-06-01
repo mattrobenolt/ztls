@@ -109,6 +109,7 @@ pub const ParseError = error{
 
 pub const Parsed = struct {
     cipher_suites: []const u8,
+    legacy_session_id: []const u8 = &.{},
     server_name: ?[]const u8 = null,
     alpn_protocols: []const u8 = &.{},
     public_key: x25519.PublicKey,
@@ -231,7 +232,7 @@ pub fn parse(msg: []const u8) ParseError!Parsed {
     try r.skip(2); // legacy_version
     try r.skip(32); // random
     const session_id_len = try r.read(u8);
-    try r.skip(session_id_len);
+    const legacy_session_id = try r.readSlice(session_id_len);
 
     const cipher_suites_len = try r.read(u16);
     if (cipher_suites_len == 0 or cipher_suites_len % 2 != 0) return error.InvalidVectorLength;
@@ -245,7 +246,7 @@ pub fn parse(msg: []const u8) ParseError!Parsed {
     if (extensions_len > msg.len - r.pos) return error.InvalidExtensionLength;
     const extensions_end = r.pos + extensions_len;
 
-    var parsed: Parsed = .{ .cipher_suites = cipher_suites, .public_key = undefined };
+    var parsed: Parsed = .{ .cipher_suites = cipher_suites, .legacy_session_id = legacy_session_id, .public_key = undefined };
     var got_supported_versions = false;
     var got_key_share = false;
     var got_server_name = false;
