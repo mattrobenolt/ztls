@@ -564,7 +564,7 @@ test "application data: server sends and receives" {
     try testing.expectEqualStrings("world", try server.receiveApplicationData(client_wire[0..incoming.len]));
 }
 
-test "in-memory authenticated client-server handshake reaches app data" {
+fn expectInMemoryAuthenticatedHandshake(suite: CipherSuite) !void {
     const client_keypair: x25519.KeyPair = .generate();
     const server_keypair: x25519.KeyPair = .generate();
 
@@ -577,8 +577,11 @@ test "in-memory authenticated client-server handshake reaches app data" {
 
     var server: ServerHandshake = .init(server_keypair);
     server.supportAlpn(&.{"h2"});
+    const suites = [_]CipherSuite{suite};
+    server.supportSuites(&suites);
     var server_out: [4096]u8 = undefined;
     const sh_record = try server.acceptClientHello(ch_record, .zero, &server_out);
+    try testing.expectEqual(suite, server.suite);
     try client.processServerHello(sh_record[frame.header_len..]);
 
     const sk = try EcdsaP256Sha256.SecretKey.fromBytes(server_ecdsa_scalar[0..32].*);
@@ -608,6 +611,18 @@ test "in-memory authenticated client-server handshake reaches app data" {
     @memcpy(server_app_mut[0..server_app.len], server_app);
     const ev = try client.handleRecord(server_app_mut[0..server_app.len], &client_out);
     try testing.expectEqualStrings("pong", ev.application_data);
+}
+
+// RFC 8446 §9.1 — TLS 1.3 implementations must support all three mandatory suites.
+test "in-memory authenticated client-server handshake reaches app data" {
+    try expectInMemoryAuthenticatedHandshake(.aes_128_gcm_sha256);
+}
+
+// RFC 8446 §9.1 — all mandatory TLS 1.3 cipher suites complete the full handshake.
+test "in-memory authenticated client-server handshake suite matrix" {
+    try expectInMemoryAuthenticatedHandshake(.aes_128_gcm_sha256);
+    try expectInMemoryAuthenticatedHandshake(.aes_256_gcm_sha384);
+    try expectInMemoryAuthenticatedHandshake(.chacha20_poly1305_sha256);
 }
 
 test "acceptClientHello: server suite preference" {
