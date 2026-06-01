@@ -11,6 +11,8 @@ const mem = std.mem;
 
 const aead = @import("aead.zig");
 const client_hello = @import("client_hello.zig");
+const encrypted_extensions = @import("encrypted_extensions.zig");
+const finished = @import("finished.zig");
 const frame = @import("frame.zig");
 const hkdf = @import("hkdf.zig");
 const RecordLayer = @import("RecordLayer.zig");
@@ -77,6 +79,8 @@ pub const AcceptError = frame.ParseError || client_hello.ParseError || server_he
     UnsupportedCipherSuite,
     IdentityElement,
 };
+
+pub const FlightError = encrypted_extensions.EncodeError || RecordLayer.EncryptError;
 
 /// Consume a plaintext ClientHello record and emit a plaintext ServerHello
 /// record. The returned bytes must be written before continuing the handshake.
@@ -170,6 +174,29 @@ fn suiteAead(suite: CipherSuite) aead.Keys {
     };
 }
 
+/// Emit the encrypted part of the server flight for the current skeleton:
+/// EncryptedExtensions followed by Finished. Certificate/CertificateVerify are
+/// intentionally still absent, so this only models anonymous test handshakes;
+/// the real authenticated flight is the next step. RFC 8446 §4.3.1, §4.4.4.
+pub fn sendAnonymousFlight(self: *ServerHandshake, out: []u8) FlightError![]const u8 {
+    assert(self.state == .wait_client_finished);
+    var plaintext: [256]u8 = undefined;
+    var pos: usize = 0;
+    const ee = try encrypted_extensions.encode(plaintext[pos..], self.selected_alpn);
+    self.suite_state.update(ee);
+    pos += ee.len;
+
+    switch (self.suite_state) {
+        inline .sha256, .sha384 => |*s| {
+            const th = s.transcript.peek();
+            const fin = try finished.encode(@TypeOf(s.transcript), plaintext[pos..], &s.server_finished_key.data, &th);
+            s.transcript.update(fin);
+            pos += fin.len;
+        },
+    }
+    return self.tx.encrypt(.handshake, plaintext[0..pos], out);
+}
+
 fn chooseSuite(ch: client_hello.Parsed) ?CipherSuite {
     // Server preference order: AES-128 first for the cheap/default path, then
     // AES-256, then ChaCha. We can revisit once benchmarks say otherwise.
@@ -208,6 +235,49 @@ test "acceptClientHello: emits ServerHello and installs handshake keys" {
     try client_hs.processServerHello(sh_record[frame.header_len..][0..hdr.length()]);
     try testing.expectEqualSlices(u8, &client_hs.rx.iv.data, &hs.tx.iv.data);
     try testing.expectEqualSlices(u8, &client_hs.tx.iv.data, &hs.rx.iv.data);
+}
+
+test "sendAnonymousFlight: client decrypts EncryptedExtensions and Finished" {
+    const client_keypair: x25519.KeyPair = .generate();
+    const server_keypair: x25519.KeyPair = .generate();
+    var ch_buf: [512]u8 = undefined;
+    const ch = try client_hello.encode(&ch_buf, .zero, .init(client_keypair.public_key), "example.com", &.{"h2"});
+    var ch_record: [1024]u8 = undefined;
+    ch_record[0..frame.header_len].* = mem.toBytes(frame.Header.init(.handshake, @intCast(ch.len)));
+    @memcpy(ch_record[frame.header_len..][0..ch.len], ch);
+
+    var server: ServerHandshake = .init(server_keypair);
+    server.supportAlpn(&.{"h2"});
+    var sh_out: [256]u8 = undefined;
+    const sh_record = try server.acceptClientHello(ch_record[0 .. frame.header_len + ch.len], .zero, &sh_out);
+
+    var client = @import("ClientHandshake.zig").init(client_keypair);
+    client.offerAlpn(&.{"h2"});
+    client.injectClientHello(ch);
+    try client.processServerHello(sh_record[frame.header_len..]);
+
+    var flight_out: [512]u8 = undefined;
+    const flight_record = try server.sendAnonymousFlight(&flight_out);
+    const dec = try client.rx.decrypt(flight_out[0..flight_record.len]);
+    try testing.expectEqual(.handshake, dec.content_type);
+
+    var hr: @import("ClientHandshake.zig").HandshakeReader = .init(dec.content);
+    const ee = (try hr.next()).?;
+    try testing.expectEqual(@import("ClientHandshake.zig").HandshakeType.encrypted_extensions, ee.type);
+    const parsed_ee = try encrypted_extensions.parse(ee.raw, &.{"h2"});
+    try testing.expectEqualStrings("h2", parsed_ee.alpn_protocol.?);
+    var transcript: Sha256 = .init(.{});
+    transcript.update(ch);
+    transcript.update(sh_record[frame.header_len..]);
+    transcript.update(ee.raw);
+
+    const fin = (try hr.next()).?;
+    try testing.expectEqual(@import("ClientHandshake.zig").HandshakeType.finished, fin.type);
+    const th = transcript.peek();
+    switch (server.suite_state) {
+        .sha256 => |s| try finished.verify(Sha256, fin.raw, &s.server_finished_key.data, &th),
+        .sha384 => unreachable,
+    }
 }
 
 test "acceptClientHello: rejects unsupported suite" {
