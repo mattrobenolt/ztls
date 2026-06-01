@@ -1,14 +1,19 @@
 /// TLS 1.3 server handshake state machine skeleton.
 ///
-/// This is intentionally narrow: parse ClientHello, choose parameters, and emit
-/// plaintext ServerHello. Encrypted flight and Finished processing come next.
-/// No allocations, no I/O.
+/// This is intentionally narrow: parse ClientHello, choose parameters, emit
+/// plaintext ServerHello, and install handshake traffic keys. Encrypted flight
+/// and Finished processing come next. No allocations, no I/O.
 const std = @import("std");
 const assert = std.debug.assert;
+const Sha256 = std.crypto.hash.sha2.Sha256;
+const Sha384 = std.crypto.hash.sha2.Sha384;
 const mem = std.mem;
 
+const aead = @import("aead.zig");
 const client_hello = @import("client_hello.zig");
 const frame = @import("frame.zig");
+const hkdf = @import("hkdf.zig");
+const RecordLayer = @import("RecordLayer.zig");
 const server_hello = @import("server_hello.zig");
 const x25519 = @import("x25519.zig");
 const CipherSuite = @import("root.zig").CipherSuite;
@@ -21,11 +26,37 @@ pub const State = enum {
     connected,
 };
 
+fn HashArm(comptime Hkdf_: type, comptime Hash: type) type {
+    return struct {
+        transcript: Hash,
+        aead: aead.Keys,
+        handshake_secret: Hkdf_.Prk,
+        client_finished_key: Hkdf_.Prk,
+        server_finished_key: Hkdf_.Prk,
+
+        const Hkdf = Hkdf_;
+    };
+}
+
+const Suite = union(enum) {
+    sha256: HashArm(hkdf.HkdfSha256, Sha256),
+    sha384: HashArm(hkdf.HkdfSha384, Sha384),
+
+    fn update(self: *Suite, msg: []const u8) void {
+        switch (self.*) {
+            inline .sha256, .sha384 => |*s| s.transcript.update(msg),
+        }
+    }
+};
+
 state: State = .wait_ch,
 keypair: x25519.KeyPair,
 suite: CipherSuite = .aes_128_gcm_sha256,
+suite_state: Suite = undefined,
 alpn_protocols: client_hello.AlpnProtocols = &.{},
 selected_alpn: ?[]const u8 = null,
+rx: RecordLayer = undefined,
+tx: RecordLayer = undefined,
 
 pub fn init(keypair: x25519.KeyPair) ServerHandshake {
     return .{ .keypair = keypair };
@@ -44,11 +75,13 @@ pub const AcceptError = frame.ParseError || client_hello.ParseError || server_he
     IncompleteRecord,
     UnexpectedRecord,
     UnsupportedCipherSuite,
+    IdentityElement,
 };
 
 /// Consume a plaintext ClientHello record and emit a plaintext ServerHello
 /// record. The returned bytes must be written before continuing the handshake.
-/// RFC 8446 §4.1.2, §4.1.3, §5.1.
+/// Installs handshake traffic keys for the encrypted server flight.
+/// RFC 8446 §4.1.2, §4.1.3, §5.1, §7.1.
 pub fn acceptClientHello(
     self: *ServerHandshake,
     record: []const u8,
@@ -60,15 +93,81 @@ pub fn acceptClientHello(
     if (hdr.content_type != .handshake) return error.UnexpectedRecord;
     if (record.len < frame.header_len + hdr.length()) return error.IncompleteRecord;
 
-    const ch = try client_hello.parse(record[frame.header_len..][0..hdr.length()]);
+    const ch_msg = record[frame.header_len..][0..hdr.length()];
+    const ch = try client_hello.parse(ch_msg);
     const suite = chooseSuite(ch) orelse return error.UnsupportedCipherSuite;
     self.suite = suite;
     self.selected_alpn = ch.selectAlpn(self.alpn_protocols);
 
     const sh = try server_hello.encode(out[frame.header_len..], random.data, &.{}, suite, .init(self.keypair.public_key));
     out[0..frame.header_len].* = mem.toBytes(frame.Header.init(.handshake, @intCast(sh.len)));
+
+    try self.installHandshakeKeys(suite, ch_msg, sh, ch.public_key);
     self.state = .wait_client_finished;
     return out[0 .. frame.header_len + sh.len];
+}
+
+fn installHandshakeKeys(
+    self: *ServerHandshake,
+    suite: CipherSuite,
+    ch_msg: []const u8,
+    sh_msg: []const u8,
+    client_public_key: x25519.PublicKey,
+) error{IdentityElement}!void {
+    const dhe = try x25519.sharedSecret(self.keypair.secret_key, client_public_key);
+    switch (suite) {
+        .aes_128_gcm_sha256, .chacha20_poly1305_sha256 => {
+            var transcript: Sha256 = .init(.{});
+            transcript.update(ch_msg);
+            transcript.update(sh_msg);
+            self.suite_state = .{ .sha256 = makeHandshakeArm(hkdf.HkdfSha256, Sha256, transcript, suiteAead(suite), &dhe) };
+        },
+        .aes_256_gcm_sha384 => {
+            var transcript: Sha384 = .init(.{});
+            transcript.update(ch_msg);
+            transcript.update(sh_msg);
+            self.suite_state = .{ .sha384 = makeHandshakeArm(hkdf.HkdfSha384, Sha384, transcript, suiteAead(suite), &dhe) };
+        },
+    }
+
+    switch (self.suite_state) {
+        inline .sha256, .sha384 => |s| {
+            const H = @TypeOf(s).Hkdf;
+            const th = s.transcript.peek();
+            const client_secret = H.clientHandshakeTrafficSecret(s.handshake_secret, &.init(th));
+            const server_secret = H.serverHandshakeTrafficSecret(s.handshake_secret, &.init(th));
+            self.rx = H.makeRecordLayer(s.aead, client_secret);
+            self.tx = H.makeRecordLayer(s.aead, server_secret);
+        },
+    }
+}
+
+fn makeHandshakeArm(
+    comptime H: type,
+    comptime Hash: type,
+    transcript: Hash,
+    aead_key: aead.Keys,
+    dhe: *const hkdf.SharedSecret,
+) HashArm(H, Hash) {
+    const handshake_secret = H.handshakeSecret(H.early_secret, dhe);
+    const th = transcript.peek();
+    const client_secret = H.clientHandshakeTrafficSecret(handshake_secret, &.init(th));
+    const server_secret = H.serverHandshakeTrafficSecret(handshake_secret, &.init(th));
+    return .{
+        .transcript = transcript,
+        .aead = aead_key,
+        .handshake_secret = handshake_secret,
+        .client_finished_key = H.finishedKey(client_secret),
+        .server_finished_key = H.finishedKey(server_secret),
+    };
+}
+
+fn suiteAead(suite: CipherSuite) aead.Keys {
+    return switch (suite) {
+        .aes_128_gcm_sha256 => .aes128_gcm,
+        .chacha20_poly1305_sha256 => .chacha20_poly1305,
+        .aes_256_gcm_sha384 => .aes256_gcm,
+    };
 }
 
 fn chooseSuite(ch: client_hello.Parsed) ?CipherSuite {
@@ -82,7 +181,7 @@ fn chooseSuite(ch: client_hello.Parsed) ?CipherSuite {
 
 const testing = std.testing;
 
-test "acceptClientHello: emits ServerHello" {
+test "acceptClientHello: emits ServerHello and installs handshake keys" {
     const client_keypair: x25519.KeyPair = .generate();
     const server_keypair: x25519.KeyPair = .generate();
     var ch_buf: [512]u8 = undefined;
@@ -103,6 +202,12 @@ test "acceptClientHello: emits ServerHello" {
     const sh = try server_hello.parse(sh_record[frame.header_len..][0..hdr.length()]);
     try testing.expectEqual(.aes_128_gcm_sha256, sh.cipher_suite);
     try testing.expectEqualSlices(u8, &server_keypair.public_key, &sh.server_public_key.data);
+
+    var client_hs = @import("ClientHandshake.zig").init(client_keypair);
+    client_hs.injectClientHello(ch);
+    try client_hs.processServerHello(sh_record[frame.header_len..][0..hdr.length()]);
+    try testing.expectEqualSlices(u8, &client_hs.rx.iv.data, &hs.tx.iv.data);
+    try testing.expectEqualSlices(u8, &client_hs.tx.iv.data, &hs.rx.iv.data);
 }
 
 test "acceptClientHello: rejects unsupported suite" {
