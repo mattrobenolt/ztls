@@ -21,6 +21,37 @@ pub const Result = struct {
     alpn_protocol: ?[]const u8 = null,
 };
 
+pub const EncodeError = error{ BufferTooShort, EmptyAlpnProtocol, AlpnProtocolTooLong };
+
+pub fn encodedLen(alpn_protocol: ?[]const u8) usize {
+    const alpn_len: usize = if (alpn_protocol) |p| 4 + 2 + 1 + p.len else 0;
+    return 4 + 2 + alpn_len;
+}
+
+/// Encode EncryptedExtensions. Currently only ALPN is supported as server
+/// output. RFC 8446 §4.3.1, RFC 7301 §3.2.
+pub fn encode(out: []u8, alpn_protocol: ?[]const u8) EncodeError![]const u8 {
+    if (alpn_protocol) |p| {
+        if (p.len == 0) return error.EmptyAlpnProtocol;
+        if (p.len > 255) return error.AlpnProtocolTooLong;
+    }
+    const len = encodedLen(alpn_protocol);
+    if (out.len < len) return error.BufferTooShort;
+
+    var w: wire.Writer = .init(out);
+    w.append(u8, 0x08);
+    w.append(u24, @intCast(len - 4));
+    w.append(u16, @intCast(len - 6));
+    if (alpn_protocol) |p| {
+        w.append(u16, 0x0010);
+        w.append(u16, @intCast(2 + 1 + p.len));
+        w.append(u16, @intCast(1 + p.len));
+        w.append(u8, @intCast(p.len));
+        w.appendSlice(p);
+    }
+    return w.written();
+}
+
 /// Parse an EncryptedExtensions handshake message.
 ///
 /// Recognizes ALPN when the caller offered protocols. Unknown extensions are
@@ -75,6 +106,20 @@ fn parseAlpn(ext: []const u8, offered: []const []const u8) ParseError![]const u8
 }
 
 const testing = std.testing;
+
+test "encode: empty EncryptedExtensions" {
+    var out: [32]u8 = undefined;
+    const msg = try encode(&out, null);
+    try testing.expectEqualSlices(u8, &.{ 0x08, 0x00, 0x00, 0x02, 0x00, 0x00 }, msg);
+    _ = try parse(msg, &.{});
+}
+
+test "encode: ALPN EncryptedExtensions" {
+    var out: [32]u8 = undefined;
+    const msg = try encode(&out, "h2");
+    const result = try parse(msg, &.{ "h2", "http/1.1" });
+    try testing.expectEqualStrings("h2", result.alpn_protocol.?);
+}
 
 test "parse: valid EncryptedExtensions" {
     // type(1) + length(3) + extensions_len(2) + no extensions
