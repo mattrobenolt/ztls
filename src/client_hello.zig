@@ -120,6 +120,21 @@ pub const Parsed = struct {
         }
         return false;
     }
+
+    /// Return the first server-preferred protocol also present in the client's
+    /// ALPN ProtocolNameList. Returned slice points at `server_protocols`, not
+    /// the ClientHello buffer, so it is stable for server flight encoding.
+    pub fn selectAlpn(self: Parsed, server_protocols: []const []const u8) ?[]const u8 {
+        for (server_protocols) |server_protocol| {
+            var r: wire.Reader = .init(self.alpn_protocols);
+            while (r.pos < self.alpn_protocols.len) {
+                const len = r.read(u8) catch return null;
+                const client_protocol = r.readSlice(len) catch return null;
+                if (std.mem.eql(u8, server_protocol, client_protocol)) return server_protocol;
+            }
+        }
+        return null;
+    }
 };
 
 pub fn encode(
@@ -433,6 +448,9 @@ test "parse: encoded ClientHello" {
     try testing.expectEqualStrings("example.com", parsed.server_name.?);
     try testing.expectEqualSlices(u8, &key.data, &parsed.public_key.data);
     try testing.expectEqualSlices(u8, &.{ 0x02, 'h', '2', 0x08, 'h', 't', 't', 'p', '/', '1', '.', '1' }, parsed.alpn_protocols);
+    try testing.expectEqualStrings("http/1.1", parsed.selectAlpn(&.{ "http/1.1", "h2" }).?);
+    try testing.expectEqualStrings("h2", parsed.selectAlpn(&.{"h2"}).?);
+    try testing.expectEqual(@as(?[]const u8, null), parsed.selectAlpn(&.{"bogus"}));
 }
 
 test "parse: rejects malformed ClientHello" {
