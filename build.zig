@@ -82,6 +82,26 @@ pub fn build(b: *std.Build) void {
     const bench_bin_step = b.step("bench-bin", "Build the benchmark binary for profiling");
     bench_bin_step.dependOn(&install_bench.step);
 
+    const evp_bench_mod = b.createModule(.{
+        .target = target,
+        .optimize = .ReleaseFast,
+        .link_libc = true,
+    });
+    const evp_bench = b.addExecutable(.{
+        .name = "openssl_evp_bench",
+        .root_module = evp_bench_mod,
+    });
+    evp_bench.addCSourceFile(.{ .file = b.path("bench/openssl_evp.c"), .flags = &.{"-O3"} });
+    evp_bench.linkLibC();
+    evp_bench.linkSystemLibrary("crypto");
+    const run_evp_bench = b.addRunArtifact(evp_bench);
+    if (b.args) |args| run_evp_bench.addArgs(args);
+    const evp_bench_step = b.step("bench-evp", "Run OpenSSL EVP AEAD benchmarks");
+    evp_bench_step.dependOn(&run_evp_bench.step);
+    const install_evp_bench = b.addInstallArtifact(evp_bench, .{});
+    const evp_bench_bin_step = b.step("bench-evp-bin", "Build the OpenSSL EVP benchmark binary");
+    evp_bench_bin_step.dependOn(&install_evp_bench.step);
+
     const examples = [_][]const u8{
         "full_handshake",
         "handshake_keys",

@@ -22,7 +22,8 @@ rustls has two useful generations of benchmarking:
 BoringSSL's `bssl speed` is lower-level. It times primitive chunks (AEAD,
 hashes, ECDH, signatures) over fixed durations and reports operations/sec and
 MB/s. That is useful for isolating crypto backend behavior, but it misses TLS
-record overhead and state-machine costs.
+record overhead and state-machine costs. ztls mirrors this with
+`zig build bench-evp`, an OpenSSL EVP-only AEAD harness.
 
 Go's `crypto/tls` tests and benchmarks use local in-memory pipes and recorded
 reference handshakes. The important lesson for ztls is the same: keep benchmark
@@ -91,6 +92,7 @@ The first `zig build bench` is deliberately boring:
 - record framing/parser rows for cheap non-crypto surfaces;
 - deterministic generated-OpenSSL client handshake replay for all three suites;
 - ztls in-memory authenticated client/server handshake and app-data rows;
+- OpenSSL EVP raw AEAD rows via `zig build bench-evp`;
 - no network;
 - no allocations in library code; benchmark-only scratch allocation is fine;
 - CSV rows written to stdout.
@@ -127,3 +129,15 @@ valgrind --tool=callgrind --callgrind-out-file=callgrind.out \
   ./zig-out/bin/record_protection_bench --filter chacha20
 callgrind_annotate callgrind.out
 ```
+
+For raw OpenSSL crypto comparison:
+
+```sh
+zig build bench-evp
+zig build bench-evp-bin
+zig-out/bin/openssl_evp_bench --filter aes_128
+```
+
+These EVP rows are not a TLS comparison. They isolate OpenSSL's AEAD
+implementation and EVP setup/update/final overhead so ztls record numbers can
+be interpreted against the crypto floor.
