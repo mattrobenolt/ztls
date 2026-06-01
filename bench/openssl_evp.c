@@ -128,6 +128,76 @@ static uint64_t bench_decrypt(const suite_t *suite, size_t size, size_t iteratio
     return elapsed;
 }
 
+static int evp_encrypt_reuse(EVP_CIPHER_CTX *ctx, const uint8_t *iv, const uint8_t *in, uint8_t *out, size_t size, uint8_t tag[16]) {
+    int len = 0;
+    int out_len = 0;
+    if (EVP_EncryptInit_ex(ctx, NULL, NULL, NULL, iv) != 1) return 0;
+    if (EVP_EncryptUpdate(ctx, NULL, &len, aad, sizeof(aad)) != 1) return 0;
+    if (EVP_EncryptUpdate(ctx, out, &len, in, (int)size) != 1) return 0;
+    out_len += len;
+    if (EVP_EncryptFinal_ex(ctx, out + out_len, &len) != 1) return 0;
+    if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_AEAD_GET_TAG, 16, tag) != 1) return 0;
+    return 1;
+}
+
+static int evp_decrypt_reuse(EVP_CIPHER_CTX *ctx, const uint8_t *iv, const uint8_t *in, uint8_t *out, size_t size, const uint8_t tag[16]) {
+    int len = 0;
+    int out_len = 0;
+    if (EVP_DecryptInit_ex(ctx, NULL, NULL, NULL, iv) != 1) return 0;
+    if (EVP_DecryptUpdate(ctx, NULL, &len, aad, sizeof(aad)) != 1) return 0;
+    if (EVP_DecryptUpdate(ctx, out, &len, in, (int)size) != 1) return 0;
+    out_len += len;
+    if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_AEAD_SET_TAG, 16, (void *)tag) != 1) return 0;
+    if (EVP_DecryptFinal_ex(ctx, out + out_len, &len) != 1) return 0;
+    return 1;
+}
+
+static void init_encrypt_ctx(EVP_CIPHER_CTX *ctx, const suite_t *suite, const uint8_t *key, const uint8_t *iv) {
+    if (EVP_EncryptInit_ex(ctx, suite->cipher(), NULL, NULL, NULL) != 1) abort();
+    if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_AEAD_SET_IVLEN, 12, NULL) != 1) abort();
+    if (EVP_EncryptInit_ex(ctx, NULL, NULL, key, iv) != 1) abort();
+}
+
+static void init_decrypt_ctx(EVP_CIPHER_CTX *ctx, const suite_t *suite, const uint8_t *key, const uint8_t *iv) {
+    if (EVP_DecryptInit_ex(ctx, suite->cipher(), NULL, NULL, NULL) != 1) abort();
+    if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_AEAD_SET_IVLEN, 12, NULL) != 1) abort();
+    if (EVP_DecryptInit_ex(ctx, NULL, NULL, key, iv) != 1) abort();
+}
+
+static uint64_t bench_encrypt_reuse(const suite_t *suite, size_t size, size_t iterations, uint8_t *in, uint8_t *out, uint8_t *key, uint8_t *iv) {
+    EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
+    if (ctx == NULL) abort();
+    uint8_t tag[16];
+    init_encrypt_ctx(ctx, suite, key, iv);
+    for (size_t i = 0; i < 32; i++) if (!evp_encrypt_reuse(ctx, iv, in, out, size, tag)) abort();
+    uint64_t start = now_ns();
+    for (size_t i = 0; i < iterations; i++) {
+        if (!evp_encrypt_reuse(ctx, iv, in, out, size, tag)) abort();
+        OPENSSL_cleanse(tag, sizeof(tag));
+    }
+    uint64_t elapsed = now_ns() - start;
+    EVP_CIPHER_CTX_free(ctx);
+    return elapsed;
+}
+
+static uint64_t bench_decrypt_reuse(const suite_t *suite, size_t size, size_t iterations, uint8_t *plain, uint8_t *ciphertext, uint8_t *out, uint8_t *key, uint8_t *iv) {
+    EVP_CIPHER_CTX *enc = EVP_CIPHER_CTX_new();
+    EVP_CIPHER_CTX *dec = EVP_CIPHER_CTX_new();
+    if (enc == NULL || dec == NULL) abort();
+    uint8_t tag[16];
+    if (!evp_encrypt_once(enc, suite, key, iv, plain, ciphertext, size, tag)) abort();
+    init_decrypt_ctx(dec, suite, key, iv);
+    for (size_t i = 0; i < 32; i++) if (!evp_decrypt_reuse(dec, iv, ciphertext, out, size, tag)) abort();
+    uint64_t start = now_ns();
+    for (size_t i = 0; i < iterations; i++) {
+        if (!evp_decrypt_reuse(dec, iv, ciphertext, out, size, tag)) abort();
+    }
+    uint64_t elapsed = now_ns() - start;
+    EVP_CIPHER_CTX_free(enc);
+    EVP_CIPHER_CTX_free(dec);
+    return elapsed;
+}
+
 static double mib_per_sec(size_t bytes, uint64_t ns) {
     double mib = (double)bytes / (1024.0 * 1024.0);
     double sec = (double)ns / 1000000000.0;
@@ -141,6 +211,8 @@ int main(int argc, char **argv) {
         for (size_t i = 0; i < sizeof(suites) / sizeof(suites[0]); i++) {
             printf("openssl_evp_encrypt,%s\n", suites[i].name);
             printf("openssl_evp_decrypt,%s\n", suites[i].name);
+            printf("openssl_evp_reuse_encrypt,%s\n", suites[i].name);
+            printf("openssl_evp_reuse_decrypt,%s\n", suites[i].name);
         }
         return 0;
     }
@@ -174,6 +246,16 @@ int main(int argc, char **argv) {
             if (matches(&args, "openssl_evp_decrypt", suites[s].name)) {
                 uint64_t ns = bench_decrypt(&suites[s], size, iterations, plain, ciphertext, out, key, iv);
                 printf("openssl_evp_decrypt,%s,%zu,%zu,%zu,%llu,%.2f\n", suites[s].name, size, iterations, bytes, (unsigned long long)ns, mib_per_sec(bytes, ns));
+                fflush(stdout);
+            }
+            if (matches(&args, "openssl_evp_reuse_encrypt", suites[s].name)) {
+                uint64_t ns = bench_encrypt_reuse(&suites[s], size, iterations, plain, ciphertext, key, iv);
+                printf("openssl_evp_reuse_encrypt,%s,%zu,%zu,%zu,%llu,%.2f\n", suites[s].name, size, iterations, bytes, (unsigned long long)ns, mib_per_sec(bytes, ns));
+                fflush(stdout);
+            }
+            if (matches(&args, "openssl_evp_reuse_decrypt", suites[s].name)) {
+                uint64_t ns = bench_decrypt_reuse(&suites[s], size, iterations, plain, ciphertext, out, key, iv);
+                printf("openssl_evp_reuse_decrypt,%s,%zu,%zu,%zu,%llu,%.2f\n", suites[s].name, size, iterations, bytes, (unsigned long long)ns, mib_per_sec(bytes, ns));
                 fflush(stdout);
             }
         }

@@ -145,7 +145,11 @@ zig-out/bin/openssl_evp_bench --filter aes_128
 
 These EVP rows are not a TLS comparison. They isolate OpenSSL's AEAD
 implementation and EVP setup/update/final overhead so ztls record numbers can
-be interpreted against the crypto floor.
+be interpreted against the crypto floor. The `openssl_evp_reuse_*` rows keep the
+EVP context and cipher/key setup alive across iterations, resetting only the IV
+per operation; use those rows to avoid over-crediting ztls on tiny records where
+full EVP setup dominates. This still does not make EVP a no-allocation ztls core
+backend — OpenSSL 3 provider contexts allocate behind the API.
 
 For libssl machinery without kernel sockets:
 
