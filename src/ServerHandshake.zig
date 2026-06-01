@@ -11,6 +11,7 @@ const mem = std.mem;
 
 const aead = @import("aead.zig");
 const client_hello = @import("client_hello.zig");
+const certificate = @import("certificate.zig");
 const encrypted_extensions = @import("encrypted_extensions.zig");
 const finished = @import("finished.zig");
 const frame = @import("frame.zig");
@@ -80,7 +81,15 @@ pub const AcceptError = frame.ParseError || client_hello.ParseError || server_he
     IdentityElement,
 };
 
-pub const FlightError = encrypted_extensions.EncodeError || RecordLayer.EncryptError;
+pub const SignError = error{ BufferTooShort, IdentityElement, NonCanonical };
+
+pub const Signer = struct {
+    scheme: std.crypto.tls.SignatureScheme,
+    context: *anyopaque,
+    sign: *const fn (context: *anyopaque, msg: []const u8, out: []u8) SignError![]const u8,
+};
+
+pub const FlightError = encrypted_extensions.EncodeError || certificate.EncodeError || certificate.CertificateVerifyEncodeError || RecordLayer.EncryptError || SignError;
 
 /// Consume a plaintext ClientHello record and emit a plaintext ServerHello
 /// record. The returned bytes must be written before continuing the handshake.
@@ -197,6 +206,54 @@ pub fn sendAnonymousFlight(self: *ServerHandshake, out: []u8) FlightError![]cons
     return self.tx.encrypt(.handshake, plaintext[0..pos], out);
 }
 
+/// Emit an authenticated encrypted server flight: EncryptedExtensions,
+/// Certificate, CertificateVerify, Finished. The signer receives the exact TLS
+/// 1.3 CertificateVerify input (`64*SP || context || 0 || transcript_hash`) and
+/// writes a DER signature into caller-provided scratch. RFC 8446 §4.3-§4.4.
+pub fn sendAuthenticatedFlight(
+    self: *ServerHandshake,
+    certs_der: []const []const u8,
+    signer: Signer,
+    plaintext: []u8,
+    out: []u8,
+) FlightError![]const u8 {
+    assert(self.state == .wait_client_finished);
+    var pos: usize = 0;
+
+    const ee = try encrypted_extensions.encode(plaintext[pos..], self.selected_alpn);
+    self.suite_state.update(ee);
+    pos += ee.len;
+
+    const cert = try certificate.encode(plaintext[pos..], certs_der);
+    self.suite_state.update(cert);
+    pos += cert.len;
+
+    var cv_input: [certificate.server_certificate_verify_context.len + 64]u8 = undefined;
+    cv_input[0..certificate.server_certificate_verify_context.len].* = certificate.server_certificate_verify_context.*;
+    const transcript_hash_len: usize = switch (self.suite_state) {
+        inline .sha256, .sha384 => |*s| blk: {
+            const th = s.transcript.peek();
+            @memcpy(cv_input[certificate.server_certificate_verify_context.len..][0..th.len], &th);
+            break :blk th.len;
+        },
+    };
+    var sig_buf: [std.crypto.sign.ecdsa.EcdsaP384Sha384.Signature.der_encoded_length_max]u8 = undefined;
+    const sig = try signer.sign(signer.context, cv_input[0 .. certificate.server_certificate_verify_context.len + transcript_hash_len], &sig_buf);
+    const cv = try certificate.encodeCertificateVerify(plaintext[pos..], signer.scheme, sig);
+    self.suite_state.update(cv);
+    pos += cv.len;
+
+    switch (self.suite_state) {
+        inline .sha256, .sha384 => |*s| {
+            const th = s.transcript.peek();
+            const fin = try finished.encode(@TypeOf(s.transcript), plaintext[pos..], &s.server_finished_key.data, &th);
+            s.transcript.update(fin);
+            pos += fin.len;
+        },
+    }
+    return self.tx.encrypt(.handshake, plaintext[0..pos], out);
+}
+
 fn chooseSuite(ch: client_hello.Parsed) ?CipherSuite {
     // Server preference order: AES-128 first for the cheap/default path, then
     // AES-256, then ChaCha. We can revisit once benchmarks say otherwise.
@@ -207,6 +264,27 @@ fn chooseSuite(ch: client_hello.Parsed) ?CipherSuite {
 }
 
 const testing = std.testing;
+
+const test_cert_der = @embedFile("test_fixtures/server.crt.der");
+
+const EcdsaP256Sha256 = std.crypto.sign.ecdsa.EcdsaP256Sha256;
+
+const TestSigner = struct {
+    keypair: EcdsaP256Sha256.KeyPair,
+
+    fn sign(context: *anyopaque, msg: []const u8, out: []u8) SignError![]const u8 {
+        const self: *TestSigner = @ptrCast(@alignCast(context));
+        const sig = self.keypair.sign(msg, null) catch |err| switch (err) {
+            error.IdentityElement => return error.IdentityElement,
+            error.NonCanonical => return error.NonCanonical,
+        };
+        var der: [EcdsaP256Sha256.Signature.der_encoded_length_max]u8 = undefined;
+        const encoded = sig.toDer(&der);
+        if (out.len < encoded.len) return error.BufferTooShort;
+        @memcpy(out[0..encoded.len], encoded);
+        return out[0..encoded.len];
+    }
+};
 
 test "acceptClientHello: emits ServerHello and installs handshake keys" {
     const client_keypair: x25519.KeyPair = .generate();
@@ -278,6 +356,41 @@ test "sendAnonymousFlight: client decrypts EncryptedExtensions and Finished" {
         .sha256 => |s| try finished.verify(Sha256, fin.raw, &s.server_finished_key.data, &th),
         .sha384 => unreachable,
     }
+}
+
+test "sendAuthenticatedFlight: client decrypts authenticated server flight" {
+    const client_keypair: x25519.KeyPair = .generate();
+    const server_keypair: x25519.KeyPair = .generate();
+    var ch_buf: [512]u8 = undefined;
+    const ch = try client_hello.encode(&ch_buf, .zero, .init(client_keypair.public_key), "example.com", &.{"h2"});
+    var ch_record: [1024]u8 = undefined;
+    ch_record[0..frame.header_len].* = mem.toBytes(frame.Header.init(.handshake, @intCast(ch.len)));
+    @memcpy(ch_record[frame.header_len..][0..ch.len], ch);
+
+    var server: ServerHandshake = .init(server_keypair);
+    server.supportAlpn(&.{"h2"});
+    var sh_out: [256]u8 = undefined;
+    const sh_record = try server.acceptClientHello(ch_record[0 .. frame.header_len + ch.len], .zero, &sh_out);
+
+    var signer: TestSigner = .{ .keypair = EcdsaP256Sha256.KeyPair.generate() };
+    const signer_api: Signer = .{ .scheme = .ecdsa_secp256r1_sha256, .context = &signer, .sign = TestSigner.sign };
+    var plaintext: [4096]u8 = undefined;
+    var flight_out: [4096]u8 = undefined;
+    const flight_record = try server.sendAuthenticatedFlight(&.{test_cert_der}, signer_api, &plaintext, &flight_out);
+
+    var client = @import("ClientHandshake.zig").init(client_keypair);
+    client.offerAlpn(&.{"h2"});
+    client.injectClientHello(ch);
+    try client.processServerHello(sh_record[frame.header_len..]);
+    const dec = try client.rx.decrypt(flight_out[0..flight_record.len]);
+    try testing.expectEqual(.handshake, dec.content_type);
+
+    var hr: @import("ClientHandshake.zig").HandshakeReader = .init(dec.content);
+    try testing.expectEqual(@import("ClientHandshake.zig").HandshakeType.encrypted_extensions, (try hr.next()).?.type);
+    try testing.expectEqual(@import("ClientHandshake.zig").HandshakeType.certificate, (try hr.next()).?.type);
+    try testing.expectEqual(@import("ClientHandshake.zig").HandshakeType.certificate_verify, (try hr.next()).?.type);
+    try testing.expectEqual(@import("ClientHandshake.zig").HandshakeType.finished, (try hr.next()).?.type);
+    try testing.expectEqual(@as(?@import("ClientHandshake.zig").HandshakeReader.Message, null), try hr.next());
 }
 
 test "acceptClientHello: rejects unsupported suite" {
