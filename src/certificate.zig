@@ -31,6 +31,33 @@ pub const Policy = struct {
     host_name: ?[]const u8 = null,
 };
 
+pub const EncodeError = error{BufferTooShort};
+
+pub fn encodedLen(certs_der: []const []const u8) usize {
+    var list_len: usize = 0;
+    for (certs_der) |cert_der| list_len += 3 + cert_der.len + 2;
+    return 4 + 1 + 3 + list_len;
+}
+
+/// Encode a TLS 1.3 Certificate handshake message with empty request_context
+/// and empty per-certificate extensions. RFC 8446 §4.4.2.
+pub fn encode(out: []u8, certs_der: []const []const u8) EncodeError![]const u8 {
+    const len = encodedLen(certs_der);
+    if (out.len < len) return error.BufferTooShort;
+    var w: wire.Writer = .init(out);
+    const list_len = len - 4 - 1 - 3;
+    w.append(u8, 0x0b);
+    w.append(u24, @intCast(len - 4));
+    w.append(u8, 0x00);
+    w.append(u24, @intCast(list_len));
+    for (certs_der) |cert_der| {
+        w.append(u24, @intCast(cert_der.len));
+        w.appendSlice(cert_der);
+        w.append(u16, 0x0000);
+    }
+    return w.written();
+}
+
 /// Parse a Certificate handshake message and extract the leaf certificate
 /// public key as a slice into `msg`. The caller must keep `msg` alive until
 /// verifySignature has been called. Optionally validates the chain against
@@ -180,25 +207,12 @@ const chain_root_pem = "tests/fixtures/chain/root.crt";
 const chain_leaf_der = @embedFile("test_fixtures/chain/leaf.der");
 const chain_intermediate_der = @embedFile("test_fixtures/chain/intermediate.der");
 
-fn buildCertMsg(buf: []u8, cert_der: []const u8) []u8 {
+fn buildCertMsg(buf: []u8, cert_der: []const u8) []const u8 {
     return buildCertChainMsg(buf, &.{cert_der});
 }
 
-fn buildCertChainMsg(buf: []u8, certs_der: []const []const u8) []u8 {
-    var w: wire.Writer = .init(buf);
-    var list_len: usize = 0;
-    for (certs_der) |cert_der| list_len += 3 + cert_der.len + 2;
-    const body_len = 1 + 3 + list_len;
-    w.append(u8, 0x0b);
-    w.append(u24, @intCast(body_len));
-    w.append(u8, 0x00);
-    w.append(u24, @intCast(list_len));
-    for (certs_der) |cert_der| {
-        w.append(u24, @intCast(cert_der.len));
-        w.appendSlice(cert_der);
-        w.append(u16, 0x0000);
-    }
-    return w.written();
+fn buildCertChainMsg(buf: []u8, certs_der: []const []const u8) []const u8 {
+    return encode(buf, certs_der) catch unreachable;
 }
 
 fn buildCvMsg(buf: []u8, sig: []const u8) []u8 {
@@ -227,9 +241,17 @@ test "parse: extracts public key from ECDSA P-256 certificate" {
 
 test "parse: wrong handshake type" {
     var buf: [1024]u8 = undefined;
-    var msg = buildCertMsg(&buf, fixture_cert_der);
-    msg[0] = 0x01;
-    try testing.expectError(error.InvalidHandshakeType, parse(msg, .{}));
+    _ = buildCertMsg(&buf, fixture_cert_der);
+    buf[0] = 0x01;
+    try testing.expectError(error.InvalidHandshakeType, parse(&buf, .{}));
+}
+
+test "encode: round trips certificate chain" {
+    var buf: [4096]u8 = undefined;
+    const msg = try encode(&buf, &.{ chain_leaf_der, chain_intermediate_der });
+    try testing.expectEqual(encodedLen(&.{ chain_leaf_der, chain_intermediate_der }), msg.len);
+    const pub_key = try parse(msg, .{ .host_name = "chain.test", .now_sec = 1_780_300_000 });
+    try testing.expect(pub_key.len > 0);
 }
 
 test "parse: validates hostname" {
