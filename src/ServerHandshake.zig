@@ -10,6 +10,7 @@ const Sha384 = std.crypto.hash.sha2.Sha384;
 const mem = std.mem;
 
 const aead = @import("aead.zig");
+const alert = @import("alert.zig");
 const client_hello = @import("client_hello.zig");
 const certificate = @import("certificate.zig");
 const encrypted_extensions = @import("encrypted_extensions.zig");
@@ -65,6 +66,10 @@ alpn_protocols: client_hello.AlpnProtocols = &.{},
 selected_alpn: ?[]const u8 = null,
 rx: RecordLayer = undefined,
 tx: RecordLayer = undefined,
+/// Set when an engine call hands the caller bytes that must be written before
+/// more input can be safely processed. Prevents dropped ServerHello/flight/app
+/// data from silently desynchronizing traffic keys.
+pending_write: bool = false,
 
 pub fn init(keypair: x25519.KeyPair) ServerHandshake {
     return .{ .keypair = keypair };
@@ -84,9 +89,20 @@ pub fn selectedAlpnProtocol(self: *const ServerHandshake) ?[]const u8 {
     return self.selected_alpn;
 }
 
+pub fn completeWrite(self: *ServerHandshake) void {
+    self.pending_write = false;
+}
+
 pub fn isConnected(self: *const ServerHandshake) bool {
     return self.state == .connected;
 }
+
+pub const Event = union(enum) {
+    application_data: []const u8,
+    write: []const u8,
+    none,
+    closed,
+};
 
 pub const AcceptError = frame.ParseError || client_hello.ParseError || server_hello.EncodeError || error{
     IncompleteRecord,
@@ -110,8 +126,10 @@ pub const ClientFinishedError = RecordLayer.DecryptError || finished.VerifyError
     UnexpectedMessage,
 };
 
-pub const SendError = RecordLayer.EncryptError;
-pub const ReceiveError = RecordLayer.DecryptError || error{UnexpectedRecord};
+pub const SendError = RecordLayer.EncryptError || error{PendingWrite};
+pub const ReceiveError = RecordLayer.DecryptError || alert.ParseError || error{ UnexpectedRecord, UnexpectedMessage, PeerAlert };
+pub const HandleError = AcceptError || FlightError || ClientFinishedError || ReceiveError || alert.ParseError || error{PendingWrite};
+pub const AlertError = RecordLayer.EncryptError || error{ BufferTooShort, PendingWrite };
 
 /// Consume a plaintext ClientHello record and emit a plaintext ServerHello
 /// record. The returned bytes must be written before continuing the handshake.
@@ -282,8 +300,12 @@ pub fn processClientFinished(self: *ServerHandshake, record: []u8) ClientFinishe
     assert(self.state == .wait_client_finished);
     const dec = try self.rx.decrypt(record);
     if (dec.content_type != .handshake) return error.UnexpectedRecord;
+    return self.processClientFinishedPlaintext(dec.content);
+}
 
-    var hr: @import("ClientHandshake.zig").HandshakeReader = .init(dec.content);
+fn processClientFinishedPlaintext(self: *ServerHandshake, plaintext: []const u8) ClientFinishedError!void {
+    assert(self.state == .wait_client_finished);
+    var hr: @import("ClientHandshake.zig").HandshakeReader = .init(plaintext);
     const msg = (try hr.next()) orelse return error.UnexpectedMessage;
     if (msg.type != .finished) return error.UnexpectedMessage;
     if (try hr.next() != null) return error.UnexpectedMessage;
@@ -304,9 +326,89 @@ pub fn processClientFinished(self: *ServerHandshake, record: []u8) ClientFinishe
     self.state = .connected;
 }
 
+pub fn handleRecord(self: *ServerHandshake, record: []u8, random: client_hello.Random, out: []u8) HandleError!Event {
+    if (self.pending_write) return error.PendingWrite;
+    const ev: Event = switch (self.state) {
+        .wait_ch => try self.handleWaitClientHello(record, random, out),
+        .wait_client_finished => try self.handleWaitClientFinished(record),
+        .connected => try self.handleConnected(record),
+    };
+    if (ev == .write) self.pending_write = true;
+    return ev;
+}
+
+fn handleWaitClientHello(self: *ServerHandshake, record: []u8, random: client_hello.Random, out: []u8) HandleError!Event {
+    const hdr = try frame.parseHeader(record);
+    if (record.len < frame.header_len + hdr.length()) return error.IncompleteRecord;
+    switch (hdr.content_type) {
+        .change_cipher_spec => return .none, // RFC 8446 §D.4 — middlebox compat, silently discarded.
+        .alert => {
+            const a = try alert.parse(record[frame.header_len..][0..hdr.length()]);
+            if (a.isCloseNotify()) return .closed;
+            return error.PeerAlert;
+        },
+        .handshake => return .{ .write = try self.acceptClientHello(record, random, out) },
+        else => return error.UnexpectedRecord,
+    }
+}
+
+fn handleWaitClientFinished(self: *ServerHandshake, record: []u8) HandleError!Event {
+    const dec = try self.rx.decrypt(record);
+    switch (dec.content_type) {
+        .handshake => {
+            try self.processClientFinishedPlaintext(dec.content);
+            return .none;
+        },
+        .alert => {
+            const a = try alert.parse(dec.content);
+            if (a.isCloseNotify()) return .closed;
+            return error.PeerAlert;
+        },
+        else => return error.UnexpectedRecord,
+    }
+}
+
+fn handleConnected(self: *ServerHandshake, record: []u8) ReceiveError!Event {
+    const dec = try self.rx.decrypt(record);
+    switch (dec.content_type) {
+        .application_data => return .{ .application_data = dec.content },
+        .alert => {
+            const a = try alert.parse(dec.content);
+            if (a.isCloseNotify()) return .closed;
+            return error.PeerAlert;
+        },
+        .handshake => return error.UnexpectedMessage,
+        else => return error.UnexpectedRecord,
+    }
+}
+
+pub fn sendAlert(self: *ServerHandshake, description: alert.Description, out: []u8) AlertError![]const u8 {
+    if (self.pending_write) return error.PendingWrite;
+    var msg: [2]u8 = undefined;
+    const level: alert.Level = if (description == .close_notify) .warning else .fatal;
+    _ = alert.encode(&msg, level, description) catch unreachable;
+    const record = switch (self.state) {
+        .wait_ch => try plaintextAlert(&msg, out),
+        else => try self.tx.encrypt(.alert, &msg, out),
+    };
+    self.pending_write = true;
+    return record;
+}
+
+fn plaintextAlert(msg: *const [2]u8, out: []u8) error{BufferTooShort}![]u8 {
+    const total = frame.header_len + msg.len;
+    if (out.len < total) return error.BufferTooShort;
+    out[0..frame.header_len].* = mem.toBytes(frame.Header.init(.alert, msg.len));
+    out[frame.header_len..][0..msg.len].* = msg.*;
+    return out[0..total];
+}
+
 pub fn sendApplicationData(self: *ServerHandshake, plaintext: []const u8, out: []u8) SendError![]u8 {
     assert(self.state == .connected);
-    return self.tx.encrypt(.application_data, plaintext, out);
+    if (self.pending_write) return error.PendingWrite;
+    const record = try self.tx.encrypt(.application_data, plaintext, out);
+    self.pending_write = true;
+    return record;
 }
 
 pub fn receiveApplicationData(self: *ServerHandshake, record: []u8) ReceiveError![]const u8 {
@@ -347,6 +449,65 @@ const TestSigner = struct {
         return out[0..encoded.len];
     }
 };
+
+// RFC 8446 §6 — alerts before handshake protection are plaintext records.
+test "sendAlert: plaintext fatal alert before ClientHello" {
+    var hs: ServerHandshake = .init(.generate());
+    var out: [16]u8 = undefined;
+    const rec = try hs.sendAlert(.decode_error, &out);
+    try testing.expectEqualSlices(u8, &.{ 0x15, 0x03, 0x03, 0x00, 0x02, 0x02, 0x32 }, rec);
+    try testing.expectError(error.PendingWrite, hs.sendAlert(.decode_error, &out));
+}
+
+// RFC 8446 §6.1 — close_notify is sent as a warning-level alert.
+test "sendAlert: encrypted close_notify after handshake" {
+    var server = try connectedTestServer();
+    var peer = server.tx;
+    var out: [64]u8 = undefined;
+    const rec = try server.sendAlert(.close_notify, &out);
+
+    var rec_buf: [64]u8 = undefined;
+    @memcpy(rec_buf[0..rec.len], rec);
+    const dec = try peer.decrypt(rec_buf[0..rec.len]);
+    try testing.expectEqual(.alert, dec.content_type);
+    try testing.expectEqualSlices(u8, &.{ 0x01, 0x00 }, dec.content);
+}
+
+// RFC 8446 §D.4 — middlebox-compat ChangeCipherSpec records are ignored.
+test "handleRecord: drops ChangeCipherSpec while waiting for ClientHello" {
+    var hs: ServerHandshake = .init(.generate());
+    var ccs = [_]u8{ 0x14, 0x03, 0x03, 0x00, 0x01, 0x01 };
+    var out: [64]u8 = undefined;
+    try testing.expectEqual(Event.none, try hs.handleRecord(&ccs, .zero, &out));
+}
+
+// RFC 8446 §5 — server handleRecord emits ServerHello and blocks until written.
+test "handleRecord: ClientHello returns ServerHello write and enforces pending write" {
+    const client_keypair: x25519.KeyPair = .generate();
+    var ch_buf: [512]u8 = undefined;
+    const ch = try client_hello.encode(&ch_buf, .zero, .init(client_keypair.public_key), null, &.{});
+    var record: [1024]u8 = undefined;
+    record[0..frame.header_len].* = mem.toBytes(frame.Header.init(.handshake, @intCast(ch.len)));
+    @memcpy(record[frame.header_len..][0..ch.len], ch);
+
+    var hs: ServerHandshake = .init(.generate());
+    var out: [256]u8 = undefined;
+    const ev = try hs.handleRecord(record[0 .. frame.header_len + ch.len], .zero, &out);
+    try testing.expectEqual(.wait_client_finished, hs.state);
+    const written = ev.write;
+    const hdr = try frame.parseHeader(written);
+    try testing.expectEqual(.handshake, hdr.content_type);
+    try testing.expectError(error.PendingWrite, hs.handleRecord(record[0 .. frame.header_len + ch.len], .zero, &out));
+    hs.completeWrite();
+}
+
+// RFC 8446 §5.1 — application_data is invalid before the handshake completes.
+test "handleRecord: rejects application_data before connected" {
+    var hs: ServerHandshake = .init(.generate());
+    var rec = [_]u8{ 0x17, 0x03, 0x03, 0x00, 0x05 } ++ [_]u8{0} ** 5;
+    var out: [64]u8 = undefined;
+    try testing.expectError(error.UnexpectedRecord, hs.handleRecord(&rec, .zero, &out));
+}
 
 test "acceptClientHello: emits ServerHello and installs handshake keys" {
     const client_keypair: x25519.KeyPair = .generate();
