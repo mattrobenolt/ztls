@@ -21,6 +21,10 @@ const RecordLayer = @import("RecordLayer.zig");
 const server_hello = @import("server_hello.zig");
 const x25519 = @import("x25519.zig");
 const CipherSuite = @import("root.zig").CipherSuite;
+const ClientHandshake = @import("ClientHandshake.zig");
+const HandshakeReader = ClientHandshake.HandshakeReader;
+const HandshakeType = ClientHandshake.HandshakeType;
+const KeyUpdateRequest = ClientHandshake.KeyUpdateRequest;
 
 const ServerHandshake = @This();
 
@@ -53,6 +57,26 @@ const Suite = union(enum) {
             inline .sha256, .sha384 => |*s| s.transcript.update(msg),
         }
     }
+
+    fn ratchetClientKey(self: *Suite) RecordLayer {
+        switch (self.*) {
+            inline .sha256, .sha384 => |*s| {
+                const H = @TypeOf(s.*).Hkdf;
+                s.client_app_secret = H.nextTrafficSecret(s.client_app_secret);
+                return H.makeRecordLayer(s.aead, s.client_app_secret);
+            },
+        }
+    }
+
+    fn ratchetServerKey(self: *Suite) RecordLayer {
+        switch (self.*) {
+            inline .sha256, .sha384 => |*s| {
+                const H = @TypeOf(s.*).Hkdf;
+                s.server_app_secret = H.nextTrafficSecret(s.server_app_secret);
+                return H.makeRecordLayer(s.aead, s.server_app_secret);
+            },
+        }
+    }
 };
 
 const default_supported_suites = [_]CipherSuite{ .aes_128_gcm_sha256, .aes_256_gcm_sha384, .chacha20_poly1305_sha256 };
@@ -70,6 +94,7 @@ tx: RecordLayer = undefined,
 /// more input can be safely processed. Prevents dropped ServerHello/flight/app
 /// data from silently desynchronizing traffic keys.
 pending_write: bool = false,
+post_handshake_count: u8 = 0,
 
 pub fn init(keypair: x25519.KeyPair) ServerHandshake {
     return .{ .keypair = keypair };
@@ -127,7 +152,7 @@ pub const ClientFinishedError = RecordLayer.DecryptError || finished.VerifyError
 };
 
 pub const SendError = RecordLayer.EncryptError || error{PendingWrite};
-pub const ReceiveError = RecordLayer.DecryptError || alert.ParseError || error{ UnexpectedRecord, UnexpectedMessage, PeerAlert };
+pub const ReceiveError = RecordLayer.DecryptError || SendError || alert.ParseError || error{ UnexpectedEof, UnexpectedRecord, UnexpectedMessage, IllegalParameter, TooManyKeyUpdates, PeerAlert };
 pub const HandleError = AcceptError || FlightError || ClientFinishedError || ReceiveError || alert.ParseError || error{PendingWrite};
 pub const AlertError = RecordLayer.EncryptError || error{ BufferTooShort, PendingWrite };
 
@@ -331,7 +356,7 @@ pub fn handleRecord(self: *ServerHandshake, record: []u8, random: client_hello.R
     const ev: Event = switch (self.state) {
         .wait_ch => try self.handleWaitClientHello(record, random, out),
         .wait_client_finished => try self.handleWaitClientFinished(record),
-        .connected => try self.handleConnected(record),
+        .connected => try self.handleConnected(record, out),
     };
     if (ev == .write) self.pending_write = true;
     return ev;
@@ -368,18 +393,51 @@ fn handleWaitClientFinished(self: *ServerHandshake, record: []u8) HandleError!Ev
     }
 }
 
-fn handleConnected(self: *ServerHandshake, record: []u8) ReceiveError!Event {
+const max_post_handshake_messages = 16;
+
+fn handleConnected(self: *ServerHandshake, record: []u8, out: []u8) ReceiveError!Event {
     const dec = try self.rx.decrypt(record);
     switch (dec.content_type) {
-        .application_data => return .{ .application_data = dec.content },
+        .application_data => {
+            self.post_handshake_count = 0;
+            return .{ .application_data = dec.content };
+        },
+        .handshake => {
+            var respond = false;
+            var hr: HandshakeReader = .init(dec.content);
+            while (try hr.next()) |msg| {
+                self.post_handshake_count +|= 1;
+                if (self.post_handshake_count > max_post_handshake_messages) return error.TooManyKeyUpdates;
+                if (msg.type != .key_update) return error.UnexpectedMessage;
+                if (hr.r.remaining().len != 0) return error.UnexpectedMessage;
+                if (try parseKeyUpdate(msg.raw) == .update_requested) respond = true;
+                self.rx = self.suite_state.ratchetClientKey();
+            }
+            if (respond) return .{ .write = try self.sendKeyUpdate(out, .update_not_requested) };
+            return .none;
+        },
         .alert => {
             const a = try alert.parse(dec.content);
             if (a.isCloseNotify()) return .closed;
             return error.PeerAlert;
         },
-        .handshake => return error.UnexpectedMessage,
         else => return error.UnexpectedRecord,
     }
+}
+
+pub fn sendKeyUpdate(self: *ServerHandshake, out: []u8, request: KeyUpdateRequest) SendError![]const u8 {
+    assert(self.state == .connected);
+    if (self.pending_write) return error.PendingWrite;
+    const msg = [_]u8{ @intFromEnum(HandshakeType.key_update), 0x00, 0x00, 0x01, @intFromEnum(request) };
+    const record = try self.tx.encrypt(.handshake, &msg, out);
+    self.tx = self.suite_state.ratchetServerKey();
+    self.pending_write = true;
+    return record;
+}
+
+fn parseKeyUpdate(msg: []const u8) error{ UnexpectedEof, IllegalParameter }!KeyUpdateRequest {
+    if (msg.len != 5) return error.UnexpectedEof;
+    return std.enums.fromInt(KeyUpdateRequest, msg[4]) orelse error.IllegalParameter;
 }
 
 pub fn sendAlert(self: *ServerHandshake, description: alert.Description, out: []u8) AlertError![]const u8 {
@@ -706,6 +764,90 @@ test "processClientFinished: verifies Finished and installs app keys" {
     try testing.expectEqual(.connected, server.state);
     try testing.expectEqual(@as(u64, 0), server.rx.seq);
     try testing.expectEqual(@as(u64, 0), server.tx.seq);
+}
+
+// RFC 8446 §4.6.3 — a client KeyUpdate(update_requested) ratchets the
+// server receive key and elicits a server KeyUpdate(update_not_requested),
+// encrypted under the old send key.
+test "handleRecord: client KeyUpdate(update_requested) ratchets rx and responds" {
+    var server = try connectedTestServer();
+    var client_tx = server.rx;
+    var server_tx_old = server.tx;
+
+    const ku = [_]u8{ @intFromEnum(HandshakeType.key_update), 0x00, 0x00, 0x01, @intFromEnum(KeyUpdateRequest.update_requested) };
+    var ku_buf: [64]u8 = undefined;
+    const ku_wire = try client_tx.encrypt(.handshake, &ku, &ku_buf);
+    var rx_buf: [64]u8 = undefined;
+    @memcpy(rx_buf[0..ku_wire.len], ku_wire);
+    var out: [64]u8 = undefined;
+    const ev = try server.handleRecord(rx_buf[0..ku_wire.len], .zero, &out);
+
+    const resp = ev.write;
+    var resp_buf: [64]u8 = undefined;
+    @memcpy(resp_buf[0..resp.len], resp);
+    const dec = try server_tx_old.decrypt(resp_buf[0..resp.len]);
+    try testing.expectEqual(.handshake, dec.content_type);
+    try testing.expectEqualSlices(u8, &.{ @intFromEnum(HandshakeType.key_update), 0x00, 0x00, 0x01, @intFromEnum(KeyUpdateRequest.update_not_requested) }, dec.content);
+    server.completeWrite();
+
+    var client_tx_1 = server.rx;
+    var app_buf: [64]u8 = undefined;
+    const app_wire = try client_tx_1.encrypt(.application_data, "after", &app_buf);
+    var app_rx: [64]u8 = undefined;
+    @memcpy(app_rx[0..app_wire.len], app_wire);
+    try testing.expectEqualSlices(u8, "after", (try server.handleRecord(app_rx[0..app_wire.len], .zero, &out)).application_data);
+}
+
+// RFC 8446 §4.6.3 — update_not_requested only ratchets the receive key.
+test "handleRecord: client KeyUpdate(update_not_requested) ratchets rx only" {
+    var server = try connectedTestServer();
+    var client_tx = server.rx;
+
+    const ku = [_]u8{ @intFromEnum(HandshakeType.key_update), 0x00, 0x00, 0x01, @intFromEnum(KeyUpdateRequest.update_not_requested) };
+    var ku_buf: [64]u8 = undefined;
+    const ku_wire = try client_tx.encrypt(.handshake, &ku, &ku_buf);
+    var rx_buf: [64]u8 = undefined;
+    @memcpy(rx_buf[0..ku_wire.len], ku_wire);
+    var out: [64]u8 = undefined;
+    try testing.expectEqual(Event.none, try server.handleRecord(rx_buf[0..ku_wire.len], .zero, &out));
+
+    var client_tx_1 = server.rx;
+    var app_buf: [64]u8 = undefined;
+    const app_wire = try client_tx_1.encrypt(.application_data, "after", &app_buf);
+    var app_rx: [64]u8 = undefined;
+    @memcpy(app_rx[0..app_wire.len], app_wire);
+    try testing.expectEqualSlices(u8, "after", (try server.handleRecord(app_rx[0..app_wire.len], .zero, &out)).application_data);
+}
+
+// RFC 8446 §4.6.3 — server KeyUpdate is encrypted under the old send key, then ratchets.
+test "sendKeyUpdate: server-initiated KeyUpdate encrypts under old key then ratchets tx" {
+    var server = try connectedTestServer();
+    var peer_rx_old = server.tx;
+    var out: [64]u8 = undefined;
+    const rec = try server.sendKeyUpdate(&out, .update_requested);
+    var rec_buf: [64]u8 = undefined;
+    @memcpy(rec_buf[0..rec.len], rec);
+    const dec = try peer_rx_old.decrypt(rec_buf[0..rec.len]);
+    try testing.expectEqual(.handshake, dec.content_type);
+    try testing.expectEqualSlices(u8, &.{ @intFromEnum(HandshakeType.key_update), 0x00, 0x00, 0x01, @intFromEnum(KeyUpdateRequest.update_requested) }, dec.content);
+    try testing.expectError(error.PendingWrite, server.sendKeyUpdate(&out, .update_requested));
+    server.completeWrite();
+}
+
+// RFC 8446 §5.1 — a KeyUpdate must align with a record boundary.
+test "handleRecord: KeyUpdate not at record boundary is rejected" {
+    var server = try connectedTestServer();
+    var client_tx = server.rx;
+    const two = [_]u8{
+        @intFromEnum(HandshakeType.key_update), 0x00, 0x00, 0x01, @intFromEnum(KeyUpdateRequest.update_not_requested),
+        @intFromEnum(HandshakeType.key_update), 0x00, 0x00, 0x01, @intFromEnum(KeyUpdateRequest.update_not_requested),
+    };
+    var wire_buf: [64]u8 = undefined;
+    const wire_rec = try client_tx.encrypt(.handshake, &two, &wire_buf);
+    var rx_buf: [64]u8 = undefined;
+    @memcpy(rx_buf[0..wire_rec.len], wire_rec);
+    var out: [64]u8 = undefined;
+    try testing.expectError(error.UnexpectedMessage, server.handleRecord(rx_buf[0..wire_rec.len], .zero, &out));
 }
 
 test "application data: server sends and receives" {
