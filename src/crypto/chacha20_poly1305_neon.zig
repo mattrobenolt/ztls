@@ -114,7 +114,7 @@ pub fn decrypt(
     var computed = std.mem.asBytes(&data)[0..tag_length].*;
     if (!crypto.timing_safe.eql([tag_length]u8, computed, tag)) {
         crypto.secureZero(u8, &computed);
-        @memset(plaintext, undefined);
+        crypto.secureZero(u8, plaintext);
         return error.AuthenticationFailed;
     }
 }

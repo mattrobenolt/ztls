@@ -1001,7 +1001,7 @@ chacha20_poly1305_seal:
 	b	.Lseal_tail
 
 .Lseal_tail_64:
-	ldp	x3, x4, [x5, #48] // extra_in_len and extra_in_ptr
+	ldp	x3, x4, [x5, #48] // extra_in_ptr and extra_in_len
 
     // Here we handle the last [0,64) bytes of plaintext
 	cmp	x2, #16

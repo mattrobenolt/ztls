@@ -208,6 +208,72 @@ test "ChaCha20Poly1305: RFC 8439 known-answer vector" {
     try testing.expectEqualSlices(u8, &plaintext, &decrypted);
 }
 
+// RFC 8439 §2.8 — empty plaintext authenticates AAD and lengths.
+test "ChaCha20Poly1305: empty plaintext known-answer vector" {
+    const key: ChaCha20Poly1305Key = .init(hex(32, "1c9240a5eb55d38af333888604f6b5f0473917c1402b80099dca5cbc207075c0"));
+    const npub: Nonce = .init(hex(12, "000000000102030405060708"));
+    const ad = hex(12, "f33388860000000000004e91");
+    const expected_tag = hex(16, "66f09890d77129cc79e1ed577bd95c04");
+
+    var tag: Tag = undefined;
+    const aead: Aead = .{ .chacha20_poly1305 = key };
+    aead.encrypt(&.{}, &tag, &.{}, &ad, &npub);
+    try testing.expectEqualSlices(u8, &expected_tag, &tag.data);
+    try aead.decrypt(&.{}, &.{}, &tag, &ad, &npub);
+}
+
+// RFC 8439 §2.8 — ChaCha20-Poly1305 rejects forged ciphertexts.
+test "ChaCha20Poly1305: authentication failure on tampered ciphertext" {
+    const key: ChaCha20Poly1305Key = .init(@splat(0x01));
+    const iv: Iv = .init(@splat(0x02));
+    const npub = construct(&iv, 0);
+    const ad = "header";
+    const plaintext = "secret";
+
+    var ciphertext: [plaintext.len]u8 = undefined;
+    var tag: Tag = undefined;
+    const aead: Aead = .{ .chacha20_poly1305 = key };
+    aead.encrypt(&ciphertext, &tag, plaintext, ad, &npub);
+
+    ciphertext[0] ^= 0xff;
+    var decrypted: [plaintext.len]u8 = undefined;
+    try testing.expectError(error.AuthenticationFailed, aead.decrypt(&decrypted, &ciphertext, &tag, ad, &npub));
+}
+
+// RFC 8439 §2.8 — ChaCha20-Poly1305 rejects forged tags.
+test "ChaCha20Poly1305: authentication failure on tampered tag" {
+    const key: ChaCha20Poly1305Key = .init(@splat(0x01));
+    const iv: Iv = .init(@splat(0x02));
+    const npub = construct(&iv, 0);
+    const ad = "header";
+    const plaintext = "secret";
+
+    var ciphertext: [plaintext.len]u8 = undefined;
+    var tag: Tag = undefined;
+    const aead: Aead = .{ .chacha20_poly1305 = key };
+    aead.encrypt(&ciphertext, &tag, plaintext, ad, &npub);
+
+    tag.data[0] ^= 0xff;
+    var decrypted: [plaintext.len]u8 = undefined;
+    try testing.expectError(error.AuthenticationFailed, aead.decrypt(&decrypted, &ciphertext, &tag, ad, &npub));
+}
+
+// RFC 8439 §2.8 — ChaCha20-Poly1305 authenticates associated data.
+test "ChaCha20Poly1305: authentication failure on tampered ad" {
+    const key: ChaCha20Poly1305Key = .init(@splat(0x01));
+    const iv: Iv = .init(@splat(0x02));
+    const npub = construct(&iv, 0);
+    const plaintext = "secret";
+
+    var ciphertext: [plaintext.len]u8 = undefined;
+    var tag: Tag = undefined;
+    const aead: Aead = .{ .chacha20_poly1305 = key };
+    aead.encrypt(&ciphertext, &tag, plaintext, "header", &npub);
+
+    var decrypted: [plaintext.len]u8 = undefined;
+    try testing.expectError(error.AuthenticationFailed, aead.decrypt(&decrypted, &ciphertext, &tag, "HEADER", &npub));
+}
+
 test "decrypt: authentication failure on tampered ciphertext" {
     const key: Aes128GcmKey = .init(@splat(0x01));
     const iv: Iv = .init(@splat(0x02));
