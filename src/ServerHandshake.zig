@@ -76,6 +76,10 @@ pub fn selectedAlpnProtocol(self: *const ServerHandshake) ?[]const u8 {
     return self.selected_alpn;
 }
 
+pub fn isConnected(self: *const ServerHandshake) bool {
+    return self.state == .connected;
+}
+
 pub const AcceptError = frame.ParseError || client_hello.ParseError || server_hello.EncodeError || error{
     IncompleteRecord,
     UnexpectedRecord,
@@ -97,6 +101,9 @@ pub const ClientFinishedError = RecordLayer.DecryptError || finished.VerifyError
     UnexpectedRecord,
     UnexpectedMessage,
 };
+
+pub const SendError = RecordLayer.EncryptError;
+pub const ReceiveError = RecordLayer.DecryptError || error{UnexpectedRecord};
 
 /// Consume a plaintext ClientHello record and emit a plaintext ServerHello
 /// record. The returned bytes must be written before continuing the handshake.
@@ -290,6 +297,18 @@ pub fn processClientFinished(self: *ServerHandshake, record: []u8) ClientFinishe
     self.state = .connected;
 }
 
+pub fn sendApplicationData(self: *ServerHandshake, plaintext: []const u8, out: []u8) SendError![]u8 {
+    assert(self.state == .connected);
+    return self.tx.encrypt(.application_data, plaintext, out);
+}
+
+pub fn receiveApplicationData(self: *ServerHandshake, record: []u8) ReceiveError![]const u8 {
+    assert(self.state == .connected);
+    const dec = try self.rx.decrypt(record);
+    if (dec.content_type != .application_data) return error.UnexpectedRecord;
+    return dec.content;
+}
+
 fn chooseSuite(ch: client_hello.Parsed) ?CipherSuite {
     // Server preference order: AES-128 first for the cheap/default path, then
     // AES-256, then ChaCha. We can revisit once benchmarks say otherwise.
@@ -429,6 +448,35 @@ test "sendAuthenticatedFlight: client decrypts authenticated server flight" {
     try testing.expectEqual(@as(?@import("ClientHandshake.zig").HandshakeReader.Message, null), try hr.next());
 }
 
+fn connectedTestServer() !ServerHandshake {
+    const client_keypair: x25519.KeyPair = .generate();
+    const server_keypair: x25519.KeyPair = .generate();
+    var ch_buf: [512]u8 = undefined;
+    const ch = try client_hello.encode(&ch_buf, .zero, .init(client_keypair.public_key), null, &.{});
+    var ch_record: [1024]u8 = undefined;
+    ch_record[0..frame.header_len].* = mem.toBytes(frame.Header.init(.handshake, @intCast(ch.len)));
+    @memcpy(ch_record[frame.header_len..][0..ch.len], ch);
+
+    var server: ServerHandshake = .init(server_keypair);
+    var sh_out: [256]u8 = undefined;
+    _ = try server.acceptClientHello(ch_record[0 .. frame.header_len + ch.len], .zero, &sh_out);
+    var flight_out: [512]u8 = undefined;
+    _ = try server.sendAnonymousFlight(&flight_out);
+
+    var fin_plain: [64]u8 = undefined;
+    const fin = switch (server.suite_state) {
+        inline .sha256, .sha384 => |*s| blk: {
+            const th = s.transcript.peek();
+            break :blk try finished.encode(@TypeOf(s.transcript), &fin_plain, &s.client_finished_key.data, &th);
+        },
+    };
+    var client_tx = server.rx;
+    var fin_wire: [128]u8 = undefined;
+    const fin_record = try client_tx.encrypt(.handshake, fin, &fin_wire);
+    try server.processClientFinished(fin_wire[0..fin_record.len]);
+    return server;
+}
+
 test "processClientFinished: verifies Finished and installs app keys" {
     const client_keypair: x25519.KeyPair = .generate();
     const server_keypair: x25519.KeyPair = .generate();
@@ -458,6 +506,23 @@ test "processClientFinished: verifies Finished and installs app keys" {
     try testing.expectEqual(.connected, server.state);
     try testing.expectEqual(@as(u64, 0), server.rx.seq);
     try testing.expectEqual(@as(u64, 0), server.tx.seq);
+}
+
+test "application data: server sends and receives" {
+    var server = try connectedTestServer();
+    try testing.expect(server.isConnected());
+
+    var server_wire: [128]u8 = undefined;
+    var server_rx = server.tx;
+    const sent = try server.sendApplicationData("hello", &server_wire);
+    const dec_sent = try server_rx.decrypt(server_wire[0..sent.len]);
+    try testing.expectEqual(.application_data, dec_sent.content_type);
+    try testing.expectEqualStrings("hello", dec_sent.content);
+
+    var client_tx = server.rx;
+    var client_wire: [128]u8 = undefined;
+    const incoming = try client_tx.encrypt(.application_data, "world", &client_wire);
+    try testing.expectEqualStrings("world", try server.receiveApplicationData(client_wire[0..incoming.len]));
 }
 
 test "acceptClientHello: rejects unsupported suite" {
