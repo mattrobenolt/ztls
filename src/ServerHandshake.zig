@@ -197,11 +197,10 @@ fn suiteAead(suite: CipherSuite) aead.Keys {
     };
 }
 
-/// Emit the encrypted part of the server flight for the current skeleton:
-/// EncryptedExtensions followed by Finished. Certificate/CertificateVerify are
-/// intentionally still absent, so this only models anonymous test handshakes;
-/// the real authenticated flight is the next step. RFC 8446 §4.3.1, §4.4.4.
-pub fn sendAnonymousFlight(self: *ServerHandshake, out: []u8) FlightError![]const u8 {
+// Test-only helper for anonymous handshakes. Keep private: TLS server callers
+// must use sendAuthenticatedFlight() so CertificateVerify binds the server's
+// identity into the transcript. RFC 8446 §4.3.1, §4.4.4.
+fn sendAnonymousFlightForTest(self: *ServerHandshake, out: []u8) FlightError![]const u8 {
     assert(self.state == .wait_client_finished);
     var plaintext: [256]u8 = undefined;
     var pos: usize = 0;
@@ -372,7 +371,7 @@ test "acceptClientHello: emits ServerHello and installs handshake keys" {
     try testing.expectEqualSlices(u8, &client_hs.tx.iv.data, &hs.rx.iv.data);
 }
 
-test "sendAnonymousFlight: client decrypts EncryptedExtensions and Finished" {
+test "sendAnonymousFlightForTest: client decrypts EncryptedExtensions and Finished" {
     const client_keypair: x25519.KeyPair = .generate();
     const server_keypair: x25519.KeyPair = .generate();
     var ch_buf: [512]u8 = undefined;
@@ -392,7 +391,7 @@ test "sendAnonymousFlight: client decrypts EncryptedExtensions and Finished" {
     try client.processServerHello(sh_record[frame.header_len..]);
 
     var flight_out: [512]u8 = undefined;
-    const flight_record = try server.sendAnonymousFlight(&flight_out);
+    const flight_record = try server.sendAnonymousFlightForTest(&flight_out);
     const dec = try client.rx.decrypt(flight_out[0..flight_record.len]);
     try testing.expectEqual(.handshake, dec.content_type);
 
@@ -463,7 +462,7 @@ fn connectedTestServer() !ServerHandshake {
     var sh_out: [256]u8 = undefined;
     _ = try server.acceptClientHello(ch_record[0 .. frame.header_len + ch.len], .zero, &sh_out);
     var flight_out: [512]u8 = undefined;
-    _ = try server.sendAnonymousFlight(&flight_out);
+    _ = try server.sendAnonymousFlightForTest(&flight_out);
 
     var fin_plain: [64]u8 = undefined;
     const fin = switch (server.suite_state) {
@@ -524,7 +523,7 @@ test "processClientFinished: verifies Finished and installs app keys" {
     var sh_out: [256]u8 = undefined;
     _ = try server.acceptClientHello(ch_record[0 .. frame.header_len + ch.len], .zero, &sh_out);
     var flight_out: [512]u8 = undefined;
-    _ = try server.sendAnonymousFlight(&flight_out);
+    _ = try server.sendAnonymousFlightForTest(&flight_out);
 
     var fin_plain: [64]u8 = undefined;
     const fin = switch (server.suite_state) {
