@@ -36,6 +36,8 @@ fn HashArm(comptime Hkdf_: type, comptime Hash: type) type {
         handshake_secret: Hkdf_.Prk,
         client_finished_key: Hkdf_.Prk,
         server_finished_key: Hkdf_.Prk,
+        client_app_secret: Hkdf_.Prk = undefined,
+        server_app_secret: Hkdf_.Prk = undefined,
 
         const Hkdf = Hkdf_;
     };
@@ -90,6 +92,11 @@ pub const Signer = struct {
 };
 
 pub const FlightError = encrypted_extensions.EncodeError || certificate.EncodeError || certificate.CertificateVerifyEncodeError || RecordLayer.EncryptError || SignError;
+
+pub const ClientFinishedError = RecordLayer.DecryptError || finished.VerifyError || frame.ParseError || error{
+    UnexpectedRecord,
+    UnexpectedMessage,
+};
 
 /// Consume a plaintext ClientHello record and emit a plaintext ServerHello
 /// record. The returned bytes must be written before continuing the handshake.
@@ -254,6 +261,35 @@ pub fn sendAuthenticatedFlight(
     return self.tx.encrypt(.handshake, plaintext[0..pos], out);
 }
 
+/// Consume the client's encrypted Finished, verify it against the transcript
+/// through server Finished, then install application traffic keys. RFC 8446
+/// §4.4.4, §7.1.
+pub fn processClientFinished(self: *ServerHandshake, record: []u8) ClientFinishedError!void {
+    assert(self.state == .wait_client_finished);
+    const dec = try self.rx.decrypt(record);
+    if (dec.content_type != .handshake) return error.UnexpectedRecord;
+
+    var hr: @import("ClientHandshake.zig").HandshakeReader = .init(dec.content);
+    const msg = (try hr.next()) orelse return error.UnexpectedMessage;
+    if (msg.type != .finished) return error.UnexpectedMessage;
+    if (try hr.next() != null) return error.UnexpectedMessage;
+
+    switch (self.suite_state) {
+        inline .sha256, .sha384 => |*s| {
+            const H = @TypeOf(s.*).Hkdf;
+            const th = s.transcript.peek();
+            try finished.verify(@TypeOf(s.transcript), msg.raw, &s.client_finished_key.data, &th);
+            const master = H.masterSecret(s.handshake_secret);
+            s.client_app_secret = H.clientApplicationTrafficSecret(master, &.init(th));
+            s.server_app_secret = H.serverApplicationTrafficSecret(master, &.init(th));
+            self.rx = H.makeRecordLayer(s.aead, s.client_app_secret);
+            self.tx = H.makeRecordLayer(s.aead, s.server_app_secret);
+            s.transcript.update(msg.raw);
+        },
+    }
+    self.state = .connected;
+}
+
 fn chooseSuite(ch: client_hello.Parsed) ?CipherSuite {
     // Server preference order: AES-128 first for the cheap/default path, then
     // AES-256, then ChaCha. We can revisit once benchmarks say otherwise.
@@ -391,6 +427,37 @@ test "sendAuthenticatedFlight: client decrypts authenticated server flight" {
     try testing.expectEqual(@import("ClientHandshake.zig").HandshakeType.certificate_verify, (try hr.next()).?.type);
     try testing.expectEqual(@import("ClientHandshake.zig").HandshakeType.finished, (try hr.next()).?.type);
     try testing.expectEqual(@as(?@import("ClientHandshake.zig").HandshakeReader.Message, null), try hr.next());
+}
+
+test "processClientFinished: verifies Finished and installs app keys" {
+    const client_keypair: x25519.KeyPair = .generate();
+    const server_keypair: x25519.KeyPair = .generate();
+    var ch_buf: [512]u8 = undefined;
+    const ch = try client_hello.encode(&ch_buf, .zero, .init(client_keypair.public_key), null, &.{});
+    var ch_record: [1024]u8 = undefined;
+    ch_record[0..frame.header_len].* = mem.toBytes(frame.Header.init(.handshake, @intCast(ch.len)));
+    @memcpy(ch_record[frame.header_len..][0..ch.len], ch);
+
+    var server: ServerHandshake = .init(server_keypair);
+    var sh_out: [256]u8 = undefined;
+    _ = try server.acceptClientHello(ch_record[0 .. frame.header_len + ch.len], .zero, &sh_out);
+    var flight_out: [512]u8 = undefined;
+    _ = try server.sendAnonymousFlight(&flight_out);
+
+    var fin_plain: [64]u8 = undefined;
+    const fin = switch (server.suite_state) {
+        inline .sha256, .sha384 => |*s| blk: {
+            const th = s.transcript.peek();
+            break :blk try finished.encode(@TypeOf(s.transcript), &fin_plain, &s.client_finished_key.data, &th);
+        },
+    };
+    var client_tx = server.rx;
+    var fin_wire: [128]u8 = undefined;
+    const fin_record = try client_tx.encrypt(.handshake, fin, &fin_wire);
+    try server.processClientFinished(fin_wire[0..fin_record.len]);
+    try testing.expectEqual(.connected, server.state);
+    try testing.expectEqual(@as(u64, 0), server.rx.seq);
+    try testing.expectEqual(@as(u64, 0), server.tx.seq);
 }
 
 test "acceptClientHello: rejects unsupported suite" {
