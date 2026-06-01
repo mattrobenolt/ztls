@@ -4,7 +4,6 @@
 /// TLSCiphertext encrypt/decrypt. RFC 8446 §5.2
 const std = @import("std");
 const testing = std.testing;
-const Aes128Gcm = std.crypto.aead.aes_gcm.Aes128Gcm;
 
 const Aead = @import("aead.zig").Aead;
 const AeadError = @import("aead.zig").Error;
