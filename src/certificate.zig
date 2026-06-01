@@ -32,6 +32,7 @@ pub const Policy = struct {
 };
 
 pub const EncodeError = error{BufferTooShort};
+pub const CertificateVerifyEncodeError = error{BufferTooShort};
 
 pub fn encodedLen(certs_der: []const []const u8) usize {
     var list_len: usize = 0;
@@ -116,6 +117,34 @@ fn verifyAgainstBundle(bundle: *const Certificate.Bundle, subject: Certificate.P
 pub const AuthError = ParseError || VerifyError;
 
 const server_context = " " ** 64 ++ "TLS 1.3, server CertificateVerify\x00";
+const client_context = " " ** 64 ++ "TLS 1.3, client CertificateVerify\x00";
+
+pub fn certificateVerifyEncodedLen(signature: []const u8) usize {
+    return 4 + 2 + 2 + signature.len;
+}
+
+/// Encode a CertificateVerify handshake message from a caller-provided
+/// signature. ztls does not own private keys; server-side code signs
+/// `server_context || transcript_hash` outside this helper, then wraps the
+/// signature here. RFC 8446 §4.4.3.
+pub fn encodeCertificateVerify(
+    out: []u8,
+    scheme: crypto.tls.SignatureScheme,
+    signature: []const u8,
+) CertificateVerifyEncodeError![]const u8 {
+    const len = certificateVerifyEncodedLen(signature);
+    if (out.len < len) return error.BufferTooShort;
+    var w: wire.Writer = .init(out);
+    w.append(u8, 0x0f);
+    w.append(u24, @intCast(len - 4));
+    w.append(crypto.tls.SignatureScheme, scheme);
+    w.append(u16, @intCast(signature.len));
+    w.appendSlice(signature);
+    return w.written();
+}
+
+pub const server_certificate_verify_context = server_context;
+pub const client_certificate_verify_context = client_context;
 
 pub const VerifyError = error{
     InvalidEnumTag,
@@ -215,15 +244,8 @@ fn buildCertChainMsg(buf: []u8, certs_der: []const []const u8) []const u8 {
     return encode(buf, certs_der) catch unreachable;
 }
 
-fn buildCvMsg(buf: []u8, sig: []const u8) []u8 {
-    var w: wire.Writer = .init(buf);
-    const body_len = 2 + 2 + sig.len;
-    w.append(u8, 0x0f);
-    w.append(u24, @intCast(body_len));
-    w.append(u16, 0x0403); // ecdsa_secp256r1_sha256
-    w.append(u16, @intCast(sig.len));
-    w.appendSlice(sig);
-    return w.written();
+fn buildCvMsg(buf: []u8, sig: []const u8) []const u8 {
+    return encodeCertificateVerify(buf, .ecdsa_secp256r1_sha256, sig) catch unreachable;
 }
 
 const test_transcript_hash = blk: {
@@ -340,6 +362,14 @@ test "parse: malformed DER length is rejected, not crashed" {
     try testing.expectError(error.CertificateFieldHasInvalidLength, parse(&msg, .{}));
 }
 
+test "encodeCertificateVerify: wraps signature" {
+    var buf: [512]u8 = undefined;
+    const msg = try encodeCertificateVerify(&buf, .ecdsa_secp256r1_sha256, fixture_cv_sig);
+    try testing.expectEqual(@as(u8, 0x0f), msg[0]);
+    try testing.expectEqual(certificateVerifyEncodedLen(fixture_cv_sig), msg.len);
+    try testing.expectEqualSlices(u8, fixture_cv_sig, msg[8..]);
+}
+
 test "verifySignature: valid ECDSA P-256 signature" {
     var cert_buf: [1024]u8 = undefined;
     const pub_key = try parse(buildCertMsg(&cert_buf, fixture_cert_der), .{});
@@ -359,9 +389,9 @@ test "verifySignature: wrong handshake type" {
     var cert_buf: [1024]u8 = undefined;
     const pub_key = try parse(buildCertMsg(&cert_buf, fixture_cert_der), .{});
     var cv_buf: [512]u8 = undefined;
-    var cv_msg = buildCvMsg(&cv_buf, fixture_cv_sig);
-    cv_msg[0] = 0x01;
-    try testing.expectError(error.InvalidHandshakeType, verifySignature(cv_msg, pub_key, &test_transcript_hash));
+    _ = buildCvMsg(&cv_buf, fixture_cv_sig);
+    cv_buf[0] = 0x01;
+    try testing.expectError(error.InvalidHandshakeType, verifySignature(&cv_buf, pub_key, &test_transcript_hash));
 }
 
 // Fuzz target: parse must reject arbitrary Certificate bytes with an error,
