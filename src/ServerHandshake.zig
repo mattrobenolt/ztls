@@ -54,10 +54,13 @@ const Suite = union(enum) {
     }
 };
 
+const default_supported_suites = [_]CipherSuite{ .aes_128_gcm_sha256, .aes_256_gcm_sha384, .chacha20_poly1305_sha256 };
+
 state: State = .wait_ch,
 keypair: x25519.KeyPair,
 suite: CipherSuite = .aes_128_gcm_sha256,
 suite_state: Suite = undefined,
+supported_suites: []const CipherSuite = &default_supported_suites,
 alpn_protocols: client_hello.AlpnProtocols = &.{},
 selected_alpn: ?[]const u8 = null,
 rx: RecordLayer = undefined,
@@ -65,6 +68,11 @@ tx: RecordLayer = undefined,
 
 pub fn init(keypair: x25519.KeyPair) ServerHandshake {
     return .{ .keypair = keypair };
+}
+
+pub fn supportSuites(self: *ServerHandshake, suites: []const CipherSuite) void {
+    assert(self.state == .wait_ch);
+    self.supported_suites = suites;
 }
 
 pub fn supportAlpn(self: *ServerHandshake, protocols: client_hello.AlpnProtocols) void {
@@ -122,7 +130,7 @@ pub fn acceptClientHello(
 
     const ch_msg = record[frame.header_len..][0..hdr.length()];
     const ch = try client_hello.parse(ch_msg);
-    const suite = chooseSuite(ch) orelse return error.UnsupportedCipherSuite;
+    const suite = self.chooseSuite(ch) orelse return error.UnsupportedCipherSuite;
     self.suite = suite;
     self.selected_alpn = ch.selectAlpn(self.alpn_protocols);
 
@@ -308,10 +316,8 @@ pub fn receiveApplicationData(self: *ServerHandshake, record: []u8) ReceiveError
     return dec.content;
 }
 
-fn chooseSuite(ch: client_hello.Parsed) ?CipherSuite {
-    // Server preference order: AES-128 first for the cheap/default path, then
-    // AES-256, then ChaCha. We can revisit once benchmarks say otherwise.
-    inline for (.{ CipherSuite.aes_128_gcm_sha256, .aes_256_gcm_sha384, .chacha20_poly1305_sha256 }) |suite| {
+fn chooseSuite(self: *const ServerHandshake, ch: client_hello.Parsed) ?CipherSuite {
+    for (self.supported_suites) |suite| {
         if (ch.offersSuite(suite)) return suite;
     }
     return null;
@@ -602,6 +608,24 @@ test "in-memory authenticated client-server handshake reaches app data" {
     @memcpy(server_app_mut[0..server_app.len], server_app);
     const ev = try client.handleRecord(server_app_mut[0..server_app.len], &client_out);
     try testing.expectEqualStrings("pong", ev.application_data);
+}
+
+test "acceptClientHello: server suite preference" {
+    const client_keypair: x25519.KeyPair = .generate();
+    var ch_buf: [512]u8 = undefined;
+    const ch = try client_hello.encode(&ch_buf, .zero, .init(client_keypair.public_key), null, &.{});
+    var record: [1024]u8 = undefined;
+    record[0..frame.header_len].* = mem.toBytes(frame.Header.init(.handshake, @intCast(ch.len)));
+    @memcpy(record[frame.header_len..][0..ch.len], ch);
+
+    var hs: ServerHandshake = .init(.generate());
+    const suites = [_]CipherSuite{.chacha20_poly1305_sha256};
+    hs.supportSuites(&suites);
+    var out: [256]u8 = undefined;
+    const sh_record = try hs.acceptClientHello(record[0 .. frame.header_len + ch.len], .zero, &out);
+    const hdr = try frame.parseHeader(sh_record);
+    const sh = try server_hello.parse(sh_record[frame.header_len..][0..hdr.length()]);
+    try testing.expectEqual(.chacha20_poly1305_sha256, sh.cipher_suite);
 }
 
 test "acceptClientHello: rejects unsupported suite" {
