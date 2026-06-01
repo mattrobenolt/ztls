@@ -14,6 +14,7 @@ pub const finished = @import("finished.zig");
 pub const frame = @import("frame.zig");
 pub const new_session_ticket = @import("new_session_ticket.zig");
 pub const server_hello = @import("server_hello.zig");
+pub const ServerHandshake = @import("ServerHandshake.zig");
 pub const wire = @import("wire.zig");
 pub const x25519 = @import("x25519.zig");
 
