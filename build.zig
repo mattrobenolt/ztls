@@ -102,6 +102,27 @@ pub fn build(b: *std.Build) void {
     const evp_bench_bin_step = b.step("bench-evp-bin", "Build the OpenSSL EVP benchmark binary");
     evp_bench_bin_step.dependOn(&install_evp_bench.step);
 
+    const bio_bench_mod = b.createModule(.{
+        .target = target,
+        .optimize = .ReleaseFast,
+        .link_libc = true,
+    });
+    const bio_bench = b.addExecutable(.{
+        .name = "openssl_bio_bench",
+        .root_module = bio_bench_mod,
+    });
+    bio_bench.addCSourceFile(.{ .file = b.path("bench/openssl_bio.c"), .flags = &.{"-O3"} });
+    bio_bench.linkLibC();
+    bio_bench.linkSystemLibrary("ssl");
+    bio_bench.linkSystemLibrary("crypto");
+    const run_bio_bench = b.addRunArtifact(bio_bench);
+    if (b.args) |args| run_bio_bench.addArgs(args);
+    const bio_bench_step = b.step("bench-openssl", "Run OpenSSL libssl memory BIO benchmarks");
+    bio_bench_step.dependOn(&run_bio_bench.step);
+    const install_bio_bench = b.addInstallArtifact(bio_bench, .{});
+    const bio_bench_bin_step = b.step("bench-openssl-bin", "Build the OpenSSL memory BIO benchmark binary");
+    bio_bench_bin_step.dependOn(&install_bio_bench.step);
+
     const examples = [_][]const u8{
         "full_handshake",
         "handshake_keys",

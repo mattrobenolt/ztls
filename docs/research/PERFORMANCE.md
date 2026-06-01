@@ -93,6 +93,7 @@ The first `zig build bench` is deliberately boring:
 - deterministic generated-OpenSSL client handshake replay for all three suites;
 - ztls in-memory authenticated client/server handshake and app-data rows;
 - OpenSSL EVP raw AEAD rows via `zig build bench-evp`;
+- OpenSSL/libssl memory-BIO rows via `zig build bench-openssl`;
 - no network;
 - no allocations in library code; benchmark-only scratch allocation is fine;
 - CSV rows written to stdout.
@@ -141,3 +142,16 @@ zig-out/bin/openssl_evp_bench --filter aes_128
 These EVP rows are not a TLS comparison. They isolate OpenSSL's AEAD
 implementation and EVP setup/update/final overhead so ztls record numbers can
 be interpreted against the crypto floor.
+
+For libssl machinery without kernel sockets:
+
+```sh
+zig build bench-openssl
+zig build bench-openssl-bin
+zig-out/bin/openssl_bio_bench --filter handshake
+zig-out/bin/openssl_bio_bench --filter ping_pong
+```
+
+The memory-BIO rows include libssl and BIO overhead but exclude TCP/syscall
+noise. That is the closest current comparison to ztls' no-I/O state-machine
+model.
