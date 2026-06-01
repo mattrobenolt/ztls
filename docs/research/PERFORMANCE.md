@@ -73,9 +73,13 @@ Start with layers that exist today:
 
 ## Methodology
 
-- Build benchmarks with `-Doptimize=ReleaseFast`.
+- Build benchmarks with `-Doptimize=ReleaseFast` and a native CPU target. The
+  build defaults benchmark/test artifacts to native CPU now; generic AArch64
+  silently selects std.crypto's software AES/GHASH paths and is not a useful
+  performance target.
 - Print machine/build metadata with each run: target, CPU model if available,
-  Zig version, optimization mode, git revision.
+  Zig version, optimization mode, git revision. If a benchmark says
+  `cpu generic`, do not use it for OpenSSL comparisons.
 - Output machine-readable rows (`csv`-ish is enough): benchmark name, bytes,
   iterations, elapsed ns, throughput/op rate.
 - Warm up before measuring where branch/cache effects matter.

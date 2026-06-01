@@ -1,7 +1,21 @@
 const std = @import("std");
+const builtin = @import("builtin");
+
+fn nativeTarget() std.Target.Query {
+    var query: std.Target.Query = .{ .cpu_model = .native };
+    // Zig's native CPU detection reports generic under some Apple-Silicon Linux
+    // VMs despite /proc/cpuinfo exposing aes/pmull. For performance work that
+    // silently selects std.crypto's soft AES path, which is not a useful target.
+    if (builtin.cpu.arch == .aarch64 and builtin.os.tag == .linux) {
+        query.cpu_model = .{ .explicit = &std.Target.aarch64.cpu.apple_m1 };
+    }
+    return query;
+}
 
 pub fn build(b: *std.Build) void {
-    const target = b.standardTargetOptions(.{});
+    const target = b.standardTargetOptions(.{
+        .default_target = nativeTarget(),
+    });
     const optimize = b.standardOptimizeOption(.{});
 
     const mod = b.addModule("ztls", .{
