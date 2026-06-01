@@ -559,6 +559,52 @@ test "application data: server sends and receives" {
     try testing.expectEqualStrings("world", try server.receiveApplicationData(client_wire[0..incoming.len]));
 }
 
+test "in-memory authenticated client-server handshake reaches app data" {
+    const client_keypair: x25519.KeyPair = .generate();
+    const server_keypair: x25519.KeyPair = .generate();
+
+    var client = @import("ClientHandshake.zig").init(client_keypair);
+    client.offerAlpn(&.{"h2"});
+    client.policy.host_name = "ztls.server.test";
+    var client_out: [1024]u8 = undefined;
+    const ch_record = try client.start(&client_out, .zero, "ztls.server.test");
+    client.completeWrite();
+
+    var server: ServerHandshake = .init(server_keypair);
+    server.supportAlpn(&.{"h2"});
+    var server_out: [4096]u8 = undefined;
+    const sh_record = try server.acceptClientHello(ch_record, .zero, &server_out);
+    try client.processServerHello(sh_record[frame.header_len..]);
+
+    const sk = try EcdsaP256Sha256.SecretKey.fromBytes(server_ecdsa_scalar[0..32].*);
+    var signer: TestSigner = .{ .keypair = try EcdsaP256Sha256.KeyPair.fromSecretKey(sk) };
+    const signer_api: Signer = .{ .scheme = .ecdsa_secp256r1_sha256, .context = &signer, .sign = TestSigner.sign };
+    var plaintext: [4096]u8 = undefined;
+    const flight_record = try server.sendAuthenticatedFlight(&.{server_ecdsa_cert_der}, signer_api, &plaintext, &server_out);
+    const client_event = try client.handleRecord(server_out[0..flight_record.len], &client_out);
+    const client_finished_record = switch (client_event) {
+        .write => |w| w,
+        else => return error.UnexpectedEvent,
+    };
+    client.completeWrite();
+    try testing.expect(client.isConnected());
+
+    try server.processClientFinished(client_out[0..client_finished_record.len]);
+    try testing.expect(server.isConnected());
+    try testing.expectEqualStrings("h2", client.selectedAlpnProtocol().?);
+    try testing.expectEqualStrings("h2", server.selectedAlpnProtocol().?);
+
+    const client_app = try client.sendApplicationData("ping", &client_out);
+    client.completeWrite();
+    try testing.expectEqualStrings("ping", try server.receiveApplicationData(client_out[0..client_app.len]));
+
+    const server_app = try server.sendApplicationData("pong", &server_out);
+    var server_app_mut: [128]u8 = undefined;
+    @memcpy(server_app_mut[0..server_app.len], server_app);
+    const ev = try client.handleRecord(server_app_mut[0..server_app.len], &client_out);
+    try testing.expectEqualStrings("pong", ev.application_data);
+}
+
 test "acceptClientHello: rejects unsupported suite" {
     const client_keypair: x25519.KeyPair = .generate();
     var ch_buf: [512]u8 = undefined;
