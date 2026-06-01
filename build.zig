@@ -1,6 +1,12 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
+fn addCryptoAssembly(b: *std.Build, target: std.Build.ResolvedTarget, module: *std.Build.Module) void {
+    if (target.result.cpu.arch == .aarch64 and target.result.os.tag == .linux) {
+        module.addAssemblyFile(b.path("src/crypto/chacha20_poly1305_armv8.S"));
+    }
+}
+
 fn nativeTarget() std.Target.Query {
     var query: std.Target.Query = .{ .cpu_model = .native };
     // Zig's native CPU detection reports generic under some Apple-Silicon Linux
@@ -23,6 +29,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    addCryptoAssembly(b, target, mod);
 
     // Tests get their own module so the txtar dependency (used only to decode
     // the RFC 8448 fixture archive) never leaks into the public ztls module.
@@ -31,6 +38,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    addCryptoAssembly(b, target, test_mod);
     // txtar decodes the RFC 8448 fixture archive. Lazy: only fetched when a
     // step that needs it (tests, the full_handshake example) is built.
     const txtar_mod: ?*std.Build.Module = if (b.lazyDependency("txtar", .{
@@ -76,6 +84,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = .ReleaseFast,
     });
+    addCryptoAssembly(b, target, bench_mod);
     const bench_root = b.createModule(.{
         .root_source_file = b.path("bench/record_protection.zig"),
         .target = target,

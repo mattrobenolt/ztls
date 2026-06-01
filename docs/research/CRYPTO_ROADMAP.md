@@ -27,8 +27,10 @@ setup overhead dominates.
 
 The bigger pure-crypto hole is ChaCha20-Poly1305. `std.crypto`'s AArch64
 ChaCha path is scalar in Zig 0.15.2, while OpenSSL uses NEON implementations for
-ChaCha and Poly1305. That makes ChaCha the first serious candidate for a native
-optimized backend.
+ChaCha and Poly1305. ztls now has an AArch64 Linux prototype using BoringSSL's
+Apache-2.0 combined `chacha20_poly1305_armv8` assembly. It is intentionally
+narrow: Linux/AArch64 only, std.crypto fallback elsewhere, and the public AEAD
+API remains unchanged.
 
 Handshake latency is a separate problem. Full handshakes are dominated by
 certificate parsing/signature verification, X25519, HKDF/transcript hashing, and
@@ -111,20 +113,24 @@ crypto floor.
 
 ### 3. ChaCha20-Poly1305 native SIMD
 
-This is the highest-value primitive target.
+This was the highest-value primitive target and is the first native prototype.
 
-For AArch64, port a known-good NEON ChaCha20 and Poly1305 design into Zig or a
-small platform-specific assembly file. For x86_64, target AVX2/SSE2 first.
-Possible reference families: BoringSSL, libsodium, Floodyberry/Andrew Moon,
-BearSSL, depending on license fit.
+For AArch64 Linux, ztls imports BoringSSL's combined NEON ChaCha20-Poly1305
+assembly through a small Zig facade. For x86_64, target AVX2/SSE2 next if
+benchmarks justify it. Avoid headerless SUPERCOP/Floodyberry snapshots; use
+sources with unambiguous licensing.
 
 Requirements:
 
 - no heap state;
 - no new public API complexity;
-- Wycheproof/RFC vectors before benchmarks matter;
+- RFC 8439 known-answer coverage before benchmarks matter;
 - objdump proof of vectorized hot paths;
 - >2x speedup over Zig 0.15.2 `std.crypto` ChaCha before merging.
+
+Initial native AArch64 Linux prototype results improved record ChaCha from about
+`142/398/489 MiB/s` at 128/1350/16384 bytes to about
+`478/1217/1485 MiB/s` for encrypt and `377/1119/1502 MiB/s` for decrypt.
 
 ### 4. AES-GCM parallel GHASH
 
