@@ -321,6 +321,8 @@ fn chooseSuite(ch: client_hello.Parsed) ?CipherSuite {
 const testing = std.testing;
 
 const test_cert_der = @embedFile("test_fixtures/server.crt.der");
+const server_ecdsa_cert_der = @embedFile("test_fixtures/server-ecdsa/server.der");
+const server_ecdsa_scalar = @embedFile("test_fixtures/server-ecdsa/scalar.bin");
 
 const EcdsaP256Sha256 = std.crypto.sign.ecdsa.EcdsaP256Sha256;
 
@@ -475,6 +477,38 @@ fn connectedTestServer() !ServerHandshake {
     const fin_record = try client_tx.encrypt(.handshake, fin, &fin_wire);
     try server.processClientFinished(fin_wire[0..fin_record.len]);
     return server;
+}
+
+test "sendAuthenticatedFlight: client processes CertificateVerify and Finished" {
+    const client_keypair: x25519.KeyPair = .generate();
+    const server_keypair: x25519.KeyPair = .generate();
+    var ch_buf: [512]u8 = undefined;
+    const ch = try client_hello.encode(&ch_buf, .zero, .init(client_keypair.public_key), "ztls.server.test", &.{"h2"});
+    var ch_record: [1024]u8 = undefined;
+    ch_record[0..frame.header_len].* = mem.toBytes(frame.Header.init(.handshake, @intCast(ch.len)));
+    @memcpy(ch_record[frame.header_len..][0..ch.len], ch);
+
+    var server: ServerHandshake = .init(server_keypair);
+    server.supportAlpn(&.{"h2"});
+    var sh_out: [256]u8 = undefined;
+    const sh_record = try server.acceptClientHello(ch_record[0 .. frame.header_len + ch.len], .zero, &sh_out);
+
+    const sk = try EcdsaP256Sha256.SecretKey.fromBytes(server_ecdsa_scalar[0..32].*);
+    var signer: TestSigner = .{ .keypair = try EcdsaP256Sha256.KeyPair.fromSecretKey(sk) };
+    const signer_api: Signer = .{ .scheme = .ecdsa_secp256r1_sha256, .context = &signer, .sign = TestSigner.sign };
+    var plaintext: [4096]u8 = undefined;
+    var flight_out: [4096]u8 = undefined;
+    const flight_record = try server.sendAuthenticatedFlight(&.{server_ecdsa_cert_der}, signer_api, &plaintext, &flight_out);
+
+    var client = @import("ClientHandshake.zig").init(client_keypair);
+    client.offerAlpn(&.{"h2"});
+    client.policy.host_name = "ztls.server.test";
+    client.injectClientHello(ch);
+    try client.processServerHello(sh_record[frame.header_len..]);
+    const dec = try client.rx.decrypt(flight_out[0..flight_record.len]);
+    try client.processFlight(dec.content, client.policy);
+    try testing.expectEqual(@import("ClientHandshake.zig").State.send_finished, client.state);
+    try testing.expectEqualStrings("h2", client.selectedAlpnProtocol().?);
 }
 
 test "processClientFinished: verifies Finished and installs app keys" {
