@@ -530,6 +530,7 @@ fn processHandshakeRecord(self: *ClientHandshake, record: []u8, out: []u8) Proce
 pub const ServerHelloError = server_hello.ParseError || aead.Error || error{
     UnsupportedCipherSuite,
     IdentityElement,
+    LibcryptoFailed,
 };
 
 /// Process the server's ServerHello: parse it, absorb it into the transcript,

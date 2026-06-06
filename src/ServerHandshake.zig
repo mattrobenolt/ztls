@@ -146,6 +146,7 @@ pub const AcceptError = frame.ParseError || client_hello.ParseError || server_he
     UnexpectedRecord,
     UnsupportedCipherSuite,
     IdentityElement,
+    LibcryptoFailed,
 };
 
 pub const SignError = error{ BufferTooShort, IdentityElement, NonCanonical };
@@ -203,7 +204,7 @@ fn installHandshakeKeys(
     ch_msg: []const u8,
     sh_msg: []const u8,
     client_public_key: x25519.PublicKey,
-) (error{IdentityElement} || aead.Error)!void {
+) (error{ IdentityElement, LibcryptoFailed } || aead.Error)!void {
     const dhe = try x25519.sharedSecret(self.keypair.secret_key, client_public_key);
     switch (suite) {
         .aes_128_gcm_sha256, .chacha20_poly1305_sha256 => {
