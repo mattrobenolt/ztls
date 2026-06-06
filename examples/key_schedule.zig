@@ -61,14 +61,10 @@ pub fn main() !void {
     print("client_write_iv:  {x}\n", .{client_write_iv.data});
 
     // Wire up RecordLayers with derived keys.
-    var server_tx: RecordLayer = .{
-        .aead = .{ .aes128_gcm = server_write_key },
-        .iv = server_write_iv,
-    };
-    var client_rx: RecordLayer = .{
-        .aead = .{ .aes128_gcm = server_write_key },
-        .iv = server_write_iv,
-    };
+    var server_tx: RecordLayer = try .init(.{ .aes128_gcm = server_write_key }, server_write_iv);
+    defer server_tx.deinit();
+    var client_rx: RecordLayer = try .init(.{ .aes128_gcm = server_write_key }, server_write_iv);
+    defer client_rx.deinit();
 
     // Server encrypts a handshake record, client decrypts it.
     const plaintext = "EncryptedExtensions";

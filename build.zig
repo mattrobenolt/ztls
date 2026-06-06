@@ -23,12 +23,20 @@ pub fn build(b: *std.Build) void {
         .default_target = nativeTarget(),
     });
     const optimize = b.standardOptimizeOption(.{});
+    const crypto_backend = b.option(enum { std, openssl }, "crypto", "Crypto backend") orelse .std;
+    const ztls_options = b.addOptions();
+    ztls_options.addOption(@TypeOf(crypto_backend), "crypto_backend", crypto_backend);
 
     const mod = b.addModule("ztls", .{
         .root_source_file = b.path("src/root.zig"),
         .target = target,
         .optimize = optimize,
     });
+    mod.addOptions("ztls_options", ztls_options);
+    if (crypto_backend == .openssl) {
+        mod.link_libc = true;
+        mod.linkSystemLibrary("crypto", .{});
+    }
     addCryptoAssembly(b, target, mod);
 
     // Tests get their own module so the txtar dependency (used only to decode
@@ -38,6 +46,11 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    test_mod.addOptions("ztls_options", ztls_options);
+    if (crypto_backend == .openssl) {
+        test_mod.link_libc = true;
+        test_mod.linkSystemLibrary("crypto", .{});
+    }
     addCryptoAssembly(b, target, test_mod);
     // txtar decodes the RFC 8448 fixture archive. Lazy: only fetched when a
     // step that needs it (tests, the full_handshake example) is built.
@@ -97,6 +110,11 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = .ReleaseFast,
     });
+    bench_mod.addOptions("ztls_options", ztls_options);
+    if (crypto_backend == .openssl) {
+        bench_mod.link_libc = true;
+        bench_mod.linkSystemLibrary("crypto", .{});
+    }
     addCryptoAssembly(b, target, bench_mod);
     const bench_root = b.createModule(.{
         .root_source_file = b.path("bench/record_protection.zig"),

@@ -106,14 +106,10 @@ pub fn main() !void {
 
     // ── RecordLayer round-trip ───────────────────────────────────────────────
 
-    var server_tx: ztls.RecordLayer = .{
-        .aead = .{ .aes128_gcm = server_key },
-        .iv = server_iv,
-    };
-    var client_rx: ztls.RecordLayer = .{
-        .aead = .{ .aes128_gcm = server_key },
-        .iv = server_iv,
-    };
+    var server_tx: ztls.RecordLayer = try .init(.{ .aes128_gcm = server_key }, server_iv);
+    defer server_tx.deinit();
+    var client_rx: ztls.RecordLayer = try .init(.{ .aes128_gcm = server_key }, server_iv);
+    defer client_rx.deinit();
 
     const plaintext = "EncryptedExtensions";
     var out: [plaintext.len + ztls.RecordLayer.overhead]u8 = undefined;

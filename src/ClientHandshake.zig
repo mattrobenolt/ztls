@@ -199,7 +199,7 @@ const Suite = union(enum) {
     /// through the server Finished (the Master Secret point); the client
     /// Finished is absorbed afterward. The plaintext Finished is written to
     /// `out`; rx/tx are application-keyed.
-    fn finishHandshake(self: *Suite, out: []u8) error{BufferTooShort}!HandshakeKeys.WithFinished {
+    fn finishHandshake(self: *Suite, out: []u8) (error{BufferTooShort} || aead.Error)!HandshakeKeys.WithFinished {
         switch (self.*) {
             .buffering => unreachable,
             inline .sha256, .sha384 => |*s| {
@@ -213,10 +213,14 @@ const Suite = union(enum) {
 
                 s.transcript.update(fin); // client Finished now part of the transcript
 
+                var tx = try H.makeRecordLayer(s.aead, s.client_app_secret);
+                errdefer tx.deinit();
+                const rx = try H.makeRecordLayer(s.aead, s.server_app_secret);
+
                 return .{
                     .finished = fin,
-                    .tx = H.makeRecordLayer(s.aead, s.client_app_secret),
-                    .rx = H.makeRecordLayer(s.aead, s.server_app_secret),
+                    .tx = tx,
+                    .rx = rx,
                 };
             },
         }
@@ -224,26 +228,26 @@ const Suite = union(enum) {
 
     /// RFC 8446 §7.2 — ratchet our sending (client) application key and return
     /// the fresh RecordLayer (sequence number reset to 0).
-    fn ratchetClientKey(self: *Suite) RecordLayer {
+    fn ratchetClientKey(self: *Suite) aead.Error!RecordLayer {
         switch (self.*) {
             .buffering => unreachable,
             inline .sha256, .sha384 => |*s| {
                 const H = @TypeOf(s.*).Hkdf;
                 s.client_app_secret = H.nextTrafficSecret(s.client_app_secret);
-                return H.makeRecordLayer(s.aead, s.client_app_secret);
+                return try H.makeRecordLayer(s.aead, s.client_app_secret);
             },
         }
     }
 
     /// RFC 8446 §7.2 — ratchet the peer's sending (server) application key and
     /// return the fresh RecordLayer (sequence number reset to 0).
-    fn ratchetServerKey(self: *Suite) RecordLayer {
+    fn ratchetServerKey(self: *Suite) aead.Error!RecordLayer {
         switch (self.*) {
             .buffering => unreachable,
             inline .sha256, .sha384 => |*s| {
                 const H = @TypeOf(s.*).Hkdf;
                 s.server_app_secret = H.nextTrafficSecret(s.server_app_secret);
-                return H.makeRecordLayer(s.aead, s.server_app_secret);
+                return try H.makeRecordLayer(s.aead, s.server_app_secret);
             },
         }
     }
@@ -256,7 +260,7 @@ const Suite = union(enum) {
     /// secret rooted there — traffic keys and both finished keys — because the
     /// running hash moves on and cannot be rewound. The handshake secret and
     /// finished keys are retained in the arm; the RecordLayers are returned.
-    fn deriveHandshakeKeys(self: *Suite, dhe: *const SharedSecret) HandshakeKeys {
+    fn deriveHandshakeKeys(self: *Suite, dhe: *const SharedSecret) aead.Error!HandshakeKeys {
         switch (self.*) {
             .buffering => unreachable,
             inline .sha256, .sha384 => |*s| {
@@ -270,9 +274,13 @@ const Suite = union(enum) {
                 s.client_finished_key = H.finishedKey(client_secret);
                 s.server_finished_key = H.finishedKey(server_secret);
 
+                var rx = try H.makeRecordLayer(s.aead, server_secret);
+                errdefer rx.deinit();
+                const tx = try H.makeRecordLayer(s.aead, client_secret);
+
                 return .{
-                    .rx = H.makeRecordLayer(s.aead, server_secret),
-                    .tx = H.makeRecordLayer(s.aead, client_secret),
+                    .rx = rx,
+                    .tx = tx,
                 };
             },
         }
@@ -322,6 +330,16 @@ pub fn init(keypair: x25519.KeyPair) ClientHandshake {
         .suite = .{ .buffering = .{ .sha256 = .init(.{}), .sha384 = .init(.{}) } },
         .keypair = keypair,
     };
+}
+
+pub fn deinit(self: *ClientHandshake) void {
+    switch (self.state) {
+        .wait_ee, .wait_cert, .wait_cv, .wait_finished, .send_finished, .connected => {
+            self.rx.deinit();
+            self.tx.deinit();
+        },
+        .start, .wait_sh => {},
+    }
 }
 
 /// Acknowledge that the bytes from the last engine call were written to the
@@ -509,7 +527,7 @@ fn processHandshakeRecord(self: *ClientHandshake, record: []u8, out: []u8) Proce
     }
 }
 
-pub const ServerHelloError = server_hello.ParseError || error{
+pub const ServerHelloError = server_hello.ParseError || aead.Error || error{
     UnsupportedCipherSuite,
     IdentityElement,
 };
@@ -531,7 +549,7 @@ pub fn processServerHello(self: *ClientHandshake, msg: []const u8) ServerHelloEr
 
     self.suite.update(msg); // transcript now covers ClientHello || ServerHello
     const dhe = try x25519.sharedSecret(self.keypair.secret_key, sh.server_public_key);
-    const keys = self.suite.deriveHandshakeKeys(&dhe);
+    const keys = try self.suite.deriveHandshakeKeys(&dhe);
     self.rx = keys.rx;
     self.tx = keys.tx;
     self.state = .wait_ee;
@@ -731,7 +749,7 @@ fn receiveConnected(self: *ClientHandshake, record: []u8, out: []u8) ReceiveErro
                         if (try parseKeyUpdate(msg.raw) == .update_requested) respond = true;
                         // Ratchet the receive key only after consuming the
                         // KeyUpdate (RFC 8446 §4.6.3).
-                        const next_rx = self.suite.ratchetServerKey();
+                        const next_rx = try self.suite.ratchetServerKey();
                         self.rx.deinit();
                         self.rx = next_rx;
                     },
@@ -760,7 +778,7 @@ pub fn sendKeyUpdate(self: *ClientHandshake, out: []u8, request: KeyUpdateReques
     if (self.pending_write) return error.PendingWrite;
     const msg = [_]u8{ @intFromEnum(HandshakeType.key_update), 0x00, 0x00, 0x01, @intFromEnum(request) };
     const record = try self.tx.encrypt(.handshake, &msg, out);
-    const next_tx = self.suite.ratchetClientKey();
+    const next_tx = try self.suite.ratchetClientKey();
     self.tx.deinit();
     self.tx = next_tx;
     self.pending_write = true;
@@ -855,7 +873,7 @@ test "deriveHandshakeKeys: RFC 8448 §3 server handshake key/iv/finished" {
     const b = hs.suite.buffering;
     hs.suite = .{ .sha256 = .{ .transcript = b.sha256, .aead = .aes128_gcm } };
 
-    const keys = hs.suite.deriveHandshakeKeys(&dhe);
+    const keys = try hs.suite.deriveHandshakeKeys(&dhe);
 
     // server_write_key
     try testing.expectEqualSlices(u8, &.{
@@ -1047,7 +1065,8 @@ test "clientFinished: RFC 8448 §3 emits Finished and upgrades to app keys" {
     try hs.processFlight(rfc8448Fixture("server_flight.b64", &flight_buf), .{});
 
     // Mirror of the encryptor: client handshake-traffic key at seq 0.
-    var peer = hs.tx;
+    var peer = try hs.tx.clone();
+    defer peer.deinit();
 
     var out: [128]u8 = undefined;
     const record = try hs.clientFinished(&out);
@@ -1079,7 +1098,8 @@ test "ratchetClientKey: RFC 8446 §7.2 next application write key" {
     var out: [128]u8 = undefined;
     _ = try hs.clientFinished(&out);
 
-    const rl = hs.suite.ratchetClientKey();
+    var rl = try hs.suite.ratchetClientKey();
+    defer rl.deinit();
     try testing.expectEqualSlices(u8, &.{
         0x38, 0x79, 0xd8, 0x2f, 0x5f, 0x14, 0x05, 0x6e,
         0x62, 0x3f, 0x2c, 0xe5, 0xbf, 0xc6, 0x6f, 0xce,
@@ -1103,7 +1123,8 @@ test "handleRecord: application data returns plaintext and resets the flood coun
     hs.post_handshake_count = 5; // pretend we saw some control messages
 
     // The server's sending layer mirrors our rx (server app key, seq 0).
-    var server_tx = hs.rx;
+    var server_tx = try hs.rx.clone();
+    defer server_tx.deinit();
     var rec_buf: [128]u8 = undefined;
     const app_record = try server_tx.encrypt(.application_data, "ping", &rec_buf);
 
@@ -1125,8 +1146,10 @@ test "handleRecord: server KeyUpdate(update_requested) ratchets rx and responds"
     // send-key mirror to decrypt the response. Capture the server's secret_0
     // before receive() ratchets our rx, so we can advance it independently.
     const server_secret_0 = hs.suite.sha256.server_app_secret;
-    var server_tx = hs.rx;
-    var client_send_mirror = hs.tx;
+    var server_tx = try hs.rx.clone();
+    defer server_tx.deinit();
+    var client_send_mirror = try hs.tx.clone();
+    defer client_send_mirror.deinit();
 
     const ku = [_]u8{ 0x18, 0x00, 0x00, 0x01, 0x01 }; // KeyUpdate(update_requested)
     var ku_buf: [64]u8 = undefined;
@@ -1150,7 +1173,8 @@ test "handleRecord: server KeyUpdate(update_requested) ratchets rx and responds"
     // Advance the server's send secret independently (in lockstep with our rx).
     const H = hkdf.HkdfSha256;
     const server_secret_1 = H.nextTrafficSecret(server_secret_0);
-    var server_tx_1 = H.makeRecordLayer(.aes128_gcm, server_secret_1);
+    var server_tx_1 = try H.makeRecordLayer(.aes128_gcm, server_secret_1);
+    defer server_tx_1.deinit();
     var app_buf: [64]u8 = undefined;
     const app_wire = try server_tx_1.encrypt(.application_data, "after", &app_buf);
     var app_rx: [64]u8 = undefined;
@@ -1163,7 +1187,8 @@ test "handleRecord: server KeyUpdate(update_requested) ratchets rx and responds"
 // coalesced in one record is illegal (cf. Go CVE-2026-32283).
 test "handleRecord: KeyUpdate not at record boundary is rejected" {
     var hs = try rfc8448ConnectedClient();
-    var server_tx = hs.rx;
+    var server_tx = try hs.rx.clone();
+    defer server_tx.deinit();
 
     // [KeyUpdate][KeyUpdate] in one record.
     const two_kus = [_]u8{ 0x18, 0x00, 0x00, 0x01, 0x00 } ++ [_]u8{ 0x18, 0x00, 0x00, 0x01, 0x00 };
@@ -1189,7 +1214,8 @@ test "sendAlert: plaintext fatal alert before ServerHello" {
 // RFC 8446 §6.1 — close_notify is sent as a warning-level alert.
 test "sendAlert: encrypted close_notify after handshake" {
     var hs = try rfc8448ConnectedClient();
-    var peer = hs.tx;
+    var peer = try hs.tx.clone();
+    defer peer.deinit();
 
     var out: [64]u8 = undefined;
     const rec = try hs.sendAlert(.close_notify, &out);
@@ -1203,7 +1229,8 @@ test "sendAlert: encrypted close_notify after handshake" {
 
 test "handleRecord: close_notify returns closed" {
     var hs = try rfc8448ConnectedClient();
-    var server_tx = hs.rx;
+    var server_tx = try hs.rx.clone();
+    defer server_tx.deinit();
 
     const close_notify = [_]u8{ 0x01, 0x00 }; // warning, close_notify
     var buf: [64]u8 = undefined;
@@ -1218,7 +1245,8 @@ test "handleRecord: close_notify returns closed" {
 // RFC 8446 §6.2 — fatal alerts abort; they are not clean close_notify.
 test "handleRecord: fatal alert returns PeerAlert" {
     var hs = try rfc8448ConnectedClient();
-    var server_tx = hs.rx;
+    var server_tx = try hs.rx.clone();
+    defer server_tx.deinit();
 
     const fatal = [_]u8{ 0x02, 0x0a }; // fatal, unexpected_message
     var buf: [64]u8 = undefined;
@@ -1232,7 +1260,9 @@ test "handleRecord: fatal alert returns PeerAlert" {
 
 test "handleRecord: NewSessionTicket is parsed and ignored" {
     var hs = try rfc8448ConnectedClient();
-    hs.rx = hs.suite.ratchetServerKey();
+    const next_rx = try hs.suite.ratchetServerKey();
+    hs.rx.deinit();
+    hs.rx = next_rx;
     var out: [128]u8 = undefined;
     const ticket = [_]u8{
         0x04, 0x00, 0x00, 0x0f,
@@ -1242,18 +1272,22 @@ test "handleRecord: NewSessionTicket is parsed and ignored" {
         0xbb, 0x00, 0x00,
     };
     var wire_buf: [128]u8 = undefined;
-    var server_tx = hs.rx;
+    var server_tx = try hs.rx.clone();
+    defer server_tx.deinit();
     const record = try server_tx.encrypt(.handshake, &ticket, &wire_buf);
     try testing.expectEqual(Event.none, try hs.handleRecord(record, &out));
 }
 
 test "handleRecord: malformed NewSessionTicket is rejected" {
     var hs = try rfc8448ConnectedClient();
-    hs.rx = hs.suite.ratchetServerKey();
+    const next_rx = try hs.suite.ratchetServerKey();
+    hs.rx.deinit();
+    hs.rx = next_rx;
     var out: [128]u8 = undefined;
     const bad_ticket = [_]u8{ 0x04, 0x00, 0x00, 0x00 };
     var wire_buf: [128]u8 = undefined;
-    var server_tx = hs.rx;
+    var server_tx = try hs.rx.clone();
+    defer server_tx.deinit();
     const record = try server_tx.encrypt(.handshake, &bad_ticket, &wire_buf);
     try testing.expectError(error.UnexpectedEof, hs.handleRecord(record, &out));
 }
@@ -1269,7 +1303,8 @@ test "handleRecord: KeyUpdate flood is rejected" {
     var server_secret = hs.suite.sha256.server_app_secret;
     var i: usize = 0;
     const result = while (i < max_post_handshake_messages + 1) : (i += 1) {
-        var server_tx = H.makeRecordLayer(.aes128_gcm, server_secret);
+        var server_tx = try H.makeRecordLayer(.aes128_gcm, server_secret);
+        defer server_tx.deinit();
         const ku = [_]u8{ 0x18, 0x00, 0x00, 0x01, 0x00 };
         var ku_buf: [64]u8 = undefined;
         const ku_wire = try server_tx.encrypt(.handshake, &ku, &ku_buf);
@@ -1316,7 +1351,8 @@ test "handleRecord: drives RFC 8448 §3 handshake to connected" {
 
     // Mirror of the client handshake-traffic encryptor (seq 0), captured before
     // the flight completes and swaps tx to the application key.
-    var peer = hs.tx;
+    var peer = try hs.tx.clone();
+    defer peer.deinit();
 
     // ChangeCipherSpec — middlebox compat, discarded (RFC 8446 §D.4).
     var ccs = [_]u8{ 0x14, 0x03, 0x03, 0x00, 0x01, 0x01 };

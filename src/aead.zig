@@ -15,7 +15,7 @@ const Aes128Gcm = crypto.aead.aes_gcm.Aes128Gcm;
 const Aes256Gcm = crypto.aead.aes_gcm.Aes256Gcm;
 const ChaCha20Poly1305 = crypto.aead.chacha_poly.ChaCha20Poly1305;
 const ChaCha20Poly1305Neon = @import("crypto/chacha20_poly1305_neon.zig");
-pub const Error = crypto.errors.AuthenticationError;
+const options = @import("ztls_options");
 const testing = std.testing;
 
 const construct = @import("nonce.zig").construct;
@@ -23,7 +23,14 @@ pub const Iv = @import("nonce.zig").Iv;
 const memx = @import("memx.zig");
 const Nonce = @import("nonce.zig").Nonce;
 
-const use_neon_chacha = builtin.cpu.arch == .aarch64 and builtin.os.tag == .linux;
+pub const CryptoBackend = enum { std, openssl };
+pub const backend: CryptoBackend = @field(CryptoBackend, @tagName(options.crypto_backend));
+
+const c = if (backend == .openssl) @cImport({
+    @cInclude("openssl/evp.h");
+}) else struct {};
+
+const use_neon_chacha = backend == .std and builtin.cpu.arch == .aarch64 and builtin.os.tag == .linux;
 
 // Verify our assumptions about the stdlib types at compile time.
 comptime {
@@ -44,6 +51,11 @@ pub const Tag = memx.Array(tag_len);
 pub const Aes128GcmKey = memx.Array(Aes128Gcm.key_length);
 pub const Aes256GcmKey = memx.Array(Aes256Gcm.key_length);
 pub const ChaCha20Poly1305Key = memx.Array(ChaCha20Poly1305.key_length);
+
+pub const Error = crypto.errors.AuthenticationError || error{
+    AeadSetupFailed,
+    AeadEncryptFailed,
+};
 
 /// The set of supported AEAD cipher suites.
 pub const Keys = enum {
@@ -66,27 +78,45 @@ pub const Aead = union(Keys) {
     aes256_gcm: Aes256GcmKey,
     chacha20_poly1305: ChaCha20Poly1305Key,
 
+    fn suite(self: Aead) Keys {
+        return switch (self) {
+            .aes128_gcm => .aes128_gcm,
+            .aes256_gcm => .aes256_gcm,
+            .chacha20_poly1305 => .chacha20_poly1305,
+        };
+    }
+
+    fn keyBytes(self: *const Aead) []const u8 {
+        return switch (self.*) {
+            inline else => |*key| &key.data,
+        };
+    }
+
     /// Encrypt `plaintext` into `ciphertext` and write the authentication tag.
     /// `ciphertext` must be the same length as `plaintext`.
     /// `ad` is authenticated but not encrypted (the TLS record header).
     pub fn encrypt(
         self: Aead,
+        ctx: *Context,
         ciphertext: []u8,
         tag: *Tag,
         plaintext: []const u8,
         ad: []const u8,
         npub: *const Nonce,
-    ) void {
-        switch (self) {
-            .aes128_gcm => |key| Aes128Gcm.encrypt(ciphertext, &tag.data, plaintext, ad, npub.data, key.data),
-            .aes256_gcm => |key| Aes256Gcm.encrypt(ciphertext, &tag.data, plaintext, ad, npub.data, key.data),
-            .chacha20_poly1305 => |key| {
-                if (comptime use_neon_chacha) {
-                    ChaCha20Poly1305Neon.encrypt(ciphertext, &tag.data, plaintext, ad, npub.data, key.data);
-                } else {
-                    ChaCha20Poly1305.encrypt(ciphertext, &tag.data, plaintext, ad, npub.data, key.data);
-                }
+    ) Error!void {
+        switch (backend) {
+            .std => switch (self) {
+                .aes128_gcm => |key| Aes128Gcm.encrypt(ciphertext, &tag.data, plaintext, ad, npub.data, key.data),
+                .aes256_gcm => |key| Aes256Gcm.encrypt(ciphertext, &tag.data, plaintext, ad, npub.data, key.data),
+                .chacha20_poly1305 => |key| {
+                    if (comptime use_neon_chacha) {
+                        ChaCha20Poly1305Neon.encrypt(ciphertext, &tag.data, plaintext, ad, npub.data, key.data);
+                    } else {
+                        ChaCha20Poly1305.encrypt(ciphertext, &tag.data, plaintext, ad, npub.data, key.data);
+                    }
+                },
             },
+            .openssl => try opensslEncrypt(ctx, ciphertext, tag, plaintext, ad, npub),
         }
     }
 
@@ -95,25 +125,121 @@ pub const Aead = union(Keys) {
     /// Returns `error.AuthenticationFailed` if the tag does not verify.
     pub fn decrypt(
         self: Aead,
+        ctx: *Context,
         plaintext: []u8,
         ciphertext: []const u8,
         tag: *const Tag,
         ad: []const u8,
         npub: *const Nonce,
     ) Error!void {
-        switch (self) {
-            .aes128_gcm => |key| try Aes128Gcm.decrypt(plaintext, ciphertext, tag.data, ad, npub.data, key.data),
-            .aes256_gcm => |key| try Aes256Gcm.decrypt(plaintext, ciphertext, tag.data, ad, npub.data, key.data),
-            .chacha20_poly1305 => |key| {
-                if (comptime use_neon_chacha) {
-                    try ChaCha20Poly1305Neon.decrypt(plaintext, ciphertext, tag.data, ad, npub.data, key.data);
-                } else {
-                    try ChaCha20Poly1305.decrypt(plaintext, ciphertext, tag.data, ad, npub.data, key.data);
-                }
+        switch (backend) {
+            .std => switch (self) {
+                .aes128_gcm => |key| try Aes128Gcm.decrypt(plaintext, ciphertext, tag.data, ad, npub.data, key.data),
+                .aes256_gcm => |key| try Aes256Gcm.decrypt(plaintext, ciphertext, tag.data, ad, npub.data, key.data),
+                .chacha20_poly1305 => |key| {
+                    if (comptime use_neon_chacha) {
+                        try ChaCha20Poly1305Neon.decrypt(plaintext, ciphertext, tag.data, ad, npub.data, key.data);
+                    } else {
+                        try ChaCha20Poly1305.decrypt(plaintext, ciphertext, tag.data, ad, npub.data, key.data);
+                    }
+                },
             },
+            .openssl => try opensslDecrypt(ctx, plaintext, ciphertext, tag, ad, npub),
         }
     }
 };
+
+pub const Context = switch (backend) {
+    .std => struct {
+        pub fn init(_: Aead) Error!Context {
+            return .{};
+        }
+
+        pub fn deinit(_: *Context) void {}
+    },
+    .openssl => struct {
+        enc: *c.EVP_CIPHER_CTX,
+        dec: *c.EVP_CIPHER_CTX,
+
+        pub fn init(aead: Aead) Error!Context {
+            const enc = c.EVP_CIPHER_CTX_new() orelse return error.AeadSetupFailed;
+            errdefer c.EVP_CIPHER_CTX_free(enc);
+            const dec = c.EVP_CIPHER_CTX_new() orelse return error.AeadSetupFailed;
+            errdefer c.EVP_CIPHER_CTX_free(dec);
+
+            try opensslInit(enc, aead, .encrypt);
+            try opensslInit(dec, aead, .decrypt);
+            return .{ .enc = enc, .dec = dec };
+        }
+
+        pub fn deinit(self: *Context) void {
+            c.EVP_CIPHER_CTX_free(self.enc);
+            c.EVP_CIPHER_CTX_free(self.dec);
+            self.* = undefined;
+        }
+    },
+};
+
+const OpensslDirection = enum { encrypt, decrypt };
+
+fn opensslCipher(suite: Keys) *const c.EVP_CIPHER {
+    return switch (suite) {
+        .aes128_gcm => c.EVP_aes_128_gcm(),
+        .aes256_gcm => c.EVP_aes_256_gcm(),
+        .chacha20_poly1305 => c.EVP_chacha20_poly1305(),
+    } orelse unreachable;
+}
+
+fn opensslInit(ctx: *c.EVP_CIPHER_CTX, aead: Aead, direction: OpensslDirection) Error!void {
+    switch (direction) {
+        .encrypt => {
+            if (c.EVP_EncryptInit_ex(ctx, opensslCipher(aead.suite()), null, null, null) != 1) return error.AeadSetupFailed;
+            if (c.EVP_CIPHER_CTX_ctrl(ctx, c.EVP_CTRL_AEAD_SET_IVLEN, @sizeOf(Nonce), null) != 1) return error.AeadSetupFailed;
+            if (c.EVP_EncryptInit_ex(ctx, null, null, aead.keyBytes().ptr, null) != 1) return error.AeadSetupFailed;
+        },
+        .decrypt => {
+            if (c.EVP_DecryptInit_ex(ctx, opensslCipher(aead.suite()), null, null, null) != 1) return error.AeadSetupFailed;
+            if (c.EVP_CIPHER_CTX_ctrl(ctx, c.EVP_CTRL_AEAD_SET_IVLEN, @sizeOf(Nonce), null) != 1) return error.AeadSetupFailed;
+            if (c.EVP_DecryptInit_ex(ctx, null, null, aead.keyBytes().ptr, null) != 1) return error.AeadSetupFailed;
+        },
+    }
+}
+
+fn opensslEncrypt(
+    ctx: *Context,
+    ciphertext: []u8,
+    tag: *Tag,
+    plaintext: []const u8,
+    ad: []const u8,
+    npub: *const Nonce,
+) Error!void {
+    var len: c_int = 0;
+    var out_len: c_int = 0;
+    if (c.EVP_EncryptInit_ex(ctx.enc, null, null, null, &npub.data) != 1) return error.AeadEncryptFailed;
+    if (c.EVP_EncryptUpdate(ctx.enc, null, &len, ad.ptr, @intCast(ad.len)) != 1) return error.AeadEncryptFailed;
+    if (c.EVP_EncryptUpdate(ctx.enc, ciphertext.ptr, &len, plaintext.ptr, @intCast(plaintext.len)) != 1) return error.AeadEncryptFailed;
+    out_len += len;
+    if (c.EVP_EncryptFinal_ex(ctx.enc, ciphertext.ptr + @as(usize, @intCast(out_len)), &len) != 1) return error.AeadEncryptFailed;
+    if (c.EVP_CIPHER_CTX_ctrl(ctx.enc, c.EVP_CTRL_AEAD_GET_TAG, tag_len, &tag.data) != 1) return error.AeadEncryptFailed;
+}
+
+fn opensslDecrypt(
+    ctx: *Context,
+    plaintext: []u8,
+    ciphertext: []const u8,
+    tag: *const Tag,
+    ad: []const u8,
+    npub: *const Nonce,
+) Error!void {
+    var len: c_int = 0;
+    var out_len: c_int = 0;
+    if (c.EVP_DecryptInit_ex(ctx.dec, null, null, null, &npub.data) != 1) return error.AuthenticationFailed;
+    if (c.EVP_DecryptUpdate(ctx.dec, null, &len, ad.ptr, @intCast(ad.len)) != 1) return error.AuthenticationFailed;
+    if (c.EVP_DecryptUpdate(ctx.dec, plaintext.ptr, &len, ciphertext.ptr, @intCast(ciphertext.len)) != 1) return error.AuthenticationFailed;
+    out_len += len;
+    if (c.EVP_CIPHER_CTX_ctrl(ctx.dec, c.EVP_CTRL_AEAD_SET_TAG, tag_len, @constCast(&tag.data)) != 1) return error.AuthenticationFailed;
+    if (c.EVP_DecryptFinal_ex(ctx.dec, plaintext.ptr + @as(usize, @intCast(out_len)), &len) != 1) return error.AuthenticationFailed;
+}
 
 // RFC 8446 §9.1 — mandatory cipher suites
 
@@ -127,10 +253,12 @@ test "Aes128Gcm: encrypt/decrypt round-trip" {
     var ciphertext: [plaintext.len]u8 = undefined;
     var tag: Tag = undefined;
     const aead: Aead = .{ .aes128_gcm = key };
-    aead.encrypt(&ciphertext, &tag, plaintext, ad, &npub);
+    var ctx = try Context.init(aead);
+    defer ctx.deinit();
+    try aead.encrypt(&ctx, &ciphertext, &tag, plaintext, ad, &npub);
 
     var decrypted: [plaintext.len]u8 = undefined;
-    try aead.decrypt(&decrypted, &ciphertext, &tag, ad, &npub);
+    try aead.decrypt(&ctx, &decrypted, &ciphertext, &tag, ad, &npub);
     try testing.expectEqualSlices(u8, plaintext, &decrypted);
 }
 
@@ -144,10 +272,12 @@ test "Aes256Gcm: encrypt/decrypt round-trip" {
     var ciphertext: [plaintext.len]u8 = undefined;
     var tag: Tag = undefined;
     const aead: Aead = .{ .aes256_gcm = key };
-    aead.encrypt(&ciphertext, &tag, plaintext, ad, &npub);
+    var ctx = try Context.init(aead);
+    defer ctx.deinit();
+    try aead.encrypt(&ctx, &ciphertext, &tag, plaintext, ad, &npub);
 
     var decrypted: [plaintext.len]u8 = undefined;
-    try aead.decrypt(&decrypted, &ciphertext, &tag, ad, &npub);
+    try aead.decrypt(&ctx, &decrypted, &ciphertext, &tag, ad, &npub);
     try testing.expectEqualSlices(u8, plaintext, &decrypted);
 }
 
@@ -161,10 +291,12 @@ test "ChaCha20Poly1305: encrypt/decrypt round-trip" {
     var ciphertext: [plaintext.len]u8 = undefined;
     var tag: Tag = undefined;
     const aead: Aead = .{ .chacha20_poly1305 = key };
-    aead.encrypt(&ciphertext, &tag, plaintext, ad, &npub);
+    var ctx = try Context.init(aead);
+    defer ctx.deinit();
+    try aead.encrypt(&ctx, &ciphertext, &tag, plaintext, ad, &npub);
 
     var decrypted: [plaintext.len]u8 = undefined;
-    try aead.decrypt(&decrypted, &ciphertext, &tag, ad, &npub);
+    try aead.decrypt(&ctx, &decrypted, &ciphertext, &tag, ad, &npub);
     try testing.expectEqualSlices(u8, plaintext, &decrypted);
 }
 
@@ -198,13 +330,15 @@ test "ChaCha20Poly1305: RFC 8439 known-answer vector" {
     var ciphertext: [plaintext.len]u8 = undefined;
     var tag: Tag = undefined;
     const aead: Aead = .{ .chacha20_poly1305 = key };
-    aead.encrypt(&ciphertext, &tag, &plaintext, &ad, &npub);
+    var ctx = try Context.init(aead);
+    defer ctx.deinit();
+    try aead.encrypt(&ctx, &ciphertext, &tag, &plaintext, &ad, &npub);
 
     try testing.expectEqualSlices(u8, &expected_ciphertext, &ciphertext);
     try testing.expectEqualSlices(u8, &expected_tag, &tag.data);
 
     var decrypted: [plaintext.len]u8 = undefined;
-    try aead.decrypt(&decrypted, &ciphertext, &tag, &ad, &npub);
+    try aead.decrypt(&ctx, &decrypted, &ciphertext, &tag, &ad, &npub);
     try testing.expectEqualSlices(u8, &plaintext, &decrypted);
 }
 
@@ -217,9 +351,11 @@ test "ChaCha20Poly1305: empty plaintext known-answer vector" {
 
     var tag: Tag = undefined;
     const aead: Aead = .{ .chacha20_poly1305 = key };
-    aead.encrypt(&.{}, &tag, &.{}, &ad, &npub);
+    var ctx = try Context.init(aead);
+    defer ctx.deinit();
+    try aead.encrypt(&ctx, &.{}, &tag, &.{}, &ad, &npub);
     try testing.expectEqualSlices(u8, &expected_tag, &tag.data);
-    try aead.decrypt(&.{}, &.{}, &tag, &ad, &npub);
+    try aead.decrypt(&ctx, &.{}, &.{}, &tag, &ad, &npub);
 }
 
 // RFC 8439 §2.8 — ChaCha20-Poly1305 rejects forged ciphertexts.
@@ -233,11 +369,13 @@ test "ChaCha20Poly1305: authentication failure on tampered ciphertext" {
     var ciphertext: [plaintext.len]u8 = undefined;
     var tag: Tag = undefined;
     const aead: Aead = .{ .chacha20_poly1305 = key };
-    aead.encrypt(&ciphertext, &tag, plaintext, ad, &npub);
+    var ctx = try Context.init(aead);
+    defer ctx.deinit();
+    try aead.encrypt(&ctx, &ciphertext, &tag, plaintext, ad, &npub);
 
     ciphertext[0] ^= 0xff;
     var decrypted: [plaintext.len]u8 = undefined;
-    try testing.expectError(error.AuthenticationFailed, aead.decrypt(&decrypted, &ciphertext, &tag, ad, &npub));
+    try testing.expectError(error.AuthenticationFailed, aead.decrypt(&ctx, &decrypted, &ciphertext, &tag, ad, &npub));
 }
 
 // RFC 8439 §2.8 — ChaCha20-Poly1305 rejects forged tags.
@@ -251,11 +389,13 @@ test "ChaCha20Poly1305: authentication failure on tampered tag" {
     var ciphertext: [plaintext.len]u8 = undefined;
     var tag: Tag = undefined;
     const aead: Aead = .{ .chacha20_poly1305 = key };
-    aead.encrypt(&ciphertext, &tag, plaintext, ad, &npub);
+    var ctx = try Context.init(aead);
+    defer ctx.deinit();
+    try aead.encrypt(&ctx, &ciphertext, &tag, plaintext, ad, &npub);
 
     tag.data[0] ^= 0xff;
     var decrypted: [plaintext.len]u8 = undefined;
-    try testing.expectError(error.AuthenticationFailed, aead.decrypt(&decrypted, &ciphertext, &tag, ad, &npub));
+    try testing.expectError(error.AuthenticationFailed, aead.decrypt(&ctx, &decrypted, &ciphertext, &tag, ad, &npub));
 }
 
 // RFC 8439 §2.8 — ChaCha20-Poly1305 authenticates associated data.
@@ -268,10 +408,12 @@ test "ChaCha20Poly1305: authentication failure on tampered ad" {
     var ciphertext: [plaintext.len]u8 = undefined;
     var tag: Tag = undefined;
     const aead: Aead = .{ .chacha20_poly1305 = key };
-    aead.encrypt(&ciphertext, &tag, plaintext, "header", &npub);
+    var ctx = try Context.init(aead);
+    defer ctx.deinit();
+    try aead.encrypt(&ctx, &ciphertext, &tag, plaintext, "header", &npub);
 
     var decrypted: [plaintext.len]u8 = undefined;
-    try testing.expectError(error.AuthenticationFailed, aead.decrypt(&decrypted, &ciphertext, &tag, "HEADER", &npub));
+    try testing.expectError(error.AuthenticationFailed, aead.decrypt(&ctx, &decrypted, &ciphertext, &tag, "HEADER", &npub));
 }
 
 test "decrypt: authentication failure on tampered ciphertext" {
@@ -284,11 +426,13 @@ test "decrypt: authentication failure on tampered ciphertext" {
     var ciphertext: [plaintext.len]u8 = undefined;
     var tag: Tag = undefined;
     const aead: Aead = .{ .aes128_gcm = key };
-    aead.encrypt(&ciphertext, &tag, plaintext, ad, &npub);
+    var ctx = try Context.init(aead);
+    defer ctx.deinit();
+    try aead.encrypt(&ctx, &ciphertext, &tag, plaintext, ad, &npub);
 
     ciphertext[0] ^= 0xff;
     var decrypted: [plaintext.len]u8 = undefined;
-    try testing.expectError(error.AuthenticationFailed, aead.decrypt(&decrypted, &ciphertext, &tag, ad, &npub));
+    try testing.expectError(error.AuthenticationFailed, aead.decrypt(&ctx, &decrypted, &ciphertext, &tag, ad, &npub));
 }
 
 test "decrypt: authentication failure on tampered tag" {
@@ -301,11 +445,13 @@ test "decrypt: authentication failure on tampered tag" {
     var ciphertext: [plaintext.len]u8 = undefined;
     var tag: Tag = undefined;
     const aead: Aead = .{ .aes128_gcm = key };
-    aead.encrypt(&ciphertext, &tag, plaintext, ad, &npub);
+    var ctx = try Context.init(aead);
+    defer ctx.deinit();
+    try aead.encrypt(&ctx, &ciphertext, &tag, plaintext, ad, &npub);
 
     tag.data[0] ^= 0xff;
     var decrypted: [plaintext.len]u8 = undefined;
-    try testing.expectError(error.AuthenticationFailed, aead.decrypt(&decrypted, &ciphertext, &tag, ad, &npub));
+    try testing.expectError(error.AuthenticationFailed, aead.decrypt(&ctx, &decrypted, &ciphertext, &tag, ad, &npub));
 }
 
 test "decrypt: authentication failure on tampered ad" {
@@ -317,8 +463,10 @@ test "decrypt: authentication failure on tampered ad" {
     var ciphertext: [plaintext.len]u8 = undefined;
     var tag: Tag = undefined;
     const aead: Aead = .{ .aes128_gcm = key };
-    aead.encrypt(&ciphertext, &tag, plaintext, "header", &npub);
+    var ctx = try Context.init(aead);
+    defer ctx.deinit();
+    try aead.encrypt(&ctx, &ciphertext, &tag, plaintext, "header", &npub);
 
     var decrypted: [plaintext.len]u8 = undefined;
-    try testing.expectError(error.AuthenticationFailed, aead.decrypt(&decrypted, &ciphertext, &tag, "HEADER", &npub));
+    try testing.expectError(error.AuthenticationFailed, aead.decrypt(&ctx, &decrypted, &ciphertext, &tag, "HEADER", &npub));
 }

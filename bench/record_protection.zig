@@ -97,6 +97,7 @@ pub fn main() !void {
     try stdout.print("# os {s}\n", .{@tagName(builtin.os.tag)});
     try stdout.print("# cpu {s}\n", .{builtin.cpu.model.name});
     try stdout.print("# optimize {s}\n", .{@tagName(builtin.mode)});
+    try stdout.print("# crypto {s}\n", .{@tagName(ztls.aead.backend)});
     try stdout.print("benchmark,suite,size,iterations,bytes,elapsed_ns,mib_per_sec\n", .{});
     try stdout.flush();
 
@@ -361,7 +362,8 @@ fn benchEncrypt(comptime suite: Suite, comptime size: usize, timer: *std.time.Ti
     const iterations = @max(256, target_bytes / size);
     var plaintext: [size]u8 = @splat(0xab);
     var out: [RecordLayer.overhead + size]u8 = undefined;
-    var tx: RecordLayer = .{ .aead = suite.aead(), .iv = Iv.zero };
+    var tx: RecordLayer = try .init(suite.aead(), Iv.zero);
+    defer tx.deinit();
 
     // Warm up without measuring first-use effects.
     for (0..32) |_| _ = try tx.encrypt(.application_data, &plaintext, &out);
@@ -385,18 +387,22 @@ fn benchDecrypt(comptime suite: Suite, comptime size: usize, timer: *std.time.Ti
 
     var plaintext: [size]u8 = @splat(0xcd);
 
-    var tx: RecordLayer = .{ .aead = suite.aead(), .iv = .zero };
+    var tx: RecordLayer = try .init(suite.aead(), .zero);
+    defer tx.deinit();
     for (0..iterations) |i| {
         const record = try tx.encrypt(.application_data, &plaintext, records[i * record_len ..][0..record_len]);
         assert(record.len == record_len);
     }
 
-    var rx: RecordLayer = .{ .aead = suite.aead(), .iv = .zero };
+    var rx: RecordLayer = try .init(suite.aead(), .zero);
+    defer rx.deinit();
 
     // Warm up using a separate one-record layer so the measured sequence stays aligned.
     var warm_record: [record_len]u8 = undefined;
-    var warm_tx: RecordLayer = .{ .aead = suite.aead(), .iv = .zero };
-    var warm_rx: RecordLayer = .{ .aead = suite.aead(), .iv = .zero };
+    var warm_tx: RecordLayer = try .init(suite.aead(), .zero);
+    defer warm_tx.deinit();
+    var warm_rx: RecordLayer = try .init(suite.aead(), .zero);
+    defer warm_rx.deinit();
     const warm = try warm_tx.encrypt(.application_data, &plaintext, &warm_record);
     _ = try warm_rx.decrypt(warm);
 
@@ -486,6 +492,8 @@ fn benchZtlsHandshake(comptime suite: Suite, timer: *std.time.Timer) !Result {
 
 fn doZtlsHandshake(comptime suite: Suite) !void {
     var pair = try connectPair(suite);
+    defer pair.client.deinit();
+    defer pair.server.deinit();
     doNotOptimizeAway(&pair.client);
     doNotOptimizeAway(&pair.server);
 }
@@ -493,6 +501,8 @@ fn doZtlsHandshake(comptime suite: Suite) !void {
 fn benchZtlsAppData(comptime suite: Suite, comptime size: usize, comptime direction: Direction, timer: *std.time.Timer) !Result {
     const iterations = @max(256, target_bytes / size);
     var pair = try connectPair(suite);
+    defer pair.client.deinit();
+    defer pair.server.deinit();
     var payload: [size]u8 = @splat(0xa5);
     var wire: [RecordLayer.overhead + size]u8 = undefined;
     var out: [RecordLayer.overhead + size]u8 = undefined;
@@ -507,6 +517,7 @@ fn benchZtlsAppData(comptime suite: Suite, comptime size: usize, comptime direct
         },
         .server_to_client => {
             const record = try pair.server.sendApplicationData(&payload, &wire);
+            pair.server.completeWrite();
             const ev = try pair.client.handleRecord(wire[0..record.len], &out);
             doNotOptimizeAway(ev.application_data.ptr);
         },
@@ -519,6 +530,8 @@ fn benchZtlsAppData(comptime suite: Suite, comptime size: usize, comptime direct
 fn benchZtlsPingPong(comptime suite: Suite, comptime size: usize, timer: *std.time.Timer) !Result {
     const iterations = @max(256, target_bytes / (size * 2));
     var pair = try connectPair(suite);
+    defer pair.client.deinit();
+    defer pair.server.deinit();
     var payload: [size]u8 = @splat(0x5a);
     var client_wire: [RecordLayer.overhead + size]u8 = undefined;
     var server_wire: [RecordLayer.overhead + size]u8 = undefined;
@@ -532,6 +545,7 @@ fn benchZtlsPingPong(comptime suite: Suite, comptime size: usize, timer: *std.ti
         doNotOptimizeAway(got.ptr);
 
         const s = try pair.server.sendApplicationData(&payload, &server_wire);
+        pair.server.completeWrite();
         const ev = try pair.client.handleRecord(server_wire[0..s.len], &client_out);
         doNotOptimizeAway(ev.application_data.ptr);
     }

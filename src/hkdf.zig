@@ -173,7 +173,7 @@ fn Hkdf(comptime Hmac: type) type {
         /// a ready-to-use RecordLayer. `key` selects the AEAD at runtime (the
         /// negotiated cipher suite), so a single arm serves all suites of its
         /// hash (e.g. SHA-256 covers AES-128-GCM and ChaCha20-Poly1305).
-        pub fn makeRecordLayer(key: aead.Keys, prk: Prk) RecordLayer {
+        pub fn makeRecordLayer(key: aead.Keys, prk: Prk) aead.Error!RecordLayer {
             const layer_aead: aead.Aead = switch (key) {
                 inline else => |k| @unionInit(aead.Aead, @tagName(k), trafficKey(k, prk)),
             };
