@@ -21,6 +21,47 @@ ci: ci-actions
     zig build test-openssl
     zig build test-openssl-server
     zig build bench -- --filter record_encrypt --filter aes_128
+    zig build bench-evp -- --filter aes_128
+    zig build bench-openssl -- --filter aes_128
+
+[doc("List ztls, OpenSSL EVP, and OpenSSL memory-BIO benchmark rows")]
+[group("bench")]
+bench-list:
+    zig build bench -- --list
+    zig build bench-evp -- --list
+    zig build bench-openssl -- --list
+
+[doc("Run comparable ztls, OpenSSL EVP, and OpenSSL memory-BIO benchmark rows")]
+[group("bench")]
+bench-compare FILTER="aes_128":
+    zig build bench -- --filter {{ FILTER }}
+    zig build bench-evp -- --filter {{ FILTER }}
+    zig build bench-openssl -- --filter {{ FILTER }}
+
+[doc("Build benchmark binaries used for perf, callgrind, and disassembly")]
+[group("bench")]
+bench-bins:
+    zig build bench-bin bench-evp-bin bench-openssl-bin
+
+[doc("Disassemble an installed benchmark binary to a file")]
+[group("bench")]
+bench-disasm BIN="record_protection_bench" OUT="zig-out/{{ BIN }}.asm": bench-bins
+    objdump -d zig-out/bin/{{ BIN }} > {{ OUT }}
+    @echo {{ OUT }}
+
+[doc("Disassemble the libcrypto linked by an installed benchmark binary")]
+[group("bench")]
+[linux]
+bench-disasm-libcrypto BIN="record_protection_bench" OUT="zig-out/libcrypto.asm": bench-bins
+    objdump -d $(ldd zig-out/bin/{{ BIN }} | awk '/libcrypto/{print $3; exit}') > {{ OUT }}
+    @echo {{ OUT }}
+
+[doc("Record a perf profile for an installed benchmark binary")]
+[group("bench")]
+[linux]
+bench-perf BIN="record_protection_bench" *ARGS: bench-bins
+    perf record --call-graph dwarf --output zig-out/{{ BIN }}.perf.data -- zig-out/bin/{{ BIN }} {{ ARGS }}
+    @echo zig-out/{{ BIN }}.perf.data
 
 [doc("Run example program")]
 [group("demo")]

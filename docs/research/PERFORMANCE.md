@@ -119,6 +119,17 @@ metal.
 Typical local flow:
 
 ```sh
+just bench-compare aes_128
+just bench-bins
+just bench-disasm record_protection_bench zig-out/record_protection_bench.asm
+just bench-disasm-libcrypto record_protection_bench zig-out/libcrypto.asm
+just bench-perf record_protection_bench --filter record_encrypt --filter aes_128
+perf report --input zig-out/record_protection_bench.perf.data
+```
+
+The raw Zig build steps remain available when you want to bypass `just`:
+
+```sh
 zig build bench
 zig build bench-bin
 perf record --call-graph dwarf ./zig-out/bin/record_protection_bench
@@ -138,6 +149,8 @@ callgrind_annotate callgrind.out
 For raw OpenSSL crypto comparison:
 
 ```sh
+just bench-compare aes_128
+# or only the raw EVP harness:
 zig build bench-evp
 zig build bench-evp-bin
 zig-out/bin/openssl_evp_bench --filter aes_128
