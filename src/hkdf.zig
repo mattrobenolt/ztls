@@ -174,12 +174,10 @@ fn Hkdf(comptime Hmac: type) type {
         /// negotiated cipher suite), so a single arm serves all suites of its
         /// hash (e.g. SHA-256 covers AES-128-GCM and ChaCha20-Poly1305).
         pub fn makeRecordLayer(key: aead.Keys, prk: Prk) RecordLayer {
-            return .{
-                .aead = switch (key) {
-                    inline else => |k| @unionInit(aead.Aead, @tagName(k), trafficKey(k, prk)),
-                },
-                .iv = trafficIv(prk),
+            const layer_aead: aead.Aead = switch (key) {
+                inline else => |k| @unionInit(aead.Aead, @tagName(k), trafficKey(k, prk)),
             };
+            return .init(layer_aead, trafficIv(prk));
         }
 
         /// RFC 8446 §4.4.4 — derive the finished key from a traffic secret.

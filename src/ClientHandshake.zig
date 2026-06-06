@@ -681,6 +681,8 @@ pub fn clientFinished(self: *ClientHandshake, out: []u8) SendError![]const u8 {
     // Encrypt under the handshake-traffic key that is still installed, then
     // promote: the Finished is the last handshake-protected message.
     const record = try self.tx.encrypt(.handshake, keys.finished, out);
+    self.tx.deinit();
+    self.rx.deinit();
     self.tx = keys.tx;
     self.rx = keys.rx;
     self.state = .connected;
@@ -729,7 +731,9 @@ fn receiveConnected(self: *ClientHandshake, record: []u8, out: []u8) ReceiveErro
                         if (try parseKeyUpdate(msg.raw) == .update_requested) respond = true;
                         // Ratchet the receive key only after consuming the
                         // KeyUpdate (RFC 8446 §4.6.3).
-                        self.rx = self.suite.ratchetServerKey();
+                        const next_rx = self.suite.ratchetServerKey();
+                        self.rx.deinit();
+                        self.rx = next_rx;
                     },
                     .new_session_ticket => _ = try new_session_ticket.parse(msg.raw), // parsed and ignored until PSK resumption
                     else => return error.UnexpectedMessage,
@@ -756,7 +760,9 @@ pub fn sendKeyUpdate(self: *ClientHandshake, out: []u8, request: KeyUpdateReques
     if (self.pending_write) return error.PendingWrite;
     const msg = [_]u8{ @intFromEnum(HandshakeType.key_update), 0x00, 0x00, 0x01, @intFromEnum(request) };
     const record = try self.tx.encrypt(.handshake, &msg, out);
-    self.tx = self.suite.ratchetClientKey();
+    const next_tx = self.suite.ratchetClientKey();
+    self.tx.deinit();
+    self.tx = next_tx;
     self.pending_write = true;
     return record;
 }

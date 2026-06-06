@@ -345,8 +345,12 @@ fn processClientFinishedPlaintext(self: *ServerHandshake, plaintext: []const u8)
             const master = H.masterSecret(s.handshake_secret);
             s.client_app_secret = H.clientApplicationTrafficSecret(master, &.init(th));
             s.server_app_secret = H.serverApplicationTrafficSecret(master, &.init(th));
-            self.rx = H.makeRecordLayer(s.aead, s.client_app_secret);
-            self.tx = H.makeRecordLayer(s.aead, s.server_app_secret);
+            const next_rx = H.makeRecordLayer(s.aead, s.client_app_secret);
+            const next_tx = H.makeRecordLayer(s.aead, s.server_app_secret);
+            self.rx.deinit();
+            self.tx.deinit();
+            self.rx = next_rx;
+            self.tx = next_tx;
             s.transcript.update(msg.raw);
         },
     }
@@ -424,7 +428,9 @@ fn handleConnected(self: *ServerHandshake, record: []u8, out: []u8) ReceiveError
                 if (msg.type != .key_update) return error.UnexpectedMessage;
                 if (hr.r.remaining().len != 0) return error.UnexpectedMessage;
                 if (try parseKeyUpdate(msg.raw) == .update_requested) respond = true;
-                self.rx = self.suite_state.ratchetClientKey();
+                const next_rx = self.suite_state.ratchetClientKey();
+                self.rx.deinit();
+                self.rx = next_rx;
             }
             if (respond) return .{ .write = try self.sendKeyUpdate(out, .update_not_requested) };
             return .none;
@@ -442,7 +448,9 @@ pub fn sendKeyUpdate(self: *ServerHandshake, out: []u8, request: KeyUpdateReques
     if (self.pending_write) return error.PendingWrite;
     const msg = [_]u8{ @intFromEnum(HandshakeType.key_update), 0x00, 0x00, 0x01, @intFromEnum(request) };
     const record = try self.tx.encrypt(.handshake, &msg, out);
-    self.tx = self.suite_state.ratchetServerKey();
+    const next_tx = self.suite_state.ratchetServerKey();
+    self.tx.deinit();
+    self.tx = next_tx;
     self.pending_write = true;
     return record;
 }

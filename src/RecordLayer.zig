@@ -28,6 +28,14 @@ aead: Aead,
 iv: Iv,
 seq: u64 = 0,
 
+pub fn init(aead_: Aead, iv_: Iv) RecordLayer {
+    return .{ .aead = aead_, .iv = iv_ };
+}
+
+pub fn deinit(self: *RecordLayer) void {
+    _ = self;
+}
+
 pub const DecryptError = frame.ParseError || AeadError || error{
     UnexpectedContentType,
     RecordTooShort,
