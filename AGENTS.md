@@ -1,6 +1,6 @@
 # AGENTS.md
 
-This is ztls: a TLS 1.3 framing library in Zig. No allocations. No I/O.
+This is ztls: a TLS 1.3 framing library in Zig. No I/O. Caller-owned buffers.
 Read `docs/research/DESIGN.md` before writing any code.
 
 ---
@@ -22,10 +22,11 @@ fast." Both are first-class from the start. A working slow implementation is
 not an acceptable intermediate state — correctness decisions shape performance
 decisions and vice versa.
 
-**No allocations in library code.** If you find yourself reaching for an
-allocator, stop. Caller owns all memory. Buffers are passed as slices. The
-engine holds no heap state. If a data structure doesn't fit in a fixed-size
-stack or caller-provided buffer, redesign it.
+**No ztls-owned allocations in the TLS engine.** If you find yourself reaching
+for an allocator in protocol/framing code, stop. Caller owns all TLS buffers.
+The engine holds no heap state. Production crypto backends may perform
+documented backend-owned libc/libcrypto allocations; do not hide those behind a
+fake no-allocation claim.
 
 **No unnecessary copies.** Avoid memcpy and memmove unless provably
 unavoidable. Design buffer layouts to allow in-place and zero-copy paths. If
@@ -91,14 +92,25 @@ test suite covers something we implement, we run it. No exceptions.
 
 ## Crypto
 
-Default backend is `std.crypto` — zero dependencies, pure Zig.
-A `libcrypto` backend will be offered as an opt-in build flag for
-deployments that want OpenSSL's hardware-accelerated primitives.
-Both backends present the same API; the flag is a comptime switch.
+Production crypto comes from the libcrypto family. OpenSSL/libcrypto is the
+first implementation target because it is already in the dev shell and interop
+harnesses; AWS-LC must remain a first-class design target, with BoringSSL
+possible later behind its own backend if the API surface is worth it.
 
-Do not reach for libcrypto by default. Do not implement your own crypto.
+`std.crypto` is development/transitional: useful for bring-up, tests, and
+fallback while provider seams are built, but not the production performance,
+patching, FIPS, or PQ story.
 
-See `docs/research/DESIGN.md` for full backend rationale.
+The strict no-allocation invariant applies to ztls-owned framing, state machine,
+record buffers, and caller-visible TLS I/O. A libcrypto-family production build
+may link libc and may execute backend/provider-owned allocations during setup or
+primitive initialization. Keep ztls itself allocator-free: no `std.heap` in
+`src/`, no malloc/free owned by ztls, and all TLS input/output buffers remain
+caller-owned.
+
+Do not use libssl in core. Do not implement your own primitive crypto. Post-
+quantum support should come through provider-backed key exchange and signature
+mechanisms where the selected libcrypto-family backend supports them.
 
 ---
 

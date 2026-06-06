@@ -8,11 +8,18 @@ const assert = std.debug.assert;
 const Sha256 = std.crypto.hash.sha2.Sha256;
 const Sha384 = std.crypto.hash.sha2.Sha384;
 const mem = std.mem;
+const testing = std.testing;
+const EcdsaP256Sha256 = std.crypto.sign.ecdsa.EcdsaP256Sha256;
 
 const aead = @import("aead.zig");
 const alert = @import("alert.zig");
-const client_hello = @import("client_hello.zig");
 const certificate = @import("certificate.zig");
+const CipherSuite = @import("root.zig").CipherSuite;
+const client_hello = @import("client_hello.zig");
+const ClientHandshake = @import("ClientHandshake.zig");
+const HandshakeReader = ClientHandshake.HandshakeReader;
+const HandshakeType = ClientHandshake.HandshakeType;
+const KeyUpdateRequest = ClientHandshake.KeyUpdateRequest;
 const encrypted_extensions = @import("encrypted_extensions.zig");
 const finished = @import("finished.zig");
 const frame = @import("frame.zig");
@@ -20,11 +27,6 @@ const hkdf = @import("hkdf.zig");
 const RecordLayer = @import("RecordLayer.zig");
 const server_hello = @import("server_hello.zig");
 const x25519 = @import("x25519.zig");
-const CipherSuite = @import("root.zig").CipherSuite;
-const ClientHandshake = @import("ClientHandshake.zig");
-const HandshakeReader = ClientHandshake.HandshakeReader;
-const HandshakeType = ClientHandshake.HandshakeType;
-const KeyUpdateRequest = ClientHandshake.KeyUpdateRequest;
 
 const ServerHandshake = @This();
 
@@ -365,16 +367,15 @@ pub fn handleRecord(self: *ServerHandshake, record: []u8, random: client_hello.R
 fn handleWaitClientHello(self: *ServerHandshake, record: []u8, random: client_hello.Random, out: []u8) HandleError!Event {
     const hdr = try frame.parseHeader(record);
     if (record.len < frame.header_len + hdr.length()) return error.IncompleteRecord;
-    switch (hdr.content_type) {
-        .change_cipher_spec => return .none, // RFC 8446 §D.4 — middlebox compat, silently discarded.
-        .alert => {
+    return switch (hdr.content_type) {
+        .change_cipher_spec => .none, // RFC 8446 §D.4 — middlebox compat, silently discarded.
+        .alert => blk: {
             const a = try alert.parse(record[frame.header_len..][0..hdr.length()]);
-            if (a.isCloseNotify()) return .closed;
-            return error.PeerAlert;
+            break :blk if (a.isCloseNotify()) .closed else error.PeerAlert;
         },
-        .handshake => return .{ .write = try self.acceptClientHello(record, random, out) },
-        else => return error.UnexpectedRecord,
-    }
+        .handshake => .{ .write = try self.acceptClientHello(record, random, out) },
+        else => error.UnexpectedRecord,
+    };
 }
 
 fn handleWaitClientFinished(self: *ServerHandshake, record: []u8) HandleError!Event {
@@ -392,18 +393,17 @@ fn handleWaitClientFinished(self: *ServerHandshake, record: []u8) HandleError!Ev
     }
 
     const dec = try self.rx.decrypt(record);
-    switch (dec.content_type) {
-        .handshake => {
+    return switch (dec.content_type) {
+        .handshake => blk: {
             try self.processClientFinishedPlaintext(dec.content);
-            return .none;
+            break :blk .none;
         },
-        .alert => {
+        .alert => blk: {
             const a = try alert.parse(dec.content);
-            if (a.isCloseNotify()) return .closed;
-            return error.PeerAlert;
+            break :blk if (a.isCloseNotify()) .closed else error.PeerAlert;
         },
-        else => return error.UnexpectedRecord,
-    }
+        else => error.UnexpectedRecord,
+    };
 }
 
 const max_post_handshake_messages = 16;
@@ -431,8 +431,7 @@ fn handleConnected(self: *ServerHandshake, record: []u8, out: []u8) ReceiveError
         },
         .alert => {
             const a = try alert.parse(dec.content);
-            if (a.isCloseNotify()) return .closed;
-            return error.PeerAlert;
+            return if (a.isCloseNotify()) .closed else error.PeerAlert;
         },
         else => return error.UnexpectedRecord,
     }
@@ -458,9 +457,9 @@ pub fn sendAlert(self: *ServerHandshake, description: alert.Description, out: []
     var msg: [2]u8 = undefined;
     const level: alert.Level = if (description == .close_notify) .warning else .fatal;
     _ = alert.encode(&msg, level, description) catch unreachable;
-    const record = switch (self.state) {
-        .wait_ch => try plaintextAlert(&msg, out),
-        else => try self.tx.encrypt(.alert, &msg, out),
+    const record = try switch (self.state) {
+        .wait_ch => plaintextAlert(&msg, out),
+        else => self.tx.encrypt(.alert, &msg, out),
     };
     self.pending_write = true;
     return record;
@@ -496,23 +495,16 @@ fn chooseSuite(self: *const ServerHandshake, ch: client_hello.Parsed) ?CipherSui
     return null;
 }
 
-const testing = std.testing;
-
 const test_cert_der = @embedFile("test_fixtures/server.crt.der");
 const server_ecdsa_cert_der = @embedFile("test_fixtures/server-ecdsa/server.der");
 const server_ecdsa_scalar = @embedFile("test_fixtures/server-ecdsa/scalar.bin");
-
-const EcdsaP256Sha256 = std.crypto.sign.ecdsa.EcdsaP256Sha256;
 
 const TestSigner = struct {
     keypair: EcdsaP256Sha256.KeyPair,
 
     fn sign(context: *anyopaque, msg: []const u8, out: []u8) SignError![]const u8 {
         const self: *TestSigner = @ptrCast(@alignCast(context));
-        const sig = self.keypair.sign(msg, null) catch |err| switch (err) {
-            error.IdentityElement => return error.IdentityElement,
-            error.NonCanonical => return error.NonCanonical,
-        };
+        const sig = self.keypair.sign(msg, null) catch |err| return err;
         var der: [EcdsaP256Sha256.Signature.der_encoded_length_max]u8 = undefined;
         const encoded = sig.toDer(&der);
         if (out.len < encoded.len) return error.BufferTooShort;

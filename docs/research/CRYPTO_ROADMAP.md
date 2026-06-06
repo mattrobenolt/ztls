@@ -1,12 +1,16 @@
 # Crypto backend roadmap
 
-ztls currently uses `std.crypto` for all cryptographic primitives. OpenSSL is
-present only in benchmark and interop harnesses. That is still the right default:
-core ztls remains no-allocation, no-I/O, and easy to audit.
+ztls currently uses `std.crypto` for most cryptographic primitives, with OpenSSL
+present in benchmark and interop harnesses. That is a development/transitional
+state, not the production direction. Production crypto should come from the
+libcrypto family. OpenSSL/libcrypto is the first concrete backend target because
+it is already in the dev shell, benchmark ladder, and interop harnesses. AWS-LC
+must remain a first-class design target, not an accidental maybe-later drop-in.
 
-The performance question is narrower: what would it take to match or replace
-libcrypto-class primitive performance without importing libssl's machinery or
-violating ztls' memory model?
+The product question is no longer whether to avoid libcrypto. It is how to use
+libcrypto-family primitive APIs without importing libssl machinery, without
+giving up ztls' Sans-I/O state-machine boundary, and while being honest that
+production backends may link libc and allocate inside backend/provider code.
 
 ## Current evidence
 
@@ -36,26 +40,29 @@ Handshake latency is a separate problem. Full handshakes are dominated by
 certificate parsing/signature verification, X25519, HKDF/transcript hashing, and
 server signing. AEAD changes will not move handshake numbers much.
 
-## OpenSSL EVP is not a no-allocation core backend
+## Backend allocation contract: honest, explicit, bounded
 
-OpenSSL 3 EVP cannot honestly be used inside strict no-allocation ztls core.
-`EVP_CIPHER_CTX` is opaque and heap-allocated through `EVP_CIPHER_CTX_new`.
-Even with caller-created contexts, provider-backed ciphers allocate internal
-algorithm contexts during init; OpenSSL's AES-GCM and ChaCha20-Poly1305 provider
-`newctx` paths use OpenSSL heap allocation.
+OpenSSL 3 EVP cannot honestly be described as allocation-free. `EVP_CIPHER_CTX`
+is opaque and heap-allocated through `EVP_CIPHER_CTX_new`; provider-backed
+ciphers can allocate internal algorithm contexts during init; OpenSSL's AES-GCM
+and ChaCha20-Poly1305 provider `newctx` paths use OpenSSL heap allocation.
+Provider fetch/setup may also allocate.
 
-So there are only two honest libcrypto options:
+That fact does not disqualify libcrypto-family production crypto. It changes the
+contract:
 
-1. keep OpenSSL EVP as an opt-in adapter outside the strict core memory
-   contract, with allocation behavior explicitly owned by the caller/provider;
-2. do not add an EVP backend to core, and use EVP only as the benchmark floor
-   while ztls develops no-allocation native primitives.
+1. ztls-owned TLS engine code remains allocator-free, caller-buffered, and
+   Sans-I/O;
+2. production crypto backends may link libc and may perform backend/provider-owned
+   allocation behind the primitive API;
+3. backend allocation behavior must be documented and kept behind initialization,
+   context, or provider boundaries as much as the chosen library permits;
+4. no documentation or code should claim OpenSSL-compatible EVP/provider paths
+   preserve a strict no-heap invariant.
 
-Do not add an EVP backend that claims to preserve the no-allocation invariant.
-Fake invariants are worse than slow code.
-
-BoringSSL is different and exposes caller-owned `EVP_AEAD_CTX`-style APIs, but
-that is a separate backend, not OpenSSL-compatible libcrypto.
+AWS-LC/BoringSSL-style APIs may expose more caller-owned context shapes than
+OpenSSL 3 EVP. Treat those as backend-specific advantages. Do not flatten them
+into a fake generic OpenSSL-compatible promise.
 
 ## Backend seams
 
@@ -66,9 +73,20 @@ The AEAD seam is already clean enough to preserve:
 - HKDF derives byte-array traffic keys and constructs `RecordLayer` values.
 
 The non-AEAD seams are weaker. HKDF, HMAC, SHA-2, X25519, and certificate
-signature verification call `std.crypto` directly. That is fine today, but a
-full native-crypto backend needs a `src/crypto/` facade so hot primitives can be
-swapped without threading backend decisions through the handshake state machines.
+signature verification call `std.crypto` directly. That is fine during the
+transition, but production crypto needs a `src/crypto/` facade so primitives can
+be swapped without threading backend decisions through the handshake state
+machines.
+
+The backend facade should target the libcrypto family first, not a native rewrite
+first. Required facade areas:
+
+- AEAD for AES-GCM and ChaCha20-Poly1305;
+- HKDF/HMAC/hash for the TLS 1.3 key schedule and transcript;
+- X25519/P-256 key exchange where supported by the selected backend;
+- certificate/signature verification and server signing;
+- future provider-backed PQ or hybrid KEX/signature algorithms without changing
+  the TLS engine API shape every time a provider adds an algorithm.
 
 First cleanup step: remove direct unused crypto imports from files that do not
 need them, especially the dead `std.crypto.aead.aes_gcm.Aes128Gcm` import in
@@ -78,18 +96,32 @@ need them, especially the dead `std.crypto.aead.aes_gcm.Aes128Gcm` import in
 
 ### 0. Measurement and guardrails
 
-Add repeatable profiling and instruction checks before writing new crypto:
+Add repeatable profiling and instruction checks before making performance claims:
 
 - benchmark binaries must default to native CPU;
 - AArch64 AES-GCM builds must contain `aese` and `pmull`;
 - x86_64 AES-GCM builds must contain AES-NI/VAES and PCLMUL-family
   instructions where supported;
 - `perf`/callgrind runs should be filterable by suite and size;
-- docs should record the exact benchmark command, CPU, Zig version, and commit.
+- docs should record the exact benchmark command, CPU, Zig version, backend
+  library/version, and commit.
 
 Create TODOs from measured hot spots only. No speculative SIMD rewrites.
 
-### 1. Backend facade
+### 1. Documentation and support tiers
+
+Keep the docs aligned with the production direction:
+
+- OpenSSL/libcrypto is the first concrete production backend target;
+- AWS-LC is first-class in the architecture and must not be blocked by OpenSSL-3-
+  only assumptions;
+- BoringSSL is a possible later backend with its own API caveats;
+- `std.crypto` is development/transitional, not the production target;
+- libcrypto-family builds may link libc and may allocate inside backend/provider
+  code;
+- ztls remains Sans-I/O and caller-buffered.
+
+### 2. Crypto facade and lifecycle, std-backed
 
 Create a small crypto facade without changing behavior:
 
@@ -97,85 +129,110 @@ Create a small crypto facade without changing behavior:
 - preserve public `aead` key/tag/suite types;
 - hide AEAD, SHA-2, HMAC/HKDF, X25519, and signature-verification choices behind
   ztls-owned modules over time;
+- add provider-ready `init`/`deinit` lifecycle where state will eventually own
+  backend handles;
 - add a build option only when a second backend actually exists.
 
 The goal is boring refactoring with identical benchmark numbers.
 
-### 2. Fairer OpenSSL crypto-floor rows
+### 3. OpenSSL/libcrypto AEAD backend
 
-The current EVP benchmark reinitializes `EVP_CIPHER_CTX` for every operation.
-That is useful because it mirrors simple EVP usage, but it overstates setup cost
-for small records. Add reused-context EVP rows so small-record comparisons do
-not accidentally measure only EVP init overhead.
-
-Those rows are still not no-allocation core candidates; they are a better
-crypto floor.
-
-### 3. ChaCha20-Poly1305 native SIMD
-
-This was the highest-value primitive target and is the first native prototype.
-
-For AArch64 Linux, ztls imports BoringSSL's combined NEON ChaCha20-Poly1305
-assembly through a small Zig facade. For x86_64, target AVX2/SSE2 next if
-benchmarks justify it. Avoid headerless SUPERCOP/Floodyberry snapshots; use
-sources with unambiguous licensing.
+OpenSSL/libcrypto is the first concrete backend target. Add record-protection
+AEAD first because the current benchmark ladder already has OpenSSL EVP floor
+rows and libssl BIO rows.
 
 Requirements:
 
-- no heap state;
-- no new public API complexity;
-- RFC 8439 known-answer coverage before benchmarks matter;
-- objdump proof of vectorized hot paths;
-- >2x speedup over Zig 0.15.2 `std.crypto` ChaCha before merging.
+- support AES-128-GCM, AES-256-GCM, and ChaCha20-Poly1305;
+- use reused contexts; never allocate/free EVP contexts per record;
+- preserve ztls nonce construction, record AAD, in-place paths, and sequence
+  number ownership;
+- support KeyUpdate/rekey safely without leaking old provider state;
+- link libc/libcrypto only for the backend build;
+- label benchmark rows by backend.
 
-Initial native AArch64 Linux prototype results improved record ChaCha from about
-`142/398/489 MiB/s` at 128/1350/16384 bytes to about
-`478/1217/1485 MiB/s` for encrypt and `377/1119/1502 MiB/s` for decrypt.
+This backend is not no-allocation. It is the first production libcrypto-family
+implementation with an explicit backend-owned allocation contract.
 
-### 4. AES-GCM parallel GHASH
+### 4. AWS-LC AEAD backend
 
-AES-GCM already uses hardware AES and PMULL on AArch64. The likely remaining gap
-is OpenSSL's more aggressively interleaved AES/GHASH pipelines and multi-block
-GHASH reduction.
-
-Target this after ChaCha unless profiling contradicts that. The win is probably
-smaller and the maintenance burden is higher.
+Add AWS-LC as a named backend, not as an assumed OpenSSL substitute.
 
 Requirements:
 
-- no regression for 16-byte records;
-- measurable improvement for 8 KiB and 16 KiB records;
-- instruction-level proof that hardware AES/GHASH paths remain selected.
+- inspect the actual AWS-LC headers/library used in the dev shell or CI;
+- prefer AWS-LC/BoringSSL-style AEAD APIs if they are stable and better match
+  ztls' one-shot record operation shape;
+- otherwise use the OpenSSL-compatible EVP subset where available;
+- keep AWS-LC/OpenSSL divergences inside backend modules;
+- run the same AEAD tests, interop tests, and benchmark rows as the OpenSSL
+  backend.
 
-### 5. SHA-2/HKDF and handshake math
+### 5. HKDF/HMAC/SHA transcript hashing
 
-If handshake profiling shows transcript hashing or HKDF as material, add SHA-256
-extension paths for AArch64 and x86_64 SHA-NI. SHA-384 may remain scalar unless
-numbers justify the work.
+AEAD-only libcrypto is not a real production/compliance story. Move the TLS 1.3
+key schedule and transcript hashes behind the provider facade:
 
-If handshake remains ~2x slower than OpenSSL, profile and split TODOs for:
+- SHA-256/SHA-384 incremental transcript hashes;
+- HKDF extract/expand and HMAC for Finished;
+- RFC 8448 vectors and existing Finished/HKDF tests for every enabled backend;
+- avoid OpenSSL-3-only APIs in shared code if AWS-LC compatibility matters.
 
-- X25519 scalar multiplication;
-- P-256 ECDSA verification;
-- DER/certificate parsing;
-- server signing callback cost.
+### 6. Key exchange
 
-Do not let AEAD work pretend to solve handshake latency.
+Replace hard-coded X25519/std.crypto with provider-backed named groups:
+
+- X25519 first;
+- P-256/P-384 where supported by the selected provider;
+- capability queries for supported groups;
+- shared-secret slices sized by group rather than fixed 32-byte assumptions;
+- multiple key-share and HelloRetryRequest work only when more than one useful
+  group exists.
+
+### 7. Signatures and certificates
+
+Move primitive signature operations behind the provider while keeping trust
+policy and I/O outside ztls:
+
+- ECDSA P-256/P-384 and RSA-PSS verification first;
+- server `CertificateVerify` signing via caller-owned/provider-owned key handles;
+- keep certificate parsing/path policy caller-buffered and Sans-I/O;
+- avoid pulling libssl or OS trust-store loading into core.
+
+### 8. PQ/hybrid groups
+
+Post-quantum support should come from provider-backed KEX/signature mechanisms,
+not ztls-owned PQ primitives.
+
+Requirements:
+
+- named-group abstraction for hybrid groups such as X25519MLKEM768 where the
+  backend supports them;
+- backend capability reporting for experimental/FIPS/provider-specific support;
+- multiple key shares and HelloRetryRequest retry path;
+- careful version-specific testing because AWS-LC, OpenSSL, and BoringSSL differ
+  in API surface, naming, and maturity.
 
 ## Success criteria
 
-A ztls-owned crypto backend is worth calling successful only when:
+A production crypto backend is worth calling successful only when:
 
-- AES-GCM is within roughly 10–15% of OpenSSL EVP for large records on supported
-  AArch64 and x86_64 targets;
-- ChaCha20-Poly1305 is within roughly 20% of OpenSSL EVP across realistic record
-  sizes;
+- OpenSSL/libcrypto backend support exists behind ztls-owned facades;
+- AWS-LC compatibility remains an explicit design target and has CI/benchmark
+  coverage once the backend lands;
+- OpenSSL compatibility/interop remains covered by harnesses and benchmark rows;
+- AES-GCM and ChaCha20-Poly1305 meet libcrypto-class throughput on supported
+  AArch64 and x86_64 targets, with exact targets recorded per benchmark run;
 - full ztls app-data rows match or beat OpenSSL memory-BIO rows for small and
-  MTU-sized records;
-- all relevant Wycheproof/RFC vectors pass;
-- the backend remains no-allocation and no-I/O;
-- instruction checks catch accidental scalar fallback.
+  MTU-sized records where realistic;
+- all relevant Wycheproof/RFC vectors pass for every enabled backend;
+- ztls remains Sans-I/O and caller-buffered;
+- ztls-owned code remains allocator-free, while backend/provider-owned allocation
+  is explicitly documented for production libcrypto-family builds;
+- instruction/profile checks catch accidental scalar fallback;
+- the design has an explicit provider-backed path for future PQ/hybrid KEX and
+  signatures rather than ztls-owned PQ primitive implementations.
 
-Until then, `std.crypto` remains the correctness/default backend, OpenSSL EVP is
-our comparison floor, and any libcrypto adapter is explicitly outside the strict
-core allocation contract.
+Until then, `std.crypto` remains the development/transitional backend and OpenSSL
+EVP/libssl rows remain compatibility and performance floors, not the production
+architecture by themselves.

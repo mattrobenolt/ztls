@@ -10,13 +10,16 @@
 //! - Bounds-check DER element parsing so malformed certificate lengths return
 //!   CertificateFieldHasInvalidLength instead of panicking on out-of-bounds access.
 
-buffer: []const u8,
-index: u32,
-
+const std = @import("std");
+const crypto = std.crypto;
+const mem = std.mem;
 /// Vendored parser from Zig 0.15.2 std.crypto.Certificate.
 /// Bundle remains std-owned; ztls vendors only the parser/verification code to
 /// patch malformed-DER bounds checks before upstream Zig ships the fix.
 pub const Bundle = std.crypto.Certificate.Bundle;
+
+buffer: []const u8,
+index: u32,
 
 pub const Version = enum { v1, v2, v3 };
 
@@ -844,9 +847,6 @@ fn verifyEd25519(
     };
 }
 
-const std = @import("std");
-const crypto = std.crypto;
-const mem = std.mem;
 const Certificate = @This();
 
 pub const der = struct {
@@ -952,9 +952,8 @@ pub const rsa = struct {
     /// RFC 3447 8.1 RSASSA-PSS
     pub const PSSSignature = struct {
         pub fn fromBytes(comptime modulus_len: usize, msg: []const u8) [modulus_len]u8 {
-            var result: [modulus_len]u8 = undefined;
+            var result: [modulus_len]u8 = @splat(0);
             @memcpy(result[0..msg.len], msg);
-            @memset(result[msg.len..], 0);
             return result;
         }
 
@@ -1115,9 +1114,8 @@ pub const rsa = struct {
     /// RFC 3447 8.2 RSASSA-PKCS1-v1_5
     pub const PKCS1v1_5Signature = struct {
         pub fn fromBytes(comptime modulus_len: usize, msg: []const u8) [modulus_len]u8 {
-            var result: [modulus_len]u8 = undefined;
+            var result: [modulus_len]u8 = @splat(0);
             @memcpy(result[0..msg.len], msg);
-            @memset(result[msg.len..], 0);
             return result;
         }
 

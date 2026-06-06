@@ -1,7 +1,9 @@
 # ztls — Design & Research Notes
 
-TLS 1.3 framing library in Zig. No allocations. No I/O. Leverage libcrypto for
-the actual crypto primitives. Everything else is ours.
+TLS 1.3 framing library in Zig. Sans-I/O. Caller-owned TLS buffers. Production
+crypto is delegated to the libcrypto family: OpenSSL/libcrypto first, AWS-LC as
+a first-class design target, and BoringSSL later if its API surface earns it.
+Everything else is ours.
 
 ---
 
@@ -11,9 +13,11 @@ the actual crypto primitives. Everything else is ours.
 - **Correctness and performance are co-equal first-class goals.** Not
   "correctness first, optimize later" — both matter from the start. A correct
   slow implementation isn't a milestone, it's a dead end.
-- **No allocations in the library itself.** Caller owns all memory. Buffers are
-  passed in as slices. The engine holds no heap state. Like BearSSL, not like
-  OpenSSL.
+- **No ztls-owned allocations in the TLS engine.** Caller owns all TLS buffers.
+  The engine holds no heap state and never performs transport I/O. Production
+  libcrypto-family backends may link libc and may perform backend/provider-owned
+  allocation during setup or primitive initialization; those allocations must be
+  explicit in the backend contract and must not leak into ztls buffer ownership.
 - **No I/O.** The engine is a pure state machine: you feed it bytes, it gives
   you bytes back. Where those bytes come from and go is entirely the caller's
   problem.
@@ -24,9 +28,12 @@ the actual crypto primitives. Everything else is ours.
   struct layouts. Don't waste cache lines.
 - **SIMD where it matters.** Zig exposes SIMD via `@Vector`. AES-GCM, ChaCha,
   SHA-256, and record scanning are all candidates. Measure first, then apply.
-- **Leverage libcrypto.** Don't write our own crypto (yet). Use OpenSSL/libcrypto
-  for AEAD (AES-GCM, ChaCha20-Poly1305), ECDH (X25519, P-256), HKDF, and
-  signature verification. We own the TLS framing and state machine.
+- **Use libcrypto-family production crypto.** Do not implement our own primitive
+  crypto. OpenSSL/libcrypto is the first concrete backend target; AWS-LC remains
+  first-class in the architecture rather than an accidental drop-in. Production
+  crypto should cover AEAD, KEX, HKDF/HMAC/hash, and signature operations. ztls
+  owns TLS framing, transcripts, alerts, record sequencing, and caller-buffer
+  discipline.
 - **Linux and macOS only.** No Windows. Design for real targets.
 - **Higher-level wrappers are separate.** If someone wants a `net.Stream`
   adapter or an async wrapper, that's a thin layer on top, not baked in.
@@ -40,7 +47,8 @@ the actual crypto primitives. Everything else is ours.
 
 ## What We Are Not Doing (Yet)
 
-- Our own AES, GCM, SHA, X25519 implementations. libcrypto handles that.
+- Our own AES, GCM, SHA, X25519/P-256, or post-quantum primitive implementations.
+  The production path is libcrypto-family/provider-backed primitives.
 - TLS 1.2 or earlier.
 - DTLS.
 - 0-RTT (initially — nice to add later, but adds replay complexity).
@@ -262,43 +270,58 @@ all storage and decide how bytes move.
 
 ### Crypto backends
 
-Default backend is `std.crypto` — zero dependencies, pure Zig, works everywhere.
+Production crypto is a libcrypto-family backend. OpenSSL/libcrypto is the first
+implementation target because the project already has OpenSSL interop and EVP
+benchmark coverage. AWS-LC remains a first-class architecture target, not an
+afterthought hidden behind an accidental OpenSSL-only design. BoringSSL may be a
+later backend if its API differences are worth supporting directly.
 
-A `libcrypto` backend will also be offered as an opt-in build flag
-(e.g. `-Dcrypto=libcrypto`). Reasons to use it:
+`std.crypto` remains useful, but its role is development/transitional: it keeps
+bring-up simple, makes some tests independent of external C libraries, and
+provides a fallback while backend seams are built. It is not the long-term
+production backend target.
 
-- **Security patching**: dynamically linking libcrypto means an OpenSSL
-  security release propagates to your application without a recompile.
-- **Drop-in compatibility**: BoringSSL, LibreSSL, AWS-LC, and others are
-  libcrypto-compatible and can slot in transparently.
-- **Performance**: OpenSSL's AES-NI + CLMUL for GCM, hand-rolled assembly,
-  hardware acceleration on x86 in particular.
-- **ifunc runtime dispatch**: libcrypto uses GNU indirect function resolvers
-  to detect CPU features at process startup and resolve function pointers to
-  the best available implementation (e.g. VAES on supporting hardware, AES-NI
-  on older, software fallback on embedded). One binary runs optimally across
-  the hardware spectrum. Zig's SIMD is fixed at compile time — you target one
-  CPU feature level and that's what you get.
+This changes the memory contract. ztls-owned code still does not allocate, does
+not import `std.heap`, does not own TLS buffers, and does no I/O. A production
+libcrypto-family backend may link libc and may perform backend/provider-owned
+allocation during initialization, context setup, provider fetch, or primitive
+operation depending on the selected library. That behavior must be called out
+honestly and kept behind the crypto backend boundary. Do not describe OpenSSL
+EVP/provider paths as no-allocation.
 
-The tradeoff is linking libcrypto pulls in libc, which is undesirable for
-embedded or minimal targets. Hence opt-in, not default.
+The Sans-I/O boundary is preserved. The backend supplies primitive operations:
+AEAD, hash/HMAC/HKDF, key exchange, signature verification/signing, and later
+provider-backed PQ/hybrid KEX and signatures. It does not own sockets, BIOs,
+trust-store loading, certificate policy I/O, application buffers, or handshake
+state-machine control.
 
-The AEAD (and eventually HKDF) layers will dispatch to the right
-implementation at comptime based on the build flag. Both backends
-present the same API surface — swapping is invisible to the caller.
+Backend design implications:
 
-Stdlib coverage for the default backend:
+- keep ztls key/tag/suite and record APIs stable where possible;
+- hide backend selection behind ztls-owned crypto facade modules;
+- avoid libssl in core; use primitive libcrypto-family APIs only;
+- accept and document backend-owned libc/provider allocation for production
+  backends instead of pretending OpenSSL-compatible EVP is allocation-free;
+- keep OpenSSL interop and EVP/libssl benchmark rows as compatibility and
+  performance floors;
+- route post-quantum evolution through provider-backed KEX/signature mechanisms
+  where the backend supports them, while ztls handles TLS negotiation and
+  transcript semantics.
+
+Current transitional stdlib coverage:
 - `std.crypto.aead.aes_gcm` — AES-128-GCM, AES-256-GCM
 - `std.crypto.aead.chacha_poly` — ChaCha20-Poly1305
 - `std.crypto.kdf.hkdf` — HKDF-SHA256 and HKDF-SHA384
 - `std.crypto.dh.X25519` — X25519 key exchange
 - `std.crypto.Certificate`-derived parser in `cryptox/` — X.509 public-key extraction and certificate signature verification, with a local DER bounds fix until upstream Zig carries it.
 
+These remain useful for tests and development, but production backend work
+should move primitives behind libcrypto-family-capable facades.
+
 X.509 validation uses caller-owned policy: `Policy.bundle` anchors the parsed
 chain to a trust root, `Policy.now_sec` checks validity periods, and
 `Policy.host_name` verifies the leaf SAN/CN. Loading OS trust stores remains a
-caller/wrapper responsibility because ztls library code does no allocation and
-no I/O.
+caller/wrapper responsibility because ztls library code does no I/O.
 
 ---
 
@@ -391,8 +414,10 @@ Next benchmark target: add comparison/profiling workflows around the replay and 
 
 ## Open Questions
 
-1. ~~**libcrypto vs zig stdlib crypto**~~ — resolved: using zig stdlib throughout.
-   RSA cert verification deferred; ECDSA-only initially is fine.
+1. ~~**libcrypto vs zig stdlib crypto**~~ — resolved: production crypto moves to
+   the libcrypto family. OpenSSL/libcrypto is the first concrete target; AWS-LC
+   remains first-class in the architecture. `std.crypto` is development/
+   transitional, not the production target.
 
 2. **Internal buffer ownership**: Does the engine own its staging buffers
    (caller allocates, engine holds slice), or does the caller pass a fresh
@@ -404,11 +429,10 @@ Next benchmark target: add comparison/profiling workflows around the replay and 
 4. **Session tickets / PSK resumption**: Useful for performance but not needed
    for a correct implementation. Phase 2.
 
-5. **Certificate validation**: Full X.509 chain validation is a lot of code.
-   Options: (a) call out to libcrypto for this, (b) implement minimal validation
-   (BearSSL's approach), (c) provide a callback and let the caller decide.
-   Option (c) is most flexible and keeps scope tight. Mandatory for security
-   but not for the protocol machinery itself.
+5. **Certificate validation**: Full X.509 path validation remains caller-policy
+   driven. libcrypto-family backends may provide signature primitives and future
+   provider-backed signature algorithms, but ztls/wrappers still own trust bundle
+   provisioning, hostname policy, and any OS trust-store I/O.
 
 6. **SNI and ALPN**: SNI is supported and also seeds hostname verification by
    default. ALPN is supported through caller-owned offered protocol slices;
