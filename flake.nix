@@ -29,12 +29,19 @@
             inherit system;
             overlays = [ mattware.overlays.default ];
           };
+          ast-grep = pkgs.ast-grep {
+            languages.zig = {
+              grammar = pkgs.tree-sitter-grammars.tree-sitter-zig;
+              extensions = [ "zig" ];
+            };
+          };
           inherit (pkgs) lib stdenv;
         in
         {
           devShells.default = pkgs.mkShell {
             packages =
               (with pkgs; [
+                ast-grep
                 just
                 openssl
                 pkg-config
