@@ -2,6 +2,10 @@ const std = @import("std");
 const assert = std.debug.assert;
 const mem = std.mem;
 const doNotOptimizeAway = mem.doNotOptimizeAway;
+const Io = std.Io;
+const heap = std.heap;
+const ascii = std.ascii;
+const time = std.time;
 const builtin = @import("builtin");
 
 const txtar = @import("txtar");
@@ -72,12 +76,12 @@ const Result = struct {
 
     fn mbPerSec(self: Result) f64 {
         const mib = @as(f64, @floatFromInt(self.bytes)) / (1024.0 * 1024.0);
-        const sec = @as(f64, @floatFromInt(self.ns)) / std.time.ns_per_s;
+        const sec = @as(f64, @floatFromInt(self.ns)) / time.ns_per_s;
         return mib / sec;
     }
 
     fn opsPerSec(self: Result) f64 {
-        const sec = @as(f64, @floatFromInt(self.ns)) / std.time.ns_per_s;
+        const sec = @as(f64, @floatFromInt(self.ns)) / time.ns_per_s;
         return @as(f64, @floatFromInt(self.iterations)) / sec;
     }
 };
@@ -102,7 +106,7 @@ pub fn main() !void {
 
     if (args.list) return listBenchmarks(stdout);
 
-    var timer = try std.time.Timer.start();
+    var timer = try time.Timer.start();
 
     if (matches(args.filter, "parse_header", "none")) {
         const header = benchParseHeader(&timer);
@@ -252,10 +256,10 @@ fn parseArgs() !Args {
 
 fn matches(filter: ?[]const u8, benchmark: []const u8, suite: []const u8) bool {
     const f = filter orelse return true;
-    return std.ascii.indexOfIgnoreCase(benchmark, f) != null or std.ascii.indexOfIgnoreCase(suite, f) != null;
+    return ascii.indexOfIgnoreCase(benchmark, f) != null or ascii.indexOfIgnoreCase(suite, f) != null;
 }
 
-fn listBenchmarks(stdout: *std.Io.Writer) !void {
+fn listBenchmarks(stdout: *Io.Writer) !void {
     try stdout.print("parse_header,none\n", .{});
     try stdout.print("record_buffer_next,none\n", .{});
     inline for (.{ Suite.aes_128_gcm_sha256, Suite.aes_256_gcm_sha384, Suite.chacha20_poly1305_sha256 }) |suite| {
@@ -272,7 +276,7 @@ fn listBenchmarks(stdout: *std.Io.Writer) !void {
     }
 }
 
-fn benchParseHeader(timer: *std.time.Timer) Result {
+fn benchParseHeader(timer: *time.Timer) Result {
     const iterations = 64 * 1024 * 1024;
     const record = [_]u8{ 0x17, 0x03, 0x03, 0x00, 0x16 } ++ [_]u8{0} ** 22;
 
@@ -286,7 +290,7 @@ fn benchParseHeader(timer: *std.time.Timer) Result {
     return .{ .bytes = iterations * frame.header_len, .iterations = iterations, .ns = ns };
 }
 
-fn benchRecordBuffer(timer: *std.time.Timer) !Result {
+fn benchRecordBuffer(timer: *time.Timer) !Result {
     const iterations = 8 * 1024 * 1024;
     const record = [_]u8{ 0x17, 0x03, 0x03, 0x00, 0x01, 0x00 };
     var storage: [RecordBuffer.min_storage]u8 = undefined;
@@ -304,9 +308,9 @@ fn benchRecordBuffer(timer: *std.time.Timer) !Result {
     return .{ .bytes = iterations * record.len, .iterations = iterations, .ns = ns };
 }
 
-fn benchClientHandshakeReplay(comptime suite: Suite, timer: *std.time.Timer) !Result {
+fn benchClientHandshakeReplay(comptime suite: Suite, timer: *time.Timer) !Result {
     var fixture_scratch: [8192]u8 = undefined;
-    var fba: std.heap.FixedBufferAllocator = .init(&fixture_scratch);
+    var fba: heap.FixedBufferAllocator = .init(&fixture_scratch);
     var records_buf: [2048]u8 = undefined;
     const records = try fixture(fba.allocator(), suite.fixtureName(), &records_buf);
 
@@ -364,7 +368,7 @@ fn fixture(alloc: mem.Allocator, name: []const u8, out: []u8) ![]u8 {
     return error.FixtureNotFound;
 }
 
-fn benchEncrypt(comptime suite: Suite, comptime size: usize, timer: *std.time.Timer) !Result {
+fn benchEncrypt(comptime suite: Suite, comptime size: usize, timer: *time.Timer) !Result {
     const iterations = @max(256, target_bytes / size);
     var plaintext: [size]u8 = @splat(0xab);
     var out: [RecordLayer.overhead + size]u8 = undefined;
@@ -384,10 +388,10 @@ fn benchEncrypt(comptime suite: Suite, comptime size: usize, timer: *std.time.Ti
     return .{ .bytes = iterations * size, .iterations = iterations, .ns = ns };
 }
 
-fn benchDecrypt(comptime suite: Suite, comptime size: usize, timer: *std.time.Timer) !Result {
+fn benchDecrypt(comptime suite: Suite, comptime size: usize, timer: *time.Timer) !Result {
     const iterations = @max(256, target_bytes / size);
     const record_len = RecordLayer.overhead + size;
-    const allocator = std.heap.smp_allocator;
+    const allocator = heap.smp_allocator;
     const records = try allocator.alloc(u8, iterations * record_len);
     defer allocator.free(records);
 
@@ -425,11 +429,11 @@ fn benchDecrypt(comptime suite: Suite, comptime size: usize, timer: *std.time.Ti
 const Direction = enum { client_to_server, server_to_client };
 
 fn deterministicClientKeypair() !ztls.x25519.KeyPair {
-    return try ztls.x25519.KeyPair.generateDeterministic([_]u8{0x11} ** 32);
+    return .generateDeterministic(@splat(0x11));
 }
 
 fn deterministicServerKeypair() !ztls.x25519.KeyPair {
-    return try ztls.x25519.KeyPair.generateDeterministic([_]u8{0x22} ** 32);
+    return .generateDeterministic(@splat(0x22));
 }
 
 fn connectPair(comptime suite: Suite) !struct { client: ztls.ClientHandshake, server: ztls.ServerHandshake } {
@@ -446,7 +450,7 @@ fn connectPair(comptime suite: Suite) !struct { client: ztls.ClientHandshake, se
     const sh_record = try server.acceptClientHello(ch_record, rfc8448.client_random, &server_out);
     try client.processServerHello(sh_record[ztls.frame.header_len..]);
 
-    var signer = try ztls.signature.PrivateKey.fromP256Scalar(server_scalar[0..32]);
+    var signer: ztls.signature.PrivateKey = try .fromP256Scalar(server_scalar[0..32]);
     defer signer.deinit();
     var plaintext: [8192]u8 = undefined;
     const flight_record = try server.sendAuthenticatedFlight(&.{server_cert_der}, signer.signer(), &plaintext, &server_out);
@@ -461,7 +465,7 @@ fn connectPair(comptime suite: Suite) !struct { client: ztls.ClientHandshake, se
     return .{ .client = client, .server = server };
 }
 
-fn benchZtlsHandshake(comptime suite: Suite, timer: *std.time.Timer) !Result {
+fn benchZtlsHandshake(comptime suite: Suite, timer: *time.Timer) !Result {
     try doZtlsHandshake(suite);
 
     timer.reset();
@@ -481,7 +485,7 @@ const HandshakeSplit = struct {
     server_finished_ns: u64 = 0,
 };
 
-fn printHandshakeSplit(stdout: *std.Io.Writer, comptime suite: Suite, split: HandshakeSplit) !void {
+fn printHandshakeSplit(stdout: *Io.Writer, comptime suite: Suite, split: HandshakeSplit) !void {
     try printHandshakeSplitRow(stdout, "ztls_handshake_client_start", suite, split.iterations, split.client_start_ns);
     try printHandshakeSplitRow(stdout, "ztls_handshake_server_accept", suite, split.iterations, split.server_accept_ns);
     try printHandshakeSplitRow(stdout, "ztls_handshake_client_server_hello", suite, split.iterations, split.client_server_hello_ns);
@@ -490,12 +494,12 @@ fn printHandshakeSplit(stdout: *std.Io.Writer, comptime suite: Suite, split: Han
     try printHandshakeSplitRow(stdout, "ztls_handshake_server_finished", suite, split.iterations, split.server_finished_ns);
 }
 
-fn printHandshakeSplitRow(stdout: *std.Io.Writer, name: []const u8, comptime suite: Suite, iterations: usize, ns: u64) !void {
+fn printHandshakeSplitRow(stdout: *Io.Writer, name: []const u8, comptime suite: Suite, iterations: usize, ns: u64) !void {
     const result: Result = .{ .bytes = iterations, .iterations = iterations, .ns = ns };
     try stdout.print("{s},{s},1,{d},{d},{d},{d:.2}\n", .{ name, suite.name(), iterations, iterations, ns, result.opsPerSec() });
 }
 
-fn benchZtlsHandshakeSplit(comptime suite: Suite, timer: *std.time.Timer) !HandshakeSplit {
+fn benchZtlsHandshakeSplit(comptime suite: Suite, timer: *time.Timer) !HandshakeSplit {
     try doZtlsHandshakeSplit(suite, timer, null);
 
     var split: HandshakeSplit = .{ .iterations = ztls_handshake_iterations };
@@ -503,12 +507,12 @@ fn benchZtlsHandshakeSplit(comptime suite: Suite, timer: *std.time.Timer) !Hands
     return split;
 }
 
-fn addTime(timer: *std.time.Timer, total: *u64) void {
+fn addTime(timer: *time.Timer, total: *u64) void {
     total.* += timer.read();
 }
 
-fn doZtlsHandshakeSplit(comptime suite: Suite, timer: *std.time.Timer, split: ?*HandshakeSplit) !void {
-    var signer = try ztls.signature.PrivateKey.fromP256Scalar(server_scalar[0..32]);
+fn doZtlsHandshakeSplit(comptime suite: Suite, timer: *time.Timer, split: ?*HandshakeSplit) !void {
+    var signer: ztls.signature.PrivateKey = try .fromP256Scalar(server_scalar[0..32]);
     defer signer.deinit();
 
     var client: ztls.ClientHandshake = .init(try deterministicClientKeypair());
@@ -561,7 +565,7 @@ fn doZtlsHandshake(comptime suite: Suite) !void {
     doNotOptimizeAway(&pair.server);
 }
 
-fn benchZtlsAppData(comptime suite: Suite, comptime size: usize, comptime direction: Direction, timer: *std.time.Timer) !Result {
+fn benchZtlsAppData(comptime suite: Suite, comptime size: usize, comptime direction: Direction, timer: *time.Timer) !Result {
     const iterations = @max(256, target_bytes / size);
     var pair = try connectPair(suite);
     defer pair.client.deinit();
@@ -590,7 +594,7 @@ fn benchZtlsAppData(comptime suite: Suite, comptime size: usize, comptime direct
     return .{ .bytes = iterations * size, .iterations = iterations, .ns = ns };
 }
 
-fn benchZtlsPingPong(comptime suite: Suite, comptime size: usize, timer: *std.time.Timer) !Result {
+fn benchZtlsPingPong(comptime suite: Suite, comptime size: usize, timer: *time.Timer) !Result {
     const iterations = @max(256, target_bytes / (size * 2));
     var pair = try connectPair(suite);
     defer pair.client.deinit();
