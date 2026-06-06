@@ -201,13 +201,31 @@ pub const VerifyError = error{
     SignatureVerificationFailed,
 };
 
-/// Verify a CertificateVerify handshake message.
+/// Verify a server CertificateVerify handshake message.
 ///
 /// `pub_key` is a slice into the caller's Certificate message buffer.
 /// `transcript_hash` covers all messages up to and including Certificate.
 ///
 /// RFC 8446 §4.4.3
-pub fn verifySignature(
+pub fn verifyServerSignature(
+    msg: []const u8,
+    pub_key: []const u8,
+    transcript_hash: []const u8,
+) VerifyError!void {
+    return verifySignature(server_context, msg, pub_key, transcript_hash);
+}
+
+/// Verify a client CertificateVerify handshake message. RFC 8446 §4.4.3.
+pub fn verifyClientSignature(
+    msg: []const u8,
+    pub_key: []const u8,
+    transcript_hash: []const u8,
+) VerifyError!void {
+    return verifySignature(client_context, msg, pub_key, transcript_hash);
+}
+
+fn verifySignature(
+    context: []const u8,
     msg: []const u8,
     pub_key: []const u8,
     transcript_hash: []const u8,
@@ -243,7 +261,7 @@ pub fn verifySignature(
         },
         else => {},
     }
-    if (c.EVP_DigestVerifyUpdate(ctx, server_context, server_context.len) != 1) return error.SignatureVerificationFailed;
+    if (c.EVP_DigestVerifyUpdate(ctx, context.ptr, context.len) != 1) return error.SignatureVerificationFailed;
     if (c.EVP_DigestVerifyUpdate(ctx, transcript_hash.ptr, transcript_hash.len) != 1) return error.SignatureVerificationFailed;
     if (c.EVP_DigestVerifyFinal(ctx, sig.ptr, sig.len) != 1) return error.SignatureVerificationFailed;
 }
@@ -395,7 +413,7 @@ test "verifySignature: valid ECDSA P-256 signature" {
     var cert_buf: [1024]u8 = undefined;
     const pub_key = try parse(buildCertMsg(&cert_buf, fixture_cert_der), .{});
     var cv_buf: [512]u8 = undefined;
-    try verifySignature(buildCvMsg(&cv_buf, fixture_cv_sig), pub_key, &test_transcript_hash);
+    try verifyServerSignature(buildCvMsg(&cv_buf, fixture_cv_sig), pub_key, &test_transcript_hash);
 }
 
 test "verifySignature: wrong transcript hash" {
@@ -403,7 +421,15 @@ test "verifySignature: wrong transcript hash" {
     const pub_key = try parse(buildCertMsg(&cert_buf, fixture_cert_der), .{});
     var cv_buf: [512]u8 = undefined;
     const bad_hash: [32]u8 = @splat(0);
-    try testing.expectError(error.SignatureVerificationFailed, verifySignature(buildCvMsg(&cv_buf, fixture_cv_sig), pub_key, &bad_hash));
+    try testing.expectError(error.SignatureVerificationFailed, verifyServerSignature(buildCvMsg(&cv_buf, fixture_cv_sig), pub_key, &bad_hash));
+}
+
+// RFC 8446 §4.4.3 — CertificateVerify context string binds the endpoint role.
+test "verifySignature: server signature is not valid for client context" {
+    var cert_buf: [1024]u8 = undefined;
+    const pub_key = try parse(buildCertMsg(&cert_buf, fixture_cert_der), .{});
+    var cv_buf: [512]u8 = undefined;
+    try testing.expectError(error.SignatureVerificationFailed, verifyClientSignature(buildCvMsg(&cv_buf, fixture_cv_sig), pub_key, &test_transcript_hash));
 }
 
 test "verifySignature: wrong handshake type" {
@@ -412,7 +438,7 @@ test "verifySignature: wrong handshake type" {
     var cv_buf: [512]u8 = undefined;
     _ = buildCvMsg(&cv_buf, fixture_cv_sig);
     cv_buf[0] = 0x01;
-    try testing.expectError(error.InvalidHandshakeType, verifySignature(&cv_buf, pub_key, &test_transcript_hash));
+    try testing.expectError(error.InvalidHandshakeType, verifyServerSignature(&cv_buf, pub_key, &test_transcript_hash));
 }
 
 // Fuzz target: parse must reject arbitrary Certificate bytes with an error,

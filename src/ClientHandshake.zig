@@ -192,7 +192,7 @@ const Suite = union(enum) {
             .buffering => unreachable,
             inline .sha256, .sha384 => |*s| {
                 const th = s.transcript.peek();
-                try certificate.verifySignature(cv_msg, pub_key, &th);
+                try certificate.verifyServerSignature(cv_msg, pub_key, &th);
             },
         }
     }
