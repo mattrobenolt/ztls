@@ -20,6 +20,12 @@ pub const PrivateKey = struct {
     scheme: certificate.SignatureScheme,
     key: *c.EVP_PKEY,
 
+    pub fn fromDer(scheme: certificate.SignatureScheme, der: []const u8) SignError!PrivateKey {
+        var ptr: [*c]const u8 = der.ptr;
+        const key = c.d2i_AutoPrivateKey(null, &ptr, @intCast(der.len)) orelse return error.LibcryptoFailed;
+        return .{ .scheme = scheme, .key = key };
+    }
+
     pub fn fromP256Scalar(scalar: *const [32]u8) SignError!PrivateKey {
         return .{ .scheme = .ecdsa_secp256r1_sha256, .key = try p256KeyFromScalar(scalar) };
     }
