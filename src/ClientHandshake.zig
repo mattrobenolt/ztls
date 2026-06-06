@@ -357,7 +357,8 @@ pub fn deinit(self: *ClientHandshake) void {
         .start, .wait_sh => {},
     }
     self.suite.secureZero();
-    std.crypto.secureZero(u8, std.mem.asBytes(&self.keypair.secret_key));
+    crypto.secureZero(u8, mem.asBytes(&self.keypair.secret_key));
+    self.* = undefined;
 }
 
 /// Acknowledge that the bytes from the last engine call were written to the

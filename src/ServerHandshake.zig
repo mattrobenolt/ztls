@@ -129,6 +129,7 @@ pub fn deinit(self: *ServerHandshake) void {
         .wait_ch => {},
     }
     std.crypto.secureZero(u8, std.mem.asBytes(&self.keypair.secret_key));
+    self.* = undefined;
 }
 
 pub fn supportSuites(self: *ServerHandshake, suites: []const CipherSuite) void {

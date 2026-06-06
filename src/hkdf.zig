@@ -25,9 +25,6 @@ pub const HkdfSha384 = Hkdf(HmacSha384);
 /// Raw ECDH shared secret output.
 /// TODO: replace with a proper typed result from the key exchange layer
 /// (X25519, P-256) once implemented.
-///
-/// TODO: replace with a proper typed result from the key exchange layer
-/// (X25519, P-256) once implemented.
 pub const SharedSecret = memx.Array(32);
 
 fn Hkdf(comptime Hmac: type) type {
