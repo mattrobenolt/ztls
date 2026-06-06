@@ -182,8 +182,7 @@ into provider-backed named groups:
 TLS `CertificateVerify` signing and verification now use OpenSSL EVP, while
 trust policy and I/O stay outside ztls:
 
-- replace scalar-oriented test signing helpers with caller-owned/provider-owned
-  key handles;
+- expand EVP private-key loading beyond unencrypted DER/PEM when needed;
 - decide whether the vendored `std.crypto.Certificate`-derived chain validation
   remains an implementation detail or moves to libcrypto/provider verification;
 - keep certificate parsing/path policy caller-buffered and Sans-I/O;
