@@ -43,6 +43,7 @@
               (with pkgs; [
                 ast-grep
                 just
+                nushell
                 openssl
                 pinact
                 pkg-config

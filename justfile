@@ -38,6 +38,23 @@ bench-compare FILTER="aes_128":
     zig build bench-evp -- --filter {{ FILTER }}
     zig build bench-openssl -- --filter {{ FILTER }}
 
+[doc("Run full benchmark comparison set into zig-out/perf")]
+[group("bench")]
+bench-capture:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    mkdir -p zig-out/perf
+    stamp=$(date +%Y%m%d-%H%M%S)
+    zig build bench > "zig-out/perf/ztls-all-${stamp}.csv"
+    zig build bench-evp > "zig-out/perf/evp-all-${stamp}.csv"
+    zig build bench-openssl > "zig-out/perf/bio-all-${stamp}.csv"
+    echo "${stamp}"
+
+[doc("Analyze captured ztls/OpenSSL benchmark CSVs")]
+[group("bench")]
+bench-analyze *ARGS:
+    nu scripts/analyze-bench.nu {{ ARGS }}
+
 [doc("Build benchmark binaries used for perf, callgrind, and disassembly")]
 [group("bench")]
 bench-bins:
