@@ -29,10 +29,11 @@ pub const overhead = frame.header_len + 1 + tag_len;
 aead: Aead,
 iv: Iv,
 seq: u64 = 0,
+key_limit: u64,
 ctx: AeadContext,
 
 pub fn init(aead_: Aead, iv_: Iv) AeadError!RecordLayer {
-    return .{ .aead = aead_, .iv = iv_, .ctx = try .init(aead_) };
+    return .{ .aead = aead_, .iv = iv_, .key_limit = aead_.keyUsageLimit(), .ctx = try .init(aead_) };
 }
 
 pub fn deinit(self: *RecordLayer) void {
@@ -49,6 +50,7 @@ pub const DecryptError = frame.ParseError || AeadError || error{
     UnexpectedContentType,
     RecordTooShort,
     SequenceNumberOverflow,
+    KeyUpdateRequired,
     InvalidInnerPlaintext,
 };
 
@@ -57,6 +59,8 @@ pub const EncryptError = AeadError || error{
     BufferTooShort,
     /// 2^64 records sent on this layer (RFC 8446 §5.5).
     SequenceNumberOverflow,
+    /// AEAD usage limit reached for this traffic key (RFC 8446 §5.5).
+    KeyUpdateRequired,
     /// `content` exceeds the per-record plaintext limit (RFC 8446 §5.2); the
     /// caller must fragment into multiple records.
     PlaintextTooLarge,
@@ -73,10 +77,7 @@ pub const EncryptError = AeadError || error{
 ///
 /// RFC 8446 §5.2
 pub fn decrypt(self: *RecordLayer, buf: []u8) DecryptError!DecryptedRecord {
-    if (self.seq == std.math.maxInt(u64)) {
-        @branchHint(.cold);
-        return error.SequenceNumberOverflow;
-    }
+    try self.checkSequenceLimit();
 
     const hdr = try frame.parseHeader(buf);
     // RecordLayer is scoped to the post-handshake application data path.
@@ -117,10 +118,7 @@ pub fn decrypt(self: *RecordLayer, buf: []u8) DecryptError!DecryptedRecord {
 ///
 /// RFC 8446 §5.2
 pub fn encrypt(self: *RecordLayer, content_type: ContentType, content: []const u8, out: []u8) EncryptError![]u8 {
-    if (self.seq == std.math.maxInt(u64)) {
-        @branchHint(.cold);
-        return error.SequenceNumberOverflow;
-    }
+    try self.checkSequenceLimit();
     if (content.len > frame.max_plaintext_len) return error.PlaintextTooLarge;
 
     const inner_len = content.len + 1; // content + type byte
@@ -148,6 +146,17 @@ pub fn encrypt(self: *RecordLayer, content_type: ContentType, content: []const u
     return out[0..total];
 }
 
+fn checkSequenceLimit(self: *const RecordLayer) (error{ SequenceNumberOverflow, KeyUpdateRequired })!void {
+    if (self.seq == std.math.maxInt(u64)) {
+        @branchHint(.cold);
+        return error.SequenceNumberOverflow;
+    }
+    if (self.seq >= self.key_limit) {
+        @branchHint(.cold);
+        return error.KeyUpdateRequired;
+    }
+}
+
 // RFC 8446 §5.2 — record protection
 
 test "encrypt: buffer too short" {
@@ -160,9 +169,24 @@ test "encrypt: buffer too short" {
 test "encrypt: sequence number overflow" {
     var rl: RecordLayer = try .init(.{ .aes128_gcm = .zero }, .zero);
     defer rl.deinit();
+    rl.key_limit = std.math.maxInt(u64);
     rl.seq = std.math.maxInt(u64);
     var buf: [64]u8 = undefined;
     try testing.expectError(error.SequenceNumberOverflow, rl.encrypt(.application_data, "hello", &buf));
+}
+
+// RFC 8446 §5.5 — endpoints cannot protect more records than the AEAD usage limit permits.
+test "encrypt/decrypt: key update required at AEAD usage limit" {
+    var tx: RecordLayer = try .init(.{ .aes128_gcm = .zero }, .zero);
+    defer tx.deinit();
+    tx.key_limit = 0;
+    var buf: [64]u8 = undefined;
+    try testing.expectError(error.KeyUpdateRequired, tx.encrypt(.application_data, "hello", &buf));
+
+    var rx: RecordLayer = try .init(.{ .aes128_gcm = .zero }, .zero);
+    defer rx.deinit();
+    rx.key_limit = 0;
+    try testing.expectError(error.KeyUpdateRequired, rx.decrypt(&buf));
 }
 
 test "encrypt/decrypt: round-trip" {

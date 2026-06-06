@@ -328,7 +328,7 @@ caller/wrapper responsibility because ztls library code does no I/O.
 ## Build Order
 
 - ✅ 1. Record frame parser — wire format parse/emit, no crypto (`frame.zig`)
-- ✅ 2. AEAD wrapper — zig stdlib `std.crypto.aead` (`aead.zig`)
+- ✅ 2. AEAD wrapper — OpenSSL EVP AEAD (`aead.zig`)
 - ✅ 3. Nonce construction — XOR of IV with seq number (`nonce.zig`)
 - ✅ 4. Encrypted record encode/decode — `RecordLayer.zig` (Layer 1 complete)
 - ✅ 5. HKDF key schedule — `hkdf.zig`, full ladder + traffic secrets, RFC 8448 §3 vectors
@@ -346,8 +346,9 @@ caller/wrapper responsibility because ztls library code does no I/O.
 - ✅ 17. TLS alert parsing and explicit alert emission
 - ✅ 18. X.509 policy: caller-owned trust bundle, validity time, hostname verification
 - ✅ 19. ALPN ClientHello offer + EncryptedExtensions selection validation
-- ◐ 20. HelloRetryRequest: detected and rejected cleanly; retry path remains future work
-- ◐ 21. NewSessionTicket: parsed and ignored; PSK/session resumption remains future work
+- ✅ 20. Record-layer AEAD usage limits before KeyUpdate is required (§5.5)
+- ◐ 21. HelloRetryRequest: detected and rejected cleanly; retry path remains future work
+- ◐ 22. NewSessionTicket: parsed and ignored; PSK/session resumption remains future work
 
 Next correctness targets: server-side ztls, fuller external conformance suites,
 and longer-horizon PSK/session resumption work. Full HelloRetryRequest retry

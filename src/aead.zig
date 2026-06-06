@@ -50,11 +50,18 @@ pub const Aead = union(Keys) {
     aes256_gcm: Aes256GcmKey,
     chacha20_poly1305: ChaCha20Poly1305Key,
 
-    fn suite(self: Aead) Keys {
+    pub fn suite(self: Aead) Keys {
         return switch (self) {
             .aes128_gcm => .aes128_gcm,
             .aes256_gcm => .aes256_gcm,
             .chacha20_poly1305 => .chacha20_poly1305,
+        };
+    }
+
+    pub fn keyUsageLimit(self: Aead) u64 {
+        return switch (self.suite()) {
+            .aes128_gcm, .aes256_gcm => 1 << 24,
+            .chacha20_poly1305 => 1 << 36,
         };
     }
 
