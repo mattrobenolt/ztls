@@ -31,6 +31,16 @@ pub const Policy = struct {
     host_name: ?[]const u8 = null,
 };
 
+/// RFC 8446 §4.2.3 signature schemes supported by ztls.
+pub const SignatureScheme = enum(u16) {
+    ecdsa_secp256r1_sha256 = 0x0403,
+    ecdsa_secp384r1_sha384 = 0x0503,
+    rsa_pss_rsae_sha256 = 0x0804,
+    rsa_pss_rsae_sha384 = 0x0805,
+    rsa_pss_rsae_sha512 = 0x0806,
+    _,
+};
+
 pub const EncodeError = error{BufferTooShort};
 pub const CertificateVerifyEncodeError = error{BufferTooShort};
 
@@ -129,7 +139,7 @@ pub fn certificateVerifyEncodedLen(signature: []const u8) usize {
 /// signature here. RFC 8446 §4.4.3.
 pub fn encodeCertificateVerify(
     out: []u8,
-    scheme: crypto.tls.SignatureScheme,
+    scheme: SignatureScheme,
     signature: []const u8,
 ) CertificateVerifyEncodeError![]const u8 {
     const len = certificateVerifyEncodedLen(signature);
@@ -137,7 +147,7 @@ pub fn encodeCertificateVerify(
     var w: wire.Writer = .init(out);
     w.append(u8, 0x0f);
     w.append(u24, @intCast(len - 4));
-    w.append(crypto.tls.SignatureScheme, scheme);
+    w.append(SignatureScheme, scheme);
     w.append(u16, @intCast(signature.len));
     w.appendSlice(signature);
     return w.written();
@@ -181,7 +191,7 @@ pub fn verifySignature(
     if (handshake_type != 0x0f) return error.InvalidHandshakeType;
     try r.skip(3);
 
-    const scheme = try r.read(crypto.tls.SignatureScheme);
+    const scheme = try r.read(SignatureScheme);
     const sig_len = try r.read(u16);
     const sig = try r.readSlice(sig_len);
 

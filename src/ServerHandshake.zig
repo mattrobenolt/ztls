@@ -152,7 +152,7 @@ pub const AcceptError = frame.ParseError || client_hello.ParseError || server_he
 pub const SignError = error{ BufferTooShort, IdentityElement, NonCanonical };
 
 pub const Signer = struct {
-    scheme: std.crypto.tls.SignatureScheme,
+    scheme: certificate.SignatureScheme,
     context: *anyopaque,
     sign: *const fn (context: *anyopaque, msg: []const u8, out: []u8) SignError![]const u8,
 };

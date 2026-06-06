@@ -6,6 +6,7 @@ const assert = std.debug.assert;
 const testing = std.testing;
 
 const CipherSuite = @import("root.zig").CipherSuite;
+const SignatureScheme = @import("certificate.zig").SignatureScheme;
 const memx = @import("memx.zig");
 const wire = @import("wire.zig");
 const x25519 = @import("x25519.zig");
@@ -17,14 +18,6 @@ const legacy_version: u16 = 0x0303;
 
 /// RFC 8446 §4.2.7
 const NamedGroup = enum(u16) { x25519 = 0x001d };
-
-/// RFC 8446 §4.2.3
-const SignatureScheme = enum(u16) {
-    ecdsa_secp256r1_sha256 = 0x0403,
-    ecdsa_secp384r1_sha384 = 0x0503,
-    rsa_pss_rsae_sha256 = 0x0804,
-    rsa_pss_rsae_sha384 = 0x0805,
-};
 
 const cipher_suite_count = std.meta.tags(CipherSuite).len;
 const sig_scheme_count = std.meta.tags(SignatureScheme).len;
