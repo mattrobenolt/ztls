@@ -276,10 +276,11 @@ benchmark coverage. AWS-LC remains a first-class architecture target, not an
 afterthought hidden behind an accidental OpenSSL-only design. BoringSSL may be a
 later backend if its API differences are worth supporting directly.
 
-`std.crypto` remains useful, but its role is development/transitional: it keeps
-bring-up simple, makes some tests independent of external C libraries, and
-provides a fallback while backend seams are built. It is not the long-term
-production backend target.
+There is no parallel `std.crypto` backend. This is new pre-alpha software, so
+there is no compatibility burden that justifies preserving a second crypto path
+while the production direction is libcrypto-family primitives. Any remaining
+`std.crypto` usage is implementation debt in primitives not yet moved to
+libcrypto, not an exposed backend choice.
 
 This changes the memory contract. ztls-owned code still does not allocate, does
 not import `std.heap`, does not own TLS buffers, and does no I/O. A production
@@ -298,7 +299,7 @@ state-machine control.
 Backend design implications:
 
 - keep ztls key/tag/suite and record APIs stable where possible;
-- hide backend selection behind ztls-owned crypto facade modules;
+- hide provider-specific details behind ztls-owned crypto facade modules;
 - avoid libssl in core; use primitive libcrypto-family APIs only;
 - accept and document backend-owned libc/provider allocation for production
   backends instead of pretending OpenSSL-compatible EVP is allocation-free;
@@ -308,15 +309,14 @@ Backend design implications:
   where the backend supports them, while ztls handles TLS negotiation and
   transcript semantics.
 
-Current transitional stdlib coverage:
-- `std.crypto.aead.aes_gcm` — AES-128-GCM, AES-256-GCM
-- `std.crypto.aead.chacha_poly` — ChaCha20-Poly1305
-- `std.crypto.kdf.hkdf` — HKDF-SHA256 and HKDF-SHA384
-- `std.crypto.dh.X25519` — X25519 key exchange
-- `std.crypto.Certificate`-derived parser in `cryptox/` — X.509 public-key extraction and certificate signature verification, with a local DER bounds fix until upstream Zig carries it.
-
-These remain useful for tests and development, but production backend work
-should move primitives behind libcrypto-family-capable facades.
+Current primitive migration state:
+- AEAD record protection uses OpenSSL/libcrypto EVP.
+- HKDF-SHA256/HKDF-SHA384, transcript hashing, X25519, and certificate signature
+  verification still use Zig stdlib-derived code and should move behind
+  libcrypto-family primitive facades next.
+- `std.crypto.Certificate`-derived parser in `cryptox/` still provides X.509
+  public-key extraction and certificate signature verification, with a local DER
+  bounds fix until the parser/policy boundary is revisited.
 
 X.509 validation uses caller-owned policy: `Policy.bundle` anchors the parsed
 chain to a trust root, `Policy.now_sec` checks validity periods, and
@@ -416,8 +416,8 @@ Next benchmark target: add comparison/profiling workflows around the replay and 
 
 1. ~~**libcrypto vs zig stdlib crypto**~~ — resolved: production crypto moves to
    the libcrypto family. OpenSSL/libcrypto is the first concrete target; AWS-LC
-   remains first-class in the architecture. `std.crypto` is development/
-   transitional, not the production target.
+   remains first-class in the architecture. Do not keep `std.crypto` as an
+   exposed backend choice.
 
 2. **Internal buffer ownership**: Does the engine own its staging buffers
    (caller allocates, engine holds slice), or does the caller pass a fresh

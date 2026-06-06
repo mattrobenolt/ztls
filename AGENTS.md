@@ -97,9 +97,9 @@ first implementation target because it is already in the dev shell and interop
 harnesses; AWS-LC must remain a first-class design target, with BoringSSL
 possible later behind its own backend if the API surface is worth it.
 
-`std.crypto` is development/transitional: useful for bring-up, tests, and
-fallback while provider seams are built, but not the production performance,
-patching, FIPS, or PQ story.
+Do not add or preserve a `std.crypto` backend as a parallel product path. This
+is pre-alpha software; there is no compatibility reason to keep transitional
+backend scaffolding once the production direction is chosen.
 
 The strict no-allocation invariant applies to ztls-owned framing, state machine,
 record buffers, and caller-visible TLS I/O. A libcrypto-family production build

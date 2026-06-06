@@ -8,14 +8,11 @@
 /// All three share the same tag length (16 bytes) and nonce length (12 bytes).
 /// Keys are derived during the handshake and held for the connection lifetime.
 const std = @import("std");
-const builtin = @import("builtin");
 const crypto = std.crypto;
 const assert = std.debug.assert;
-const Aes128Gcm = crypto.aead.aes_gcm.Aes128Gcm;
-const Aes256Gcm = crypto.aead.aes_gcm.Aes256Gcm;
-const ChaCha20Poly1305 = crypto.aead.chacha_poly.ChaCha20Poly1305;
-const ChaCha20Poly1305Neon = @import("crypto/chacha20_poly1305_neon.zig");
-const options = @import("ztls_options");
+const c = @cImport({
+    @cInclude("openssl/evp.h");
+});
 const testing = std.testing;
 
 const construct = @import("nonce.zig").construct;
@@ -23,34 +20,17 @@ pub const Iv = @import("nonce.zig").Iv;
 const memx = @import("memx.zig");
 const Nonce = @import("nonce.zig").Nonce;
 
-pub const CryptoBackend = enum { std, openssl };
-pub const backend: CryptoBackend = @field(CryptoBackend, @tagName(options.crypto_backend));
-
-const c = if (backend == .openssl) @cImport({
-    @cInclude("openssl/evp.h");
-}) else struct {};
-
-const use_neon_chacha = backend == .std and builtin.cpu.arch == .aarch64 and builtin.os.tag == .linux;
-
-// Verify our assumptions about the stdlib types at compile time.
 comptime {
-    assert(Aes128Gcm.tag_length == 16);
-    assert(Aes256Gcm.tag_length == 16);
-    assert(ChaCha20Poly1305.tag_length == 16);
-    assert(ChaCha20Poly1305Neon.tag_length == 16);
-    assert(Aes128Gcm.nonce_length == @sizeOf(Nonce));
-    assert(Aes256Gcm.nonce_length == @sizeOf(Nonce));
-    assert(ChaCha20Poly1305.nonce_length == @sizeOf(Nonce));
-    assert(ChaCha20Poly1305Neon.nonce_length == @sizeOf(Nonce));
+    assert(@sizeOf(Nonce) == 12);
 }
 
 /// Authentication tag — 16 bytes for all TLS 1.3 ciphers.
 pub const tag_len = 16;
 pub const Tag = memx.Array(tag_len);
 
-pub const Aes128GcmKey = memx.Array(Aes128Gcm.key_length);
-pub const Aes256GcmKey = memx.Array(Aes256Gcm.key_length);
-pub const ChaCha20Poly1305Key = memx.Array(ChaCha20Poly1305.key_length);
+pub const Aes128GcmKey = memx.Array(16);
+pub const Aes256GcmKey = memx.Array(32);
+pub const ChaCha20Poly1305Key = memx.Array(32);
 
 pub const Error = crypto.errors.AuthenticationError || error{
     AeadSetupFailed,
@@ -62,14 +42,6 @@ pub const Keys = enum {
     aes128_gcm,
     aes256_gcm,
     chacha20_poly1305,
-
-    fn toCipher(comptime tag: Keys) type {
-        return switch (tag) {
-            .aes128_gcm => Aes128Gcm,
-            .aes256_gcm => Aes256Gcm,
-            .chacha20_poly1305 => ChaCha20Poly1305,
-        };
-    }
 };
 
 /// A cipher context holding the key for one direction of a TLS connection.
@@ -104,20 +76,8 @@ pub const Aead = union(Keys) {
         ad: []const u8,
         npub: *const Nonce,
     ) Error!void {
-        switch (backend) {
-            .std => switch (self) {
-                .aes128_gcm => |key| Aes128Gcm.encrypt(ciphertext, &tag.data, plaintext, ad, npub.data, key.data),
-                .aes256_gcm => |key| Aes256Gcm.encrypt(ciphertext, &tag.data, plaintext, ad, npub.data, key.data),
-                .chacha20_poly1305 => |key| {
-                    if (comptime use_neon_chacha) {
-                        ChaCha20Poly1305Neon.encrypt(ciphertext, &tag.data, plaintext, ad, npub.data, key.data);
-                    } else {
-                        ChaCha20Poly1305.encrypt(ciphertext, &tag.data, plaintext, ad, npub.data, key.data);
-                    }
-                },
-            },
-            .openssl => try opensslEncrypt(ctx, ciphertext, tag, plaintext, ad, npub),
-        }
+        _ = self;
+        try opensslEncrypt(ctx, ciphertext, tag, plaintext, ad, npub);
     }
 
     /// Decrypt `ciphertext` into `plaintext` and verify the authentication tag.
@@ -132,52 +92,31 @@ pub const Aead = union(Keys) {
         ad: []const u8,
         npub: *const Nonce,
     ) Error!void {
-        switch (backend) {
-            .std => switch (self) {
-                .aes128_gcm => |key| try Aes128Gcm.decrypt(plaintext, ciphertext, tag.data, ad, npub.data, key.data),
-                .aes256_gcm => |key| try Aes256Gcm.decrypt(plaintext, ciphertext, tag.data, ad, npub.data, key.data),
-                .chacha20_poly1305 => |key| {
-                    if (comptime use_neon_chacha) {
-                        try ChaCha20Poly1305Neon.decrypt(plaintext, ciphertext, tag.data, ad, npub.data, key.data);
-                    } else {
-                        try ChaCha20Poly1305.decrypt(plaintext, ciphertext, tag.data, ad, npub.data, key.data);
-                    }
-                },
-            },
-            .openssl => try opensslDecrypt(ctx, plaintext, ciphertext, tag, ad, npub),
-        }
+        _ = self;
+        try opensslDecrypt(ctx, plaintext, ciphertext, tag, ad, npub);
     }
 };
 
-pub const Context = switch (backend) {
-    .std => struct {
-        pub fn init(_: Aead) Error!Context {
-            return .{};
-        }
+pub const Context = struct {
+    enc: *c.EVP_CIPHER_CTX,
+    dec: *c.EVP_CIPHER_CTX,
 
-        pub fn deinit(_: *Context) void {}
-    },
-    .openssl => struct {
-        enc: *c.EVP_CIPHER_CTX,
-        dec: *c.EVP_CIPHER_CTX,
+    pub fn init(aead: Aead) Error!Context {
+        const enc = c.EVP_CIPHER_CTX_new() orelse return error.AeadSetupFailed;
+        errdefer c.EVP_CIPHER_CTX_free(enc);
+        const dec = c.EVP_CIPHER_CTX_new() orelse return error.AeadSetupFailed;
+        errdefer c.EVP_CIPHER_CTX_free(dec);
 
-        pub fn init(aead: Aead) Error!Context {
-            const enc = c.EVP_CIPHER_CTX_new() orelse return error.AeadSetupFailed;
-            errdefer c.EVP_CIPHER_CTX_free(enc);
-            const dec = c.EVP_CIPHER_CTX_new() orelse return error.AeadSetupFailed;
-            errdefer c.EVP_CIPHER_CTX_free(dec);
+        try opensslInit(enc, aead, .encrypt);
+        try opensslInit(dec, aead, .decrypt);
+        return .{ .enc = enc, .dec = dec };
+    }
 
-            try opensslInit(enc, aead, .encrypt);
-            try opensslInit(dec, aead, .decrypt);
-            return .{ .enc = enc, .dec = dec };
-        }
-
-        pub fn deinit(self: *Context) void {
-            c.EVP_CIPHER_CTX_free(self.enc);
-            c.EVP_CIPHER_CTX_free(self.dec);
-            self.* = undefined;
-        }
-    },
+    pub fn deinit(self: *Context) void {
+        c.EVP_CIPHER_CTX_free(self.enc);
+        c.EVP_CIPHER_CTX_free(self.dec);
+        self.* = undefined;
+    }
 };
 
 const OpensslDirection = enum { encrypt, decrypt };

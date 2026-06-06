@@ -97,7 +97,7 @@ pub fn main() !void {
     try stdout.print("# os {s}\n", .{@tagName(builtin.os.tag)});
     try stdout.print("# cpu {s}\n", .{builtin.cpu.model.name});
     try stdout.print("# optimize {s}\n", .{@tagName(builtin.mode)});
-    try stdout.print("# crypto {s}\n", .{@tagName(ztls.aead.backend)});
+    try stdout.print("# crypto openssl\n", .{});
     try stdout.print("benchmark,suite,size,iterations,bytes,elapsed_ns,mib_per_sec\n", .{});
     try stdout.flush();
 

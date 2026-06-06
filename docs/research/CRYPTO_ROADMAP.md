@@ -1,9 +1,8 @@
 # Crypto backend roadmap
 
-ztls currently uses `std.crypto` for most cryptographic primitives, with OpenSSL
-present in benchmark and interop harnesses. That is a development/transitional
-state, not the production direction. Production crypto should come from the
-libcrypto family. OpenSSL/libcrypto is the first concrete backend target because
+ztls still has `std.crypto` usage in primitives that have not moved yet, with
+OpenSSL present in benchmark and interop harnesses. That is implementation debt,
+not a backend strategy. Production crypto should come from the libcrypto family. OpenSSL/libcrypto is the first concrete backend target because
 it is already in the dev shell, benchmark ladder, and interop harnesses. AWS-LC
 must remain a first-class design target, not an accidental maybe-later drop-in.
 
@@ -116,26 +115,12 @@ Keep the docs aligned with the production direction:
 - AWS-LC is first-class in the architecture and must not be blocked by OpenSSL-3-
   only assumptions;
 - BoringSSL is a possible later backend with its own API caveats;
-- `std.crypto` is development/transitional, not the production target;
+- do not preserve `std.crypto` as an exposed backend choice;
 - libcrypto-family builds may link libc and may allocate inside backend/provider
   code;
 - ztls remains Sans-I/O and caller-buffered.
 
-### 2. Crypto facade and lifecycle, std-backed
-
-Create a small crypto facade without changing behavior:
-
-- keep `std.crypto` as the only implementation initially;
-- preserve public `aead` key/tag/suite types;
-- hide AEAD, SHA-2, HMAC/HKDF, X25519, and signature-verification choices behind
-  ztls-owned modules over time;
-- add provider-ready `init`/`deinit` lifecycle where state will eventually own
-  backend handles;
-- add a build option only when a second backend actually exists.
-
-The goal is boring refactoring with identical benchmark numbers.
-
-### 3. OpenSSL/libcrypto AEAD backend
+### 2. OpenSSL/libcrypto AEAD backend
 
 OpenSSL/libcrypto is the first concrete backend target. Add record-protection
 AEAD first because the current benchmark ladder already has OpenSSL EVP floor
@@ -154,7 +139,7 @@ Requirements:
 This backend is not no-allocation. It is the first production libcrypto-family
 implementation with an explicit backend-owned allocation contract.
 
-### 4. AWS-LC AEAD backend
+### 3. AWS-LC AEAD backend
 
 Add AWS-LC as a named backend, not as an assumed OpenSSL substitute.
 
@@ -168,7 +153,7 @@ Requirements:
 - run the same AEAD tests, interop tests, and benchmark rows as the OpenSSL
   backend.
 
-### 5. HKDF/HMAC/SHA transcript hashing
+### 4. HKDF/HMAC/SHA transcript hashing
 
 AEAD-only libcrypto is not a real production/compliance story. Move the TLS 1.3
 key schedule and transcript hashes behind the provider facade:
@@ -178,7 +163,7 @@ key schedule and transcript hashes behind the provider facade:
 - RFC 8448 vectors and existing Finished/HKDF tests for every enabled backend;
 - avoid OpenSSL-3-only APIs in shared code if AWS-LC compatibility matters.
 
-### 6. Key exchange
+### 5. Key exchange
 
 Replace hard-coded X25519/std.crypto with provider-backed named groups:
 
@@ -189,7 +174,7 @@ Replace hard-coded X25519/std.crypto with provider-backed named groups:
 - multiple key-share and HelloRetryRequest work only when more than one useful
   group exists.
 
-### 7. Signatures and certificates
+### 6. Signatures and certificates
 
 Move primitive signature operations behind the provider while keeping trust
 policy and I/O outside ztls:
@@ -199,7 +184,7 @@ policy and I/O outside ztls:
 - keep certificate parsing/path policy caller-buffered and Sans-I/O;
 - avoid pulling libssl or OS trust-store loading into core.
 
-### 8. PQ/hybrid groups
+### 7. PQ/hybrid groups
 
 Post-quantum support should come from provider-backed KEX/signature mechanisms,
 not ztls-owned PQ primitives.
@@ -233,6 +218,7 @@ A production crypto backend is worth calling successful only when:
 - the design has an explicit provider-backed path for future PQ/hybrid KEX and
   signatures rather than ztls-owned PQ primitive implementations.
 
-Until then, `std.crypto` remains the development/transitional backend and OpenSSL
-EVP/libssl rows remain compatibility and performance floors, not the production
+Until the remaining primitives are provider-backed, any `std.crypto` usage is
+implementation debt in not-yet-migrated primitives. OpenSSL EVP/libssl rows
+remain compatibility and performance floors, not the whole production
 architecture by themselves.

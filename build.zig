@@ -1,12 +1,6 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
-fn addCryptoAssembly(b: *std.Build, target: std.Build.ResolvedTarget, module: *std.Build.Module) void {
-    if (target.result.cpu.arch == .aarch64 and target.result.os.tag == .linux) {
-        module.addAssemblyFile(b.path("src/crypto/chacha20_poly1305_armv8.S"));
-    }
-}
-
 fn nativeTarget() std.Target.Query {
     var query: std.Target.Query = .{ .cpu_model = .native };
     // Zig's native CPU detection reports generic under some Apple-Silicon Linux
@@ -23,21 +17,14 @@ pub fn build(b: *std.Build) void {
         .default_target = nativeTarget(),
     });
     const optimize = b.standardOptimizeOption(.{});
-    const crypto_backend = b.option(enum { std, openssl }, "crypto", "Crypto backend") orelse .std;
-    const ztls_options = b.addOptions();
-    ztls_options.addOption(@TypeOf(crypto_backend), "crypto_backend", crypto_backend);
 
     const mod = b.addModule("ztls", .{
         .root_source_file = b.path("src/root.zig"),
         .target = target,
         .optimize = optimize,
     });
-    mod.addOptions("ztls_options", ztls_options);
-    if (crypto_backend == .openssl) {
-        mod.link_libc = true;
-        mod.linkSystemLibrary("crypto", .{});
-    }
-    addCryptoAssembly(b, target, mod);
+    mod.link_libc = true;
+    mod.linkSystemLibrary("crypto", .{});
 
     // Tests get their own module so the txtar dependency (used only to decode
     // the RFC 8448 fixture archive) never leaks into the public ztls module.
@@ -46,12 +33,8 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
-    test_mod.addOptions("ztls_options", ztls_options);
-    if (crypto_backend == .openssl) {
-        test_mod.link_libc = true;
-        test_mod.linkSystemLibrary("crypto", .{});
-    }
-    addCryptoAssembly(b, target, test_mod);
+    test_mod.link_libc = true;
+    test_mod.linkSystemLibrary("crypto", .{});
     // txtar decodes the RFC 8448 fixture archive. Lazy: only fetched when a
     // step that needs it (tests, the full_handshake example) is built.
     const txtar_mod: ?*std.Build.Module = if (b.lazyDependency("txtar", .{
@@ -110,12 +93,8 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = .ReleaseFast,
     });
-    bench_mod.addOptions("ztls_options", ztls_options);
-    if (crypto_backend == .openssl) {
-        bench_mod.link_libc = true;
-        bench_mod.linkSystemLibrary("crypto", .{});
-    }
-    addCryptoAssembly(b, target, bench_mod);
+    bench_mod.link_libc = true;
+    bench_mod.linkSystemLibrary("crypto", .{});
     const bench_root = b.createModule(.{
         .root_source_file = b.path("bench/record_protection.zig"),
         .target = target,
