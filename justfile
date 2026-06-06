@@ -7,6 +7,15 @@ default:
 test:
     zig build test --summary all
 
+[doc("Run unit, interop, formatting, and benchmark smoke checks")]
+[group("test")]
+ci:
+    zig fmt --check src/ examples/ bench/ build.zig
+    zig build test
+    zig build test-openssl
+    zig build test-openssl-server
+    zig build bench -- --filter record_encrypt --filter aes_128
+
 [doc("Run example program")]
 [group("demo")]
 example EXAMPLE *ARGS:
