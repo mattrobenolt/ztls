@@ -8,7 +8,6 @@
 /// All three share the same tag length (16 bytes) and nonce length (12 bytes).
 /// Keys are derived during the handshake and held for the connection lifetime.
 const std = @import("std");
-const crypto = std.crypto;
 const assert = std.debug.assert;
 const c = @cImport({
     @cInclude("openssl/evp.h");
@@ -32,7 +31,8 @@ pub const Aes128GcmKey = memx.Array(16);
 pub const Aes256GcmKey = memx.Array(32);
 pub const ChaCha20Poly1305Key = memx.Array(32);
 
-pub const Error = crypto.errors.AuthenticationError || error{
+pub const Error = error{
+    AuthenticationFailed,
     AeadSetupFailed,
     AeadEncryptFailed,
 };

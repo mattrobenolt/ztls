@@ -1,10 +1,15 @@
 # Crypto backend roadmap
 
-ztls still has `std.crypto` usage in primitives that have not moved yet, with
-OpenSSL present in benchmark and interop harnesses. That is implementation debt,
-not a backend strategy. Production crypto should come from the libcrypto family. OpenSSL/libcrypto is the first concrete backend target because
-it is already in the dev shell, benchmark ladder, and interop harnesses. AWS-LC
-must remain a first-class design target, not an accidental maybe-later drop-in.
+ztls uses OpenSSL/libcrypto for AEAD record protection, with OpenSSL also
+present in benchmark and interop harnesses. `std.crypto` remains fine for small,
+internal primitives such as SHA-2/HMAC/HKDF where a libcrypto call would only add
+fallible runtime plumbing without buying a meaningful backend boundary.
+
+Production crypto should come from the libcrypto family where the primitive is a
+real backend concern. OpenSSL/libcrypto is the first concrete backend target
+because it is already in the dev shell, benchmark ladder, and interop harnesses.
+AWS-LC must remain a first-class design target, not an accidental maybe-later
+drop-in.
 
 The product question is no longer whether to avoid libcrypto. It is how to use
 libcrypto-family primitive APIs without importing libssl machinery, without
@@ -28,12 +33,11 @@ OpenSSL EVP, not orders of magnitude behind. OpenSSL still wins on large bulk
 records, while ztls is competitive or faster on small records where EVP/libssl
 setup overhead dominates.
 
-The bigger pure-crypto hole is ChaCha20-Poly1305. `std.crypto`'s AArch64
+The bigger pure-crypto hole was ChaCha20-Poly1305. `std.crypto`'s AArch64
 ChaCha path is scalar in Zig 0.15.2, while OpenSSL uses NEON implementations for
-ChaCha and Poly1305. ztls now has an AArch64 Linux prototype using BoringSSL's
-Apache-2.0 combined `chacha20_poly1305_armv8` assembly. It is intentionally
-narrow: Linux/AArch64 only, std.crypto fallback elsewhere, and the public AEAD
-API remains unchanged.
+ChaCha and Poly1305. AEAD record protection now routes through OpenSSL EVP for
+AES-GCM and ChaCha20-Poly1305 instead of carrying a local native ChaCha assembly
+backend.
 
 Handshake latency is a separate problem. Full handshakes are dominated by
 certificate parsing/signature verification, X25519, HKDF/transcript hashing, and
@@ -71,25 +75,24 @@ The AEAD seam is already clean enough to preserve:
 - `src/RecordLayer.zig` only calls `Aead.encrypt` / `Aead.decrypt`;
 - HKDF derives byte-array traffic keys and constructs `RecordLayer` values.
 
-The non-AEAD seams are weaker. HKDF, HMAC, SHA-2, X25519, and certificate
-signature verification call `std.crypto` directly. That is fine during the
-transition, but production crypto needs a `src/crypto/` facade so primitives can
-be swapped without threading backend decisions through the handshake state
-machines.
+The non-AEAD seams are mixed. HKDF, HMAC, and SHA-2 can stay on `std.crypto`
+until there is a concrete provider/FIPS requirement. X25519, certificate
+signature verification, and server signing are real backend boundaries and need
+a `src/crypto/` facade so provider decisions do not leak through the handshake
+state machines.
 
 The backend facade should target the libcrypto family first, not a native rewrite
 first. Required facade areas:
 
 - AEAD for AES-GCM and ChaCha20-Poly1305;
-- HKDF/HMAC/hash for the TLS 1.3 key schedule and transcript;
 - X25519/P-256 key exchange where supported by the selected backend;
 - certificate/signature verification and server signing;
 - future provider-backed PQ or hybrid KEX/signature algorithms without changing
   the TLS engine API shape every time a provider adds an algorithm.
 
-First cleanup step: remove direct unused crypto imports from files that do not
-need them, especially the dead `std.crypto.aead.aes_gcm.Aes128Gcm` import in
-`src/RecordLayer.zig`.
+First cleanup step: keep direct crypto imports honest. `std.crypto` imports are
+fine for hashing/HKDF helpers, but record AEAD should not expose or preserve a
+parallel stdlib backend path.
 
 ## Milestones
 
@@ -155,13 +158,12 @@ Requirements:
 
 ### 4. HKDF/HMAC/SHA transcript hashing
 
-AEAD-only libcrypto is not a real production/compliance story. Move the TLS 1.3
-key schedule and transcript hashes behind the provider facade:
+Keep the TLS 1.3 key schedule and transcript hashes on `std.crypto` by default.
+Moving these to libcrypto only makes sense for a concrete provider/FIPS policy,
+not as cleanup for its own sake.
 
-- SHA-256/SHA-384 incremental transcript hashes;
-- HKDF extract/expand and HMAC for Finished;
-- RFC 8448 vectors and existing Finished/HKDF tests for every enabled backend;
-- avoid OpenSSL-3-only APIs in shared code if AWS-LC compatibility matters.
+If that policy appears later, move SHA-256/SHA-384, HKDF, and HMAC behind a small
+facade and run the existing RFC 8448 Finished/HKDF vectors against it.
 
 ### 5. Key exchange
 
@@ -218,7 +220,8 @@ A production crypto backend is worth calling successful only when:
 - the design has an explicit provider-backed path for future PQ/hybrid KEX and
   signatures rather than ztls-owned PQ primitive implementations.
 
-Until the remaining primitives are provider-backed, any `std.crypto` usage is
-implementation debt in not-yet-migrated primitives. OpenSSL EVP/libssl rows
-remain compatibility and performance floors, not the whole production
-architecture by themselves.
+Until the remaining backend-sensitive primitives are provider-backed,
+`std.crypto` usage in X25519 and signature paths is migration debt. `std.crypto`
+for hashing/HKDF is ordinary implementation detail unless provider/FIPS policy
+makes it otherwise. OpenSSL EVP/libssl rows remain compatibility and performance
+floors, not the whole production architecture by themselves.
