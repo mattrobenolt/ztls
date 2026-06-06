@@ -21,7 +21,6 @@ const ztls_handshake_iterations = 64;
 const openssl_replay_archive = @embedFile("test_fixtures/openssl_replay.txtar");
 const server_cert_der = @embedFile("test_fixtures/server-ecdsa/server.der");
 const server_scalar = @embedFile("test_fixtures/server-ecdsa/scalar.bin");
-const EcdsaP256Sha256 = std.crypto.sign.ecdsa.EcdsaP256Sha256;
 
 const Suite = enum {
     aes_128_gcm_sha256,
@@ -419,19 +418,11 @@ fn benchDecrypt(comptime suite: Suite, comptime size: usize, timer: *std.time.Ti
 const Direction = enum { client_to_server, server_to_client };
 
 const BenchSigner = struct {
-    keypair: EcdsaP256Sha256.KeyPair,
+    scalar: [32]u8,
 
     fn sign(context: *anyopaque, msg: []const u8, out: []u8) ztls.ServerHandshake.SignError![]const u8 {
         const self: *BenchSigner = @ptrCast(@alignCast(context));
-        const sig = self.keypair.sign(msg, null) catch |err| switch (err) {
-            error.IdentityElement => return error.IdentityElement,
-            error.NonCanonical => return error.NonCanonical,
-        };
-        var der: [EcdsaP256Sha256.Signature.der_encoded_length_max]u8 = undefined;
-        const encoded = sig.toDer(&der);
-        if (out.len < encoded.len) return error.BufferTooShort;
-        @memcpy(out[0..encoded.len], encoded);
-        return out[0..encoded.len];
+        return ztls.signature.signEcdsaP256Sha256(&self.scalar, msg, out);
     }
 };
 
@@ -444,8 +435,7 @@ fn deterministicServerKeypair() !ztls.x25519.KeyPair {
 }
 
 fn deterministicSigner() !BenchSigner {
-    const sk = try EcdsaP256Sha256.SecretKey.fromBytes(server_scalar[0..32].*);
-    return .{ .keypair = try EcdsaP256Sha256.KeyPair.fromSecretKey(sk) };
+    return .{ .scalar = server_scalar[0..32].* };
 }
 
 fn signerApi(signer: *BenchSigner) ztls.ServerHandshake.Signer {

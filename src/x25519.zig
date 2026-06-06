@@ -27,8 +27,11 @@ pub const KeyPair = struct {
     pub fn generate() KeyPair {
         var secret_key: [secret_length]u8 = undefined;
         std.crypto.random.bytes(&secret_key);
-        const public_key = publicFromSecret(secret_key) catch unreachable;
-        return .{ .secret_key = secret_key, .public_key = public_key };
+        return generateDeterministic(secret_key) catch unreachable;
+    }
+
+    pub fn generateDeterministic(seed: [secret_length]u8) Error!KeyPair {
+        return .{ .secret_key = seed, .public_key = try publicFromSecret(seed) };
     }
 };
 

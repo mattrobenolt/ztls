@@ -20,7 +20,13 @@ const legacy_version: u16 = 0x0303;
 const NamedGroup = enum(u16) { x25519 = 0x001d };
 
 const cipher_suite_count = std.meta.tags(CipherSuite).len;
-const sig_scheme_count = std.meta.tags(SignatureScheme).len;
+const supported_signature_schemes = [_]SignatureScheme{
+    .ecdsa_secp256r1_sha256,
+    .ecdsa_secp384r1_sha384,
+    .rsa_pss_rsae_sha256,
+    .rsa_pss_rsae_sha384,
+};
+const sig_scheme_count = supported_signature_schemes.len;
 
 const handshake_header_len = 4;
 const ext_header_len = 2 + 2; // extension type + data length field
@@ -202,7 +208,7 @@ pub fn encode(
     w.append(u16, 0x000d);
     w.append(u16, 2 + sig_scheme_count * 2);
     w.append(u16, sig_scheme_count * 2);
-    inline for (std.meta.tags(SignatureScheme)) |s| w.append(SignatureScheme, s);
+    inline for (supported_signature_schemes) |s| w.append(SignatureScheme, s);
 
     // key_share (RFC 8446 §4.2.8)
     w.append(u16, 0x0033);
