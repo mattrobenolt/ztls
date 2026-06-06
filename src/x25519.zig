@@ -79,6 +79,29 @@ pub fn sharedSecret(secret_key: [secret_length]u8, peer_public_key: PublicKey) E
     return out;
 }
 
+fn hex(comptime bytes_len: usize, comptime encoded: []const u8) [bytes_len]u8 {
+    var out: [bytes_len]u8 = undefined;
+    _ = std.fmt.hexToBytes(&out, encoded) catch unreachable;
+    return out;
+}
+
+// RFC 7748 §5.2 — X25519 scalar multiplication test vector.
+test "sharedSecret: RFC 7748 X25519 vector" {
+    const scalar = hex(32, "a546e36bf0527c9d3b16154b82465edd62144c0ac1fc5a18506a2244ba449ac4");
+    const peer: PublicKey = .init(hex(32, "e6db6867583030db3594c1a424b15f7c726624ec26b3353b10a903a6d0ab1c4c"));
+    const secret = try sharedSecret(scalar, peer);
+    try std.testing.expectEqualSlices(u8, &hex(32, "c3da55379de9c6908e94ea4df28d084f32eccf03491c71f754b4075577a28552"), &secret.data);
+}
+
+// RFC 7748 §6.1 — X25519 public keys are scalar multiplication by base point 9.
+test "KeyPair.generateDeterministic: RFC 7748 public keys" {
+    const alice = try KeyPair.generateDeterministic(hex(32, "77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a"));
+    try std.testing.expectEqualSlices(u8, &hex(32, "8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a"), &alice.public_key);
+
+    const bob = try KeyPair.generateDeterministic(hex(32, "5dab087e624a8a4b79e17f8b83800ee66f3bb1292618b6fd1c2f8b27ff88e0eb"));
+    try std.testing.expectEqualSlices(u8, &hex(32, "de9edb7d7b7dc1b4d35b61c2ece435373f8343c85b78674dadfc7e146f882b4f"), &bob.public_key);
+}
+
 comptime {
     assert(@sizeOf(PublicKey) == public_length);
     assert(@sizeOf(SecretKey) == secret_length);
