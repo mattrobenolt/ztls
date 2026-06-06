@@ -9,7 +9,6 @@ const Sha256 = std.crypto.hash.sha2.Sha256;
 const Sha384 = std.crypto.hash.sha2.Sha384;
 const mem = std.mem;
 const testing = std.testing;
-const EcdsaP256Sha256 = std.crypto.sign.ecdsa.EcdsaP256Sha256;
 
 const aead = @import("aead.zig");
 const alert = @import("alert.zig");
@@ -26,6 +25,7 @@ const frame = @import("frame.zig");
 const hkdf = @import("hkdf.zig");
 const RecordLayer = @import("RecordLayer.zig");
 const server_hello = @import("server_hello.zig");
+const signature = @import("signature.zig");
 const x25519 = @import("x25519.zig");
 
 const ServerHandshake = @This();
@@ -149,7 +149,7 @@ pub const AcceptError = frame.ParseError || client_hello.ParseError || server_he
     LibcryptoFailed,
 };
 
-pub const SignError = error{ BufferTooShort, IdentityElement, NonCanonical };
+pub const SignError = error{ BufferTooShort, IdentityElement, LibcryptoFailed, NonCanonical };
 
 pub const Signer = struct {
     scheme: certificate.SignatureScheme,
@@ -317,7 +317,7 @@ pub fn sendAuthenticatedFlight(
             break :blk th.len;
         },
     };
-    var sig_buf: [std.crypto.sign.ecdsa.EcdsaP384Sha384.Signature.der_encoded_length_max]u8 = undefined;
+    var sig_buf: [512]u8 = undefined;
     const sig = try signer.sign(signer.context, cv_input[0 .. certificate.server_certificate_verify_context.len + transcript_hash_len], &sig_buf);
     const cv = try certificate.encodeCertificateVerify(plaintext[pos..], signer.scheme, sig);
     self.suite_state.update(cv);
@@ -523,16 +523,11 @@ const server_ecdsa_cert_der = @embedFile("test_fixtures/server-ecdsa/server.der"
 const server_ecdsa_scalar = @embedFile("test_fixtures/server-ecdsa/scalar.bin");
 
 const TestSigner = struct {
-    keypair: EcdsaP256Sha256.KeyPair,
+    scalar: [32]u8,
 
     fn sign(context: *anyopaque, msg: []const u8, out: []u8) SignError![]const u8 {
         const self: *TestSigner = @ptrCast(@alignCast(context));
-        const sig = self.keypair.sign(msg, null) catch |err| return err;
-        var der: [EcdsaP256Sha256.Signature.der_encoded_length_max]u8 = undefined;
-        const encoded = sig.toDer(&der);
-        if (out.len < encoded.len) return error.BufferTooShort;
-        @memcpy(out[0..encoded.len], encoded);
-        return out[0..encoded.len];
+        return signature.signEcdsaP256Sha256(&self.scalar, msg, out);
     }
 };
 
@@ -682,7 +677,7 @@ test "sendAuthenticatedFlight: client decrypts authenticated server flight" {
     var sh_out: [256]u8 = undefined;
     const sh_record = try server.acceptClientHello(ch_record[0 .. frame.header_len + ch.len], .zero, &sh_out);
 
-    var signer: TestSigner = .{ .keypair = EcdsaP256Sha256.KeyPair.generate() };
+    var signer: TestSigner = .{ .scalar = server_ecdsa_scalar[0..32].* };
     const signer_api: Signer = .{ .scheme = .ecdsa_secp256r1_sha256, .context = &signer, .sign = TestSigner.sign };
     var plaintext: [4096]u8 = undefined;
     var flight_out: [4096]u8 = undefined;
@@ -747,8 +742,7 @@ test "sendAuthenticatedFlight: client processes CertificateVerify and Finished" 
     var sh_out: [256]u8 = undefined;
     const sh_record = try server.acceptClientHello(ch_record[0 .. frame.header_len + ch.len], .zero, &sh_out);
 
-    const sk = try EcdsaP256Sha256.SecretKey.fromBytes(server_ecdsa_scalar[0..32].*);
-    var signer: TestSigner = .{ .keypair = try EcdsaP256Sha256.KeyPair.fromSecretKey(sk) };
+    var signer: TestSigner = .{ .scalar = server_ecdsa_scalar[0..32].* };
     const signer_api: Signer = .{ .scheme = .ecdsa_secp256r1_sha256, .context = &signer, .sign = TestSigner.sign };
     var plaintext: [4096]u8 = undefined;
     var flight_out: [4096]u8 = undefined;
@@ -927,8 +921,7 @@ fn expectInMemoryAuthenticatedHandshake(suite: CipherSuite) !void {
     try testing.expectEqual(suite, server.suite);
     try client.processServerHello(sh_record[frame.header_len..]);
 
-    const sk = try EcdsaP256Sha256.SecretKey.fromBytes(server_ecdsa_scalar[0..32].*);
-    var signer: TestSigner = .{ .keypair = try EcdsaP256Sha256.KeyPair.fromSecretKey(sk) };
+    var signer: TestSigner = .{ .scalar = server_ecdsa_scalar[0..32].* };
     const signer_api: Signer = .{ .scheme = .ecdsa_secp256r1_sha256, .context = &signer, .sign = TestSigner.sign };
     var plaintext: [4096]u8 = undefined;
     const flight_record = try server.sendAuthenticatedFlight(&.{server_ecdsa_cert_der}, signer_api, &plaintext, &server_out);

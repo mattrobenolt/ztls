@@ -19,8 +19,6 @@ const base_port = 15433;
 const alpn_protocol = "http/1.1";
 const response = "HTTP/1.0 200 OK\r\nContent-Length: 5\r\n\r\nhello";
 
-const EcdsaP256Sha256 = std.crypto.sign.ecdsa.EcdsaP256Sha256;
-
 const SuiteCase = struct {
     openssl_name: []const u8,
     ztls_suite: ztls.CipherSuite,
@@ -33,19 +31,11 @@ const suites = [_]SuiteCase{
 };
 
 const TestSigner = struct {
-    keypair: EcdsaP256Sha256.KeyPair,
+    scalar: [32]u8,
 
     fn sign(context: *anyopaque, msg: []const u8, out: []u8) ztls.ServerHandshake.SignError![]const u8 {
         const self: *TestSigner = @ptrCast(@alignCast(context));
-        const sig = self.keypair.sign(msg, null) catch |err| switch (err) {
-            error.IdentityElement => return error.IdentityElement,
-            error.NonCanonical => return error.NonCanonical,
-        };
-        var der: [EcdsaP256Sha256.Signature.der_encoded_length_max]u8 = undefined;
-        const encoded = sig.toDer(&der);
-        if (out.len < encoded.len) return error.BufferTooShort;
-        @memcpy(out[0..encoded.len], encoded);
-        return out[0..encoded.len];
+        return ztls.signature.signEcdsaP256Sha256(&self.scalar, msg, out);
     }
 };
 
@@ -123,8 +113,7 @@ fn serve(stream: net.Stream, suite: ztls.CipherSuite, cert_der: []const u8, scal
     const supported = [_]ztls.CipherSuite{suite};
     hs.supportSuites(&supported);
 
-    const sk = try EcdsaP256Sha256.SecretKey.fromBytes(scalar[0..32].*);
-    var signer: TestSigner = .{ .keypair = try EcdsaP256Sha256.KeyPair.fromSecretKey(sk) };
+    var signer: TestSigner = .{ .scalar = scalar[0..32].* };
     const signer_api: ztls.ServerHandshake.Signer = .{ .scheme = .ecdsa_secp256r1_sha256, .context = &signer, .sign = TestSigner.sign };
 
     var random: ztls.client_hello.Random = undefined;
