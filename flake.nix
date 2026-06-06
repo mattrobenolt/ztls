@@ -44,11 +44,13 @@
                 ast-grep
                 just
                 openssl
+                pinact
                 pkg-config
                 python3
                 txtar
                 zig_0_15
                 zigdoc
+                zizmor
                 ziglint
                 zls_0_15
               ])

@@ -7,9 +7,15 @@ default:
 test:
     zig build test --summary all
 
-[doc("Run unit, interop, formatting, and benchmark smoke checks")]
+[doc("Check GitHub Actions pins")]
 [group("test")]
-ci:
+ci-actions:
+    pinact run --fix=false --no-api .github/workflows/*.yml
+    zizmor .github
+
+[doc("Run unit, interop, formatting, benchmark smoke, and workflow checks")]
+[group("test")]
+ci: ci-actions
     zig fmt --check src/ examples/ bench/ build.zig
     zig build test
     zig build test-openssl
