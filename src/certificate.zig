@@ -2,11 +2,15 @@
 ///
 /// RFC 8446 §4.4.2, §4.4.3
 const std = @import("std");
-const crypto = std.crypto;
 const Certificate = @import("cryptox/Certificate.zig");
-const ecdsa = crypto.sign.ecdsa;
-const sha2 = crypto.hash.sha2;
+const Sha256 = std.crypto.hash.sha2.Sha256;
 const testing = std.testing;
+const c = @cImport({
+    @cInclude("openssl/ec.h");
+    @cInclude("openssl/evp.h");
+    @cInclude("openssl/obj_mac.h");
+    @cInclude("openssl/rsa.h");
+});
 
 const wire = @import("wire.zig");
 
@@ -126,6 +130,38 @@ fn verifyAgainstBundle(bundle: *const Certificate.Bundle, subject: Certificate.P
 
 pub const AuthError = ParseError || VerifyError;
 
+fn publicKeyFromCertificateBits(scheme: SignatureScheme, pub_key: []const u8) VerifyError!*c.EVP_PKEY {
+    return switch (scheme) {
+        .ecdsa_secp256r1_sha256 => ecPublicKeyFromSec1(c.NID_X9_62_prime256v1, pub_key),
+        .ecdsa_secp384r1_sha384 => ecPublicKeyFromSec1(c.NID_secp384r1, pub_key),
+        .rsa_pss_rsae_sha256, .rsa_pss_rsae_sha384, .rsa_pss_rsae_sha512 => rsaPublicKeyFromDer(pub_key),
+        else => error.UnsupportedSignatureScheme,
+    };
+}
+
+fn ecPublicKeyFromSec1(nid: c_int, pub_key: []const u8) VerifyError!*c.EVP_PKEY {
+    var ec: ?*c.EC_KEY = c.EC_KEY_new_by_curve_name(nid) orelse return error.InvalidEncoding;
+    errdefer c.EC_KEY_free(ec);
+    var ptr: [*c]const u8 = pub_key.ptr;
+    if (c.o2i_ECPublicKey(&ec, &ptr, @intCast(pub_key.len)) == null) return error.InvalidEncoding;
+
+    const key = c.EVP_PKEY_new() orelse return error.SignatureVerificationFailed;
+    errdefer c.EVP_PKEY_free(key);
+    if (c.EVP_PKEY_assign_EC_KEY(key, ec) != 1) return error.SignatureVerificationFailed;
+    return key;
+}
+
+fn rsaPublicKeyFromDer(pub_key: []const u8) VerifyError!*c.EVP_PKEY {
+    var ptr: [*c]const u8 = pub_key.ptr;
+    const rsa = c.d2i_RSAPublicKey(null, &ptr, @intCast(pub_key.len)) orelse return error.InvalidEncoding;
+    errdefer c.RSA_free(rsa);
+
+    const key = c.EVP_PKEY_new() orelse return error.SignatureVerificationFailed;
+    errdefer c.EVP_PKEY_free(key);
+    if (c.EVP_PKEY_assign_RSA(key, rsa) != 1) return error.SignatureVerificationFailed;
+    return key;
+}
+
 const server_context = " " ** 64 ++ "TLS 1.3, server CertificateVerify\x00";
 const client_context = " " ** 64 ++ "TLS 1.3, client CertificateVerify\x00";
 
@@ -162,17 +198,8 @@ pub const VerifyError = error{
     InvalidHandshakeType,
     UnsupportedSignatureScheme,
     InvalidEncoding,
-    IdentityElement,
-    NonCanonical,
-    NotSquare,
     SignatureVerificationFailed,
-    CertificateSignatureInvalid,
-    TlsBadRsaSignatureBitCount,
-} ||
-    Certificate.rsa.PublicKey.ParseDerError ||
-    Certificate.rsa.PublicKey.FromBytesError ||
-    Certificate.rsa.PSSSignature.VerifyError ||
-    Certificate.rsa.PKCS1v1_5Signature.VerifyError;
+};
 
 /// Verify a CertificateVerify handshake message.
 ///
@@ -195,46 +222,30 @@ pub fn verifySignature(
     const sig_len = try r.read(u16);
     const sig = try r.readSlice(sig_len);
 
-    switch (scheme) {
-        inline .ecdsa_secp256r1_sha256,
-        .ecdsa_secp384r1_sha384,
-        => |tag| {
-            const Ecdsa = switch (tag) {
-                .ecdsa_secp256r1_sha256 => ecdsa.EcdsaP256Sha256,
-                .ecdsa_secp384r1_sha384 => ecdsa.EcdsaP384Sha384,
-                else => unreachable,
-            };
-            const signature: Ecdsa.Signature = try .fromDer(sig);
-            const public_key: Ecdsa.PublicKey = try .fromSec1(pub_key);
-            var verifier = try signature.verifier(public_key);
-            verifier.update(server_context);
-            verifier.update(transcript_hash);
-            try verifier.verify();
-        },
-        inline .rsa_pss_rsae_sha256,
-        .rsa_pss_rsae_sha384,
-        .rsa_pss_rsae_sha512,
-        => |tag| {
-            const Hash = switch (tag) {
-                .rsa_pss_rsae_sha256 => sha2.Sha256,
-                .rsa_pss_rsae_sha384 => sha2.Sha384,
-                .rsa_pss_rsae_sha512 => sha2.Sha512,
-                else => unreachable,
-            };
-            const PublicKey = Certificate.rsa.PublicKey;
-            const PSSSignature = Certificate.rsa.PSSSignature;
-            const components = try PublicKey.parseDer(pub_key);
-            const public_key: PublicKey = try .fromBytes(components.exponent, components.modulus);
-            switch (components.modulus.len) {
-                inline 128, 256, 384, 512 => |modulus_len| {
-                    const rsa_sig = PSSSignature.fromBytes(modulus_len, sig);
-                    try PSSSignature.concatVerify(modulus_len, rsa_sig, &.{ server_context, transcript_hash }, public_key, Hash);
-                },
-                else => return error.TlsBadRsaSignatureBitCount,
-            }
-        },
+    const md = switch (scheme) {
+        .ecdsa_secp256r1_sha256, .rsa_pss_rsae_sha256 => c.EVP_sha256(),
+        .ecdsa_secp384r1_sha384, .rsa_pss_rsae_sha384 => c.EVP_sha384(),
+        .rsa_pss_rsae_sha512 => c.EVP_sha512(),
         else => return error.UnsupportedSignatureScheme,
+    } orelse return error.SignatureVerificationFailed;
+
+    const key = try publicKeyFromCertificateBits(scheme, pub_key);
+    defer c.EVP_PKEY_free(key);
+
+    const ctx = c.EVP_MD_CTX_new() orelse return error.SignatureVerificationFailed;
+    defer c.EVP_MD_CTX_free(ctx);
+    var pctx: ?*c.EVP_PKEY_CTX = null;
+    if (c.EVP_DigestVerifyInit(ctx, &pctx, md, null, key) != 1) return error.SignatureVerificationFailed;
+    switch (scheme) {
+        .rsa_pss_rsae_sha256, .rsa_pss_rsae_sha384, .rsa_pss_rsae_sha512 => {
+            if (c.EVP_PKEY_CTX_set_rsa_padding(pctx, c.RSA_PKCS1_PSS_PADDING) != 1) return error.SignatureVerificationFailed;
+            if (c.EVP_PKEY_CTX_set_rsa_pss_saltlen(pctx, c.RSA_PSS_SALTLEN_DIGEST) != 1) return error.SignatureVerificationFailed;
+        },
+        else => {},
     }
+    if (c.EVP_DigestVerifyUpdate(ctx, server_context, server_context.len) != 1) return error.SignatureVerificationFailed;
+    if (c.EVP_DigestVerifyUpdate(ctx, transcript_hash.ptr, transcript_hash.len) != 1) return error.SignatureVerificationFailed;
+    if (c.EVP_DigestVerifyFinal(ctx, sig.ptr, sig.len) != 1) return error.SignatureVerificationFailed;
 }
 
 // Fixtures generated with: just gen-fixtures
@@ -261,7 +272,7 @@ fn buildCvMsg(buf: []u8, sig: []const u8) []const u8 {
 const test_transcript_hash = blk: {
     @setEvalBranchQuota(100_000);
     var out: [32]u8 = undefined;
-    sha2.Sha256.hash("test transcript", &out, .{});
+    Sha256.hash("test transcript", &out, .{});
     break :blk out;
 };
 
