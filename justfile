@@ -38,6 +38,18 @@ bench-compare FILTER="aes_128":
     zig build bench-evp -- --filter {{ FILTER }}
     zig build bench-openssl -- --filter {{ FILTER }}
 
+[doc("Run one exact app-data row for ztls and OpenSSL memory BIO")]
+[group("bench")]
+bench-app-row SUITE="aes_128" SIZE="1350":
+    zig build bench -- --bench ztls_app_client_to_server --suite {{ SUITE }} --size {{ SIZE }}
+    zig build bench-openssl -- --bench openssl_bio_app_client_to_server --suite {{ SUITE }} --size {{ SIZE }}
+
+[doc("Run one exact record-crypto row for ztls and OpenSSL EVP reuse")]
+[group("bench")]
+bench-record-row SUITE="aes_128" SIZE="1350":
+    zig build bench -- --bench record_encrypt --suite {{ SUITE }} --size {{ SIZE }}
+    zig build bench-evp -- --bench openssl_evp_reuse_encrypt --suite {{ SUITE }} --size {{ SIZE }}
+
 [doc("Run full benchmark comparison set into zig-out/perf")]
 [group("bench")]
 bench-capture:

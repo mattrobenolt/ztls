@@ -144,6 +144,9 @@ def main [
     record_vs_evp_reuse: (record-vs-evp $rows)
     handshake_vs_bio: (handshake-vs-bio $rows)
     split_handshake: (split-handshake $rows $suite)
+    worst_app_vs_bio: (app-vs-bio $rows | sort-by ratio | first 5)
+    worst_record_vs_evp_reuse: (record-vs-evp $rows | sort-by ratio | first 5)
+    worst_handshake_vs_bio: (handshake-vs-bio $rows | sort-by ratio | first 3)
   }
 
   if $json { $report | to json } else { $report }

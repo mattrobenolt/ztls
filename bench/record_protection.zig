@@ -66,6 +66,9 @@ const Suite = enum {
 
 const Args = struct {
     filter: ?[]const u8 = null,
+    bench: ?[]const u8 = null,
+    suite: ?[]const u8 = null,
+    size: ?usize = null,
     list: bool = false,
 };
 
@@ -108,7 +111,7 @@ pub fn main() !void {
 
     var timer = try time.Timer.start();
 
-    if (matches(args.filter, "parse_header", "none")) {
+    if (matches(args, "parse_header", "none", frame.header_len)) {
         const header = benchParseHeader(&timer);
         try stdout.print("parse_header,none,{d},{d},{d},{d},{d:.2}\n", .{
             frame.header_len,
@@ -120,7 +123,7 @@ pub fn main() !void {
         try stdout.flush();
     }
 
-    if (matches(args.filter, "record_buffer_next", "none")) {
+    if (matches(args, "record_buffer_next", "none", frame.header_len)) {
         const records = try benchRecordBuffer(&timer);
         try stdout.print("record_buffer_next,none,{d},{d},{d},{d},{d:.2}\n", .{
             frame.header_len,
@@ -133,7 +136,7 @@ pub fn main() !void {
     }
 
     inline for (.{ Suite.aes_128_gcm_sha256, Suite.aes_256_gcm_sha384, Suite.chacha20_poly1305_sha256 }) |suite| {
-        if (matches(args.filter, "client_handshake_replay", suite.name())) {
+        if (matches(args, "client_handshake_replay", suite.name(), 879)) {
             const replay = try benchClientHandshakeReplay(suite, &timer);
             try stdout.print("client_handshake_replay,{s},{d},{d},{d},{d},{d:.2}\n", .{
                 suite.name(),
@@ -146,7 +149,7 @@ pub fn main() !void {
             try stdout.flush();
         }
 
-        if (matches(args.filter, "ztls_handshake", suite.name())) {
+        if (matches(args, "ztls_handshake", suite.name(), 1)) {
             const full = try benchZtlsHandshake(suite, &timer);
             try stdout.print("ztls_handshake,{s},{d},{d},{d},{d},{d:.2}\n", .{
                 suite.name(),
@@ -159,7 +162,7 @@ pub fn main() !void {
             try stdout.flush();
         }
 
-        if (matches(args.filter, "ztls_handshake_split", suite.name())) {
+        if (matches(args, "ztls_handshake_split", suite.name(), 1)) {
             const split = try benchZtlsHandshakeSplit(suite, &timer);
             try printHandshakeSplit(stdout, suite, split);
             try stdout.flush();
@@ -168,7 +171,7 @@ pub fn main() !void {
 
     inline for (.{ Suite.aes_128_gcm_sha256, Suite.aes_256_gcm_sha384, Suite.chacha20_poly1305_sha256 }) |suite| {
         inline for (sizes) |size| {
-            if (matches(args.filter, "record_encrypt", suite.name())) {
+            if (matches(args, "record_encrypt", suite.name(), size)) {
                 const enc = try benchEncrypt(suite, size, &timer);
                 try stdout.print("record_encrypt,{s},{d},{d},{d},{d},{d:.2}\n", .{
                     suite.name(),
@@ -181,7 +184,7 @@ pub fn main() !void {
                 try stdout.flush();
             }
 
-            if (matches(args.filter, "record_decrypt", suite.name())) {
+            if (matches(args, "record_decrypt", suite.name(), size)) {
                 const dec = try benchDecrypt(suite, size, &timer);
                 try stdout.print("record_decrypt,{s},{d},{d},{d},{d},{d:.2}\n", .{
                     suite.name(),
@@ -194,7 +197,7 @@ pub fn main() !void {
                 try stdout.flush();
             }
 
-            if (matches(args.filter, "ztls_app_client_to_server", suite.name())) {
+            if (matches(args, "ztls_app_client_to_server", suite.name(), size)) {
                 const c2s = try benchZtlsAppData(suite, size, .client_to_server, &timer);
                 try stdout.print("ztls_app_client_to_server,{s},{d},{d},{d},{d},{d:.2}\n", .{
                     suite.name(),
@@ -207,7 +210,7 @@ pub fn main() !void {
                 try stdout.flush();
             }
 
-            if (matches(args.filter, "ztls_app_server_to_client", suite.name())) {
+            if (matches(args, "ztls_app_server_to_client", suite.name(), size)) {
                 const s2c = try benchZtlsAppData(suite, size, .server_to_client, &timer);
                 try stdout.print("ztls_app_server_to_client,{s},{d},{d},{d},{d},{d:.2}\n", .{
                     suite.name(),
@@ -220,7 +223,7 @@ pub fn main() !void {
                 try stdout.flush();
             }
 
-            if (matches(args.filter, "ztls_app_ping_pong", suite.name())) {
+            if (matches(args, "ztls_app_ping_pong", suite.name(), size)) {
                 const ping_pong = try benchZtlsPingPong(suite, size, &timer);
                 try stdout.print("ztls_app_ping_pong,{s},{d},{d},{d},{d},{d:.2}\n", .{
                     suite.name(),
@@ -247,6 +250,18 @@ fn parseArgs() !Args {
             result.filter = it.next() orelse return error.MissingFilter;
         } else if (mem.startsWith(u8, arg, "--filter=")) {
             result.filter = arg["--filter=".len..];
+        } else if (mem.eql(u8, arg, "--bench")) {
+            result.bench = it.next() orelse return error.MissingBench;
+        } else if (mem.startsWith(u8, arg, "--bench=")) {
+            result.bench = arg["--bench=".len..];
+        } else if (mem.eql(u8, arg, "--suite")) {
+            result.suite = it.next() orelse return error.MissingSuite;
+        } else if (mem.startsWith(u8, arg, "--suite=")) {
+            result.suite = arg["--suite=".len..];
+        } else if (mem.eql(u8, arg, "--size")) {
+            result.size = try std.fmt.parseInt(usize, it.next() orelse return error.MissingSize, 10);
+        } else if (mem.startsWith(u8, arg, "--size=")) {
+            result.size = try std.fmt.parseInt(usize, arg["--size=".len..], 10);
         } else {
             return error.UnknownArgument;
         }
@@ -254,8 +269,11 @@ fn parseArgs() !Args {
     return result;
 }
 
-fn matches(filter: ?[]const u8, benchmark: []const u8, suite: []const u8) bool {
-    const f = filter orelse return true;
+fn matches(args: Args, benchmark: []const u8, suite: []const u8, size: usize) bool {
+    if (args.bench) |b| if (ascii.indexOfIgnoreCase(benchmark, b) == null) return false;
+    if (args.suite) |s| if (ascii.indexOfIgnoreCase(suite, s) == null) return false;
+    if (args.size) |z| if (size != z) return false;
+    const f = args.filter orelse return true;
     return ascii.indexOfIgnoreCase(benchmark, f) != null or ascii.indexOfIgnoreCase(suite, f) != null;
 }
 

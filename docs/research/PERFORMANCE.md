@@ -122,6 +122,8 @@ Typical local flow:
 just bench-capture
 just bench-analyze
 just bench-compare aes_128
+just bench-app-row aes_128 1350
+just bench-record-row aes_128 1350
 just bench-bins
 just bench-disasm record_protection_bench zig-out/record_protection_bench.asm
 just bench-disasm-libcrypto record_protection_bench zig-out/libcrypto.asm
@@ -132,8 +134,14 @@ perf report --input zig-out/record_protection_bench.perf.data
 `bench-capture` writes timestamped CSV-ish files under `zig-out/perf/` for
 ztls, OpenSSL EVP, and OpenSSL memory BIO. `bench-analyze` consumes the latest
 capture by default and emits structured ratios for ztls-vs-BIO app data,
-ztls-vs-EVP-reuse record crypto, handshake ops/sec, and split handshake timing.
-Pass explicit files with `--ztls`, `--evp`, and `--bio` when comparing older runs.
+ztls-vs-EVP-reuse record crypto, handshake ops/sec, split handshake timing, and
+worst-ratio rows sorted first. Pass explicit files with `--ztls`, `--evp`, and
+`--bio` when comparing older runs.
+
+All benchmark binaries accept fuzzy `--filter` plus structured filters:
+`--bench <name>`, `--suite <substring>`, and `--size <bytes>`. Use the structured
+filters for perf/disassembly work so one profile means one scenario, not a whole
+family of rows.
 
 The raw Zig build steps remain available when you want to bypass `just`:
 

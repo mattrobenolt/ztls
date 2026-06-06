@@ -25,6 +25,10 @@ static const suite_t suites[] = {
 
 typedef struct {
     const char *filter;
+    const char *bench;
+    const char *suite;
+    size_t size;
+    int has_size;
     int list;
 } args_t;
 
@@ -44,7 +48,10 @@ static int contains_ignore_case(const char *haystack, const char *needle) {
     return 0;
 }
 
-static int matches(const args_t *args, const char *bench, const char *suite) {
+static int matches(const args_t *args, const char *bench, const char *suite, size_t size) {
+    if (args->bench && !contains_ignore_case(bench, args->bench)) return 0;
+    if (args->suite && !contains_ignore_case(suite, args->suite)) return 0;
+    if (args->has_size && args->size != size) return 0;
     return args->filter == NULL || contains_ignore_case(bench, args->filter) || contains_ignore_case(suite, args->filter);
 }
 
@@ -58,6 +65,23 @@ static args_t parse_args(int argc, char **argv) {
             args.filter = argv[i];
         } else if (strncmp(argv[i], "--filter=", 9) == 0) {
             args.filter = argv[i] + 9;
+        } else if (strcmp(argv[i], "--bench") == 0) {
+            if (++i >= argc) { fprintf(stderr, "missing --bench value\n"); exit(2); }
+            args.bench = argv[i];
+        } else if (strncmp(argv[i], "--bench=", 8) == 0) {
+            args.bench = argv[i] + 8;
+        } else if (strcmp(argv[i], "--suite") == 0) {
+            if (++i >= argc) { fprintf(stderr, "missing --suite value\n"); exit(2); }
+            args.suite = argv[i];
+        } else if (strncmp(argv[i], "--suite=", 8) == 0) {
+            args.suite = argv[i] + 8;
+        } else if (strcmp(argv[i], "--size") == 0) {
+            if (++i >= argc) { fprintf(stderr, "missing --size value\n"); exit(2); }
+            args.size = strtoull(argv[i], NULL, 10);
+            args.has_size = 1;
+        } else if (strncmp(argv[i], "--size=", 7) == 0) {
+            args.size = strtoull(argv[i] + 7, NULL, 10);
+            args.has_size = 1;
         } else {
             fprintf(stderr, "unknown argument: %s\n", argv[i]);
             exit(2);
@@ -238,22 +262,22 @@ int main(int argc, char **argv) {
             if (iterations < 256) iterations = 256;
             size_t bytes = iterations * size;
 
-            if (matches(&args, "openssl_evp_encrypt", suites[s].name)) {
+            if (matches(&args, "openssl_evp_encrypt", suites[s].name, size)) {
                 uint64_t ns = bench_encrypt(&suites[s], size, iterations, plain, ciphertext, key, iv);
                 printf("openssl_evp_encrypt,%s,%zu,%zu,%zu,%llu,%.2f\n", suites[s].name, size, iterations, bytes, (unsigned long long)ns, mib_per_sec(bytes, ns));
                 fflush(stdout);
             }
-            if (matches(&args, "openssl_evp_decrypt", suites[s].name)) {
+            if (matches(&args, "openssl_evp_decrypt", suites[s].name, size)) {
                 uint64_t ns = bench_decrypt(&suites[s], size, iterations, plain, ciphertext, out, key, iv);
                 printf("openssl_evp_decrypt,%s,%zu,%zu,%zu,%llu,%.2f\n", suites[s].name, size, iterations, bytes, (unsigned long long)ns, mib_per_sec(bytes, ns));
                 fflush(stdout);
             }
-            if (matches(&args, "openssl_evp_reuse_encrypt", suites[s].name)) {
+            if (matches(&args, "openssl_evp_reuse_encrypt", suites[s].name, size)) {
                 uint64_t ns = bench_encrypt_reuse(&suites[s], size, iterations, plain, ciphertext, key, iv);
                 printf("openssl_evp_reuse_encrypt,%s,%zu,%zu,%zu,%llu,%.2f\n", suites[s].name, size, iterations, bytes, (unsigned long long)ns, mib_per_sec(bytes, ns));
                 fflush(stdout);
             }
-            if (matches(&args, "openssl_evp_reuse_decrypt", suites[s].name)) {
+            if (matches(&args, "openssl_evp_reuse_decrypt", suites[s].name, size)) {
                 uint64_t ns = bench_decrypt_reuse(&suites[s], size, iterations, plain, ciphertext, out, key, iv);
                 printf("openssl_evp_reuse_decrypt,%s,%zu,%zu,%zu,%llu,%.2f\n", suites[s].name, size, iterations, bytes, (unsigned long long)ns, mib_per_sec(bytes, ns));
                 fflush(stdout);
