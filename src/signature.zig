@@ -2,10 +2,12 @@
 const certificate = @import("certificate.zig");
 
 const c = @cImport({
+    @cInclude("openssl/bio.h");
     @cInclude("openssl/bn.h");
     @cInclude("openssl/ec.h");
     @cInclude("openssl/evp.h");
     @cInclude("openssl/obj_mac.h");
+    @cInclude("openssl/pem.h");
 });
 
 pub const SignError = error{ BufferTooShort, IdentityElement, LibcryptoFailed, NonCanonical };
@@ -23,6 +25,13 @@ pub const PrivateKey = struct {
     pub fn fromDer(scheme: certificate.SignatureScheme, der: []const u8) SignError!PrivateKey {
         var ptr: [*c]const u8 = der.ptr;
         const key = c.d2i_AutoPrivateKey(null, &ptr, @intCast(der.len)) orelse return error.LibcryptoFailed;
+        return .{ .scheme = scheme, .key = key };
+    }
+
+    pub fn fromPem(scheme: certificate.SignatureScheme, pem: []const u8) SignError!PrivateKey {
+        const bio = c.BIO_new_mem_buf(pem.ptr, @intCast(pem.len)) orelse return error.LibcryptoFailed;
+        defer _ = c.BIO_free(bio);
+        const key = c.PEM_read_bio_PrivateKey(bio, null, null, null) orelse return error.LibcryptoFailed;
         return .{ .scheme = scheme, .key = key };
     }
 
