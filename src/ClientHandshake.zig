@@ -5,22 +5,23 @@
 /// to send. RFC 8446 §4, Appendix A.
 const std = @import("std");
 const assert = std.debug.assert;
-const Sha256 = std.crypto.hash.sha2.Sha256;
-const Sha384 = std.crypto.hash.sha2.Sha384;
+const crypto = std.crypto;
+const Sha256 = crypto.hash.sha2.Sha256;
+const Sha384 = crypto.hash.sha2.Sha384;
 const testing = std.testing;
 const mem = std.mem;
 const base64 = std.base64.standard.Decoder;
 
-const alert = @import("alert.zig");
 const aead = @import("aead.zig");
+const alert = @import("alert.zig");
 const certificate = @import("certificate.zig");
 const client_hello = @import("client_hello.zig");
 const encrypted_extensions = @import("encrypted_extensions.zig");
 const finished = @import("finished.zig");
 const frame = @import("frame.zig");
 const hkdf = @import("hkdf.zig");
-const new_session_ticket = @import("new_session_ticket.zig");
 const SharedSecret = hkdf.SharedSecret;
+const new_session_ticket = @import("new_session_ticket.zig");
 const RecordLayer = @import("RecordLayer.zig");
 const server_hello = @import("server_hello.zig");
 const wire = @import("wire.zig");
@@ -142,6 +143,14 @@ fn HashArm(comptime Hkdf_: type, comptime Hash: type) type {
     };
 }
 
+fn secureZeroHashArm(arm: anytype) void {
+    crypto.secureZero(u8, mem.asBytes(&arm.handshake_secret));
+    crypto.secureZero(u8, mem.asBytes(&arm.client_finished_key));
+    crypto.secureZero(u8, mem.asBytes(&arm.server_finished_key));
+    crypto.secureZero(u8, mem.asBytes(&arm.client_app_secret));
+    crypto.secureZero(u8, mem.asBytes(&arm.server_app_secret));
+}
+
 const Suite = union(enum) {
     /// Pre-ServerHello: the negotiated hash isn't known yet, so run both
     /// transcript hashes and keep the one the chosen suite uses. RFC 8446
@@ -149,6 +158,13 @@ const Suite = union(enum) {
     buffering: struct { sha256: Sha256, sha384: Sha384 },
     sha256: HashArm(hkdf.HkdfSha256, Sha256),
     sha384: HashArm(hkdf.HkdfSha384, Sha384),
+
+    fn secureZero(self: *Suite) void {
+        switch (self.*) {
+            .buffering => {},
+            inline .sha256, .sha384 => |*s| secureZeroHashArm(s),
+        }
+    }
 
     /// Feed one handshake message (4-byte header + body, no record framing)
     /// into the running transcript hash. RFC 8446 §4.4.1. While buffering
@@ -340,6 +356,8 @@ pub fn deinit(self: *ClientHandshake) void {
         },
         .start, .wait_sh => {},
     }
+    self.suite.secureZero();
+    std.crypto.secureZero(u8, std.mem.asBytes(&self.keypair.secret_key));
 }
 
 /// Acknowledge that the bytes from the last engine call were written to the

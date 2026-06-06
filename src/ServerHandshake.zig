@@ -50,9 +50,23 @@ fn HashArm(comptime Hkdf_: type, comptime Hash: type) type {
     };
 }
 
+fn secureZeroHashArm(arm: anytype) void {
+    std.crypto.secureZero(u8, std.mem.asBytes(&arm.handshake_secret));
+    std.crypto.secureZero(u8, std.mem.asBytes(&arm.client_finished_key));
+    std.crypto.secureZero(u8, std.mem.asBytes(&arm.server_finished_key));
+    std.crypto.secureZero(u8, std.mem.asBytes(&arm.client_app_secret));
+    std.crypto.secureZero(u8, std.mem.asBytes(&arm.server_app_secret));
+}
+
 const Suite = union(enum) {
     sha256: HashArm(hkdf.HkdfSha256, Sha256),
     sha384: HashArm(hkdf.HkdfSha384, Sha384),
+
+    fn secureZero(self: *Suite) void {
+        switch (self.*) {
+            inline .sha256, .sha384 => |*s| secureZeroHashArm(s),
+        }
+    }
 
     fn update(self: *Suite, msg: []const u8) void {
         switch (self.*) {
@@ -110,6 +124,11 @@ pub fn deinit(self: *ServerHandshake) void {
         },
         .wait_ch => {},
     }
+    switch (self.state) {
+        .wait_client_finished, .connected => self.suite_state.secureZero(),
+        .wait_ch => {},
+    }
+    std.crypto.secureZero(u8, std.mem.asBytes(&self.keypair.secret_key));
 }
 
 pub fn supportSuites(self: *ServerHandshake, suites: []const CipherSuite) void {

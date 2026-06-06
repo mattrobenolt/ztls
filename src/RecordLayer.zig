@@ -38,6 +38,10 @@ pub fn init(aead_: Aead, iv_: Iv) AeadError!RecordLayer {
 
 pub fn deinit(self: *RecordLayer) void {
     self.ctx.deinit();
+    std.crypto.secureZero(u8, std.mem.asBytes(&self.aead));
+    std.crypto.secureZero(u8, std.mem.asBytes(&self.iv));
+    self.seq = 0;
+    self.key_limit = 0;
 }
 
 pub fn clone(self: *const RecordLayer) AeadError!RecordLayer {
@@ -176,6 +180,21 @@ test "encrypt: sequence number overflow" {
 }
 
 // RFC 8446 §5.5 — endpoints cannot protect more records than the AEAD usage limit permits.
+// RFC 8446 §7.1 — traffic keys are secret keying material and are cleared on teardown.
+test "deinit: clears caller-visible traffic key material" {
+    const key: Aes128GcmKey = .init(@splat(0xab));
+    const iv: Iv = .init(@splat(0xcd));
+    var rl: RecordLayer = try .init(.{ .aes128_gcm = key }, iv);
+    rl.deinit();
+    switch (rl.aead) {
+        .aes128_gcm => |k| try testing.expectEqualSlices(u8, &Aes128GcmKey.zero.data, &k.data),
+        else => return error.WrongSuite,
+    }
+    try testing.expectEqualSlices(u8, &Iv.zero.data, &rl.iv.data);
+    try testing.expectEqual(@as(u64, 0), rl.seq);
+    try testing.expectEqual(@as(u64, 0), rl.key_limit);
+}
+
 test "encrypt/decrypt: key update required at AEAD usage limit" {
     var tx: RecordLayer = try .init(.{ .aes128_gcm = .zero }, .zero);
     defer tx.deinit();
