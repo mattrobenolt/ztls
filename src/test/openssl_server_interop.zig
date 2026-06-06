@@ -30,15 +30,6 @@ const suites = [_]SuiteCase{
     .{ .openssl_name = "TLS_AES_256_GCM_SHA384", .ztls_suite = .aes_256_gcm_sha384 },
 };
 
-const TestSigner = struct {
-    scalar: [32]u8,
-
-    fn sign(context: *anyopaque, msg: []const u8, out: []u8) ztls.ServerHandshake.SignError![]const u8 {
-        const self: *TestSigner = @ptrCast(@alignCast(context));
-        return ztls.signature.signEcdsaP256Sha256(&self.scalar, msg, out);
-    }
-};
-
 const ServerArgs = struct {
     port: u16,
     suite: ztls.CipherSuite,
@@ -113,8 +104,9 @@ fn serve(stream: net.Stream, suite: ztls.CipherSuite, cert_der: []const u8, scal
     const supported = [_]ztls.CipherSuite{suite};
     hs.supportSuites(&supported);
 
-    var signer: TestSigner = .{ .scalar = scalar[0..32].* };
-    const signer_api: ztls.ServerHandshake.Signer = .{ .scheme = .ecdsa_secp256r1_sha256, .context = &signer, .sign = TestSigner.sign };
+    var signer = try ztls.signature.PrivateKey.fromP256Scalar(scalar[0..32]);
+    defer signer.deinit();
+    const signer_api = signer.signer();
 
     var random: ztls.client_hello.Random = undefined;
     crypto.random.bytes(&random.data);

@@ -149,13 +149,8 @@ pub const AcceptError = frame.ParseError || client_hello.ParseError || server_he
     LibcryptoFailed,
 };
 
-pub const SignError = error{ BufferTooShort, IdentityElement, LibcryptoFailed, NonCanonical };
-
-pub const Signer = struct {
-    scheme: certificate.SignatureScheme,
-    context: *anyopaque,
-    sign: *const fn (context: *anyopaque, msg: []const u8, out: []u8) SignError![]const u8,
-};
+pub const SignError = signature.SignError;
+pub const Signer = signature.Signer;
 
 pub const FlightError = encrypted_extensions.EncodeError || certificate.EncodeError || certificate.CertificateVerifyEncodeError || RecordLayer.EncryptError || SignError;
 
@@ -522,15 +517,6 @@ const test_cert_der = @embedFile("test_fixtures/server.crt.der");
 const server_ecdsa_cert_der = @embedFile("test_fixtures/server-ecdsa/server.der");
 const server_ecdsa_scalar = @embedFile("test_fixtures/server-ecdsa/scalar.bin");
 
-const TestSigner = struct {
-    scalar: [32]u8,
-
-    fn sign(context: *anyopaque, msg: []const u8, out: []u8) SignError![]const u8 {
-        const self: *TestSigner = @ptrCast(@alignCast(context));
-        return signature.signEcdsaP256Sha256(&self.scalar, msg, out);
-    }
-};
-
 // RFC 8446 §6 — alerts before handshake protection are plaintext records.
 test "sendAlert: plaintext fatal alert before ClientHello" {
     var hs: ServerHandshake = .init(.generate());
@@ -677,8 +663,9 @@ test "sendAuthenticatedFlight: client decrypts authenticated server flight" {
     var sh_out: [256]u8 = undefined;
     const sh_record = try server.acceptClientHello(ch_record[0 .. frame.header_len + ch.len], .zero, &sh_out);
 
-    var signer: TestSigner = .{ .scalar = server_ecdsa_scalar[0..32].* };
-    const signer_api: Signer = .{ .scheme = .ecdsa_secp256r1_sha256, .context = &signer, .sign = TestSigner.sign };
+    var signer = try signature.PrivateKey.fromP256Scalar(server_ecdsa_scalar[0..32]);
+    defer signer.deinit();
+    const signer_api = signer.signer();
     var plaintext: [4096]u8 = undefined;
     var flight_out: [4096]u8 = undefined;
     const flight_record = try server.sendAuthenticatedFlight(&.{test_cert_der}, signer_api, &plaintext, &flight_out);
@@ -742,8 +729,9 @@ test "sendAuthenticatedFlight: client processes CertificateVerify and Finished" 
     var sh_out: [256]u8 = undefined;
     const sh_record = try server.acceptClientHello(ch_record[0 .. frame.header_len + ch.len], .zero, &sh_out);
 
-    var signer: TestSigner = .{ .scalar = server_ecdsa_scalar[0..32].* };
-    const signer_api: Signer = .{ .scheme = .ecdsa_secp256r1_sha256, .context = &signer, .sign = TestSigner.sign };
+    var signer = try signature.PrivateKey.fromP256Scalar(server_ecdsa_scalar[0..32]);
+    defer signer.deinit();
+    const signer_api = signer.signer();
     var plaintext: [4096]u8 = undefined;
     var flight_out: [4096]u8 = undefined;
     const flight_record = try server.sendAuthenticatedFlight(&.{server_ecdsa_cert_der}, signer_api, &plaintext, &flight_out);
@@ -921,8 +909,9 @@ fn expectInMemoryAuthenticatedHandshake(suite: CipherSuite) !void {
     try testing.expectEqual(suite, server.suite);
     try client.processServerHello(sh_record[frame.header_len..]);
 
-    var signer: TestSigner = .{ .scalar = server_ecdsa_scalar[0..32].* };
-    const signer_api: Signer = .{ .scheme = .ecdsa_secp256r1_sha256, .context = &signer, .sign = TestSigner.sign };
+    var signer = try signature.PrivateKey.fromP256Scalar(server_ecdsa_scalar[0..32]);
+    defer signer.deinit();
+    const signer_api = signer.signer();
     var plaintext: [4096]u8 = undefined;
     const flight_record = try server.sendAuthenticatedFlight(&.{server_ecdsa_cert_der}, signer_api, &plaintext, &server_out);
     const client_event = try client.handleRecord(server_out[0..flight_record.len], &client_out);

@@ -417,29 +417,12 @@ fn benchDecrypt(comptime suite: Suite, comptime size: usize, timer: *std.time.Ti
 
 const Direction = enum { client_to_server, server_to_client };
 
-const BenchSigner = struct {
-    scalar: [32]u8,
-
-    fn sign(context: *anyopaque, msg: []const u8, out: []u8) ztls.ServerHandshake.SignError![]const u8 {
-        const self: *BenchSigner = @ptrCast(@alignCast(context));
-        return ztls.signature.signEcdsaP256Sha256(&self.scalar, msg, out);
-    }
-};
-
 fn deterministicClientKeypair() !ztls.x25519.KeyPair {
     return try ztls.x25519.KeyPair.generateDeterministic([_]u8{0x11} ** 32);
 }
 
 fn deterministicServerKeypair() !ztls.x25519.KeyPair {
     return try ztls.x25519.KeyPair.generateDeterministic([_]u8{0x22} ** 32);
-}
-
-fn deterministicSigner() !BenchSigner {
-    return .{ .scalar = server_scalar[0..32].* };
-}
-
-fn signerApi(signer: *BenchSigner) ztls.ServerHandshake.Signer {
-    return .{ .scheme = .ecdsa_secp256r1_sha256, .context = signer, .sign = BenchSigner.sign };
 }
 
 fn connectPair(comptime suite: Suite) !struct { client: ztls.ClientHandshake, server: ztls.ServerHandshake } {
@@ -456,9 +439,10 @@ fn connectPair(comptime suite: Suite) !struct { client: ztls.ClientHandshake, se
     const sh_record = try server.acceptClientHello(ch_record, rfc8448.client_random, &server_out);
     try client.processServerHello(sh_record[ztls.frame.header_len..]);
 
-    var signer = try deterministicSigner();
+    var signer = try ztls.signature.PrivateKey.fromP256Scalar(server_scalar[0..32]);
+    defer signer.deinit();
     var plaintext: [8192]u8 = undefined;
-    const flight_record = try server.sendAuthenticatedFlight(&.{server_cert_der}, signerApi(&signer), &plaintext, &server_out);
+    const flight_record = try server.sendAuthenticatedFlight(&.{server_cert_der}, signer.signer(), &plaintext, &server_out);
     const ev = try client.handleRecord(server_out[0..flight_record.len], &client_out);
     const client_finished = switch (ev) {
         .write => |w| w,
