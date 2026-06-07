@@ -1,4 +1,4 @@
-# ztls — Sans-I/O使用指南
+# ztls — Sans-I/O
 
 ztls is a pure TLS 1.3 state machine: you feed it bytes, it gives you bytes back. It does not open sockets, allocate memory, or spawn threads. This document shows how to drive a handshake and exchange application data using the public API.
 
