@@ -21,22 +21,52 @@ pub const NamedGroup = enum(u16) {
     x25519 = 0x001d,
     secp256r1 = 0x0017,
     secp384r1 = 0x0018,
+    secp256r1_mlkem768 = 0x11eb,
+    x25519_mlkem768 = 0x11ec,
+    secp384r1_mlkem1024 = 0x11ed,
     _,
 };
 
-/// Sized for the widest supported group, not a fixed 32. X25519 = 32,
-/// P-256 uncompressed SEC1 = 65, P-384 = 97.
-pub const max_public_key_len = 97;
-/// Widest shared secret: P-384 = 48. X25519/P-256 = 32.
-pub const max_shared_secret_len = 48;
+/// Sized for the widest named group we plan to support, not a fixed 32.
+/// X25519 = 32, P-256 uncompressed SEC1 = 65, P-384 = 97,
+/// X25519MLKEM768 = 1216, SecP256r1MLKEM768 = 1249,
+/// SecP384r1MLKEM1024 = 1665.
+pub const max_public_key_len = 1665;
+/// Widest shared secret: P-384 || ML-KEM-1024 = 48 + 32.
+/// X25519/P-256/P-384 alone remain 32/32/48.
+pub const max_shared_secret_len = 80;
 
 pub const Error = error{ UnsupportedGroup, LibcryptoFailed, IdentityElement };
 
 /// Wire length of a group's public key (key_exchange field), or null if the
-/// group is not supported.
-pub fn publicKeyLen(group: NamedGroup) ?u8 {
+/// group is not implemented yet.
+pub fn publicKeyLen(group: NamedGroup) ?u16 {
     return switch (group) {
         .x25519 => x25519.public_length,
+        else => null,
+    };
+}
+
+/// Wire length for known future groups, even before backend math is available.
+/// Values for the ML-KEM hybrids come from draft-ietf-tls-ecdhe-mlkem-05 §3.
+pub fn plannedPublicKeyLen(group: NamedGroup) ?u16 {
+    return switch (group) {
+        .x25519 => x25519.public_length,
+        .secp256r1 => 65,
+        .secp384r1 => 97,
+        .x25519_mlkem768 => 32 + 1184,
+        .secp256r1_mlkem768 => 65 + 1184,
+        .secp384r1_mlkem1024 => 97 + 1568,
+        else => null,
+    };
+}
+
+pub fn plannedSharedSecretLen(group: NamedGroup) ?u8 {
+    return switch (group) {
+        .x25519, .secp256r1 => 32,
+        .secp384r1 => 48,
+        .x25519_mlkem768, .secp256r1_mlkem768 => 32 + 32,
+        .secp384r1_mlkem1024 => 48 + 32,
         else => null,
     };
 }
@@ -123,6 +153,19 @@ test "NamedGroup wire identifiers" {
     try std.testing.expectEqual(@as(u16, 0x001d), @intFromEnum(NamedGroup.x25519));
     try std.testing.expectEqual(@as(u16, 0x0017), @intFromEnum(NamedGroup.secp256r1));
     try std.testing.expectEqual(@as(u16, 0x0018), @intFromEnum(NamedGroup.secp384r1));
+    try std.testing.expectEqual(@as(u16, 0x11ec), @intFromEnum(NamedGroup.x25519_mlkem768));
+    try std.testing.expectEqual(@as(u16, 0x11eb), @intFromEnum(NamedGroup.secp256r1_mlkem768));
+    try std.testing.expectEqual(@as(u16, 0x11ed), @intFromEnum(NamedGroup.secp384r1_mlkem1024));
+}
+
+// draft-ietf-tls-ecdhe-mlkem-05 §3 / §7 — hybrid group key_share sizes are
+// named now so parser/negotiation code can size buffers before backend support lands.
+test "planned future group sizes" {
+    try std.testing.expectEqual(@as(?u16, 1216), plannedPublicKeyLen(.x25519_mlkem768));
+    try std.testing.expectEqual(@as(?u16, 1249), plannedPublicKeyLen(.secp256r1_mlkem768));
+    try std.testing.expectEqual(@as(?u16, 1665), plannedPublicKeyLen(.secp384r1_mlkem1024));
+    try std.testing.expectEqual(@as(?u8, 64), plannedSharedSecretLen(.x25519_mlkem768));
+    try std.testing.expectEqual(@as(?u8, 80), plannedSharedSecretLen(.secp384r1_mlkem1024));
 }
 
 // RFC 7748 §5.2 — X25519 keypair derives the published shared secret through the
