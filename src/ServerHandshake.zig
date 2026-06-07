@@ -919,6 +919,26 @@ test "handleRecord: KeyUpdate not at record boundary is rejected" {
     try testing.expectError(error.UnexpectedMessage, server.handleRecord(rx_buf[0..wire_rec.len], .zero, &out));
 }
 
+// RFC 8446 Appendix A — server state machine must reject arbitrary inbound records without panics.
+fn fuzzHandleRecord(_: void, input: []const u8) anyerror!void {
+    const key_seed: [32]u8 = @splat(0x42);
+    const keypair = x25519.KeyPair.generateDeterministic(key_seed) catch unreachable;
+    var server: ServerHandshake = .init(keypair);
+    defer server.deinit();
+
+    var record_buf: [frame.max_wire_record_len + 64]u8 = undefined;
+    const n = @min(input.len, record_buf.len);
+    @memcpy(record_buf[0..n], input[0..n]);
+    var out: [4096]u8 = undefined;
+    const random: client_hello.Random = .init(@splat(0));
+    _ = server.handleRecord(record_buf[0..n], random, &out) catch {};
+}
+
+// RFC 8446 Appendix A — malformed server inputs are covered by fuzzing.
+test "fuzz: ServerHandshake.handleRecord rejects arbitrary input" {
+    try testing.fuzz({}, fuzzHandleRecord, .{});
+}
+
 test "application data: server sends and receives" {
     var server = try connectedTestServer();
     try testing.expect(server.isConnected());
