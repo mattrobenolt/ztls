@@ -406,7 +406,7 @@ test "parse: unsupported TLS version" {
 // Fuzz target: parse must reject arbitrary bytes with an error, never crash
 // (no panic/overflow/OOB). Run with `zig build test --fuzz`.
 fn fuzzParse(_: void, input: []const u8) anyerror!void {
-    _ = parse(input) catch {};
+    _ = parse(input) catch return;
 }
 
 test "fuzz: parse handles arbitrary input" {
@@ -526,7 +526,7 @@ test "parseHelloRetryRequest: rejects missing supported_versions" {
 }
 
 fn fuzzParseHrr(_: void, input: []const u8) anyerror!void {
-    _ = parseHelloRetryRequest(input) catch {};
+    _ = parseHelloRetryRequest(input) catch return;
 }
 
 test "fuzz: parseHelloRetryRequest handles arbitrary input" {

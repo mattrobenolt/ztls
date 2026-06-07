@@ -11,6 +11,7 @@ const len = 12;
 pub const Nonce = memx.Array(len);
 pub const Iv = memx.Array(len);
 
+// ziglint-ignore: Z006
 const NonceVec = @Vector(len, u8);
 
 /// Construct the per-record nonce by XORing the IV with the sequence number.

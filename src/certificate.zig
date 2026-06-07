@@ -577,7 +577,7 @@ test "parse: extracts non-critical name constraints" {
 // never crash. Exercises our framing plus cryptox.Certificate's X.509 parser.
 // Run with `zig build test --fuzz`.
 fn fuzzParse(_: void, input: []const u8) anyerror!void {
-    _ = parse(input, .{}) catch {};
+    _ = parse(input, .{}) catch return;
 }
 
 test "fuzz: parse handles arbitrary input" {

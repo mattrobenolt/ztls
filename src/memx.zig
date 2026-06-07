@@ -57,6 +57,7 @@ pub fn lastIndexOfNonZero(buf: []const u8) ?usize {
     var i = buf.len - 1;
     if (buf[i] != 0) return i;
 
+    // ziglint-ignore: Z006
     const Vec = @Vector(vector_chunk_len, u8);
     const zero: Vec = @splat(0);
 

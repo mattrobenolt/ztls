@@ -206,7 +206,7 @@ test "writeInnerPlaintext: buffer too short" {
 // RFC 8446 §5.1 — TLSPlaintext header is 5 bytes: content_type (1) + legacy_version
 // (2) + length (2). parseHeader must never panic on arbitrary input.
 fn fuzzParseHeader(_: void, input: []const u8) anyerror!void {
-    _ = parseHeader(input) catch {};
+    _ = parseHeader(input) catch return;
 }
 
 test "fuzz: parseHeader handles arbitrary input" {

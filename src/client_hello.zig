@@ -560,7 +560,7 @@ test "parse: ignores unknown extension" {
 // RFC 8446 §4.1.2 — ClientHello parse must never crash or panic on arbitrary
 // wire input. Errors are expected; panics, OOB, or integer overflow are not.
 fn fuzzParse(_: void, input: []const u8) anyerror!void {
-    _ = parse(input) catch {};
+    _ = parse(input) catch return;
 }
 
 test "fuzz: parse handles arbitrary input" {

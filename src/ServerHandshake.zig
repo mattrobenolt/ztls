@@ -985,7 +985,7 @@ fn fuzzHandleRecord(_: void, input: []const u8) anyerror!void {
     @memcpy(record_buf[0..n], input[0..n]);
     var out: [4096]u8 = undefined;
     const random: client_hello.Random = .init(@splat(0));
-    _ = server.handleRecord(record_buf[0..n], random, &out) catch {};
+    _ = server.handleRecord(record_buf[0..n], random, &out) catch return;
 }
 
 // RFC 8446 Appendix A — malformed server inputs are covered by fuzzing.
@@ -1016,7 +1016,7 @@ fn expectInMemoryAuthenticatedHandshake(suite: CipherSuite) !void {
     const client_keypair: x25519.KeyPair = .generate();
     const server_keypair: x25519.KeyPair = .generate();
 
-    var client = @import("ClientHandshake.zig").init(client_keypair);
+    var client: ClientHandshake = .init(client_keypair);
     client.offerAlpn(&.{"h2"});
     client.policy.host_name = "ztls.server.test";
     var client_out: [1024]u8 = undefined;

@@ -146,7 +146,7 @@ fn sendBestEffortAlert(hs: *ztls.ServerHandshake, stream: net.Stream, err: anyer
         else => .internal_error,
     };
     const alert_record = hs.sendAlert(description, out) catch return;
-    stream.writeAll(alert_record) catch {};
+    stream.writeAll(alert_record) catch return;
 }
 
 pub fn main() !void {

@@ -1483,7 +1483,7 @@ fn fuzzProcessFlight(_: void, input: []const u8) anyerror!void {
     var hs: ClientHandshake = .init(rfc8448_client_keypair);
     hs.injectClientHello(&rfc8448_client_hello);
     hs.processServerHello(&rfc8448_server_hello) catch return;
-    _ = hs.processFlight(input, .{}) catch {};
+    _ = hs.processFlight(input, .{}) catch return;
 }
 
 test "fuzz: processFlight handles arbitrary decrypted bytes" {

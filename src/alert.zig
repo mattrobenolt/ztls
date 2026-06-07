@@ -99,7 +99,7 @@ test "encode" {
 // RFC 8446 §6 — Alert messages are exactly two bytes; fuzz arbitrary inputs to
 // ensure parse rejects truncation and never crashes. Run with `zig build test --fuzz`.
 fn fuzzParse(_: void, input: []const u8) anyerror!void {
-    _ = parse(input) catch {};
+    _ = parse(input) catch return;
 }
 
 test "fuzz: parse handles arbitrary input" {

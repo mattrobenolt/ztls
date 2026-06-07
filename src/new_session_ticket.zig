@@ -186,7 +186,7 @@ test "parse: rejects malformed extensions length" {
 }
 
 fn fuzzParse(_: void, input: []const u8) anyerror!void {
-    _ = parse(input) catch {};
+    _ = parse(input) catch return;
 }
 
 test "fuzz: parse handles arbitrary input" {

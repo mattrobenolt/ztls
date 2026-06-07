@@ -22,7 +22,7 @@ pub fn main() !void {
             error.ProcessFdQuotaExceeded, error.SystemFdQuotaExceeded => return err,
             else => continue,
         };
-        handleConnection(conn) catch {};
+        handleConnection(conn) catch continue;
     }
 }
 
@@ -114,5 +114,5 @@ fn sendBestEffortAlert(hs: *ztls.ServerHandshake, stream: std.net.Stream, err: a
         else => .internal_error,
     };
     const alert_record = hs.sendAlert(description, out) catch return;
-    stream.writeAll(alert_record) catch {};
+    stream.writeAll(alert_record) catch return;
 }
