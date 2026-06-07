@@ -24,6 +24,12 @@ ci: ci-actions
     zig build bench-evp -- --bench openssl_evp_reuse_encrypt --suite aes_128 --size 1350
     zig build bench-openssl -- --bench openssl_bio_app_client_to_server --suite aes_128 --size 1350
 
+[doc("Run tlsfuzzer TLS 1.3 conformance smoke tests")]
+[group("test")]
+tlsfuzzer *ARGS:
+    zig build tlsfuzzer-server
+    cd conformance && uv run pytest {{ ARGS }}
+
 [doc("List ztls, OpenSSL EVP, and OpenSSL memory-BIO benchmark rows")]
 [group("bench")]
 bench-list:

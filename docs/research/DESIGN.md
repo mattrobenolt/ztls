@@ -389,14 +389,17 @@ Every error path is tested. Fuzzing is not optional.
 ### Conformance / Industry Test Suites
 
 - **tlsfuzzer** (https://github.com/tlsfuzzer/tlsfuzzer) — RFC conformance and
-  protocol fuzzer. Runs Python scripts against a live server. Comprehensive
-  TLS 1.3 coverage. Run via `scripts/test-tls13-*.py`.
+  protocol fuzzer. Runs Python scripts against a live server. Initial TLS 1.3
+  smoke coverage lives in `conformance/` and runs with `just tlsfuzzer`; expand
+  it with negative conversations for malformed ClientHello, Finished, record
+  limits, KeyUpdate, and alert behavior.
 - **TLS-Anvil** (https://github.com/tls-attacker/TLS-Anvil) — ~408 RFC-based
   client and server tests for TLS 1.3. Java/JUnit based. More structured than
   tlsfuzzer.
-- **Wycheproof** (https://github.com/C2SP/wycheproof) — test vectors for
-  every crypto primitive we use (AES-GCM, ChaCha20-Poly1305, HKDF, X25519,
-  ECDH, ECDSA). These are JSON files; write a test harness to consume them.
+- **Wycheproof** (https://github.com/C2SP/wycheproof) — integration vectors at
+  the libcrypto boundary (AEAD tag/AAD/nonce handling, X25519 identity-element
+  rejection, ECDSA DER verification), not proof that ztls implements primitive
+  crypto. These are JSON files; write a test harness to consume them.
 - **bettertls** (https://github.com/Netflix/bettertls) — name constraints and
   path-building correctness for certificate validation.
 

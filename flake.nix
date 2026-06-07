@@ -48,6 +48,7 @@
                 pinact
                 pkg-config
                 python3
+                uv
                 txtar
                 zig_0_15
                 zigdoc

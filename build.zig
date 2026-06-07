@@ -75,6 +75,19 @@ pub fn build(b: *std.Build) void {
     const server_interop_step = b.step("test-openssl-server", "Run the openssl s_client interop test");
     server_interop_step.dependOn(&run_server_interop.step);
 
+    const tlsfuzzer_server_exe = b.addExecutable(.{
+        .name = "ztls_tlsfuzzer_server",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/test/tlsfuzzer_server.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{.{ .name = "ztls", .module = mod }},
+        }),
+    });
+    const install_tlsfuzzer_server = b.addInstallArtifact(tlsfuzzer_server_exe, .{});
+    const tlsfuzzer_server_step = b.step("tlsfuzzer-server", "Build the tlsfuzzer TCP server");
+    tlsfuzzer_server_step.dependOn(&install_tlsfuzzer_server.step);
+
     const replay_fixtures_exe = b.addExecutable(.{
         .name = "generate_replay_fixtures",
         .root_module = b.createModule(.{
