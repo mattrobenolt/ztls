@@ -116,7 +116,7 @@ def expect_closed_or_alert(sock):
     try:
         data = sock.recv(1)
         assert data in (b"", b"\x15"), f"expected close or alert, got {data!r}"
-    except (ConnectionResetError, TimeoutError, socket.timeout):
+    except ConnectionResetError, TimeoutError, socket.timeout:
         pass
 
 

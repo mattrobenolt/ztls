@@ -29,7 +29,7 @@ def _wait_for_ready(proc: subprocess.Popen, host: str, port: int, timeout_s: flo
             if chunk:
                 captured.extend(chunk)
                 saw_marker = marker in captured
-        except (BlockingIOError, OSError):
+        except BlockingIOError, OSError:
             pass
         if saw_marker:
             try:
