@@ -23,7 +23,11 @@ openssl req -x509 -new -key server.key -sha256 -days 3650 \
   -addext 'subjectAltName=DNS:ztls.server.test'
 openssl x509 -in server.crt -outform DER -out server.der
 openssl ec -in server.key -noout -text > key.txt
-python3 - <<'PY'
+uv run --script - <<'PY'
+# /// script
+# requires-python = ">=3.14"
+# dependencies = []
+# ///
 import re, pathlib
 text=pathlib.Path('key.txt').read_text().splitlines()
 out=[]; flag=False

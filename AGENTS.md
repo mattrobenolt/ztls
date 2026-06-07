@@ -55,6 +55,20 @@ feelings about performance are wrong until measured.
 
 ---
 
+## Dev Environment
+
+The Nix flake is the source of truth for development tooling. If a recipe,
+script, test, or conformance harness needs a command, add it to `flake.nix`;
+don't suggest installing it globally and don't make scripts skip because a
+devshell dependency is absent. Generated or downloaded artifacts may be recipe
+dependencies, but tools should be assumed present in the devshell.
+
+When already inside the devshell, run commands directly. Don't wrap normal
+checks in `nix develop --command` unless there is evidence the current shell is
+missing the updated environment.
+
+---
+
 ## Code Style
 
 - Prefer `ast-grep` for structural searches and mechanical refactors. Use plain

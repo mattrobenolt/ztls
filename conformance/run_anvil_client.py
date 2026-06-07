@@ -1,11 +1,10 @@
-#!/usr/bin/env python3
-"""TLS-Anvil client-runner scaffold for the ztls TLS-Anvil client binary.
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.14"
+# dependencies = []
+# ///
+"""TLS-Anvil client-runner scaffold for the ztls TLS-Anvil client binary."""
 
-Skips gracefully when Java or the TLS-Anvil JAR is missing. Full invocation is
-still TODO-122ca1af.
-"""
-
-import shutil
 import sys
 from pathlib import Path
 
@@ -20,27 +19,15 @@ def eprint(msg: str) -> None:
 
 
 def main() -> int:
-    if not shutil.which("java"):
-        eprint("SKIP: java not found in PATH; add jdk to devshell (TODO-122ca1af)")
-        return 0
-
     if not ANVIL_JAR.exists():
-        eprint(
-            f"SKIP: TLS-Anvil JAR not found at {ANVIL_JAR}; run 'just anvil-fetch' first (TODO-122ca1af)"
-        )
-        return 0
+        eprint(f"expected TLS-Anvil JAR at {ANVIL_JAR}; run 'just anvil-fetch'")
+        return 1
 
     if not CLIENT_BIN.exists():
-        eprint(
-            f"SKIP: client binary not found at {CLIENT_BIN}; run 'zig build tls-anvil-client' first"
-        )
-        return 0
+        eprint(f"expected client binary at {CLIENT_BIN}; run 'zig build tls-anvil-client'")
+        return 1
 
-    # TODO: start TLS-Anvil in client mode, start ztls client against it,
-    # collect results, apply skip list.
-    eprint(
-        "TLS-Anvil client test runner: scaffolding present, full runner not yet wired (TODO-122ca1af)"
-    )
+    eprint("TLS-Anvil client test runner scaffold is present; full runner is not wired yet")
     return 0
 
 

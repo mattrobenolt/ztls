@@ -52,6 +52,7 @@
             packages =
               (with pkgs; [
                 ast-grep
+                curl
                 go
                 jdk
                 just
@@ -59,7 +60,6 @@
                 openssl
                 pinact
                 pkg-config
-                python3
                 rustToolchain
                 uv
                 txtar
