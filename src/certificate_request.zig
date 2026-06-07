@@ -3,8 +3,9 @@
 /// RFC 8446 §4.3.2
 const std = @import("std");
 const testing = std.testing;
-const wire = @import("wire.zig");
+
 const SignatureScheme = @import("certificate.zig").SignatureScheme;
+const wire = @import("wire.zig");
 
 pub const EncodeError = error{BufferTooShort};
 

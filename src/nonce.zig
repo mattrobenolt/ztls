@@ -1,9 +1,9 @@
+//! Per-record nonce construction for TLS 1.3.
+//!
+//! RFC 8446 §5.3
 const std = @import("std");
 const testing = std.testing;
 
-/// Per-record nonce construction for TLS 1.3.
-///
-/// RFC 8446 §5.3
 const memx = @import("memx.zig");
 
 const len = 12;

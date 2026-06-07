@@ -45,11 +45,11 @@ pub const Alert = struct {
     level: Level,
     description: Description,
 
-    pub fn isCloseNotify(self: Alert) bool {
+    pub inline fn isCloseNotify(self: Alert) bool {
         return self.description == .close_notify;
     }
 
-    pub fn isFatal(self: Alert) bool {
+    pub inline fn isFatal(self: Alert) bool {
         return self.level == .fatal and !self.isCloseNotify();
     }
 };

@@ -12,6 +12,8 @@ const testing = std.testing;
 const mem = std.mem;
 const base64 = std.base64.standard.Decoder;
 
+const txtar = @import("txtar");
+
 const aead = @import("aead.zig");
 const alert = @import("alert.zig");
 const array_buffer = @import("array_buffer.zig");
@@ -277,7 +279,7 @@ const Suite = union(enum) {
             inline .sha256, .sha384 => |*s| {
                 const H = @TypeOf(s.*).Hkdf;
                 s.client_app_secret = H.nextTrafficSecret(s.client_app_secret);
-                return try H.makeRecordLayer(s.aead, s.client_app_secret);
+                return H.makeRecordLayer(s.aead, s.client_app_secret);
             },
         }
     }
@@ -290,7 +292,7 @@ const Suite = union(enum) {
             inline .sha256, .sha384 => |*s| {
                 const H = @TypeOf(s.*).Hkdf;
                 s.server_app_secret = H.nextTrafficSecret(s.server_app_secret);
-                return try H.makeRecordLayer(s.aead, s.server_app_secret);
+                return H.makeRecordLayer(s.aead, s.server_app_secret);
             },
         }
     }
@@ -558,21 +560,18 @@ fn processHandshakeRecord(self: *ClientHandshake, record: []u8, out: []u8) Proce
             switch (dec.content_type) {
                 .handshake => {
                     try self.processFlight(dec.content, self.policy);
-                    if (self.state == .send_finished) return try self.clientFinished(out);
-                    return null;
+                    return if (self.state == .send_finished) try self.clientFinished(out) else null;
                 },
                 .alert => {
                     const a = try alert.parse(dec.content);
-                    if (a.isCloseNotify()) return null;
-                    return error.PeerAlert;
+                    return if (a.isCloseNotify()) null else error.PeerAlert;
                 },
                 else => return error.UnexpectedRecord,
             }
         },
         .alert => {
             const a = try alert.parse(record[frame.header_len..][0..hdr.length()]);
-            if (a.isCloseNotify()) return null;
-            return error.PeerAlert;
+            return if (a.isCloseNotify()) null else error.PeerAlert;
         },
         else => return error.UnexpectedRecord,
     }
@@ -807,13 +806,11 @@ fn receiveConnected(self: *ClientHandshake, record: []u8, out: []u8) ReceiveErro
                 }
             }
             // One response covers any number of update_requested KeyUpdates.
-            if (respond) return .{ .write = try self.sendKeyUpdate(out, .update_not_requested) };
-            return .none;
+            return if (respond) return .{ .write = try self.sendKeyUpdate(out, .update_not_requested) } else .none;
         },
         .alert => {
             const a = try alert.parse(dec.content);
-            if (a.isCloseNotify()) return .closed;
-            return error.PeerAlert;
+            return if (a.isCloseNotify()) .closed else error.PeerAlert;
         },
         else => return error.UnexpectedRecord,
     }
@@ -986,12 +983,11 @@ const rfc8448_archive = @embedFile("test_fixtures/rfc8448.txtar");
 // Test-only — the txtar import lives inside the function so the public ztls
 // module never requires the dependency.
 fn rfc8448Fixture(name: []const u8, out: []u8) []u8 {
-    const txtar = @import("txtar");
     var archive = txtar.parse(testing.allocator, rfc8448_archive) catch unreachable;
     defer archive.deinit(testing.allocator);
     for (archive.files) |f| {
         if (!mem.eql(u8, f.name, name)) continue;
-        const b64 = mem.trimRight(u8, f.data, "\n");
+        const b64 = mem.trimEnd(u8, f.data, "\n");
         const n = base64.calcSizeForSlice(b64) catch unreachable;
         base64.decode(out[0..n], b64) catch unreachable;
         return out[0..n];

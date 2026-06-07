@@ -1,5 +1,6 @@
-const certificate = @import("certificate.zig");
 const testing = @import("std").testing;
+
+const certificate = @import("certificate.zig");
 
 pub const CertificateChain = union(enum) {
     slice: []const []const u8,

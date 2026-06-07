@@ -82,7 +82,7 @@ fn parseArgs(arena: mem.Allocator) !Args {
 
 fn loadKey(path: ?[]const u8) !ztls.signature.PrivateKey {
     if (path != null) return error.UnsupportedKeyFile;
-    return try ztls.signature.PrivateKey.fromP256Scalar(fallback_scalar[0..32]);
+    return .fromP256Scalar(fallback_scalar[0..32]);
 }
 
 fn loadCert(path: ?[]const u8) ![]const u8 {

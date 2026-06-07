@@ -2,17 +2,13 @@
 ///
 /// RFC 8446 §4.4.2, §4.4.3
 const std = @import("std");
-const Certificate = @import("cryptox/Certificate.zig");
 const Sha256 = std.crypto.hash.sha2.Sha256;
 const testing = std.testing;
-const c = @cImport({
-    @cInclude("openssl/ec.h");
-    @cInclude("openssl/evp.h");
-    @cInclude("openssl/obj_mac.h");
-    @cInclude("openssl/rsa.h");
-});
 
+const Certificate = @import("cryptox/Certificate.zig");
 const wire = @import("wire.zig");
+
+const c = @import("c.zig").openssl;
 
 pub const PolicyError = error{
     CertificateKeyUsageRejected,

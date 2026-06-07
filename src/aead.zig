@@ -1,24 +1,22 @@
-/// AEAD cipher wrapper for TLS 1.3.
-///
-/// TLS 1.3 mandates three AEAD cipher suites (RFC 8446 §9.1):
-///   - TLS_AES_128_GCM_SHA256
-///   - TLS_AES_256_GCM_SHA384
-///   - TLS_CHACHA20_POLY1305_SHA256
-///
-/// All three share the same tag length (16 bytes) and nonce length (12 bytes).
-/// Keys are derived during the handshake and held for the connection lifetime.
+//! AEAD cipher wrapper for TLS 1.3.
+//!
+//! TLS 1.3 mandates three AEAD cipher suites (RFC 8446 §9.1):
+//!   - TLS_AES_128_GCM_SHA256
+//!   - TLS_AES_256_GCM_SHA384
+//!   - TLS_CHACHA20_POLY1305_SHA256
+//!
+//! All three share the same tag length (16 bytes) and nonce length (12 bytes).
+//! Keys are derived during the handshake and held for the connection lifetime.
 const std = @import("std");
 const assert = std.debug.assert;
 const testing = std.testing;
 
+const c = @import("c.zig").openssl;
 const construct = @import("nonce.zig").construct;
 pub const Iv = @import("nonce.zig").Iv;
 const memx = @import("memx.zig");
 const Nonce = @import("nonce.zig").Nonce;
 
-const c = @cImport({
-    @cInclude("openssl/evp.h");
-});
 comptime {
     assert(@sizeOf(Nonce) == 12);
 }

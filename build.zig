@@ -1,18 +1,20 @@
 const std = @import("std");
+const Build = std.Build;
+const Target = std.Target;
 const builtin = @import("builtin");
 
-fn nativeTarget() std.Target.Query {
-    var query: std.Target.Query = .{ .cpu_model = .native };
+fn nativeTarget() Target.Query {
+    var query: Target.Query = .{ .cpu_model = .native };
     // Zig's native CPU detection reports generic under some Apple-Silicon Linux
     // VMs despite /proc/cpuinfo exposing aes/pmull. For performance work that
     // silently selects std.crypto's soft AES path, which is not a useful target.
     if (builtin.cpu.arch == .aarch64 and builtin.os.tag == .linux) {
-        query.cpu_model = .{ .explicit = &std.Target.aarch64.cpu.apple_m1 };
+        query.cpu_model = .{ .explicit = &Target.aarch64.cpu.apple_m1 };
     }
     return query;
 }
 
-pub fn build(b: *std.Build) void {
+pub fn build(b: *Build) void {
     const target = b.standardTargetOptions(.{
         .default_target = nativeTarget(),
     });
@@ -37,7 +39,7 @@ pub fn build(b: *std.Build) void {
     test_mod.linkSystemLibrary("crypto", .{});
     // txtar decodes the RFC 8448 fixture archive. Lazy: only fetched when a
     // step that needs it (tests, the full_handshake example) is built.
-    const txtar_mod: ?*std.Build.Module = if (b.lazyDependency("txtar", .{
+    const txtar_mod: ?*Build.Module = if (b.lazyDependency("txtar", .{
         .target = target,
         .optimize = optimize,
     })) |dep| dep.module("txtar") else null;

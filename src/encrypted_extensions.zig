@@ -3,6 +3,8 @@
 /// RFC 8446 §4.3.1
 const std = @import("std");
 const mem = std.mem;
+const testing = std.testing;
+
 const wire = @import("wire.zig");
 
 pub const ParseError = error{
@@ -104,8 +106,6 @@ fn parseAlpn(ext: []const u8, offered: []const []const u8) ParseError![]const u8
     }
     return error.UnofferedAlpnProtocol;
 }
-
-const testing = std.testing;
 
 test "encode: empty EncryptedExtensions" {
     var out: [32]u8 = undefined;

@@ -1,12 +1,10 @@
-/// X25519 ephemeral key exchange for TLS 1.3.
-///
-/// RFC 8446 §4.2.8.2, RFC 7748
+//! X25519 ephemeral key exchange for TLS 1.3.
+//!
+//! RFC 8446 §4.2.8.2, RFC 7748
 const std = @import("std");
 const assert = std.debug.assert;
-const c = @cImport({
-    @cInclude("openssl/evp.h");
-});
 
+const c = @import("c.zig").openssl;
 const memx = @import("memx.zig");
 
 pub const public_length = 32;

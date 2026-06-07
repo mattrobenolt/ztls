@@ -1,7 +1,7 @@
-/// TLS 1.3 record protection — one direction of a TLS connection (read or write).
-///
-/// Composes record framing, nonce construction, and AEAD to implement
-/// TLSCiphertext encrypt/decrypt. RFC 8446 §5.2
+//! TLS 1.3 record protection — one direction of a TLS connection (read or write).
+//!
+//! Composes record framing, nonce construction, and AEAD to implement
+//! TLSCiphertext encrypt/decrypt. RFC 8446 §5.2
 const std = @import("std");
 const mem = std.mem;
 const testing = std.testing;
@@ -39,11 +39,7 @@ pub fn init(aead_: Aead, iv_: Iv) AeadError!RecordLayer {
 
 pub fn deinit(self: *RecordLayer) void {
     self.ctx.deinit();
-    self.aead.secureZero();
-    self.iv.secureZero();
-    self.seq = 0;
-    self.key_limit = 0;
-    self.ctx = undefined;
+    std.crypto.secureZero(u8, mem.asBytes(self));
 }
 
 pub fn clone(self: *const RecordLayer) AeadError!RecordLayer {

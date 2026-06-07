@@ -1,6 +1,6 @@
-/// TLS 1.3 transcript utilities.
-///
-/// RFC 8446 §4.4.1 — The Transcript Hash.
+//! TLS 1.3 transcript utilities.
+//!
+//! RFC 8446 §4.4.1 — The Transcript Hash.
 const std = @import("std");
 const testing = std.testing;
 

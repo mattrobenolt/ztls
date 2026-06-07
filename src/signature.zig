@@ -1,14 +1,6 @@
-/// Signature helpers for TLS 1.3 CertificateVerify.
+//! Signature helpers for TLS 1.3 CertificateVerify.
+const c = @import("c.zig").openssl;
 const certificate = @import("certificate.zig");
-
-const c = @cImport({
-    @cInclude("openssl/bio.h");
-    @cInclude("openssl/bn.h");
-    @cInclude("openssl/ec.h");
-    @cInclude("openssl/evp.h");
-    @cInclude("openssl/obj_mac.h");
-    @cInclude("openssl/pem.h");
-});
 
 pub const SignError = error{ BufferTooShort, IdentityElement, LibcryptoFailed, NonCanonical };
 

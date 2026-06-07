@@ -1,13 +1,13 @@
-/// TLS 1.3 ServerHello handshake message parsing.
-///
-/// RFC 8446 §4.1.3
+//! TLS 1.3 ServerHello handshake message parsing.
+//!
+//! RFC 8446 §4.1.3
 const std = @import("std");
 const testing = std.testing;
 
 const CipherSuite = @import("root.zig").CipherSuite;
+const NamedGroup = @import("kex.zig").NamedGroup;
 const wire = @import("wire.zig");
 const x25519 = @import("x25519.zig");
-const NamedGroup = @import("kex.zig").NamedGroup;
 
 pub const ServerHello = struct {
     /// The negotiated cipher suite. Determines which HKDF hash to use.

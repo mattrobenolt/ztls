@@ -5,6 +5,8 @@
 /// reject malformed tickets instead of accepting arbitrary bytes.
 /// RFC 8446 §4.6.1.
 const std = @import("std");
+const testing = std.testing;
+
 const wire = @import("wire.zig");
 
 pub const ParseError = error{
@@ -70,8 +72,6 @@ pub fn parse(msg: []const u8) ParseError!NewSessionTicket {
         .max_early_data_size = max_early_data_size,
     };
 }
-
-const testing = std.testing;
 
 // RFC 8446 §4.6.1 — NewSessionTicket carries lifetime, age_add, nonce, ticket, and extensions.
 test "parse: valid NewSessionTicket" {

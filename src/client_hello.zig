@@ -6,12 +6,12 @@ const assert = std.debug.assert;
 const testing = std.testing;
 
 const CipherSuite = @import("root.zig").CipherSuite;
-const SignatureScheme = @import("certificate.zig").SignatureScheme;
-const memx = @import("memx.zig");
-const wire = @import("wire.zig");
-const x25519 = @import("x25519.zig");
 const kex = @import("kex.zig");
 const NamedGroup = kex.NamedGroup;
+const memx = @import("memx.zig");
+const SignatureScheme = @import("certificate.zig").SignatureScheme;
+const wire = @import("wire.zig");
+const x25519 = @import("x25519.zig");
 
 pub const Random = memx.Array(32);
 
@@ -310,7 +310,7 @@ fn parseAlpn(ext: []const u8) ParseError![]const u8 {
     var r: wire.Reader = .init(ext);
     const list_len = try r.read(u16);
     if (list_len != ext.len - 2) return error.InvalidExtensionLength;
-    return try r.readSlice(list_len);
+    return r.readSlice(list_len);
 }
 
 fn parseSupportedVersions(ext: []const u8) ParseError!void {

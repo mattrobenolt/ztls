@@ -28,7 +28,7 @@ pub fn main() !void {
 
 fn readPort() !u16 {
     if (std.posix.getenv("PORT")) |value| {
-        return try std.fmt.parseInt(u16, value, 10);
+        return std.fmt.parseInt(u16, value, 10);
     }
     return 4433;
 }

@@ -1,9 +1,9 @@
-/// TLS 1.3 server handshake state machine.
-///
-/// Parses ClientHello, emits ServerHello, sends an authenticated encrypted
-/// flight (EncryptedExtensions / Certificate / CertificateVerify / Finished),
-/// verifies the client Finished, and handles application data and post-handshake
-/// KeyUpdate. No allocations, no I/O.
+//! TLS 1.3 server handshake state machine.
+//!
+//! Parses ClientHello, emits ServerHello, sends an authenticated encrypted
+//! flight (EncryptedExtensions / Certificate / CertificateVerify / Finished),
+//! verifies the client Finished, and handles application data and post-handshake
+//! KeyUpdate. No allocations, no I/O.
 const std = @import("std");
 const assert = std.debug.assert;
 const Sha256 = std.crypto.hash.sha2.Sha256;
@@ -51,17 +51,18 @@ pub const State = enum {
 
 fn HashArm(comptime Hkdf_: type, comptime Hash: type) type {
     return struct {
-        transcript: Hash,
-        aead: aead.Keys,
-        handshake_secret: Hkdf_.Prk,
-        client_finished_key: Hkdf_.Prk,
-        server_finished_key: Hkdf_.Prk,
-        client_app_secret: Hkdf_.Prk = undefined,
-        server_app_secret: Hkdf_.Prk = undefined,
-
+        const Self = @This();
         const Hkdf = Hkdf_;
 
-        fn secureZero(self: *@This()) void {
+        transcript: Hash,
+        aead: aead.Keys,
+        handshake_secret: Hkdf.Prk,
+        client_finished_key: Hkdf.Prk,
+        server_finished_key: Hkdf.Prk,
+        client_app_secret: Hkdf.Prk = undefined,
+        server_app_secret: Hkdf.Prk = undefined,
+
+        fn secureZero(self: *Self) void {
             std.crypto.secureZero(u8, mem.asBytes(self));
         }
     };
@@ -88,7 +89,7 @@ const Suite = union(enum) {
             inline .sha256, .sha384 => |*s| {
                 const H = @TypeOf(s.*).Hkdf;
                 s.client_app_secret = H.nextTrafficSecret(s.client_app_secret);
-                return try H.makeRecordLayer(s.aead, s.client_app_secret);
+                return H.makeRecordLayer(s.aead, s.client_app_secret);
             },
         }
     }
@@ -98,7 +99,7 @@ const Suite = union(enum) {
             inline .sha256, .sha384 => |*s| {
                 const H = @TypeOf(s.*).Hkdf;
                 s.server_app_secret = H.nextTrafficSecret(s.server_app_secret);
-                return try H.makeRecordLayer(s.aead, s.server_app_secret);
+                return H.makeRecordLayer(s.aead, s.server_app_secret);
             },
         }
     }
@@ -435,7 +436,7 @@ pub fn processClientFinished(self: *ServerHandshake, record: []u8) ClientFinishe
 
 fn processClientFinishedPlaintext(self: *ServerHandshake, plaintext: []const u8) ClientFinishedError!void {
     assert(self.state == .wait_client_finished);
-    var hr: @import("ClientHandshake.zig").HandshakeReader = .init(plaintext);
+    var hr: ClientHandshake.HandshakeReader = .init(plaintext);
     const msg = (try hr.next()) orelse return error.UnexpectedMessage;
     if (msg.type != .finished) return error.UnexpectedMessage;
     if (try hr.next() != null) return error.UnexpectedMessage;
@@ -701,7 +702,7 @@ test "acceptClientHello: emits ServerHello and installs handshake keys" {
     try testing.expectEqual(.aes_128_gcm_sha256, sh.cipher_suite);
     try testing.expectEqualSlices(u8, &server_keypair.public_key.data, &sh.server_public_key.data);
 
-    var client_hs = @import("ClientHandshake.zig").init(client_keypair);
+    var client_hs: ClientHandshake = .init(client_keypair);
     client_hs.injectClientHello(ch);
     try client_hs.processServerHello(sh_record[frame.header_len..][0..hdr.length()]);
     try testing.expectEqualSlices(u8, &client_hs.rx.iv.data, &hs.tx.iv.data);
@@ -722,7 +723,7 @@ test "sendAnonymousFlightForTest: client decrypts EncryptedExtensions and Finish
     var sh_out: [256]u8 = undefined;
     const sh_record = try server.acceptClientHello(ch_record[0 .. frame.header_len + ch.len], .zero, &sh_out);
 
-    var client = @import("ClientHandshake.zig").init(client_keypair);
+    var client: ClientHandshake = .init(client_keypair);
     client.offerAlpn(&.{"h2"});
     client.injectClientHello(ch);
     try client.processServerHello(sh_record[frame.header_len..]);
@@ -732,9 +733,9 @@ test "sendAnonymousFlightForTest: client decrypts EncryptedExtensions and Finish
     const dec = try client.rx.decrypt(flight_out[0..flight_record.len]);
     try testing.expectEqual(.handshake, dec.content_type);
 
-    var hr: @import("ClientHandshake.zig").HandshakeReader = .init(dec.content);
+    var hr: ClientHandshake.HandshakeReader = .init(dec.content);
     const ee = (try hr.next()).?;
-    try testing.expectEqual(@import("ClientHandshake.zig").HandshakeType.encrypted_extensions, ee.type);
+    try testing.expectEqual(.encrypted_extensions, ee.type);
     const parsed_ee = try encrypted_extensions.parse(ee.raw, &.{"h2"});
     try testing.expectEqualStrings("h2", parsed_ee.alpn_protocol.?);
     var transcript: Sha256 = .init(.{});
@@ -743,7 +744,7 @@ test "sendAnonymousFlightForTest: client decrypts EncryptedExtensions and Finish
     transcript.update(ee.raw);
 
     const fin = (try hr.next()).?;
-    try testing.expectEqual(@import("ClientHandshake.zig").HandshakeType.finished, fin.type);
+    try testing.expectEqual(.finished, fin.type);
     const th = transcript.peek();
     switch (server.suite_state) {
         .sha256 => |s| try finished.verify(Sha256, fin.raw, &s.server_finished_key.data, &th),
@@ -765,26 +766,26 @@ test "sendAuthenticatedFlight: client decrypts authenticated server flight" {
     var sh_out: [256]u8 = undefined;
     const sh_record = try server.acceptClientHello(ch_record[0 .. frame.header_len + ch.len], .zero, &sh_out);
 
-    var signer = try signature.PrivateKey.fromP256Scalar(server_ecdsa_scalar[0..32]);
+    var signer: signature.PrivateKey = try .fromP256Scalar(server_ecdsa_scalar[0..32]);
     defer signer.deinit();
     const signer_api = signer.signer();
     var plaintext: [4096]u8 = undefined;
     var flight_out: [4096]u8 = undefined;
     const flight_record = try server.sendAuthenticatedFlight(&.{test_cert_der}, signer_api, &plaintext, &flight_out);
 
-    var client = @import("ClientHandshake.zig").init(client_keypair);
+    var client: ClientHandshake = .init(client_keypair);
     client.offerAlpn(&.{"h2"});
     client.injectClientHello(ch);
     try client.processServerHello(sh_record[frame.header_len..]);
     const dec = try client.rx.decrypt(flight_out[0..flight_record.len]);
     try testing.expectEqual(.handshake, dec.content_type);
 
-    var hr: @import("ClientHandshake.zig").HandshakeReader = .init(dec.content);
-    try testing.expectEqual(@import("ClientHandshake.zig").HandshakeType.encrypted_extensions, (try hr.next()).?.type);
-    try testing.expectEqual(@import("ClientHandshake.zig").HandshakeType.certificate, (try hr.next()).?.type);
-    try testing.expectEqual(@import("ClientHandshake.zig").HandshakeType.certificate_verify, (try hr.next()).?.type);
-    try testing.expectEqual(@import("ClientHandshake.zig").HandshakeType.finished, (try hr.next()).?.type);
-    try testing.expectEqual(@as(?@import("ClientHandshake.zig").HandshakeReader.Message, null), try hr.next());
+    var hr: ClientHandshake.HandshakeReader = .init(dec.content);
+    try testing.expectEqual(.encrypted_extensions, (try hr.next()).?.type);
+    try testing.expectEqual(.certificate, (try hr.next()).?.type);
+    try testing.expectEqual(.certificate_verify, (try hr.next()).?.type);
+    try testing.expectEqual(.finished, (try hr.next()).?.type);
+    try testing.expectEqual(@as(?ClientHandshake.HandshakeReader.Message, null), try hr.next());
 }
 
 fn connectedTestServer() !ServerHandshake {
@@ -831,21 +832,21 @@ test "sendAuthenticatedFlight: client processes CertificateVerify and Finished" 
     var sh_out: [256]u8 = undefined;
     const sh_record = try server.acceptClientHello(ch_record[0 .. frame.header_len + ch.len], .zero, &sh_out);
 
-    var signer = try signature.PrivateKey.fromP256Scalar(server_ecdsa_scalar[0..32]);
+    var signer: signature.PrivateKey = try .fromP256Scalar(server_ecdsa_scalar[0..32]);
     defer signer.deinit();
     const signer_api = signer.signer();
     var plaintext: [4096]u8 = undefined;
     var flight_out: [4096]u8 = undefined;
     const flight_record = try server.sendAuthenticatedFlight(&.{server_ecdsa_cert_der}, signer_api, &plaintext, &flight_out);
 
-    var client = @import("ClientHandshake.zig").init(client_keypair);
+    var client: ClientHandshake = .init(client_keypair);
     client.offerAlpn(&.{"h2"});
     client.policy.host_name = "ztls.server.test";
     client.injectClientHello(ch);
     try client.processServerHello(sh_record[frame.header_len..]);
     const dec = try client.rx.decrypt(flight_out[0..flight_record.len]);
     try client.processFlight(dec.content, client.policy);
-    try testing.expectEqual(@import("ClientHandshake.zig").State.send_finished, client.state);
+    try testing.expectEqual(.send_finished, client.state);
     try testing.expectEqualStrings("h2", client.selectedAlpnProtocol().?);
 }
 
