@@ -120,14 +120,14 @@ pub fn main() !void {
 
     // Each server record goes through the one inbound entry point, handleRecord.
     var sh = server_hello_record;
-    _ = try hs.handleRecord(&sh, out.fullSlice());
+    _ = try hs.handleRecord(&sh, &out.buffer);
     print("[server] ServerHello                          → state={s}\n", .{@tagName(hs.state)});
 
     var ccs = ccs_record;
-    _ = try hs.handleRecord(&ccs, out.fullSlice());
+    _ = try hs.handleRecord(&ccs, &out.buffer);
     print("[server] ChangeCipherSpec (discarded)         → state={s}\n", .{@tagName(hs.state)});
 
-    const ev = try hs.handleRecord(server_flight_record, out.fullSlice());
+    const ev = try hs.handleRecord(server_flight_record, &out.buffer);
     print("[server] EncryptedExtensions/Cert/CV/Finished → state={s}\n", .{@tagName(hs.state)});
     print("[client] Finished sent ({} wire bytes)\n", .{ev.write.len});
     hs.completeWrite(); // acknowledge the Finished was sent
@@ -141,7 +141,7 @@ pub fn main() !void {
 
     const message = "Hello from ztls!";
     var app_out: ztls.ClientHandshake.OutBuffer = .empty;
-    const record = try hs.sendApplicationData(message, app_out.fullSlice());
+    const record = try hs.sendApplicationData(message, &app_out.buffer);
     app_out.resize(@intCast(record.len));
     print("[client] encrypted {} bytes                    → {} wire bytes\n", .{
         message.len, record.len,

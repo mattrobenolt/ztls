@@ -27,10 +27,6 @@ pub fn SliceBuffer(comptime T: type) type {
             return self.buffer[0..self.len];
         }
 
-        pub fn fullSlice(self: *Self) []T {
-            return self.buffer;
-        }
-
         pub fn unusedCapacitySlice(self: *Self) []T {
             return self.buffer[self.len..];
         }
@@ -61,8 +57,7 @@ pub fn SliceBuffer(comptime T: type) type {
         }
 
         pub fn secureZero(self: *Self) void {
-            std.crypto.secureZero(T, self.fullSlice());
-            self.len = 0;
+            std.crypto.secureZero(T, std.mem.asBytes(self));
         }
     };
 }
@@ -98,10 +93,6 @@ fn ArrayBufferAligned(
             else => unreachable,
         } {
             return self.buffer[0..self.len];
-        }
-
-        pub fn fullSlice(self: *Self) []align(alignment.toByteUnits()) T {
-            return &self.buffer;
         }
 
         pub fn unusedCapacitySlice(self: *Self) []align(alignment.toByteUnits()) T {
@@ -153,7 +144,7 @@ fn ArrayBufferAligned(
         }
 
         pub fn secureZero(self: *Self) void {
-            std.crypto.secureZero(T, self.fullSlice());
+            std.crypto.secureZero(T, &self.buffer);
             self.len = 0;
         }
     };
@@ -193,7 +184,7 @@ test "secureZero clears full storage and length" {
     buf.secureZero();
 
     try testing.expectEqual(@as(usize, 0), buf.len);
-    try testing.expectEqualSlices(u8, &.{ 0, 0, 0, 0, 0, 0, 0, 0 }, buf.fullSlice());
+    try testing.expectEqualSlices(u8, &.{ 0, 0, 0, 0, 0, 0, 0, 0 }, &buf.buffer);
 }
 
 test "append returns error on overflow" {

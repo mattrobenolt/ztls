@@ -130,7 +130,7 @@ fn serve(
     var random: ztls.client_hello.Random = undefined;
     crypto.random.bytes(&random.data);
     var storage: ztls.RecordBuffer.Storage = .empty;
-    var rb: ztls.RecordBuffer = .init(storage.fullSlice());
+    var rb: ztls.RecordBuffer = .init(&storage.buffer);
     var out: [4096]u8 = undefined;
     errdefer |err| harness.sendBestEffortAlert(&hs, stream, err, &out);
 

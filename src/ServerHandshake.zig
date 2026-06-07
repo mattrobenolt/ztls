@@ -22,6 +22,11 @@ const encrypted_extensions = @import("encrypted_extensions.zig");
 const finished = @import("finished.zig");
 const frame = @import("frame.zig");
 pub const max_out_len = frame.max_wire_record_len;
+pub const OutBuffer = frame.OutBuffer;
+/// Single caller-owned buffer for prepared authenticated server flights. The
+/// handshake plaintext is staged inside the TLS record payload region, then
+/// encrypted in place into the same backing storage.
+pub const FlightBuffer = OutBuffer;
 const handshake = @import("handshake.zig");
 const HandshakeReader = handshake.Reader;
 const HandshakeType = handshake.Type;
@@ -38,12 +43,6 @@ pub const Signer = signature.Signer;
 const x25519 = @import("x25519.zig");
 
 const ServerHandshake = @This();
-
-pub const OutBuffer = frame.OutBuffer;
-/// Single caller-owned buffer for prepared authenticated server flights. The
-/// handshake plaintext is staged inside the TLS record payload region, then
-/// encrypted in place into the same backing storage.
-pub const FlightBuffer = OutBuffer;
 
 pub const State = enum {
     wait_ch,
@@ -392,7 +391,7 @@ pub fn sendAuthenticatedFlightBuffered(
     const record = try self.sendPreparedCertificateChainFlight(
         .init(certs_der),
         signer,
-        out.fullSlice(),
+        &out.buffer,
     );
     out.resize(@intCast(record.len));
     return out.slice();

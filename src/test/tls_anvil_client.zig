@@ -35,7 +35,7 @@ pub fn main() !void {
 
     var out: [1024]u8 = undefined;
     var storage: ztls.RecordBuffer.Storage = .empty;
-    var rb: ztls.RecordBuffer = .init(storage.fullSlice());
+    var rb: ztls.RecordBuffer = .init(&storage.buffer);
 
     // ClientHello.
     try stream.writeAll(try hs.start(&out, random, host));

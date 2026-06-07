@@ -680,7 +680,7 @@ fn appendHandshakeFragment(self: *ClientHandshake, payload: []const u8) FlightEr
 }
 
 fn stashHandshakeFragment(self: *ClientHandshake, fragment: []const u8) FlightError!void {
-    if (self.handshake_buf.fullSlice().len == 0) return error.UnexpectedEof;
+    if (self.handshake_buf.buffer.len == 0) return error.UnexpectedEof;
     self.handshake_buf.clear();
     self.handshake_buf.appendSlice(fragment) catch return error.HandshakeBufferTooShort;
 }

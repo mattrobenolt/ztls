@@ -65,7 +65,7 @@ pub fn main() !void {
     std.crypto.random.bytes(&random.data);
 
     var storage: ztls.RecordBuffer.Storage = .empty;
-    var rb: ztls.RecordBuffer = .init(storage.fullSlice());
+    var rb: ztls.RecordBuffer = .init(&storage.buffer);
     var out: ztls.ServerHandshake.OutBuffer = .empty;
     var flight: ztls.ServerHandshake.FlightBuffer = .empty;
 
@@ -75,7 +75,7 @@ pub fn main() !void {
         if (n == 0) return error.ClientClosed;
         rb.advance(n);
         while (try rb.next()) |record| {
-            const ev = try hs.handleRecord(record, random, out.fullSlice());
+            const ev = try hs.handleRecord(record, random, &out.buffer);
             switch (ev) {
                 .write => |w| {
                     try conn.stream.writeAll(w);
@@ -103,15 +103,15 @@ pub fn main() !void {
         if (n == 0) return error.ClientClosed;
         rb.advance(n);
         while (try rb.next()) |record| {
-            const ev = try hs.handleRecord(record, random, out.fullSlice());
+            const ev = try hs.handleRecord(record, random, &out.buffer);
             switch (ev) {
                 .application_data => |data| {
                     if (std.mem.startsWith(u8, data, "GET ")) {
-                        const rec = try hs.sendApplicationData(response, out.fullSlice());
+                        const rec = try hs.sendApplicationData(response, &out.buffer);
                         try conn.stream.writeAll(rec);
                         hs.completeWrite();
                     }
-                    const close = try hs.sendAlert(.close_notify, out.fullSlice());
+                    const close = try hs.sendAlert(.close_notify, &out.buffer);
                     try conn.stream.writeAll(close);
                     hs.completeWrite();
                     return;

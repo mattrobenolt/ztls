@@ -43,12 +43,12 @@ pub fn main() !void {
     std.crypto.random.bytes(&random.data);
 
     // 1. ClientHello — client emits its first flight.
-    const ch_record = try client.start(client_out.fullSlice(), random, "ztls.server.test");
+    const ch_record = try client.start(&client_out.buffer, random, "ztls.server.test");
     client.completeWrite();
     print("[client] ClientHello sent → state={s}\n", .{@tagName(client.state)});
 
     // 2. ServerHello — server consumes ClientHello and emits ServerHello.
-    const sh_record = try server.acceptClientHello(ch_record, random, server_out.fullSlice());
+    const sh_record = try server.acceptClientHello(ch_record, random, &server_out.buffer);
     server.completeWrite();
     print("[server] ServerHello sent → state={s}\n", .{@tagName(server.state)});
 
@@ -65,7 +65,7 @@ pub fn main() !void {
     print("[server] authenticated flight sent → state={s}\n", .{@tagName(server.state)});
 
     // 5. Client processes the encrypted flight and auto-emits its Finished.
-    const client_event = try client.handleRecord(flight_record, client_out.fullSlice());
+    const client_event = try client.handleRecord(flight_record, &client_out.buffer);
     const client_finished_record = switch (client_event) {
         .write => |w| w,
         else => return error.UnexpectedEvent,
@@ -86,7 +86,7 @@ pub fn main() !void {
     print("\n=== handshake complete (ALPN={s}) ===\n\n", .{client.selectedAlpnProtocol().?});
 
     // 7. Application-data round trip.
-    const ping = try client.sendApplicationData("ping", client_out.fullSlice());
+    const ping = try client.sendApplicationData("ping", &client_out.buffer);
     client_out.resize(@intCast(ping.len));
     client.completeWrite();
     try testing.expectEqualStrings(
@@ -95,9 +95,9 @@ pub fn main() !void {
     );
     print("[app]    client → server: ping\n", .{});
 
-    const pong = try server.sendApplicationData("pong", server_out.fullSlice());
+    const pong = try server.sendApplicationData("pong", &server_out.buffer);
     server.completeWrite();
-    const ev = try client.handleRecord(pong, client_out.fullSlice());
+    const ev = try client.handleRecord(pong, &client_out.buffer);
     try testing.expectEqualStrings("pong", ev.application_data);
     print("[app]    server → client: pong\n", .{});
 

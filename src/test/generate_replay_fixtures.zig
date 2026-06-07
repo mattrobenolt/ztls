@@ -86,7 +86,7 @@ fn captureSuite(arena: std.mem.Allocator, suite: []const u8, port: u16) ![]u8 {
     hs.completeWrite();
 
     var storage: ztls.RecordBuffer.Storage = .empty;
-    var rb: ztls.RecordBuffer = .init(storage.fullSlice());
+    var rb: ztls.RecordBuffer = .init(&storage.buffer);
 
     var records: std.ArrayList(u8) = .empty;
     errdefer records.deinit(arena);

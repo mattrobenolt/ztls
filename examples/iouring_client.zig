@@ -62,16 +62,16 @@ pub fn main() !void {
     std.crypto.random.bytes(&random.data);
     var out: ztls.ClientHandshake.OutBuffer = .empty;
     var storage: ztls.RecordBuffer.Storage = .empty;
-    var rb: ztls.RecordBuffer = .init(storage.fullSlice());
+    var rb: ztls.RecordBuffer = .init(&storage.buffer);
 
-    try sendAll(&ring, stream.handle, try hs.start(out.fullSlice(), random, server_name));
+    try sendAll(&ring, stream.handle, try hs.start(&out.buffer, random, server_name));
     hs.completeWrite();
     print("[iouring] ClientHello sent → state={s}\n", .{@tagName(hs.state)});
 
     while (!hs.isConnected()) {
         const n = try recvIntoRecordBuffer(&ring, stream.handle, &rb);
         if (n == 0) return error.PeerClosed;
-        while (try rb.next()) |record| switch (try hs.handleRecord(record, out.fullSlice())) {
+        while (try rb.next()) |record| switch (try hs.handleRecord(record, &out.buffer)) {
             .write => |w| {
                 try sendAll(&ring, stream.handle, w);
                 hs.completeWrite();
@@ -83,7 +83,7 @@ pub fn main() !void {
     print("[iouring] handshake complete (ALPN={s})\n", .{hs.selectedAlpnProtocol().?});
 
     const request = "GET / HTTP/1.0\r\n\r\n";
-    try sendAll(&ring, stream.handle, try hs.sendApplicationData(request, out.fullSlice()));
+    try sendAll(&ring, stream.handle, try hs.sendApplicationData(request, &out.buffer));
     hs.completeWrite();
     print("[iouring] sent: {s}", .{request});
 
@@ -91,7 +91,7 @@ pub fn main() !void {
     while (true) {
         const n = try recvIntoRecordBuffer(&ring, stream.handle, &rb);
         if (n == 0) break;
-        while (try rb.next()) |record| switch (try hs.handleRecord(record, out.fullSlice())) {
+        while (try rb.next()) |record| switch (try hs.handleRecord(record, &out.buffer)) {
             .application_data => |data| {
                 print("[iouring] received: {s}\n", .{data});
                 response_seen = true;

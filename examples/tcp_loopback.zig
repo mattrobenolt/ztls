@@ -59,7 +59,7 @@ fn serverRun(ctx: *ServerCtx) !void {
     std.crypto.random.bytes(&random.data);
 
     var storage: ztls.RecordBuffer.Storage = .empty;
-    var rb: ztls.RecordBuffer = .init(storage.fullSlice());
+    var rb: ztls.RecordBuffer = .init(&storage.buffer);
     var out: ztls.ServerHandshake.OutBuffer = .empty;
     var flight: ztls.ServerHandshake.FlightBuffer = .empty;
 
@@ -69,7 +69,7 @@ fn serverRun(ctx: *ServerCtx) !void {
         if (n == 0) return error.ClientClosed;
         rb.advance(n);
         while (try rb.next()) |record| {
-            const ev = try hs.handleRecord(record, random, out.fullSlice());
+            const ev = try hs.handleRecord(record, random, &out.buffer);
             switch (ev) {
                 .write => |w| {
                     try conn.stream.writeAll(w);
@@ -97,15 +97,15 @@ fn serverRun(ctx: *ServerCtx) !void {
         if (n == 0) return error.ClientClosed;
         rb.advance(n);
         while (try rb.next()) |record| {
-            const ev = try hs.handleRecord(record, random, out.fullSlice());
+            const ev = try hs.handleRecord(record, random, &out.buffer);
             switch (ev) {
                 .application_data => |data| {
                     if (!std.mem.startsWith(u8, data, "GET ")) return error.UnexpectedRequest;
                     const response = "HTTP/1.0 200 OK\r\nContent-Length: 5\r\n\r\nhello";
-                    const rec = try hs.sendApplicationData(response, out.fullSlice());
+                    const rec = try hs.sendApplicationData(response, &out.buffer);
                     try conn.stream.writeAll(rec);
                     hs.completeWrite();
-                    const close = try hs.sendAlert(.close_notify, out.fullSlice());
+                    const close = try hs.sendAlert(.close_notify, &out.buffer);
                     try conn.stream.writeAll(close);
                     hs.completeWrite();
                     return;
@@ -140,9 +140,9 @@ fn clientRun(client_keypair: ztls.x25519.KeyPair, actual_port: u16) !void {
     std.crypto.random.bytes(&random.data);
     var out: ztls.ClientHandshake.OutBuffer = .empty;
     var storage: ztls.RecordBuffer.Storage = .empty;
-    var rb: ztls.RecordBuffer = .init(storage.fullSlice());
+    var rb: ztls.RecordBuffer = .init(&storage.buffer);
 
-    try stream.writeAll(try hs.start(out.fullSlice(), random, server_name));
+    try stream.writeAll(try hs.start(&out.buffer, random, server_name));
     hs.completeWrite();
     print("[client] ClientHello sent → state={s}\n", .{@tagName(hs.state)});
 
@@ -150,7 +150,7 @@ fn clientRun(client_keypair: ztls.x25519.KeyPair, actual_port: u16) !void {
         const n = try stream.read(rb.writable());
         if (n == 0) return error.ServerClosed;
         rb.advance(n);
-        while (try rb.next()) |record| switch (try hs.handleRecord(record, out.fullSlice())) {
+        while (try rb.next()) |record| switch (try hs.handleRecord(record, &out.buffer)) {
             .write => |w| {
                 try stream.writeAll(w);
                 hs.completeWrite();
@@ -162,7 +162,7 @@ fn clientRun(client_keypair: ztls.x25519.KeyPair, actual_port: u16) !void {
     print("[client] handshake complete (ALPN={s})\n", .{hs.selectedAlpnProtocol().?});
 
     const request = "GET / HTTP/1.0\r\n\r\n";
-    try stream.writeAll(try hs.sendApplicationData(request, out.fullSlice()));
+    try stream.writeAll(try hs.sendApplicationData(request, &out.buffer));
     hs.completeWrite();
     print("[client] sent: {s}", .{request});
 
@@ -170,7 +170,7 @@ fn clientRun(client_keypair: ztls.x25519.KeyPair, actual_port: u16) !void {
         const n = try stream.read(rb.writable());
         if (n == 0) break;
         rb.advance(n);
-        while (try rb.next()) |record| switch (try hs.handleRecord(record, out.fullSlice())) {
+        while (try rb.next()) |record| switch (try hs.handleRecord(record, &out.buffer)) {
             .application_data => |data| {
                 print("[client] received: {s}\n", .{data});
             },
