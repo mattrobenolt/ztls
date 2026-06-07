@@ -21,6 +21,10 @@ pub fn Array(comptime len: comptime_int) type {
         pub inline fn init(data: Data) Self {
             return .{ .data = data };
         }
+
+        pub inline fn secureZero(self: *Self) void {
+            std.crypto.secureZero(u8, &self.data);
+        }
     };
 }
 
@@ -75,6 +79,12 @@ pub fn lastIndexOfNonZero(buf: []const u8) ?usize {
     }
 
     return null;
+}
+
+test "Array.secureZero clears contents" {
+    var secret: Array(4) = .init(.{ 1, 2, 3, 4 });
+    secret.secureZero();
+    try testing.expectEqualSlices(u8, &.{ 0, 0, 0, 0 }, &secret.data);
 }
 
 test "lastIndexOfNonZero: last byte non-zero (fast path)" {

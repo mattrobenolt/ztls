@@ -59,6 +59,11 @@ pub fn SliceBuffer(comptime T: type) type {
         pub fn clear(self: *Self) void {
             self.len = 0;
         }
+
+        pub fn secureZero(self: *Self) void {
+            std.crypto.secureZero(T, self.fullSlice());
+            self.len = 0;
+        }
     };
 }
 
@@ -145,6 +150,11 @@ pub fn ArrayBufferAligned(
         pub fn clear(self: *Self) void {
             self.len = 0;
         }
+
+        pub fn secureZero(self: *Self) void {
+            std.crypto.secureZero(T, self.fullSlice());
+            self.len = 0;
+        }
     };
 }
 
@@ -174,6 +184,15 @@ test "appendAssumeCapacity" {
     buf.appendSliceAssumeCapacity("test");
     try testing.expectEqualStrings("test", buf.constSlice());
     try testing.expectEqual(12, buf.remainingCapacity());
+}
+
+test "secureZero clears full storage and length" {
+    var buf: ArrayBuffer(u8, 8) = .empty;
+    try buf.appendSlice("secret");
+    buf.secureZero();
+
+    try testing.expectEqual(@as(usize, 0), buf.len);
+    try testing.expectEqualSlices(u8, &.{ 0, 0, 0, 0, 0, 0, 0, 0 }, buf.fullSlice());
 }
 
 test "append returns error on overflow" {

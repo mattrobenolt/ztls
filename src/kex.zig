@@ -137,7 +137,7 @@ pub const KeyPair = struct {
     }
 
     pub fn deinit(self: *KeyPair) void {
-        crypto.secureZero(u8, self.secret.fullSlice());
+        self.secret.secureZero();
         self.* = undefined;
     }
 };

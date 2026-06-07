@@ -39,8 +39,8 @@ pub fn init(aead_: Aead, iv_: Iv) AeadError!RecordLayer {
 
 pub fn deinit(self: *RecordLayer) void {
     self.ctx.deinit();
-    std.crypto.secureZero(u8, mem.asBytes(&self.aead));
-    std.crypto.secureZero(u8, mem.asBytes(&self.iv));
+    self.aead.secureZero();
+    self.iv.secureZero();
     self.seq = 0;
     self.key_limit = 0;
     self.ctx = undefined;

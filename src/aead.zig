@@ -65,6 +65,13 @@ pub const Aead = union(Keys) {
         };
     }
 
+    pub fn secureZero(self: *Aead) void {
+        switch (self.*) {
+            inline else => |*key| key.secureZero(),
+        }
+        std.crypto.secureZero(u8, std.mem.asBytes(self));
+    }
+
     fn keyBytes(self: *const Aead) []const u8 {
         return switch (self.*) {
             inline else => |*key| &key.data,

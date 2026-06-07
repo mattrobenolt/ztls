@@ -157,11 +157,11 @@ fn HashArm(comptime Hkdf_: type, comptime Hash: type) type {
 }
 
 fn secureZeroHashArm(arm: anytype) void {
-    crypto.secureZero(u8, mem.asBytes(&arm.handshake_secret));
-    crypto.secureZero(u8, mem.asBytes(&arm.client_finished_key));
-    crypto.secureZero(u8, mem.asBytes(&arm.server_finished_key));
-    crypto.secureZero(u8, mem.asBytes(&arm.client_app_secret));
-    crypto.secureZero(u8, mem.asBytes(&arm.server_app_secret));
+    arm.handshake_secret.secureZero();
+    arm.client_finished_key.secureZero();
+    arm.server_finished_key.secureZero();
+    arm.client_app_secret.secureZero();
+    arm.server_app_secret.secureZero();
 }
 
 const Suite = union(enum) {
@@ -373,7 +373,7 @@ pub fn deinit(self: *ClientHandshake) void {
         .start, .wait_sh => {},
     }
     self.suite.secureZero();
-    crypto.secureZero(u8, mem.asBytes(&self.keypair.secret_key.data));
+    self.keypair.secret_key.secureZero();
     self.* = undefined;
 }
 
