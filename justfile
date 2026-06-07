@@ -58,6 +58,55 @@ tlsfuzzer-lockstep:
     zig build tlsfuzzer-server
     cd conformance && uv run pytest -q -m lockstep
 
+[doc("Download TLS-Anvil release JAR and dependencies")]
+[group("conformance")]
+anvil-fetch:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    mkdir -p zig-out/tools/tls-anvil
+    if [[ -f zig-out/tools/tls-anvil/apps/TLS-Anvil.jar ]]; then
+        echo "TLS-Anvil already fetched"
+        exit 0
+    fi
+    curl -sL -o zig-out/tools/tls-anvil/TLS-Anvil-v1.5.0.zip \
+        https://github.com/tls-attacker/TLS-Anvil/releases/download/v1.5.0/TLS-Anvil-v1.5.0.zip
+    python3 -c "import zipfile; z=zipfile.ZipFile('zig-out/tools/tls-anvil/TLS-Anvil-v1.5.0.zip'); z.extractall('zig-out/tools/tls-anvil/')"
+    echo "TLS-Anvil fetched to zig-out/tools/tls-anvil/"
+
+[doc("Run TLS-Anvil server tests (skips if Java or JAR missing)")]
+[group("conformance")]
+anvil-server:
+    zig build tlsfuzzer-server
+    cd conformance && python3 run_anvil_server.py
+
+[doc("Run TLS-Anvil client tests (skips if Java or JAR missing)")]
+[group("conformance")]
+anvil-client:
+    zig build tls-anvil-client
+    cd conformance && python3 run_anvil_client.py
+
+[doc("Clone BoringSSL and build the BoGo runner")]
+[group("conformance")]
+bogo-fetch:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if ! command -v go >/dev/null 2>&1; then
+        echo "SKIP: go not found in PATH; add go to devshell (TODO-0a5196f2)"
+        exit 0
+    fi
+    mkdir -p zig-out/tools
+    if [[ ! -d zig-out/tools/boringssl ]]; then
+        git clone --depth 1 https://github.com/google/boringssl.git zig-out/tools/boringssl
+    fi
+    cd zig-out/tools/boringssl/ssl/test/runner
+    go build -o ../../../../../../bogo-runner .
+
+[doc("Run BoGo tests against the ztls shim (skips if Go or runner missing)")]
+[group("conformance")]
+bogo:
+    zig build bogo-shim
+    conformance/run_bogo.sh
+
 [doc("List ztls, OpenSSL EVP, OpenSSL memory-BIO, and rustls benchmark rows")]
 [group("bench")]
 bench-list:
