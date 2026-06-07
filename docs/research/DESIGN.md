@@ -367,9 +367,9 @@ Every error path is tested. Fuzzing is not optional.
 
 - Record layer: parse/emit round-trips, length edge cases, truncated input,
   oversized records. Cite §5.1.
-- AEAD: encrypt/decrypt, bad auth tag, nonce reuse detection. Wycheproof is
-  useful for backend assurance, especially once libcrypto exists, but current
-  std.crypto-only AEAD tests mostly validate std rather than ztls.
+- AEAD: encrypt/decrypt, bad auth tag, nonce reuse detection. Wycheproof
+  boundary vectors validate ztls's libcrypto call shape: AAD, nonce, tag, and
+  authentication-failure propagation.
 - Key schedule: derive expected secrets against RFC 8448 where available and
   independent vectors where RFC 8448 has no trace (e.g. SHA-384 suite support).
 - Handshake parsing: valid and malformed messages for every handshake type.
@@ -389,19 +389,19 @@ Every error path is tested. Fuzzing is not optional.
 ### Conformance / Industry Test Suites
 
 - **tlsfuzzer** (https://github.com/tlsfuzzer/tlsfuzzer) — RFC conformance and
-  protocol fuzzer. Runs Python scripts against a live server. Initial TLS 1.3
-  smoke coverage lives in `conformance/` and runs with `just tlsfuzzer`; expand
-  it with negative conversations for malformed ClientHello, Finished, record
-  limits, KeyUpdate, and alert behavior.
+  protocol fuzzer. Runs Python scripts against a live server. The active TLS 1.3
+  suite lives in `conformance/` and runs with `just tlsfuzzer`; it covers the
+  supported server surface: mandatory cipher suites, handshake, application data,
+  KeyUpdate, alerts, malformed ClientHello, record limits, and ALPN/cipher
+  negotiation failures.
 - **TLS-Anvil** (https://github.com/tls-attacker/TLS-Anvil) — ~408 RFC-based
-  client and server tests for TLS 1.3. Java/JUnit based. More structured than
-  tlsfuzzer.
+  client and server tests for TLS 1.3. Java/JUnit based. Useful for broad future
+  matrix coverage, especially once ztls implements HRR, PSK/resumption, 0-RTT,
+  or client auth.
 - **Wycheproof** (https://github.com/C2SP/wycheproof) — integration vectors at
   the libcrypto boundary (AEAD tag/AAD/nonce handling, X25519 identity-element
   rejection, ECDSA DER verification), not proof that ztls implements primitive
-  crypto. Initial boundary smoke vectors run with `zig build test-wycheproof`;
-  expand this into a full JSON-vector harness as the supported primitive surface
-  grows.
+  crypto. Boundary smoke vectors run with `zig build test-wycheproof`.
 - **bettertls** (https://github.com/Netflix/bettertls) — name constraints and
   path-building correctness for certificate validation.
 

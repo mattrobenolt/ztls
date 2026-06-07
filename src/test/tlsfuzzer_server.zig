@@ -109,6 +109,7 @@ fn sendBestEffortAlert(hs: *ztls.ServerHandshake, stream: std.net.Stream, err: a
         error.UnsupportedCipherSuite => .handshake_failure,
         error.NoApplicationProtocol => .no_application_protocol,
         error.UnexpectedRecord, error.UnexpectedMessage => .unexpected_message,
+        error.IllegalParameter => .illegal_parameter,
         error.IncompleteRecord, error.UnexpectedEof, error.RecordTooShort, error.InvalidInnerPlaintext => .decode_error,
         else => .internal_error,
     };

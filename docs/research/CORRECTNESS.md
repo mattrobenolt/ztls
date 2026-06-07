@@ -45,8 +45,10 @@ Current coverage:
 - ServerHello, EncryptedExtensions, Certificate, CertificateVerify, Finished
 - client Finished, application-data echo, and `close_notify`
 - KeyUpdate(update_requested) with server response
+- malformed KeyUpdate rejection (`decode_error` / `illegal_parameter`)
 - corrupted application-data MAC rejection
 - oversized TLSCiphertext rejection
+- close_notify before handshake
 - garbage pre-handshake bytes
 - premature Finished before handshake keys exist
 - truncated and empty ClientHello records
@@ -87,10 +89,10 @@ Current fuzz surfaces include:
 - client decrypted `processFlight`
 - server `handleRecord` in the initial state
 
-The server `handleRecord` fuzz target is intentionally pre-auth because real
-AEAD rejects arbitrary ciphertext before deeper state-machine paths. Deeper
-post-auth fuzzing requires a fuzz-only/mock AEAD provider; that is test coverage
-plumbing, not a production crypto backend.
+The server `handleRecord` fuzz target covers the pre-auth boundary where raw
+wire bytes first enter the Sans-I/O server. Post-auth behavior is covered by
+unit tests and tlsfuzzer conversations, where records are cryptographically
+valid enough to reach the state-machine paths under test.
 
 ## Verification gates
 
@@ -105,19 +107,16 @@ This mirrors rustls's proof-token idea in a Zig-appropriate form: the final
 connected transition has an auditable local condition rather than relying on a
 large implicit control-flow argument.
 
-## External suites not currently CI-gated
+## External suite policy
 
-BoGo and TLS-Anvil are valuable but not yet operational in this repo. They are
-larger integrations:
+The CI-gated conformance target is the currently supported ztls protocol surface:
+TLS 1.3 full handshake with X25519, certificate-authenticated server flight,
+application data, alerts, and KeyUpdate. PSK, resumption, 0-RTT, client auth,
+and HelloRetryRequest are not implemented product features, so tests for them
+are not disabled conformance holes; they are outside the advertised surface.
 
-- **BoGo** requires a command-line shim that speaks BoringSSL's runner protocol,
-  maps ztls errors, and maintains a disabled-test manifest for unsupported TLS
-  features such as HRR, PSK, resumption, 0-RTT, and client auth.
-- **TLS-Anvil** requires a Java/JUnit runner and a long-running server/client
-  wrapper. It is best treated as a periodic conformance report rather than a
-  lightweight per-commit gate.
-
-These suites should be added once the supported TLS surface grows beyond the
-current TLS 1.3 full-handshake/app-data/KeyUpdate subset. Until then,
-`tlsfuzzer`, OpenSSL interop, RFC vectors, fuzzing, and Wycheproof boundary
-vectors are the active auditable correctness program.
+BoGo and TLS-Anvil are useful additional external runners, but their value is in
+broad matrix coverage across features ztls does not yet implement. For the
+current supported surface, the active external conformance authority is
+tlsfuzzer, backed by OpenSSL interop, RFC vectors, fuzzing, verification gates,
+and Wycheproof boundary vectors.

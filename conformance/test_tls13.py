@@ -20,6 +20,7 @@ from tlsfuzzer.messages import (
     Connect,
     FinishedGenerator,
     KeyUpdateGenerator,
+    RawMessageGenerator,
     RawSocketWriteGenerator,
 )
 from tlsfuzzer.runner import Runner
@@ -197,6 +198,28 @@ def test_tls13_corrupted_app_data_record_is_rejected(ztls_server):
     Runner(conversation).run()
 
 
+def test_tls13_rejects_truncated_keyupdate(ztls_server):
+    conversation = Connect(ztls_server["host"], ztls_server["port"])
+    node = conversation.add_child(ClientHelloGenerator(CIPHERS, extensions=tls13_extensions()))
+    node = tls13_handshake(node)
+    node = node.add_child(
+        RawMessageGenerator(ContentType.handshake, bytearray(b"\x18\x00\x00\x00"))
+    )
+    expect_alert_or_close(node, AlertLevel.fatal, AlertDescription.decode_error)
+    Runner(conversation).run()
+
+
+def test_tls13_rejects_invalid_keyupdate_request(ztls_server):
+    conversation = Connect(ztls_server["host"], ztls_server["port"])
+    node = conversation.add_child(ClientHelloGenerator(CIPHERS, extensions=tls13_extensions()))
+    node = tls13_handshake(node)
+    node = node.add_child(
+        RawMessageGenerator(ContentType.handshake, bytearray(b"\x18\x00\x00\x01\x02"))
+    )
+    expect_alert_or_close(node, AlertLevel.fatal, AlertDescription.illegal_parameter)
+    Runner(conversation).run()
+
+
 def test_tls13_oversized_record_is_rejected(ztls_server):
     oversized_len = 0x4101
     oversized_record = bytearray(bytes([ContentType.application_data]) + b"\x03\x03")
@@ -212,6 +235,15 @@ def test_tls13_oversized_record_is_rejected(ztls_server):
         (AlertDescription.record_overflow, AlertDescription.decode_error),
     )
     Runner(conversation).run()
+
+
+def test_tls13_close_notify_before_handshake(ztls_server):
+    sock = raw_connect(ztls_server)
+    try:
+        sock.sendall(record(ContentType.alert, b"\x01\x00"))
+        expect_closed_or_alert(sock)
+    finally:
+        sock.close()
 
 
 def test_tls13_rejects_garbage_pre_handshake(ztls_server):
