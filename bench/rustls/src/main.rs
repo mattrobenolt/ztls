@@ -224,57 +224,37 @@ fn transfer(conn: &mut Conn) {
     while transfer_step(conn) {}
 }
 
-/// Like transfer_step but accumulates wall time spent on client-side work
-/// and server-side work separately. Used to produce the side-specific
-/// handshake timing rows.
-fn transfer_step_timed(conn: &mut Conn, client_ns: &mut u128, server_ns: &mut u128) -> bool {
-    let mut progress = false;
-
-    let t = Instant::now();
-    let w = conn.client.write_tls(&mut conn.c2s).unwrap();
-    *client_ns += t.elapsed().as_nanos();
-    if w > 0 {
-        progress = true;
-    }
-
-    let t = Instant::now();
-    let w = conn.server.write_tls(&mut conn.s2c).unwrap();
-    *server_ns += t.elapsed().as_nanos();
-    if w > 0 {
-        progress = true;
-    }
-
-    if !conn.c2s.is_empty() {
-        let t = Instant::now();
-        let wire = std::mem::take(&mut conn.c2s);
-        let wire_len = wire.len() as u64;
-        let mut cursor = Cursor::new(wire);
-        while cursor.position() < wire_len {
-            if conn.server.read_tls(&mut cursor).unwrap() == 0 {
-                break;
-            }
-            conn.server.process_new_packets().unwrap();
+fn deliver_to_server(conn: &mut Conn) {
+    let wire = std::mem::take(&mut conn.c2s);
+    let wire_len = wire.len() as u64;
+    let mut cursor = Cursor::new(wire);
+    while cursor.position() < wire_len {
+        if conn.server.read_tls(&mut cursor).unwrap() == 0 {
+            break;
         }
-        *server_ns += t.elapsed().as_nanos();
-        progress = true;
+        conn.server.process_new_packets().unwrap();
     }
+}
 
-    if !conn.s2c.is_empty() {
-        let t = Instant::now();
-        let wire = std::mem::take(&mut conn.s2c);
-        let wire_len = wire.len() as u64;
-        let mut cursor = Cursor::new(wire);
-        while cursor.position() < wire_len {
-            if conn.client.read_tls(&mut cursor).unwrap() == 0 {
-                break;
-            }
-            conn.client.process_new_packets().unwrap();
+fn deliver_to_client(conn: &mut Conn) {
+    let wire = std::mem::take(&mut conn.s2c);
+    let wire_len = wire.len() as u64;
+    let mut cursor = Cursor::new(wire);
+    while cursor.position() < wire_len {
+        if conn.client.read_tls(&mut cursor).unwrap() == 0 {
+            break;
         }
-        *client_ns += t.elapsed().as_nanos();
-        progress = true;
+        conn.client.process_new_packets().unwrap();
     }
+}
 
-    progress
+#[derive(Default)]
+struct HandshakeSplit {
+    client_start_ns: u128,
+    server_accept_ns: u128,
+    server_flight_ns: u128,
+    client_flight_ns: u128,
+    server_finished_ns: u128,
 }
 
 fn make_conn(c: &Arc<ClientConfig>, s: &Arc<ServerConfig>) -> Conn {
@@ -297,18 +277,41 @@ fn connected(c: &Arc<ClientConfig>, s: &Arc<ServerConfig>) -> Conn {
     conn
 }
 
-/// Run one full handshake and return (client_ns, server_ns): cumulative wall
-/// time attributed to client-side work and server-side work respectively.
-fn handshake_split(c: &Arc<ClientConfig>, s: &Arc<ServerConfig>) -> (u128, u128) {
+/// Run one full handshake with rustls' public no-I/O API and split timing at
+/// observable flight boundaries. rustls processes ServerHello through Finished
+/// as one client read/process step, so there is no honest separate
+/// client_server_hello row here.
+fn handshake_split(c: &Arc<ClientConfig>, s: &Arc<ServerConfig>) -> HandshakeSplit {
     let mut conn = make_conn(c, s);
-    let mut client_ns = 0u128;
-    let mut server_ns = 0u128;
-    while transfer_step_timed(&mut conn, &mut client_ns, &mut server_ns) {}
+    let mut split = HandshakeSplit::default();
+
+    let t = Instant::now();
+    conn.client.write_tls(&mut conn.c2s).unwrap();
+    split.client_start_ns += t.elapsed().as_nanos();
+
+    let t = Instant::now();
+    deliver_to_server(&mut conn);
+    split.server_accept_ns += t.elapsed().as_nanos();
+
+    let t = Instant::now();
+    conn.server.write_tls(&mut conn.s2c).unwrap();
+    split.server_flight_ns += t.elapsed().as_nanos();
+
+    let t = Instant::now();
+    deliver_to_client(&mut conn);
+    conn.client.write_tls(&mut conn.c2s).unwrap();
+    split.client_flight_ns += t.elapsed().as_nanos();
+
+    let t = Instant::now();
+    deliver_to_server(&mut conn);
+    split.server_finished_ns += t.elapsed().as_nanos();
+
+    transfer(&mut conn);
     assert!(
         !conn.client.is_handshaking() && !conn.server.is_handshaking(),
         "handshake did not converge"
     );
-    (client_ns, server_ns)
+    split
 }
 
 fn read_exact_app<R: Read>(mut r: R, mut len: usize, buf: &mut [u8]) {
@@ -371,8 +374,11 @@ fn main() {
         for (suite, _) in SUITES {
             for row in [
                 "rustls_handshake",
-                "rustls_handshake_client_total",
-                "rustls_handshake_server_total",
+                "rustls_handshake_client_start",
+                "rustls_handshake_server_accept",
+                "rustls_handshake_server_flight",
+                "rustls_handshake_client_flight",
+                "rustls_handshake_server_finished",
                 "rustls_app_client_to_server",
                 "rustls_app_server_to_client",
                 "rustls_app_ping_pong",
@@ -404,30 +410,39 @@ fn main() {
             );
         }
 
-        // Side-specific handshake timing: measure cumulative time attributed
-        // to client-side vs server-side work across all iterations, using
-        // transfer_step_timed to partition each step's cost.
-        let want_client = matches(&args, "rustls_handshake_client_total", suite_name, 1);
-        let want_server = matches(&args, "rustls_handshake_server_total", suite_name, 1);
-        if want_client || want_server {
-            let mut total_client_ns = 0u128;
-            let mut total_server_ns = 0u128;
+        let split_rows = [
+            "rustls_handshake_client_start",
+            "rustls_handshake_server_accept",
+            "rustls_handshake_server_flight",
+            "rustls_handshake_client_flight",
+            "rustls_handshake_server_finished",
+        ];
+        if split_rows
+            .iter()
+            .any(|row| matches(&args, row, suite_name, 1))
+        {
+            let mut total = HandshakeSplit::default();
             for _ in 0..HANDSHAKE_ITERATIONS {
-                let (c, s) = handshake_split(&client, &server);
-                total_client_ns += c;
-                total_server_ns += s;
+                let split = handshake_split(&client, &server);
+                total.client_start_ns += split.client_start_ns;
+                total.server_accept_ns += split.server_accept_ns;
+                total.server_flight_ns += split.server_flight_ns;
+                total.client_flight_ns += split.client_flight_ns;
+                total.server_finished_ns += split.server_finished_ns;
             }
-            if want_client {
-                println!(
-                    "rustls_handshake_client_total,{suite_name},1,{HANDSHAKE_ITERATIONS},{HANDSHAKE_ITERATIONS},{total_client_ns},{:.2}",
-                    ops_per_sec(HANDSHAKE_ITERATIONS, total_client_ns)
-                );
-            }
-            if want_server {
-                println!(
-                    "rustls_handshake_server_total,{suite_name},1,{HANDSHAKE_ITERATIONS},{HANDSHAKE_ITERATIONS},{total_server_ns},{:.2}",
-                    ops_per_sec(HANDSHAKE_ITERATIONS, total_server_ns)
-                );
+            for (row, ns) in [
+                ("rustls_handshake_client_start", total.client_start_ns),
+                ("rustls_handshake_server_accept", total.server_accept_ns),
+                ("rustls_handshake_server_flight", total.server_flight_ns),
+                ("rustls_handshake_client_flight", total.client_flight_ns),
+                ("rustls_handshake_server_finished", total.server_finished_ns),
+            ] {
+                if matches(&args, row, suite_name, 1) {
+                    println!(
+                        "{row},{suite_name},1,{HANDSHAKE_ITERATIONS},{HANDSHAKE_ITERATIONS},{ns},{:.2}",
+                        ops_per_sec(HANDSHAKE_ITERATIONS, ns)
+                    );
+                }
             }
         }
 
