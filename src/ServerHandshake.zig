@@ -169,6 +169,7 @@ pub const AcceptError = frame.ParseError || client_hello.ParseError || server_he
     IncompleteRecord,
     UnexpectedRecord,
     UnsupportedCipherSuite,
+    NoApplicationProtocol,
     IdentityElement,
     LibcryptoFailed,
 };
@@ -208,6 +209,7 @@ pub fn acceptClientHello(
     const suite = self.chooseSuite(ch) orelse return error.UnsupportedCipherSuite;
     self.suite = suite;
     self.selected_alpn = ch.selectAlpn(self.alpn_protocols);
+    if (ch.alpn_protocols.len != 0 and self.alpn_protocols.len != 0 and self.selected_alpn == null) return error.NoApplicationProtocol;
 
     const sh = try server_hello.encode(out[frame.header_len..], random.data, ch.legacy_session_id, suite, .init(self.keypair.public_key));
     out[0..frame.header_len].* = mem.toBytes(frame.Header.init(.handshake, @intCast(sh.len)));

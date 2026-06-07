@@ -35,6 +35,7 @@ from tlslite.constants import (
     SignatureScheme,
 )
 from tlslite.extensions import (
+    ALPNExtension,
     ClientKeyShareExtension,
     SignatureAlgorithmsCertExtension,
     SignatureAlgorithmsExtension,
@@ -50,8 +51,8 @@ CIPHERS = [
 ]
 
 
-def tls13_extensions():
-    return {
+def tls13_extensions(alpn_protocols=None):
+    ext = {
         ExtensionType.key_share: ClientKeyShareExtension().create(
             [key_share_gen(GroupName.x25519)]
         ),
@@ -72,6 +73,9 @@ def tls13_extensions():
             ]
         ),
     }
+    if alpn_protocols is not None:
+        ext[ExtensionType.alpn] = ALPNExtension().create(alpn_protocols)
+    return ext
 
 
 def tls13_handshake(node):
@@ -253,6 +257,19 @@ def test_tls13_rejects_truncated_key_share_extension(ztls_server):
         expect_closed_or_alert(sock)
     finally:
         sock.close()
+
+
+def test_tls13_rejects_unshared_alpn(ztls_server):
+    conversation = Connect(ztls_server["host"], ztls_server["port"])
+    node = conversation.add_child(
+        ClientHelloGenerator(
+            CIPHERS,
+            extensions=tls13_extensions(alpn_protocols=[b"not-supported"]),
+        )
+    )
+    alert = node.add_child(ExpectAlert(AlertLevel.fatal, AlertDescription.no_application_protocol))
+    alert.add_child(ExpectClose())
+    Runner(conversation).run()
 
 
 def test_tls13_rejects_unsupported_cipher_suite(ztls_server):
