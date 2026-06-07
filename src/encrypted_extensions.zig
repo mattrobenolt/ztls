@@ -61,24 +61,26 @@ pub fn encode(out: []u8, alpn_protocol: ?[]const u8) EncodeError![]const u8 {
 /// ALPN is rejected if unsolicited or if it selects a protocol we did not offer.
 /// RFC 8446 §4.3.1, RFC 7301 §3.2.
 pub fn parse(msg: []const u8, offered_alpn: []const []const u8) ParseError!Parsed {
+    if (msg.len < 6) return error.UnexpectedEof;
+
     var r: wire.Reader = .init(msg);
-    const handshake_type = try r.read(u8);
+    const handshake_type = r.assumeRead(u8);
     if (handshake_type != 0x08) return error.InvalidHandshakeType;
-    const body_len = try r.read(u24);
+    const body_len = r.assumeRead(u24);
     if (body_len != msg.len - 4) return error.InvalidHandshakeLength;
 
     if (body_len < 2) return error.InvalidHandshakeLength;
-    const extensions_len = try r.read(u16);
+    const extensions_len = r.assumeRead(u16);
     if (extensions_len != body_len - 2) return error.InvalidExtensionLength;
     const extensions_end = r.pos + extensions_len;
 
     var result: Parsed = .{};
     while (r.pos < extensions_end) {
-        const ext_type = try r.read(u16);
-        const ext_len = try r.read(u16);
+        if (extensions_end - r.pos < 4) return error.InvalidExtensionLength;
+        const ext_type = r.assumeRead(u16);
+        const ext_len = r.assumeRead(u16);
         if (r.pos + ext_len > extensions_end) return error.InvalidExtensionLength;
-        const ext = msg[r.pos..][0..ext_len];
-        r.pos += ext_len;
+        const ext = r.assumeReadSlice(ext_len);
 
         switch (ext_type) {
             0x0010 => {
@@ -94,12 +96,14 @@ pub fn parse(msg: []const u8, offered_alpn: []const []const u8) ParseError!Parse
 
 fn parseAlpn(ext: []const u8, offered: []const []const u8) ParseError![]const u8 {
     if (offered.len == 0) return error.UnexpectedExtension;
+    if (ext.len < 3) return error.InvalidExtensionLength;
     var r: wire.Reader = .init(ext);
-    const list_len = try r.read(u16);
+    const list_len = r.assumeRead(u16);
     if (list_len != ext.len - 2) return error.InvalidExtensionLength;
-    const protocol_len = try r.read(u8);
+    const protocol_len = r.assumeRead(u8);
     if (protocol_len == 0) return error.EmptyAlpnProtocol;
-    const protocol = try r.readSlice(protocol_len);
+    if (r.remaining().len < protocol_len) return error.InvalidExtensionLength;
+    const protocol = r.assumeReadSlice(protocol_len);
     if (r.pos != ext.len) return error.TooManyAlpnProtocols;
     for (offered) |candidate| {
         if (mem.eql(u8, candidate, protocol)) return protocol;

@@ -222,26 +222,30 @@ pub fn encode(
 }
 
 pub fn parse(msg: []const u8) ParseError!Parsed {
+    if (msg.len < handshake_header_len + 2 + 32 + 1 + 2 + 1 + 2) return error.UnexpectedEof;
     var r: wire.Reader = .init(msg);
-    const handshake_type = try r.read(u8);
+    const handshake_type = r.assumeRead(u8);
     if (handshake_type != 0x01) return error.InvalidHandshakeType;
-    const body_len = try r.read(u24);
+    const body_len = r.assumeRead(u24);
     if (body_len != msg.len - handshake_header_len) return error.InvalidHandshakeLength;
 
-    try r.skip(2); // legacy_version
-    try r.skip(32); // random
-    const session_id_len = try r.read(u8);
-    const legacy_session_id = try r.readSlice(session_id_len);
+    r.assumeSkip(2); // legacy_version
+    r.assumeSkip(32); // random
+    const session_id_len = r.assumeRead(u8);
+    if (r.remaining().len < session_id_len + 2) return error.UnexpectedEof;
+    const legacy_session_id = r.assumeReadSlice(session_id_len);
 
-    const cipher_suites_len = try r.read(u16);
+    const cipher_suites_len = r.assumeRead(u16);
     if (cipher_suites_len == 0 or cipher_suites_len % 2 != 0) return error.InvalidVectorLength;
-    const cipher_suites = try r.readSlice(cipher_suites_len);
+    if (r.remaining().len < cipher_suites_len + 1) return error.UnexpectedEof;
+    const cipher_suites = r.assumeReadSlice(cipher_suites_len);
 
-    const compression_len = try r.read(u8);
+    const compression_len = r.assumeRead(u8);
     if (compression_len == 0) return error.InvalidVectorLength;
-    try r.skip(compression_len);
+    if (r.remaining().len < compression_len + 2) return error.UnexpectedEof;
+    r.assumeSkip(compression_len);
 
-    const extensions_len = try r.read(u16);
+    const extensions_len = r.assumeRead(u16);
     if (extensions_len > msg.len - r.pos) return error.InvalidExtensionLength;
     const extensions_end = r.pos + extensions_len;
 
@@ -257,11 +261,11 @@ pub fn parse(msg: []const u8) ParseError!Parsed {
     var got_supported_groups = false;
 
     while (r.pos < extensions_end) {
-        const ext_type = try r.read(u16);
-        const ext_len = try r.read(u16);
+        if (extensions_end - r.pos < 4) return error.InvalidExtensionLength;
+        const ext_type = r.assumeRead(u16);
+        const ext_len = r.assumeRead(u16);
         if (ext_len > extensions_end - r.pos) return error.InvalidExtensionLength;
-        const ext = msg[r.pos..][0..ext_len];
-        r.pos += ext_len;
+        const ext = r.assumeReadSlice(ext_len);
 
         switch (ext_type) {
             0x0000 => {
@@ -299,53 +303,62 @@ pub fn parse(msg: []const u8) ParseError!Parsed {
 }
 
 fn parseSni(ext: []const u8) ParseError!?[]const u8 {
+    if (ext.len < 2) return error.InvalidExtensionLength;
     var r: wire.Reader = .init(ext);
-    const list_len = try r.read(u16);
+    const list_len = r.assumeRead(u16);
     if (list_len != ext.len - 2) return error.InvalidExtensionLength;
     if (list_len == 0) return null;
-    const name_type = try r.read(u8);
-    const name_len = try r.read(u16);
-    const name = try r.readSlice(name_len);
+    if (r.remaining().len < 1 + 2) return error.InvalidVectorLength;
+    const name_type = r.assumeRead(u8);
+    const name_len = r.assumeRead(u16);
+    if (r.remaining().len < name_len) return error.InvalidVectorLength;
+    const name = r.assumeReadSlice(name_len);
     if (r.pos != ext.len) return error.InvalidVectorLength;
     if (name_type != 0x00) return null;
     return name;
 }
 
 fn parseAlpn(ext: []const u8) ParseError![]const u8 {
+    if (ext.len < 2) return error.InvalidExtensionLength;
     var r: wire.Reader = .init(ext);
-    const list_len = try r.read(u16);
+    const list_len = r.assumeRead(u16);
     if (list_len != ext.len - 2) return error.InvalidExtensionLength;
-    return r.readSlice(list_len);
+    return r.assumeReadSlice(list_len);
 }
 
 fn parseSupportedVersions(ext: []const u8) ParseError!void {
+    if (ext.len < 1) return error.InvalidVectorLength;
     var r: wire.Reader = .init(ext);
-    const list_len = try r.read(u8);
+    const list_len = r.assumeRead(u8);
     if (list_len != ext.len - 1 or list_len % 2 != 0) return error.InvalidVectorLength;
     while (r.pos < ext.len) {
-        if (try r.read(u16) == 0x0304) return;
+        if (r.assumeRead(u16) == 0x0304) return;
     }
     return error.UnsupportedTlsVersion;
 }
 
 fn parseSupportedGroups(ext: []const u8) ParseError!void {
+    if (ext.len < 2) return error.InvalidVectorLength;
     var r: wire.Reader = .init(ext);
-    const list_len = try r.read(u16);
+    const list_len = r.assumeRead(u16);
     if (list_len != ext.len - 2 or list_len % 2 != 0) return error.InvalidVectorLength;
     while (r.pos < ext.len) {
-        if (try r.read(u16) == @intFromEnum(NamedGroup.x25519)) return;
+        if (r.assumeRead(u16) == @intFromEnum(NamedGroup.x25519)) return;
     }
     return error.UnsupportedKeyShare;
 }
 
 fn parseKeyShare(ext: []const u8) ParseError!x25519.PublicKey {
+    if (ext.len < 2) return error.InvalidVectorLength;
     var r: wire.Reader = .init(ext);
-    const client_shares_len = try r.read(u16);
+    const client_shares_len = r.assumeRead(u16);
     if (client_shares_len != ext.len - 2) return error.InvalidVectorLength;
     while (r.pos < ext.len) {
-        const group = try r.read(u16);
-        const key_len = try r.read(u16);
-        const key = try r.readSlice(key_len);
+        if (r.remaining().len < 4) return error.InvalidVectorLength;
+        const group = r.assumeRead(u16);
+        const key_len = r.assumeRead(u16);
+        if (r.remaining().len < key_len) return error.InvalidVectorLength;
+        const key = r.assumeReadSlice(key_len);
         if (group == @intFromEnum(NamedGroup.x25519)) {
             if (key.len != 32) return error.UnsupportedKeyShare;
             return .init(key[0..32].*);

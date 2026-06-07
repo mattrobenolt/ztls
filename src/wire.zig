@@ -3,6 +3,14 @@ const std = @import("std");
 const assert = std.debug.assert;
 const testing = std.testing;
 
+fn wireSize(comptime T: type) comptime_int {
+    return switch (@typeInfo(T)) {
+        .int => @divExact(@bitSizeOf(T), 8),
+        .@"enum" => |info| wireSize(info.tag_type),
+        else => @compileError("wireSize: unsupported type " ++ @typeName(T)),
+    };
+}
+
 /// A forward-only writer into a caller-owned buffer.
 ///
 /// Tracks the current position. Call `written()` to get the filled slice.
@@ -74,10 +82,17 @@ pub const Reader = struct {
     ///
     /// Supports integer and enum types.
     pub fn read(self: *Reader, comptime T: type) !T {
+        const n = comptime wireSize(T);
+        if (self.pos + n > self.buf.len) return error.UnexpectedEof;
+        return self.assumeRead(T);
+    }
+
+    /// Read a value after the caller has already proved enough bytes remain.
+    pub fn assumeRead(self: *Reader, comptime T: type) T {
         switch (@typeInfo(T)) {
             .int => {
-                const n = comptime @divExact(@bitSizeOf(T), 8);
-                if (self.pos + n > self.buf.len) return error.UnexpectedEof;
+                const n = comptime wireSize(T);
+                assert(self.pos + n <= self.buf.len);
                 var value: u64 = 0;
                 inline for (0..n) |i| {
                     value = (value << 8) | self.buf[self.pos + i];
@@ -87,8 +102,8 @@ pub const Reader = struct {
                 return @intCast(value);
             },
             .@"enum" => |info| {
-                const tag = try self.read(info.tag_type);
-                return std.enums.fromInt(T, tag) orelse return error.InvalidEnumTag;
+                const tag = self.assumeRead(info.tag_type);
+                return std.enums.fromInt(T, tag) orelse unreachable;
             },
             else => @compileError("Reader.read: unsupported type " ++ @typeName(T)),
         }
@@ -97,6 +112,12 @@ pub const Reader = struct {
     /// Return a zero-copy slice of `n` bytes and advance.
     pub fn readSlice(self: *Reader, n: usize) error{UnexpectedEof}![]const u8 {
         if (self.pos + n > self.buf.len) return error.UnexpectedEof;
+        return self.assumeReadSlice(n);
+    }
+
+    /// Return a zero-copy slice after the caller has already proved it exists.
+    pub fn assumeReadSlice(self: *Reader, n: usize) []const u8 {
+        assert(self.pos + n <= self.buf.len);
         const s = self.buf[self.pos..][0..n];
         self.pos += n;
         return s;
@@ -105,6 +126,12 @@ pub const Reader = struct {
     /// Skip `n` bytes.
     pub fn skip(self: *Reader, n: usize) error{UnexpectedEof}!void {
         if (self.pos + n > self.buf.len) return error.UnexpectedEof;
+        self.assumeSkip(n);
+    }
+
+    /// Skip after the caller has already proved enough bytes remain.
+    pub fn assumeSkip(self: *Reader, n: usize) void {
+        assert(self.pos + n <= self.buf.len);
         self.pos += n;
     }
 
@@ -178,6 +205,14 @@ test "Reader.readSlice: zero-copy" {
 test "Reader.read: UnexpectedEof" {
     var r: Reader = .init(&.{0x01});
     try testing.expectError(error.UnexpectedEof, r.read(u16));
+}
+
+test "Reader assume methods skip bounds checks after caller validation" {
+    var r: Reader = .init(&.{ 0x01, 0x02, 0x03, 0x04 });
+    try testing.expectEqual(@as(u16, 0x0102), r.assumeRead(u16));
+    try testing.expectEqualSlices(u8, &.{0x03}, r.assumeReadSlice(1));
+    r.assumeSkip(1);
+    try testing.expectEqual(@as(usize, 0), r.remaining().len);
 }
 
 test "Writer.reserve: write directly into buffer" {

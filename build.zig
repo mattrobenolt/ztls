@@ -174,6 +174,40 @@ pub fn build(b: *Build) void {
     const bench_bin_step = b.step("bench-bin", "Build the benchmark binary for profiling");
     bench_bin_step.dependOn(&install_bench.step);
 
+    const micro_bench_root = b.createModule(.{
+        .root_source_file = b.path("src/micro_bench.zig"),
+        .target = target,
+        .optimize = .ReleaseFast,
+    });
+    micro_bench_root.link_libc = true;
+    micro_bench_root.linkSystemLibrary("crypto", .{});
+    const micro_bench_exe = b.addExecutable(.{
+        .name = "ztls_micro_bench",
+        .root_module = micro_bench_root,
+    });
+    const run_micro_bench = b.addRunArtifact(micro_bench_exe);
+    if (b.args) |args| run_micro_bench.addArgs(args);
+    const micro_bench_step = b.step("bench-micro", "Run Go-style ztls microbenchmarks");
+    micro_bench_step.dependOn(&run_micro_bench.step);
+
+    const install_micro_bench = b.addInstallArtifact(micro_bench_exe, .{});
+    const micro_bench_bin_step = b.step("bench-micro-bin", "Build the microbenchmark binary for profiling");
+    micro_bench_bin_step.dependOn(&install_micro_bench.step);
+
+    const micro_bench_disasm = b.addSystemCommand(&.{
+        "sh",
+        "-c",
+        "mkdir -p zig-out/bench && objdump -d zig-out/bin/ztls_micro_bench > zig-out/bench/ztls_micro_bench.asm",
+    });
+    micro_bench_disasm.step.dependOn(&install_micro_bench.step);
+    const micro_bench_disasm_step = b.step("bench-micro-disasm", "Write microbenchmark disassembly to zig-out/bench/ztls_micro_bench.asm");
+    micro_bench_disasm_step.dependOn(&micro_bench_disasm.step);
+
+    const benchstat = b.addSystemCommand(&.{"benchstat"});
+    if (b.args) |args| benchstat.addArgs(args);
+    const benchstat_step = b.step("benchstat", "Run golang.org/x/perf/cmd/benchstat via go run");
+    benchstat_step.dependOn(&benchstat.step);
+
     const evp_bench_mod = b.createModule(.{
         .target = target,
         .optimize = .ReleaseFast,

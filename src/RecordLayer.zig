@@ -99,10 +99,16 @@ pub fn decrypt(self: *RecordLayer, buf: []u8) DecryptError!DecryptedRecord {
     // All encrypted records on the wire are application_data (RFC 8446 §5.2).
     // The handshake layer handles pre-handshake record types, including
     // silently discarding change_cipher_spec (RFC 8446 §D.4).
-    if (hdr.content_type != .application_data) return error.UnexpectedContentType;
+    if (hdr.content_type != .application_data) {
+        @branchHint(.cold);
+        return error.UnexpectedContentType;
+    }
 
     const payload_len = hdr.length();
-    if (payload_len <= tag_len) return error.RecordTooShort;
+    if (payload_len <= tag_len) {
+        @branchHint(.cold);
+        return error.RecordTooShort;
+    }
 
     const ct_len = payload_len - tag_len;
     const payload = buf[frame.header_len..][0..payload_len];

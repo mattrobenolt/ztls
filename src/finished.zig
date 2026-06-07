@@ -29,10 +29,11 @@ pub fn verify(
     const Hmac = crypto.auth.hmac.Hmac(Hash);
     const Digest = [Hmac.mac_length]u8;
 
+    if (msg.len < 4) return error.UnexpectedEof;
     var r: wire.Reader = .init(msg);
-    const handshake_type = try r.read(u8);
+    const handshake_type = r.assumeRead(u8);
     if (handshake_type != @intFromEnum(HandshakeType.finished)) return error.InvalidHandshakeType;
-    try r.skip(3);
+    r.assumeSkip(3);
     const verify_data = r.remaining();
 
     // Recompute: HMAC(finished_key, transcript_hash)

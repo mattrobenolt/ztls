@@ -45,6 +45,7 @@ pub fn hex(comptime len: usize, comptime encoded: []const u8) [len]u8 {
 }
 
 const vector_chunk_len = @min(std.simd.suggestVectorLength(u8) orelse 16, 32);
+const VectorMask = std.meta.Int(.unsigned, vector_chunk_len);
 
 /// Return the index of the last non-zero byte in `buf`, or null if all zeros.
 ///
@@ -68,14 +69,9 @@ pub fn lastIndexOfNonZero(buf: []const u8) ?usize {
     while (i >= vector_chunk_len) {
         i -= vector_chunk_len;
         const chunk: Vec = buf[i..][0..vector_chunk_len].*;
-        if (@reduce(.Or, chunk != zero)) {
-            var j: usize = vector_chunk_len - 1;
-            while (true) {
-                if (buf[i + j] != 0) return i + j;
-                if (j == 0) break;
-                j -= 1;
-            }
-        }
+        const non_zero = chunk != zero;
+        const mask: VectorMask = @bitCast(non_zero);
+        if (mask != 0) return i + vector_chunk_len - 1 - @clz(mask);
     }
 
     while (i > 0) {

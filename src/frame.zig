@@ -97,17 +97,16 @@ pub const ParseError = error{
 
 /// Parse the 5-byte record header from the front of `buf`.
 ///
-/// Returns a pointer view into `buf` — no copy. Use header.length() and
-/// header.legacyVersion() to read the u16 fields in native byte order.
-/// The fragment begins at `buf[header_len..]` and is `header.length()`
-/// bytes long — caller ensures that many bytes are available.
+/// Returns the parsed header value. The fragment begins at `buf[header_len..]`
+/// and is `header.length()` bytes long — caller ensures that many bytes are
+/// available.
 ///
 /// RFC 8446 §5.1, §5.2
-pub fn parseHeader(buf: []const u8) ParseError!*const Header {
+pub fn parseHeader(buf: []const u8) ParseError!Header {
     if (buf.len < header_len) return error.BufferTooShort;
-    const h: *const Header = @ptrCast(buf.ptr);
-    if (h.length() > max_ciphertext_len) return error.RecordTooLarge;
-    return h;
+    const length = (@as(u16, buf[3]) << 8) | buf[4];
+    if (length > max_ciphertext_len) return error.RecordTooLarge;
+    return .init(@enumFromInt(buf[0]), length);
 }
 
 // RFC 8446 §5.1 — record header format

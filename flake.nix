@@ -52,6 +52,7 @@
             packages =
               (with pkgs; [
                 ast-grep
+                benchstat
                 curl
                 go
                 jdk

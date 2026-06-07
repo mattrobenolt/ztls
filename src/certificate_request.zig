@@ -36,7 +36,8 @@ pub const SchemeIterator = struct {
 
     pub fn next(self: *SchemeIterator) ParseError!?SignatureScheme {
         if (self.r.remaining().len == 0) return null;
-        return @enumFromInt(try self.r.read(u16));
+        if (self.r.remaining().len < 2) return error.UnexpectedEof;
+        return @enumFromInt(self.r.assumeRead(u16));
     }
 };
 
@@ -68,35 +69,39 @@ pub fn encode(out: []u8, sig_algs: []const SignatureScheme) EncodeError![]const 
 /// Parse a complete CertificateRequest handshake message. Returned slices alias
 /// `msg`. RFC 8446 §4.3.2.
 pub fn parse(msg: []const u8) ParseError!Parsed {
+    if (msg.len < 4 + 1 + 2) return error.UnexpectedEof;
     var r: wire.Reader = .init(msg);
-    const handshake_type = try r.read(u8);
+    const handshake_type = r.assumeRead(u8);
     if (handshake_type != 0x0d) return error.InvalidHandshakeType;
-    const body_len = try r.read(u24);
+    const body_len = r.assumeRead(u24);
     if (body_len != msg.len - 4) return error.InvalidHandshakeLength;
 
-    const ctx_len = try r.read(u8);
-    const request_context = try r.readSlice(ctx_len);
-    const exts_total_len = try r.read(u16);
+    const ctx_len = r.assumeRead(u8);
+    if (r.remaining().len < ctx_len + 2) return error.UnexpectedEof;
+    const request_context = r.assumeReadSlice(ctx_len);
+    const exts_total_len = r.assumeRead(u16);
     if (exts_total_len != r.remaining().len) return error.InvalidExtensionLength;
 
-    var extensions: wire.Reader = .init(try r.readSlice(exts_total_len));
+    var extensions: wire.Reader = .init(r.assumeReadSlice(exts_total_len));
     var signature_schemes_raw: ?[]const u8 = null;
     var certificate_authorities_raw: []const u8 = &.{};
 
     while (extensions.remaining().len != 0) {
         if (extensions.remaining().len < 4) return error.InvalidExtensionLength;
-        const ext_type = try extensions.read(u16);
-        const ext_len = try extensions.read(u16);
+        const ext_type = extensions.assumeRead(u16);
+        const ext_len = extensions.assumeRead(u16);
         if (ext_len > extensions.remaining().len) return error.InvalidExtensionLength;
-        const ext_data = try extensions.readSlice(ext_len);
+        const ext_data = extensions.assumeReadSlice(ext_len);
 
         switch (ext_type) {
             0x000d => {
                 if (signature_schemes_raw != null) return error.DuplicateExtension;
                 var er: wire.Reader = .init(ext_data);
-                const list_len = try er.read(u16);
+                if (er.remaining().len < 2) return error.InvalidExtensionLength;
+                const list_len = er.assumeRead(u16);
                 if (list_len == 0 or list_len % 2 != 0) return error.InvalidExtensionLength;
-                signature_schemes_raw = try er.readSlice(list_len);
+                if (er.remaining().len < list_len) return error.InvalidExtensionLength;
+                signature_schemes_raw = er.assumeReadSlice(list_len);
                 if (er.remaining().len != 0) return error.InvalidExtensionLength;
             },
             0x002f => {

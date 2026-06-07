@@ -108,13 +108,13 @@ pub const Reader = struct {
             self.r.pos = begin;
             return error.UnexpectedEof;
         }
-        const msg_type = try self.r.read(u8);
-        const len = try self.r.read(u24);
+        const msg_type = self.r.assumeRead(u8);
+        const len = self.r.assumeRead(u24);
         if (self.r.remaining().len < len) {
             self.r.pos = begin;
             return error.UnexpectedEof;
         }
-        _ = try self.r.readSlice(len);
+        _ = self.r.assumeReadSlice(len);
         return .{ .type = @enumFromInt(msg_type), .raw = self.r.buf[begin..self.r.pos] };
     }
 };

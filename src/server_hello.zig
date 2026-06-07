@@ -3,6 +3,7 @@
 //! RFC 8446 §4.1.3
 const std = @import("std");
 const testing = std.testing;
+const mem = std.mem;
 
 const CipherSuite = @import("root.zig").CipherSuite;
 const NamedGroup = @import("kex.zig").NamedGroup;
@@ -95,24 +96,27 @@ pub const HrrParseError = error{
 ///
 /// RFC 8446 §4.1.4, §4.2.2, §4.2.8.
 pub fn parseHelloRetryRequest(msg: []const u8) HrrParseError!HelloRetryRequest {
+    if (msg.len < 4) return error.UnexpectedEof;
     var r: wire.Reader = .init(msg);
 
-    const handshake_type = try r.read(u8);
+    const handshake_type = r.assumeRead(u8);
     if (handshake_type != 0x02) return error.InvalidHandshakeType;
-    const body_len = try r.read(u24);
+    const body_len = r.assumeRead(u24);
     if (body_len != msg.len - 4) return error.InvalidHandshakeLength;
+    if (body_len < 2 + 32 + 1 + 2 + 1 + 2) return error.UnexpectedEof;
 
-    try r.skip(2); // legacy_version
-    const random = try r.readSlice(32);
-    if (!std.mem.eql(u8, random, &hello_retry_request_random)) return error.NotHelloRetryRequest;
+    r.assumeSkip(2); // legacy_version
+    const random = r.assumeReadSlice(32);
+    if (!mem.eql(u8, random, &hello_retry_request_random)) return error.NotHelloRetryRequest;
 
-    const session_id_len = try r.read(u8);
-    try r.skip(session_id_len); // legacy_session_id_echo
+    const session_id_len = r.assumeRead(u8);
+    if (r.remaining().len < session_id_len + 2 + 1 + 2) return error.UnexpectedEof;
+    r.assumeSkip(session_id_len); // legacy_session_id_echo
 
     const cipher_suite = try r.read(CipherSuite);
-    try r.skip(1); // legacy_compression_method
+    r.assumeSkip(1); // legacy_compression_method
 
-    const extensions_len = try r.read(u16);
+    const extensions_len = r.assumeRead(u16);
     if (extensions_len != msg.len - r.pos) return error.InvalidExtensionLength;
     const extensions_end = r.pos + extensions_len;
 
@@ -123,8 +127,9 @@ pub fn parseHelloRetryRequest(msg: []const u8) HrrParseError!HelloRetryRequest {
     var got_cookie = false;
 
     while (r.pos < extensions_end) {
-        const ext_type = try r.read(u16);
-        const ext_len = try r.read(u16);
+        if (extensions_end - r.pos < 4) return error.InvalidExtensionLength;
+        const ext_type = r.assumeRead(u16);
+        const ext_len = r.assumeRead(u16);
         if (ext_len > extensions_end - r.pos) return error.InvalidExtensionLength;
 
         switch (ext_type) {
@@ -132,7 +137,7 @@ pub fn parseHelloRetryRequest(msg: []const u8) HrrParseError!HelloRetryRequest {
             0x002b => {
                 if (got_supported_versions) return error.DuplicateExtension;
                 if (ext_len != 2) return error.InvalidExtensionLength;
-                const version = try r.read(u16);
+                const version = r.assumeRead(u16);
                 if (version != 0x0304) return error.UnsupportedTlsVersion;
                 got_supported_versions = true;
             },
@@ -148,17 +153,17 @@ pub fn parseHelloRetryRequest(msg: []const u8) HrrParseError!HelloRetryRequest {
             0x002c => {
                 if (got_cookie) return error.DuplicateExtension;
                 if (ext_len < 2) return error.InvalidExtensionLength;
-                const cookie_len = try r.read(u16);
+                const cookie_len = r.assumeRead(u16);
                 if (cookie_len == 0 or cookie_len != ext_len - 2)
                     return error.InvalidExtensionLength;
-                cookie = try r.readSlice(cookie_len);
+                cookie = r.assumeReadSlice(cookie_len);
                 got_cookie = true;
             },
-            else => try r.skip(ext_len),
+            else => r.assumeSkip(ext_len),
         }
     }
-    if (r.pos != extensions_end) return error.InvalidExtensionLength;
 
+    if (r.pos != extensions_end) return error.InvalidExtensionLength;
     if (!got_supported_versions) return error.MissingExtension;
 
     return .{
@@ -216,30 +221,33 @@ pub fn encode(
 ///
 /// RFC 8446 §4.1.3
 pub fn parse(msg: []const u8) ParseError!ServerHello {
+    if (msg.len < 4) return error.UnexpectedEof;
     var r: wire.Reader = .init(msg);
 
     // Handshake header (RFC 8446 §4)
-    const handshake_type = try r.read(u8);
+    const handshake_type = r.assumeRead(u8);
     if (handshake_type != 0x02) return error.InvalidHandshakeType;
-    const body_len = try r.read(u24);
+    const body_len = r.assumeRead(u24);
     if (body_len != msg.len - 4) return error.InvalidHandshakeLength;
+    if (body_len < 2 + 32 + 1 + 2 + 1 + 2) return error.UnexpectedEof;
 
     // ServerHello body (RFC 8446 §4.1.3). HelloRetryRequest is encoded as a
     // ServerHello with a fixed Random value; detect it explicitly so callers
     // get a clean unsupported-feature error instead of a misleading key_share
     // parse failure. RFC 8446 §4.1.3.
-    try r.skip(2); // legacy_version
-    const random = try r.readSlice(32);
-    if (std.mem.eql(u8, random, &hello_retry_request_random)) return error.HelloRetryRequest;
+    r.assumeSkip(2); // legacy_version
+    const random = r.assumeReadSlice(32);
+    if (mem.eql(u8, random, &hello_retry_request_random)) return error.HelloRetryRequest;
 
-    const session_id_len = try r.read(u8);
-    try r.skip(session_id_len); // legacy_session_id_echo
+    const session_id_len = r.assumeRead(u8);
+    if (r.remaining().len < session_id_len + 2 + 1 + 2) return error.UnexpectedEof;
+    r.assumeSkip(session_id_len); // legacy_session_id_echo
 
     const cipher_suite = try r.read(CipherSuite);
-    try r.skip(1); // legacy_compression_method
+    r.assumeSkip(1); // legacy_compression_method
 
     // Extensions
-    const extensions_len = try r.read(u16);
+    const extensions_len = r.assumeRead(u16);
     if (extensions_len > msg.len - r.pos) return error.InvalidExtensionLength;
     const extensions_end = r.pos + extensions_len;
 
@@ -248,8 +256,9 @@ pub fn parse(msg: []const u8) ParseError!ServerHello {
     var got_key_share = false;
 
     while (r.pos < extensions_end) {
-        const ext_type = try r.read(u16);
-        const ext_len = try r.read(u16);
+        if (extensions_end - r.pos < 4) return error.InvalidExtensionLength;
+        const ext_type = r.assumeRead(u16);
+        const ext_len = r.assumeRead(u16);
         if (ext_len > extensions_end - r.pos) return error.InvalidExtensionLength;
 
         switch (ext_type) {
@@ -257,7 +266,7 @@ pub fn parse(msg: []const u8) ParseError!ServerHello {
             0x002b => {
                 if (got_supported_versions) return error.DuplicateExtension;
                 if (ext_len != 2) return error.InvalidExtensionLength;
-                const version = try r.read(u16);
+                const version = r.assumeRead(u16);
                 if (version != 0x0304) return error.UnsupportedTlsVersion;
                 got_supported_versions = true;
             },
@@ -265,17 +274,19 @@ pub fn parse(msg: []const u8) ParseError!ServerHello {
             0x0033 => {
                 if (got_key_share) return error.DuplicateExtension;
                 const ext_end = r.pos + ext_len;
-                const group = try r.read(u16);
+                if (ext_len < 4) return error.InvalidExtensionLength;
+                const group = r.assumeRead(u16);
                 // x25519 only
                 if (group != @intFromEnum(NamedGroup.x25519))
                     return error.UnsupportedKeyShareGroup;
-                const key_len = try r.read(u16);
+                const key_len = r.assumeRead(u16);
                 if (key_len != 32) return error.UnsupportedKeyShareGroup;
-                server_public_key = .init((try r.readSlice(32))[0..32].*);
+                if (ext_end - r.pos < 32) return error.InvalidExtensionLength;
+                server_public_key = .init(r.assumeReadSlice(32)[0..32].*);
                 if (r.pos != ext_end) return error.InvalidExtensionLength;
                 got_key_share = true;
             },
-            else => try r.skip(ext_len),
+            else => r.assumeSkip(ext_len),
         }
     }
     if (r.pos != extensions_end) return error.InvalidExtensionLength;

@@ -60,17 +60,20 @@ pub fn encode(out: []u8, certs_der: []const []const u8) EncodeError![]const u8 {
 /// RFC 8446 §4.4.2
 // ziglint-ignore: Z015 -- ParseError is a public error-set alias.
 pub fn parse(msg: []const u8, policy: Policy) ParseError![]const u8 {
+    if (msg.len < 4 + 1 + 3) return error.UnexpectedEof;
     var r: wire.Reader = .init(msg);
 
-    const handshake_type = try r.read(u8);
+    const handshake_type = r.assumeRead(u8);
     if (handshake_type != 0x0b) return error.InvalidHandshakeType;
-    try r.skip(3); // body length
+    r.assumeSkip(3); // body length
 
-    const ctx_len = try r.read(u8);
-    try r.skip(ctx_len);
+    const ctx_len = r.assumeRead(u8);
+    if (r.remaining().len < ctx_len + 3) return error.UnexpectedEof;
+    r.assumeSkip(ctx_len);
 
-    const list_len = try r.read(u24);
+    const list_len = r.assumeRead(u24);
     if (list_len == 0) return error.EmptyCertificateList;
+    if (r.remaining().len < list_len) return error.UnexpectedEof;
 
     const list_end = r.pos + list_len;
     var cert_index: usize = 0;
@@ -78,10 +81,13 @@ pub fn parse(msg: []const u8, policy: Policy) ParseError![]const u8 {
     var subject_to_verify: ?Certificate.Parsed = null;
 
     while (r.pos < list_end) {
-        const cert_len = try r.read(u24);
-        const cert_der = try r.readSlice(cert_len);
-        const ext_len = try r.read(u16);
-        try r.skip(ext_len);
+        if (list_end - r.pos < 3) return error.UnexpectedEof;
+        const cert_len = r.assumeRead(u24);
+        if (r.remaining().len < cert_len + 2) return error.UnexpectedEof;
+        const cert_der = r.assumeReadSlice(cert_len);
+        const ext_len = r.assumeRead(u16);
+        if (r.remaining().len < ext_len) return error.UnexpectedEof;
+        r.assumeSkip(ext_len);
 
         const cert: Certificate = .{ .buffer = cert_der, .index = 0 };
         const parsed = try cert.parse();
@@ -211,15 +217,17 @@ fn verifySignature(
     pub_key: []const u8,
     transcript_hash: []const u8,
 ) VerifyError!void {
+    if (msg.len < 4 + 2 + 2) return error.UnexpectedEof;
     var r: wire.Reader = .init(msg);
 
-    const handshake_type = try r.read(u8);
+    const handshake_type = r.assumeRead(u8);
     if (handshake_type != 0x0f) return error.InvalidHandshakeType;
-    try r.skip(3);
+    r.assumeSkip(3);
 
     const scheme = try r.read(SignatureScheme);
-    const sig_len = try r.read(u16);
-    const sig = try r.readSlice(sig_len);
+    const sig_len = r.assumeRead(u16);
+    if (r.remaining().len < sig_len) return error.UnexpectedEof;
+    const sig = r.assumeReadSlice(sig_len);
 
     const md = switch (scheme) {
         .ecdsa_secp256r1_sha256, .rsa_pss_rsae_sha256 => c.EVP_sha256(),

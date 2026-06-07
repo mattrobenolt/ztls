@@ -30,35 +30,40 @@ pub const ParseError = error{
 /// Handshake header. Returned slices borrow `msg` and are for inspection only;
 /// current client state machine ignores the result.
 pub fn parse(msg: []const u8) ParseError!NewSessionTicket {
-    var r: wire.Reader = .init(msg);
-    const handshake_type = try r.read(u8);
-    if (handshake_type != 0x04) return error.InvalidHandshakeType;
-    const body_len = try r.read(u24);
-    if (body_len != msg.len - 4) return error.InvalidHandshakeLength;
+    if (msg.len < 4) return error.UnexpectedEof;
 
-    const ticket_lifetime = try r.read(u32);
-    const ticket_age_add = try r.read(u32);
-    const nonce_len = try r.read(u8);
-    const nonce = try r.readSlice(nonce_len);
-    const ticket_len = try r.read(u16);
+    var r: wire.Reader = .init(msg);
+    const handshake_type = r.assumeRead(u8);
+    if (handshake_type != 0x04) return error.InvalidHandshakeType;
+    const body_len = r.assumeRead(u24);
+    if (body_len != msg.len - 4) return error.InvalidHandshakeLength;
+    if (body_len < 4 + 4 + 1 + 2 + 2) return error.UnexpectedEof;
+
+    const ticket_lifetime = r.assumeRead(u32);
+    const ticket_age_add = r.assumeRead(u32);
+    const nonce_len = r.assumeRead(u8);
+    if (r.remaining().len < nonce_len + 2) return error.UnexpectedEof;
+    const nonce = r.assumeReadSlice(nonce_len);
+    const ticket_len = r.assumeRead(u16);
     if (ticket_len == 0) return error.EmptyTicket;
-    const ticket = try r.readSlice(ticket_len);
-    const extensions_len = try r.read(u16);
-    if (extensions_len != msg.len - r.pos) return error.InvalidExtensionLength;
-    var extensions: wire.Reader = .init(try r.readSlice(extensions_len));
+    if (r.remaining().len < ticket_len + 2) return error.UnexpectedEof;
+    const ticket = r.assumeReadSlice(ticket_len);
+    const extensions_len = r.assumeRead(u16);
+    if (extensions_len != r.remaining().len) return error.InvalidExtensionLength;
+    var extensions: wire.Reader = .init(r.assumeReadSlice(extensions_len));
     var max_early_data_size: ?u32 = null;
     while (extensions.remaining().len != 0) {
         if (extensions.remaining().len < 4) return error.InvalidExtensionLength;
-        const extension_type = try extensions.read(u16);
-        const extension_len = try extensions.read(u16);
+        const extension_type = extensions.assumeRead(u16);
+        const extension_len = extensions.assumeRead(u16);
         if (extension_len > extensions.remaining().len) return error.InvalidExtensionLength;
-        const extension = try extensions.readSlice(extension_len);
+        const extension = extensions.assumeReadSlice(extension_len);
         switch (extension_type) {
             0x002a => {
                 if (max_early_data_size != null) return error.DuplicateEarlyData;
                 if (extension.len != 4) return error.InvalidExtensionLength;
                 var er: wire.Reader = .init(extension);
-                max_early_data_size = try er.read(u32);
+                max_early_data_size = er.assumeRead(u32);
             },
             else => {},
         }
