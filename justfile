@@ -31,6 +31,14 @@ ci: ci-actions
 wycheproof:
     zig build test-wycheproof
 
+[doc("Check Python conformance tests with ruff and ty")]
+[group("test")]
+[working-directory("conformance")]
+conformance-python:
+    uv run ruff format --check .
+    uv run ruff check .
+    uv run ty check .
+
 [doc("Run tlsfuzzer TLS 1.3 conformance smoke tests")]
 [group("test")]
 tlsfuzzer *ARGS:

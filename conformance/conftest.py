@@ -21,7 +21,9 @@ def _wait_for_ready(proc: subprocess.Popen, host: str, port: int, timeout_s: flo
     saw_marker = False
     while time.monotonic() < deadline:
         if proc.poll() is not None:
-            raise RuntimeError(f"ztls_tlsfuzzer_server exited early rc={proc.returncode}: {captured.decode(errors='replace')!r}")
+            raise RuntimeError(
+                f"ztls_tlsfuzzer_server exited early rc={proc.returncode}: {captured.decode(errors='replace')!r}"
+            )
         try:
             chunk = proc.stdout.read(4096)
             if chunk:
@@ -36,7 +38,9 @@ def _wait_for_ready(proc: subprocess.Popen, host: str, port: int, timeout_s: flo
             except OSError:
                 pass
         time.sleep(0.05)
-    raise RuntimeError(f"ztls_tlsfuzzer_server not ready on {host}:{port}; output={captured.decode(errors='replace')!r}")
+    raise RuntimeError(
+        f"ztls_tlsfuzzer_server not ready on {host}:{port}; output={captured.decode(errors='replace')!r}"
+    )
 
 
 @pytest.fixture(scope="session")
@@ -48,7 +52,9 @@ def ztls_server():
         port = sock.getsockname()[1]
     env = os.environ.copy()
     env["PORT"] = str(port)
-    proc = subprocess.Popen([str(SERVER_BIN)], env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    proc = subprocess.Popen(
+        [str(SERVER_BIN)], env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT
+    )
     _wait_for_ready(proc, "127.0.0.1", port)
     try:
         yield {"host": "127.0.0.1", "port": port, "proc": proc}
@@ -73,4 +79,7 @@ def _server_alive(request):
     yield
     if proc.poll() is not None:
         captured = proc.stdout.read() if proc.stdout else b""
-        pytest.fail(f"ztls_tlsfuzzer_server died during test rc={proc.returncode}: {captured.decode(errors='replace')!r}", pytrace=False)
+        pytest.fail(
+            f"ztls_tlsfuzzer_server died during test rc={proc.returncode}: {captured.decode(errors='replace')!r}",
+            pytrace=False,
+        )

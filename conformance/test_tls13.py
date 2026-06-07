@@ -58,9 +58,7 @@ def tls13_extensions():
         ExtensionType.supported_versions: SupportedVersionsExtension().create(
             [TLS_1_3_DRAFT, (3, 3)]
         ),
-        ExtensionType.supported_groups: SupportedGroupsExtension().create(
-            [GroupName.x25519]
-        ),
+        ExtensionType.supported_groups: SupportedGroupsExtension().create([GroupName.x25519]),
         ExtensionType.signature_algorithms: SignatureAlgorithmsExtension().create(
             [
                 SignatureScheme.ecdsa_secp256r1_sha256,
@@ -97,9 +95,7 @@ def expect_alert_or_close(node, level, description):
 
 
 def close_notify(node):
-    send = node.add_child(
-        AlertGenerator(AlertLevel.warning, AlertDescription.close_notify)
-    )
+    send = node.add_child(AlertGenerator(AlertLevel.warning, AlertDescription.close_notify))
     alert = send.add_child(ExpectAlert())
     alert.next_sibling = ExpectClose()
     alert.add_child(ExpectClose())
@@ -107,9 +103,7 @@ def close_notify(node):
 
 
 def raw_connect(ztls_server):
-    sock = socket.create_connection(
-        (ztls_server["host"], ztls_server["port"]), timeout=2
-    )
+    sock = socket.create_connection((ztls_server["host"], ztls_server["port"]), timeout=2)
     sock.settimeout(1)
     return sock
 
@@ -118,7 +112,7 @@ def expect_closed_or_alert(sock):
     try:
         data = sock.recv(1)
         assert data in (b"", b"\x15"), f"expected close or alert, got {data!r}"
-    except ConnectionResetError, TimeoutError, socket.timeout:
+    except (ConnectionResetError, TimeoutError, socket.timeout):
         pass
 
 
@@ -127,9 +121,7 @@ def record(content_type: int, body: bytes, version: bytes = b"\x03\x03") -> byte
 
 
 def minimal_client_hello_with_ext(ext_type: int, ext_body: bytes) -> bytes:
-    extensions = (
-        ext_type.to_bytes(2, "big") + len(ext_body).to_bytes(2, "big") + ext_body
-    )
+    extensions = ext_type.to_bytes(2, "big") + len(ext_body).to_bytes(2, "big") + ext_body
     body = (
         b"\x03\x03"
         + (b"\x11" * 32)
@@ -146,13 +138,9 @@ def minimal_client_hello_with_ext(ext_type: int, ext_body: bytes) -> bytes:
 
 def run_echo_conversation(ztls_server, ciphers):
     conversation = Connect(ztls_server["host"], ztls_server["port"])
-    node = conversation.add_child(
-        ClientHelloGenerator(ciphers, extensions=tls13_extensions())
-    )
+    node = conversation.add_child(ClientHelloGenerator(ciphers, extensions=tls13_extensions()))
     node = tls13_handshake(node)
-    node = node.add_child(
-        ApplicationDataGenerator(bytearray(b"ztls tlsfuzzer smoke\n"))
-    )
+    node = node.add_child(ApplicationDataGenerator(bytearray(b"ztls tlsfuzzer smoke\n")))
     node = node.add_child(ExpectApplicationData())
     close_notify(node)
     Runner(conversation).run()
@@ -184,17 +172,11 @@ def test_tls13_chacha20_poly1305_echo(ztls_server):
 
 def test_tls13_keyupdate_update_requested(ztls_server):
     conversation = Connect(ztls_server["host"], ztls_server["port"])
-    node = conversation.add_child(
-        ClientHelloGenerator(CIPHERS, extensions=tls13_extensions())
-    )
+    node = conversation.add_child(ClientHelloGenerator(CIPHERS, extensions=tls13_extensions()))
     node = tls13_handshake(node)
-    node = node.add_child(
-        KeyUpdateGenerator(message_type=KeyUpdateMessageType.update_requested)
-    )
+    node = node.add_child(KeyUpdateGenerator(message_type=KeyUpdateMessageType.update_requested))
     node = node.add_child(ApplicationDataGenerator(bytearray(b"after key update\n")))
-    node = node.add_child(
-        ExpectKeyUpdate(message_type=KeyUpdateMessageType.update_not_requested)
-    )
+    node = node.add_child(ExpectKeyUpdate(message_type=KeyUpdateMessageType.update_not_requested))
     node = node.add_child(ExpectApplicationData())
     close_notify(node)
     Runner(conversation).run()
@@ -202,9 +184,7 @@ def test_tls13_keyupdate_update_requested(ztls_server):
 
 def test_tls13_corrupted_app_data_record_is_rejected(ztls_server):
     conversation = Connect(ztls_server["host"], ztls_server["port"])
-    node = conversation.add_child(
-        ClientHelloGenerator(CIPHERS, extensions=tls13_extensions())
-    )
+    node = conversation.add_child(ClientHelloGenerator(CIPHERS, extensions=tls13_extensions()))
     node = tls13_handshake(node)
     node = node.add_child(
         RawSocketWriteGenerator(data=bytearray(b"\x17\x03\x03\x00\x20" + b"\xaa" * 32))
@@ -219,9 +199,7 @@ def test_tls13_oversized_record_is_rejected(ztls_server):
     oversized_record.extend(oversized_len.to_bytes(2, "big"))
     oversized_record.extend(b"\x00" * 16)
     conversation = Connect(ztls_server["host"], ztls_server["port"])
-    node = conversation.add_child(
-        ClientHelloGenerator(CIPHERS, extensions=tls13_extensions())
-    )
+    node = conversation.add_child(ClientHelloGenerator(CIPHERS, extensions=tls13_extensions()))
     node = tls13_handshake(node)
     node = node.add_child(RawSocketWriteGenerator(data=oversized_record))
     expect_alert_or_close(
@@ -271,9 +249,7 @@ def test_tls13_rejects_empty_client_hello_record(ztls_server):
 def test_tls13_rejects_truncated_key_share_extension(ztls_server):
     sock = raw_connect(ztls_server)
     try:
-        sock.sendall(
-            minimal_client_hello_with_ext(ExtensionType.key_share, b"\x00\x04\x00\x1d")
-        )
+        sock.sendall(minimal_client_hello_with_ext(ExtensionType.key_share, b"\x00\x04\x00\x1d"))
         expect_closed_or_alert(sock)
     finally:
         sock.close()
@@ -290,8 +266,6 @@ def test_tls13_rejects_unsupported_cipher_suite(ztls_server):
             extensions=tls13_extensions(),
         )
     )
-    alert = node.add_child(
-        ExpectAlert(AlertLevel.fatal, AlertDescription.handshake_failure)
-    )
+    alert = node.add_child(ExpectAlert(AlertLevel.fatal, AlertDescription.handshake_failure))
     alert.add_child(ExpectClose())
     Runner(conversation).run()

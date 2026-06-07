@@ -7,3 +7,15 @@ dependencies = [
   "tlsfuzzer @ git+https://github.com/tlsfuzzer/tlsfuzzer.git@bf7f579dc0e65498cfb21b60e9b152f6bd84a3bf",
   "tlslite-ng @ git+https://github.com/tlsfuzzer/tlslite-ng.git@02d1506badb16473faf50ebc3a413c6d789fe31f",
 ]
+
+[dependency-groups]
+dev = [
+  "ruff>=0.15.16",
+  "ty>=0.0.44",
+]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ty.environment]
+python-version = "3.12"
