@@ -21,7 +21,7 @@ no-alloc:
 [doc("Run ziglint, excluding vendored cryptox")]
 [group("test")]
 lint:
-    ziglint build.zig examples bench $(find src -path src/cryptox -prune -o -name '*.zig' -print)
+    ziglint build.zig examples bench $(fd --extension zig --exclude cryptox . src)
 
 [doc("Run unit, interop, formatting, benchmark smoke, and workflow checks")]
 [group("test")]
@@ -96,10 +96,6 @@ anvil-client:
 bogo-fetch:
     #!/usr/bin/env bash
     set -euo pipefail
-    if ! command -v go >/dev/null 2>&1; then
-        echo "SKIP: go not found in PATH; add go to devshell (TODO-0a5196f2)"
-        exit 0
-    fi
     mkdir -p zig-out/tools
     if [[ ! -d zig-out/tools/boringssl ]]; then
         git clone --depth 1 https://github.com/google/boringssl.git zig-out/tools/boringssl

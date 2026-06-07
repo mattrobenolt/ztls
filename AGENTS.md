@@ -1,6 +1,6 @@
 # AGENTS.md
 
-This is ztls: a TLS 1.3 framing library in Zig. No I/O. Caller-owned buffers.
+This is ztls: a Sans-I/O TLS 1.3 library in Zig. No transport I/O. Caller-owned buffers.
 Read `docs/research/DESIGN.md` before writing any code.
 
 ---
@@ -8,8 +8,10 @@ Read `docs/research/DESIGN.md` before writing any code.
 ## What This Is
 
 A pure TLS 1.3 state machine. The engine consumes and produces byte slices.
-It does not open sockets. It does not call malloc. Higher-level wrappers that
-add I/O belong in a separate package.
+Core library code does not open sockets. ztls-owned protocol/state-machine code
+must not allocate. Higher-level wrappers that add I/O belong outside the core
+engine; repo examples and test shims may use sockets to exercise the Sans-I/O
+API.
 
 Target platforms: Linux and macOS. No Windows support, no portability tax.
 
@@ -79,17 +81,21 @@ Every test cites the RFC section it validates. Format:
 test "nonce construction" { ... }
 ```
 
-No test without a spec reference. Error path tests are not optional.
+Protocol tests cite the spec section they validate. Utility tests that are not
+direct protocol assertions should name the invariant or behavior clearly. Error
+path tests are not optional.
 
-**Unit tests** live in the same file as the code they test (`test` blocks).
+**Unit tests** usually live in the same file as the code they test (`test` blocks).
 
-**Integration tests** live in `src/test/`. The integration test harness connects
-a ztls client to a ztls server via an in-memory pipe, and also connects to
+**Integration tests** live in `src/test/` and examples. The harnesses connect a
+ztls client to a ztls server in memory and exercise both directions against
 `openssl s_server` / `openssl s_client` as ground-truth peers.
 
 **Conformance tests** — see `docs/research/DESIGN.md` § Testing Strategy.
-tlsfuzzer and Wycheproof test vectors are the primary external suites. When a
-test suite covers something we implement, we run it. No exceptions.
+Active external coverage includes tlsfuzzer, Wycheproof boundary smoke tests,
+TLS-Anvil shims, BoGo shims, and the bettertls inventory. When a suite covers
+something we implement, we either run it or keep an explicit skip/inventory for
+unsupported surface area.
 
 ---
 
