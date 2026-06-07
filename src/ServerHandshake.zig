@@ -1,8 +1,9 @@
-/// TLS 1.3 server handshake state machine skeleton.
+/// TLS 1.3 server handshake state machine.
 ///
-/// This is intentionally narrow: parse ClientHello, choose parameters, emit
-/// plaintext ServerHello, and install handshake traffic keys. Encrypted flight
-/// and Finished processing come next. No allocations, no I/O.
+/// Parses ClientHello, emits ServerHello, sends an authenticated encrypted
+/// flight (EncryptedExtensions / Certificate / CertificateVerify / Finished),
+/// verifies the client Finished, and handles application data and post-handshake
+/// KeyUpdate. No allocations, no I/O.
 const std = @import("std");
 const assert = std.debug.assert;
 const Sha256 = std.crypto.hash.sha2.Sha256;
@@ -104,6 +105,10 @@ suite_state: Suite = undefined,
 supported_suites: []const CipherSuite = &default_supported_suites,
 alpn_protocols: client_hello.AlpnProtocols = &.{},
 selected_alpn: ?[]const u8 = null,
+/// SNI hostname sent by the client in the server_name extension (RFC 6066 §3).
+/// Populated after acceptClientHello / handleRecord returns the first write event.
+/// Points into the caller-owned record buffer; copy if needed beyond the next call.
+client_server_name: ?[]const u8 = null,
 rx: RecordLayer = undefined,
 tx: RecordLayer = undefined,
 /// Set when an engine call hands the caller bytes that must be written before
@@ -148,6 +153,16 @@ pub fn supportAlpn(self: *ServerHandshake, protocols: client_hello.AlpnProtocols
 
 pub fn selectedAlpnProtocol(self: *const ServerHandshake) ?[]const u8 {
     return self.selected_alpn;
+}
+
+/// Return the SNI hostname from the ClientHello server_name extension, or null
+/// if the client did not send one. Available after the first handleRecord/
+/// acceptClientHello call returns. Points into the caller's record buffer —
+/// copy before the next call if you need it longer.
+///
+/// RFC 6066 §3 — server_name extension.
+pub fn clientServerName(self: *const ServerHandshake) ?[]const u8 {
+    return self.client_server_name;
 }
 
 pub fn completeWrite(self: *ServerHandshake) void {
@@ -210,6 +225,7 @@ pub fn acceptClientHello(
     self.suite = suite;
     self.selected_alpn = ch.selectAlpn(self.alpn_protocols);
     if (ch.alpn_protocols.len != 0 and self.alpn_protocols.len != 0 and self.selected_alpn == null) return error.NoApplicationProtocol;
+    self.client_server_name = ch.server_name;
 
     const sh = try server_hello.encode(out[frame.header_len..], random.data, ch.legacy_session_id, suite, .init(self.keypair.public_key));
     out[0..frame.header_len].* = mem.toBytes(frame.Header.init(.handshake, @intCast(sh.len)));
@@ -1044,6 +1060,37 @@ test "acceptClientHello: server suite preference" {
     const hdr = try frame.parseHeader(sh_record);
     const sh = try server_hello.parse(sh_record[frame.header_len..][0..hdr.length()]);
     try testing.expectEqual(.chacha20_poly1305_sha256, sh.cipher_suite);
+}
+
+// RFC 6066 §3 — server_name extension: server must be able to read the
+// requested hostname to select the appropriate certificate.
+test "acceptClientHello: exposes SNI via clientServerName" {
+    const client_keypair: x25519.KeyPair = .generate();
+    var ch_buf: [512]u8 = undefined;
+    const ch = try client_hello.encode(&ch_buf, .zero, .init(client_keypair.public_key), "example.com", &.{});
+    var record: [1024]u8 = undefined;
+    record[0..frame.header_len].* = mem.toBytes(frame.Header.init(.handshake, @intCast(ch.len)));
+    @memcpy(record[frame.header_len..][0..ch.len], ch);
+
+    var hs: ServerHandshake = .init(.generate());
+    var out: [256]u8 = undefined;
+    _ = try hs.acceptClientHello(record[0 .. frame.header_len + ch.len], .zero, &out);
+    try testing.expectEqualStrings("example.com", hs.clientServerName().?);
+}
+
+// RFC 6066 §3 — SNI is optional; no server_name extension means null.
+test "acceptClientHello: clientServerName is null when SNI absent" {
+    const client_keypair: x25519.KeyPair = .generate();
+    var ch_buf: [512]u8 = undefined;
+    const ch = try client_hello.encode(&ch_buf, .zero, .init(client_keypair.public_key), null, &.{});
+    var record: [1024]u8 = undefined;
+    record[0..frame.header_len].* = mem.toBytes(frame.Header.init(.handshake, @intCast(ch.len)));
+    @memcpy(record[frame.header_len..][0..ch.len], ch);
+
+    var hs: ServerHandshake = .init(.generate());
+    var out: [256]u8 = undefined;
+    _ = try hs.acceptClientHello(record[0 .. frame.header_len + ch.len], .zero, &out);
+    try testing.expectEqual(null, hs.clientServerName());
 }
 
 test "acceptClientHello: rejects unsupported suite" {
