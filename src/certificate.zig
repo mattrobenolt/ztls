@@ -94,6 +94,7 @@ pub fn encode(out: []u8, certs_der: []const []const u8) EncodeError![]const u8 {
 /// the policy's trust bundle.
 ///
 /// RFC 8446 §4.4.2
+// ziglint-ignore: Z015 -- ParseError is a public error-set alias.
 pub fn parse(msg: []const u8, policy: Policy) ParseError![]const u8 {
     var r: wire.Reader = .init(msg);
 

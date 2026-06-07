@@ -441,6 +441,7 @@ pub fn selectedAlpnProtocol(self: *const ClientHandshake) ?[]const u8 {
 /// key), frame it as a plaintext record into `out`, absorb it into the
 /// transcript, and advance start -> wait_sh. Returns the wire-ready record to
 /// send (then completeWrite() once sent). RFC 8446 §4.1.2, §5.1.
+// ziglint-ignore: Z015 -- StartError is a public error-set alias.
 pub fn start(
     self: *ClientHandshake,
     out: []u8,
@@ -500,6 +501,7 @@ pub fn isConnected(self: *const ClientHandshake) bool {
 /// decrypted application data, handles post-handshake control messages
 /// (KeyUpdate), and surfaces a KeyUpdate response as `.write`. `record` is
 /// decrypted in place; `out` receives any record to send. RFC 8446 §5.
+// ziglint-ignore: Z015 -- HandleError is a public error-set alias.
 pub fn handleRecord(self: *ClientHandshake, record: []u8, out: []u8) HandleError!Event {
     if (self.pending_write.isPending()) return error.PendingWrite;
     const ev: Event = if (self.state == .connected)
@@ -517,6 +519,7 @@ pub const AlertError = RecordLayer.EncryptError || error{PendingWrite};
 /// Encode a TLS alert record (then completeWrite() once sent). Before handshake
 /// keys exist this emits a plaintext alert record; after ServerHello it encrypts
 /// the alert under the current send traffic key. RFC 8446 §6.
+// ziglint-ignore: Z015 -- AlertError is a public error-set alias.
 pub fn sendAlert(
     self: *ClientHandshake,
     description: alert.Description,
@@ -545,6 +548,7 @@ fn plaintextAlert(msg: *const [2]u8, out: []u8) error{BufferTooShort}![]u8 {
 
 /// Encrypt application data into a wire-ready record (then completeWrite() once
 /// sent). RFC 8446 §5.2.
+// ziglint-ignore: Z015 -- SendError is a public error-set alias.
 pub fn sendApplicationData(
     self: *ClientHandshake,
     plaintext: []const u8,
@@ -557,6 +561,7 @@ pub fn sendApplicationData(
     return record;
 }
 
+// ziglint-ignore: Z015 -- SendError is a public error-set alias.
 pub fn sendPreparedApplicationData(
     self: *ClientHandshake,
     plaintext_len: usize,
@@ -626,6 +631,7 @@ pub const ServerHelloError = server_hello.ParseError || aead.Error || error{
 /// Process the server's ServerHello: parse it, absorb it into the transcript,
 /// compute the DHE shared secret, and install the handshake-traffic keys.
 /// RFC 8446 §4.1.3, §7.1. Advances wait_sh -> wait_ee.
+// ziglint-ignore: Z015 -- ServerHelloError is a public error-set alias.
 pub fn processServerHello(self: *ClientHandshake, msg: []const u8) ServerHelloError!void {
     assert(self.state == .wait_sh);
     const sh = try server_hello.parse(msg);
@@ -671,6 +677,7 @@ pub const FlightError = error{
 /// one message per record): self.state persists and each call resumes. A
 /// single handshake message must still fit within one payload — message-
 /// spanning-records reassembly is not yet supported.
+// ziglint-ignore: Z015 -- FlightError is a public error-set alias.
 pub fn processFlight(
     self: *ClientHandshake,
     payload: []const u8,
@@ -792,6 +799,7 @@ pub const SendError = RecordLayer.EncryptError || error{ PendingWrite, Unexpecte
 /// rx/tx are swapped to application-traffic keys. After this returns, both
 /// directions carry application data. `out` receives the encrypted record and
 /// the returned slice is the bytes to send.
+// ziglint-ignore: Z015 -- SendError is a public error-set alias.
 pub fn clientFinished(self: *ClientHandshake, out: []u8) SendError![]const u8 {
     assert(self.state == .send_finished);
     if (self.server_flight_progress != .finished_verified) return error.UnexpectedMessage;
@@ -889,6 +897,7 @@ fn receiveConnected(self: *ClientHandshake, record: []u8, out: []u8) ReceiveErro
 /// Send a KeyUpdate. Encrypts the message under the current (old) send key,
 /// then ratchets our send key so subsequent records use the next generation
 /// (RFC 8446 §4.6.3, §7.2). `request` asks the peer to update in return.
+// ziglint-ignore: Z015 -- SendError is a public error-set alias.
 pub fn sendKeyUpdate(
     self: *ClientHandshake,
     out: []u8,

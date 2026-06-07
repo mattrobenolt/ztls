@@ -226,6 +226,7 @@ pub const AlertError = RecordLayer.EncryptError || error{ BufferTooShort, Pendin
 /// record. The returned bytes must be written before continuing the handshake.
 /// Installs handshake traffic keys for the encrypted server flight.
 /// RFC 8446 §4.1.2, §4.1.3, §5.1, §7.1.
+// ziglint-ignore: Z015 -- AcceptError is a public error-set alias.
 pub fn acceptClientHello(
     self: *ServerHandshake,
     record: []const u8,
@@ -369,6 +370,7 @@ fn sendAnonymousFlightForTest(self: *ServerHandshake, out: []u8) FlightError![]c
 /// Certificate, CertificateVerify, Finished. The signer receives the exact TLS
 /// 1.3 CertificateVerify input (`64*SP || context || 0 || transcript_hash`) and
 /// writes a DER signature into caller-provided scratch. RFC 8446 §4.3-§4.4.
+// ziglint-ignore: Z015 -- FlightError is a public error-set alias.
 pub fn sendAuthenticatedFlight(
     self: *ServerHandshake,
     certs_der: []const []const u8,
@@ -379,6 +381,7 @@ pub fn sendAuthenticatedFlight(
     return self.sendCertificateChainFlight(.init(certs_der), signer, plaintext, out);
 }
 
+// ziglint-ignore: Z015 -- FlightError is a public error-set alias.
 pub fn sendCertificateChainFlight(
     self: *ServerHandshake,
     chain: CertificateChain,
@@ -390,6 +393,7 @@ pub fn sendCertificateChainFlight(
     return self.tx.encrypt(.handshake, flight, out);
 }
 
+// ziglint-ignore: Z015 -- FlightError is a public error-set alias.
 pub fn sendPreparedAuthenticatedFlight(
     self: *ServerHandshake,
     certs_der: []const []const u8,
@@ -399,6 +403,7 @@ pub fn sendPreparedAuthenticatedFlight(
     return self.sendPreparedCertificateChainFlight(.init(certs_der), signer, out);
 }
 
+// ziglint-ignore: Z015 -- FlightError is a public error-set alias.
 pub fn sendPreparedCertificateChainFlight(
     self: *ServerHandshake,
     chain: CertificateChain,
@@ -410,6 +415,7 @@ pub fn sendPreparedCertificateChainFlight(
     return self.tx.encryptPrepared(.handshake, flight.len, out);
 }
 
+// ziglint-ignore: Z015 -- FlightError is a public error-set alias.
 pub fn sendAuthenticatedFlightBuffered(
     self: *ServerHandshake,
     certs_der: []const []const u8,
@@ -481,6 +487,7 @@ fn encodeAuthenticatedFlight(
 /// Consume the client's encrypted Finished, verify it against the transcript
 /// through server Finished, then install application traffic keys. RFC 8446
 /// §4.4.4, §7.1.
+// ziglint-ignore: Z015 -- ClientFinishedError is a public error-set alias.
 pub fn processClientFinished(self: *ServerHandshake, record: []u8) ClientFinishedError!void {
     assert(self.state == .wait_client_finished);
     const dec = try self.rx.decrypt(record);
@@ -519,6 +526,7 @@ fn processClientFinishedPlaintext(
     self.state = .connected;
 }
 
+// ziglint-ignore: Z015 -- HandleError is a public error-set alias.
 pub fn handleRecord(
     self: *ServerHandshake,
     record: []u8,
@@ -617,6 +625,7 @@ fn handleConnected(self: *ServerHandshake, record: []u8, out: []u8) ReceiveError
     }
 }
 
+// ziglint-ignore: Z015 -- SendError is a public error-set alias.
 pub fn sendKeyUpdate(
     self: *ServerHandshake,
     out: []u8,
@@ -640,6 +649,7 @@ fn parseKeyUpdate(msg: []const u8) error{ UnexpectedEof, IllegalParameter }!KeyU
     return std.enums.fromInt(KeyUpdateRequest, msg[4]) orelse error.IllegalParameter;
 }
 
+// ziglint-ignore: Z015 -- AlertError is a public error-set alias.
 pub fn sendAlert(
     self: *ServerHandshake,
     description: alert.Description,
@@ -665,6 +675,7 @@ fn plaintextAlert(msg: *const [2]u8, out: []u8) error{BufferTooShort}![]u8 {
     return out[0..total];
 }
 
+// ziglint-ignore: Z015 -- SendError is a public error-set alias.
 pub fn sendApplicationData(
     self: *ServerHandshake,
     plaintext: []const u8,
@@ -677,6 +688,7 @@ pub fn sendApplicationData(
     return record;
 }
 
+// ziglint-ignore: Z015 -- SendError is a public error-set alias.
 pub fn sendPreparedApplicationData(
     self: *ServerHandshake,
     plaintext_len: usize,
@@ -689,6 +701,7 @@ pub fn sendPreparedApplicationData(
     return record;
 }
 
+// ziglint-ignore: Z015 -- ReceiveError is a public error-set alias.
 pub fn receiveApplicationData(self: *ServerHandshake, record: []u8) ReceiveError![]const u8 {
     assert(self.state == .connected);
     const dec = try self.rx.decrypt(record);

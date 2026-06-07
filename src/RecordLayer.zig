@@ -85,6 +85,7 @@ pub const EncryptError = AeadError || error{
 /// Sequence number increments only on successful authentication.
 ///
 /// RFC 8446 §5.2
+// ziglint-ignore: Z015 -- DecryptError is a public error-set alias.
 pub fn decrypt(self: *RecordLayer, buf: []u8) DecryptError!DecryptedRecord {
     try self.checkSequenceLimit();
 
@@ -126,6 +127,7 @@ pub fn decrypt(self: *RecordLayer, buf: []u8) DecryptError!DecryptedRecord {
 /// Returns the number of bytes written.
 ///
 /// RFC 8446 §5.2
+// ziglint-ignore: Z015 -- EncryptError is a public error-set alias.
 pub fn encrypt(
     self: *RecordLayer,
     content_type: ContentType,
@@ -149,6 +151,7 @@ pub fn encrypt(
 /// Encrypt a TLS record after the caller has already written plaintext into
 /// `out[5..][0..content_len]`. This avoids the plaintext copy in `encrypt` for
 /// producers that can serialize directly into the record buffer.
+// ziglint-ignore: Z015 -- EncryptError is a public error-set alias.
 pub fn encryptPrepared(
     self: *RecordLayer,
     content_type: ContentType,

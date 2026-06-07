@@ -18,10 +18,16 @@ ci-actions:
 no-alloc:
     ast-grep scan --rule rules/no-ztls-owned-allocations.yml src --globs '*.zig' --globs '!src/test/**' --report-style short
 
+[doc("Run ziglint, excluding vendored cryptox")]
+[group("test")]
+lint:
+    ziglint build.zig examples bench $(find src -path src/cryptox -prune -o -name '*.zig' -print)
+
 [doc("Run unit, interop, formatting, benchmark smoke, and workflow checks")]
 [group("test")]
 ci: ci-actions
     zig fmt --check src/ examples/ bench/ build.zig
+    just lint
     just no-alloc
     zig build test
     zig build test-openssl
