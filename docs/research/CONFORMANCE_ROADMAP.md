@@ -118,9 +118,14 @@ reviewed.
 ## Extension negotiation hardening — TODO-391e747f
 
 **Current behavior:** ztls parses `server_name`, `supported_versions`,
-`supported_groups`, `key_share`, and `alpn`, rejects duplicates, and ignores
-unknown extensions. It does not negotiate `max_fragment_length`,
-`record_size_limit`, `signature_algorithms_cert`, `status_request`, etc.
+`supported_groups`, `key_share`, and `alpn`, rejects duplicates of every
+recognized type (RFC 8446 §4.2), and ignores unknown extensions (RFC 8446
+§4.1.2). Both the duplicate `supported_groups` rejection and the
+ignore-unknown path are pinned by tests in `src/client_hello.zig`
+(`test "parse: rejects duplicate supported_groups"`,
+`test "parse: ignores unknown extension"`). It does not negotiate
+`max_fragment_length`, `record_size_limit`, `signature_algorithms_cert`,
+`status_request`, etc.
 
 **Prerequisites:** decide which extensions are in scope. `record_size_limit`
 (RFC 8449) is the highest-value candidate given the caller-owned-buffer design.

@@ -250,6 +250,7 @@ pub fn parse(msg: []const u8) ParseError!Parsed {
     var got_key_share = false;
     var got_server_name = false;
     var got_alpn = false;
+    var got_supported_groups = false;
 
     while (r.pos < extensions_end) {
         const ext_type = try r.read(u16);
@@ -264,7 +265,11 @@ pub fn parse(msg: []const u8) ParseError!Parsed {
                 parsed.server_name = try parseSni(ext);
                 got_server_name = true;
             },
-            0x000a => try parseSupportedGroups(ext),
+            0x000a => {
+                if (got_supported_groups) return error.DuplicateExtension;
+                try parseSupportedGroups(ext);
+                got_supported_groups = true;
+            },
             0x0010 => {
                 if (got_alpn) return error.DuplicateExtension;
                 parsed.alpn_protocols = try parseAlpn(ext);
@@ -509,4 +514,60 @@ test "encode: server_name too long" {
     var buf: [512]u8 = undefined;
     const long_name = "a" ** 254;
     try testing.expectError(error.ServerNameTooLong, encode(&buf, .zero, .zero, long_name, &.{}));
+}
+
+// Offsets into an encoded ClientHello with an empty session_id, the three fixed
+// cipher suites, and a single compression byte: handshake_header(4) +
+// legacy_version(2) + random(32) + session_id_len(1) + cipher_suites_len(2) +
+// cipher_suites(6) + compression_len(1) + compression(1) = 49.
+const extensions_len_offset = 49;
+
+// Append `ext` to the extension block of an encoded ClientHello, fixing the
+// handshake body length (u24 at [1..4]) and extensions_len (u16) fields.
+fn appendExtension(buf: []u8, encoded_len: usize, ext: []const u8) usize {
+    @memcpy(buf[encoded_len..][0..ext.len], ext);
+    const new_len = encoded_len + ext.len;
+    const body_len = std.mem.readInt(u24, buf[1..4], .big) + @as(u24, @intCast(ext.len));
+    std.mem.writeInt(u24, buf[1..4], body_len, .big);
+    const ext_len = std.mem.readInt(u16, buf[extensions_len_offset..][0..2], .big) + @as(u16, @intCast(ext.len));
+    std.mem.writeInt(u16, buf[extensions_len_offset..][0..2], ext_len, .big);
+    return new_len;
+}
+
+// RFC 8446 §4.2 — "There MUST NOT be more than one extension of the same type in
+// a given extension block." A duplicate supported_groups must be rejected, the
+// same as the other recognized extensions.
+test "parse: rejects duplicate supported_groups" {
+    var buf: [512]u8 = undefined;
+    const encoded = try encode(&buf, .zero, .zero, null, &.{});
+    const dup_supported_groups = [_]u8{ 0x00, 0x0a, 0x00, 0x04, 0x00, 0x02, 0x00, 0x1d };
+    const new_len = appendExtension(&buf, encoded.len, &dup_supported_groups);
+    try testing.expectError(error.DuplicateExtension, parse(buf[0..new_len]));
+}
+
+// RFC 8446 §4.1.2 — a server MUST ignore unrecognized extensions in ClientHello.
+// ztls skips them; this pins that current behavior so a regression that started
+// rejecting unknown extensions would be caught.
+test "parse: ignores unknown extension" {
+    var buf: [512]u8 = undefined;
+    const encoded = try encode(&buf, .zero, .zero, null, &.{});
+    // GREASE-style unknown extension type 0x5a5a with a 3-byte body.
+    const unknown_ext = [_]u8{ 0x5a, 0x5a, 0x00, 0x03, 0xde, 0xad, 0xbe };
+    const new_len = appendExtension(&buf, encoded.len, &unknown_ext);
+    const parsed = try parse(buf[0..new_len]);
+    try testing.expect(parsed.offersSuite(.aes_128_gcm_sha256));
+}
+
+// RFC 8446 §4.1.2 — ClientHello parse must never crash or panic on arbitrary
+// wire input. Errors are expected; panics, OOB, or integer overflow are not.
+fn fuzzParse(_: void, input: []const u8) anyerror!void {
+    _ = parse(input) catch {};
+}
+
+test "fuzz: parse handles arbitrary input" {
+    // Seed with a valid encoded ClientHello so the fuzzer starts from a
+    // structurally plausible baseline and can explore truncation / mutation.
+    var seed_buf: [512]u8 = undefined;
+    const seed = encode(&seed_buf, .zero, .zero, null, &.{}) catch &seed_buf;
+    try testing.fuzz({}, fuzzParse, .{ .corpus = &.{seed} });
 }
