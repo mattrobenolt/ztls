@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Run TLS-Anvil client tests using the ztls TLS-Anvil client binary.
+"""TLS-Anvil client-runner scaffold for the ztls TLS-Anvil client binary.
 
-Skips gracefully when Java or the TLS-Anvil JAR is missing.
+Skips gracefully when Java or the TLS-Anvil JAR is missing. Full invocation is
+still TODO-122ca1af.
 """
 
 import shutil

@@ -99,7 +99,7 @@ bogo-fetch:
         git clone --depth 1 https://github.com/google/boringssl.git zig-out/tools/boringssl
     fi
     cd zig-out/tools/boringssl/ssl/test/runner
-    go build -o ../../../../../../bogo-runner .
+    go build -o runner .
 
 [doc("Run BoGo tests against the ztls shim (skips if Go or runner missing)")]
 [group("conformance")]

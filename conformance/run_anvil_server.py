@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Run TLS-Anvil server tests against the ztls tlsfuzzer server.
+"""TLS-Anvil server-runner scaffold for the ztls tlsfuzzer server.
 
-Skips gracefully when Java or the TLS-Anvil JAR is missing.
-Applies conformance/anvil-skip-list.json as a post-hoc filter.
+Skips gracefully when Java or the TLS-Anvil JAR is missing. Full invocation and
+skip-list accounting are still TODO-122ca1af.
 """
 
 import json

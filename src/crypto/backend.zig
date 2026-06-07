@@ -28,8 +28,9 @@ pub fn name(backend: Backend) []const u8 {
     };
 }
 
-// Provider interface roadmap — current production backend is OpenSSL/libcrypto;
-// AWS-LC and BoringSSL remain named libcrypto-family targets, not runtime claims.
+// docs/research/PROVIDER_INTERFACE.md §1 — current production backend is
+// OpenSSL/libcrypto; AWS-LC and BoringSSL remain named libcrypto-family targets,
+// not runtime claims.
 test "backend family is explicit" {
     try std.testing.expectEqual(Backend.openssl, active);
     try std.testing.expect(isLibcryptoFamily(.openssl));

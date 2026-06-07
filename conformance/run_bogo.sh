@@ -3,7 +3,7 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SHIM_BIN="${REPO_ROOT}/zig-out/bin/ztls_bogo_shim"
-BOGO_RUNNER="${REPO_ROOT}/zig-out/tools/boringssl/ssl/test/runner"
+BOGO_RUNNER="${REPO_ROOT}/zig-out/tools/boringssl/ssl/test/runner/runner"
 SKIP_LIST="${REPO_ROOT}/conformance/bogo-skip-list.json"
 
 if ! command -v go >/dev/null 2>&1; then

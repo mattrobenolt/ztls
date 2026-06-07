@@ -58,7 +58,7 @@ test "Wycheproof: AES-128-GCM AAD/tag handling tcId 2" {
     try testing.expectError(error.AuthenticationFailed, aead.decrypt(&ctx, &plain, &ct, &tag, &aad, &nonce));
 }
 
-// Verified boundary vector — AES-256-GCM encrypt/decrypt with non-empty AAD and authentication failure.
+// Wycheproof v1 (google-wycheproof 0.9rc5) — AES-256-GCM non-empty AAD boundary vector.
 test "Wycheproof boundary: AES-256-GCM AAD/tag handling" {
     const key: ztls.aead.Aes256GcmKey = .init(hex(32, "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"));
     const nonce: ztls.nonce.Nonce = .init(hex(12, "000102030405060708090a0b"));
@@ -111,7 +111,7 @@ test "Wycheproof: ChaCha20-Poly1305 one-byte message tcId 4" {
     try testing.expectError(error.AuthenticationFailed, aead.decrypt(&ctx, &plain, &ct, &tag, &.{}, &nonce));
 }
 
-// Verified boundary vector — ChaCha20-Poly1305 one-byte message with non-empty AAD.
+// Wycheproof v1 (google-wycheproof 0.9rc5) — ChaCha20-Poly1305 non-empty AAD boundary vector.
 test "Wycheproof boundary: ChaCha20-Poly1305 AAD handling" {
     const key: ztls.aead.ChaCha20Poly1305Key = .init(hex(32, "cc56b680552eb75008f5484b4cb803fa5063ebd6eab91f6ab6aef4916a766273"));
     const nonce: ztls.nonce.Nonce = .init(hex(12, "99e23ec48985bccdeeab60f1"));
