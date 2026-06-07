@@ -14,7 +14,7 @@ const assert = std.debug.assert;
 const testing = std.testing;
 const crypto = std.crypto;
 
-const memx = @import("memx.zig");
+const ArrayBuffer = @import("array_buffer.zig").ArrayBuffer;
 const x25519 = @import("x25519.zig");
 
 /// RFC 8446 §4.2.7 — named group / curve identifiers used in supported_groups
@@ -39,8 +39,8 @@ pub const max_public_key_len = 1665;
 /// X25519/P-256/P-384 alone remain 32/32/48.
 pub const max_shared_secret_len = 80;
 
-pub const PublicKeyMaterial = memx.Array(max_public_key_len);
-pub const SharedSecretMaterial = memx.Array(max_shared_secret_len);
+pub const PublicKeyMaterial = ArrayBuffer(u8, max_public_key_len);
+pub const SharedSecretMaterial = ArrayBuffer(u8, max_shared_secret_len);
 
 pub const Error = error{ UnsupportedGroup, LibcryptoFailed, IdentityElement };
 
@@ -83,9 +83,7 @@ pub fn plannedSharedSecretLen(group: NamedGroup) ?u8 {
 pub const KeyPair = struct {
     group: NamedGroup,
     public_key: PublicKeyMaterial,
-    public_key_len: u16,
     secret: SharedSecretMaterial,
-    secret_len: u8,
 
     pub fn generate(group: NamedGroup) Error!KeyPair {
         return switch (group) {
@@ -107,19 +105,17 @@ pub const KeyPair = struct {
     fn fromX25519(kp: x25519.KeyPair) KeyPair {
         var out: KeyPair = .{
             .group = .x25519,
-            .public_key = .init(undefined),
-            .public_key_len = x25519.public_length,
-            .secret = .init(undefined),
-            .secret_len = x25519.secret_length,
+            .public_key = .empty,
+            .secret = .empty,
         };
-        @memcpy(out.public_key.data[0..x25519.public_length], &kp.public_key);
-        @memcpy(out.secret.data[0..x25519.secret_length], &kp.secret_key);
+        out.public_key.appendSliceAssumeCapacity(&kp.public_key);
+        out.secret.appendSliceAssumeCapacity(&kp.secret_key);
         return out;
     }
 
     /// Group-sized public key as it appears in the key_share key_exchange field.
     pub fn publicKey(self: *const KeyPair) []const u8 {
-        return self.public_key.data[0..@intCast(self.public_key_len)];
+        return self.public_key.constSlice();
     }
 
     /// Derive the DHE shared secret into `out`, returning the group-sized slice.
@@ -132,7 +128,7 @@ pub const KeyPair = struct {
                 if (peer_public.len != x25519.public_length) return error.UnsupportedGroup;
                 const peer: x25519.PublicKey = .init(peer_public[0..x25519.public_length].*);
                 var scalar: [x25519.secret_length]u8 = undefined;
-                @memcpy(&scalar, self.secret.data[0..x25519.secret_length]);
+                @memcpy(&scalar, self.secret.constSlice());
                 const ss = try x25519.sharedSecret(scalar, peer);
                 @memcpy(out[0..ss.len], &ss);
                 return out[0..ss.len];
@@ -142,7 +138,7 @@ pub const KeyPair = struct {
     }
 
     pub fn deinit(self: *KeyPair) void {
-        crypto.secureZero(u8, &self.secret.data);
+        crypto.secureZero(u8, self.secret.fullSlice());
         self.* = undefined;
     }
 };

@@ -11,9 +11,9 @@ const Sha384 = std.crypto.hash.sha2.Sha384;
 const mem = std.mem;
 const testing = std.testing;
 
-const array_buffer = @import("array_buffer.zig");
 const aead = @import("aead.zig");
 const alert = @import("alert.zig");
+const ArrayBuffer = @import("array_buffer.zig").ArrayBuffer;
 const certificate = @import("certificate.zig");
 const CipherSuite = @import("root.zig").CipherSuite;
 const client_hello = @import("client_hello.zig");
@@ -24,16 +24,18 @@ const KeyUpdateRequest = ClientHandshake.KeyUpdateRequest;
 const encrypted_extensions = @import("encrypted_extensions.zig");
 const finished = @import("finished.zig");
 const frame = @import("frame.zig");
+pub const max_out_len = frame.max_wire_record_len;
 const hkdf = @import("hkdf.zig");
 const RecordLayer = @import("RecordLayer.zig");
 const server_hello = @import("server_hello.zig");
 const signature = @import("signature.zig");
+pub const SignError = signature.SignError;
+pub const Signer = signature.Signer;
 const x25519 = @import("x25519.zig");
 
 const ServerHandshake = @This();
 
-pub const max_out_len = frame.max_wire_record_len;
-pub const OutBuffer = array_buffer.ArrayBuffer(u8, max_out_len);
+pub const OutBuffer = ArrayBuffer(u8, max_out_len);
 /// Single caller-owned buffer for prepared authenticated server flights. The
 /// handshake plaintext is staged inside the TLS record payload region, then
 /// encrypted in place into the same backing storage.
@@ -196,9 +198,6 @@ pub const AcceptError = frame.ParseError || client_hello.ParseError || server_he
     IdentityElement,
     LibcryptoFailed,
 };
-
-pub const SignError = signature.SignError;
-pub const Signer = signature.Signer;
 
 pub const FlightError = encrypted_extensions.EncodeError || certificate.EncodeError || certificate.CertificateVerifyEncodeError || RecordLayer.EncryptError || SignError;
 

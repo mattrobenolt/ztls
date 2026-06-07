@@ -13,13 +13,14 @@ const mem = std.mem;
 const base64 = std.base64.standard.Decoder;
 
 const aead = @import("aead.zig");
-const array_buffer = @import("array_buffer.zig");
 const alert = @import("alert.zig");
+const ArrayBuffer = @import("array_buffer.zig").ArrayBuffer;
 const certificate = @import("certificate.zig");
 const client_hello = @import("client_hello.zig");
 const encrypted_extensions = @import("encrypted_extensions.zig");
 const finished = @import("finished.zig");
 const frame = @import("frame.zig");
+pub const max_out_len = frame.max_wire_record_len;
 const hkdf = @import("hkdf.zig");
 const new_session_ticket = @import("new_session_ticket.zig");
 const RecordLayer = @import("RecordLayer.zig");
@@ -29,8 +30,13 @@ const x25519 = @import("x25519.zig");
 
 const ClientHandshake = @This();
 
-pub const max_out_len = frame.max_wire_record_len;
-pub const OutBuffer = array_buffer.ArrayBuffer(u8, max_out_len);
+pub const OutBuffer = ArrayBuffer(u8, max_out_len);
+
+/// Upper bound on a leaf public key we retain across records. Covers RSA-4096
+/// (~525-byte DER) with margin; ECDSA P-256/P-384 are far smaller.
+const max_leaf_pub_key = 1024;
+const LeafPublicKeyBuffer = ArrayBuffer(u8, max_leaf_pub_key);
+const SelectedAlpnBuffer = ArrayBuffer(u8, 255);
 
 /// RFC 8446 §4 — handshake message type. Open enum: unrecognized values pass
 /// through the reader untouched; the state machine decides what is unexpected.
@@ -326,8 +332,7 @@ policy: certificate.Policy = .{},
 /// Leaf public key extracted from the Certificate message, copied here so it
 /// survives until CertificateVerify (which may arrive in a later record —
 /// openssl sends each flight message in its own record). Sized for RSA-4096.
-leaf_pub_key: [max_leaf_pub_key]u8 = undefined,
-leaf_pub_key_len: usize = 0,
+leaf_pub_key: LeafPublicKeyBuffer = .empty,
 /// Optional caller-owned storage for a handshake message that spans encrypted
 /// records. Empty means spanning messages are rejected with UnexpectedEof.
 handshake_buf: []u8 = &.{},
@@ -343,8 +348,7 @@ server_cv_verified: bool = false,
 server_finished_verified: bool = false,
 /// ALPN protocols offered in ClientHello. Caller-owned, must live until start().
 alpn_protocols: client_hello.AlpnProtocols = &.{},
-selected_alpn: [255]u8 = undefined,
-selected_alpn_len: u8 = 0,
+selected_alpn: SelectedAlpnBuffer = .empty,
 
 /// Start a client handshake with our ephemeral X25519 keypair. The negotiated
 /// suite is hardcoded to SHA-256 for now; true suite selection (and re-hashing
@@ -399,8 +403,8 @@ pub fn offerAlpn(self: *ClientHandshake, protocols: client_hello.AlpnProtocols) 
 /// The ALPN protocol selected by the server, if any. Stable after the
 /// EncryptedExtensions message is processed.
 pub fn selectedAlpnProtocol(self: *const ClientHandshake) ?[]const u8 {
-    if (self.selected_alpn_len == 0) return null;
-    return self.selected_alpn[0..self.selected_alpn_len];
+    if (self.selected_alpn.len == 0) return null;
+    return self.selected_alpn.constSlice();
 }
 
 /// Begin the handshake: encode a ClientHello (from the init keypair's public
@@ -593,10 +597,6 @@ pub fn processServerHello(self: *ClientHandshake, msg: []const u8) ServerHelloEr
     self.state = .wait_ee;
 }
 
-/// Upper bound on a leaf public key we retain across records. Covers RSA-4096
-/// (~525-byte DER) with margin; ECDSA P-256/P-384 are far smaller.
-const max_leaf_pub_key = 1024;
-
 pub const FlightError = error{ UnexpectedMessage, UnexpectedEof, CertificateKeyTooLarge, HandshakeBufferTooShort } ||
     encrypted_extensions.ParseError ||
     certificate.AuthError ||
@@ -669,8 +669,8 @@ fn processFlightMessage(self: *ClientHandshake, msg: HandshakeReader.Message, po
             if (msg.type != .encrypted_extensions) return error.UnexpectedMessage;
             const ee = try encrypted_extensions.parse(msg.raw, self.alpn_protocols);
             if (ee.alpn_protocol) |protocol| {
-                @memcpy(self.selected_alpn[0..protocol.len], protocol);
-                self.selected_alpn_len = @intCast(protocol.len);
+                self.selected_alpn.clear();
+                self.selected_alpn.appendSliceAssumeCapacity(protocol);
             }
             self.suite.update(msg.raw);
             self.state = .wait_cert;
@@ -680,9 +680,8 @@ fn processFlightMessage(self: *ClientHandshake, msg: HandshakeReader.Message, po
             // Extract and copy the leaf public key now; it must survive until
             // CertificateVerify, which may arrive in a later record.
             const pk = try certificate.parse(msg.raw, policy);
-            if (pk.len > self.leaf_pub_key.len) return error.CertificateKeyTooLarge;
-            @memcpy(self.leaf_pub_key[0..pk.len], pk);
-            self.leaf_pub_key_len = pk.len;
+            self.leaf_pub_key.clear();
+            self.leaf_pub_key.appendSlice(pk) catch return error.CertificateKeyTooLarge;
             self.server_cert_verified = true;
             self.suite.update(msg.raw);
             self.state = .wait_cv;
@@ -690,7 +689,7 @@ fn processFlightMessage(self: *ClientHandshake, msg: HandshakeReader.Message, po
         .wait_cv => {
             if (msg.type != .certificate_verify) return error.UnexpectedMessage;
             if (!self.server_cert_verified) return error.UnexpectedMessage;
-            try self.suite.verifyCertificate(msg.raw, self.leaf_pub_key[0..self.leaf_pub_key_len]);
+            try self.suite.verifyCertificate(msg.raw, self.leaf_pub_key.constSlice());
             self.server_cv_verified = true;
             self.suite.update(msg.raw);
             self.state = .wait_finished;
