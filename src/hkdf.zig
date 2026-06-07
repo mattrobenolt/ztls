@@ -29,10 +29,10 @@ fn Hkdf(comptime Hmac: type) type {
     return struct {
         /// Length of the pseudorandom key and all derived secrets.
         pub const prk_len = H.prk_length;
-        pub const Prk = memx.TaggedArray("hkdf.Prk", prk_len);
-        pub const TranscriptHash = memx.TaggedArray("hkdf.TranscriptHash", prk_len);
-        pub const TrafficSecret = memx.TaggedArray("hkdf.TrafficSecret", prk_len);
-        pub const FinishedKey = memx.TaggedArray("hkdf.FinishedKey", prk_len);
+        pub const Prk = memx.Array(prk_len);
+        pub const TranscriptHash = memx.Array(prk_len);
+        pub const TrafficSecret = memx.Array(prk_len);
+        pub const FinishedKey = memx.Array(prk_len);
         const prk_zero = &Prk.zero.data;
 
         comptime {
