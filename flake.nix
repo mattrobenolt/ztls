@@ -52,6 +52,8 @@
             packages =
               (with pkgs; [
                 ast-grep
+                go
+                jdk
                 just
                 nushell
                 openssl

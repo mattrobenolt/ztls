@@ -14,7 +14,7 @@ test "Wycheproof: X25519 shared secret tcId 1" {
     const private = hex(32, "c8a9d5a91091ad851c668b0736c1c9a02936c0d3ad62670858088047ba057475");
     const public: ztls.x25519.PublicKey = .init(hex(32, "504a36999f489cd2fdbc08baff3d88fa00569ba986cba22548ffde80f9806829"));
     const shared = try ztls.x25519.sharedSecret(private, public);
-    try testing.expectEqualSlices(u8, &hex(32, "436a2c040cf45fea9b29a0cb81b1f41458f863d0d61b453d0a982720d6d61320"), &shared.data);
+    try testing.expectEqualSlices(u8, &hex(32, "436a2c040cf45fea9b29a0cb81b1f41458f863d0d61b453d0a982720d6d61320"), &shared);
 }
 
 // RFC 7748 §6.1 / Wycheproof low-order public keys — all-zero shared secret is rejected.

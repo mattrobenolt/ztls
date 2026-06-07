@@ -9,6 +9,7 @@ pub const nonce = @import("nonce.zig");
 pub const RecordLayer = @import("RecordLayer.zig");
 pub const RecordBuffer = @import("RecordBuffer.zig");
 pub const certificate = @import("certificate.zig");
+pub const certificate_request = @import("certificate_request.zig");
 pub const encrypted_extensions = @import("encrypted_extensions.zig");
 pub const finished = @import("finished.zig");
 pub const frame = @import("frame.zig");

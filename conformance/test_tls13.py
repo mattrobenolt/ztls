@@ -1,5 +1,7 @@
 import socket
 
+import pytest
+
 from tlsfuzzer.expect import (
     ExpectAlert,
     ExpectApplicationData,
@@ -151,6 +153,7 @@ def run_echo_conversation(ztls_server, ciphers):
     Runner(conversation).run()
 
 
+@pytest.mark.lockstep
 def test_tls13_handshake_and_application_echo(ztls_server):
     run_echo_conversation(ztls_server, CIPHERS)
 
@@ -175,6 +178,7 @@ def test_tls13_chacha20_poly1305_echo(ztls_server):
     )
 
 
+@pytest.mark.lockstep
 def test_tls13_keyupdate_update_requested(ztls_server):
     conversation = Connect(ztls_server["host"], ztls_server["port"])
     node = conversation.add_child(ClientHelloGenerator(CIPHERS, extensions=tls13_extensions()))
@@ -291,6 +295,7 @@ def test_tls13_rejects_truncated_key_share_extension(ztls_server):
         sock.close()
 
 
+@pytest.mark.lockstep
 def test_tls13_rejects_unshared_alpn(ztls_server):
     conversation = Connect(ztls_server["host"], ztls_server["port"])
     node = conversation.add_child(

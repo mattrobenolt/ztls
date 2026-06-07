@@ -52,6 +52,12 @@ tlsfuzzer *ARGS:
     zig build tlsfuzzer-server
     cd conformance && uv run pytest {{ ARGS }}
 
+[doc("Run strict tlsfuzzer lockstep conversations")]
+[group("test")]
+tlsfuzzer-lockstep:
+    zig build tlsfuzzer-server
+    cd conformance && uv run pytest -q -m lockstep
+
 [doc("List ztls, OpenSSL EVP, OpenSSL memory-BIO, and rustls benchmark rows")]
 [group("bench")]
 bench-list:

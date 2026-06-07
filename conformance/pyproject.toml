@@ -17,5 +17,10 @@ dev = [
 [tool.ruff]
 line-length = 100
 
+[tool.pytest.ini_options]
+markers = [
+  "lockstep: strict request/response tlsfuzzer conversations",
+]
+
 [tool.ty.environment]
 python-version = "3.14"

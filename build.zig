@@ -88,6 +88,32 @@ pub fn build(b: *std.Build) void {
     const tlsfuzzer_server_step = b.step("tlsfuzzer-server", "Build the tlsfuzzer TCP server");
     tlsfuzzer_server_step.dependOn(&install_tlsfuzzer_server.step);
 
+    const tls_anvil_client_exe = b.addExecutable(.{
+        .name = "ztls_tls_anvil_client",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/test/tls_anvil_client.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{.{ .name = "ztls", .module = mod }},
+        }),
+    });
+    const install_tls_anvil_client = b.addInstallArtifact(tls_anvil_client_exe, .{});
+    const tls_anvil_client_step = b.step("tls-anvil-client", "Build the TLS-Anvil TCP client");
+    tls_anvil_client_step.dependOn(&install_tls_anvil_client.step);
+
+    const bogo_shim_exe = b.addExecutable(.{
+        .name = "ztls_bogo_shim",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/test/bogo_shim.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{.{ .name = "ztls", .module = mod }},
+        }),
+    });
+    const install_bogo_shim = b.addInstallArtifact(bogo_shim_exe, .{});
+    const bogo_shim_step = b.step("bogo-shim", "Build the BoGo shim");
+    bogo_shim_step.dependOn(&install_bogo_shim.step);
+
     const wycheproof_tests = b.addTest(.{
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/test/wycheproof_smoke.zig"),

@@ -1,0 +1,45 @@
+{
+  "comment": "TLS-Anvil skip list for ztls. Patterns are matched against test display names. Wildcards use shell-style globbing (Python fnmatch). Each skip must reference a TODO or an explicit out-of-scope decision.",
+  "skip": [
+    {
+      "pattern": "*HelloRetryRequest*",
+      "reason": "HRR not implemented (TODO-26b50566)"
+    },
+    {
+      "pattern": "*Psk*",
+      "reason": "PSK/resumption not implemented (TODO-6afc9ec7)"
+    },
+    {
+      "pattern": "*0Rtt*",
+      "reason": "0-RTT not implemented (TODO-c3fcc172)"
+    },
+    {
+      "pattern": "*ClientAuth*",
+      "reason": "Client certificate auth not implemented (TODO-cac6cc77)"
+    },
+    {
+      "pattern": "*RecordSizeLimit*",
+      "reason": "record_size_limit extension not implemented (TODO-5e048d7d)"
+    },
+    {
+      "pattern": "*SessionTicket*",
+      "reason": "NewSessionTicket is parsed and ignored; resumption not implemented (TODO-6afc9ec7)"
+    },
+    {
+      "pattern": "*EarlyData*",
+      "reason": "0-RTT/early data not implemented (TODO-c3fcc172)"
+    },
+    {
+      "pattern": "*MaxFragmentLength*",
+      "reason": "max_fragment_length extension not implemented (TODO-5e048d7d)"
+    },
+    {
+      "pattern": "*DTLS*",
+      "reason": "DTLS is out of scope"
+    },
+    {
+      "pattern": "*Tls12*",
+      "reason": "TLS 1.2 is out of scope"
+    }
+  ]
+}
