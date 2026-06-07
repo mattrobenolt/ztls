@@ -104,7 +104,8 @@ fn readRecord(stream: net.Stream, buf: []u8) ![]u8 {
 
 fn expectVersion(version: ?[]const u8) !void {
     if (version) |v| {
-        if (!mem.eql(u8, v, "1.3") and !mem.eql(u8, v, "TLS1.3") and !mem.eql(u8, v, "tls1.3")) return error.VersionMismatch;
+        const ok = mem.eql(u8, v, "1.3") or mem.eql(u8, v, "TLS1.3") or mem.eql(u8, v, "tls1.3");
+        if (!ok) return error.VersionMismatch;
     }
 }
 
@@ -135,14 +136,23 @@ fn checkExpectations(args: Args, hs: *const ztls.ServerHandshake) !void {
     try expectAlpn(args.expect_alpn, hs.selectedAlpnProtocol());
 }
 
-fn sendBestEffortAlert(hs: *ztls.ServerHandshake, stream: net.Stream, err: anyerror, out: []u8) void {
+fn sendBestEffortAlert(
+    hs: *ztls.ServerHandshake,
+    stream: net.Stream,
+    err: anyerror,
+    out: []u8,
+) void {
     const description: ztls.alert.Description = switch (err) {
         error.AuthenticationFailed => .bad_record_mac,
         error.UnsupportedCipherSuite => .handshake_failure,
         error.NoApplicationProtocol => .no_application_protocol,
         error.UnexpectedRecord, error.UnexpectedMessage => .unexpected_message,
         error.IllegalParameter => .illegal_parameter,
-        error.IncompleteRecord, error.UnexpectedEof, error.RecordTooShort, error.InvalidInnerPlaintext => .decode_error,
+        error.IncompleteRecord,
+        error.UnexpectedEof,
+        error.RecordTooShort,
+        error.InvalidInnerPlaintext,
+        => .decode_error,
         else => .internal_error,
     };
     const alert_record = hs.sendAlert(description, out) catch return;
@@ -192,7 +202,9 @@ pub fn main() !void {
     }
 
     var in_buf: [ztls.frame.header_len + ztls.frame.max_ciphertext_len]u8 = undefined;
-    var out_buf: [ztls.frame.header_len + ztls.frame.max_plaintext_len + ztls.aead.tag_len + 1]u8 = undefined;
+    const out_buf_len =
+        ztls.frame.header_len + ztls.frame.max_plaintext_len + ztls.aead.tag_len + 1;
+    var out_buf: [out_buf_len]u8 = undefined;
     var expectations_checked = false;
 
     while (true) {
@@ -212,7 +224,11 @@ pub fn main() !void {
                 try conn.stream.writeAll(bytes);
                 hs.completeWrite();
                 if (!hs.isConnected()) {
-                    const flight = hs.sendPreparedAuthenticatedFlight(&.{cert_der}, signer.signer(), &out_buf) catch |err| {
+                    const flight = hs.sendPreparedAuthenticatedFlight(
+                        &.{cert_der},
+                        signer.signer(),
+                        &out_buf,
+                    ) catch |err| {
                         sendBestEffortAlert(&hs, conn.stream, err, &out_buf);
                         return;
                     };

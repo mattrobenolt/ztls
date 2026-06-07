@@ -11,7 +11,7 @@ const print = std.debug.print;
 const ztls = @import("ztls");
 
 pub fn main() !void {
-    // ── X25519 key exchange ──────────────────────────────────────────────────
+    // ── X25519 key exchange ──────────────────────
 
     // Use the RFC 8448 §3 client private key for deterministic output.
     const kp: ztls.x25519.KeyPair = .{
@@ -29,7 +29,7 @@ pub fn main() !void {
         },
     };
 
-    // ── ClientHello ──────────────────────────────────────────────────────────
+    // ── ClientHello ────────────────────────
 
     const random: ztls.client_hello.Random = .init(.{
         0xcb, 0x34, 0xec, 0xb1, 0xe7, 0x81, 0x63, 0xba,
@@ -48,7 +48,7 @@ pub fn main() !void {
     );
     print("ClientHello: {} bytes\n", .{client_hello.len});
 
-    // ── ServerHello ──────────────────────────────────────────────────────────
+    // ── ServerHello ────────────────────────
 
     const server_hello_bytes: []const u8 = &.{
         0x02, 0x00, 0x00, 0x56, 0x03, 0x03, 0xa6, 0xaf, 0x06, 0xa4, 0x12, 0x18, 0x60,
@@ -64,12 +64,12 @@ pub fn main() !void {
     print("cipher_suite:      {s}\n", .{@tagName(sh.cipher_suite)});
     print("server_public_key: {x}\n", .{sh.server_public_key.data});
 
-    // ── DHE shared secret ────────────────────────────────────────────────────
+    // ── DHE shared secret ──────────────────────
 
     const dhe = try ztls.x25519.sharedSecret(kp.secret_key, sh.server_public_key);
     print("shared_secret:     {x}\n", .{dhe});
 
-    // ── Key schedule ─────────────────────────────────────────────────────────
+    // ── Key schedule ────────────────────────
 
     const hkdf = ztls.hkdf.HkdfSha256;
 
@@ -92,7 +92,7 @@ pub fn main() !void {
     print("client_hs_traffic:       {x}\n", .{client_hs_secret.data});
     print("server_hs_traffic:       {x}\n", .{server_hs_secret.data});
 
-    // ── RecordLayer keys ─────────────────────────────────────────────────────
+    // ── RecordLayer keys ───────────────────────
 
     const server_key = hkdf.trafficKey(.aes128_gcm, server_hs_secret);
     const server_iv = hkdf.trafficIv(server_hs_secret);
@@ -104,7 +104,7 @@ pub fn main() !void {
     print("client_write_key: {x}\n", .{client_key.data});
     print("client_write_iv:  {x}\n", .{client_iv.data});
 
-    // ── RecordLayer round-trip ───────────────────────────────────────────────
+    // ── RecordLayer round-trip ─────────────────────
 
     var server_tx: ztls.RecordLayer = try .init(.{ .aes128_gcm = server_key }, server_iv);
     defer server_tx.deinit();

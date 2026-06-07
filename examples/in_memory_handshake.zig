@@ -22,12 +22,12 @@ pub fn main() !void {
     const client_keypair: ztls.x25519.KeyPair = .generate();
     const server_keypair: ztls.x25519.KeyPair = .generate();
 
-    // ── Client setup ─────────────────────────────────────────────────────────
+    // ── Client setup ────────────────────────
     var client: ztls.ClientHandshake = .init(client_keypair);
     client.offerAlpn(&.{"h2"});
     client.policy.host_name = "ztls.server.test";
 
-    // ── Server setup ─────────────────────────────────────────────────────────
+    // ── Server setup ────────────────────────
     var server: ztls.ServerHandshake = .init(server_keypair);
     server.supportAlpn(&.{"h2"});
 
@@ -54,7 +54,11 @@ pub fn main() !void {
     print("[client] handshake keys installed → state={s}\n", .{@tagName(client.state)});
 
     // 4. Server sends authenticated flight: EE + Cert + CertificateVerify + Finished.
-    const flight_record = try server.sendAuthenticatedFlightBuffered(&.{cert_der}, signer_api, &flight);
+    const flight_record = try server.sendAuthenticatedFlightBuffered(
+        &.{cert_der},
+        signer_api,
+        &flight,
+    );
     print("[server] authenticated flight sent → state={s}\n", .{@tagName(server.state)});
 
     // 5. Client processes the encrypted flight and auto-emits its Finished.
@@ -71,7 +75,7 @@ pub fn main() !void {
     try server.processClientFinished(client_out.slice());
     print("[server] client Finished verified → state={s}\n", .{@tagName(server.state)});
 
-    // ── Verify handshake completed ───────────────────────────────────────────
+    // ── Verify handshake completed ───────────────────
     std.debug.assert(client.isConnected());
     std.debug.assert(server.isConnected());
     std.debug.assert(std.mem.eql(u8, client.selectedAlpnProtocol().?, "h2"));
@@ -82,7 +86,10 @@ pub fn main() !void {
     const ping = try client.sendApplicationData("ping", client_out.fullSlice());
     client_out.resize(@intCast(ping.len));
     client.completeWrite();
-    try std.testing.expectEqualStrings("ping", try server.receiveApplicationData(client_out.slice()));
+    try std.testing.expectEqualStrings(
+        "ping",
+        try server.receiveApplicationData(client_out.slice()),
+    );
     print("[app]    client → server: ping\n", .{});
 
     const pong = try server.sendApplicationData("pong", server_out.fullSlice());

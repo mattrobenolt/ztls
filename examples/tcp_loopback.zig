@@ -25,18 +25,18 @@ pub fn main() !void {
     const client_keypair: ztls.x25519.KeyPair = .generate();
     const server_keypair: ztls.x25519.KeyPair = .generate();
 
-    // ── Start TCP server on an ephemeral port ───────────────────────────────
+    // ── Start TCP server on an ephemeral port ────────────────
     const addr = try std.net.Address.parseIp(host, port);
     var server_listener = try addr.listen(.{ .reuse_address = true });
     defer server_listener.deinit();
     const actual_port = server_listener.listen_address.in.getPort();
     print("[tcp]    server listening on {s}:{d}\n", .{ host, actual_port });
 
-    // ── Spawn server thread (blocks in accept) ──────────────────────────────
+    // ── Spawn server thread (blocks in accept) ───────────────
     var sctx: ServerCtx = .{ .listener = &server_listener, .keypair = server_keypair };
     const server_thread = try std.Thread.spawn(.{}, serverRun, .{&sctx});
 
-    // ── Run client ──────────────────────────────────────────────────────────
+    // ── Run client ─────────────────────────
     try clientRun(client_keypair, actual_port);
 
     server_thread.join();
@@ -75,7 +75,11 @@ fn serverRun(ctx: *ServerCtx) !void {
                     try conn.stream.writeAll(w);
                     hs.completeWrite();
                     if (!sent_flight and hs.state == .wait_client_finished) {
-                        const flight_bytes = try hs.sendAuthenticatedFlightBuffered(&.{cert_der}, signer_api, &flight);
+                        const flight_bytes = try hs.sendAuthenticatedFlightBuffered(
+                            &.{cert_der},
+                            signer_api,
+                            &flight,
+                        );
                         try conn.stream.writeAll(flight_bytes);
                         sent_flight = true;
                     }

@@ -109,7 +109,8 @@ pub fn parse(msg: []const u8) ParseError!Parsed {
 
     return .{
         .request_context = request_context,
-        .signature_schemes_raw = signature_schemes_raw orelse return error.MissingSignatureAlgorithmsExtension,
+        .signature_schemes_raw = signature_schemes_raw orelse
+            return error.MissingSignatureAlgorithmsExtension,
         .certificate_authorities_raw = certificate_authorities_raw,
     };
 }

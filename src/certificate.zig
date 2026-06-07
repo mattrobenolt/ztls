@@ -21,7 +21,10 @@ pub const ParseError = error{
     InvalidHandshakeType,
     EmptyCertificateList,
     CertificateIssuerNotFound,
-} || PolicyError || Certificate.ParseError || Certificate.Parsed.VerifyError || Certificate.Parsed.VerifyHostNameError;
+} || PolicyError ||
+    Certificate.ParseError ||
+    Certificate.Parsed.VerifyError ||
+    Certificate.Parsed.VerifyHostNameError;
 
 pub const LeafUsage = enum {
     none,
@@ -132,7 +135,8 @@ pub fn parse(msg: []const u8, policy: Policy) ParseError![]const u8 {
     }
 
     if (policy.bundle) |bundle| {
-        try verifyAgainstBundle(bundle, subject_to_verify orelse return error.EmptyCertificateList, policy.now_sec);
+        const subject = subject_to_verify orelse return error.EmptyCertificateList;
+        try verifyAgainstBundle(bundle, subject, policy.now_sec);
     }
 
     return leaf_pub_key orelse error.EmptyCertificateList;
@@ -144,11 +148,13 @@ const key_usage_digital_signature: u4 = 0;
 fn verifyServerAuthPolicy(parsed: Certificate.Parsed) ParseError!void {
     // RFC 8446 §4.4.2.2 — server certificates must permit CertificateVerify
     // signing via KeyUsage.digitalSignature when KeyUsage is present.
-    if (!try parsed.allowsKeyUsage(key_usage_digital_signature)) return error.CertificateKeyUsageRejected;
+    if (!try parsed.allowsKeyUsage(key_usage_digital_signature))
+        return error.CertificateKeyUsageRejected;
 
     // RFC 5280 §4.2.1.12 — when EKU is present it restricts certificate use;
     // id-kp-serverAuth is required for TLS server authentication.
-    if (!try parsed.allowsExtKeyUsage(&eku_server_auth_oid)) return error.CertificateExtendedKeyUsageRejected;
+    if (!try parsed.allowsExtKeyUsage(&eku_server_auth_oid))
+        return error.CertificateExtendedKeyUsageRejected;
 
     switch (parsed.signature_algorithm) {
         .sha256WithRSAEncryption,
@@ -163,19 +169,30 @@ fn verifyServerAuthPolicy(parsed: Certificate.Parsed) ParseError!void {
     }
 }
 
-fn verifyAgainstBundle(bundle: *const Certificate.Bundle, subject: Certificate.Parsed, now_sec: i64) ParseError!void {
-    const issuer_index = bundle.find(subject.issuer()) orelse return error.CertificateIssuerNotFound;
+fn verifyAgainstBundle(
+    bundle: *const Certificate.Bundle,
+    subject: Certificate.Parsed,
+    now_sec: i64,
+) ParseError!void {
+    const issuer_index = bundle.find(subject.issuer()) orelse
+        return error.CertificateIssuerNotFound;
     const issuer_cert: Certificate = .{ .buffer = bundle.bytes.items, .index = issuer_index };
     try subject.verify(try issuer_cert.parse(), now_sec);
 }
 
 pub const AuthError = ParseError || VerifyError;
 
-fn publicKeyFromCertificateBits(scheme: SignatureScheme, pub_key: []const u8) VerifyError!*c.EVP_PKEY {
+fn publicKeyFromCertificateBits(
+    scheme: SignatureScheme,
+    pub_key: []const u8,
+) VerifyError!*c.EVP_PKEY {
     return switch (scheme) {
         .ecdsa_secp256r1_sha256 => ecPublicKeyFromSec1(c.NID_X9_62_prime256v1, pub_key),
         .ecdsa_secp384r1_sha384 => ecPublicKeyFromSec1(c.NID_secp384r1, pub_key),
-        .rsa_pss_rsae_sha256, .rsa_pss_rsae_sha384, .rsa_pss_rsae_sha512 => rsaPublicKeyFromDer(pub_key),
+        .rsa_pss_rsae_sha256,
+        .rsa_pss_rsae_sha384,
+        .rsa_pss_rsae_sha512,
+        => rsaPublicKeyFromDer(pub_key),
         else => error.UnsupportedSignatureScheme,
     };
 }
@@ -194,7 +211,8 @@ fn ecPublicKeyFromSec1(nid: c_int, pub_key: []const u8) VerifyError!*c.EVP_PKEY 
 
 fn rsaPublicKeyFromDer(pub_key: []const u8) VerifyError!*c.EVP_PKEY {
     var ptr: [*c]const u8 = pub_key.ptr;
-    const rsa = c.d2i_RSAPublicKey(null, &ptr, @intCast(pub_key.len)) orelse return error.InvalidEncoding;
+    const rsa = c.d2i_RSAPublicKey(null, &ptr, @intCast(pub_key.len)) orelse
+        return error.InvalidEncoding;
     errdefer c.RSA_free(rsa);
 
     const key = c.EVP_PKEY_new() orelse return error.SignatureVerificationFailed;
@@ -294,17 +312,23 @@ fn verifySignature(
     const ctx = c.EVP_MD_CTX_new() orelse return error.SignatureVerificationFailed;
     defer c.EVP_MD_CTX_free(ctx);
     var pctx: ?*c.EVP_PKEY_CTX = null;
-    if (c.EVP_DigestVerifyInit(ctx, &pctx, md, null, key) != 1) return error.SignatureVerificationFailed;
+    if (c.EVP_DigestVerifyInit(ctx, &pctx, md, null, key) != 1)
+        return error.SignatureVerificationFailed;
     switch (scheme) {
         .rsa_pss_rsae_sha256, .rsa_pss_rsae_sha384, .rsa_pss_rsae_sha512 => {
-            if (c.EVP_PKEY_CTX_set_rsa_padding(pctx, c.RSA_PKCS1_PSS_PADDING) != 1) return error.SignatureVerificationFailed;
-            if (c.EVP_PKEY_CTX_set_rsa_pss_saltlen(pctx, c.RSA_PSS_SALTLEN_DIGEST) != 1) return error.SignatureVerificationFailed;
+            if (c.EVP_PKEY_CTX_set_rsa_padding(pctx, c.RSA_PKCS1_PSS_PADDING) != 1)
+                return error.SignatureVerificationFailed;
+            if (c.EVP_PKEY_CTX_set_rsa_pss_saltlen(pctx, c.RSA_PSS_SALTLEN_DIGEST) != 1)
+                return error.SignatureVerificationFailed;
         },
         else => {},
     }
-    if (c.EVP_DigestVerifyUpdate(ctx, context.ptr, context.len) != 1) return error.SignatureVerificationFailed;
-    if (c.EVP_DigestVerifyUpdate(ctx, transcript_hash.ptr, transcript_hash.len) != 1) return error.SignatureVerificationFailed;
-    if (c.EVP_DigestVerifyFinal(ctx, sig.ptr, sig.len) != 1) return error.SignatureVerificationFailed;
+    if (c.EVP_DigestVerifyUpdate(ctx, context.ptr, context.len) != 1)
+        return error.SignatureVerificationFailed;
+    if (c.EVP_DigestVerifyUpdate(ctx, transcript_hash.ptr, transcript_hash.len) != 1)
+        return error.SignatureVerificationFailed;
+    if (c.EVP_DigestVerifyFinal(ctx, sig.ptr, sig.len) != 1)
+        return error.SignatureVerificationFailed;
 }
 
 // Fixtures generated with: just gen-fixtures
@@ -316,7 +340,8 @@ const chain_root_pem = "tests/fixtures/chain/root.crt";
 const chain_leaf_der = @embedFile("test_fixtures/chain/leaf.der");
 const chain_intermediate_der = @embedFile("test_fixtures/chain/intermediate.der");
 const name_constraints_der = @embedFile("test_fixtures/name_constraints.der");
-const name_constraints_noncritical_der = @embedFile("test_fixtures/name_constraints_noncritical.der");
+const name_constraints_noncritical_der =
+    @embedFile("test_fixtures/name_constraints_noncritical.der");
 
 fn buildCertMsg(buf: []u8, cert_der: []const u8) []const u8 {
     return buildCertChainMsg(buf, &.{cert_der});
@@ -366,7 +391,10 @@ test "parse: validates hostname" {
 
 test "parse: rejects hostname mismatch" {
     var buf: [1024]u8 = undefined;
-    try testing.expectError(error.CertificateHostMismatch, parse(buildCertMsg(&buf, fixture_cert_der), .{ .host_name = "wrong.local" }));
+    try testing.expectError(
+        error.CertificateHostMismatch,
+        parse(buildCertMsg(&buf, fixture_cert_der), .{ .host_name = "wrong.local" }),
+    );
 }
 
 test "parse: validates leaf against trust bundle" {
@@ -389,11 +417,10 @@ test "parse: validates leaf-intermediate-root chain" {
     try bundle.addCertsFromFilePath(testing.allocator, std.fs.cwd(), chain_root_pem);
 
     var buf: [4096]u8 = undefined;
-    const pub_key = try parse(buildCertChainMsg(&buf, &.{ chain_leaf_der, chain_intermediate_der }), .{
-        .bundle = &bundle,
-        .now_sec = 1_780_300_000,
-        .host_name = "chain.test",
-    });
+    const pub_key = try parse(
+        buildCertChainMsg(&buf, &.{ chain_leaf_der, chain_intermediate_der }),
+        .{ .bundle = &bundle, .now_sec = 1_780_300_000, .host_name = "chain.test" },
+    );
     try testing.expect(pub_key.len > 0);
 }
 
@@ -403,11 +430,13 @@ test "parse: rejects chain with missing intermediate" {
     try bundle.addCertsFromFilePath(testing.allocator, std.fs.cwd(), chain_root_pem);
 
     var buf: [4096]u8 = undefined;
-    try testing.expectError(error.CertificateIssuerNotFound, parse(buildCertChainMsg(&buf, &.{chain_leaf_der}), .{
-        .bundle = &bundle,
-        .now_sec = 1_780_300_000,
-        .host_name = "chain.test",
-    }));
+    try testing.expectError(
+        error.CertificateIssuerNotFound,
+        parse(
+            buildCertChainMsg(&buf, &.{chain_leaf_der}),
+            .{ .bundle = &bundle, .now_sec = 1_780_300_000, .host_name = "chain.test" },
+        ),
+    );
 }
 
 test "parse: rejects chain hostname mismatch" {
@@ -416,20 +445,25 @@ test "parse: rejects chain hostname mismatch" {
     try bundle.addCertsFromFilePath(testing.allocator, std.fs.cwd(), chain_root_pem);
 
     var buf: [4096]u8 = undefined;
-    try testing.expectError(error.CertificateHostMismatch, parse(buildCertChainMsg(&buf, &.{ chain_leaf_der, chain_intermediate_der }), .{
-        .bundle = &bundle,
-        .now_sec = 1_780_300_000,
-        .host_name = "wrong.chain.test",
-    }));
+    try testing.expectError(
+        error.CertificateHostMismatch,
+        parse(
+            buildCertChainMsg(&buf, &.{ chain_leaf_der, chain_intermediate_der }),
+            .{ .bundle = &bundle, .now_sec = 1_780_300_000, .host_name = "wrong.chain.test" },
+        ),
+    );
 }
 
 test "parse: rejects untrusted leaf when bundle misses issuer" {
     const bundle: Certificate.Bundle = .{};
     var buf: [1024]u8 = undefined;
-    try testing.expectError(error.CertificateIssuerNotFound, parse(buildCertMsg(&buf, fixture_cert_der), .{
-        .bundle = &bundle,
-        .now_sec = 1_780_300_000,
-    }));
+    try testing.expectError(
+        error.CertificateIssuerNotFound,
+        parse(buildCertMsg(&buf, fixture_cert_der), .{
+            .bundle = &bundle,
+            .now_sec = 1_780_300_000,
+        }),
+    );
 }
 
 test "parse: malformed DER length is rejected, not crashed" {
@@ -476,7 +510,12 @@ fn policyLeaf(
 test "verifyServerAuthPolicy: KeyUsage without digitalSignature is rejected" {
     // BIT STRING, 6 unused bits, 0x40 sets bit 1 (nonRepudiation) but not bit 0.
     const key_usage = "\x03\x02\x06\x40";
-    const leaf = policyLeaf(key_usage, .{ .start = 0, .end = key_usage.len }, .empty, .ecdsa_with_SHA256);
+    const leaf = policyLeaf(
+        key_usage,
+        .{ .start = 0, .end = key_usage.len },
+        .empty,
+        .ecdsa_with_SHA256,
+    );
     try testing.expectError(error.CertificateKeyUsageRejected, verifyServerAuthPolicy(leaf));
 }
 
@@ -486,14 +525,20 @@ test "verifyServerAuthPolicy: EKU without serverAuth is rejected" {
     // SEQUENCE { OID id-kp-clientAuth (1.3.6.1.5.5.7.3.2) }
     const eku = "\x30\x0a\x06\x08\x2b\x06\x01\x05\x05\x07\x03\x02";
     const leaf = policyLeaf(eku, .empty, .{ .start = 0, .end = eku.len }, .ecdsa_with_SHA256);
-    try testing.expectError(error.CertificateExtendedKeyUsageRejected, verifyServerAuthPolicy(leaf));
+    try testing.expectError(
+        error.CertificateExtendedKeyUsageRejected,
+        verifyServerAuthPolicy(leaf),
+    );
 }
 
 // RFC 8446 §4.2.3 — only the TLS 1.3 signature algorithms are acceptable for a
 // server certificate; a legacy SHA-1/RSA cert must be rejected by policy.
 test "verifyServerAuthPolicy: unsupported signature algorithm is rejected" {
     const leaf = policyLeaf("", .empty, .empty, .sha1WithRSAEncryption);
-    try testing.expectError(error.CertificateSignatureAlgorithmRejected, verifyServerAuthPolicy(leaf));
+    try testing.expectError(
+        error.CertificateSignatureAlgorithmRejected,
+        verifyServerAuthPolicy(leaf),
+    );
 }
 
 // RFC 8446 §4.4.2.2 — a leaf with no KeyUsage/EKU restrictions and a supported
@@ -523,7 +568,10 @@ test "verifySignature: wrong transcript hash" {
     const pub_key = try parse(buildCertMsg(&cert_buf, fixture_cert_der), .{});
     var cv_buf: [512]u8 = undefined;
     const bad_hash: [32]u8 = @splat(0);
-    try testing.expectError(error.SignatureVerificationFailed, verifyServerSignature(buildCvMsg(&cv_buf, fixture_cv_sig), pub_key, &bad_hash));
+    try testing.expectError(
+        error.SignatureVerificationFailed,
+        verifyServerSignature(buildCvMsg(&cv_buf, fixture_cv_sig), pub_key, &bad_hash),
+    );
 }
 
 // RFC 8446 §4.4.3 — CertificateVerify context string binds the endpoint role.
@@ -531,7 +579,10 @@ test "verifySignature: server signature is not valid for client context" {
     var cert_buf: [1024]u8 = undefined;
     const pub_key = try parse(buildCertMsg(&cert_buf, fixture_cert_der), .{});
     var cv_buf: [512]u8 = undefined;
-    try testing.expectError(error.SignatureVerificationFailed, verifyClientSignature(buildCvMsg(&cv_buf, fixture_cv_sig), pub_key, &test_transcript_hash));
+    try testing.expectError(
+        error.SignatureVerificationFailed,
+        verifyClientSignature(buildCvMsg(&cv_buf, fixture_cv_sig), pub_key, &test_transcript_hash),
+    );
 }
 
 test "verifySignature: wrong handshake type" {
@@ -540,7 +591,10 @@ test "verifySignature: wrong handshake type" {
     var cv_buf: [512]u8 = undefined;
     _ = buildCvMsg(&cv_buf, fixture_cv_sig);
     cv_buf[0] = 0x01;
-    try testing.expectError(error.InvalidHandshakeType, verifyServerSignature(&cv_buf, pub_key, &test_transcript_hash));
+    try testing.expectError(
+        error.InvalidHandshakeType,
+        verifyServerSignature(&cv_buf, pub_key, &test_transcript_hash),
+    );
 }
 
 // RFC 5280 §4.2.1.10 — Name Constraints extension is parsed from a real

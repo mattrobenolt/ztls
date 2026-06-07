@@ -31,7 +31,9 @@ pub fn construct(iv: *const Iv, seq: u64) Nonce {
 
 // RFC 8446 §5.3 — nonce construction
 test "construct: seq 0 is just the IV" {
-    const iv: Iv = .init(.{ 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b });
+    const iv: Iv = .init(.{
+        0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b,
+    });
     const nonce = construct(&iv, 0);
     try testing.expectEqualSlices(u8, &iv.data, &nonce.data);
 }
@@ -39,8 +41,14 @@ test "construct: seq 0 is just the IV" {
 test "construct: seq increments flip the right bytes" {
     const iv: Iv = .zero;
     try testing.expectEqual(Nonce.init(.{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1 }), construct(&iv, 1));
-    try testing.expectEqual(Nonce.init(.{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255 }), construct(&iv, 255));
-    try testing.expectEqual(Nonce.init(.{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0 }), construct(&iv, 256));
+    try testing.expectEqual(
+        Nonce.init(.{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255 }),
+        construct(&iv, 255),
+    );
+    try testing.expectEqual(
+        Nonce.init(.{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0 }),
+        construct(&iv, 256),
+    );
 }
 
 test "construct: XOR with non-zero IV" {

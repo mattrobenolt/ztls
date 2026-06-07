@@ -95,7 +95,8 @@ pub const KeyPair = struct {
     pub fn generateDeterministic(group: NamedGroup, seed: [32]u8) Error!KeyPair {
         switch (group) {
             .x25519 => {
-                const kp = x25519.KeyPair.generateDeterministic(.init(seed)) catch return error.LibcryptoFailed;
+                const kp = x25519.KeyPair.generateDeterministic(.init(seed)) catch
+                    return error.LibcryptoFailed;
                 return fromX25519(kp);
             },
             else => return error.UnsupportedGroup,
@@ -122,12 +123,17 @@ pub const KeyPair = struct {
     /// The result feeds hkdf.handshakeSecret directly.
     ///
     /// RFC 8446 §7.4.2
-    pub fn sharedSecret(self: *const KeyPair, peer_public: []const u8, out: *[max_shared_secret_len]u8) Error![]const u8 {
+    pub fn sharedSecret(
+        self: *const KeyPair,
+        peer_public: []const u8,
+        out: *[max_shared_secret_len]u8,
+    ) Error![]const u8 {
         switch (self.group) {
             .x25519 => {
                 if (peer_public.len != x25519.public_length) return error.UnsupportedGroup;
                 const peer: x25519.PublicKey = .init(peer_public[0..x25519.public_length].*);
-                const scalar: x25519.SecretKey = .init(self.secret.constSlice()[0..x25519.secret_length].*);
+                const scalar: x25519.SecretKey =
+                    .init(self.secret.constSlice()[0..x25519.secret_length].*);
                 const ss = try x25519.sharedSecret(scalar, peer);
                 @memcpy(out[0..ss.len], &ss);
                 return out[0..ss.len];
@@ -171,18 +177,27 @@ test "planned future group sizes" {
 // group-parameterized KeyPair surface.
 test "KeyPair.sharedSecret: RFC 7748 X25519 vector via NamedGroup" {
     var scalar: [32]u8 = undefined;
-    _ = try std.fmt.hexToBytes(&scalar, "a546e36bf0527c9d3b16154b82465edd62144c0ac1fc5a18506a2244ba449ac4");
+    _ = try std.fmt.hexToBytes(
+        &scalar,
+        "a546e36bf0527c9d3b16154b82465edd62144c0ac1fc5a18506a2244ba449ac4",
+    );
     var kp = try KeyPair.generateDeterministic(.x25519, scalar);
     defer kp.deinit();
 
     var peer: [32]u8 = undefined;
-    _ = try std.fmt.hexToBytes(&peer, "e6db6867583030db3594c1a424b15f7c726624ec26b3353b10a903a6d0ab1c4c");
+    _ = try std.fmt.hexToBytes(
+        &peer,
+        "e6db6867583030db3594c1a424b15f7c726624ec26b3353b10a903a6d0ab1c4c",
+    );
 
     var out: [max_shared_secret_len]u8 = undefined;
     const ss = try kp.sharedSecret(&peer, &out);
 
     var want: [32]u8 = undefined;
-    _ = try std.fmt.hexToBytes(&want, "c3da55379de9c6908e94ea4df28d084f32eccf03491c71f754b4075577a28552");
+    _ = try std.fmt.hexToBytes(
+        &want,
+        "c3da55379de9c6908e94ea4df28d084f32eccf03491c71f754b4075577a28552",
+    );
     try testing.expectEqualSlices(u8, &want, ss);
 }
 

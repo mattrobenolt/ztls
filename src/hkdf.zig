@@ -65,7 +65,8 @@ fn Hkdf(comptime Hmac: type) type {
             const label_len_field = @sizeOf(u8);
             const context_len_field = @sizeOf(u8);
             const max_context_len = 255;
-            const buf_len = length_field + label_len_field + full_label.len + context_len_field + max_context_len;
+            const header_len = length_field + label_len_field + context_len_field;
+            const buf_len = header_len + full_label.len + max_context_len;
             var buf: [buf_len]u8 = undefined;
             var pos: usize = 0;
 
@@ -109,7 +110,11 @@ fn Hkdf(comptime Hmac: type) type {
         ///
         /// Expands `secret` using `label` and a transcript hash as context.
         /// Output is always `prk_len` bytes (the hash output length).
-        pub inline fn deriveSecret(secret: Prk, comptime label: []const u8, transcript_hash: *const Prk) Prk {
+        pub inline fn deriveSecret(
+            secret: Prk,
+            comptime label: []const u8,
+            transcript_hash: *const Prk,
+        ) Prk {
             var out: Prk = undefined;
             expandLabel(&out.data, label, &transcript_hash.data, secret);
             return out;
@@ -136,11 +141,17 @@ fn Hkdf(comptime Hmac: type) type {
 
         // RFC 8446 §7.1 — traffic secrets from HandshakeSecret.
 
-        pub inline fn clientHandshakeTrafficSecret(handshake: Prk, transcript_hash: *const Prk) Prk {
+        pub inline fn clientHandshakeTrafficSecret(
+            handshake: Prk,
+            transcript_hash: *const Prk,
+        ) Prk {
             return deriveSecret(handshake, "c hs traffic", transcript_hash);
         }
 
-        pub inline fn serverHandshakeTrafficSecret(handshake: Prk, transcript_hash: *const Prk) Prk {
+        pub inline fn serverHandshakeTrafficSecret(
+            handshake: Prk,
+            transcript_hash: *const Prk,
+        ) Prk {
             return deriveSecret(handshake, "s hs traffic", transcript_hash);
         }
 
@@ -182,7 +193,10 @@ fn Hkdf(comptime Hmac: type) type {
         }
 
         /// RFC 8446 §7.3 — derive the write key from a traffic secret.
-        pub inline fn trafficKey(comptime key: aead.Keys, prk: Prk) @FieldType(aead.Aead, @tagName(key)) {
+        pub inline fn trafficKey(
+            comptime key: aead.Keys,
+            prk: Prk,
+        ) @FieldType(aead.Aead, @tagName(key)) {
             var out: @FieldType(aead.Aead, @tagName(key)) = undefined;
             expandLabel(&out.data, "key", "", prk);
             return out;

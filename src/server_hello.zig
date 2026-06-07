@@ -149,7 +149,8 @@ pub fn parseHelloRetryRequest(msg: []const u8) HrrParseError!HelloRetryRequest {
                 if (got_cookie) return error.DuplicateExtension;
                 if (ext_len < 2) return error.InvalidExtensionLength;
                 const cookie_len = try r.read(u16);
-                if (cookie_len == 0 or cookie_len != ext_len - 2) return error.InvalidExtensionLength;
+                if (cookie_len == 0 or cookie_len != ext_len - 2)
+                    return error.InvalidExtensionLength;
                 cookie = try r.readSlice(cookie_len);
                 got_cookie = true;
             },
@@ -265,7 +266,9 @@ pub fn parse(msg: []const u8) ParseError!ServerHello {
                 if (got_key_share) return error.DuplicateExtension;
                 const ext_end = r.pos + ext_len;
                 const group = try r.read(u16);
-                if (group != @intFromEnum(NamedGroup.x25519)) return error.UnsupportedKeyShareGroup; // x25519 only
+                // x25519 only
+                if (group != @intFromEnum(NamedGroup.x25519))
+                    return error.UnsupportedKeyShareGroup;
                 const key_len = try r.read(u16);
                 if (key_len != 32) return error.UnsupportedKeyShareGroup;
                 server_public_key = .init((try r.readSlice(32))[0..32].*);

@@ -74,7 +74,10 @@ pub fn build(b: *Build) void {
         }),
     });
     const run_server_interop = b.addRunArtifact(server_interop_exe);
-    const server_interop_step = b.step("test-openssl-server", "Run the openssl s_client interop test");
+    const server_interop_step = b.step(
+        "test-openssl-server",
+        "Run the openssl s_client interop test",
+    );
     server_interop_step.dependOn(&run_server_interop.step);
 
     const tlsfuzzer_server_exe = b.addExecutable(.{
@@ -138,7 +141,10 @@ pub fn build(b: *Build) void {
         }),
     });
     const run_replay_fixtures = b.addRunArtifact(replay_fixtures_exe);
-    const replay_fixtures_step = b.step("generate-replay-fixtures", "Generate OpenSSL replay fixtures for benchmarks");
+    const replay_fixtures_step = b.step(
+        "generate-replay-fixtures",
+        "Generate OpenSSL replay fixtures for benchmarks",
+    );
     replay_fixtures_step.dependOn(&run_replay_fixtures.step);
 
     const bench_mod = b.addModule("ztls_bench", .{
@@ -206,16 +212,28 @@ pub fn build(b: *Build) void {
     const bio_bench_step = b.step("bench-openssl", "Run OpenSSL libssl memory BIO benchmarks");
     bio_bench_step.dependOn(&run_bio_bench.step);
     const install_bio_bench = b.addInstallArtifact(bio_bench, .{});
-    const bio_bench_bin_step = b.step("bench-openssl-bin", "Build the OpenSSL memory BIO benchmark binary");
+    const bio_bench_bin_step = b.step(
+        "bench-openssl-bin",
+        "Build the OpenSSL memory BIO benchmark binary",
+    );
     bio_bench_bin_step.dependOn(&install_bio_bench.step);
 
-    const rustls_bench = b.addSystemCommand(&.{ "cargo", "run", "--release", "--manifest-path", "bench/rustls/Cargo.toml", "--" });
+    const rustls_bench = b.addSystemCommand(
+        &.{ "cargo", "run", "--release", "--manifest-path", "bench/rustls/Cargo.toml", "--" },
+    );
     if (b.args) |args| rustls_bench.addArgs(args);
     const rustls_bench_step = b.step("bench-rustls", "Run rustls in-memory benchmarks");
     rustls_bench_step.dependOn(&rustls_bench.step);
 
-    const rustls_bench_build = b.addSystemCommand(&.{ "cargo", "build", "--release", "--manifest-path", "bench/rustls/Cargo.toml" });
-    const rustls_bench_install = b.addSystemCommand(&.{ "sh", "-c", "mkdir -p zig-out/bin && cp bench/rustls/target/release/rustls_bench zig-out/bin/rustls_bench" });
+    const rustls_bench_build = b.addSystemCommand(
+        &.{ "cargo", "build", "--release", "--manifest-path", "bench/rustls/Cargo.toml" },
+    );
+    const rustls_bench_install = b.addSystemCommand(&.{
+        "sh",
+        "-c",
+        "mkdir -p zig-out/bin && " ++
+            "cp bench/rustls/target/release/rustls_bench zig-out/bin/rustls_bench",
+    });
     rustls_bench_install.step.dependOn(&rustls_bench_build.step);
     const rustls_bench_bin_step = b.step("bench-rustls-bin", "Build the rustls benchmark binary");
     rustls_bench_bin_step.dependOn(&rustls_bench_install.step);
@@ -243,7 +261,10 @@ pub fn build(b: *Build) void {
         const step = b.step(b.fmt("example-{s}", .{name}), b.fmt("Run {s} example", .{name}));
         step.dependOn(&run.step);
 
-        const asm_step = b.step(b.fmt("example-{s}-asm", .{name}), b.fmt("Emit asm for {s} example", .{name}));
+        const asm_step = b.step(
+            b.fmt("example-{s}-asm", .{name}),
+            b.fmt("Emit asm for {s} example", .{name}),
+        );
         const asm_exe = b.addExecutable(.{
             .name = name,
             .root_module = b.createModule(.{

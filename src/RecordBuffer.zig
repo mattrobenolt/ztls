@@ -93,7 +93,9 @@ test "next: two records coalesced in one fill" {
     var rb: RecordBuffer = .init(&storage);
 
     // Two tiny handshake records: header + 1 byte each.
-    const data = [_]u8{ 22, 0x03, 0x03, 0x00, 0x01, 0xaa } ++ [_]u8{ 22, 0x03, 0x03, 0x00, 0x01, 0xbb };
+    const data =
+        [_]u8{ 22, 0x03, 0x03, 0x00, 0x01, 0xaa } ++
+        [_]u8{ 22, 0x03, 0x03, 0x00, 0x01, 0xbb };
     @memcpy(rb.writable()[0..data.len], &data);
     rb.advance(data.len);
 
@@ -129,7 +131,9 @@ test "next: in-place mutation of a returned record survives across next()" {
     var storage: [min_storage]u8 = undefined;
     var rb: RecordBuffer = .init(&storage);
 
-    const data = [_]u8{ 23, 0x03, 0x03, 0x00, 0x01, 0x11 } ++ [_]u8{ 23, 0x03, 0x03, 0x00, 0x01, 0x22 };
+    const data =
+        [_]u8{ 23, 0x03, 0x03, 0x00, 0x01, 0x11 } ++
+        [_]u8{ 23, 0x03, 0x03, 0x00, 0x01, 0x22 };
     @memcpy(rb.writable()[0..data.len], &data);
     rb.advance(data.len);
 

@@ -81,7 +81,11 @@ pub fn main() !void {
                     try conn.stream.writeAll(w);
                     hs.completeWrite();
                     if (!sent_flight and hs.state == .wait_client_finished) {
-                        const flight_bytes = try hs.sendAuthenticatedFlightBuffered(&.{cert_der}, signer_api, &flight);
+                        const flight_bytes = try hs.sendAuthenticatedFlightBuffered(
+                            &.{cert_der},
+                            signer_api,
+                            &flight,
+                        );
                         try conn.stream.writeAll(flight_bytes);
                         sent_flight = true;
                     }

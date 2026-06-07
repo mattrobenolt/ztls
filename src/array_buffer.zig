@@ -93,6 +93,7 @@ pub fn ArrayBufferAligned(
 
         pub fn slice(self: *Self) switch (@TypeOf(&self.buffer)) {
             *align(alignment.toByteUnits()) [capacity]T => []align(alignment.toByteUnits()) T,
+            // ziglint-ignore: Z024
             *align(alignment.toByteUnits()) const [capacity]T => []align(alignment.toByteUnits()) const T,
             else => unreachable,
         } {

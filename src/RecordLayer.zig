@@ -34,9 +34,16 @@ key_limit: u64,
 ctx: AeadContext,
 
 pub fn init(aead_: Aead, iv_: Iv) AeadError!RecordLayer {
-    return .{ .aead = aead_, .iv = iv_, .key_limit = aead_.keyUsageLimit(), .ctx = try .init(aead_) };
+    return .{
+        .aead = aead_,
+        .iv = iv_,
+        .key_limit = aead_.keyUsageLimit(),
+        .ctx = try .init(aead_),
+    };
 }
 
+// Traffic key material is deliberately left caller-visible as zeroed bytes for audit tests.
+// ziglint-ignore: Z030
 pub fn deinit(self: *RecordLayer) void {
     self.ctx.deinit();
     std.crypto.secureZero(u8, mem.asBytes(self));
@@ -119,7 +126,12 @@ pub fn decrypt(self: *RecordLayer, buf: []u8) DecryptError!DecryptedRecord {
 /// Returns the number of bytes written.
 ///
 /// RFC 8446 §5.2
-pub fn encrypt(self: *RecordLayer, content_type: ContentType, content: []const u8, out: []u8) EncryptError![]u8 {
+pub fn encrypt(
+    self: *RecordLayer,
+    content_type: ContentType,
+    content: []const u8,
+    out: []u8,
+) EncryptError![]u8 {
     try self.checkSequenceLimit();
     if (content.len > frame.max_plaintext_len) return error.PlaintextTooLarge;
 
@@ -137,7 +149,12 @@ pub fn encrypt(self: *RecordLayer, content_type: ContentType, content: []const u
 /// Encrypt a TLS record after the caller has already written plaintext into
 /// `out[5..][0..content_len]`. This avoids the plaintext copy in `encrypt` for
 /// producers that can serialize directly into the record buffer.
-pub fn encryptPrepared(self: *RecordLayer, content_type: ContentType, content_len: usize, out: []u8) EncryptError![]u8 {
+pub fn encryptPrepared(
+    self: *RecordLayer,
+    content_type: ContentType,
+    content_len: usize,
+    out: []u8,
+) EncryptError![]u8 {
     try self.checkSequenceLimit();
     if (content_len > frame.max_plaintext_len) return error.PlaintextTooLarge;
 
@@ -161,7 +178,9 @@ pub fn encryptPrepared(self: *RecordLayer, content_type: ContentType, content_le
     return out[0..total];
 }
 
-fn checkSequenceLimit(self: *const RecordLayer) (error{ SequenceNumberOverflow, KeyUpdateRequired })!void {
+fn checkSequenceLimit(
+    self: *const RecordLayer,
+) (error{ SequenceNumberOverflow, KeyUpdateRequired })!void {
     if (self.seq == std.math.maxInt(u64)) {
         @branchHint(.cold);
         return error.SequenceNumberOverflow;
@@ -187,7 +206,10 @@ test "encrypt: sequence number overflow" {
     rl.key_limit = std.math.maxInt(u64);
     rl.seq = std.math.maxInt(u64);
     var buf: [64]u8 = undefined;
-    try testing.expectError(error.SequenceNumberOverflow, rl.encrypt(.application_data, "hello", &buf));
+    try testing.expectError(
+        error.SequenceNumberOverflow,
+        rl.encrypt(.application_data, "hello", &buf),
+    );
 }
 
 // RFC 8446 §5.5 — endpoints cannot protect more records than the AEAD usage limit permits.

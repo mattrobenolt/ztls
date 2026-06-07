@@ -104,13 +104,19 @@ const finished_msg: [36]u8 = .{
 test "verify: wrong verify_data" {
     var bad = finished_msg;
     bad[4] ^= 0xff;
-    try testing.expectError(error.InvalidVerifyData, verify(Sha256, &bad, &server_finished_key, &server_transcript_hash));
+    try testing.expectError(
+        error.InvalidVerifyData,
+        verify(Sha256, &bad, &server_finished_key, &server_transcript_hash),
+    );
 }
 
 test "verify: wrong handshake type" {
     var bad = finished_msg;
     bad[0] = 0x01;
-    try testing.expectError(error.InvalidHandshakeType, verify(Sha256, &bad, &server_finished_key, &server_transcript_hash));
+    try testing.expectError(
+        error.InvalidHandshakeType,
+        verify(Sha256, &bad, &server_finished_key, &server_transcript_hash),
+    );
 }
 
 test "encode then verify round-trip" {

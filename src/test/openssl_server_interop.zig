@@ -42,8 +42,16 @@ pub fn main() !void {
     defer arena_allocator.deinit();
     const arena = arena_allocator.allocator();
 
-    const cert_der = try std.fs.cwd().readFileAlloc(arena, "src/test_fixtures/server-ecdsa/server.der", 4096);
-    const scalar = try std.fs.cwd().readFileAlloc(arena, "src/test_fixtures/server-ecdsa/scalar.bin", 64);
+    const cert_der = try std.fs.cwd().readFileAlloc(
+        arena,
+        "src/test_fixtures/server-ecdsa/server.der",
+        4096,
+    );
+    const scalar = try std.fs.cwd().readFileAlloc(
+        arena,
+        "src/test_fixtures/server-ecdsa/scalar.bin",
+        64,
+    );
 
     for (suites, 0..) |suite, i| {
         print("[server-interop] {s}\n", .{suite.openssl_name});
@@ -51,8 +59,19 @@ pub fn main() !void {
     }
 }
 
-fn runSuite(arena: mem.Allocator, suite: SuiteCase, port: u16, cert_der: []const u8, scalar: []const u8) !void {
-    var args: ServerArgs = .{ .port = port, .suite = suite.ztls_suite, .cert_der = cert_der, .scalar = scalar };
+fn runSuite(
+    arena: mem.Allocator,
+    suite: SuiteCase,
+    port: u16,
+    cert_der: []const u8,
+    scalar: []const u8,
+) !void {
+    var args: ServerArgs = .{
+        .port = port,
+        .suite = suite.ztls_suite,
+        .cert_der = cert_der,
+        .scalar = scalar,
+    };
     const thread = try std.Thread.spawn(.{}, serverThread, .{&args});
 
     var child = try startClient(arena, suite.openssl_name, port);
@@ -97,7 +116,12 @@ fn serverThread(args: *const ServerArgs) !void {
     try serve(conn.stream, args.suite, args.cert_der, args.scalar);
 }
 
-fn serve(stream: net.Stream, suite: ztls.CipherSuite, cert_der: []const u8, scalar: []const u8) !void {
+fn serve(
+    stream: net.Stream,
+    suite: ztls.CipherSuite,
+    cert_der: []const u8,
+    scalar: []const u8,
+) !void {
     const server_keypair: ztls.x25519.KeyPair = .generate();
     var hs: ztls.ServerHandshake = .init(server_keypair);
     hs.supportAlpn(&.{alpn_protocol});
@@ -127,7 +151,12 @@ fn serve(stream: net.Stream, suite: ztls.CipherSuite, cert_der: []const u8, scal
                     try stream.writeAll(w);
                     hs.completeWrite();
                     if (!sent_flight and hs.state == .wait_client_finished) {
-                        const flight = try hs.sendAuthenticatedFlight(&.{cert_der}, signer_api, &plaintext, &out);
+                        const flight = try hs.sendAuthenticatedFlight(
+                            &.{cert_der},
+                            signer_api,
+                            &plaintext,
+                            &out,
+                        );
                         try stream.writeAll(flight);
                         sent_flight = true;
                     }
@@ -158,7 +187,12 @@ fn serve(stream: net.Stream, suite: ztls.CipherSuite, cert_der: []const u8, scal
     }
 }
 
-fn sendResponse(stream: net.Stream, hs: *ztls.ServerHandshake, request: []const u8, out: []u8) !void {
+fn sendResponse(
+    stream: net.Stream,
+    hs: *ztls.ServerHandshake,
+    request: []const u8,
+    out: []u8,
+) !void {
     if (!mem.startsWith(u8, request, "GET ")) return error.UnexpectedRequest;
     const rec = try hs.sendApplicationData(response, out);
     try stream.writeAll(rec);

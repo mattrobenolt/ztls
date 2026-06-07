@@ -11,9 +11,11 @@ const ztls = @import("ztls");
 pub fn main() !void {
     // In a real TLS connection, key and IV are derived from the handshake
     // key schedule. Here we just pick fixed values for demonstration.
-    var sender: ztls.RecordLayer = try .init(.{ .aes128_gcm = .init(@splat(0xab)) }, .init(@splat(0xcd)));
+    var sender: ztls.RecordLayer =
+        try .init(.{ .aes128_gcm = .init(@splat(0xab)) }, .init(@splat(0xcd)));
     defer sender.deinit();
-    var receiver: ztls.RecordLayer = try .init(.{ .aes128_gcm = .init(@splat(0xab)) }, .init(@splat(0xcd)));
+    var receiver: ztls.RecordLayer =
+        try .init(.{ .aes128_gcm = .init(@splat(0xab)) }, .init(@splat(0xcd)));
     defer receiver.deinit();
 
     const messages = [_][]const u8{

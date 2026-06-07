@@ -135,7 +135,11 @@ pub fn main() !void {
         try stdout.flush();
     }
 
-    inline for (.{ Suite.aes_128_gcm_sha256, Suite.aes_256_gcm_sha384, Suite.chacha20_poly1305_sha256 }) |suite| {
+    inline for (.{
+        Suite.aes_128_gcm_sha256,
+        Suite.aes_256_gcm_sha384,
+        Suite.chacha20_poly1305_sha256,
+    }) |suite| {
         if (matches(args, "client_handshake_replay", suite.name(), 879)) {
             const replay = try benchClientHandshakeReplay(suite, &timer);
             try stdout.print("client_handshake_replay,{s},{d},{d},{d},{d},{d:.2}\n", .{
@@ -164,12 +168,16 @@ pub fn main() !void {
 
         if (matches(args, "ztls_handshake_split", suite.name(), 1)) {
             const split = try benchZtlsHandshakeSplit(suite, &timer);
-            try printHandshakeSplit(stdout, suite, split);
+            try printHandshakeSplit(suite, stdout, split);
             try stdout.flush();
         }
     }
 
-    inline for (.{ Suite.aes_128_gcm_sha256, Suite.aes_256_gcm_sha384, Suite.chacha20_poly1305_sha256 }) |suite| {
+    inline for (.{
+        Suite.aes_128_gcm_sha256,
+        Suite.aes_256_gcm_sha384,
+        Suite.chacha20_poly1305_sha256,
+    }) |suite| {
         inline for (sizes) |size| {
             if (matches(args, "record_encrypt", suite.name(), size)) {
                 const enc = try benchEncrypt(suite, size, &timer);
@@ -225,7 +233,9 @@ pub fn main() !void {
 
             if (matches(args, "ztls_app_prepared_client_to_server", suite.name(), size)) {
                 const c2s = try benchZtlsAppDataPrepared(suite, size, &timer);
-                try stdout.print("ztls_app_prepared_client_to_server,{s},{d},{d},{d},{d},{d:.2}\n", .{
+                const prepared_fmt = "ztls_app_prepared_client_to_server" ++
+                    ",{s},{d},{d},{d},{d},{d:.2}\n";
+                try stdout.print(prepared_fmt, .{
                     suite.name(),
                     size,
                     c2s.iterations,
@@ -285,9 +295,17 @@ fn parseArgs() !Args {
         } else if (mem.startsWith(u8, arg, "--suite=")) {
             result.suite = arg["--suite=".len..];
         } else if (mem.eql(u8, arg, "--size")) {
-            result.size = try std.fmt.parseInt(usize, it.next() orelse return error.MissingSize, 10);
+            result.size = try std.fmt.parseInt(
+                usize,
+                it.next() orelse return error.MissingSize,
+                10,
+            );
         } else if (mem.startsWith(u8, arg, "--size=")) {
-            result.size = try std.fmt.parseInt(usize, arg["--size=".len..], 10);
+            result.size = try std.fmt.parseInt(
+                usize,
+                arg["--size=".len..],
+                10,
+            );
         } else {
             return error.UnknownArgument;
         }
@@ -300,18 +318,27 @@ fn matches(args: Args, benchmark: []const u8, suite: []const u8, size: usize) bo
     if (args.suite) |s| if (ascii.indexOfIgnoreCase(suite, s) == null) return false;
     if (args.size) |z| if (size != z) return false;
     const f = args.filter orelse return true;
-    return ascii.indexOfIgnoreCase(benchmark, f) != null or ascii.indexOfIgnoreCase(suite, f) != null;
+    return ascii.indexOfIgnoreCase(benchmark, f) != null or
+        ascii.indexOfIgnoreCase(suite, f) != null;
 }
 
 fn listBenchmarks(stdout: *Io.Writer) !void {
     try stdout.print("parse_header,none\n", .{});
     try stdout.print("record_buffer_next,none\n", .{});
-    inline for (.{ Suite.aes_128_gcm_sha256, Suite.aes_256_gcm_sha384, Suite.chacha20_poly1305_sha256 }) |suite| {
+    inline for (.{
+        Suite.aes_128_gcm_sha256,
+        Suite.aes_256_gcm_sha384,
+        Suite.chacha20_poly1305_sha256,
+    }) |suite| {
         try stdout.print("client_handshake_replay,{s}\n", .{suite.name()});
         try stdout.print("ztls_handshake,{s}\n", .{suite.name()});
         try stdout.print("ztls_handshake_split,{s}\n", .{suite.name()});
     }
-    inline for (.{ Suite.aes_128_gcm_sha256, Suite.aes_256_gcm_sha384, Suite.chacha20_poly1305_sha256 }) |suite| {
+    inline for (.{
+        Suite.aes_128_gcm_sha256,
+        Suite.aes_256_gcm_sha384,
+        Suite.chacha20_poly1305_sha256,
+    }) |suite| {
         try stdout.print("record_encrypt,{s}\n", .{suite.name()});
         try stdout.print("record_decrypt,{s}\n", .{suite.name()});
         try stdout.print("record_encrypt_prepared,{s}\n", .{suite.name()});
@@ -372,7 +399,11 @@ fn benchClientHandshakeReplay(comptime suite: Suite, timer: *time.Timer) !Result
     const ns = timer.read();
 
     const bytes_per_replay = try clientHelloLen() + records.len;
-    return .{ .bytes = bytes_per_replay * handshake_iterations, .iterations = handshake_iterations, .ns = ns };
+    return .{
+        .bytes = bytes_per_replay * handshake_iterations,
+        .iterations = handshake_iterations,
+        .ns = ns,
+    };
 }
 
 fn replayHandshake(records: []const u8, out: []u8) !void {
@@ -467,7 +498,11 @@ fn benchDecrypt(comptime suite: Suite, comptime size: usize, timer: *time.Timer)
     var tx: RecordLayer = try .init(suite.aead(), .zero);
     defer tx.deinit();
     for (0..iterations) |i| {
-        const record = try tx.encrypt(.application_data, &plaintext, records[i * record_len ..][0..record_len]);
+        const record = try tx.encrypt(
+            .application_data,
+            &plaintext,
+            records[i * record_len ..][0..record_len],
+        );
         assert(record.len == record_len);
     }
 
@@ -503,7 +538,10 @@ fn deterministicServerKeypair() !ztls.x25519.KeyPair {
     return .generateDeterministic(.init(@splat(0x22)));
 }
 
-fn connectPair(comptime suite: Suite) !struct { client: ztls.ClientHandshake, server: ztls.ServerHandshake } {
+fn connectPair(comptime suite: Suite) !struct {
+    client: ztls.ClientHandshake,
+    server: ztls.ServerHandshake,
+} {
     var client: ztls.ClientHandshake = .init(try deterministicClientKeypair());
     client.policy.host_name = "ztls.server.test";
     var client_out: [4096]u8 = undefined;
@@ -519,7 +557,11 @@ fn connectPair(comptime suite: Suite) !struct { client: ztls.ClientHandshake, se
 
     var signer: ztls.signature.PrivateKey = try .fromP256Scalar(server_scalar[0..32]);
     defer signer.deinit();
-    const flight_record = try server.sendPreparedAuthenticatedFlight(&.{server_cert_der}, signer.signer(), &server_out);
+    const flight_record = try server.sendPreparedAuthenticatedFlight(
+        &.{server_cert_der},
+        signer.signer(),
+        &server_out,
+    );
     const ev = try client.handleRecord(server_out[0..flight_record.len], &client_out);
     const client_finished = switch (ev) {
         .write => |w| w,
@@ -538,7 +580,11 @@ fn benchZtlsHandshake(comptime suite: Suite, timer: *time.Timer) !Result {
     for (0..ztls_handshake_iterations) |_| try doZtlsHandshake(suite);
     const ns = timer.read();
 
-    return .{ .bytes = ztls_handshake_iterations, .iterations = ztls_handshake_iterations, .ns = ns };
+    return .{
+        .bytes = ztls_handshake_iterations,
+        .iterations = ztls_handshake_iterations,
+        .ns = ns,
+    };
 }
 
 const HandshakeSplit = struct {
@@ -551,18 +597,62 @@ const HandshakeSplit = struct {
     server_finished_ns: u64 = 0,
 };
 
-fn printHandshakeSplit(stdout: *Io.Writer, comptime suite: Suite, split: HandshakeSplit) !void {
-    try printHandshakeSplitRow(stdout, "ztls_handshake_client_start", suite, split.iterations, split.client_start_ns);
-    try printHandshakeSplitRow(stdout, "ztls_handshake_server_accept", suite, split.iterations, split.server_accept_ns);
-    try printHandshakeSplitRow(stdout, "ztls_handshake_client_server_hello", suite, split.iterations, split.client_server_hello_ns);
-    try printHandshakeSplitRow(stdout, "ztls_handshake_server_flight", suite, split.iterations, split.server_flight_ns);
-    try printHandshakeSplitRow(stdout, "ztls_handshake_client_flight", suite, split.iterations, split.client_flight_ns);
-    try printHandshakeSplitRow(stdout, "ztls_handshake_server_finished", suite, split.iterations, split.server_finished_ns);
+fn printHandshakeSplit(comptime suite: Suite, stdout: *Io.Writer, split: HandshakeSplit) !void {
+    try printHandshakeSplitRow(
+        suite,
+        stdout,
+        "ztls_handshake_client_start",
+        split.iterations,
+        split.client_start_ns,
+    );
+    try printHandshakeSplitRow(
+        suite,
+        stdout,
+        "ztls_handshake_server_accept",
+        split.iterations,
+        split.server_accept_ns,
+    );
+    try printHandshakeSplitRow(
+        suite,
+        stdout,
+        "ztls_handshake_client_server_hello",
+        split.iterations,
+        split.client_server_hello_ns,
+    );
+    try printHandshakeSplitRow(
+        suite,
+        stdout,
+        "ztls_handshake_server_flight",
+        split.iterations,
+        split.server_flight_ns,
+    );
+    try printHandshakeSplitRow(
+        suite,
+        stdout,
+        "ztls_handshake_client_flight",
+        split.iterations,
+        split.client_flight_ns,
+    );
+    try printHandshakeSplitRow(
+        suite,
+        stdout,
+        "ztls_handshake_server_finished",
+        split.iterations,
+        split.server_finished_ns,
+    );
 }
 
-fn printHandshakeSplitRow(stdout: *Io.Writer, name: []const u8, comptime suite: Suite, iterations: usize, ns: u64) !void {
+fn printHandshakeSplitRow(
+    comptime suite: Suite,
+    stdout: *Io.Writer,
+    name: []const u8,
+    iterations: usize,
+    ns: u64,
+) !void {
     const result: Result = .{ .bytes = iterations, .iterations = iterations, .ns = ns };
-    try stdout.print("{s},{s},1,{d},{d},{d},{d:.2}\n", .{ name, suite.name(), iterations, iterations, ns, result.opsPerSec() });
+    try stdout.print("{s},{s},1,{d},{d},{d},{d:.2}\n", .{
+        name, suite.name(), iterations, iterations, ns, result.opsPerSec(),
+    });
 }
 
 fn benchZtlsHandshakeSplit(comptime suite: Suite, timer: *time.Timer) !HandshakeSplit {
@@ -604,7 +694,11 @@ fn doZtlsHandshakeSplit(comptime suite: Suite, timer: *time.Timer, split: ?*Hand
     if (split) |s| addTime(timer, &s.client_server_hello_ns);
 
     timer.reset();
-    const flight_record = try server.sendPreparedAuthenticatedFlight(&.{server_cert_der}, signer.signer(), &server_out);
+    const flight_record = try server.sendPreparedAuthenticatedFlight(
+        &.{server_cert_der},
+        signer.signer(),
+        &server_out,
+    );
     if (split) |s| addTime(timer, &s.server_flight_ns);
 
     timer.reset();
@@ -630,7 +724,12 @@ fn doZtlsHandshake(comptime suite: Suite) !void {
     doNotOptimizeAway(&pair.server);
 }
 
-fn benchZtlsAppData(comptime suite: Suite, comptime size: usize, comptime direction: Direction, timer: *time.Timer) !Result {
+fn benchZtlsAppData(
+    comptime suite: Suite,
+    comptime size: usize,
+    comptime direction: Direction,
+    timer: *time.Timer,
+) !Result {
     const iterations = @max(256, target_bytes / size);
     var pair = try connectPair(suite);
     defer pair.client.deinit();
@@ -659,7 +758,11 @@ fn benchZtlsAppData(comptime suite: Suite, comptime size: usize, comptime direct
     return .{ .bytes = iterations * size, .iterations = iterations, .ns = ns };
 }
 
-fn benchZtlsAppDataPrepared(comptime suite: Suite, comptime size: usize, timer: *time.Timer) !Result {
+fn benchZtlsAppDataPrepared(
+    comptime suite: Suite,
+    comptime size: usize,
+    timer: *time.Timer,
+) !Result {
     const iterations = @max(256, target_bytes / size);
     var pair = try connectPair(suite);
     defer pair.client.deinit();

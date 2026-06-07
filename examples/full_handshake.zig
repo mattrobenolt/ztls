@@ -105,13 +105,16 @@ pub fn main() !void {
     var fixture_buf: [8192]u8 = undefined;
     var fba: std.heap.FixedBufferAllocator = .init(&fixture_buf);
     var flight_buf: [1024]u8 = undefined;
-    const server_flight_record = try fixture(fba.allocator(), "server_flight_record.b64", &flight_buf);
+    const server_flight_record =
+        try fixture(fba.allocator(), "server_flight_record.b64", &flight_buf);
 
     var hs: ztls.ClientHandshake = .init(client_keypair);
     // We replay the fixed §3 ClientHello (so the transcript matches the trace),
     // so inject it rather than encoding a fresh one via start().
     hs.injectClientHello(&client_hello);
-    print("[client] ClientHello sent ({} bytes)          → state={s}\n", .{ client_hello.len, @tagName(hs.state) });
+    print("[client] ClientHello sent ({} bytes)          → state={s}\n", .{
+        client_hello.len, @tagName(hs.state),
+    });
 
     var out: ztls.ClientHandshake.OutBuffer = .empty;
 
@@ -140,7 +143,9 @@ pub fn main() !void {
     var app_out: ztls.ClientHandshake.OutBuffer = .empty;
     const record = try hs.sendApplicationData(message, app_out.fullSlice());
     app_out.resize(@intCast(record.len));
-    print("[client] encrypted {} bytes                    → {} wire bytes\n", .{ message.len, record.len });
+    print("[client] encrypted {} bytes                    → {} wire bytes\n", .{
+        message.len, record.len,
+    });
 
     const dec = try peer.decrypt(app_out.slice());
     print("[peer]   decrypted: \"{s}\"\n", .{dec.content});

@@ -58,7 +58,13 @@ pub fn main() !void {
     }
 }
 
-fn runSuite(arena: Allocator, cert_path: []const u8, key_path: []const u8, suite: []const u8, port: u16) !void {
+fn runSuite(
+    arena: Allocator,
+    cert_path: []const u8,
+    key_path: []const u8,
+    suite: []const u8,
+    port: u16,
+) !void {
     var server = try startServer(arena, cert_path, key_path, suite, port);
     defer _ = server.kill() catch {};
     const stream = try connectWithRetry(port);
@@ -82,7 +88,13 @@ fn genCert(arena: Allocator, cert_path: []const u8, key_path: []const u8) !void 
     if (term != .Exited or term.Exited != 0) return error.CertGenFailed;
 }
 
-fn startServer(arena: Allocator, cert_path: []const u8, key_path: []const u8, suite: []const u8, port: u16) !Child {
+fn startServer(
+    arena: Allocator,
+    cert_path: []const u8,
+    key_path: []const u8,
+    suite: []const u8,
+    port: u16,
+) !Child {
     const port_str = try std.fmt.allocPrint(arena, "{d}", .{port});
     var child = Child.init(&.{
         "openssl", "s_server",
@@ -148,7 +160,9 @@ fn interop(stream: net.Stream) !void {
         };
     }
     try testing.expectEqualStrings(alpn_protocol, hs.selectedAlpnProtocol().?);
-    print("[interop] handshake completed against openssl s_server; ALPN={s}\n", .{hs.selectedAlpnProtocol().?});
+    print("[interop] handshake completed against openssl s_server; ALPN={s}\n", .{
+        hs.selectedAlpnProtocol().?,
+    });
 
     // Request the s_server status page and read the response.
     try stream.writeAll(try hs.sendApplicationData("GET / HTTP/1.0\r\n\r\n", &out));

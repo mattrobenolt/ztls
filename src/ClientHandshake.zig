@@ -229,12 +229,20 @@ const Suite = union(enum) {
     /// RFC 8446 §4.4.4 — verify the server's Finished MAC. Snapshots the
     /// transcript through CertificateVerify (the state before Finished is
     /// absorbed) and checks the MAC with the retained server finished key.
-    fn verifyServerFinished(self: *const Suite, finished_msg: []const u8) finished.VerifyError!void {
+    fn verifyServerFinished(
+        self: *const Suite,
+        finished_msg: []const u8,
+    ) finished.VerifyError!void {
         switch (self.*) {
             .buffering => unreachable,
             inline .sha256, .sha384 => |*s| {
                 const th = s.transcript.peek();
-                try finished.verify(@TypeOf(s.transcript), finished_msg, &s.server_finished_key.data, &th);
+                try finished.verify(
+                    @TypeOf(s.transcript),
+                    finished_msg,
+                    &s.server_finished_key.data,
+                    &th,
+                );
             },
         }
     }
@@ -244,13 +252,21 @@ const Suite = union(enum) {
     /// through the server Finished (the Master Secret point); the client
     /// Finished is absorbed afterward. The plaintext Finished is written to
     /// `out`; rx/tx are application-keyed.
-    fn finishHandshake(self: *Suite, out: []u8) (error{BufferTooShort} || aead.Error)!HandshakeKeys.WithFinished {
+    fn finishHandshake(
+        self: *Suite,
+        out: []u8,
+    ) (error{BufferTooShort} || aead.Error)!HandshakeKeys.WithFinished {
         switch (self.*) {
             .buffering => unreachable,
             inline .sha256, .sha384 => |*s| {
                 const H = @TypeOf(s.*).Hkdf;
                 const th = s.transcript.peek(); // through server Finished
-                const fin = try finished.encode(@TypeOf(s.transcript), out, &s.client_finished_key.data, &th);
+                const fin = try finished.encode(
+                    @TypeOf(s.transcript),
+                    out,
+                    &s.client_finished_key.data,
+                    &th,
+                );
 
                 const master = H.masterSecret(s.handshake_secret);
                 s.client_app_secret = H.clientApplicationTrafficSecret(master, &.init(th));
@@ -313,8 +329,10 @@ const Suite = union(enum) {
                 s.handshake_secret = H.handshakeSecret(H.early_secret, dhe);
 
                 const th = s.transcript.peek();
-                const client_secret = H.clientHandshakeTrafficSecret(s.handshake_secret, &.init(th));
-                const server_secret = H.serverHandshakeTrafficSecret(s.handshake_secret, &.init(th));
+                const client_secret =
+                    H.clientHandshakeTrafficSecret(s.handshake_secret, &.init(th));
+                const server_secret =
+                    H.serverHandshakeTrafficSecret(s.handshake_secret, &.init(th));
 
                 s.client_finished_key = H.finishedKey(client_secret);
                 s.server_finished_key = H.finishedKey(server_secret);
@@ -432,7 +450,13 @@ pub fn start(
     assert(self.state == .start);
     if (out.len < frame.header_len) return error.BufferTooShort;
     if (self.policy.host_name == null) self.policy.host_name = server_name;
-    const ch = try client_hello.encode(out[frame.header_len..], random, self.keypair.public_key, server_name, self.alpn_protocols);
+    const ch = try client_hello.encode(
+        out[frame.header_len..],
+        random,
+        self.keypair.public_key,
+        server_name,
+        self.alpn_protocols,
+    );
     out[0..frame.header_len].* = mem.toBytes(frame.Header.init(.handshake, @intCast(ch.len)));
     self.injectClientHello(ch);
     self.pending_write.mark();
@@ -493,7 +517,11 @@ pub const AlertError = RecordLayer.EncryptError || error{PendingWrite};
 /// Encode a TLS alert record (then completeWrite() once sent). Before handshake
 /// keys exist this emits a plaintext alert record; after ServerHello it encrypts
 /// the alert under the current send traffic key. RFC 8446 §6.
-pub fn sendAlert(self: *ClientHandshake, description: alert.Description, out: []u8) AlertError![]const u8 {
+pub fn sendAlert(
+    self: *ClientHandshake,
+    description: alert.Description,
+    out: []u8,
+) AlertError![]const u8 {
     if (self.pending_write.isPending()) return error.PendingWrite;
     var msg: [2]u8 = undefined;
     const level: alert.Level = if (description == .close_notify) .warning else .fatal;
@@ -517,7 +545,11 @@ fn plaintextAlert(msg: *const [2]u8, out: []u8) error{BufferTooShort}![]u8 {
 
 /// Encrypt application data into a wire-ready record (then completeWrite() once
 /// sent). RFC 8446 §5.2.
-pub fn sendApplicationData(self: *ClientHandshake, plaintext: []const u8, out: []u8) SendError![]const u8 {
+pub fn sendApplicationData(
+    self: *ClientHandshake,
+    plaintext: []const u8,
+    out: []u8,
+) SendError![]const u8 {
     assert(self.state == .connected);
     if (self.pending_write.isPending()) return error.PendingWrite;
     const record = try self.tx.encrypt(.application_data, plaintext, out);
@@ -525,7 +557,11 @@ pub fn sendApplicationData(self: *ClientHandshake, plaintext: []const u8, out: [
     return record;
 }
 
-pub fn sendPreparedApplicationData(self: *ClientHandshake, plaintext_len: usize, out: []u8) SendError![]const u8 {
+pub fn sendPreparedApplicationData(
+    self: *ClientHandshake,
+    plaintext_len: usize,
+    out: []u8,
+) SendError![]const u8 {
     assert(self.state == .connected);
     if (self.pending_write.isPending()) return error.PendingWrite;
     const record = try self.tx.encryptPrepared(.application_data, plaintext_len, out);
@@ -539,7 +575,11 @@ pub const ProcessError = frame.ParseError || RecordLayer.DecryptError ||
 
 // Handshake-phase inbound: drive the flight from one record, returning the
 // client Finished to send when the flight completes, else null.
-fn processHandshakeRecord(self: *ClientHandshake, record: []u8, out: []u8) ProcessError!?[]const u8 {
+fn processHandshakeRecord(
+    self: *ClientHandshake,
+    record: []u8,
+    out: []u8,
+) ProcessError!?[]const u8 {
     const hdr = try frame.parseHeader(record);
     if (record.len < frame.header_len + hdr.length()) return error.IncompleteRecord;
 
@@ -594,7 +634,9 @@ pub fn processServerHello(self: *ClientHandshake, msg: []const u8) ServerHelloEr
     const b = self.suite.buffering;
     self.suite = switch (sh.cipher_suite) {
         .aes_128_gcm_sha256 => .{ .sha256 = .{ .transcript = b.sha256, .aead = .aes128_gcm } },
-        .chacha20_poly1305_sha256 => .{ .sha256 = .{ .transcript = b.sha256, .aead = .chacha20_poly1305 } },
+        .chacha20_poly1305_sha256 => .{
+            .sha256 = .{ .transcript = b.sha256, .aead = .chacha20_poly1305 },
+        },
         .aes_256_gcm_sha384 => .{ .sha384 = .{ .transcript = b.sha384, .aead = .aes256_gcm } },
     };
 
@@ -606,7 +648,12 @@ pub fn processServerHello(self: *ClientHandshake, msg: []const u8) ServerHelloEr
     self.state = .wait_ee;
 }
 
-pub const FlightError = error{ UnexpectedMessage, UnexpectedEof, CertificateKeyTooLarge, HandshakeBufferTooShort } ||
+pub const FlightError = error{
+    UnexpectedMessage,
+    UnexpectedEof,
+    CertificateKeyTooLarge,
+    HandshakeBufferTooShort,
+} ||
     encrypted_extensions.ParseError ||
     certificate.AuthError ||
     finished.VerifyError;
@@ -636,7 +683,11 @@ pub fn processFlight(
     return self.processFlightBytes(payload, policy);
 }
 
-fn processFlightBytes(self: *ClientHandshake, payload: []const u8, policy: certificate.Policy) FlightError!void {
+fn processFlightBytes(
+    self: *ClientHandshake,
+    payload: []const u8,
+    policy: certificate.Policy,
+) FlightError!void {
     var hr: HandshakeReader = .init(payload);
     while (true) {
         const msg = hr.next() catch |err| switch (err) {
@@ -671,7 +722,11 @@ fn processFlightBuffer(self: *ClientHandshake, policy: certificate.Policy) Fligh
     }
 }
 
-fn processFlightMessage(self: *ClientHandshake, msg: HandshakeReader.Message, policy: certificate.Policy) FlightError!void {
+fn processFlightMessage(
+    self: *ClientHandshake,
+    msg: HandshakeReader.Message,
+    policy: certificate.Policy,
+) FlightError!void {
     switch (self.state) {
         .wait_ee => {
             if (msg.type != .encrypted_extensions) return error.UnexpectedMessage;
@@ -696,7 +751,8 @@ fn processFlightMessage(self: *ClientHandshake, msg: HandshakeReader.Message, po
         },
         .wait_cv => {
             if (msg.type != .certificate_verify) return error.UnexpectedMessage;
-            if (self.server_flight_progress != .certificate_verified) return error.UnexpectedMessage;
+            if (self.server_flight_progress != .certificate_verified)
+                return error.UnexpectedMessage;
             try self.suite.verifyCertificate(msg.raw, self.leaf_pub_key.constSlice());
             self.server_flight_progress = .certificate_verify_verified;
             self.suite.update(msg.raw);
@@ -704,7 +760,8 @@ fn processFlightMessage(self: *ClientHandshake, msg: HandshakeReader.Message, po
         },
         .wait_finished => {
             if (msg.type != .finished) return error.UnexpectedMessage;
-            if (self.server_flight_progress != .certificate_verify_verified) return error.UnexpectedMessage;
+            if (self.server_flight_progress != .certificate_verify_verified)
+                return error.UnexpectedMessage;
             try self.suite.verifyServerFinished(msg.raw);
             self.server_flight_progress = .finished_verified;
             self.suite.update(msg.raw);
@@ -761,8 +818,16 @@ pub fn clientFinished(self: *ClientHandshake, out: []u8) SendError![]const u8 {
 /// maxUselessRecords. Reset by application data.
 const max_post_handshake_messages = 16;
 
-pub const ReceiveError = RecordLayer.DecryptError || SendError || alert.ParseError || new_session_ticket.ParseError ||
-    error{ UnexpectedEof, UnexpectedRecord, UnexpectedMessage, IllegalParameter, TooManyKeyUpdates, PeerAlert };
+pub const ReceiveError = RecordLayer.DecryptError || SendError || alert.ParseError ||
+    new_session_ticket.ParseError ||
+    error{
+        UnexpectedEof,
+        UnexpectedRecord,
+        UnexpectedMessage,
+        IllegalParameter,
+        TooManyKeyUpdates,
+        PeerAlert,
+    };
 
 // Connected-phase inbound: the engine owns the receive path so post-handshake
 // control messages (KeyUpdate) are routed and answered correctly and the flood
@@ -785,7 +850,8 @@ fn receiveConnected(self: *ClientHandshake, record: []u8, out: []u8) ReceiveErro
             var hr: HandshakeReader = .init(dec.content);
             while (try hr.next()) |msg| {
                 self.post_handshake_count +|= 1;
-                if (self.post_handshake_count > max_post_handshake_messages) return error.TooManyKeyUpdates;
+                if (self.post_handshake_count > max_post_handshake_messages)
+                    return error.TooManyKeyUpdates;
                 switch (msg.type) {
                     .key_update => {
                         // RFC 8446 §5.1: a message immediately preceding a key
@@ -801,12 +867,16 @@ fn receiveConnected(self: *ClientHandshake, record: []u8, out: []u8) ReceiveErro
                         self.rx.deinit();
                         self.rx = next_rx;
                     },
-                    .new_session_ticket => _ = try new_session_ticket.parse(msg.raw), // parsed and ignored until PSK resumption
+                    // parsed and ignored until PSK resumption
+                    .new_session_ticket => _ = try new_session_ticket.parse(msg.raw),
                     else => return error.UnexpectedMessage,
                 }
             }
             // One response covers any number of update_requested KeyUpdates.
-            return if (respond) return .{ .write = try self.sendKeyUpdate(out, .update_not_requested) } else .none;
+            return if (respond)
+                return .{ .write = try self.sendKeyUpdate(out, .update_not_requested) }
+            else
+                .none;
         },
         .alert => {
             const a = try alert.parse(dec.content);
@@ -819,10 +889,16 @@ fn receiveConnected(self: *ClientHandshake, record: []u8, out: []u8) ReceiveErro
 /// Send a KeyUpdate. Encrypts the message under the current (old) send key,
 /// then ratchets our send key so subsequent records use the next generation
 /// (RFC 8446 §4.6.3, §7.2). `request` asks the peer to update in return.
-pub fn sendKeyUpdate(self: *ClientHandshake, out: []u8, request: KeyUpdateRequest) SendError![]const u8 {
+pub fn sendKeyUpdate(
+    self: *ClientHandshake,
+    out: []u8,
+    request: KeyUpdateRequest,
+) SendError![]const u8 {
     assert(self.state == .connected);
     if (self.pending_write.isPending()) return error.PendingWrite;
-    const msg = [_]u8{ @intFromEnum(HandshakeType.key_update), 0x00, 0x00, 0x01, @intFromEnum(request) };
+    const msg = [_]u8{
+        @intFromEnum(HandshakeType.key_update), 0x00, 0x00, 0x01, @intFromEnum(request),
+    };
     const record = try self.tx.encrypt(.handshake, &msg, out);
     const next_tx = try self.suite.ratchetClientKey();
     self.tx.deinit();
@@ -1244,7 +1320,10 @@ test "handleRecord: KeyUpdate not at record boundary is rejected" {
     var rx_buf: [64]u8 = undefined;
     @memcpy(rx_buf[0..wire_rec.len], wire_rec);
     var out: [64]u8 = undefined;
-    try testing.expectError(error.UnexpectedMessage, hs.handleRecord(rx_buf[0..wire_rec.len], &out));
+    try testing.expectError(
+        error.UnexpectedMessage,
+        hs.handleRecord(rx_buf[0..wire_rec.len], &out),
+    );
 }
 
 // RFC 8446 §6.1 — close_notify is the only alert that cleanly closes.

@@ -105,7 +105,11 @@ const Suite = union(enum) {
     }
 };
 
-const default_supported_suites = [_]CipherSuite{ .aes_128_gcm_sha256, .aes_256_gcm_sha384, .chacha20_poly1305_sha256 };
+const default_supported_suites = [_]CipherSuite{
+    .aes_128_gcm_sha256,
+    .aes_256_gcm_sha384,
+    .chacha20_poly1305_sha256,
+};
 
 state: State = .wait_ch,
 keypair: x25519.KeyPair,
@@ -185,25 +189,37 @@ pub const Event = union(enum) {
     closed,
 };
 
-pub const AcceptError = frame.ParseError || client_hello.ParseError || server_hello.EncodeError || aead.Error || error{
-    IncompleteRecord,
-    UnexpectedRecord,
-    UnsupportedCipherSuite,
-    NoApplicationProtocol,
-    IdentityElement,
-    LibcryptoFailed,
-};
+pub const AcceptError =
+    frame.ParseError || client_hello.ParseError || server_hello.EncodeError || aead.Error || error{
+        IncompleteRecord,
+        UnexpectedRecord,
+        UnsupportedCipherSuite,
+        NoApplicationProtocol,
+        IdentityElement,
+        LibcryptoFailed,
+    };
 
-pub const FlightError = encrypted_extensions.EncodeError || certificate.EncodeError || certificate.CertificateVerifyEncodeError || RecordLayer.EncryptError || SignError;
+pub const FlightError =
+    encrypted_extensions.EncodeError ||
+    certificate.EncodeError ||
+    certificate.CertificateVerifyEncodeError ||
+    RecordLayer.EncryptError ||
+    SignError;
 
-pub const ClientFinishedError = RecordLayer.DecryptError || finished.VerifyError || frame.ParseError || error{
-    UnexpectedRecord,
-    UnexpectedMessage,
-};
+pub const ClientFinishedError =
+    RecordLayer.DecryptError || finished.VerifyError || frame.ParseError || error{
+        UnexpectedRecord,
+        UnexpectedMessage,
+    };
 
 pub const SendError = RecordLayer.EncryptError || error{PendingWrite};
-pub const ReceiveError = RecordLayer.DecryptError || SendError || alert.ParseError || error{ UnexpectedEof, UnexpectedRecord, UnexpectedMessage, IllegalParameter, TooManyKeyUpdates, PeerAlert };
-pub const HandleError = AcceptError || FlightError || ClientFinishedError || ReceiveError || alert.ParseError || error{PendingWrite};
+pub const ReceiveError =
+    RecordLayer.DecryptError || SendError || alert.ParseError ||
+    error{ UnexpectedEof, UnexpectedRecord, UnexpectedMessage, IllegalParameter } ||
+    error{ TooManyKeyUpdates, PeerAlert };
+pub const HandleError =
+    AcceptError || FlightError || ClientFinishedError ||
+    ReceiveError || alert.ParseError || error{PendingWrite};
 pub const AlertError = RecordLayer.EncryptError || error{ BufferTooShort, PendingWrite };
 
 /// Consume a plaintext ClientHello record and emit a plaintext ServerHello
@@ -226,10 +242,17 @@ pub fn acceptClientHello(
     const suite = self.chooseSuite(ch) orelse return error.UnsupportedCipherSuite;
     self.suite = suite;
     self.selected_alpn = ch.selectAlpn(self.alpn_protocols);
-    if (ch.alpn_protocols.len != 0 and self.alpn_protocols.len != 0 and self.selected_alpn == null) return error.NoApplicationProtocol;
+    if (ch.alpn_protocols.len != 0 and self.alpn_protocols.len != 0 and self.selected_alpn == null)
+        return error.NoApplicationProtocol;
     self.client_server_name = ch.server_name;
 
-    const sh = try server_hello.encode(out[frame.header_len..], random.data, ch.legacy_session_id, suite, self.keypair.public_key);
+    const sh = try server_hello.encode(
+        out[frame.header_len..],
+        random.data,
+        ch.legacy_session_id,
+        suite,
+        self.keypair.public_key,
+    );
     out[0..frame.header_len].* = mem.toBytes(frame.Header.init(.handshake, @intCast(sh.len)));
 
     try self.installHandshakeKeys(suite, ch_msg, sh, ch.public_key);
@@ -250,13 +273,25 @@ fn installHandshakeKeys(
             var transcript: Sha256 = .init(.{});
             transcript.update(ch_msg);
             transcript.update(sh_msg);
-            self.suite_state = .{ .sha256 = makeHandshakeArm(hkdf.HkdfSha256, Sha256, transcript, suiteAead(suite), &dhe) };
+            self.suite_state = .{ .sha256 = makeHandshakeArm(
+                hkdf.HkdfSha256,
+                Sha256,
+                transcript,
+                suiteAead(suite),
+                &dhe,
+            ) };
         },
         .aes_256_gcm_sha384 => {
             var transcript: Sha384 = .init(.{});
             transcript.update(ch_msg);
             transcript.update(sh_msg);
-            self.suite_state = .{ .sha384 = makeHandshakeArm(hkdf.HkdfSha384, Sha384, transcript, suiteAead(suite), &dhe) };
+            self.suite_state = .{ .sha384 = makeHandshakeArm(
+                hkdf.HkdfSha384,
+                Sha384,
+                transcript,
+                suiteAead(suite),
+                &dhe,
+            ) };
         },
     }
 
@@ -317,7 +352,12 @@ fn sendAnonymousFlightForTest(self: *ServerHandshake, out: []u8) FlightError![]c
     switch (self.suite_state) {
         inline .sha256, .sha384 => |*s| {
             const th = s.transcript.peek();
-            const fin = try finished.encode(@TypeOf(s.transcript), plaintext[pos..], &s.server_finished_key.data, &th);
+            const fin = try finished.encode(
+                @TypeOf(s.transcript),
+                plaintext[pos..],
+                &s.server_finished_key.data,
+                &th,
+            );
             s.transcript.update(fin);
             pos += fin.len;
         },
@@ -376,7 +416,11 @@ pub fn sendAuthenticatedFlightBuffered(
     signer: Signer,
     out: *FlightBuffer,
 ) FlightError![]u8 {
-    const record = try self.sendPreparedCertificateChainFlight(.init(certs_der), signer, out.fullSlice());
+    const record = try self.sendPreparedCertificateChainFlight(
+        .init(certs_der),
+        signer,
+        out.fullSlice(),
+    );
     out.resize(@intCast(record.len));
     return out.slice();
 }
@@ -398,17 +442,22 @@ fn encodeAuthenticatedFlight(
     self.suite_state.update(cert);
     pos += cert.len;
 
-    var cv_input: [certificate.server_certificate_verify_context.len + 64]u8 = undefined;
-    cv_input[0..certificate.server_certificate_verify_context.len].* = certificate.server_certificate_verify_context.*;
+    const cv_ctx_len = certificate.server_certificate_verify_context.len;
+    var cv_input: [cv_ctx_len + 64]u8 = undefined;
+    cv_input[0..cv_ctx_len].* = certificate.server_certificate_verify_context.*;
     const transcript_hash_len: usize = switch (self.suite_state) {
         inline .sha256, .sha384 => |*s| blk: {
             const th = s.transcript.peek();
-            @memcpy(cv_input[certificate.server_certificate_verify_context.len..][0..th.len], &th);
+            @memcpy(cv_input[cv_ctx_len..][0..th.len], &th);
             break :blk th.len;
         },
     };
     var sig_buf: [512]u8 = undefined;
-    const sig = try signer.sign(signer.context, cv_input[0 .. certificate.server_certificate_verify_context.len + transcript_hash_len], &sig_buf);
+    const sig = try signer.sign(
+        signer.context,
+        cv_input[0 .. cv_ctx_len + transcript_hash_len],
+        &sig_buf,
+    );
     const cv = try certificate.encodeCertificateVerify(plaintext[pos..], signer.scheme, sig);
     self.suite_state.update(cv);
     pos += cv.len;
@@ -416,7 +465,12 @@ fn encodeAuthenticatedFlight(
     switch (self.suite_state) {
         inline .sha256, .sha384 => |*s| {
             const th = s.transcript.peek();
-            const fin = try finished.encode(@TypeOf(s.transcript), plaintext[pos..], &s.server_finished_key.data, &th);
+            const fin = try finished.encode(
+                @TypeOf(s.transcript),
+                plaintext[pos..],
+                &s.server_finished_key.data,
+                &th,
+            );
             s.transcript.update(fin);
             pos += fin.len;
         },
@@ -434,7 +488,10 @@ pub fn processClientFinished(self: *ServerHandshake, record: []u8) ClientFinishe
     return self.processClientFinishedPlaintext(dec.content);
 }
 
-fn processClientFinishedPlaintext(self: *ServerHandshake, plaintext: []const u8) ClientFinishedError!void {
+fn processClientFinishedPlaintext(
+    self: *ServerHandshake,
+    plaintext: []const u8,
+) ClientFinishedError!void {
     assert(self.state == .wait_client_finished);
     var hr: ClientHandshake.HandshakeReader = .init(plaintext);
     const msg = (try hr.next()) orelse return error.UnexpectedMessage;
@@ -462,7 +519,12 @@ fn processClientFinishedPlaintext(self: *ServerHandshake, plaintext: []const u8)
     self.state = .connected;
 }
 
-pub fn handleRecord(self: *ServerHandshake, record: []u8, random: client_hello.Random, out: []u8) HandleError!Event {
+pub fn handleRecord(
+    self: *ServerHandshake,
+    record: []u8,
+    random: client_hello.Random,
+    out: []u8,
+) HandleError!Event {
     if (self.pending_write.isPending()) return error.PendingWrite;
     const ev: Event = switch (self.state) {
         .wait_ch => try self.handleWaitClientHello(record, random, out),
@@ -473,7 +535,12 @@ pub fn handleRecord(self: *ServerHandshake, record: []u8, random: client_hello.R
     return ev;
 }
 
-fn handleWaitClientHello(self: *ServerHandshake, record: []u8, random: client_hello.Random, out: []u8) HandleError!Event {
+fn handleWaitClientHello(
+    self: *ServerHandshake,
+    record: []u8,
+    random: client_hello.Random,
+    out: []u8,
+) HandleError!Event {
     const hdr = try frame.parseHeader(record);
     if (record.len < frame.header_len + hdr.length()) return error.IncompleteRecord;
     return switch (hdr.content_type) {
@@ -491,7 +558,8 @@ fn handleWaitClientFinished(self: *ServerHandshake, record: []u8) HandleError!Ev
     const hdr = try frame.parseHeader(record);
     if (record.len < frame.header_len + hdr.length()) return error.IncompleteRecord;
     switch (hdr.content_type) {
-        .change_cipher_spec => return .none, // RFC 8446 §D.4 — middlebox compat, silently discarded.
+        // RFC 8446 §D.4 — middlebox compat, silently discarded.
+        .change_cipher_spec => return .none,
         .alert => {
             const a = try alert.parse(record[frame.header_len..][0..hdr.length()]);
             if (a.isCloseNotify()) return .closed;
@@ -529,7 +597,8 @@ fn handleConnected(self: *ServerHandshake, record: []u8, out: []u8) ReceiveError
             var hr: HandshakeReader = .init(dec.content);
             while (try hr.next()) |msg| {
                 self.post_handshake_count +|= 1;
-                if (self.post_handshake_count > max_post_handshake_messages) return error.TooManyKeyUpdates;
+                if (self.post_handshake_count > max_post_handshake_messages)
+                    return error.TooManyKeyUpdates;
                 if (msg.type != .key_update) return error.UnexpectedMessage;
                 if (hr.r.remaining().len != 0) return error.UnexpectedMessage;
                 if (try parseKeyUpdate(msg.raw) == .update_requested) respond = true;
@@ -548,10 +617,16 @@ fn handleConnected(self: *ServerHandshake, record: []u8, out: []u8) ReceiveError
     }
 }
 
-pub fn sendKeyUpdate(self: *ServerHandshake, out: []u8, request: KeyUpdateRequest) SendError![]const u8 {
+pub fn sendKeyUpdate(
+    self: *ServerHandshake,
+    out: []u8,
+    request: KeyUpdateRequest,
+) SendError![]const u8 {
     assert(self.state == .connected);
     if (self.pending_write.isPending()) return error.PendingWrite;
-    const msg = [_]u8{ @intFromEnum(HandshakeType.key_update), 0x00, 0x00, 0x01, @intFromEnum(request) };
+    const msg = [_]u8{
+        @intFromEnum(HandshakeType.key_update), 0x00, 0x00, 0x01, @intFromEnum(request),
+    };
     const record = try self.tx.encrypt(.handshake, &msg, out);
     const next_tx = try self.suite_state.ratchetServerKey();
     self.tx.deinit();
@@ -565,7 +640,11 @@ fn parseKeyUpdate(msg: []const u8) error{ UnexpectedEof, IllegalParameter }!KeyU
     return std.enums.fromInt(KeyUpdateRequest, msg[4]) orelse error.IllegalParameter;
 }
 
-pub fn sendAlert(self: *ServerHandshake, description: alert.Description, out: []u8) AlertError![]const u8 {
+pub fn sendAlert(
+    self: *ServerHandshake,
+    description: alert.Description,
+    out: []u8,
+) AlertError![]const u8 {
     if (self.pending_write.isPending()) return error.PendingWrite;
     var msg: [2]u8 = undefined;
     const level: alert.Level = if (description == .close_notify) .warning else .fatal;
@@ -586,7 +665,11 @@ fn plaintextAlert(msg: *const [2]u8, out: []u8) error{BufferTooShort}![]u8 {
     return out[0..total];
 }
 
-pub fn sendApplicationData(self: *ServerHandshake, plaintext: []const u8, out: []u8) SendError![]u8 {
+pub fn sendApplicationData(
+    self: *ServerHandshake,
+    plaintext: []const u8,
+    out: []u8,
+) SendError![]u8 {
     assert(self.state == .connected);
     if (self.pending_write.isPending()) return error.PendingWrite;
     const record = try self.tx.encrypt(.application_data, plaintext, out);
@@ -594,7 +677,11 @@ pub fn sendApplicationData(self: *ServerHandshake, plaintext: []const u8, out: [
     return record;
 }
 
-pub fn sendPreparedApplicationData(self: *ServerHandshake, plaintext_len: usize, out: []u8) SendError![]u8 {
+pub fn sendPreparedApplicationData(
+    self: *ServerHandshake,
+    plaintext_len: usize,
+    out: []u8,
+) SendError![]u8 {
     assert(self.state == .connected);
     if (self.pending_write.isPending()) return error.PendingWrite;
     const record = try self.tx.encryptPrepared(.application_data, plaintext_len, out);
@@ -668,7 +755,10 @@ test "handleRecord: ClientHello returns ServerHello write and enforces pending w
     const written = ev.write;
     const hdr = try frame.parseHeader(written);
     try testing.expectEqual(.handshake, hdr.content_type);
-    try testing.expectError(error.PendingWrite, hs.handleRecord(record[0 .. frame.header_len + ch.len], .zero, &out));
+    try testing.expectError(
+        error.PendingWrite,
+        hs.handleRecord(record[0 .. frame.header_len + ch.len], .zero, &out),
+    );
     hs.completeWrite();
 }
 
@@ -684,7 +774,13 @@ test "acceptClientHello: emits ServerHello and installs handshake keys" {
     const client_keypair: x25519.KeyPair = .generate();
     const server_keypair: x25519.KeyPair = .generate();
     var ch_buf: [512]u8 = undefined;
-    const ch = try client_hello.encode(&ch_buf, .zero, client_keypair.public_key, "example.com", &.{ "h2", "http/1.1" });
+    const ch = try client_hello.encode(
+        &ch_buf,
+        .zero,
+        client_keypair.public_key,
+        "example.com",
+        &.{ "h2", "http/1.1" },
+    );
     var record: [1024]u8 = undefined;
     record[0..frame.header_len].* = mem.toBytes(frame.Header.init(.handshake, @intCast(ch.len)));
     @memcpy(record[frame.header_len..][0..ch.len], ch);
@@ -713,7 +809,13 @@ test "sendAnonymousFlightForTest: client decrypts EncryptedExtensions and Finish
     const client_keypair: x25519.KeyPair = .generate();
     const server_keypair: x25519.KeyPair = .generate();
     var ch_buf: [512]u8 = undefined;
-    const ch = try client_hello.encode(&ch_buf, .zero, client_keypair.public_key, "example.com", &.{"h2"});
+    const ch = try client_hello.encode(
+        &ch_buf,
+        .zero,
+        client_keypair.public_key,
+        "example.com",
+        &.{"h2"},
+    );
     var ch_record: [1024]u8 = undefined;
     ch_record[0..frame.header_len].* = mem.toBytes(frame.Header.init(.handshake, @intCast(ch.len)));
     @memcpy(ch_record[frame.header_len..][0..ch.len], ch);
@@ -721,7 +823,11 @@ test "sendAnonymousFlightForTest: client decrypts EncryptedExtensions and Finish
     var server: ServerHandshake = .init(server_keypair);
     server.supportAlpn(&.{"h2"});
     var sh_out: [256]u8 = undefined;
-    const sh_record = try server.acceptClientHello(ch_record[0 .. frame.header_len + ch.len], .zero, &sh_out);
+    const sh_record = try server.acceptClientHello(
+        ch_record[0 .. frame.header_len + ch.len],
+        .zero,
+        &sh_out,
+    );
 
     var client: ClientHandshake = .init(client_keypair);
     client.offerAlpn(&.{"h2"});
@@ -756,7 +862,13 @@ test "sendAuthenticatedFlight: client decrypts authenticated server flight" {
     const client_keypair: x25519.KeyPair = .generate();
     const server_keypair: x25519.KeyPair = .generate();
     var ch_buf: [512]u8 = undefined;
-    const ch = try client_hello.encode(&ch_buf, .zero, client_keypair.public_key, "example.com", &.{"h2"});
+    const ch = try client_hello.encode(
+        &ch_buf,
+        .zero,
+        client_keypair.public_key,
+        "example.com",
+        &.{"h2"},
+    );
     var ch_record: [1024]u8 = undefined;
     ch_record[0..frame.header_len].* = mem.toBytes(frame.Header.init(.handshake, @intCast(ch.len)));
     @memcpy(ch_record[frame.header_len..][0..ch.len], ch);
@@ -764,14 +876,23 @@ test "sendAuthenticatedFlight: client decrypts authenticated server flight" {
     var server: ServerHandshake = .init(server_keypair);
     server.supportAlpn(&.{"h2"});
     var sh_out: [256]u8 = undefined;
-    const sh_record = try server.acceptClientHello(ch_record[0 .. frame.header_len + ch.len], .zero, &sh_out);
+    const sh_record = try server.acceptClientHello(
+        ch_record[0 .. frame.header_len + ch.len],
+        .zero,
+        &sh_out,
+    );
 
     var signer: signature.PrivateKey = try .fromP256Scalar(server_ecdsa_scalar[0..32]);
     defer signer.deinit();
     const signer_api = signer.signer();
     var plaintext: [4096]u8 = undefined;
     var flight_out: [4096]u8 = undefined;
-    const flight_record = try server.sendAuthenticatedFlight(&.{test_cert_der}, signer_api, &plaintext, &flight_out);
+    const flight_record = try server.sendAuthenticatedFlight(
+        &.{test_cert_der},
+        signer_api,
+        &plaintext,
+        &flight_out,
+    );
 
     var client: ClientHandshake = .init(client_keypair);
     client.offerAlpn(&.{"h2"});
@@ -807,7 +928,12 @@ fn connectedTestServer() !ServerHandshake {
     const fin = switch (server.suite_state) {
         inline .sha256, .sha384 => |*s| blk: {
             const th = s.transcript.peek();
-            break :blk try finished.encode(@TypeOf(s.transcript), &fin_plain, &s.client_finished_key.data, &th);
+            break :blk try finished.encode(
+                @TypeOf(s.transcript),
+                &fin_plain,
+                &s.client_finished_key.data,
+                &th,
+            );
         },
     };
     var client_tx = try server.rx.clone();
@@ -822,7 +948,13 @@ test "sendAuthenticatedFlight: client processes CertificateVerify and Finished" 
     const client_keypair: x25519.KeyPair = .generate();
     const server_keypair: x25519.KeyPair = .generate();
     var ch_buf: [512]u8 = undefined;
-    const ch = try client_hello.encode(&ch_buf, .zero, client_keypair.public_key, "ztls.server.test", &.{"h2"});
+    const ch = try client_hello.encode(
+        &ch_buf,
+        .zero,
+        client_keypair.public_key,
+        "ztls.server.test",
+        &.{"h2"},
+    );
     var ch_record: [1024]u8 = undefined;
     ch_record[0..frame.header_len].* = mem.toBytes(frame.Header.init(.handshake, @intCast(ch.len)));
     @memcpy(ch_record[frame.header_len..][0..ch.len], ch);
@@ -830,14 +962,23 @@ test "sendAuthenticatedFlight: client processes CertificateVerify and Finished" 
     var server: ServerHandshake = .init(server_keypair);
     server.supportAlpn(&.{"h2"});
     var sh_out: [256]u8 = undefined;
-    const sh_record = try server.acceptClientHello(ch_record[0 .. frame.header_len + ch.len], .zero, &sh_out);
+    const sh_record = try server.acceptClientHello(
+        ch_record[0 .. frame.header_len + ch.len],
+        .zero,
+        &sh_out,
+    );
 
     var signer: signature.PrivateKey = try .fromP256Scalar(server_ecdsa_scalar[0..32]);
     defer signer.deinit();
     const signer_api = signer.signer();
     var plaintext: [4096]u8 = undefined;
     var flight_out: [4096]u8 = undefined;
-    const flight_record = try server.sendAuthenticatedFlight(&.{server_ecdsa_cert_der}, signer_api, &plaintext, &flight_out);
+    const flight_record = try server.sendAuthenticatedFlight(
+        &.{server_ecdsa_cert_der},
+        signer_api,
+        &plaintext,
+        &flight_out,
+    );
 
     var client: ClientHandshake = .init(client_keypair);
     client.offerAlpn(&.{"h2"});
@@ -869,7 +1010,12 @@ test "processClientFinished: verifies Finished and installs app keys" {
     const fin = switch (server.suite_state) {
         inline .sha256, .sha384 => |*s| blk: {
             const th = s.transcript.peek();
-            break :blk try finished.encode(@TypeOf(s.transcript), &fin_plain, &s.client_finished_key.data, &th);
+            break :blk try finished.encode(
+                @TypeOf(s.transcript),
+                &fin_plain,
+                &s.client_finished_key.data,
+                &th,
+            );
         },
     };
     var client_tx = try server.rx.clone();
@@ -892,7 +1038,10 @@ test "handleRecord: client KeyUpdate(update_requested) ratchets rx and responds"
     var server_tx_old = try server.tx.clone();
     defer server_tx_old.deinit();
 
-    const ku = [_]u8{ @intFromEnum(HandshakeType.key_update), 0x00, 0x00, 0x01, @intFromEnum(KeyUpdateRequest.update_requested) };
+    const ku = [_]u8{
+        @intFromEnum(HandshakeType.key_update),          0x00, 0x00, 0x01,
+        @intFromEnum(KeyUpdateRequest.update_requested),
+    };
     var ku_buf: [64]u8 = undefined;
     const ku_wire = try client_tx.encrypt(.handshake, &ku, &ku_buf);
     var rx_buf: [64]u8 = undefined;
@@ -905,7 +1054,10 @@ test "handleRecord: client KeyUpdate(update_requested) ratchets rx and responds"
     @memcpy(resp_buf[0..resp.len], resp);
     const dec = try server_tx_old.decrypt(resp_buf[0..resp.len]);
     try testing.expectEqual(.handshake, dec.content_type);
-    try testing.expectEqualSlices(u8, &.{ @intFromEnum(HandshakeType.key_update), 0x00, 0x00, 0x01, @intFromEnum(KeyUpdateRequest.update_not_requested) }, dec.content);
+    try testing.expectEqualSlices(u8, &.{
+        @intFromEnum(HandshakeType.key_update),              0x00, 0x00, 0x01,
+        @intFromEnum(KeyUpdateRequest.update_not_requested),
+    }, dec.content);
     server.completeWrite();
 
     var client_tx_1 = try server.rx.clone();
@@ -914,7 +1066,8 @@ test "handleRecord: client KeyUpdate(update_requested) ratchets rx and responds"
     const app_wire = try client_tx_1.encrypt(.application_data, "after", &app_buf);
     var app_rx: [64]u8 = undefined;
     @memcpy(app_rx[0..app_wire.len], app_wire);
-    try testing.expectEqualSlices(u8, "after", (try server.handleRecord(app_rx[0..app_wire.len], .zero, &out)).application_data);
+    const ev_after = try server.handleRecord(app_rx[0..app_wire.len], .zero, &out);
+    try testing.expectEqualSlices(u8, "after", ev_after.application_data);
 }
 
 // RFC 8446 §4.6.3 — update_not_requested only ratchets the receive key.
@@ -923,13 +1076,19 @@ test "handleRecord: client KeyUpdate(update_not_requested) ratchets rx only" {
     var client_tx = try server.rx.clone();
     defer client_tx.deinit();
 
-    const ku = [_]u8{ @intFromEnum(HandshakeType.key_update), 0x00, 0x00, 0x01, @intFromEnum(KeyUpdateRequest.update_not_requested) };
+    const ku = [_]u8{
+        @intFromEnum(HandshakeType.key_update),              0x00, 0x00, 0x01,
+        @intFromEnum(KeyUpdateRequest.update_not_requested),
+    };
     var ku_buf: [64]u8 = undefined;
     const ku_wire = try client_tx.encrypt(.handshake, &ku, &ku_buf);
     var rx_buf: [64]u8 = undefined;
     @memcpy(rx_buf[0..ku_wire.len], ku_wire);
     var out: [64]u8 = undefined;
-    try testing.expectEqual(Event.none, try server.handleRecord(rx_buf[0..ku_wire.len], .zero, &out));
+    try testing.expectEqual(
+        Event.none,
+        try server.handleRecord(rx_buf[0..ku_wire.len], .zero, &out),
+    );
 
     var client_tx_1 = try server.rx.clone();
     defer client_tx_1.deinit();
@@ -937,7 +1096,8 @@ test "handleRecord: client KeyUpdate(update_not_requested) ratchets rx only" {
     const app_wire = try client_tx_1.encrypt(.application_data, "after", &app_buf);
     var app_rx: [64]u8 = undefined;
     @memcpy(app_rx[0..app_wire.len], app_wire);
-    try testing.expectEqualSlices(u8, "after", (try server.handleRecord(app_rx[0..app_wire.len], .zero, &out)).application_data);
+    const ev_after2 = try server.handleRecord(app_rx[0..app_wire.len], .zero, &out);
+    try testing.expectEqualSlices(u8, "after", ev_after2.application_data);
 }
 
 // RFC 8446 §4.6.3 — server KeyUpdate is encrypted under the old send key, then ratchets.
@@ -951,7 +1111,10 @@ test "sendKeyUpdate: server-initiated KeyUpdate encrypts under old key then ratc
     @memcpy(rec_buf[0..rec.len], rec);
     const dec = try peer_rx_old.decrypt(rec_buf[0..rec.len]);
     try testing.expectEqual(.handshake, dec.content_type);
-    try testing.expectEqualSlices(u8, &.{ @intFromEnum(HandshakeType.key_update), 0x00, 0x00, 0x01, @intFromEnum(KeyUpdateRequest.update_requested) }, dec.content);
+    try testing.expectEqualSlices(u8, &.{
+        @intFromEnum(HandshakeType.key_update),          0x00, 0x00, 0x01,
+        @intFromEnum(KeyUpdateRequest.update_requested),
+    }, dec.content);
     try testing.expectError(error.PendingWrite, server.sendKeyUpdate(&out, .update_requested));
     server.completeWrite();
 }
@@ -961,19 +1124,25 @@ test "handleRecord: KeyUpdate not at record boundary is rejected" {
     var server = try connectedTestServer();
     var client_tx = try server.rx.clone();
     defer client_tx.deinit();
+    const ku_t = @intFromEnum(HandshakeType.key_update);
+    const ku_nr = @intFromEnum(KeyUpdateRequest.update_not_requested);
     const two = [_]u8{
-        @intFromEnum(HandshakeType.key_update), 0x00, 0x00, 0x01, @intFromEnum(KeyUpdateRequest.update_not_requested),
-        @intFromEnum(HandshakeType.key_update), 0x00, 0x00, 0x01, @intFromEnum(KeyUpdateRequest.update_not_requested),
+        ku_t, 0x00, 0x00, 0x01, ku_nr,
+        ku_t, 0x00, 0x00, 0x01, ku_nr,
     };
     var wire_buf: [64]u8 = undefined;
     const wire_rec = try client_tx.encrypt(.handshake, &two, &wire_buf);
     var rx_buf: [64]u8 = undefined;
     @memcpy(rx_buf[0..wire_rec.len], wire_rec);
     var out: [64]u8 = undefined;
-    try testing.expectError(error.UnexpectedMessage, server.handleRecord(rx_buf[0..wire_rec.len], .zero, &out));
+    try testing.expectError(
+        error.UnexpectedMessage,
+        server.handleRecord(rx_buf[0..wire_rec.len], .zero, &out),
+    );
 }
 
-// RFC 8446 Appendix A — server state machine must reject arbitrary inbound records without panics.
+// RFC 8446 Appendix A — server state machine must reject arbitrary inbound
+// records without panics.
 fn fuzzHandleRecord(_: void, input: []const u8) anyerror!void {
     const key_seed: [32]u8 = @splat(0x42);
     const keypair = x25519.KeyPair.generateDeterministic(.init(key_seed)) catch unreachable;
@@ -1009,7 +1178,10 @@ test "application data: server sends and receives" {
     defer client_tx.deinit();
     var client_wire: [128]u8 = undefined;
     const incoming = try client_tx.encrypt(.application_data, "world", &client_wire);
-    try testing.expectEqualStrings("world", try server.receiveApplicationData(client_wire[0..incoming.len]));
+    try testing.expectEqualStrings(
+        "world",
+        try server.receiveApplicationData(client_wire[0..incoming.len]),
+    );
 }
 
 fn expectInMemoryAuthenticatedHandshake(suite: CipherSuite) !void {
@@ -1036,7 +1208,12 @@ fn expectInMemoryAuthenticatedHandshake(suite: CipherSuite) !void {
     defer signer.deinit();
     const signer_api = signer.signer();
     var plaintext: [4096]u8 = undefined;
-    const flight_record = try server.sendAuthenticatedFlight(&.{server_ecdsa_cert_der}, signer_api, &plaintext, &server_out);
+    const flight_record = try server.sendAuthenticatedFlight(
+        &.{server_ecdsa_cert_der},
+        signer_api,
+        &plaintext,
+        &server_out,
+    );
     const client_event = try client.handleRecord(server_out[0..flight_record.len], &client_out);
     const client_finished_record = switch (client_event) {
         .write => |w| w,
@@ -1052,7 +1229,10 @@ fn expectInMemoryAuthenticatedHandshake(suite: CipherSuite) !void {
 
     const client_app = try client.sendApplicationData("ping", &client_out);
     client.completeWrite();
-    try testing.expectEqualStrings("ping", try server.receiveApplicationData(client_out[0..client_app.len]));
+    try testing.expectEqualStrings(
+        "ping",
+        try server.receiveApplicationData(client_out[0..client_app.len]),
+    );
 
     const server_app = try server.sendApplicationData("pong", &server_out);
     var server_app_mut: [128]u8 = undefined;
@@ -1096,7 +1276,13 @@ test "acceptClientHello: server suite preference" {
 test "acceptClientHello: exposes SNI via clientServerName" {
     const client_keypair: x25519.KeyPair = .generate();
     var ch_buf: [512]u8 = undefined;
-    const ch = try client_hello.encode(&ch_buf, .zero, client_keypair.public_key, "example.com", &.{});
+    const ch = try client_hello.encode(
+        &ch_buf,
+        .zero,
+        client_keypair.public_key,
+        "example.com",
+        &.{},
+    );
     var record: [1024]u8 = undefined;
     record[0..frame.header_len].* = mem.toBytes(frame.Header.init(.handshake, @intCast(ch.len)));
     @memcpy(record[frame.header_len..][0..ch.len], ch);
@@ -1134,5 +1320,8 @@ test "acceptClientHello: rejects unsupported suite" {
     @memcpy(record[frame.header_len..][0..ch.len], ch);
     var hs: ServerHandshake = .init(.generate());
     var out: [256]u8 = undefined;
-    try testing.expectError(error.UnsupportedCipherSuite, hs.acceptClientHello(record[0 .. frame.header_len + ch.len], .zero, &out));
+    try testing.expectError(
+        error.UnsupportedCipherSuite,
+        hs.acceptClientHello(record[0 .. frame.header_len + ch.len], .zero, &out),
+    );
 }

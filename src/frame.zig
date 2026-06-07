@@ -200,7 +200,10 @@ test "writeInnerPlaintext: with padding" {
 test "writeInnerPlaintext: buffer too short" {
     var buf: [2]u8 = undefined;
     const content = [_]u8{ 1, 2, 3 };
-    try testing.expectError(error.BufferTooShort, writeInnerPlaintext(&buf, &content, .handshake, 0));
+    try testing.expectError(
+        error.BufferTooShort,
+        writeInnerPlaintext(&buf, &content, .handshake, 0),
+    );
 }
 
 // RFC 8446 §5.1 — TLSPlaintext header is 5 bytes: content_type (1) + legacy_version

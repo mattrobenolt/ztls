@@ -4,6 +4,7 @@
 const std = @import("std");
 const assert = std.debug.assert;
 const testing = std.testing;
+const mem = std.mem;
 
 const CipherSuite = @import("root.zig").CipherSuite;
 const kex = @import("kex.zig");
@@ -115,7 +116,8 @@ pub const Parsed = struct {
     pub fn offersSuite(self: Parsed, suite: CipherSuite) bool {
         var i: usize = 0;
         while (i < self.cipher_suites.len) : (i += 2) {
-            if (std.mem.readInt(u16, self.cipher_suites[i..][0..2], .big) == @intFromEnum(suite)) return true;
+            if (memx.readInt(u16, self.cipher_suites[i..][0..2]) == @intFromEnum(suite))
+                return true;
         }
         return false;
     }
@@ -129,7 +131,7 @@ pub const Parsed = struct {
             while (r.pos < self.alpn_protocols.len) {
                 const len = r.read(u8) catch return null;
                 const client_protocol = r.readSlice(len) catch return null;
-                if (std.mem.eql(u8, server_protocol, client_protocol)) return server_protocol;
+                if (mem.eql(u8, server_protocol, client_protocol)) return server_protocol;
             }
         }
         return null;
@@ -244,7 +246,11 @@ pub fn parse(msg: []const u8) ParseError!Parsed {
     if (extensions_len > msg.len - r.pos) return error.InvalidExtensionLength;
     const extensions_end = r.pos + extensions_len;
 
-    var parsed: Parsed = .{ .cipher_suites = cipher_suites, .legacy_session_id = legacy_session_id, .public_key = undefined };
+    var parsed: Parsed = .{
+        .cipher_suites = cipher_suites,
+        .legacy_session_id = legacy_session_id,
+        .public_key = undefined,
+    };
     var got_supported_versions = false;
     var got_key_share = false;
     var got_server_name = false;
@@ -422,7 +428,8 @@ test "encode: ALPN present when protocols set" {
     var i: usize = 0;
     while (i + 1 < encoded.len) : (i += 1) {
         if (encoded[i] == 0x00 and encoded[i + 1] == 0x10) {
-            try testing.expectEqualSlices(u8, &.{ 0x00, 0x0e, 0x00, 0x0c, 0x02, 'h', '2', 0x08 }, encoded[i + 2 ..][0..8]);
+            const alpn_prefix = [_]u8{ 0x00, 0x0e, 0x00, 0x0c, 0x02, 'h', '2', 0x08 };
+            try testing.expectEqualSlices(u8, &alpn_prefix, encoded[i + 2 ..][0..8]);
             found = true;
             break;
         }
@@ -433,7 +440,10 @@ test "encode: ALPN present when protocols set" {
 test "encode: rejects invalid ALPN protocols" {
     var buf: [512]u8 = undefined;
     try testing.expectError(error.EmptyAlpnProtocol, encode(&buf, .zero, .zero, null, &.{""}));
-    try testing.expectError(error.AlpnProtocolTooLong, encode(&buf, .zero, .zero, null, &.{"a" ** 256}));
+    try testing.expectError(
+        error.AlpnProtocolTooLong,
+        encode(&buf, .zero, .zero, null, &.{"a" ** 256}),
+    );
 }
 
 test "parse: encoded ClientHello" {
@@ -451,7 +461,8 @@ test "parse: encoded ClientHello" {
     try testing.expect(parsed.offersSuite(.chacha20_poly1305_sha256));
     try testing.expectEqualStrings("example.com", parsed.server_name.?);
     try testing.expectEqualSlices(u8, &key.data, &parsed.public_key.data);
-    try testing.expectEqualSlices(u8, &.{ 0x02, 'h', '2', 0x08, 'h', 't', 't', 'p', '/', '1', '.', '1' }, parsed.alpn_protocols);
+    const alpn_wire = [_]u8{ 0x02, 'h', '2', 0x08, 'h', 't', 't', 'p', '/', '1', '.', '1' };
+    try testing.expectEqualSlices(u8, &alpn_wire, parsed.alpn_protocols);
     try testing.expectEqualStrings("http/1.1", parsed.selectAlpn(&.{ "http/1.1", "h2" }).?);
     try testing.expectEqualStrings("h2", parsed.selectAlpn(&.{"h2"}).?);
     try testing.expectEqual(@as(?[]const u8, null), parsed.selectAlpn(&.{"bogus"}));
@@ -526,10 +537,11 @@ const extensions_len_offset = 49;
 fn appendExtension(buf: []u8, encoded_len: usize, ext: []const u8) usize {
     @memcpy(buf[encoded_len..][0..ext.len], ext);
     const new_len = encoded_len + ext.len;
-    const body_len = std.mem.readInt(u24, buf[1..4], .big) + @as(u24, @intCast(ext.len));
-    std.mem.writeInt(u24, buf[1..4], body_len, .big);
-    const ext_len = std.mem.readInt(u16, buf[extensions_len_offset..][0..2], .big) + @as(u16, @intCast(ext.len));
-    std.mem.writeInt(u16, buf[extensions_len_offset..][0..2], ext_len, .big);
+    const body_len = memx.readInt(u24, buf[1..4]) + @as(u24, @intCast(ext.len));
+    memx.writeInt(u24, buf[1..4], body_len);
+    const old_ext_len = memx.readInt(u16, buf[extensions_len_offset..][0..2]);
+    const ext_len = old_ext_len + @as(u16, @intCast(ext.len));
+    memx.writeInt(u16, buf[extensions_len_offset..][0..2], ext_len);
     return new_len;
 }
 
