@@ -29,7 +29,10 @@ fn Hkdf(comptime Hmac: type) type {
     return struct {
         /// Length of the pseudorandom key and all derived secrets.
         pub const prk_len = H.prk_length;
-        pub const Prk = memx.Array(prk_len);
+        pub const Prk = memx.TaggedArray("hkdf.Prk", prk_len);
+        pub const TranscriptHash = memx.TaggedArray("hkdf.TranscriptHash", prk_len);
+        pub const TrafficSecret = memx.TaggedArray("hkdf.TrafficSecret", prk_len);
+        pub const FinishedKey = memx.TaggedArray("hkdf.FinishedKey", prk_len);
         const prk_zero = &Prk.zero.data;
 
         comptime {
@@ -88,9 +91,9 @@ fn Hkdf(comptime Hmac: type) type {
         // Hash("") — used as the transcript context for the "derived" steps
         // between key schedule levels. RFC 8446 §7.1: Derive-Secret(., "derived", "")
         // uses Transcript-Hash of empty input = Hash("").
-        const empty_hash: Prk = blk: {
+        const empty_hash: TranscriptHash = blk: {
             @setEvalBranchQuota(100_000);
-            var out: Prk = undefined;
+            var out: TranscriptHash = undefined;
             const S = switch (prk_len) {
                 32 => Sha256,
                 48 => Sha384,
@@ -114,7 +117,7 @@ fn Hkdf(comptime Hmac: type) type {
         pub inline fn deriveSecret(
             secret: Prk,
             comptime label: []const u8,
-            transcript_hash: *const Prk,
+            transcript_hash: *const TranscriptHash,
         ) Prk {
             var out: Prk = undefined;
             expandLabel(&out.data, label, &transcript_hash.data, secret);
@@ -144,34 +147,40 @@ fn Hkdf(comptime Hmac: type) type {
 
         pub inline fn clientHandshakeTrafficSecret(
             handshake: Prk,
-            transcript_hash: *const Prk,
-        ) Prk {
-            return deriveSecret(handshake, "c hs traffic", transcript_hash);
+            transcript_hash: *const TranscriptHash,
+        ) TrafficSecret {
+            return .init(deriveSecret(handshake, "c hs traffic", transcript_hash).data);
         }
 
         pub inline fn serverHandshakeTrafficSecret(
             handshake: Prk,
-            transcript_hash: *const Prk,
-        ) Prk {
-            return deriveSecret(handshake, "s hs traffic", transcript_hash);
+            transcript_hash: *const TranscriptHash,
+        ) TrafficSecret {
+            return .init(deriveSecret(handshake, "s hs traffic", transcript_hash).data);
         }
 
         // RFC 8446 §7.1 — traffic secrets from MasterSecret.
 
-        pub inline fn clientApplicationTrafficSecret(master: Prk, transcript_hash: *const Prk) Prk {
-            return deriveSecret(master, "c ap traffic", transcript_hash);
+        pub inline fn clientApplicationTrafficSecret(
+            master: Prk,
+            transcript_hash: *const TranscriptHash,
+        ) TrafficSecret {
+            return .init(deriveSecret(master, "c ap traffic", transcript_hash).data);
         }
 
-        pub inline fn serverApplicationTrafficSecret(master: Prk, transcript_hash: *const Prk) Prk {
-            return deriveSecret(master, "s ap traffic", transcript_hash);
+        pub inline fn serverApplicationTrafficSecret(
+            master: Prk,
+            transcript_hash: *const TranscriptHash,
+        ) TrafficSecret {
+            return .init(deriveSecret(master, "s ap traffic", transcript_hash).data);
         }
 
         /// RFC 8446 §7.2 — next-generation application traffic secret.
         /// application_traffic_secret_N+1 =
         ///   HKDF-Expand-Label(secret_N, "traffic upd", "", Hash.length)
-        pub inline fn nextTrafficSecret(prk: Prk) Prk {
-            var out: Prk = undefined;
-            expandLabel(&out.data, "traffic upd", "", prk);
+        pub inline fn nextTrafficSecret(secret: TrafficSecret) TrafficSecret {
+            var out: TrafficSecret = undefined;
+            expandLabel(&out.data, "traffic upd", "", .init(secret.data));
             return out;
         }
 
@@ -179,7 +188,7 @@ fn Hkdf(comptime Hmac: type) type {
         /// a ready-to-use RecordLayer. `key` selects the AEAD at runtime (the
         /// negotiated cipher suite), so a single arm serves all suites of its
         /// hash (e.g. SHA-256 covers AES-128-GCM and ChaCha20-Poly1305).
-        pub fn makeRecordLayer(key: CipherSuite, prk: Prk) aead.Error!RecordLayer {
+        pub fn makeRecordLayer(key: CipherSuite, prk: TrafficSecret) aead.Error!RecordLayer {
             const layer_aead: aead.Aead = switch (key) {
                 inline else => |k| @unionInit(aead.Aead, @tagName(k), trafficKey(k, prk)),
             };
@@ -187,27 +196,27 @@ fn Hkdf(comptime Hmac: type) type {
         }
 
         /// RFC 8446 §4.4.4 — derive the finished key from a traffic secret.
-        pub inline fn finishedKey(prk: Prk) Prk {
-            var out: Prk = undefined;
-            expandLabel(&out.data, "finished", "", prk);
+        pub inline fn finishedKey(prk: TrafficSecret) FinishedKey {
+            var out: FinishedKey = undefined;
+            expandLabel(&out.data, "finished", "", .init(prk.data));
             return out;
         }
 
         /// RFC 8446 §7.3 — derive the write key from a traffic secret.
         pub inline fn trafficKey(
             comptime key: CipherSuite,
-            prk: Prk,
+            prk: TrafficSecret,
         ) @FieldType(aead.Aead, @tagName(key)) {
             var out: @FieldType(aead.Aead, @tagName(key)) = undefined;
-            expandLabel(&out.data, "key", "", prk);
+            expandLabel(&out.data, "key", "", .init(prk.data));
             return out;
         }
 
         /// RFC 8446 §7.3 — derive the write IV from a traffic secret.
         /// Always 12 bytes for all TLS 1.3 cipher suites.
-        pub inline fn trafficIv(prk: Prk) Iv {
+        pub inline fn trafficIv(prk: TrafficSecret) Iv {
             var iv: Iv = undefined;
-            expandLabel(&iv.data, "iv", "", prk);
+            expandLabel(&iv.data, "iv", "", .init(prk.data));
             return iv;
         }
     };
@@ -231,7 +240,7 @@ const dhe_rfc8448 = [_]u8{
     0xd4, 0x62, 0x72, 0x90, 0x0f, 0x89, 0x49, 0x2d,
 };
 
-const transcript_hs_rfc8448: HkdfSha256.Prk = .init(.{
+const transcript_hs_rfc8448: HkdfSha256.TranscriptHash = .init(.{
     0x86, 0x0c, 0x06, 0xed, 0xc0, 0x78, 0x58, 0xee,
     0x8e, 0x78, 0xf0, 0xe7, 0x42, 0x8c, 0x58, 0xed,
     0xd6, 0xb4, 0x3f, 0x2c, 0xa3, 0xe6, 0xe9, 0x5f,
@@ -239,7 +248,7 @@ const transcript_hs_rfc8448: HkdfSha256.Prk = .init(.{
 });
 
 test "HkdfSha256.trafficKey: RFC 8448 §3 server handshake" {
-    const secret: HkdfSha256.Prk = .init(.{
+    const secret: HkdfSha256.TrafficSecret = .init(.{
         0xb6, 0x7b, 0x7d, 0x69, 0x0c, 0xc1, 0x6c, 0x4e,
         0x75, 0xe5, 0x42, 0x13, 0xcb, 0x2d, 0x37, 0xb4,
         0xe9, 0xc9, 0x12, 0xbc, 0xde, 0xd9, 0x10, 0x5d,
@@ -256,7 +265,7 @@ test "HkdfSha256.trafficKey: RFC 8448 §3 server handshake" {
 // trace, so the expected values are computed independently via
 // HKDF-Expand-Label(SHA-384) from a chosen 48-byte traffic secret (0x01 x48).
 test "HkdfSha384: traffic key/iv, finished key, traffic-upd (independent vector)" {
-    const secret: HkdfSha384.Prk = .init(@splat(0x01));
+    const secret: HkdfSha384.TrafficSecret = .init(@splat(0x01));
     try testing.expectEqualSlices(u8, &.{
         0x2c, 0xd3, 0xe9, 0xa3, 0x6d, 0x45, 0x99, 0x50,
         0x3b, 0xae, 0x71, 0x16, 0x22, 0x3e, 0x4c, 0x29,
@@ -286,7 +295,7 @@ test "HkdfSha384: traffic key/iv, finished key, traffic-upd (independent vector)
 }
 
 test "HkdfSha256.trafficIv: RFC 8448 §3 server handshake" {
-    const secret: HkdfSha256.Prk = .init(.{
+    const secret: HkdfSha256.TrafficSecret = .init(.{
         0xb6, 0x7b, 0x7d, 0x69, 0x0c, 0xc1, 0x6c, 0x4e,
         0x75, 0xe5, 0x42, 0x13, 0xcb, 0x2d, 0x37, 0xb4,
         0xe9, 0xc9, 0x12, 0xbc, 0xde, 0xd9, 0x10, 0x5d,
@@ -346,7 +355,7 @@ test "HkdfSha256.clientHandshakeTrafficSecret: RFC 8448 §3" {
 
 test "HkdfSha256.finishedKey: RFC 8448 §3 server" {
     // server_handshake_traffic_secret
-    const secret: HkdfSha256.Prk = .init(.{
+    const secret: HkdfSha256.TrafficSecret = .init(.{
         0xb6, 0x7b, 0x7d, 0x69, 0x0c, 0xc1, 0x6c, 0x4e,
         0x75, 0xe5, 0x42, 0x13, 0xcb, 0x2d, 0x37, 0xb4,
         0xe9, 0xc9, 0x12, 0xbc, 0xde, 0xd9, 0x10, 0x5d,
@@ -366,7 +375,7 @@ test "HkdfSha256.finishedKey: RFC 8448 §3 server" {
 // independently (HKDF-Expand-Label with label "tls13 traffic upd") from the
 // RFC 8448 §3 client_application_traffic_secret_0.
 test "HkdfSha256.nextTrafficSecret: RFC 8446 §7.2" {
-    const s0: HkdfSha256.Prk = .init(.{
+    const s0: HkdfSha256.TrafficSecret = .init(.{
         0x9e, 0x40, 0x64, 0x6c, 0xe7, 0x9a, 0x7f, 0x9d,
         0xc0, 0x5a, 0xf8, 0x88, 0x9b, 0xce, 0x65, 0x52,
         0x87, 0x5a, 0xfa, 0x0b, 0x06, 0xdf, 0x00, 0x87,

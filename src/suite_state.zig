@@ -14,10 +14,10 @@ pub fn HashArm(comptime Hkdf_: type, comptime Hash: type) type {
         transcript: Hash,
         aead: CipherSuite,
         handshake_secret: Hkdf.Prk = undefined,
-        client_finished_key: Hkdf.Prk = undefined,
-        server_finished_key: Hkdf.Prk = undefined,
-        client_app_secret: Hkdf.Prk = undefined,
-        server_app_secret: Hkdf.Prk = undefined,
+        client_finished_key: Hkdf.FinishedKey = undefined,
+        server_finished_key: Hkdf.FinishedKey = undefined,
+        client_app_secret: Hkdf.TrafficSecret = undefined,
+        server_app_secret: Hkdf.TrafficSecret = undefined,
 
         pub inline fn secureZero(self: *Self) void {
             std.crypto.secureZero(u8, mem.asBytes(self));

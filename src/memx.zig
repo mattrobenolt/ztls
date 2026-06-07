@@ -10,6 +10,11 @@ const testing = std.testing;
 /// semantically different values (e.g. Prk vs SharedSecret) cannot be
 /// accidentally substituted for one another at compile time.
 pub fn Array(comptime len: comptime_int) type {
+    return TaggedArray("", len);
+}
+
+pub fn TaggedArray(comptime tag: []const u8, comptime len: comptime_int) type {
+    _ = tag;
     return struct {
         const Self = @This();
         pub const Data = [len]u8;
