@@ -110,6 +110,12 @@ Add repeatable profiling and instruction checks before making performance claims
 
 Create TODOs from measured hot spots only. No speculative SIMD rewrites.
 
+The concrete ztls-owned facade shape (AEAD lifecycle/rekey, HKDF/hash policy,
+named-group KEX and shared-secret sizing, signatures, comptime capabilities,
+backend allocation/zeroization/lifetime rules, error mapping) is specified in
+`docs/research/PROVIDER_INTERFACE.md`. The no-allocator guardrail is
+`scripts/check-no-allocator.sh` (`just no-alloc`).
+
 ### 1. Documentation and support tiers
 
 Keep the docs aligned with the production direction:

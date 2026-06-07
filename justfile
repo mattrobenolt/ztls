@@ -13,10 +13,16 @@ ci-actions:
     pinact run --fix=false --no-api .github/workflows/*.yml
     zizmor .github
 
+[doc("Assert the ztls-owned engine is allocator-free (TODO-28a2091a)")]
+[group("test")]
+no-alloc:
+    ./scripts/check-no-allocator.sh
+
 [doc("Run unit, interop, formatting, benchmark smoke, and workflow checks")]
 [group("test")]
 ci: ci-actions
     zig fmt --check src/ examples/ bench/ build.zig
+    just no-alloc
     zig build test
     zig build test-openssl
     zig build test-openssl-server
@@ -46,19 +52,21 @@ tlsfuzzer *ARGS:
     zig build tlsfuzzer-server
     cd conformance && uv run pytest {{ ARGS }}
 
-[doc("List ztls, OpenSSL EVP, and OpenSSL memory-BIO benchmark rows")]
+[doc("List ztls, OpenSSL EVP, OpenSSL memory-BIO, and rustls benchmark rows")]
 [group("bench")]
 bench-list:
     zig build bench -- --list
     zig build bench-evp -- --list
     zig build bench-openssl -- --list
+    zig build bench-rustls -- --list
 
-[doc("Run comparable ztls, OpenSSL EVP, and OpenSSL memory-BIO benchmark rows")]
+[doc("Run comparable ztls, OpenSSL EVP, OpenSSL memory-BIO, and rustls benchmark rows")]
 [group("bench")]
 bench-compare FILTER="aes_128":
     zig build bench -- --filter {{ FILTER }}
     zig build bench-evp -- --filter {{ FILTER }}
     zig build bench-openssl -- --filter {{ FILTER }}
+    zig build bench-rustls -- --filter {{ FILTER }}
 
 [doc("Run one exact app-data row for ztls and OpenSSL memory BIO")]
 [group("bench")]
@@ -94,7 +102,7 @@ bench-analyze *ARGS:
 [doc("Build benchmark binaries used for perf, callgrind, and disassembly")]
 [group("bench")]
 bench-bins:
-    zig build bench-bin bench-evp-bin bench-openssl-bin
+    zig build bench-bin bench-evp-bin bench-openssl-bin bench-rustls-bin
 
 [doc("Disassemble an installed benchmark binary to a file")]
 [group("bench")]
