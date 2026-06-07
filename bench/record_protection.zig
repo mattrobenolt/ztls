@@ -197,9 +197,35 @@ pub fn main() !void {
                 try stdout.flush();
             }
 
+            if (matches(args, "record_encrypt_prepared", suite.name(), size)) {
+                const enc = try benchEncryptPrepared(suite, size, &timer);
+                try stdout.print("record_encrypt_prepared,{s},{d},{d},{d},{d},{d:.2}\n", .{
+                    suite.name(),
+                    size,
+                    enc.iterations,
+                    enc.bytes,
+                    enc.ns,
+                    enc.mbPerSec(),
+                });
+                try stdout.flush();
+            }
+
             if (matches(args, "ztls_app_client_to_server", suite.name(), size)) {
                 const c2s = try benchZtlsAppData(suite, size, .client_to_server, &timer);
                 try stdout.print("ztls_app_client_to_server,{s},{d},{d},{d},{d},{d:.2}\n", .{
+                    suite.name(),
+                    size,
+                    c2s.iterations,
+                    c2s.bytes,
+                    c2s.ns,
+                    c2s.mbPerSec(),
+                });
+                try stdout.flush();
+            }
+
+            if (matches(args, "ztls_app_prepared_client_to_server", suite.name(), size)) {
+                const c2s = try benchZtlsAppDataPrepared(suite, size, &timer);
+                try stdout.print("ztls_app_prepared_client_to_server,{s},{d},{d},{d},{d},{d:.2}\n", .{
                     suite.name(),
                     size,
                     c2s.iterations,
@@ -270,7 +296,7 @@ fn parseArgs() !Args {
 }
 
 fn matches(args: Args, benchmark: []const u8, suite: []const u8, size: usize) bool {
-    if (args.bench) |b| if (ascii.indexOfIgnoreCase(benchmark, b) == null) return false;
+    if (args.bench) |b| if (!ascii.eqlIgnoreCase(benchmark, b)) return false;
     if (args.suite) |s| if (ascii.indexOfIgnoreCase(suite, s) == null) return false;
     if (args.size) |z| if (size != z) return false;
     const f = args.filter orelse return true;
@@ -288,7 +314,9 @@ fn listBenchmarks(stdout: *Io.Writer) !void {
     inline for (.{ Suite.aes_128_gcm_sha256, Suite.aes_256_gcm_sha384, Suite.chacha20_poly1305_sha256 }) |suite| {
         try stdout.print("record_encrypt,{s}\n", .{suite.name()});
         try stdout.print("record_decrypt,{s}\n", .{suite.name()});
+        try stdout.print("record_encrypt_prepared,{s}\n", .{suite.name()});
         try stdout.print("ztls_app_client_to_server,{s}\n", .{suite.name()});
+        try stdout.print("ztls_app_prepared_client_to_server,{s}\n", .{suite.name()});
         try stdout.print("ztls_app_server_to_client,{s}\n", .{suite.name()});
         try stdout.print("ztls_app_ping_pong,{s}\n", .{suite.name()});
     }
@@ -399,6 +427,27 @@ fn benchEncrypt(comptime suite: Suite, comptime size: usize, timer: *time.Timer)
     timer.reset();
     for (0..iterations) |_| {
         const record = try tx.encrypt(.application_data, &plaintext, &out);
+        doNotOptimizeAway(record.ptr);
+    }
+    const ns = timer.read();
+
+    return .{ .bytes = iterations * size, .iterations = iterations, .ns = ns };
+}
+
+fn benchEncryptPrepared(comptime suite: Suite, comptime size: usize, timer: *time.Timer) !Result {
+    const iterations = @max(256, target_bytes / size);
+    var out: [RecordLayer.overhead + size]u8 = undefined;
+    var tx: RecordLayer = try .init(suite.aead(), Iv.zero);
+    defer tx.deinit();
+
+    out[frame.header_len..][0..size].* = @splat(0xab);
+
+    // Warm up without measuring first-use effects.
+    for (0..32) |_| _ = try tx.encryptPrepared(.application_data, size, &out);
+
+    timer.reset();
+    for (0..iterations) |_| {
+        const record = try tx.encryptPrepared(.application_data, size, &out);
         doNotOptimizeAway(record.ptr);
     }
     const ns = timer.read();
@@ -607,6 +656,26 @@ fn benchZtlsAppData(comptime suite: Suite, comptime size: usize, comptime direct
             doNotOptimizeAway(ev.application_data.ptr);
         },
     };
+    const ns = timer.read();
+
+    return .{ .bytes = iterations * size, .iterations = iterations, .ns = ns };
+}
+
+fn benchZtlsAppDataPrepared(comptime suite: Suite, comptime size: usize, timer: *time.Timer) !Result {
+    const iterations = @max(256, target_bytes / size);
+    var pair = try connectPair(suite);
+    defer pair.client.deinit();
+    defer pair.server.deinit();
+    var wire: [RecordLayer.overhead + size]u8 = undefined;
+    wire[frame.header_len..][0..size].* = @splat(0xa5);
+
+    timer.reset();
+    for (0..iterations) |_| {
+        const record = try pair.client.sendPreparedApplicationData(size, &wire);
+        pair.client.completeWrite();
+        const plain = try pair.server.receiveApplicationData(wire[0..record.len]);
+        doNotOptimizeAway(plain.ptr);
+    }
     const ns = timer.read();
 
     return .{ .bytes = iterations * size, .iterations = iterations, .ns = ns };

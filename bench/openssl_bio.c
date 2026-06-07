@@ -38,7 +38,7 @@ static int contains_ignore_case(const char *haystack, const char *needle) {
 }
 
 static int matches(const args_t *args, const char *bench, const char *suite, size_t size) {
-    if (args->bench && !contains_ignore_case(bench, args->bench)) return 0;
+    if (args->bench && strcasecmp(bench, args->bench) != 0) return 0;
     if (args->suite && !contains_ignore_case(suite, args->suite)) return 0;
     if (args->has_size && args->size != size) return 0;
     return !args->filter || contains_ignore_case(bench, args->filter) || contains_ignore_case(suite, args->filter);

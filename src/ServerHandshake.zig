@@ -519,6 +519,14 @@ pub fn sendApplicationData(self: *ServerHandshake, plaintext: []const u8, out: [
     return record;
 }
 
+pub fn sendPreparedApplicationData(self: *ServerHandshake, plaintext_len: usize, out: []u8) SendError![]u8 {
+    assert(self.state == .connected);
+    if (self.pending_write) return error.PendingWrite;
+    const record = try self.tx.encryptPrepared(.application_data, plaintext_len, out);
+    self.pending_write = true;
+    return record;
+}
+
 pub fn receiveApplicationData(self: *ServerHandshake, record: []u8) ReceiveError![]const u8 {
     assert(self.state == .connected);
     const dec = try self.rx.decrypt(record);

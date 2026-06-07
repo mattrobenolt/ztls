@@ -3,6 +3,7 @@
 /// Composes record framing, nonce construction, and AEAD to implement
 /// TLSCiphertext encrypt/decrypt. RFC 8446 §5.2
 const std = @import("std");
+const mem = std.mem;
 const testing = std.testing;
 
 const aead_mod = @import("aead.zig");
@@ -10,15 +11,15 @@ const Aead = aead_mod.Aead;
 const AeadContext = aead_mod.Context;
 const AeadError = aead_mod.Error;
 const Aes128GcmKey = aead_mod.Aes128GcmKey;
+const Iv = aead_mod.Iv;
+const Tag = aead_mod.Tag;
+const tag_len = aead_mod.tag_len;
 const construct = @import("nonce.zig").construct;
 const frame = @import("frame.zig");
 const ContentType = frame.ContentType;
 const DecryptedRecord = frame.DecryptedRecord;
 const Header = frame.Header;
-const Iv = aead_mod.Iv;
 const memx = @import("memx.zig");
-const Tag = aead_mod.Tag;
-const tag_len = aead_mod.tag_len;
 
 const RecordLayer = @This();
 
@@ -38,10 +39,11 @@ pub fn init(aead_: Aead, iv_: Iv) AeadError!RecordLayer {
 
 pub fn deinit(self: *RecordLayer) void {
     self.ctx.deinit();
-    std.crypto.secureZero(u8, std.mem.asBytes(&self.aead));
-    std.crypto.secureZero(u8, std.mem.asBytes(&self.iv));
+    std.crypto.secureZero(u8, mem.asBytes(&self.aead));
+    std.crypto.secureZero(u8, mem.asBytes(&self.iv));
     self.seq = 0;
     self.key_limit = 0;
+    self.ctx = undefined;
 }
 
 pub fn clone(self: *const RecordLayer) AeadError!RecordLayer {
@@ -130,18 +132,31 @@ pub fn encrypt(self: *RecordLayer, content_type: ContentType, content: []const u
     if (out.len < total) return error.BufferTooShort;
 
     const inner = out[frame.header_len..][0..inner_len];
-    var tag: Tag = undefined;
-
-    // Write the record header: application_data, length = inner_len + tag_len.
-    const header: Header = .init(.application_data, @intCast(inner_len + tag_len));
-    const hdr = out[0..frame.header_len];
-    hdr.* = std.mem.toBytes(header);
 
     // Write TLSInnerPlaintext: content || real ContentType byte.
     @memcpy(inner[0..content.len], content);
-    inner[content.len] = @intFromEnum(content_type);
+    return self.encryptPrepared(content_type, content.len, out);
+}
 
-    // Encrypt the inner plaintext in place, append the tag.
+/// Encrypt a TLS record after the caller has already written plaintext into
+/// `out[5..][0..content_len]`. This avoids the plaintext copy in `encrypt` for
+/// producers that can serialize directly into the record buffer.
+pub fn encryptPrepared(self: *RecordLayer, content_type: ContentType, content_len: usize, out: []u8) EncryptError![]u8 {
+    try self.checkSequenceLimit();
+    if (content_len > frame.max_plaintext_len) return error.PlaintextTooLarge;
+
+    const inner_len = content_len + 1;
+    const total = frame.header_len + inner_len + tag_len;
+    if (out.len < total) return error.BufferTooShort;
+
+    const inner = out[frame.header_len..][0..inner_len];
+    var tag: Tag = undefined;
+
+    const header: Header = .init(.application_data, @intCast(inner_len + tag_len));
+    const hdr = out[0..frame.header_len];
+    hdr.* = mem.toBytes(header);
+    inner[content_len] = @intFromEnum(content_type);
+
     const npub = construct(&self.iv, self.seq);
     try self.aead.encrypt(&self.ctx, inner, &tag, inner, hdr, &npub);
     out[frame.header_len + inner_len ..][0..tag_len].* = tag.data;
@@ -186,10 +201,7 @@ test "deinit: clears caller-visible traffic key material" {
     const iv: Iv = .init(@splat(0xcd));
     var rl: RecordLayer = try .init(.{ .aes128_gcm = key }, iv);
     rl.deinit();
-    switch (rl.aead) {
-        .aes128_gcm => |k| try testing.expectEqualSlices(u8, &Aes128GcmKey.zero.data, &k.data),
-        else => return error.WrongSuite,
-    }
+    try testing.expectEqualSlices(u8, &([_]u8{0} ** @sizeOf(Aead)), std.mem.asBytes(&rl.aead));
     try testing.expectEqualSlices(u8, &Iv.zero.data, &rl.iv.data);
     try testing.expectEqual(@as(u64, 0), rl.seq);
     try testing.expectEqual(@as(u64, 0), rl.key_limit);
@@ -206,6 +218,25 @@ test "encrypt/decrypt: key update required at AEAD usage limit" {
     defer rx.deinit();
     rx.key_limit = 0;
     try testing.expectError(error.KeyUpdateRequired, rx.decrypt(&buf));
+}
+
+test "encryptPrepared/decrypt: round-trip" {
+    const key: Aes128GcmKey = .init(@splat(0xab));
+    const iv: Iv = .init(@splat(0xcd));
+    var tx: RecordLayer = try .init(.{ .aes128_gcm = key }, iv);
+    defer tx.deinit();
+    var rx: RecordLayer = try .init(.{ .aes128_gcm = key }, iv);
+    defer rx.deinit();
+
+    const plaintext = "hello, ztls";
+    var buf: [frame.header_len + plaintext.len + 1 + tag_len]u8 = undefined;
+    @memcpy(buf[frame.header_len..][0..plaintext.len], plaintext);
+
+    const record_buf = try tx.encryptPrepared(.application_data, plaintext.len, &buf);
+    const result = try rx.decrypt(record_buf);
+
+    try testing.expectEqual(.application_data, result.content_type);
+    try testing.expectEqualSlices(u8, plaintext, result.content);
 }
 
 test "encrypt/decrypt: round-trip" {

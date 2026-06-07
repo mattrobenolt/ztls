@@ -139,9 +139,15 @@ worst-ratio rows sorted first. Pass explicit files with `--ztls`, `--evp`, and
 `--bio` when comparing older runs.
 
 All benchmark binaries accept fuzzy `--filter` plus structured filters:
-`--bench <name>`, `--suite <substring>`, and `--size <bytes>`. Use the structured
-filters for perf/disassembly work so one profile means one scenario, not a whole
-family of rows.
+`--bench <name>`, `--suite <substring>`, and `--size <bytes>`. `--bench` is an
+exact row-name match; suite remains substring-based for convenience. Use the
+structured filters for perf/disassembly work so one profile means one scenario,
+not a whole family of rows.
+
+The `record_encrypt_prepared` and `ztls_app_prepared_client_to_server` rows use
+`RecordLayer.encryptPrepared` / `sendPreparedApplicationData`, where the caller
+has already serialized plaintext into `out[5..]`. These rows measure the
+copy-avoiding send path separately from the normal slice-to-record API.
 
 The raw Zig build steps remain available when you want to bypass `just`:
 

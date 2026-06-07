@@ -499,6 +499,14 @@ pub fn sendApplicationData(self: *ClientHandshake, plaintext: []const u8, out: [
     return record;
 }
 
+pub fn sendPreparedApplicationData(self: *ClientHandshake, plaintext_len: usize, out: []u8) SendError![]const u8 {
+    assert(self.state == .connected);
+    if (self.pending_write) return error.PendingWrite;
+    const record = try self.tx.encryptPrepared(.application_data, plaintext_len, out);
+    self.pending_write = true;
+    return record;
+}
+
 pub const ProcessError = frame.ParseError || RecordLayer.DecryptError ||
     ServerHelloError || FlightError || SendError || alert.ParseError ||
     error{ IncompleteRecord, UnexpectedRecord, PeerAlert };

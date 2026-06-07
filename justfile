@@ -20,9 +20,9 @@ ci: ci-actions
     zig build test
     zig build test-openssl
     zig build test-openssl-server
-    zig build bench -- --filter record_encrypt --filter aes_128
-    zig build bench-evp -- --filter aes_128
-    zig build bench-openssl -- --filter aes_128
+    zig build bench -- --bench record_encrypt --suite aes_128 --size 1350
+    zig build bench-evp -- --bench openssl_evp_reuse_encrypt --suite aes_128 --size 1350
+    zig build bench-openssl -- --bench openssl_bio_app_client_to_server --suite aes_128 --size 1350
 
 [doc("List ztls, OpenSSL EVP, and OpenSSL memory-BIO benchmark rows")]
 [group("bench")]
@@ -42,12 +42,14 @@ bench-compare FILTER="aes_128":
 [group("bench")]
 bench-app-row SUITE="aes_128" SIZE="1350":
     zig build bench -- --bench ztls_app_client_to_server --suite {{ SUITE }} --size {{ SIZE }}
+    zig build bench -- --bench ztls_app_prepared_client_to_server --suite {{ SUITE }} --size {{ SIZE }}
     zig build bench-openssl -- --bench openssl_bio_app_client_to_server --suite {{ SUITE }} --size {{ SIZE }}
 
 [doc("Run one exact record-crypto row for ztls and OpenSSL EVP reuse")]
 [group("bench")]
 bench-record-row SUITE="aes_128" SIZE="1350":
     zig build bench -- --bench record_encrypt --suite {{ SUITE }} --size {{ SIZE }}
+    zig build bench -- --bench record_encrypt_prepared --suite {{ SUITE }} --size {{ SIZE }}
     zig build bench-evp -- --bench openssl_evp_reuse_encrypt --suite {{ SUITE }} --size {{ SIZE }}
 
 [doc("Run full benchmark comparison set into zig-out/perf")]
