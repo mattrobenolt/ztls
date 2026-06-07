@@ -407,7 +407,7 @@ Every error path is tested. Fuzzing is not optional.
 
 ### Benchmarks
 
-See `docs/research/PERFORMANCE.md` for the benchmark plan and prior-art notes.
+See `docs/research/CORRECTNESS.md` for the active correctness/conformance evidence and `docs/research/PERFORMANCE.md` for the benchmark plan and prior-art notes.
 Current harness:
 
 - `zig build bench` — wall-time CSV-ish rows for record protection, framing, and generated-OpenSSL client handshake replay across all three mandatory suites.
