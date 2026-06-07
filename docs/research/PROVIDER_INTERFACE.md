@@ -287,27 +287,28 @@ context. Map at the seam to ztls error sets and TLS alerts:
 
 ## No-allocator invariant (TODO-28a2091a)
 
-Check: `scripts/check-no-allocator.sh`, wired as `just no-alloc` and run inside
-`just ci`. It scans tracked core `src/*.zig` (excluding `src/test/` harnesses,
-which legitimately use a testing allocator) for:
+Check: `just no-alloc`, wired into `just ci`, runs ast-grep with
+`rules/no-ztls-owned-allocations.yml` over core `src/*.zig` while excluding
+`src/test/**` harnesses that legitimately use testing allocators.
 
-- `std.heap` imports/use,
-- `std.mem.Allocator` / `Allocator` parameters and fields (comments ignored),
-- bare libc `malloc`/`calloc`/`realloc`,
-- `free(` calls that are not backend-owned libcrypto frees
-  (`EVP_*`, `OPENSSL_*`, `EC_*`, `RSA_*`, `BN_*`, `BIO_*`, `X509_*`, `ASN1_*`).
+The rule rejects ztls-owned allocation ingress in the TLS engine:
 
-Exit 0 clean, exit 1 on violation. Backend-owned libcrypto frees are explicitly
-allowed because they free backend-owned allocations, not ztls buffers. Current
-state: clean, 21 core files scanned. The only `Allocator`-adjacent text in core
-is a comment in `ClientHandshake.zig` ("keeps ztls allocation-free"), correctly
-ignored.
+- `std.heap` and direct `@import("std").heap` use,
+- `std.mem.Allocator` and direct `@import("std").mem.Allocator` use,
+- bare libc `malloc`/`calloc`/`realloc` and `c.malloc`/`c.calloc`/`c.realloc`,
+- bare `free(...)` / `c.free(...)`.
 
-Equivalent ad-hoc command:
+Exit 0 clean, exit 1 on violation. Backend-owned libcrypto destructors such as
+`c.EVP_*_free`, `c.EC_*_free`, `c.X509_*_free`, and friends are intentionally
+allowed: structurally they are not `free(...)`/`c.free(...)`, and they release
+backend-owned objects rather than ztls-owned TLS buffers. Current state: clean
+for core `src/` with `src/test/**` excluded.
+
+The direct command is:
 
 ```sh
-grep -rnE 'std\.heap|mem\.Allocator|\b(malloc|calloc|realloc)\b' src --include='*.zig' \
-  | grep -v '/test/'
+ast-grep scan --rule rules/no-ztls-owned-allocations.yml src \
+  --globs '*.zig' --globs '!src/test/**' --report-style short
 ```
 
 ---
@@ -369,7 +370,7 @@ grep -rnE 'std\.heap|mem\.Allocator|\b(malloc|calloc|realloc)\b' src --include='
 - ztls cannot guarantee backend-internal scratch (e.g. provider algorithm
   contexts) is cleansed beyond what the library's free path does. This is
   accepted per the documented backend contract.
-- Transcript-hash and HKDF intermediate secrets on `std.crypto` live on the
-  stack in handshake structs; they are not individually `secureZero`d today. If
-  a FIPS/zeroization policy lands, the key-schedule intermediates are the next
-  audit target.
+- Transcript-hash state and transient key-schedule locals on `std.crypto` are
+  not individually `secureZero`d today. Long-lived `ClientHandshake` secrets are
+  wiped in `deinit`; if a FIPS/zeroization policy lands, the remaining transient
+  key-schedule intermediates are the next audit target.

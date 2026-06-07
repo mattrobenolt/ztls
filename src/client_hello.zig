@@ -480,6 +480,26 @@ test "parse: rejects malformed ClientHello" {
     try testing.expectError(error.MissingExtension, parse(no_key_share[0..encoded.len]));
 }
 
+// RFC 8446 §4.1.4 — when the client offers no key_share for a group the server
+// supports, a conformant server sends HelloRetryRequest. ztls does not implement
+// the HRR path (see docs/research/CONFORMANCE_ROADMAP.md, TODO-d254dfa2); instead
+// it rejects the ClientHello with error.UnsupportedKeyShare. This test pins that
+// honest current behavior so it cannot silently change without a roadmap update.
+test "parse: no shared group is rejected (HRR not implemented)" {
+    var buf: [512]u8 = undefined;
+    const encoded = try encode(&buf, .zero, .zero, null, &.{});
+    const msg = buf[0..encoded.len];
+
+    // Rewrite every x25519 group id (0x001d) to secp384r1 (0x0018). With .zero
+    // public key bytes the only 0x001d occurrences are the supported_groups and
+    // key_share group identifiers.
+    var i: usize = 0;
+    while (i + 1 < msg.len) : (i += 1) {
+        if (msg[i] == 0x00 and msg[i + 1] == 0x1d) msg[i + 1] = 0x18;
+    }
+    try testing.expectError(error.UnsupportedKeyShare, parse(msg));
+}
+
 test "encode: buffer too short" {
     var buf: [10]u8 = undefined;
     try testing.expectError(error.BufferTooShort, encode(&buf, .zero, .zero, null, &.{}));

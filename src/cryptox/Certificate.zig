@@ -200,6 +200,8 @@ pub const Parsed = struct {
     pub_key_slice: Slice,
     message_slice: Slice,
     subject_alt_name_slice: Slice,
+    key_usage_slice: Slice,
+    ext_key_usage_slice: Slice,
     validity: Validity,
     version: Version,
 
@@ -247,6 +249,57 @@ pub const Parsed = struct {
 
     pub fn subjectAltName(p: Parsed) []const u8 {
         return p.slice(p.subject_alt_name_slice);
+    }
+
+    pub fn keyUsage(p: Parsed) []const u8 {
+        return p.slice(p.key_usage_slice);
+    }
+
+    pub fn extKeyUsage(p: Parsed) []const u8 {
+        return p.slice(p.ext_key_usage_slice);
+    }
+
+    /// RFC 5280 §4.2.1.3 — KeyUsage is a BIT STRING. Missing extension means
+    /// no key-usage restriction; present extension must contain the requested bit.
+    pub fn allowsKeyUsage(p: Parsed, bit_index: u4) ParseError!bool {
+        const extension = p.keyUsage();
+        if (extension.len == 0) return true;
+
+        const bit_string_elem = try der.Element.parse(extension, 0);
+        if (bit_string_elem.identifier.tag != .bitstring) return error.CertificateFieldHasWrongDataType;
+        if (bit_string_elem.slice.start == bit_string_elem.slice.end) return error.CertificateHasInvalidBitString;
+
+        const unused_bits = extension[bit_string_elem.slice.start];
+        if (unused_bits > 7) return error.CertificateHasInvalidBitString;
+        const bits: der.Element.Slice = .{ .start = bit_string_elem.slice.start + 1, .end = bit_string_elem.slice.end };
+        const data_len = bits.end - bits.start;
+        if (data_len == 0) {
+            if (unused_bits != 0) return error.CertificateHasInvalidBitString;
+            return false;
+        }
+        const bit_len = data_len * 8 - unused_bits;
+        if (bit_index >= bit_len) return false;
+
+        const byte_index: usize = bit_index / 8;
+        const mask: u8 = @as(u8, 0x80) >> @intCast(bit_index % 8);
+        return (extension[bits.start + byte_index] & mask) != 0;
+    }
+
+    /// RFC 5280 §4.2.1.12 — ExtendedKeyUsage is a sequence of OIDs. Missing
+    /// extension means no EKU restriction; present extension must include OID.
+    pub fn allowsExtKeyUsage(p: Parsed, oid: []const u8) ParseError!bool {
+        const extension = p.extKeyUsage();
+        if (extension.len == 0) return true;
+
+        const sequence = try der.Element.parse(extension, 0);
+        var oid_i = sequence.slice.start;
+        while (oid_i < sequence.slice.end) {
+            const oid_elem = try der.Element.parse(extension, oid_i);
+            oid_i = oid_elem.slice.end;
+            if (oid_elem.identifier.tag != .object_identifier) return error.CertificateFieldHasWrongDataType;
+            if (mem.eql(u8, extension[oid_elem.slice.start..oid_elem.slice.end], oid)) return true;
+        }
+        return false;
     }
 
     pub const VerifyError = error{
@@ -431,6 +484,76 @@ test "Parsed.checkHostName RFC 6125 compliance" {
     try expectEqual(false, Parsed.checkHostName("example.com", "*."));
 }
 
+// RFC 5280 §4.2.1.3 — KeyUsage.digitalSignature is bit 0 in the BIT STRING.
+test "Parsed.allowsKeyUsage reads digitalSignature" {
+    const parsed: Parsed = .{
+        .certificate = .{ .buffer = "\x03\x02\x07\x80", .index = 0 },
+        .issuer_slice = .empty,
+        .subject_slice = .empty,
+        .common_name_slice = .empty,
+        .signature_slice = .empty,
+        .signature_algorithm = .ecdsa_with_SHA256,
+        .pub_key_algo = .{ .curveEd25519 = {} },
+        .pub_key_slice = .empty,
+        .message_slice = .empty,
+        .subject_alt_name_slice = .empty,
+        .key_usage_slice = .{ .start = 0, .end = 4 },
+        .ext_key_usage_slice = .empty,
+        .validity = .{ .not_before = 0, .not_after = 0 },
+        .version = .v3,
+    };
+
+    try std.testing.expect(try parsed.allowsKeyUsage(0));
+    try std.testing.expect(!try parsed.allowsKeyUsage(1));
+}
+
+// RFC 5280 §4.2.1.3 — a BIT STRING with only the unused-bits octet and a
+// non-zero unused-bits count is malformed and must not underflow bit length.
+test "Parsed.allowsKeyUsage rejects malformed empty bit payload" {
+    const parsed: Parsed = .{
+        .certificate = .{ .buffer = "\x03\x01\x05", .index = 0 },
+        .issuer_slice = .empty,
+        .subject_slice = .empty,
+        .common_name_slice = .empty,
+        .signature_slice = .empty,
+        .signature_algorithm = .ecdsa_with_SHA256,
+        .pub_key_algo = .{ .curveEd25519 = {} },
+        .pub_key_slice = .empty,
+        .message_slice = .empty,
+        .subject_alt_name_slice = .empty,
+        .key_usage_slice = .{ .start = 0, .end = 3 },
+        .ext_key_usage_slice = .empty,
+        .validity = .{ .not_before = 0, .not_after = 0 },
+        .version = .v3,
+    };
+
+    try std.testing.expectError(error.CertificateHasInvalidBitString, parsed.allowsKeyUsage(0));
+}
+
+// RFC 5280 §4.2.1.12 — ExtendedKeyUsage contains id-kp-serverAuth as an OID.
+test "Parsed.allowsExtKeyUsage finds serverAuth" {
+    const server_auth_oid = [_]u8{ 0x2b, 0x06, 0x01, 0x05, 0x05, 0x07, 0x03, 0x01 };
+    const parsed: Parsed = .{
+        .certificate = .{ .buffer = "\x30\x0a\x06\x08\x2b\x06\x01\x05\x05\x07\x03\x01", .index = 0 },
+        .issuer_slice = .empty,
+        .subject_slice = .empty,
+        .common_name_slice = .empty,
+        .signature_slice = .empty,
+        .signature_algorithm = .ecdsa_with_SHA256,
+        .pub_key_algo = .{ .curveEd25519 = {} },
+        .pub_key_slice = .empty,
+        .message_slice = .empty,
+        .subject_alt_name_slice = .empty,
+        .key_usage_slice = .empty,
+        .ext_key_usage_slice = .{ .start = 0, .end = 12 },
+        .validity = .{ .not_before = 0, .not_after = 0 },
+        .version = .v3,
+    };
+
+    try std.testing.expect(try parsed.allowsExtKeyUsage(&server_auth_oid));
+    try std.testing.expect(!try parsed.allowsExtKeyUsage(&.{ 0x2b, 0x06, 0x01, 0x05, 0x05, 0x07, 0x03, 0x02 }));
+}
+
 pub const ParseError = der.Element.ParseError || ParseVersionError || ParseTimeError || ParseEnumError || ParseBitStringError;
 
 pub fn parse(cert: Certificate) ParseError!Parsed {
@@ -509,6 +632,8 @@ pub fn parse(cert: Certificate) ParseError!Parsed {
 
     // Extensions
     var subject_alt_name_slice = der.Element.Slice.empty;
+    var key_usage_slice = der.Element.Slice.empty;
+    var ext_key_usage_slice = der.Element.Slice.empty;
     ext: {
         if (version == .v1)
             break :ext;
@@ -538,6 +663,8 @@ pub fn parse(cert: Certificate) ParseError!Parsed {
                 try der.Element.parse(cert_bytes, critical_elem.slice.end);
             switch (ext_id) {
                 .subject_alt_name => subject_alt_name_slice = ext_bytes_elem.slice,
+                .key_usage => key_usage_slice = ext_bytes_elem.slice,
+                .ext_key_usage => ext_key_usage_slice = ext_bytes_elem.slice,
                 else => continue,
             }
         }
@@ -558,6 +685,8 @@ pub fn parse(cert: Certificate) ParseError!Parsed {
             .not_after = not_after_utc,
         },
         .subject_alt_name_slice = subject_alt_name_slice,
+        .key_usage_slice = key_usage_slice,
+        .ext_key_usage_slice = ext_key_usage_slice,
         .version = version,
     };
 }

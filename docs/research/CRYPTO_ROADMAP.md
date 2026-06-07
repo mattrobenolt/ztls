@@ -114,7 +114,7 @@ The concrete ztls-owned facade shape (AEAD lifecycle/rekey, HKDF/hash policy,
 named-group KEX and shared-secret sizing, signatures, comptime capabilities,
 backend allocation/zeroization/lifetime rules, error mapping) is specified in
 `docs/research/PROVIDER_INTERFACE.md`. The no-allocator guardrail is
-`scripts/check-no-allocator.sh` (`just no-alloc`).
+`rules/no-ztls-owned-allocations.yml` via `just no-alloc`.
 
 ### 1. Documentation and support tiers
 

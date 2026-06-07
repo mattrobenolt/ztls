@@ -7,6 +7,8 @@ rule:
     - pattern: std.heap
     - pattern: std.mem.Allocator
     - pattern: mem.Allocator
+    - pattern: "@import(\"std\").heap"
+    - pattern: "@import(\"std\").mem.Allocator"
     - pattern: malloc($$$ARGS)
     - pattern: c.malloc($$$ARGS)
     - pattern: calloc($$$ARGS)

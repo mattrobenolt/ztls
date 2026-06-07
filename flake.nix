@@ -6,6 +6,10 @@
       url = "github:mattrobenolt/nixpkgs";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    rust-overlay = {
+      url = "github:oxalica/rust-overlay";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
@@ -13,6 +17,7 @@
       flake-parts,
       nixpkgs,
       mattware,
+      rust-overlay,
       ...
     }:
     flake-parts.lib.mkFlake { inherit inputs; } {
@@ -27,8 +32,12 @@
         let
           pkgs = import nixpkgs {
             inherit system;
-            overlays = [ mattware.overlays.default ];
+            overlays = [
+              mattware.overlays.default
+              rust-overlay.overlays.default
+            ];
           };
+          inherit (pkgs) lib stdenv;
           ast-grep = pkgs.ast-grep {
             ruleDirs = [ ./rules ];
             languages.zig = {
@@ -36,7 +45,7 @@
               extensions = [ "zig" ];
             };
           };
-          inherit (pkgs) lib stdenv;
+          rustToolchain = pkgs.rust-bin.stable.latest.default;
         in
         {
           devShells.default = pkgs.mkShell {
@@ -49,6 +58,7 @@
                 pinact
                 pkg-config
                 python3
+                rustToolchain
                 uv
                 txtar
                 zig_0_15

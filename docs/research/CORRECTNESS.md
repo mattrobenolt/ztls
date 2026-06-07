@@ -114,6 +114,11 @@ TLS 1.3 full handshake with X25519, certificate-authenticated server flight,
 application data, alerts, and KeyUpdate. PSK, resumption, 0-RTT, client auth,
 and HelloRetryRequest are not implemented product features, so tests for them
 are not disabled conformance holes; they are outside the advertised surface.
+Their prerequisites and acceptance criteria are tracked in
+`docs/research/CONFORMANCE_ROADMAP.md`. Where ztls's current behavior for an
+unimplemented feature is observable (e.g. client rejects HelloRetryRequest, and
+the server rejects a ClientHello with no shared group instead of emitting HRR),
+that behavior is pinned by RFC-cited tests so it cannot drift silently.
 
 BoGo and TLS-Anvil are useful additional external runners, but their value is in
 broad matrix coverage across features ztls does not yet implement. For the

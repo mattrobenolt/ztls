@@ -16,7 +16,7 @@ ci-actions:
 [doc("Assert the ztls-owned engine is allocator-free (TODO-28a2091a)")]
 [group("test")]
 no-alloc:
-    ast-grep scan --filter no-ztls-owned-allocations src --globs '*.zig' --globs '!src/test/**' --report-style short
+    ast-grep scan --rule rules/no-ztls-owned-allocations.yml src --globs '*.zig' --globs '!src/test/**' --report-style short
 
 [doc("Run unit, interop, formatting, benchmark smoke, and workflow checks")]
 [group("test")]
@@ -92,6 +92,7 @@ bench-capture:
     zig build bench > "zig-out/perf/ztls-all-${stamp}.csv"
     zig build bench-evp > "zig-out/perf/evp-all-${stamp}.csv"
     zig build bench-openssl > "zig-out/perf/bio-all-${stamp}.csv"
+    zig build bench-rustls > "zig-out/perf/rustls-all-${stamp}.csv"
     echo "${stamp}"
 
 [doc("Analyze captured ztls/OpenSSL benchmark CSVs")]

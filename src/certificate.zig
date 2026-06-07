@@ -14,12 +14,18 @@ const c = @cImport({
 
 const wire = @import("wire.zig");
 
+pub const PolicyError = error{
+    CertificateKeyUsageRejected,
+    CertificateExtendedKeyUsageRejected,
+    CertificateSignatureAlgorithmRejected,
+};
+
 pub const ParseError = error{
     UnexpectedEof,
     InvalidHandshakeType,
     EmptyCertificateList,
     CertificateIssuerNotFound,
-} || Certificate.ParseError || Certificate.Parsed.VerifyError || Certificate.Parsed.VerifyHostNameError;
+} || PolicyError || Certificate.ParseError || Certificate.Parsed.VerifyError || Certificate.Parsed.VerifyHostNameError;
 
 /// Certificate validation policy.
 pub const Policy = struct {
@@ -33,6 +39,10 @@ pub const Policy = struct {
     /// check. ClientHandshake.start() fills this from its `server_name` when
     /// unset, so explicit policy values override SNI-derived defaults.
     host_name: ?[]const u8 = null,
+    /// Enforce TLS 1.3 server-certificate residual policy on the leaf:
+    /// KeyUsage.digitalSignature when KeyUsage is present, EKU serverAuth when
+    /// EKU is present, and a TLS 1.3-compatible certificate signature algorithm.
+    server_auth: bool = true,
 };
 
 /// RFC 8446 §4.2.3 signature schemes supported by ztls.
@@ -108,6 +118,7 @@ pub fn parse(msg: []const u8, policy: Policy) ParseError![]const u8 {
 
         if (cert_index == 0) {
             leaf_pub_key = parsed.pubKey();
+            if (policy.server_auth) try verifyServerAuthPolicy(parsed);
             if (policy.host_name) |host_name| try parsed.verifyHostName(host_name);
         }
         if (subject_to_verify) |subject| try subject.verify(parsed, policy.now_sec);
@@ -120,6 +131,31 @@ pub fn parse(msg: []const u8, policy: Policy) ParseError![]const u8 {
     }
 
     return leaf_pub_key orelse error.EmptyCertificateList;
+}
+
+const eku_server_auth_oid = [_]u8{ 0x2b, 0x06, 0x01, 0x05, 0x05, 0x07, 0x03, 0x01 };
+const key_usage_digital_signature: u4 = 0;
+
+fn verifyServerAuthPolicy(parsed: Certificate.Parsed) ParseError!void {
+    // RFC 8446 §4.4.2.2 — server certificates must permit CertificateVerify
+    // signing via KeyUsage.digitalSignature when KeyUsage is present.
+    if (!try parsed.allowsKeyUsage(key_usage_digital_signature)) return error.CertificateKeyUsageRejected;
+
+    // RFC 5280 §4.2.1.12 — when EKU is present it restricts certificate use;
+    // id-kp-serverAuth is required for TLS server authentication.
+    if (!try parsed.allowsExtKeyUsage(&eku_server_auth_oid)) return error.CertificateExtendedKeyUsageRejected;
+
+    switch (parsed.signature_algorithm) {
+        .sha256WithRSAEncryption,
+        .sha384WithRSAEncryption,
+        .sha512WithRSAEncryption,
+        .ecdsa_with_SHA256,
+        .ecdsa_with_SHA384,
+        .ecdsa_with_SHA512,
+        .curveEd25519,
+        => {},
+        else => return error.CertificateSignatureAlgorithmRejected,
+    }
 }
 
 fn verifyAgainstBundle(bundle: *const Certificate.Bundle, subject: Certificate.Parsed, now_sec: i64) ParseError!void {
@@ -399,6 +435,64 @@ test "parse: malformed DER length is rejected, not crashed" {
         0x00, 0x00, // extensions length
     };
     try testing.expectError(error.CertificateFieldHasInvalidLength, parse(&msg, .{}));
+}
+
+// Build a Parsed leaf carrying only the fields verifyServerAuthPolicy reads,
+// so policy enforcement can be tested without generating full DER fixtures.
+fn policyLeaf(
+    buffer: []const u8,
+    key_usage: Certificate.Parsed.Slice,
+    ext_key_usage: Certificate.Parsed.Slice,
+    signature_algorithm: Certificate.Algorithm,
+) Certificate.Parsed {
+    return .{
+        .certificate = .{ .buffer = buffer, .index = 0 },
+        .issuer_slice = .empty,
+        .subject_slice = .empty,
+        .common_name_slice = .empty,
+        .signature_slice = .empty,
+        .signature_algorithm = signature_algorithm,
+        .pub_key_algo = .{ .curveEd25519 = {} },
+        .pub_key_slice = .empty,
+        .message_slice = .empty,
+        .subject_alt_name_slice = .empty,
+        .key_usage_slice = key_usage,
+        .ext_key_usage_slice = ext_key_usage,
+        .validity = .{ .not_before = 0, .not_after = 0 },
+        .version = .v3,
+    };
+}
+
+// RFC 8446 §4.4.2.2 — a server certificate whose KeyUsage extension is present
+// but omits digitalSignature cannot sign CertificateVerify and must be rejected.
+test "verifyServerAuthPolicy: KeyUsage without digitalSignature is rejected" {
+    // BIT STRING, 6 unused bits, 0x40 sets bit 1 (nonRepudiation) but not bit 0.
+    const key_usage = "\x03\x02\x06\x40";
+    const leaf = policyLeaf(key_usage, .{ .start = 0, .end = key_usage.len }, .empty, .ecdsa_with_SHA256);
+    try testing.expectError(error.CertificateKeyUsageRejected, verifyServerAuthPolicy(leaf));
+}
+
+// RFC 5280 §4.2.1.12 — when EKU is present it restricts allowed uses; without
+// id-kp-serverAuth the certificate must not be accepted for TLS server auth.
+test "verifyServerAuthPolicy: EKU without serverAuth is rejected" {
+    // SEQUENCE { OID id-kp-clientAuth (1.3.6.1.5.5.7.3.2) }
+    const eku = "\x30\x0a\x06\x08\x2b\x06\x01\x05\x05\x07\x03\x02";
+    const leaf = policyLeaf(eku, .empty, .{ .start = 0, .end = eku.len }, .ecdsa_with_SHA256);
+    try testing.expectError(error.CertificateExtendedKeyUsageRejected, verifyServerAuthPolicy(leaf));
+}
+
+// RFC 8446 §4.2.3 — only the TLS 1.3 signature algorithms are acceptable for a
+// server certificate; a legacy SHA-1/RSA cert must be rejected by policy.
+test "verifyServerAuthPolicy: unsupported signature algorithm is rejected" {
+    const leaf = policyLeaf("", .empty, .empty, .sha1WithRSAEncryption);
+    try testing.expectError(error.CertificateSignatureAlgorithmRejected, verifyServerAuthPolicy(leaf));
+}
+
+// RFC 8446 §4.4.2.2 — a leaf with no KeyUsage/EKU restrictions and a supported
+// signature algorithm satisfies the residual server-auth policy.
+test "verifyServerAuthPolicy: unrestricted supported leaf is accepted" {
+    const leaf = policyLeaf("", .empty, .empty, .ecdsa_with_SHA256);
+    try verifyServerAuthPolicy(leaf);
 }
 
 test "encodeCertificateVerify: wraps signature" {

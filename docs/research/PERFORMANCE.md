@@ -67,9 +67,10 @@ Start with layers that exist today:
    ztls now has a server-side skeleton, so `zig build bench` includes
    rustls-style no-I/O scenarios over in-memory client/server state machines:
    full authenticated handshake, client-to-server application data,
-   server-to-client application data, and ping/pong small-record loops. These
-   rows are still ztls-only; comparable OpenSSL/rustls harnesses are separate
-   follow-up work.
+   server-to-client application data, and ping/pong small-record loops.
+   Comparable baselines live in separate harnesses: `zig build bench-openssl`
+   for OpenSSL/libssl memory BIO and `zig build bench-rustls` for rustls
+   client/server connections over in-memory buffers.
 
 ## Methodology
 
@@ -98,6 +99,7 @@ The first `zig build bench` is deliberately boring:
 - ztls in-memory authenticated client/server handshake and app-data rows;
 - OpenSSL EVP raw AEAD rows via `zig build bench-evp`;
 - OpenSSL/libssl memory-BIO rows via `zig build bench-openssl`;
+- rustls in-memory client/server rows via `zig build bench-rustls`;
 - no network;
 - no allocations in library code; benchmark-only scratch allocation is fine;
 - CSV rows written to stdout.

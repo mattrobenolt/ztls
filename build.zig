@@ -181,10 +181,25 @@ pub fn build(b: *std.Build) void {
     const bio_bench_bin_step = b.step("bench-openssl-bin", "Build the OpenSSL memory BIO benchmark binary");
     bio_bench_bin_step.dependOn(&install_bio_bench.step);
 
+    const rustls_bench = b.addSystemCommand(&.{ "cargo", "run", "--release", "--manifest-path", "bench/rustls/Cargo.toml", "--" });
+    if (b.args) |args| rustls_bench.addArgs(args);
+    const rustls_bench_step = b.step("bench-rustls", "Run rustls in-memory benchmarks");
+    rustls_bench_step.dependOn(&rustls_bench.step);
+
+    const rustls_bench_build = b.addSystemCommand(&.{ "cargo", "build", "--release", "--manifest-path", "bench/rustls/Cargo.toml" });
+    const rustls_bench_install = b.addSystemCommand(&.{ "sh", "-c", "mkdir -p zig-out/bin && cp bench/rustls/target/release/rustls_bench zig-out/bin/rustls_bench" });
+    rustls_bench_install.step.dependOn(&rustls_bench_build.step);
+    const rustls_bench_bin_step = b.step("bench-rustls-bin", "Build the rustls benchmark binary");
+    rustls_bench_bin_step.dependOn(&rustls_bench_install.step);
+
     const examples = [_][]const u8{
         "full_handshake",
         "handshake_keys",
+        "https_client",
+        "https_server",
+        "in_memory_handshake",
         "key_schedule",
+        "tcp_loopback",
         "record_protection",
     };
     for (examples) |name| {

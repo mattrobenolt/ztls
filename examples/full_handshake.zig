@@ -141,8 +141,6 @@ pub fn main() !void {
     const record = try hs.sendApplicationData(message, &app_out);
     print("[client] encrypted {} bytes                    → {} wire bytes\n", .{ message.len, record.len });
 
-    var dec_buf: [128]u8 = undefined;
-    @memcpy(dec_buf[0..record.len], record);
-    const dec = try peer.decrypt(dec_buf[0..record.len]);
+    const dec = try peer.decrypt(app_out[0..record.len]);
     print("[peer]   decrypted: \"{s}\"\n", .{dec.content});
 }
