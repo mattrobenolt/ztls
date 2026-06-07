@@ -41,6 +41,13 @@ const LeafPublicKeyBuffer = ArrayBuffer(u8, max_leaf_pub_key);
 const SelectedAlpnBuffer = ArrayBuffer(u8, 255);
 const HandshakeBuffer = array_buffer.SliceBuffer(u8);
 
+const ServerFlightProgress = enum {
+    none,
+    certificate_verified,
+    certificate_verify_verified,
+    finished_verified,
+};
+
 /// RFC 8446 §4 — handshake message type. Open enum: unrecognized values pass
 /// through the reader untouched; the state machine decides what is unexpected.
 pub const HandshakeType = enum(u8) {
@@ -166,9 +173,18 @@ const Suite = union(enum) {
     /// Pre-ServerHello: the negotiated hash isn't known yet, so run both
     /// transcript hashes and keep the one the chosen suite uses. RFC 8446
     /// §4.4.1 permits deferring the transcript until the hash is selected.
-    buffering: struct { sha256: Sha256, sha384: Sha384 },
+    const Buffering = struct {
+        sha256: Sha256,
+        sha384: Sha384,
+
+        const init: Buffering = .{ .sha256 = .init(.{}), .sha384 = .init(.{}) };
+    };
+
+    buffering: Buffering,
     sha256: HashArm(hkdf.HkdfSha256, Sha256),
     sha384: HashArm(hkdf.HkdfSha384, Sha384),
+
+    pub const init: Suite = .{ .buffering = .init };
 
     fn secureZero(self: *Suite) void {
         switch (self.*) {
@@ -305,10 +321,7 @@ const Suite = union(enum) {
                 errdefer rx.deinit();
                 const tx = try H.makeRecordLayer(s.aead, client_secret);
 
-                return .{
-                    .rx = rx,
-                    .tx = tx,
-                };
+                return .{ .rx = rx, .tx = tx };
             },
         }
     }
@@ -340,12 +353,9 @@ handshake_buf: HandshakeBuffer = .empty,
 /// Consecutive post-handshake messages seen with no intervening application
 /// data; reset by application data. Bounds KeyUpdate-flood DoS.
 post_handshake_count: u8 = 0,
-/// Verification gates for the server flight. These make the connected transition
-/// auditable: Certificate, CertificateVerify, and Finished must each pass before
-/// we emit client Finished and install application keys.
-server_cert_verified: bool = false,
-server_cv_verified: bool = false,
-server_finished_verified: bool = false,
+/// Ordered verification progress through the server flight. Finished emission
+/// requires Certificate, CertificateVerify, and Finished to verify in sequence.
+server_flight_progress: ServerFlightProgress = .none,
 /// ALPN protocols offered in ClientHello. Caller-owned, must live until start().
 alpn_protocols: client_hello.AlpnProtocols = &.{},
 selected_alpn: SelectedAlpnBuffer = .empty,
@@ -357,7 +367,7 @@ pub fn init(keypair: x25519.KeyPair) ClientHandshake {
     return .{
         .state = .start,
         // Hash unknown until ServerHello: run both candidate transcripts.
-        .suite = .{ .buffering = .{ .sha256 = .init(.{}), .sha384 = .init(.{}) } },
+        .suite = .init,
         .keypair = keypair,
     };
 }
@@ -681,23 +691,23 @@ fn processFlightMessage(self: *ClientHandshake, msg: HandshakeReader.Message, po
             const pk = try certificate.parse(msg.raw, policy);
             self.leaf_pub_key.clear();
             self.leaf_pub_key.appendSlice(pk) catch return error.CertificateKeyTooLarge;
-            self.server_cert_verified = true;
+            self.server_flight_progress = .certificate_verified;
             self.suite.update(msg.raw);
             self.state = .wait_cv;
         },
         .wait_cv => {
             if (msg.type != .certificate_verify) return error.UnexpectedMessage;
-            if (!self.server_cert_verified) return error.UnexpectedMessage;
+            if (self.server_flight_progress != .certificate_verified) return error.UnexpectedMessage;
             try self.suite.verifyCertificate(msg.raw, self.leaf_pub_key.constSlice());
-            self.server_cv_verified = true;
+            self.server_flight_progress = .certificate_verify_verified;
             self.suite.update(msg.raw);
             self.state = .wait_finished;
         },
         .wait_finished => {
             if (msg.type != .finished) return error.UnexpectedMessage;
-            if (!self.server_cv_verified) return error.UnexpectedMessage;
+            if (self.server_flight_progress != .certificate_verify_verified) return error.UnexpectedMessage;
             try self.suite.verifyServerFinished(msg.raw);
-            self.server_finished_verified = true;
+            self.server_flight_progress = .finished_verified;
             self.suite.update(msg.raw);
             self.state = .send_finished;
         },
@@ -728,7 +738,7 @@ pub const SendError = RecordLayer.EncryptError || error{ PendingWrite, Unexpecte
 /// the returned slice is the bytes to send.
 pub fn clientFinished(self: *ClientHandshake, out: []u8) SendError![]const u8 {
     assert(self.state == .send_finished);
-    if (!self.server_cert_verified or !self.server_cv_verified or !self.server_finished_verified) return error.UnexpectedMessage;
+    if (self.server_flight_progress != .finished_verified) return error.UnexpectedMessage;
 
     // Plaintext Finished: 4-byte handshake header + verify_data. verify_data
     // is one hash digest: 32 bytes (SHA-256) or 48 (SHA-384).
@@ -1035,9 +1045,7 @@ test "processFlight: RFC 8448 §3 full server flight to connected" {
     var flight_buf: [1024]u8 = undefined;
     try hs.processFlight(rfc8448Fixture("server_flight.b64", &flight_buf), .{});
     try testing.expectEqual(.send_finished, hs.state);
-    try testing.expect(hs.server_cert_verified);
-    try testing.expect(hs.server_cv_verified);
-    try testing.expect(hs.server_finished_verified);
+    try testing.expectEqual(.finished_verified, hs.server_flight_progress);
 }
 
 // openssl s_server sends each flight message in its own record, so processFlight
