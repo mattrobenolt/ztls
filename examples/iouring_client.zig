@@ -4,15 +4,15 @@
 //! TLS records still move through RecordBuffer and ClientHandshake, and every
 //! emitted TLS record calls completeWrite() after the io_uring send completes.
 const std = @import("std");
+const IoUring = std.os.linux.IoUring;
+const print = std.debug.print;
 const builtin = @import("builtin");
+
+const ztls = @import("ztls");
 
 comptime {
     if (builtin.os.tag != .linux) @compileError("iouring_client is Linux-only");
 }
-
-const IoUring = std.os.linux.IoUring;
-const print = std.debug.print;
-const ztls = @import("ztls");
 
 const connect_host = "127.0.0.1";
 const server_name = "ztls.server.test";
@@ -21,7 +21,12 @@ const trust_anchor_pem = "examples/fixtures/server-ecdsa/server.crt";
 
 const IoError = error{ IoUringFailed, PeerClosed };
 
+const debug_allocator: std.heap.DebugAllocator(.{}) = .init;
+
 pub fn main() !void {
+    var gpa = debug_allocator.allocator();
+    _ = gpa; // autofix
+    defer debug_allocator.deinit();
     var ring: IoUring = IoUring.init(8, 0) catch |err| switch (err) {
         error.PermissionDenied, error.SystemOutdated => {
             print("[iouring] io_uring unavailable: {}\n", .{err});

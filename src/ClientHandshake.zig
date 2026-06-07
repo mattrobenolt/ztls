@@ -14,7 +14,8 @@ const base64 = std.base64.standard.Decoder;
 
 const aead = @import("aead.zig");
 const alert = @import("alert.zig");
-const ArrayBuffer = @import("array_buffer.zig").ArrayBuffer;
+const array_buffer = @import("array_buffer.zig");
+const ArrayBuffer = array_buffer.ArrayBuffer;
 const certificate = @import("certificate.zig");
 const client_hello = @import("client_hello.zig");
 const encrypted_extensions = @import("encrypted_extensions.zig");
@@ -37,6 +38,7 @@ pub const OutBuffer = ArrayBuffer(u8, max_out_len);
 const max_leaf_pub_key = 1024;
 const LeafPublicKeyBuffer = ArrayBuffer(u8, max_leaf_pub_key);
 const SelectedAlpnBuffer = ArrayBuffer(u8, 255);
+const HandshakeBuffer = array_buffer.SliceBuffer(u8);
 
 /// RFC 8446 §4 — handshake message type. Open enum: unrecognized values pass
 /// through the reader untouched; the state machine decides what is unexpected.
@@ -335,8 +337,7 @@ policy: certificate.Policy = .{},
 leaf_pub_key: LeafPublicKeyBuffer = .empty,
 /// Optional caller-owned storage for a handshake message that spans encrypted
 /// records. Empty means spanning messages are rejected with UnexpectedEof.
-handshake_buf: []u8 = &.{},
-handshake_len: usize = 0,
+handshake_buf: HandshakeBuffer = .empty,
 /// Consecutive post-handshake messages seen with no intervening application
 /// data; reset by application data. Bounds KeyUpdate-flood DoS.
 post_handshake_count: u8 = 0,
@@ -389,8 +390,8 @@ pub const StartError = error{ BufferTooShort, ServerNameTooLong } || client_hell
 /// this, a spanning message is rejected with UnexpectedEof. The storage must
 /// live at least until the handshake completes.
 pub fn useHandshakeBuffer(self: *ClientHandshake, storage: []u8) void {
-    assert(self.handshake_len == 0);
-    self.handshake_buf = storage;
+    assert(self.handshake_buf.len == 0);
+    self.handshake_buf = .init(storage);
 }
 
 /// Offer ALPN protocols in ClientHello. Each protocol must be 1..255 bytes.
@@ -620,7 +621,7 @@ pub fn processFlight(
     payload: []const u8,
     policy: certificate.Policy,
 ) FlightError!void {
-    if (self.handshake_len != 0) {
+    if (self.handshake_buf.len != 0) {
         try self.appendHandshakeFragment(payload);
         return self.processFlightBuffer(policy);
     }
@@ -642,22 +643,21 @@ fn processFlightBytes(self: *ClientHandshake, payload: []const u8, policy: certi
 }
 
 fn processFlightBuffer(self: *ClientHandshake, policy: certificate.Policy) FlightError!void {
-    var hr: HandshakeReader = .init(self.handshake_buf[0..self.handshake_len]);
+    var hr: HandshakeReader = .init(self.handshake_buf.constSlice());
     while (true) {
         const msg = hr.next() catch |err| switch (err) {
             error.UnexpectedEof => {
-                const partial = self.handshake_buf[hr.r.pos..self.handshake_len];
-                @memmove(self.handshake_buf[0..partial.len], partial);
-                self.handshake_len = partial.len;
+                const partial = self.handshake_buf.constSlice()[hr.r.pos..];
+                self.handshake_buf.retainFrom(partial) catch unreachable;
                 return;
             },
         } orelse {
-            self.handshake_len = 0;
+            self.handshake_buf.clear();
             return;
         };
         try self.processFlightMessage(msg, policy);
         if (self.state == .send_finished) {
-            self.handshake_len = 0;
+            self.handshake_buf.clear();
             return;
         }
     }
@@ -707,16 +707,13 @@ fn processFlightMessage(self: *ClientHandshake, msg: HandshakeReader.Message, po
 }
 
 fn appendHandshakeFragment(self: *ClientHandshake, payload: []const u8) FlightError!void {
-    if (self.handshake_len + payload.len > self.handshake_buf.len) return error.HandshakeBufferTooShort;
-    @memcpy(self.handshake_buf[self.handshake_len..][0..payload.len], payload);
-    self.handshake_len += payload.len;
+    self.handshake_buf.appendSlice(payload) catch return error.HandshakeBufferTooShort;
 }
 
 fn stashHandshakeFragment(self: *ClientHandshake, fragment: []const u8) FlightError!void {
-    if (self.handshake_buf.len == 0) return error.UnexpectedEof;
-    if (fragment.len > self.handshake_buf.len) return error.HandshakeBufferTooShort;
-    @memcpy(self.handshake_buf[0..fragment.len], fragment);
-    self.handshake_len = fragment.len;
+    if (self.handshake_buf.fullSlice().len == 0) return error.UnexpectedEof;
+    self.handshake_buf.clear();
+    self.handshake_buf.appendSlice(fragment) catch return error.HandshakeBufferTooShort;
 }
 
 /// Errors from encrypting an outbound record into the caller's buffer.
@@ -1069,9 +1066,9 @@ test "processFlight: reassembles handshake message split across records" {
     var flight_buf: [1024]u8 = undefined;
     const flight = rfc8448Fixture("server_flight.b64", &flight_buf);
     try hs.processFlight(flight[0..2], .{});
-    try testing.expectEqual(@as(usize, 2), hs.handshake_len);
+    try testing.expectEqual(@as(usize, 2), hs.handshake_buf.len);
     try hs.processFlight(flight[2..], .{});
-    try testing.expectEqual(@as(usize, 0), hs.handshake_len);
+    try testing.expectEqual(@as(usize, 0), hs.handshake_buf.len);
     try testing.expectEqual(.send_finished, hs.state);
 }
 

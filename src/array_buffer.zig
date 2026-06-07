@@ -148,6 +148,16 @@ pub fn ArrayBufferAligned(
     };
 }
 
+test "SliceBuffer: append and retain" {
+    var storage: [8]u8 = undefined;
+    var buf: SliceBuffer(u8) = .init(&storage);
+
+    try buf.appendSlice("hello");
+    try testing.expectEqualStrings("hello", buf.constSlice());
+    try buf.retainFrom(buf.constSlice()[2..]);
+    try testing.expectEqualStrings("llo", buf.constSlice());
+}
+
 test "append and slice" {
     var buf: ArrayBuffer(u8, 32) = .empty;
 
