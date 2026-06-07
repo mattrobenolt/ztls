@@ -9,9 +9,6 @@
 /// Keys are derived during the handshake and held for the connection lifetime.
 const std = @import("std");
 const assert = std.debug.assert;
-const c = @cImport({
-    @cInclude("openssl/evp.h");
-});
 const testing = std.testing;
 
 const construct = @import("nonce.zig").construct;
@@ -19,6 +16,9 @@ pub const Iv = @import("nonce.zig").Iv;
 const memx = @import("memx.zig");
 const Nonce = @import("nonce.zig").Nonce;
 
+const c = @cImport({
+    @cInclude("openssl/evp.h");
+});
 comptime {
     assert(@sizeOf(Nonce) == 12);
 }
@@ -66,9 +66,6 @@ pub const Aead = union(Keys) {
     }
 
     pub fn secureZero(self: *Aead) void {
-        switch (self.*) {
-            inline else => |*key| key.secureZero(),
-        }
         std.crypto.secureZero(u8, std.mem.asBytes(self));
     }
 

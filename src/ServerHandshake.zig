@@ -60,15 +60,11 @@ fn HashArm(comptime Hkdf_: type, comptime Hash: type) type {
         server_app_secret: Hkdf_.Prk = undefined,
 
         const Hkdf = Hkdf_;
-    };
-}
 
-fn secureZeroHashArm(arm: anytype) void {
-    arm.handshake_secret.secureZero();
-    arm.client_finished_key.secureZero();
-    arm.server_finished_key.secureZero();
-    arm.client_app_secret.secureZero();
-    arm.server_app_secret.secureZero();
+        fn secureZero(self: *@This()) void {
+            std.crypto.secureZero(u8, mem.asBytes(self));
+        }
+    };
 }
 
 const Suite = union(enum) {
@@ -77,7 +73,7 @@ const Suite = union(enum) {
 
     fn secureZero(self: *Suite) void {
         switch (self.*) {
-            inline .sha256, .sha384 => |*s| secureZeroHashArm(s),
+            inline .sha256, .sha384 => |*s| s.secureZero(),
         }
     }
 

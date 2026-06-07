@@ -141,6 +141,8 @@ pub const State = enum {
 /// bytes for SHA-256, 48 for SHA-384), sealing the size polymorphism in the arm.
 fn HashArm(comptime Hkdf_: type, comptime Hash: type) type {
     return struct {
+        const Self = @This();
+
         transcript: Hash,
         // The negotiated AEAD; set from the cipher suite at ServerHello.
         aead: aead.Keys = .aes128_gcm,
@@ -153,15 +155,11 @@ fn HashArm(comptime Hkdf_: type, comptime Hash: type) type {
         server_app_secret: Hkdf_.Prk = undefined,
 
         const Hkdf = Hkdf_;
-    };
-}
 
-fn secureZeroHashArm(arm: anytype) void {
-    arm.handshake_secret.secureZero();
-    arm.client_finished_key.secureZero();
-    arm.server_finished_key.secureZero();
-    arm.client_app_secret.secureZero();
-    arm.server_app_secret.secureZero();
+        inline fn secureZero(self: *Self) void {
+            crypto.secureZero(u8, mem.asBytes(self));
+        }
+    };
 }
 
 const Suite = union(enum) {
@@ -175,7 +173,7 @@ const Suite = union(enum) {
     fn secureZero(self: *Suite) void {
         switch (self.*) {
             .buffering => {},
-            inline .sha256, .sha384 => |*s| secureZeroHashArm(s),
+            inline .sha256, .sha384 => |*s| s.secureZero(),
         }
     }
 
