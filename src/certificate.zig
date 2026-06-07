@@ -310,6 +310,8 @@ const fixture_cv_sig = @embedFile("test_fixtures/cv.sig");
 const chain_root_pem = "tests/fixtures/chain/root.crt";
 const chain_leaf_der = @embedFile("test_fixtures/chain/leaf.der");
 const chain_intermediate_der = @embedFile("test_fixtures/chain/intermediate.der");
+const name_constraints_der = @embedFile("test_fixtures/name_constraints.der");
+const name_constraints_noncritical_der = @embedFile("test_fixtures/name_constraints_noncritical.der");
 
 fn buildCertMsg(buf: []u8, cert_der: []const u8) []const u8 {
     return buildCertChainMsg(buf, &.{cert_der});
@@ -534,6 +536,36 @@ test "verifySignature: wrong handshake type" {
     _ = buildCvMsg(&cv_buf, fixture_cv_sig);
     cv_buf[0] = 0x01;
     try testing.expectError(error.InvalidHandshakeType, verifyServerSignature(&cv_buf, pub_key, &test_transcript_hash));
+}
+
+// RFC 5280 §4.2.1.10 — Name Constraints extension is parsed from a real
+// certificate and its value slice is available, even though path-level
+// enforcement is not yet implemented.
+test "parse: extracts critical name constraints" {
+    var buf: [1024]u8 = undefined;
+    const pub_key = try parse(buildCertMsg(&buf, name_constraints_der), .{});
+    try testing.expect(pub_key.len > 0);
+
+    // Verify the extension was extracted by parsing the leaf directly.
+    const cert: Certificate = .{ .buffer = name_constraints_der, .index = 0 };
+    const parsed = try cert.parse();
+    const nc = parsed.nameConstraints();
+    try testing.expect(nc.len > 0);
+    // First byte should be SEQUENCE (0x30) for NameConstraints.
+    try testing.expectEqual(@as(u8, 0x30), nc[0]);
+}
+
+// RFC 5280 §4.2.1.10 — non-critical Name Constraints are also parsed.
+test "parse: extracts non-critical name constraints" {
+    var buf: [1024]u8 = undefined;
+    const pub_key = try parse(buildCertMsg(&buf, name_constraints_noncritical_der), .{});
+    try testing.expect(pub_key.len > 0);
+
+    const cert: Certificate = .{ .buffer = name_constraints_noncritical_der, .index = 0 };
+    const parsed = try cert.parse();
+    const nc = parsed.nameConstraints();
+    try testing.expect(nc.len > 0);
+    try testing.expectEqual(@as(u8, 0x30), nc[0]);
 }
 
 // Fuzz target: parse must reject arbitrary Certificate bytes with an error,
