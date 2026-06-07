@@ -535,10 +535,10 @@ pub fn processServerHello(self: *ClientHandshake, msg: []const u8) ServerHelloEr
     const b = self.suite.buffering;
     self.suite = switch (sh.cipher_suite) {
         .aes_128_gcm_sha256, .chacha20_poly1305_sha256 => .{
-            .sha256 = .{ .transcript = b.sha256, .aead = sh.cipher_suite.aeadKeys() },
+            .sha256 = .{ .transcript = b.sha256, .aead = sh.cipher_suite },
         },
         .aes_256_gcm_sha384 => .{
-            .sha384 = .{ .transcript = b.sha384, .aead = sh.cipher_suite.aeadKeys() },
+            .sha384 = .{ .transcript = b.sha384, .aead = sh.cipher_suite },
         },
     };
 
@@ -881,7 +881,7 @@ test "deriveHandshakeKeys: RFC 8448 §3 server handshake key/iv/finished" {
     hs.suite.update(&rfc8448_server_hello);
     // Collapse to the SHA-256 arm (as processServerHello would for this suite).
     const b = hs.suite.buffering;
-    hs.suite = .{ .sha256 = .{ .transcript = b.sha256, .aead = .aes128_gcm } };
+    hs.suite = .{ .sha256 = .{ .transcript = b.sha256, .aead = .aes_128_gcm_sha256 } };
 
     const keys = try hs.suite.deriveHandshakeKeys(&dhe);
 
@@ -889,7 +889,7 @@ test "deriveHandshakeKeys: RFC 8448 §3 server handshake key/iv/finished" {
     try testing.expectEqualSlices(u8, &.{
         0x3f, 0xce, 0x51, 0x60, 0x09, 0xc2, 0x17, 0x27,
         0xd0, 0xf2, 0xe4, 0xe8, 0x6e, 0xe4, 0x03, 0xbc,
-    }, &keys.rx.aead.aes128_gcm.data);
+    }, &keys.rx.aead.aes_128_gcm_sha256.data);
     // server_write_iv
     try testing.expectEqualSlices(u8, &.{
         0x5d, 0x31, 0x3e, 0xb2, 0x67, 0x12, 0x76, 0xee,
@@ -935,7 +935,7 @@ test "processServerHello: RFC 8448 §3 installs server handshake keys" {
     try testing.expectEqualSlices(u8, &.{
         0x3f, 0xce, 0x51, 0x60, 0x09, 0xc2, 0x17, 0x27,
         0xd0, 0xf2, 0xe4, 0xe8, 0x6e, 0xe4, 0x03, 0xbc,
-    }, &hs.rx.aead.aes128_gcm.data);
+    }, &hs.rx.aead.aes_128_gcm_sha256.data);
 }
 
 // RFC 8448 §3 vectors, base64-encoded inside a txtar archive (decoded at test
@@ -1092,7 +1092,7 @@ test "clientFinished: RFC 8448 §3 emits Finished and upgrades to app keys" {
     try testing.expectEqualSlices(u8, &.{
         0x9f, 0x02, 0x28, 0x3b, 0x6c, 0x9c, 0x07, 0xef,
         0xc2, 0x6b, 0xb9, 0xf2, 0xac, 0x92, 0xe3, 0x56,
-    }, &hs.rx.aead.aes128_gcm.data);
+    }, &hs.rx.aead.aes_128_gcm_sha256.data);
 }
 
 // RFC 8446 §7.2 — KeyUpdate key ratchet. After the handshake, ratchet the
@@ -1113,7 +1113,7 @@ test "ratchetClientKey: RFC 8446 §7.2 next application write key" {
     try testing.expectEqualSlices(u8, &.{
         0x38, 0x79, 0xd8, 0x2f, 0x5f, 0x14, 0x05, 0x6e,
         0x62, 0x3f, 0x2c, 0xe5, 0xbf, 0xc6, 0x6f, 0xce,
-    }, &rl.aead.aes128_gcm.data);
+    }, &rl.aead.aes_128_gcm_sha256.data);
 }
 
 // Drive the RFC 8448 §3 handshake to connected; rx/tx carry application keys.
@@ -1183,7 +1183,7 @@ test "handleRecord: server KeyUpdate(update_requested) ratchets rx and responds"
     // Advance the server's send secret independently (in lockstep with our rx).
     const H = hkdf.HkdfSha256;
     const server_secret_1 = H.nextTrafficSecret(server_secret_0);
-    var server_tx_1 = try H.makeRecordLayer(.aes128_gcm, server_secret_1);
+    var server_tx_1 = try H.makeRecordLayer(.aes_128_gcm_sha256, server_secret_1);
     defer server_tx_1.deinit();
     var app_buf: [64]u8 = undefined;
     const app_wire = try server_tx_1.encrypt(.application_data, "after", &app_buf);
@@ -1316,7 +1316,7 @@ test "handleRecord: KeyUpdate flood is rejected" {
     var server_secret = hs.suite.sha256.server_app_secret;
     var i: usize = 0;
     const result = while (i < max_post_handshake_messages + 1) : (i += 1) {
-        var server_tx = try H.makeRecordLayer(.aes128_gcm, server_secret);
+        var server_tx = try H.makeRecordLayer(.aes_128_gcm_sha256, server_secret);
         defer server_tx.deinit();
         const ku = [_]u8{ 0x18, 0x00, 0x00, 0x01, 0x00 };
         var ku_buf: [64]u8 = undefined;

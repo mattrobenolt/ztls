@@ -12,6 +12,7 @@ const Sha384 = crypto.hash.sha2.Sha384;
 const testing = std.testing;
 
 const aead = @import("aead.zig");
+const CipherSuite = @import("cipher_suite.zig").CipherSuite;
 const Iv = @import("aead.zig").Iv;
 const memx = @import("memx.zig");
 const RecordLayer = @import("RecordLayer.zig");
@@ -178,7 +179,7 @@ fn Hkdf(comptime Hmac: type) type {
         /// a ready-to-use RecordLayer. `key` selects the AEAD at runtime (the
         /// negotiated cipher suite), so a single arm serves all suites of its
         /// hash (e.g. SHA-256 covers AES-128-GCM and ChaCha20-Poly1305).
-        pub fn makeRecordLayer(key: aead.Keys, prk: Prk) aead.Error!RecordLayer {
+        pub fn makeRecordLayer(key: CipherSuite, prk: Prk) aead.Error!RecordLayer {
             const layer_aead: aead.Aead = switch (key) {
                 inline else => |k| @unionInit(aead.Aead, @tagName(k), trafficKey(k, prk)),
             };
@@ -194,7 +195,7 @@ fn Hkdf(comptime Hmac: type) type {
 
         /// RFC 8446 §7.3 — derive the write key from a traffic secret.
         pub inline fn trafficKey(
-            comptime key: aead.Keys,
+            comptime key: CipherSuite,
             prk: Prk,
         ) @FieldType(aead.Aead, @tagName(key)) {
             var out: @FieldType(aead.Aead, @tagName(key)) = undefined;
@@ -244,7 +245,7 @@ test "HkdfSha256.trafficKey: RFC 8448 §3 server handshake" {
         0xe9, 0xc9, 0x12, 0xbc, 0xde, 0xd9, 0x10, 0x5d,
         0x42, 0xbe, 0xfd, 0x59, 0xd3, 0x91, 0xad, 0x38,
     });
-    const key = HkdfSha256.trafficKey(.aes128_gcm, secret);
+    const key = HkdfSha256.trafficKey(.aes_128_gcm_sha256, secret);
     try testing.expectEqualSlices(u8, &.{
         0x3f, 0xce, 0x51, 0x60, 0x09, 0xc2, 0x17, 0x27,
         0xd0, 0xf2, 0xe4, 0xe8, 0x6e, 0xe4, 0x03, 0xbc,
@@ -261,7 +262,7 @@ test "HkdfSha384: traffic key/iv, finished key, traffic-upd (independent vector)
         0x3b, 0xae, 0x71, 0x16, 0x22, 0x3e, 0x4c, 0x29,
         0xe6, 0xb3, 0xde, 0x23, 0xaf, 0x4b, 0x93, 0xbb,
         0xcc, 0x21, 0x95, 0xa6, 0x0e, 0xaf, 0x0b, 0x1d,
-    }, &HkdfSha384.trafficKey(.aes256_gcm, secret).data);
+    }, &HkdfSha384.trafficKey(.aes_256_gcm_sha384, secret).data);
     try testing.expectEqualSlices(u8, &.{
         0x04, 0xc8, 0xc4, 0x44, 0x22, 0xae, 0x77, 0x21,
         0x7d, 0x56, 0x69, 0x0e,

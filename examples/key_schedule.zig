@@ -48,10 +48,10 @@ pub fn main() !void {
     print("server_hs_secret:     {x}\n", .{server_hs_secret.data});
 
     // Derive RecordLayer keys and IVs from the server handshake traffic secret.
-    const server_write_key = hkdf.trafficKey(.aes128_gcm, server_hs_secret);
+    const server_write_key = hkdf.trafficKey(.aes_128_gcm_sha256, server_hs_secret);
     const server_write_iv = hkdf.trafficIv(server_hs_secret);
 
-    const client_write_key = hkdf.trafficKey(.aes128_gcm, client_hs_secret);
+    const client_write_key = hkdf.trafficKey(.aes_128_gcm_sha256, client_hs_secret);
     const client_write_iv = hkdf.trafficIv(client_hs_secret);
 
     print("\n=== handshake traffic keys ===\n", .{});
@@ -61,9 +61,10 @@ pub fn main() !void {
     print("client_write_iv:  {x}\n", .{client_write_iv.data});
 
     // Wire up RecordLayers with derived keys.
-    var server_tx: RecordLayer = try .init(.{ .aes128_gcm = server_write_key }, server_write_iv);
+    const server_aead: ztls.aead.Aead = .{ .aes_128_gcm_sha256 = server_write_key };
+    var server_tx: RecordLayer = try .init(server_aead, server_write_iv);
     defer server_tx.deinit();
-    var client_rx: RecordLayer = try .init(.{ .aes128_gcm = server_write_key }, server_write_iv);
+    var client_rx: RecordLayer = try .init(server_aead, server_write_iv);
     defer client_rx.deinit();
 
     // Server encrypts a handshake record, client decrypts it.

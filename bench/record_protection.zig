@@ -49,9 +49,9 @@ const Suite = enum {
 
     fn aead(self: Suite) Aead {
         return switch (self) {
-            .aes_128_gcm_sha256 => .{ .aes128_gcm = .init(@splat(0x11)) },
-            .aes_256_gcm_sha384 => .{ .aes256_gcm = .init(@splat(0x22)) },
-            .chacha20_poly1305_sha256 => .{ .chacha20_poly1305 = .init(@splat(0x33)) },
+            .aes_128_gcm_sha256 => .{ .aes_128_gcm_sha256 = .init(@splat(0x11)) },
+            .aes_256_gcm_sha384 => .{ .aes_256_gcm_sha384 = .init(@splat(0x22)) },
+            .chacha20_poly1305_sha256 => .{ .chacha20_poly1305_sha256 = .init(@splat(0x33)) },
         };
     }
 

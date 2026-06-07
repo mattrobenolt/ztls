@@ -3,6 +3,7 @@ const std = @import("std");
 const mem = std.mem;
 
 const aead = @import("aead.zig");
+const CipherSuite = @import("cipher_suite.zig").CipherSuite;
 const RecordLayer = @import("RecordLayer.zig");
 
 pub fn HashArm(comptime Hkdf_: type, comptime Hash: type) type {
@@ -11,7 +12,7 @@ pub fn HashArm(comptime Hkdf_: type, comptime Hash: type) type {
         pub const Hkdf = Hkdf_;
 
         transcript: Hash,
-        aead: aead.Keys,
+        aead: CipherSuite,
         handshake_secret: Hkdf.Prk = undefined,
         client_finished_key: Hkdf.Prk = undefined,
         server_finished_key: Hkdf.Prk = undefined,

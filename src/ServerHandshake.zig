@@ -253,7 +253,7 @@ fn installHandshakeKeys(
                 hkdf.HkdfSha256,
                 Sha256,
                 transcript,
-                suite.aeadKeys(),
+                suite,
                 &dhe,
             ) };
         },
@@ -265,7 +265,7 @@ fn installHandshakeKeys(
                 hkdf.HkdfSha384,
                 Sha384,
                 transcript,
-                suite.aeadKeys(),
+                suite,
                 &dhe,
             ) };
         },
@@ -290,7 +290,7 @@ fn makeHandshakeArm(
     comptime H: type,
     comptime Hash: type,
     transcript: Hash,
-    aead_key: aead.Keys,
+    aead_key: CipherSuite,
     dhe: []const u8,
 ) HashArm(H, Hash) {
     const handshake_secret = H.handshakeSecret(H.early_secret, dhe);

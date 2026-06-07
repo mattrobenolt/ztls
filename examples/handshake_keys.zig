@@ -94,9 +94,9 @@ pub fn main() !void {
 
     // ── RecordLayer keys ───────────────────────
 
-    const server_key = hkdf.trafficKey(.aes128_gcm, server_hs_secret);
+    const server_key = hkdf.trafficKey(.aes_128_gcm_sha256, server_hs_secret);
     const server_iv = hkdf.trafficIv(server_hs_secret);
-    const client_key = hkdf.trafficKey(.aes128_gcm, client_hs_secret);
+    const client_key = hkdf.trafficKey(.aes_128_gcm_sha256, client_hs_secret);
     const client_iv = hkdf.trafficIv(client_hs_secret);
 
     print("\nserver_write_key: {x}\n", .{server_key.data});
@@ -106,9 +106,9 @@ pub fn main() !void {
 
     // ── RecordLayer round-trip ─────────────────────
 
-    var server_tx: ztls.RecordLayer = try .init(.{ .aes128_gcm = server_key }, server_iv);
+    var server_tx: ztls.RecordLayer = try .init(.{ .aes_128_gcm_sha256 = server_key }, server_iv);
     defer server_tx.deinit();
-    var client_rx: ztls.RecordLayer = try .init(.{ .aes128_gcm = server_key }, server_iv);
+    var client_rx: ztls.RecordLayer = try .init(.{ .aes_128_gcm_sha256 = server_key }, server_iv);
     defer client_rx.deinit();
 
     const plaintext = "EncryptedExtensions";

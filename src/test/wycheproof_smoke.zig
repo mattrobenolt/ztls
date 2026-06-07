@@ -47,7 +47,7 @@ test "Wycheproof: AES-128-GCM AAD/tag handling tcId 2" {
     const expected_ct = hex(16, "49d8b9783e911913d87094d1f63cc765");
     const expected_tag: ztls.aead.Tag = .init(hex(16, "1e348ba07cca2cf04c618cb4d43a5b92"));
 
-    const aead: ztls.aead.Aead = .{ .aes128_gcm = key };
+    const aead: ztls.aead.Aead = .{ .aes_128_gcm_sha256 = key };
     var ctx = try ztls.aead.Context.init(aead);
     defer ctx.deinit();
 
@@ -79,7 +79,7 @@ test "Wycheproof boundary: AES-256-GCM AAD/tag handling" {
     const expected_ct = hex(16, "471fda38d7620303aac5c2c7124b6165");
     const expected_tag: ztls.aead.Tag = .init(hex(16, "01af015e2daf8b415dc2027e8d51aa80"));
 
-    const aead: ztls.aead.Aead = .{ .aes256_gcm = key };
+    const aead: ztls.aead.Aead = .{ .aes_256_gcm_sha384 = key };
     var ctx = try ztls.aead.Context.init(aead);
     defer ctx.deinit();
 
@@ -110,7 +110,7 @@ test "Wycheproof: ChaCha20-Poly1305 one-byte message tcId 4" {
     const expected_ct = hex(1, "3a");
     const expected_tag: ztls.aead.Tag = .init(hex(16, "cac27dec0968801e9f6eded69d807522"));
 
-    const aead: ztls.aead.Aead = .{ .chacha20_poly1305 = key };
+    const aead: ztls.aead.Aead = .{ .chacha20_poly1305_sha256 = key };
     var ctx = try ztls.aead.Context.init(aead);
     defer ctx.deinit();
 
@@ -142,7 +142,7 @@ test "Wycheproof boundary: ChaCha20-Poly1305 AAD handling" {
     const expected_ct = hex(1, "3a");
     const expected_tag: ztls.aead.Tag = .init(hex(16, "d7d9204f3da54c5438a2454128a7438e"));
 
-    const aead: ztls.aead.Aead = .{ .chacha20_poly1305 = key };
+    const aead: ztls.aead.Aead = .{ .chacha20_poly1305_sha256 = key };
     var ctx = try ztls.aead.Context.init(aead);
     defer ctx.deinit();
 
