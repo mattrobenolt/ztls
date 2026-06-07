@@ -30,6 +30,7 @@
             overlays = [ mattware.overlays.default ];
           };
           ast-grep = pkgs.ast-grep {
+            ruleDirs = [ ./rules ];
             languages.zig = {
               grammar = pkgs.tree-sitter-grammars.tree-sitter-zig;
               extensions = [ "zig" ];

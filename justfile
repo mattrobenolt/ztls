@@ -16,7 +16,7 @@ ci-actions:
 [doc("Assert the ztls-owned engine is allocator-free (TODO-28a2091a)")]
 [group("test")]
 no-alloc:
-    ./scripts/check-no-allocator.sh
+    ast-grep scan --filter no-ztls-owned-allocations src --globs '*.zig' --globs '!src/test/**' --report-style short
 
 [doc("Run unit, interop, formatting, benchmark smoke, and workflow checks")]
 [group("test")]
