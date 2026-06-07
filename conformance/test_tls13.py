@@ -1,3 +1,5 @@
+import socket
+
 from tlsfuzzer.expect import (
     ExpectAlert,
     ExpectApplicationData,
@@ -92,6 +94,24 @@ def close_notify(node):
     send.next_sibling = ExpectClose()
 
 
+def raw_connect(ztls_server):
+    sock = socket.create_connection((ztls_server["host"], ztls_server["port"]), timeout=2)
+    sock.settimeout(1)
+    return sock
+
+
+def expect_closed_or_alert(sock):
+    try:
+        data = sock.recv(1)
+        assert data in (b"", b"\x15"), f"expected close or alert, got {data!r}"
+    except (ConnectionResetError, TimeoutError, socket.timeout):
+        pass
+
+
+def record(content_type: int, body: bytes, version: bytes = b"\x03\x03") -> bytes:
+    return bytes([content_type]) + version + len(body).to_bytes(2, "big") + body
+
+
 def test_tls13_handshake_and_application_echo(ztls_server):
     conversation = Connect(ztls_server["host"], ztls_server["port"])
     node = conversation.add_child(ClientHelloGenerator(CIPHERS, extensions=tls13_extensions()))
@@ -134,6 +154,33 @@ def test_tls13_oversized_record_is_rejected(ztls_server):
     node = node.add_child(RawSocketWriteGenerator(data=oversized_record))
     expect_alert_or_close(node, AlertLevel.fatal, (AlertDescription.record_overflow, AlertDescription.decode_error))
     Runner(conversation).run()
+
+
+def test_tls13_rejects_garbage_pre_handshake(ztls_server):
+    sock = raw_connect(ztls_server)
+    try:
+        sock.sendall(b"this is not a TLS record\r\n")
+        expect_closed_or_alert(sock)
+    finally:
+        sock.close()
+
+
+def test_tls13_rejects_finished_before_handshake(ztls_server):
+    sock = raw_connect(ztls_server)
+    try:
+        sock.sendall(record(ContentType.handshake, b"\x14\x00\x00\x20" + b"\x00" * 32))
+        expect_closed_or_alert(sock)
+    finally:
+        sock.close()
+
+
+def test_tls13_rejects_truncated_client_hello_record(ztls_server):
+    sock = raw_connect(ztls_server)
+    try:
+        sock.sendall(b"\x16\x03\x03\x00\xc8")
+        sock.close()
+    finally:
+        sock.close()
 
 
 def test_tls13_rejects_unsupported_cipher_suite(ztls_server):

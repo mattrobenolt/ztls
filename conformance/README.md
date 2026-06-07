@@ -12,6 +12,6 @@ just tlsfuzzer -q
 just tlsfuzzer -k handshake
 ```
 
-The current suite is intentionally small but real: it performs a TLS 1.3 X25519 handshake against the ztls Sans-I/O server wrapper, validates ServerHello, EncryptedExtensions, Certificate, CertificateVerify, Finished, sends client Finished, exchanges application data, and closes with `close_notify`. It also covers KeyUpdate(update_requested), corrupted application-data MAC rejection, oversized record rejection, and an unsupported-cipher ClientHello failure with fatal `handshake_failure`.
+The current suite is intentionally small but real: it performs a TLS 1.3 X25519 handshake against the ztls Sans-I/O server wrapper, validates ServerHello, EncryptedExtensions, Certificate, CertificateVerify, Finished, sends client Finished, exchanges application data, and closes with `close_notify`. It also covers KeyUpdate(update_requested), corrupted application-data MAC rejection, oversized record rejection, garbage pre-handshake bytes, premature Finished, truncated record handling, and an unsupported-cipher ClientHello failure with fatal `handshake_failure`.
 
 This is the first external protocol-conformance harness. Grow it by adding negative conversations for malformed ClientHello extensions, invalid Finished, more record limits, and alert behavior. Unsupported protocol features should be skipped explicitly with comments naming the missing ztls feature.
