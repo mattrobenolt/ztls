@@ -403,7 +403,11 @@ Every error path is tested. Fuzzing is not optional.
   rejection, ECDSA DER verification), not proof that ztls implements primitive
   crypto. Boundary smoke vectors run with `zig build test-wycheproof`.
 - **bettertls** (https://github.com/Netflix/bettertls) — name constraints and
-  path-building correctness for certificate validation.
+  path-building correctness for certificate validation. ztls now parses the
+  Name Constraints extension (RFC 5280 §4.2.1.10) into the X.509 `Parsed`
+  struct, but subtree enforcement during chain validation is not yet
+  implemented. A bettertls inventory is maintained in
+  `docs/research/bettertls.md`.
 
 ### Benchmarks
 

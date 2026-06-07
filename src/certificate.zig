@@ -458,6 +458,7 @@ fn policyLeaf(
         .subject_alt_name_slice = .empty,
         .key_usage_slice = key_usage,
         .ext_key_usage_slice = ext_key_usage,
+        .name_constraints_slice = .empty,
         .validity = .{ .not_before = 0, .not_after = 0 },
         .version = .v3,
     };

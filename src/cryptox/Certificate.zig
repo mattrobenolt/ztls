@@ -149,6 +149,7 @@ pub const ExtensionId = enum {
     pe_logotype,
     netscape_cert_type,
     netscape_comment,
+    name_constraints,
 
     pub const map = std.StaticStringMap(ExtensionId).initComptime(.{
         .{ &.{ 0x55, 0x04, 0x03 }, .commonName },
@@ -165,6 +166,7 @@ pub const ExtensionId = enum {
         .{ &.{ 0x55, 0x1D, 0x1F }, .crl_distribution_points },
         .{ &.{ 0x55, 0x1D, 0x20 }, .certificate_policies },
         .{ &.{ 0x55, 0x1D, 0x23 }, .authority_key_identifier },
+        .{ &.{ 0x55, 0x1D, 0x1E }, .name_constraints },
         .{ &.{ 0x55, 0x1D, 0x25 }, .ext_key_usage },
         .{ &.{ 0x2B, 0x06, 0x01, 0x04, 0x01, 0x82, 0x37, 0x15, 0x01 }, .msCertsrvCAVersion },
         .{ &.{ 0x2B, 0x06, 0x01, 0x05, 0x05, 0x07, 0x01, 0x01 }, .info_access },
@@ -202,6 +204,7 @@ pub const Parsed = struct {
     subject_alt_name_slice: Slice,
     key_usage_slice: Slice,
     ext_key_usage_slice: Slice,
+    name_constraints_slice: Slice,
     validity: Validity,
     version: Version,
 
@@ -257,6 +260,10 @@ pub const Parsed = struct {
 
     pub fn extKeyUsage(p: Parsed) []const u8 {
         return p.slice(p.ext_key_usage_slice);
+    }
+
+    pub fn nameConstraints(p: Parsed) []const u8 {
+        return p.slice(p.name_constraints_slice);
     }
 
     /// RFC 5280 §4.2.1.3 — KeyUsage is a BIT STRING. Missing extension means
@@ -499,6 +506,7 @@ test "Parsed.allowsKeyUsage reads digitalSignature" {
         .subject_alt_name_slice = .empty,
         .key_usage_slice = .{ .start = 0, .end = 4 },
         .ext_key_usage_slice = .empty,
+        .name_constraints_slice = .empty,
         .validity = .{ .not_before = 0, .not_after = 0 },
         .version = .v3,
     };
@@ -523,6 +531,7 @@ test "Parsed.allowsKeyUsage rejects malformed empty bit payload" {
         .subject_alt_name_slice = .empty,
         .key_usage_slice = .{ .start = 0, .end = 3 },
         .ext_key_usage_slice = .empty,
+        .name_constraints_slice = .empty,
         .validity = .{ .not_before = 0, .not_after = 0 },
         .version = .v3,
     };
@@ -546,12 +555,61 @@ test "Parsed.allowsExtKeyUsage finds serverAuth" {
         .subject_alt_name_slice = .empty,
         .key_usage_slice = .empty,
         .ext_key_usage_slice = .{ .start = 0, .end = 12 },
+        .name_constraints_slice = .empty,
         .validity = .{ .not_before = 0, .not_after = 0 },
         .version = .v3,
     };
 
     try std.testing.expect(try parsed.allowsExtKeyUsage(&server_auth_oid));
     try std.testing.expect(!try parsed.allowsExtKeyUsage(&.{ 0x2b, 0x06, 0x01, 0x05, 0x05, 0x07, 0x03, 0x02 }));
+}
+
+// RFC 5280 §4.2.1.10 — Name Constraints extension value can be extracted from
+// a Parsed certificate structure.
+test "Parsed.nameConstraints extracts extension value" {
+    const nc_value = "\x30\x11\xA0\x0F\x30\x0D\x82\x0Bexample.com";
+    const parsed: Parsed = .{
+        .certificate = .{ .buffer = nc_value, .index = 0 },
+        .issuer_slice = .empty,
+        .subject_slice = .empty,
+        .common_name_slice = .empty,
+        .signature_slice = .empty,
+        .signature_algorithm = .ecdsa_with_SHA256,
+        .pub_key_algo = .{ .curveEd25519 = {} },
+        .pub_key_slice = .empty,
+        .message_slice = .empty,
+        .subject_alt_name_slice = .empty,
+        .key_usage_slice = .empty,
+        .ext_key_usage_slice = .empty,
+        .name_constraints_slice = .{ .start = 0, .end = nc_value.len },
+        .validity = .{ .not_before = 0, .not_after = 0 },
+        .version = .v3,
+    };
+
+    try std.testing.expectEqualSlices(u8, nc_value, parsed.nameConstraints());
+}
+
+// RFC 5280 §4.2.1.10 — absent Name Constraints returns empty slice.
+test "Parsed.nameConstraints absent returns empty" {
+    const parsed: Parsed = .{
+        .certificate = .{ .buffer = "", .index = 0 },
+        .issuer_slice = .empty,
+        .subject_slice = .empty,
+        .common_name_slice = .empty,
+        .signature_slice = .empty,
+        .signature_algorithm = .ecdsa_with_SHA256,
+        .pub_key_algo = .{ .curveEd25519 = {} },
+        .pub_key_slice = .empty,
+        .message_slice = .empty,
+        .subject_alt_name_slice = .empty,
+        .key_usage_slice = .empty,
+        .ext_key_usage_slice = .empty,
+        .name_constraints_slice = .empty,
+        .validity = .{ .not_before = 0, .not_after = 0 },
+        .version = .v3,
+    };
+
+    try std.testing.expectEqual(@as(usize, 0), parsed.nameConstraints().len);
 }
 
 pub const ParseError = der.Element.ParseError || ParseVersionError || ParseTimeError || ParseEnumError || ParseBitStringError;
@@ -634,6 +692,7 @@ pub fn parse(cert: Certificate) ParseError!Parsed {
     var subject_alt_name_slice = der.Element.Slice.empty;
     var key_usage_slice = der.Element.Slice.empty;
     var ext_key_usage_slice = der.Element.Slice.empty;
+    var name_constraints_slice = der.Element.Slice.empty;
     ext: {
         if (version == .v1)
             break :ext;
@@ -665,6 +724,7 @@ pub fn parse(cert: Certificate) ParseError!Parsed {
                 .subject_alt_name => subject_alt_name_slice = ext_bytes_elem.slice,
                 .key_usage => key_usage_slice = ext_bytes_elem.slice,
                 .ext_key_usage => ext_key_usage_slice = ext_bytes_elem.slice,
+                .name_constraints => name_constraints_slice = ext_bytes_elem.slice,
                 else => continue,
             }
         }
@@ -687,6 +747,7 @@ pub fn parse(cert: Certificate) ParseError!Parsed {
         .subject_alt_name_slice = subject_alt_name_slice,
         .key_usage_slice = key_usage_slice,
         .ext_key_usage_slice = ext_key_usage_slice,
+        .name_constraints_slice = name_constraints_slice,
         .version = version,
     };
 }
