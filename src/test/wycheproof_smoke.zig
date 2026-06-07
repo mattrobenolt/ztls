@@ -21,10 +21,7 @@ test "Wycheproof: X25519 shared secret tcId 1" {
 test "Wycheproof boundary: X25519 identity element is rejected" {
     const private = hex(32, "c8a9d5a91091ad851c668b0736c1c9a02936c0d3ad62670858088047ba057475");
     const public: ztls.x25519.PublicKey = .init(@splat(0));
-    _ = ztls.x25519.sharedSecret(private, public) catch |err| switch (err) {
-        error.IdentityElement, error.LibcryptoFailed => return,
-    };
-    return error.ExpectedIdentityElementRejection;
+    try testing.expectError(error.IdentityElement, ztls.x25519.sharedSecret(private, public));
 }
 
 // Wycheproof v1 (google-wycheproof 0.9rc5) — AES-GCM tcId 2.

@@ -71,7 +71,7 @@ pub fn sharedSecret(secret_key: [secret_length]u8, peer_public_key: PublicKey) E
 
     var secret: [secret_length]u8 = undefined;
     var len: usize = secret.len;
-    if (c.EVP_PKEY_derive(ctx, &secret, &len) != 1) return error.LibcryptoFailed;
+    if (c.EVP_PKEY_derive(ctx, &secret, &len) != 1) return error.IdentityElement;
     if (len != secret.len) return error.LibcryptoFailed;
 
     if (std.crypto.timing_safe.eql([secret_length]u8, secret, @splat(0))) return error.IdentityElement;
