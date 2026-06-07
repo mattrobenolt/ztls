@@ -36,6 +36,20 @@ check-actions:
 check-no-alloc:
     ast-grep scan --rule rules/no-ztls-owned-allocations.yml src --globs '*.zig' --globs '!src/test/**' --report-style short
 
+[doc("Check duplicated package-local server fixtures match")]
+[group("check")]
+[script("bash")]
+check-fixtures:
+    set -euo pipefail
+    canonical="tests/fixtures/server-ecdsa"
+    for dir in src/test/fixtures/server-ecdsa src/test_fixtures/server-ecdsa bench/test_fixtures/server-ecdsa examples/fixtures/server-ecdsa; do
+        cmp -s "$canonical/server.der" "$dir/server.der"
+        cmp -s "$canonical/scalar.bin" "$dir/scalar.bin"
+        if [[ -f "$dir/server.crt" ]]; then
+            cmp -s "$canonical/server.crt" "$dir/server.crt"
+        fi
+    done
+
 [doc("Run ziglint, excluding vendored cryptox")]
 [group("check")]
 lint:
@@ -51,7 +65,7 @@ check-conformance-python:
 
 [doc("Run unit, interop, formatting, benchmark smoke, and workflow checks")]
 [group("check")]
-ci: check-actions lint check-no-alloc check-conformance-python
+ci: check-actions lint check-no-alloc check-fixtures check-conformance-python
     zig fmt --check {{ fmt_paths }}
     zig build test
     zig build test-openssl
