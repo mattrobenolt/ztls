@@ -7,20 +7,16 @@
 //!   -server                act as a server (listen on -port)
 //!   -host <host>           host to connect to (client) or bind to (server)
 //!   -port <port>           port to listen on or connect to
-//!   -key-file <path>       PEM private key path (server)
-//!   -cert-file <path>      PEM certificate path (server)
+//!   -key-file <path>       parsed but unsupported; embedded fixture only for now
+//!   -cert-file <path>      parsed but unsupported; embedded fixture only for now
 //!   -alpn <protocols>      comma-separated ALPN protocols
-//!   -curves <curves>       comma-separated curve names (currently ignored beyond X25519)
+//!   -curves <curves>       parsed but ignored beyond X25519
 //!   -expect-version <ver>  expected TLS version (must be 1.3)
 //!   -expect-cipher-suite <suite>  expected cipher suite name
 //!   -expect-alpn <proto>   expected negotiated ALPN protocol
-//!   -no-ticket             disable session tickets (ignored; already no-op)
-//!   -shim-writes-first     send empty application data after handshake
-//!
-//! PEM parsing is minimal: decodes base64 between -----BEGIN/-----END lines.
-//! Only PKCS#8 private keys and X.509 certificates are supported.
+//!   -no-ticket             parsed but ignored; ztls sends no tickets
+//!   -shim-writes-first     parsed but not implemented yet
 const std = @import("std");
-const fs = std.fs;
 const mem = std.mem;
 const net = std.net;
 const crypto = std.crypto;
@@ -82,38 +78,6 @@ fn parseArgs(arena: mem.Allocator) !Args {
         // Unknown flags are silently ignored for forward compatibility.
     }
     return args;
-}
-
-/// Minimal PEM decoder: extracts base64 between -----BEGIN ... ----- and
-/// -----END ... ----- lines and decodes it. Returns DER bytes.
-fn decodePem(arena: mem.Allocator, pem_bytes: []const u8) ![]const u8 {
-    var lines = mem.splitScalar(u8, pem_bytes, '\n');
-    var in_block = false;
-    var b64_buf: std.ArrayList(u8) = .empty;
-    defer b64_buf.deinit(arena);
-
-    while (lines.next()) |line| {
-        const trimmed = mem.trim(u8, line, " \r\t");
-        if (mem.startsWith(u8, trimmed, "-----BEGIN ")) {
-            in_block = true;
-            continue;
-        }
-        if (mem.startsWith(u8, trimmed, "-----END ")) {
-            in_block = false;
-            continue;
-        }
-        if (in_block) {
-            try b64_buf.appendSlice(arena, trimmed);
-        }
-    }
-
-    if (b64_buf.items.len == 0) return error.EmptyPem;
-
-    const decoder = std.base64.standard.Decoder;
-    const size = try decoder.calcSizeForSlice(b64_buf.items);
-    const der = try arena.alloc(u8, size);
-    try decoder.decode(der, b64_buf.items);
-    return der;
 }
 
 fn loadKey(path: ?[]const u8) !ztls.signature.PrivateKey {
