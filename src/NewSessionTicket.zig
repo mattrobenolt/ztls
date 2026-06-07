@@ -9,6 +9,14 @@ const testing = std.testing;
 
 const wire = @import("wire.zig");
 
+const NewSessionTicket = @This();
+
+ticket_lifetime: u32,
+ticket_age_add: u32,
+ticket_nonce: []const u8,
+ticket: []const u8,
+max_early_data_size: ?u32 = null,
+
 pub const ParseError = error{
     UnexpectedEof,
     InvalidHandshakeType,
@@ -16,14 +24,6 @@ pub const ParseError = error{
     EmptyTicket,
     InvalidExtensionLength,
     DuplicateEarlyData,
-};
-
-pub const NewSessionTicket = struct {
-    ticket_lifetime: u32,
-    ticket_age_add: u32,
-    ticket_nonce: []const u8,
-    ticket: []const u8,
-    max_early_data_size: ?u32 = null,
 };
 
 /// Parse a complete NewSessionTicket handshake message including its 4-byte

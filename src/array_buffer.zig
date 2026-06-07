@@ -71,7 +71,7 @@ pub fn ArrayBuffer(comptime T: type, comptime buffer_capacity: comptime_int) typ
     return ArrayBufferAligned(T, .of(T), buffer_capacity);
 }
 
-pub fn ArrayBufferAligned(
+fn ArrayBufferAligned(
     comptime T: type,
     comptime alignment: Alignment,
     comptime buffer_capacity: comptime_int,

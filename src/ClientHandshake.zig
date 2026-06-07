@@ -24,6 +24,7 @@ const encrypted_extensions = @import("encrypted_extensions.zig");
 const finished = @import("finished.zig");
 const frame = @import("frame.zig");
 pub const max_out_len = frame.max_wire_record_len;
+pub const OutBuffer = frame.OutBuffer;
 const handshake = @import("handshake.zig");
 pub const HandshakeReader = handshake.Reader;
 pub const HandshakeType = handshake.Type;
@@ -34,7 +35,7 @@ pub const KeyUpdateRequest = handshake.KeyUpdateRequest;
 /// maxUselessRecords. Reset by application data.
 const max_post_handshake_messages = handshake.max_post_handshake_messages;
 const hkdf = @import("hkdf.zig");
-const new_session_ticket = @import("new_session_ticket.zig");
+const NewSessionTicket = @import("NewSessionTicket.zig");
 const PendingWrite = @import("pending_write.zig").PendingWrite;
 const RecordLayer = @import("RecordLayer.zig");
 const server_hello = @import("server_hello.zig");
@@ -43,8 +44,6 @@ const HashArm = suite_state.HashArm;
 const x25519 = @import("x25519.zig");
 
 const ClientHandshake = @This();
-
-pub const OutBuffer = ArrayBuffer(u8, max_out_len);
 
 /// Upper bound on a leaf public key we retain across records. Covers RSA-4096
 /// (~525-byte DER) with margin; ECDSA P-256/P-384 are far smaller.
@@ -719,7 +718,7 @@ pub fn clientFinished(self: *ClientHandshake, out: []u8) SendError![]const u8 {
 }
 
 pub const ReceiveError = RecordLayer.DecryptError || SendError || alert.ParseError ||
-    new_session_ticket.ParseError ||
+    NewSessionTicket.ParseError ||
     error{
         UnexpectedEof,
         UnexpectedRecord,
@@ -769,8 +768,10 @@ fn receiveConnected(self: *ClientHandshake, record: []u8, out: []u8) ReceiveErro
                         self.rx.deinit();
                         self.rx = next_rx;
                     },
-                    // parsed and ignored until PSK resumption
-                    .new_session_ticket => _ = try new_session_ticket.parse(msg.raw),
+                    .new_session_ticket => {
+                        // parsed and ignored until PSK resumption
+                        _ = try NewSessionTicket.parse(msg.raw);
+                    },
                     else => return error.UnexpectedMessage,
                 }
             }
@@ -1116,7 +1117,7 @@ test "ratchetClientKey: RFC 8446 §7.2 next application write key" {
 }
 
 // Drive the RFC 8448 §3 handshake to connected; rx/tx carry application keys.
-fn rfc8448ConnectedClient() !ClientHandshake {
+fn connectedTestClient() !ClientHandshake {
     var hs: ClientHandshake = .init(rfc8448_client_keypair);
     hs.injectClientHello(&rfc8448_client_hello);
     try hs.processServerHello(&rfc8448_server_hello);
@@ -1128,7 +1129,7 @@ fn rfc8448ConnectedClient() !ClientHandshake {
 }
 
 test "handleRecord: application data returns plaintext and resets the flood counter" {
-    var hs = try rfc8448ConnectedClient();
+    var hs = try connectedTestClient();
     hs.post_handshake_count = 5; // pretend we saw some control messages
 
     // The server's sending layer mirrors our rx (server app key, seq 0).
@@ -1149,7 +1150,7 @@ test "handleRecord: application data returns plaintext and resets the flood coun
 // receive key and elicit our own KeyUpdate(update_not_requested), encrypted
 // under the old send key.
 test "handleRecord: server KeyUpdate(update_requested) ratchets rx and responds" {
-    var hs = try rfc8448ConnectedClient();
+    var hs = try connectedTestClient();
 
     // Server's sending layer (mirrors our rx at seq 0) and our pre-ratchet
     // send-key mirror to decrypt the response. Capture the server's secret_0
@@ -1195,7 +1196,7 @@ test "handleRecord: server KeyUpdate(update_requested) ratchets rx and responds"
 // RFC 8446 §5.1 — a KeyUpdate must end at a record boundary. Two KeyUpdates
 // coalesced in one record is illegal (cf. Go CVE-2026-32283).
 test "handleRecord: KeyUpdate not at record boundary is rejected" {
-    var hs = try rfc8448ConnectedClient();
+    var hs = try connectedTestClient();
     var server_tx = try hs.rx.clone();
     defer server_tx.deinit();
 
@@ -1225,7 +1226,7 @@ test "sendAlert: plaintext fatal alert before ServerHello" {
 
 // RFC 8446 §6.1 — close_notify is sent as a warning-level alert.
 test "sendAlert: encrypted close_notify after handshake" {
-    var hs = try rfc8448ConnectedClient();
+    var hs = try connectedTestClient();
     var peer = try hs.tx.clone();
     defer peer.deinit();
 
@@ -1240,7 +1241,7 @@ test "sendAlert: encrypted close_notify after handshake" {
 }
 
 test "handleRecord: close_notify returns closed" {
-    var hs = try rfc8448ConnectedClient();
+    var hs = try connectedTestClient();
     var server_tx = try hs.rx.clone();
     defer server_tx.deinit();
 
@@ -1256,7 +1257,7 @@ test "handleRecord: close_notify returns closed" {
 
 // RFC 8446 §6.2 — fatal alerts abort; they are not clean close_notify.
 test "handleRecord: fatal alert returns PeerAlert" {
-    var hs = try rfc8448ConnectedClient();
+    var hs = try connectedTestClient();
     var server_tx = try hs.rx.clone();
     defer server_tx.deinit();
 
@@ -1271,7 +1272,7 @@ test "handleRecord: fatal alert returns PeerAlert" {
 }
 
 test "handleRecord: NewSessionTicket is parsed and ignored" {
-    var hs = try rfc8448ConnectedClient();
+    var hs = try connectedTestClient();
     const next_rx = try hs.suite.ratchetServerKey();
     hs.rx.deinit();
     hs.rx = next_rx;
@@ -1291,7 +1292,7 @@ test "handleRecord: NewSessionTicket is parsed and ignored" {
 }
 
 test "handleRecord: malformed NewSessionTicket is rejected" {
-    var hs = try rfc8448ConnectedClient();
+    var hs = try connectedTestClient();
     const next_rx = try hs.suite.ratchetServerKey();
     hs.rx.deinit();
     hs.rx = next_rx;
@@ -1305,7 +1306,7 @@ test "handleRecord: malformed NewSessionTicket is rejected" {
 }
 
 test "handleRecord: KeyUpdate flood is rejected" {
-    var hs = try rfc8448ConnectedClient();
+    var hs = try connectedTestClient();
     var out: [64]u8 = undefined;
 
     // Each iteration sends one KeyUpdate(update_not_requested) record. The
@@ -1387,7 +1388,7 @@ test "handleRecord: drives RFC 8448 §3 handshake to connected" {
 // A produced .write must be acknowledged (completeWrite) before the engine
 // will accept another call — so a dropped write can't silently desync.
 test "handleRecord: unacknowledged write blocks further calls" {
-    var hs = try rfc8448ConnectedClient();
+    var hs = try connectedTestClient();
     var out: [128]u8 = undefined;
     _ = try hs.sendApplicationData("one", &out); // sets pending_write
     try testing.expectError(error.PendingWrite, hs.sendApplicationData("two", &out));

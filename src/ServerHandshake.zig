@@ -13,7 +13,6 @@ const testing = std.testing;
 
 const aead = @import("aead.zig");
 const alert = @import("alert.zig");
-const ArrayBuffer = @import("array_buffer.zig").ArrayBuffer;
 const certificate = @import("certificate.zig");
 const CertificateChain = @import("certificate_chain.zig").CertificateChain;
 const CipherSuite = @import("root.zig").CipherSuite;
@@ -40,7 +39,7 @@ const x25519 = @import("x25519.zig");
 
 const ServerHandshake = @This();
 
-pub const OutBuffer = ArrayBuffer(u8, max_out_len);
+pub const OutBuffer = frame.OutBuffer;
 /// Single caller-owned buffer for prepared authenticated server flights. The
 /// handshake plaintext is staged inside the TLS record payload region, then
 /// encrypted in place into the same backing storage.
