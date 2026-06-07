@@ -228,4 +228,17 @@ pub fn build(b: *std.Build) void {
         _ = asm_exe.getEmittedAsm();
         asm_step.dependOn(&asm_exe.step);
     }
+
+    if (target.result.os.tag == .linux) {
+        const exe_mod = b.createModule(.{
+            .root_source_file = b.path("examples/iouring_client.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{.{ .name = "ztls", .module = mod }},
+        });
+        const exe = b.addExecutable(.{ .name = "iouring_client", .root_module = exe_mod });
+        const run = b.addRunArtifact(exe);
+        const step = b.step("example-iouring_client", "Run Linux io_uring client example");
+        step.dependOn(&run.step);
+    }
 }
