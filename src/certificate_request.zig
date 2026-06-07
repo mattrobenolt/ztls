@@ -4,7 +4,7 @@
 const std = @import("std");
 const testing = std.testing;
 
-const SignatureScheme = @import("certificate.zig").SignatureScheme;
+const SignatureScheme = @import("signature_scheme.zig").SignatureScheme;
 const wire = @import("wire.zig");
 
 pub const EncodeError = error{BufferTooShort};

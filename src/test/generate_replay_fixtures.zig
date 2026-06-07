@@ -6,11 +6,11 @@
 const std = @import("std");
 const fs = std.fs;
 const mem = std.mem;
-const net = std.net;
 const Child = std.process.Child;
-const sleep = std.Thread.sleep;
 
 const ztls = @import("ztls");
+
+const harness = @import("harness.zig");
 
 const host = "127.0.0.1";
 const replay_host_name = "test.local";
@@ -28,18 +28,18 @@ const suites = [_]Suite{
 };
 
 const client_keypair: ztls.x25519.KeyPair = .{
-    .secret_key = .{
+    .secret_key = .init(.{
         0x49, 0xaf, 0x42, 0xba, 0x7f, 0x79, 0x94, 0x85,
         0x2d, 0x71, 0x3e, 0xf2, 0x78, 0x4b, 0xcb, 0xca,
         0xa7, 0x91, 0x1d, 0xe2, 0x6a, 0xdc, 0x56, 0x42,
         0xcb, 0x63, 0x45, 0x40, 0xe7, 0xea, 0x50, 0x05,
-    },
-    .public_key = .{
+    }),
+    .public_key = .init(.{
         0x99, 0x38, 0x1d, 0xe5, 0x60, 0xe4, 0xbd, 0x43,
         0xd2, 0x3d, 0x8e, 0x43, 0x5a, 0x7d, 0xba, 0xfe,
         0xb3, 0xc0, 0x6e, 0x51, 0xc1, 0x3c, 0xae, 0x4d,
         0x54, 0x13, 0x69, 0x1e, 0x52, 0x9a, 0xaf, 0x2c,
-    },
+    }),
 };
 
 const client_random: ztls.client_hello.Random = .{ .data = .{
@@ -77,7 +77,7 @@ fn captureSuite(arena: std.mem.Allocator, suite: []const u8, port: u16) ![]u8 {
     var server = try startServer(arena, suite, port);
     defer _ = server.kill() catch {};
 
-    const stream = try connectWithRetry(port);
+    const stream = try harness.connectWithRetry(port);
     defer stream.close();
 
     var hs: ztls.ClientHandshake = .init(client_keypair);
@@ -85,8 +85,8 @@ fn captureSuite(arena: std.mem.Allocator, suite: []const u8, port: u16) ![]u8 {
     try stream.writeAll(try hs.start(&out, client_random, replay_host_name));
     hs.completeWrite();
 
-    var storage: [ztls.RecordBuffer.recommended_storage]u8 = undefined;
-    var rb: ztls.RecordBuffer = .init(&storage);
+    var storage: ztls.RecordBuffer.Storage = .empty;
+    var rb: ztls.RecordBuffer = .init(storage.fullSlice());
 
     var records: std.ArrayList(u8) = .empty;
     errdefer records.deinit(arena);
@@ -126,15 +126,4 @@ fn startServer(arena: mem.Allocator, suite: []const u8, port: u16) !Child {
     child.stderr_behavior = .Ignore;
     try child.spawn();
     return child;
-}
-
-fn connectWithRetry(port: u16) !net.Stream {
-    const addr: net.Address = try .parseIp(host, port);
-    for (0..100) |_| {
-        return net.tcpConnectToAddress(addr) catch {
-            sleep(20 * std.time.ns_per_ms);
-            continue;
-        };
-    }
-    return error.ServerNeverCameUp;
 }

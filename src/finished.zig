@@ -6,6 +6,7 @@ const crypto = std.crypto;
 const Sha256 = crypto.hash.sha2.Sha256;
 const testing = std.testing;
 
+const HandshakeType = @import("handshake.zig").Type;
 const wire = @import("wire.zig");
 
 pub const VerifyError = error{
@@ -30,7 +31,7 @@ pub fn verify(
 
     var r: wire.Reader = .init(msg);
     const handshake_type = try r.read(u8);
-    if (handshake_type != 0x14) return error.InvalidHandshakeType;
+    if (handshake_type != @intFromEnum(HandshakeType.finished)) return error.InvalidHandshakeType;
     try r.skip(3);
     const verify_data = r.remaining();
 
@@ -58,7 +59,7 @@ pub fn encode(
     if (out.len < total) return error.BufferTooShort;
 
     var w: wire.Writer = .init(out);
-    w.append(u8, 0x14); // Finished
+    w.append(HandshakeType, .finished);
     w.append(u24, Hmac.mac_length);
     Hmac.create(w.reserve(Hmac.mac_length), transcript_hash, finished_key);
     return w.written();

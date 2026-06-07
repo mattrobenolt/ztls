@@ -19,7 +19,7 @@ pub const ParseError = error{
     UnofferedAlpnProtocol,
 };
 
-pub const Result = struct {
+pub const Parsed = struct {
     alpn_protocol: ?[]const u8 = null,
 };
 
@@ -60,7 +60,7 @@ pub fn encode(out: []u8, alpn_protocol: ?[]const u8) EncodeError![]const u8 {
 /// skipped because they are informational for ztls' current core handshake, but
 /// ALPN is rejected if unsolicited or if it selects a protocol we did not offer.
 /// RFC 8446 §4.3.1, RFC 7301 §3.2.
-pub fn parse(msg: []const u8, offered_alpn: []const []const u8) ParseError!Result {
+pub fn parse(msg: []const u8, offered_alpn: []const []const u8) ParseError!Parsed {
     var r: wire.Reader = .init(msg);
     const handshake_type = try r.read(u8);
     if (handshake_type != 0x08) return error.InvalidHandshakeType;
@@ -72,7 +72,7 @@ pub fn parse(msg: []const u8, offered_alpn: []const []const u8) ParseError!Resul
     if (extensions_len != body_len - 2) return error.InvalidExtensionLength;
     const extensions_end = r.pos + extensions_len;
 
-    var result: Result = .{};
+    var result: Parsed = .{};
     while (r.pos < extensions_end) {
         const ext_type = try r.read(u16);
         const ext_len = try r.read(u16);

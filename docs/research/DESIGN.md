@@ -28,12 +28,14 @@ Everything else is ours.
   struct layouts. Don't waste cache lines.
 - **SIMD where it matters.** Zig exposes SIMD via `@Vector`. AES-GCM, ChaCha,
   SHA-256, and record scanning are all candidates. Measure first, then apply.
-- **Use libcrypto-family production crypto.** Do not implement our own primitive
-  crypto. OpenSSL/libcrypto is the first concrete backend target; AWS-LC remains
-  first-class in the architecture rather than an accidental drop-in. Production
-  crypto should cover AEAD, KEX, HKDF/HMAC/hash, and signature operations. ztls
-  owns TLS framing, transcripts, alerts, record sequencing, and caller-buffer
-  discipline.
+- **Use libcrypto-family for provider-sensitive production primitives.** Do not
+  implement our own AES-GCM, ChaCha20-Poly1305, X25519/P-256, post-quantum KEX,
+  or signature primitives. OpenSSL/libcrypto is the first concrete backend
+  target; AWS-LC remains first-class in the architecture rather than an
+  accidental drop-in. stdlib hashing/HMAC/HKDF and utility crypto helpers remain
+  acceptable where they do not create a competing AEAD/KEX/signature backend.
+  ztls owns TLS framing, transcripts, alerts, record sequencing, and
+  caller-buffer discipline.
 - **Linux and macOS only.** No Windows. Design for real targets.
 - **Higher-level wrappers are separate.** If someone wants a `net.Stream`
   adapter or an async wrapper, that's a thin layer on top, not baked in.
@@ -47,8 +49,10 @@ Everything else is ours.
 
 ## What We Are Not Doing (Yet)
 
-- Our own AES, GCM, SHA, X25519/P-256, or post-quantum primitive implementations.
-  The production path is libcrypto-family/provider-backed primitives.
+- Our own AES, GCM, ChaCha20-Poly1305, X25519/P-256, post-quantum KEX, or
+  signature primitive implementations. The production path for those is
+  libcrypto-family/provider-backed primitives. stdlib hashing/HMAC/HKDF and
+  small constant-time/zeroing/random helpers are not excluded by this rule.
 - TLS 1.2 or earlier.
 - DTLS.
 - 0-RTT (initially — nice to add later, but adds replay complexity).
@@ -276,11 +280,13 @@ benchmark coverage. AWS-LC remains a first-class architecture target, not an
 afterthought hidden behind an accidental OpenSSL-only design. BoringSSL may be a
 later backend if its API differences are worth supporting directly.
 
-There is no parallel `std.crypto` backend. This is new pre-alpha software, so
-there is no compatibility burden that justifies preserving a second crypto path
-while the production direction is libcrypto-family primitives. Any remaining
-`std.crypto` usage is implementation debt in primitives not yet moved to
-libcrypto, not an exposed backend choice.
+There is no parallel `std.crypto` AEAD/KEX/signature backend. This is new
+pre-alpha software, so there is no compatibility burden that justifies
+preserving a second product path for provider-sensitive primitives. That does
+not make every `std.crypto` use implementation debt: stdlib SHA-256/SHA-384,
+HMAC/HKDF, timing-safe comparison, secure zeroing, and randomness are acceptable
+where they keep the code smaller and do not create backend policy or algorithm
+agility divergence.
 
 This changes the memory contract. ztls-owned code still does not allocate, does
 not import `std.heap`, does not own TLS buffers, and does no I/O. A production
@@ -290,17 +296,20 @@ operation depending on the selected library. That behavior must be called out
 honestly and kept behind the crypto backend boundary. Do not describe OpenSSL
 EVP/provider paths as no-allocation.
 
-The Sans-I/O boundary is preserved. The backend supplies primitive operations:
-AEAD, hash/HMAC/HKDF, key exchange, signature verification/signing, and later
-provider-backed PQ/hybrid KEX and signatures. It does not own sockets, BIOs,
-trust-store loading, certificate policy I/O, application buffers, or handshake
-state-machine control.
+The Sans-I/O boundary is preserved. The backend supplies provider-sensitive
+primitive operations: AEAD, key exchange, signature verification/signing, and
+later provider-backed PQ/hybrid KEX and signatures. Hashing/HMAC/HKDF may stay
+on Zig stdlib unless measurement or provider-policy requirements justify a
+facade. The backend does not own sockets, BIOs, trust-store loading,
+certificate policy I/O, application buffers, or handshake state-machine
+control.
 
 Backend design implications:
 
 - keep ztls key/tag/suite and record APIs stable where possible;
 - hide provider-specific details behind ztls-owned crypto facade modules;
-- avoid libssl in core; use primitive libcrypto-family APIs only;
+- avoid libssl in core; use primitive libcrypto-family APIs for AEAD, KEX, and
+  signatures;
 - accept and document backend-owned libc/provider allocation for production
   backends instead of pretending OpenSSL-compatible EVP is allocation-free;
 - keep OpenSSL interop and EVP/libssl benchmark rows as compatibility and
@@ -309,14 +318,16 @@ Backend design implications:
   where the backend supports them, while ztls handles TLS negotiation and
   transcript semantics.
 
-Current primitive migration state:
+Current primitive/backend state:
 - AEAD record protection uses OpenSSL/libcrypto EVP.
-- HKDF-SHA256/HKDF-SHA384, transcript hashing, X25519, and certificate signature
-  verification still use Zig stdlib-derived code and should move behind
-  libcrypto-family primitive facades next.
+- X25519 and certificate signature verification/signing use OpenSSL/libcrypto
+  EVP. Those must remain provider-backed; do not add std.crypto fallback paths.
+- HKDF-SHA256/HKDF-SHA384 and transcript hashing intentionally use Zig stdlib
+  today. They are not a competing backend unless provider policy, measurement,
+  or backend agility makes a facade worthwhile.
 - `std.crypto.Certificate`-derived parser in `cryptox/` still provides X.509
-  public-key extraction and certificate signature verification, with a local DER
-  bounds fix until the parser/policy boundary is revisited.
+  parsing with a local DER bounds fix until the parser/policy boundary is
+  revisited.
 
 X.509 validation uses caller-owned policy: `Policy.bundle` anchors the parsed
 chain to a trust root, `Policy.now_sec` checks validity periods, and

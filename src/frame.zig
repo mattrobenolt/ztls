@@ -72,6 +72,10 @@ pub const Header = extern struct {
         return memx.readInt(u16, &self.length_be);
     }
 
+    pub inline fn write(self: Header, out: *[header_len]u8) void {
+        out.* = mem.toBytes(self);
+    }
+
     pub fn init(content_type: ContentType, len: u16) Header {
         var h: Header = .{
             .content_type = content_type,
@@ -102,32 +106,6 @@ pub fn parseHeader(buf: []const u8) ParseError!*const Header {
     const h: *const Header = @ptrCast(buf.ptr);
     if (h.length() > max_ciphertext_len) return error.RecordTooLarge;
     return h;
-}
-
-pub const DecryptedRecord = struct {
-    content_type: ContentType,
-    /// Subslice of the caller-provided output buffer — no copy.
-    content: []u8,
-};
-
-/// Write a TLSInnerPlaintext into `buf`: content || type_byte || padding.
-///
-/// `buf` must be at least `content.len + 1 + padding_len` bytes.
-/// Returns the number of bytes written.
-///
-/// RFC 8446 §5.2, §5.4
-pub fn writeInnerPlaintext(
-    buf: []u8,
-    content: []const u8,
-    content_type: ContentType,
-    padding_len: usize,
-) error{BufferTooShort}!usize {
-    const total = content.len + 1 + padding_len;
-    if (buf.len < total) return error.BufferTooShort;
-    @memcpy(buf[0..content.len], content);
-    buf[content.len] = @intFromEnum(content_type);
-    @memset(buf[content.len + 1 ..][0..padding_len], 0);
-    return total;
 }
 
 // RFC 8446 §5.1 — record header format
@@ -174,36 +152,10 @@ test "parseHeader: length exceeds max" {
 
 test "Header.init round-trips with parseHeader" {
     var buf: [header_len]u8 = undefined;
-    buf = mem.toBytes(Header.init(.handshake, 512));
+    Header.init(.handshake, 512).write(&buf);
     const h = try parseHeader(&buf);
     try testing.expectEqual(ContentType.handshake, h.content_type);
     try testing.expectEqual(@as(u16, 512), h.length());
-}
-
-// RFC 8446 §5.4 — padding
-test "writeInnerPlaintext: no padding" {
-    var buf: [16]u8 = undefined;
-    const content = [_]u8{ 0xca, 0xfe };
-    const n = try writeInnerPlaintext(&buf, &content, .application_data, 0);
-    try testing.expectEqual(@as(usize, 3), n);
-    try testing.expectEqualSlices(u8, &[_]u8{ 0xca, 0xfe, 23 }, buf[0..n]);
-}
-
-test "writeInnerPlaintext: with padding" {
-    var buf: [8]u8 = undefined;
-    const content = [_]u8{0xab};
-    const n = try writeInnerPlaintext(&buf, &content, .handshake, 4);
-    try testing.expectEqual(@as(usize, 6), n);
-    try testing.expectEqualSlices(u8, &[_]u8{ 0xab, 22, 0, 0, 0, 0 }, buf[0..n]);
-}
-
-test "writeInnerPlaintext: buffer too short" {
-    var buf: [2]u8 = undefined;
-    const content = [_]u8{ 1, 2, 3 };
-    try testing.expectError(
-        error.BufferTooShort,
-        writeInnerPlaintext(&buf, &content, .handshake, 0),
-    );
 }
 
 // RFC 8446 §5.1 — TLSPlaintext header is 5 bytes: content_type (1) + legacy_version

@@ -12,7 +12,7 @@ const Sha384 = crypto.hash.sha2.Sha384;
 const testing = std.testing;
 
 const aead = @import("aead.zig");
-const Iv = @import("nonce.zig").Iv;
+const Iv = @import("aead.zig").Iv;
 const memx = @import("memx.zig");
 const RecordLayer = @import("RecordLayer.zig");
 

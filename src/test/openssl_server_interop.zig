@@ -14,8 +14,10 @@ const print = std.debug.print;
 
 const ztls = @import("ztls");
 
+const harness = @import("harness.zig");
+
 const host = "127.0.0.1";
-const base_port = 15433;
+const base_port = 16433;
 const alpn_protocol = "http/1.1";
 const response = "HTTP/1.0 200 OK\r\nContent-Length: 5\r\n\r\nhello";
 
@@ -42,16 +44,8 @@ pub fn main() !void {
     defer arena_allocator.deinit();
     const arena = arena_allocator.allocator();
 
-    const cert_der = try std.fs.cwd().readFileAlloc(
-        arena,
-        "src/test_fixtures/server-ecdsa/server.der",
-        4096,
-    );
-    const scalar = try std.fs.cwd().readFileAlloc(
-        arena,
-        "src/test_fixtures/server-ecdsa/scalar.bin",
-        64,
-    );
+    const cert_der = harness.testCertDer();
+    const scalar = harness.testScalar();
 
     for (suites, 0..) |suite, i| {
         print("[server-interop] {s}\n", .{suite.openssl_name});
@@ -124,6 +118,7 @@ fn serve(
 ) !void {
     const server_keypair: ztls.x25519.KeyPair = .generate();
     var hs: ztls.ServerHandshake = .init(server_keypair);
+    defer hs.deinit();
     hs.supportAlpn(&.{alpn_protocol});
     const supported = [_]ztls.CipherSuite{suite};
     hs.supportSuites(&supported);
@@ -134,10 +129,10 @@ fn serve(
 
     var random: ztls.client_hello.Random = undefined;
     crypto.random.bytes(&random.data);
-    var storage: [ztls.RecordBuffer.recommended_storage]u8 = undefined;
-    var rb: ztls.RecordBuffer = .init(&storage);
+    var storage: ztls.RecordBuffer.Storage = .empty;
+    var rb: ztls.RecordBuffer = .init(storage.fullSlice());
     var out: [4096]u8 = undefined;
-    var plaintext: [4096]u8 = undefined;
+    errdefer |err| harness.sendBestEffortAlert(&hs, stream, err, &out);
 
     var sent_flight = false;
     while (!hs.isConnected()) {
@@ -151,10 +146,9 @@ fn serve(
                     try stream.writeAll(w);
                     hs.completeWrite();
                     if (!sent_flight and hs.state == .wait_client_finished) {
-                        const flight = try hs.sendAuthenticatedFlight(
+                        const flight = try hs.sendPreparedAuthenticatedFlight(
                             &.{cert_der},
                             signer_api,
-                            &plaintext,
                             &out,
                         );
                         try stream.writeAll(flight);

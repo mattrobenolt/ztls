@@ -6,6 +6,9 @@
 //! using only stack buffers and existing test fixtures.
 const std = @import("std");
 const print = std.debug.print;
+const mem = std.mem;
+const testing = std.testing;
+const assert = std.debug.assert;
 
 const ztls = @import("ztls");
 
@@ -14,7 +17,7 @@ const scalar = @embedFile("fixtures/server-ecdsa/scalar.bin");
 
 pub fn main() !void {
     // Load the server's signing key from a fixture P-256 scalar.
-    var signer = try ztls.signature.PrivateKey.fromP256Scalar(scalar[0..32]);
+    var signer: ztls.signature.PrivateKey = try .fromP256Scalar(scalar[0..32]);
     defer signer.deinit();
     const signer_api = signer.signer();
 
@@ -76,17 +79,17 @@ pub fn main() !void {
     print("[server] client Finished verified → state={s}\n", .{@tagName(server.state)});
 
     // ── Verify handshake completed ───────────────────
-    std.debug.assert(client.isConnected());
-    std.debug.assert(server.isConnected());
-    std.debug.assert(std.mem.eql(u8, client.selectedAlpnProtocol().?, "h2"));
-    std.debug.assert(std.mem.eql(u8, server.selectedAlpnProtocol().?, "h2"));
+    assert(client.isConnected());
+    assert(server.isConnected());
+    assert(mem.eql(u8, client.selectedAlpnProtocol().?, "h2"));
+    assert(mem.eql(u8, server.selectedAlpnProtocol().?, "h2"));
     print("\n=== handshake complete (ALPN={s}) ===\n\n", .{client.selectedAlpnProtocol().?});
 
     // 7. Application-data round trip.
     const ping = try client.sendApplicationData("ping", client_out.fullSlice());
     client_out.resize(@intCast(ping.len));
     client.completeWrite();
-    try std.testing.expectEqualStrings(
+    try testing.expectEqualStrings(
         "ping",
         try server.receiveApplicationData(client_out.slice()),
     );
@@ -95,7 +98,7 @@ pub fn main() !void {
     const pong = try server.sendApplicationData("pong", server_out.fullSlice());
     server.completeWrite();
     const ev = try client.handleRecord(pong, client_out.fullSlice());
-    try std.testing.expectEqualStrings("pong", ev.application_data);
+    try testing.expectEqualStrings("pong", ev.application_data);
     print("[app]    server → client: pong\n", .{});
 
     print("\n=== in-memory handshake OK ===\n", .{});

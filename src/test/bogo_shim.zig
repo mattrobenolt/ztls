@@ -19,14 +19,10 @@
 const std = @import("std");
 const mem = std.mem;
 const net = std.net;
-const crypto = std.crypto;
 const print = std.debug.print;
 
 const ztls = @import("ztls");
-
-// Embedded fallback fixtures when files aren't provided.
-const fallback_cert_der = @embedFile("fixtures/server-ecdsa/server.der");
-const fallback_scalar = @embedFile("fixtures/server-ecdsa/scalar.bin");
+const harness = @import("harness.zig");
 
 const Args = struct {
     server: bool = false,
@@ -82,24 +78,12 @@ fn parseArgs(arena: mem.Allocator) !Args {
 
 fn loadKey(path: ?[]const u8) !ztls.signature.PrivateKey {
     if (path != null) return error.UnsupportedKeyFile;
-    return .fromP256Scalar(fallback_scalar[0..32]);
+    return harness.testSigner();
 }
 
 fn loadCert(path: ?[]const u8) ![]const u8 {
     if (path != null) return error.UnsupportedCertFile;
-    return fallback_cert_der;
-}
-
-fn readRecord(stream: net.Stream, buf: []u8) ![]u8 {
-    const got_header = try stream.readAtLeast(buf[0..ztls.frame.header_len], ztls.frame.header_len);
-    if (got_header == 0) return error.EndOfStream;
-    if (got_header != ztls.frame.header_len) return error.UnexpectedEof;
-    const hdr = try ztls.frame.parseHeader(buf[0..ztls.frame.header_len]);
-    const len = hdr.length();
-    if (len > ztls.frame.max_ciphertext_len) return error.RecordTooLarge;
-    const got_payload = try stream.readAtLeast(buf[ztls.frame.header_len..][0..len], len);
-    if (got_payload != len) return error.UnexpectedEof;
-    return buf[0 .. ztls.frame.header_len + len];
+    return harness.testCertDer();
 }
 
 fn expectVersion(version: ?[]const u8) !void {
@@ -134,29 +118,6 @@ fn checkExpectations(args: Args, hs: *const ztls.ServerHandshake) !void {
     try expectVersion(args.expect_version);
     try expectCipherSuite(args.expect_cipher_suite, hs.suite);
     try expectAlpn(args.expect_alpn, hs.selectedAlpnProtocol());
-}
-
-fn sendBestEffortAlert(
-    hs: *ztls.ServerHandshake,
-    stream: net.Stream,
-    err: anyerror,
-    out: []u8,
-) void {
-    const description: ztls.alert.Description = switch (err) {
-        error.AuthenticationFailed => .bad_record_mac,
-        error.UnsupportedCipherSuite => .handshake_failure,
-        error.NoApplicationProtocol => .no_application_protocol,
-        error.UnexpectedRecord, error.UnexpectedMessage => .unexpected_message,
-        error.IllegalParameter => .illegal_parameter,
-        error.IncompleteRecord,
-        error.UnexpectedEof,
-        error.RecordTooShort,
-        error.InvalidInnerPlaintext,
-        => .decode_error,
-        else => .internal_error,
-    };
-    const alert_record = hs.sendAlert(description, out) catch return;
-    stream.writeAll(alert_record) catch return;
 }
 
 pub fn main() !void {
@@ -202,20 +163,18 @@ pub fn main() !void {
     }
 
     var in_buf: [ztls.frame.header_len + ztls.frame.max_ciphertext_len]u8 = undefined;
-    const out_buf_len =
-        ztls.frame.header_len + ztls.frame.max_plaintext_len + ztls.aead.tag_len + 1;
-    var out_buf: [out_buf_len]u8 = undefined;
+    var out_buf: [harness.max_wire_record_len]u8 = undefined;
     var expectations_checked = false;
 
     while (true) {
-        const record = readRecord(conn.stream, &in_buf) catch |err| switch (err) {
+        const record = harness.readRecord(conn.stream, &in_buf) catch |err| switch (err) {
             error.EndOfStream => return,
             else => return,
         };
 
-        const random: ztls.client_hello.Random = randomBytes();
+        const random = harness.randomBytes();
         const ev = hs.handleRecord(record, random, &out_buf) catch |err| {
-            sendBestEffortAlert(&hs, conn.stream, err, &out_buf);
+            harness.sendBestEffortAlert(&hs, conn.stream, err, &out_buf);
             return;
         };
 
@@ -229,7 +188,7 @@ pub fn main() !void {
                         signer.signer(),
                         &out_buf,
                     ) catch |err| {
-                        sendBestEffortAlert(&hs, conn.stream, err, &out_buf);
+                        harness.sendBestEffortAlert(&hs, conn.stream, err, &out_buf);
                         return;
                     };
                     try conn.stream.writeAll(flight);
@@ -238,7 +197,7 @@ pub fn main() !void {
             },
             .application_data => |data| {
                 const response = hs.sendApplicationData(data, &out_buf) catch |err| {
-                    sendBestEffortAlert(&hs, conn.stream, err, &out_buf);
+                    harness.sendBestEffortAlert(&hs, conn.stream, err, &out_buf);
                     return;
                 };
                 try conn.stream.writeAll(response);
@@ -256,10 +215,4 @@ pub fn main() !void {
             expectations_checked = true;
         }
     }
-}
-
-fn randomBytes() ztls.client_hello.Random {
-    var bytes: [32]u8 = undefined;
-    std.crypto.random.bytes(&bytes);
-    return .init(bytes);
 }

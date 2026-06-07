@@ -6,15 +6,18 @@ const assert = std.debug.assert;
 const testing = std.testing;
 const mem = std.mem;
 
-const CipherSuite = @import("root.zig").CipherSuite;
+const alpn_mod = @import("alpn.zig");
+pub const AlpnProtocols = alpn_mod.Protocols;
+pub const AlpnError = alpn_mod.Error;
 const kex = @import("kex.zig");
 const NamedGroup = kex.NamedGroup;
+const root = @import("root.zig");
+const CipherSuite = root.CipherSuite;
+pub const Random = root.Random;
 const memx = @import("memx.zig");
-const SignatureScheme = @import("certificate.zig").SignatureScheme;
+const SignatureScheme = @import("signature_scheme.zig").SignatureScheme;
 const wire = @import("wire.zig");
 const x25519 = @import("x25519.zig");
-
-pub const Random = memx.Array(32);
 
 /// RFC 8446 §4.1.2 — legacy_version is frozen at 0x0303.
 const legacy_version: u16 = 0x0303;
@@ -44,10 +47,6 @@ const ext_supported_versions_len = ext_header_len + 1 + 2;
 const ext_supported_groups_len = ext_header_len + 2 + 2;
 const ext_sig_algs_len = ext_header_len + 2 + sig_scheme_count * 2;
 const ext_key_share_len = ext_header_len + 2 + 2 + 2 + 32;
-
-pub const AlpnProtocols = []const []const u8;
-
-pub const AlpnError = error{ TooManyAlpnBytes, EmptyAlpnProtocol, AlpnProtocolTooLong };
 
 fn alpnExtDataLen(protocols: AlpnProtocols) AlpnError!u16 {
     var list_len: usize = 0;

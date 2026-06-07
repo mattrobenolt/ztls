@@ -15,13 +15,14 @@ const mem = std.mem;
 const testing = std.testing;
 const Allocator = mem.Allocator;
 const Child = std.process.Child;
-const sleep = std.Thread.sleep;
 const crypto = std.crypto;
 const net = std.net;
 const heap = std.heap;
 const print = std.debug.print;
 
 const ztls = @import("ztls");
+
+const harness = @import("harness.zig");
 
 const base_port = 14433;
 const host = "127.0.0.1";
@@ -67,7 +68,7 @@ fn runSuite(
 ) !void {
     var server = try startServer(arena, cert_path, key_path, suite, port);
     defer _ = server.kill() catch {};
-    const stream = try connectWithRetry(port);
+    const stream = try harness.connectWithRetry(port);
     defer stream.close();
     print("[interop] {s}\n", .{suite});
     try interop(stream);
@@ -112,18 +113,6 @@ fn startServer(
     return child;
 }
 
-fn connectWithRetry(port: u16) !net.Stream {
-    const addr: net.Address = try .parseIp(host, port);
-    var attempts: usize = 0;
-    while (attempts < 100) : (attempts += 1) {
-        return net.tcpConnectToAddress(addr) catch {
-            sleep(20 * std.time.ns_per_ms);
-            continue;
-        };
-    }
-    return error.ServerNeverCameUp;
-}
-
 fn interop(stream: net.Stream) !void {
     const kp: ztls.x25519.KeyPair = .generate();
     var random: ztls.client_hello.Random = undefined;
@@ -137,8 +126,8 @@ fn interop(stream: net.Stream) !void {
     // completeWrite(). `storage` backs the record-framing buffer that turns the
     // byte stream into whole records.
     var out: [1024]u8 = undefined;
-    var storage: [ztls.RecordBuffer.recommended_storage]u8 = undefined;
-    var rb: ztls.RecordBuffer = .init(&storage);
+    var storage: ztls.RecordBuffer.Storage = .empty;
+    var rb: ztls.RecordBuffer = .init(storage.fullSlice());
 
     // ClientHello.
     try stream.writeAll(try hs.start(&out, random, "localhost"));

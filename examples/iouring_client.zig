@@ -17,7 +17,7 @@ comptime {
 const connect_host = "127.0.0.1";
 const server_name = "ztls.server.test";
 const port: u16 = 8443;
-const trust_anchor_pem = "examples/fixtures/server-ecdsa/server.crt";
+const trust_anchor_pem = "tests/fixtures/server-ecdsa/server.crt";
 
 const IoError = error{ IoUringFailed, PeerClosed };
 

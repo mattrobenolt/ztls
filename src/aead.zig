@@ -12,10 +12,30 @@ const assert = std.debug.assert;
 const testing = std.testing;
 
 const c = @import("c.zig").openssl;
-const construct = @import("nonce.zig").construct;
-pub const Iv = @import("nonce.zig").Iv;
 const memx = @import("memx.zig");
-const Nonce = @import("nonce.zig").Nonce;
+const hex = memx.hex;
+
+pub const nonce_len = 12;
+pub const Nonce = memx.Array(nonce_len);
+pub const Iv = memx.Array(nonce_len);
+
+// ziglint-ignore: Z006
+const NonceVec = @Vector(nonce_len, u8);
+
+/// Construct the per-record nonce by XORing the IV with the sequence number.
+///
+/// The sequence number is right-aligned as a big-endian u64 in a 12-byte
+/// buffer (zero-padded on the left), then XORed with the IV.
+///
+/// RFC 8446 §5.3
+pub fn construct(iv: *const Iv, seq: u64) Nonce {
+    var padded: [nonce_len]u8 = @splat(0);
+    padded[4..12].* = memx.toBytes(u64, seq);
+
+    const a: NonceVec = iv.data;
+    const b: NonceVec = padded;
+    return .init(@as([nonce_len]u8, a ^ b));
+}
 
 comptime {
     assert(@sizeOf(Nonce) == 12);
@@ -85,7 +105,7 @@ pub const Aead = union(Keys) {
         ad: []const u8,
         npub: *const Nonce,
     ) Error!void {
-        _ = self;
+        assert(self.suite() == ctx.suite);
         try opensslEncrypt(ctx, ciphertext, tag, plaintext, ad, npub);
     }
 
@@ -101,12 +121,13 @@ pub const Aead = union(Keys) {
         ad: []const u8,
         npub: *const Nonce,
     ) Error!void {
-        _ = self;
+        assert(self.suite() == ctx.suite);
         try opensslDecrypt(ctx, plaintext, ciphertext, tag, ad, npub);
     }
 };
 
 pub const Context = struct {
+    suite: Keys,
     enc: *c.EVP_CIPHER_CTX,
     dec: *c.EVP_CIPHER_CTX,
 
@@ -118,7 +139,7 @@ pub const Context = struct {
 
         try opensslInit(enc, aead, .encrypt);
         try opensslInit(dec, aead, .decrypt);
-        return .{ .enc = enc, .dec = dec };
+        return .{ .suite = aead.suite(), .enc = enc, .dec = dec };
     }
 
     pub fn deinit(self: *Context) void {
@@ -231,7 +252,7 @@ test "Aes128Gcm: encrypt/decrypt round-trip" {
     var ciphertext: [plaintext.len]u8 = undefined;
     var tag: Tag = undefined;
     const aead: Aead = .{ .aes128_gcm = key };
-    var ctx = try Context.init(aead);
+    var ctx: Context = try .init(aead);
     defer ctx.deinit();
     try aead.encrypt(&ctx, &ciphertext, &tag, plaintext, ad, &npub);
 
@@ -250,7 +271,7 @@ test "Aes256Gcm: encrypt/decrypt round-trip" {
     var ciphertext: [plaintext.len]u8 = undefined;
     var tag: Tag = undefined;
     const aead: Aead = .{ .aes256_gcm = key };
-    var ctx = try Context.init(aead);
+    var ctx: Context = try .init(aead);
     defer ctx.deinit();
     try aead.encrypt(&ctx, &ciphertext, &tag, plaintext, ad, &npub);
 
@@ -269,19 +290,13 @@ test "ChaCha20Poly1305: encrypt/decrypt round-trip" {
     var ciphertext: [plaintext.len]u8 = undefined;
     var tag: Tag = undefined;
     const aead: Aead = .{ .chacha20_poly1305 = key };
-    var ctx = try Context.init(aead);
+    var ctx: Context = try .init(aead);
     defer ctx.deinit();
     try aead.encrypt(&ctx, &ciphertext, &tag, plaintext, ad, &npub);
 
     var decrypted: [plaintext.len]u8 = undefined;
     try aead.decrypt(&ctx, &decrypted, &ciphertext, &tag, ad, &npub);
     try testing.expectEqualSlices(u8, plaintext, &decrypted);
-}
-
-fn hex(comptime bytes_len: usize, comptime encoded: []const u8) [bytes_len]u8 {
-    var out: [bytes_len]u8 = undefined;
-    _ = std.fmt.hexToBytes(&out, encoded) catch unreachable;
-    return out;
 }
 
 // RFC 8439 §2.8.2 — ChaCha20-Poly1305 AEAD construction test vector
@@ -311,7 +326,7 @@ test "ChaCha20Poly1305: RFC 8439 known-answer vector" {
     var ciphertext: [plaintext.len]u8 = undefined;
     var tag: Tag = undefined;
     const aead: Aead = .{ .chacha20_poly1305 = key };
-    var ctx = try Context.init(aead);
+    var ctx: Context = try .init(aead);
     defer ctx.deinit();
     try aead.encrypt(&ctx, &ciphertext, &tag, &plaintext, &ad, &npub);
 
@@ -335,7 +350,7 @@ test "ChaCha20Poly1305: empty plaintext known-answer vector" {
 
     var tag: Tag = undefined;
     const aead: Aead = .{ .chacha20_poly1305 = key };
-    var ctx = try Context.init(aead);
+    var ctx: Context = try .init(aead);
     defer ctx.deinit();
     try aead.encrypt(&ctx, &.{}, &tag, &.{}, &ad, &npub);
     try testing.expectEqualSlices(u8, &expected_tag, &tag.data);
@@ -353,7 +368,7 @@ test "ChaCha20Poly1305: authentication failure on tampered ciphertext" {
     var ciphertext: [plaintext.len]u8 = undefined;
     var tag: Tag = undefined;
     const aead: Aead = .{ .chacha20_poly1305 = key };
-    var ctx = try Context.init(aead);
+    var ctx: Context = try .init(aead);
     defer ctx.deinit();
     try aead.encrypt(&ctx, &ciphertext, &tag, plaintext, ad, &npub);
 
@@ -376,7 +391,7 @@ test "ChaCha20Poly1305: authentication failure on tampered tag" {
     var ciphertext: [plaintext.len]u8 = undefined;
     var tag: Tag = undefined;
     const aead: Aead = .{ .chacha20_poly1305 = key };
-    var ctx = try Context.init(aead);
+    var ctx: Context = try .init(aead);
     defer ctx.deinit();
     try aead.encrypt(&ctx, &ciphertext, &tag, plaintext, ad, &npub);
 
@@ -398,7 +413,7 @@ test "ChaCha20Poly1305: authentication failure on tampered ad" {
     var ciphertext: [plaintext.len]u8 = undefined;
     var tag: Tag = undefined;
     const aead: Aead = .{ .chacha20_poly1305 = key };
-    var ctx = try Context.init(aead);
+    var ctx: Context = try .init(aead);
     defer ctx.deinit();
     try aead.encrypt(&ctx, &ciphertext, &tag, plaintext, "header", &npub);
 
@@ -419,7 +434,7 @@ test "decrypt: authentication failure on tampered ciphertext" {
     var ciphertext: [plaintext.len]u8 = undefined;
     var tag: Tag = undefined;
     const aead: Aead = .{ .aes128_gcm = key };
-    var ctx = try Context.init(aead);
+    var ctx: Context = try .init(aead);
     defer ctx.deinit();
     try aead.encrypt(&ctx, &ciphertext, &tag, plaintext, ad, &npub);
 
@@ -441,7 +456,7 @@ test "decrypt: authentication failure on tampered tag" {
     var ciphertext: [plaintext.len]u8 = undefined;
     var tag: Tag = undefined;
     const aead: Aead = .{ .aes128_gcm = key };
-    var ctx = try Context.init(aead);
+    var ctx: Context = try .init(aead);
     defer ctx.deinit();
     try aead.encrypt(&ctx, &ciphertext, &tag, plaintext, ad, &npub);
 
@@ -462,7 +477,7 @@ test "decrypt: authentication failure on tampered ad" {
     var ciphertext: [plaintext.len]u8 = undefined;
     var tag: Tag = undefined;
     const aead: Aead = .{ .aes128_gcm = key };
-    var ctx = try Context.init(aead);
+    var ctx: Context = try .init(aead);
     defer ctx.deinit();
     try aead.encrypt(&ctx, &ciphertext, &tag, plaintext, "header", &npub);
 
@@ -470,5 +485,44 @@ test "decrypt: authentication failure on tampered ad" {
     try testing.expectError(
         error.AuthenticationFailed,
         aead.decrypt(&ctx, &decrypted, &ciphertext, &tag, "HEADER", &npub),
+    );
+}
+
+// RFC 8446 §5.3 — nonce construction
+test "construct: seq 0 is just the IV" {
+    const iv: Iv = .init(.{
+        0x00, 0x01, 0x02, 0x03, 0x04, 0x05,
+        0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b,
+    });
+    const nonce = construct(&iv, 0);
+    try testing.expectEqualSlices(u8, &iv.data, &nonce.data);
+}
+
+test "construct: seq increments flip the right bytes" {
+    const iv: Iv = .zero;
+    try testing.expectEqual(Nonce.init(.{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1 }), construct(&iv, 1));
+    try testing.expectEqual(
+        Nonce.init(.{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255 }),
+        construct(&iv, 255),
+    );
+    try testing.expectEqual(
+        Nonce.init(.{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0 }),
+        construct(&iv, 256),
+    );
+}
+
+test "construct: XOR with non-zero IV" {
+    const iv: Iv = .init(@splat(0xff));
+    try testing.expectEqual(
+        Nonce.init(.{ 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xfe }),
+        construct(&iv, 1),
+    );
+}
+
+test "construct: seq max u64 produces expected nonce" {
+    const iv: Iv = .zero;
+    try testing.expectEqual(
+        Nonce.init(.{ 0, 0, 0, 0, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff }),
+        construct(&iv, 0xffffffffffffffff),
     );
 }

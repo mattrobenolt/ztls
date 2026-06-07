@@ -4,6 +4,8 @@
 const std = @import("std");
 const testing = std.testing;
 
+const frame = @import("frame.zig");
+
 pub const Level = enum(u8) {
     warning = 1,
     fatal = 2,
@@ -71,19 +73,28 @@ pub fn encode(out: []u8, level: Level, description: Description) error{BufferToo
     return out[0..2];
 }
 
+pub fn plaintextRecord(msg: *const [2]u8, out: []u8) error{BufferTooShort}![]u8 {
+    const total = frame.header_len + msg.len;
+    if (out.len < total) return error.BufferTooShort;
+    const header: frame.Header = .init(.alert, msg.len);
+    header.write(out[0..frame.header_len]);
+    out[frame.header_len..][0..msg.len].* = msg.*;
+    return out[0..total];
+}
+
 // RFC 8446 §6.1 — closure alerts
 test "parse: close_notify" {
     const a = try parse(&.{ 1, 0 });
-    try testing.expectEqual(Level.warning, a.level);
-    try testing.expectEqual(Description.close_notify, a.description);
+    try testing.expectEqual(.warning, a.level);
+    try testing.expectEqual(.close_notify, a.description);
     try testing.expect(a.isCloseNotify());
 }
 
 // RFC 8446 §6.2 — error alerts
 test "parse: fatal unexpected_message" {
     const a = try parse(&.{ 2, 10 });
-    try testing.expectEqual(Level.fatal, a.level);
-    try testing.expectEqual(Description.unexpected_message, a.description);
+    try testing.expectEqual(.fatal, a.level);
+    try testing.expectEqual(.unexpected_message, a.description);
     try testing.expect(a.isFatal());
 }
 

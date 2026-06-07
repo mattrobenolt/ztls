@@ -24,12 +24,22 @@ const encrypted_extensions = @import("encrypted_extensions.zig");
 const finished = @import("finished.zig");
 const frame = @import("frame.zig");
 pub const max_out_len = frame.max_wire_record_len;
+const handshake = @import("handshake.zig");
+pub const HandshakeReader = handshake.Reader;
+pub const HandshakeType = handshake.Type;
+pub const KeyUpdateRequest = handshake.KeyUpdateRequest;
+/// Max consecutive post-handshake messages with no intervening application
+/// data before we treat the peer as flooding us (RFC 8446 §4.6.3 allows
+/// either side to force updates; an unbounded stream is a DoS). Mirrors Go's
+/// maxUselessRecords. Reset by application data.
+const max_post_handshake_messages = handshake.max_post_handshake_messages;
 const hkdf = @import("hkdf.zig");
 const new_session_ticket = @import("new_session_ticket.zig");
 const PendingWrite = @import("pending_write.zig").PendingWrite;
 const RecordLayer = @import("RecordLayer.zig");
 const server_hello = @import("server_hello.zig");
-const wire = @import("wire.zig");
+const suite_state = @import("suite_state.zig");
+const HashArm = suite_state.HashArm;
 const x25519 = @import("x25519.zig");
 
 const ClientHandshake = @This();
@@ -48,65 +58,6 @@ const ServerFlightProgress = enum {
     certificate_verified,
     certificate_verify_verified,
     finished_verified,
-};
-
-/// RFC 8446 §4 — handshake message type. Open enum: unrecognized values pass
-/// through the reader untouched; the state machine decides what is unexpected.
-pub const HandshakeType = enum(u8) {
-    new_session_ticket = 0x04,
-    server_hello = 0x02,
-    encrypted_extensions = 0x08,
-    certificate_request = 0x0d, // RFC 8446 §4.3.2
-    certificate = 0x0b,
-    certificate_verify = 0x0f,
-    finished = 0x14,
-    key_update = 0x18,
-    _,
-};
-
-/// RFC 8446 §4.6.3 — whether the KeyUpdate recipient must respond with its own.
-pub const KeyUpdateRequest = enum(u8) {
-    update_not_requested = 0,
-    update_requested = 1,
-};
-
-/// Iterates the handshake messages packed into one (decrypted) record payload.
-/// A single flight commonly coalesces EncryptedExtensions, Certificate,
-/// CertificateVerify, and Finished into one record. RFC 8446 §5.1.
-pub const HandshakeReader = struct {
-    r: wire.Reader,
-
-    pub const Message = struct {
-        type: HandshakeType,
-        /// Full message including the 4-byte handshake header. This is what
-        /// feeds the transcript hash.
-        raw: []const u8,
-    };
-
-    pub fn init(buf: []const u8) HandshakeReader {
-        return .{ .r = .init(buf) };
-    }
-
-    /// Return the next complete handshake message, or null when the payload is
-    /// drained. On UnexpectedEof, `r.pos` is restored to the start of the
-    /// partial message so the caller can retain exactly the unfinished suffix
-    /// for cross-record reassembly.
-    pub fn next(self: *HandshakeReader) error{UnexpectedEof}!?Message {
-        if (self.r.remaining().len == 0) return null;
-        const begin = self.r.pos;
-        if (self.r.remaining().len < 4) {
-            self.r.pos = begin;
-            return error.UnexpectedEof;
-        }
-        const msg_type = try self.r.read(u8);
-        const len = try self.r.read(u24);
-        if (self.r.remaining().len < len) {
-            self.r.pos = begin;
-            return error.UnexpectedEof;
-        }
-        _ = try self.r.readSlice(len);
-        return .{ .type = @enumFromInt(msg_type), .raw = self.r.buf[begin..self.r.pos] };
-    }
 };
 
 /// The handshake-traffic RecordLayers derived once the key exchange completes.
@@ -138,38 +89,6 @@ pub const State = enum {
     send_finished,
     connected,
 };
-
-/// Hash-parameterized handshake state. Each arm carries every secret whose
-/// size depends on the negotiated hash, sealing the size polymorphism inside
-/// the union so the rest of ClientHandshake stays hash-agnostic.
-///
-/// Only the SHA-256 suite exists today. SHA-384 becomes a second arm carrying
-/// Sha384 + HkdfSha384.Prk-sized fields; all callers switch in one place.
-/// Per-hash handshake state, generic over the HKDF and transcript-hash types.
-/// Carries every secret whose size depends on the negotiated hash (Prk is 32
-/// bytes for SHA-256, 48 for SHA-384), sealing the size polymorphism in the arm.
-fn HashArm(comptime Hkdf_: type, comptime Hash: type) type {
-    return struct {
-        const Self = @This();
-
-        transcript: Hash,
-        // The negotiated AEAD; set from the cipher suite at ServerHello.
-        aead: aead.Keys = .aes128_gcm,
-        handshake_secret: Hkdf_.Prk = undefined,
-        client_finished_key: Hkdf_.Prk = undefined,
-        server_finished_key: Hkdf_.Prk = undefined,
-        // Application traffic secrets, retained after the handshake so KeyUpdate
-        // can ratchet them (RFC 8446 §7.2).
-        client_app_secret: Hkdf_.Prk = undefined,
-        server_app_secret: Hkdf_.Prk = undefined,
-
-        const Hkdf = Hkdf_;
-
-        inline fn secureZero(self: *Self) void {
-            crypto.secureZero(u8, mem.asBytes(self));
-        }
-    };
-}
 
 const Suite = union(enum) {
     /// Pre-ServerHello: the negotiated hash isn't known yet, so run both
@@ -289,27 +208,19 @@ const Suite = union(enum) {
 
     /// RFC 8446 §7.2 — ratchet our sending (client) application key and return
     /// the fresh RecordLayer (sequence number reset to 0).
-    fn ratchetClientKey(self: *Suite) aead.Error!RecordLayer {
+    pub fn ratchetClientKey(self: *Suite) aead.Error!RecordLayer {
         switch (self.*) {
             .buffering => unreachable,
-            inline .sha256, .sha384 => |*s| {
-                const H = @TypeOf(s.*).Hkdf;
-                s.client_app_secret = H.nextTrafficSecret(s.client_app_secret);
-                return H.makeRecordLayer(s.aead, s.client_app_secret);
-            },
+            inline .sha256, .sha384 => |*s| return s.ratchetClientKey(),
         }
     }
 
     /// RFC 8446 §7.2 — ratchet the peer's sending (server) application key and
     /// return the fresh RecordLayer (sequence number reset to 0).
-    fn ratchetServerKey(self: *Suite) aead.Error!RecordLayer {
+    pub fn ratchetServerKey(self: *Suite) aead.Error!RecordLayer {
         switch (self.*) {
             .buffering => unreachable,
-            inline .sha256, .sha384 => |*s| {
-                const H = @TypeOf(s.*).Hkdf;
-                s.server_app_secret = H.nextTrafficSecret(s.server_app_secret);
-                return H.makeRecordLayer(s.aead, s.server_app_secret);
-            },
+            inline .sha256, .sha384 => |*s| return s.ratchetServerKey(),
         }
     }
 
@@ -458,7 +369,8 @@ pub fn start(
         server_name,
         self.alpn_protocols,
     );
-    out[0..frame.header_len].* = mem.toBytes(frame.Header.init(.handshake, @intCast(ch.len)));
+    const header: frame.Header = .init(.handshake, @intCast(ch.len));
+    header.write(out[0..frame.header_len]);
     self.injectClientHello(ch);
     self.pending_write.mark();
     return out[0 .. frame.header_len + ch.len];
@@ -531,19 +443,11 @@ pub fn sendAlert(
     _ = alert.encode(&msg, level, description) catch unreachable;
 
     const record = switch (self.state) {
-        .start, .wait_sh => plaintextAlert(&msg, out),
+        .start, .wait_sh => alert.plaintextRecord(&msg, out),
         else => try self.tx.encrypt(.alert, &msg, out),
     };
     self.pending_write.mark();
     return record;
-}
-
-fn plaintextAlert(msg: *const [2]u8, out: []u8) error{BufferTooShort}![]u8 {
-    const total = frame.header_len + msg.len;
-    if (out.len < total) return error.BufferTooShort;
-    out[0..frame.header_len].* = mem.toBytes(frame.Header.init(.alert, msg.len));
-    out[frame.header_len..][0..msg.len].* = msg.*;
-    return out[0..total];
 }
 
 /// Encrypt application data into a wire-ready record (then completeWrite() once
@@ -554,11 +458,7 @@ pub fn sendApplicationData(
     plaintext: []const u8,
     out: []u8,
 ) SendError![]const u8 {
-    assert(self.state == .connected);
-    if (self.pending_write.isPending()) return error.PendingWrite;
-    const record = try self.tx.encrypt(.application_data, plaintext, out);
-    self.pending_write.mark();
-    return record;
+    return handshake.sendApplicationData(self, plaintext, out);
 }
 
 // ziglint-ignore: Z015 -- SendError is a public error-set alias.
@@ -567,11 +467,7 @@ pub fn sendPreparedApplicationData(
     plaintext_len: usize,
     out: []u8,
 ) SendError![]const u8 {
-    assert(self.state == .connected);
-    if (self.pending_write.isPending()) return error.PendingWrite;
-    const record = try self.tx.encryptPrepared(.application_data, plaintext_len, out);
-    self.pending_write.mark();
-    return record;
+    return handshake.sendPreparedApplicationData(self, plaintext_len, out);
 }
 
 pub const ProcessError = frame.ParseError || RecordLayer.DecryptError ||
@@ -639,11 +535,12 @@ pub fn processServerHello(self: *ClientHandshake, msg: []const u8) ServerHelloEr
     // the hasher that already absorbed ClientHello.
     const b = self.suite.buffering;
     self.suite = switch (sh.cipher_suite) {
-        .aes_128_gcm_sha256 => .{ .sha256 = .{ .transcript = b.sha256, .aead = .aes128_gcm } },
-        .chacha20_poly1305_sha256 => .{
-            .sha256 = .{ .transcript = b.sha256, .aead = .chacha20_poly1305 },
+        .aes_128_gcm_sha256, .chacha20_poly1305_sha256 => .{
+            .sha256 = .{ .transcript = b.sha256, .aead = sh.cipher_suite.aeadKeys() },
         },
-        .aes_256_gcm_sha384 => .{ .sha384 = .{ .transcript = b.sha384, .aead = .aes256_gcm } },
+        .aes_256_gcm_sha384 => .{
+            .sha384 = .{ .transcript = b.sha384, .aead = sh.cipher_suite.aeadKeys() },
+        },
     };
 
     self.suite.update(msg); // transcript now covers ClientHello || ServerHello
@@ -661,7 +558,8 @@ pub const FlightError = error{
     HandshakeBufferTooShort,
 } ||
     encrypted_extensions.ParseError ||
-    certificate.AuthError ||
+    certificate.ParseError ||
+    certificate.VerifyError ||
     finished.VerifyError;
 
 /// Process the server's encrypted flight: EncryptedExtensions, Certificate,
@@ -820,12 +718,6 @@ pub fn clientFinished(self: *ClientHandshake, out: []u8) SendError![]const u8 {
     return record;
 }
 
-/// Max consecutive post-handshake messages with no intervening application
-/// data before we treat the peer as flooding us (RFC 8446 §4.6.3 allows
-/// either side to force updates; an unbounded stream is a DoS). Mirrors Go's
-/// maxUselessRecords. Reset by application data.
-const max_post_handshake_messages = 16;
-
 pub const ReceiveError = RecordLayer.DecryptError || SendError || alert.ParseError ||
     new_session_ticket.ParseError ||
     error{
@@ -868,7 +760,9 @@ fn receiveConnected(self: *ClientHandshake, record: []u8, out: []u8) ReceiveErro
                         // protected under a different key epoch than it implies.
                         // Reject before ratcheting (cf. Go CVE-2026-32283).
                         if (hr.r.remaining().len != 0) return error.UnexpectedMessage;
-                        if (try parseKeyUpdate(msg.raw) == .update_requested) respond = true;
+                        if (try handshake.parseKeyUpdate(msg.raw) == .update_requested) {
+                            respond = true;
+                        }
                         // Ratchet the receive key only after consuming the
                         // KeyUpdate (RFC 8446 §4.6.3).
                         const next_rx = try self.suite.ratchetServerKey();
@@ -903,23 +797,7 @@ pub fn sendKeyUpdate(
     out: []u8,
     request: KeyUpdateRequest,
 ) SendError![]const u8 {
-    assert(self.state == .connected);
-    if (self.pending_write.isPending()) return error.PendingWrite;
-    const msg = [_]u8{
-        @intFromEnum(HandshakeType.key_update), 0x00, 0x00, 0x01, @intFromEnum(request),
-    };
-    const record = try self.tx.encrypt(.handshake, &msg, out);
-    const next_tx = try self.suite.ratchetClientKey();
-    self.tx.deinit();
-    self.tx = next_tx;
-    self.pending_write.mark();
-    return record;
-}
-
-/// Parse a KeyUpdate handshake message (4-byte header + 1-byte request).
-fn parseKeyUpdate(msg: []const u8) error{ UnexpectedEof, IllegalParameter }!KeyUpdateRequest {
-    if (msg.len != 5) return error.UnexpectedEof; // header(4) + request(1)
-    return std.enums.fromInt(KeyUpdateRequest, msg[4]) orelse error.IllegalParameter;
+    return handshake.sendKeyUpdate(.client, self, out, request);
 }
 
 // RFC 8448 §3 raw handshake messages (4-byte handshake header included, no

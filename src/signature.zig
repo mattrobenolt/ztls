@@ -1,27 +1,27 @@
 //! Signature helpers for TLS 1.3 CertificateVerify.
 const c = @import("c.zig").openssl;
-const certificate = @import("certificate.zig");
+const SignatureScheme = @import("signature_scheme.zig").SignatureScheme;
 
 pub const SignError = error{ BufferTooShort, IdentityElement, LibcryptoFailed, NonCanonical };
 
 pub const Signer = struct {
-    scheme: certificate.SignatureScheme,
+    scheme: SignatureScheme,
     context: *anyopaque,
     sign: *const fn (context: *anyopaque, msg: []const u8, out: []u8) SignError![]const u8,
 };
 
 pub const PrivateKey = struct {
-    scheme: certificate.SignatureScheme,
+    scheme: SignatureScheme,
     key: *c.EVP_PKEY,
 
-    pub fn fromDer(scheme: certificate.SignatureScheme, der: []const u8) SignError!PrivateKey {
+    pub fn fromDer(scheme: SignatureScheme, der: []const u8) SignError!PrivateKey {
         var ptr: [*c]const u8 = der.ptr;
         const key = c.d2i_AutoPrivateKey(null, &ptr, @intCast(der.len)) orelse
             return error.LibcryptoFailed;
         return .{ .scheme = scheme, .key = key };
     }
 
-    pub fn fromPem(scheme: certificate.SignatureScheme, pem: []const u8) SignError!PrivateKey {
+    pub fn fromPem(scheme: SignatureScheme, pem: []const u8) SignError!PrivateKey {
         const bio = c.BIO_new_mem_buf(pem.ptr, @intCast(pem.len)) orelse
             return error.LibcryptoFailed;
         defer _ = c.BIO_free(bio);
@@ -59,7 +59,17 @@ pub const PrivateKey = struct {
         const ctx = c.EVP_MD_CTX_new() orelse return error.LibcryptoFailed;
         defer c.EVP_MD_CTX_free(ctx);
 
-        if (c.EVP_DigestSignInit(ctx, null, md, null, self.key) != 1) return error.LibcryptoFailed;
+        var pctx: ?*c.EVP_PKEY_CTX = null;
+        if (c.EVP_DigestSignInit(ctx, &pctx, md, null, self.key) != 1) return error.LibcryptoFailed;
+        switch (self.scheme) {
+            .rsa_pss_rsae_sha256, .rsa_pss_rsae_sha384, .rsa_pss_rsae_sha512 => {
+                if (c.EVP_PKEY_CTX_set_rsa_padding(pctx, c.RSA_PKCS1_PSS_PADDING) != 1)
+                    return error.LibcryptoFailed;
+                if (c.EVP_PKEY_CTX_set_rsa_pss_saltlen(pctx, c.RSA_PSS_SALTLEN_DIGEST) != 1)
+                    return error.LibcryptoFailed;
+            },
+            else => {},
+        }
         if (c.EVP_DigestSignUpdate(ctx, msg.ptr, msg.len) != 1) return error.LibcryptoFailed;
 
         var len: usize = out.len;
@@ -90,11 +100,4 @@ fn p256KeyFromScalar(scalar: *const [32]u8) SignError!*c.EVP_PKEY {
     errdefer c.EVP_PKEY_free(pkey);
     if (c.EVP_PKEY_assign_EC_KEY(pkey, ec) != 1) return error.LibcryptoFailed;
     return pkey;
-}
-
-/// Sign `msg` as ECDSA P-256 with SHA-256, returning DER-encoded ECDSA-Sig-Value.
-pub fn signEcdsaP256Sha256(scalar: *const [32]u8, msg: []const u8, out: []u8) SignError![]const u8 {
-    var key = try PrivateKey.fromP256Scalar(scalar);
-    defer key.deinit();
-    return key.sign(msg, out);
 }

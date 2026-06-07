@@ -40,6 +40,12 @@ pub inline fn toBytes(comptime T: type, value: T) [@sizeOf(T)]u8 {
     return mem.toBytes(mem.nativeTo(T, value, .big));
 }
 
+pub fn hex(comptime len: usize, comptime encoded: []const u8) [len]u8 {
+    var out: [len]u8 = @splat(0);
+    _ = std.fmt.hexToBytes(&out, encoded) catch unreachable;
+    return out;
+}
+
 const vector_chunk_len = @min(std.simd.suggestVectorLength(u8) orelse 16, 32);
 
 /// Return the index of the last non-zero byte in `buf`, or null if all zeros.

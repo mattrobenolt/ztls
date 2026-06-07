@@ -14,14 +14,19 @@ const Aes128GcmKey = aead_mod.Aes128GcmKey;
 const Iv = aead_mod.Iv;
 const Tag = aead_mod.Tag;
 const tag_len = aead_mod.tag_len;
-const construct = @import("nonce.zig").construct;
+const construct = aead_mod.construct;
 const frame = @import("frame.zig");
 const ContentType = frame.ContentType;
-const DecryptedRecord = frame.DecryptedRecord;
 const Header = frame.Header;
 const memx = @import("memx.zig");
 
 const RecordLayer = @This();
+
+pub const DecryptedRecord = struct {
+    content_type: ContentType,
+    /// Subslice of the caller-provided output buffer — no copy.
+    content: []u8,
+};
 
 /// Bytes added to plaintext length to produce the encrypted wire record.
 /// Accounts for the 5-byte header, content type byte, and 16-byte AEAD tag.

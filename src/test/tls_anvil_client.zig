@@ -34,8 +34,8 @@ pub fn main() !void {
     hs.offerAlpn(&.{ "h2", "http/1.1" });
 
     var out: [1024]u8 = undefined;
-    var storage: [ztls.RecordBuffer.recommended_storage]u8 = undefined;
-    var rb: ztls.RecordBuffer = .init(&storage);
+    var storage: ztls.RecordBuffer.Storage = .empty;
+    var rb: ztls.RecordBuffer = .init(storage.fullSlice());
 
     // ClientHello.
     try stream.writeAll(try hs.start(&out, random, host));

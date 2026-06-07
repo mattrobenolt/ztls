@@ -9,12 +9,11 @@ const Certificate = @import("cryptox/Certificate.zig");
 const wire = @import("wire.zig");
 
 const c = @import("c.zig").openssl;
-
-pub const PolicyError = error{
-    CertificateKeyUsageRejected,
-    CertificateExtendedKeyUsageRejected,
-    CertificateSignatureAlgorithmRejected,
-};
+const certificate_policy = @import("certificate_policy.zig");
+pub const SignatureScheme = @import("signature_scheme.zig").SignatureScheme;
+pub const LeafUsage = certificate_policy.LeafUsage;
+pub const Policy = certificate_policy.Policy;
+pub const PolicyError = certificate_policy.PolicyError;
 
 pub const ParseError = error{
     UnexpectedEof,
@@ -26,42 +25,7 @@ pub const ParseError = error{
     Certificate.Parsed.VerifyError ||
     Certificate.Parsed.VerifyHostNameError;
 
-pub const LeafUsage = enum {
-    none,
-    server_auth,
-};
-
-/// Certificate validation policy.
-pub const Policy = struct {
-    /// Trust anchors for chain validation. null = signature-only, no chain
-    /// anchoring (the leaf public key is still extracted and the CV signature
-    /// still verified).
-    bundle: ?*const Certificate.Bundle = null,
-    /// Current time in seconds since the Unix epoch, for validity checks.
-    now_sec: i64 = 0,
-    /// DNS name expected in the leaf certificate SAN/CN. null = no hostname
-    /// check. ClientHandshake.start() fills this from its `server_name` when
-    /// unset, so explicit policy values override SNI-derived defaults.
-    host_name: ?[]const u8 = null,
-    /// Enforce TLS 1.3 certificate residual policy for the leaf's intended use.
-    /// `.server_auth` requires KeyUsage.digitalSignature when KeyUsage is present,
-    /// EKU serverAuth when EKU is present, and a TLS 1.3-compatible certificate
-    /// signature algorithm.
-    leaf_usage: LeafUsage = .server_auth,
-};
-
-/// RFC 8446 §4.2.3 signature schemes supported by ztls.
-pub const SignatureScheme = enum(u16) {
-    ecdsa_secp256r1_sha256 = 0x0403,
-    ecdsa_secp384r1_sha384 = 0x0503,
-    rsa_pss_rsae_sha256 = 0x0804,
-    rsa_pss_rsae_sha384 = 0x0805,
-    rsa_pss_rsae_sha512 = 0x0806,
-    _,
-};
-
 pub const EncodeError = error{BufferTooShort};
-pub const CertificateVerifyEncodeError = error{BufferTooShort};
 
 pub fn encodedLen(certs_der: []const []const u8) usize {
     var list_len: usize = 0;
@@ -126,7 +90,7 @@ pub fn parse(msg: []const u8, policy: Policy) ParseError![]const u8 {
             leaf_pub_key = parsed.pubKey();
             switch (policy.leaf_usage) {
                 .none => {},
-                .server_auth => try verifyServerAuthPolicy(parsed),
+                .server_auth => try certificate_policy.verifyServerAuth(parsed),
             }
             if (policy.host_name) |host_name| try parsed.verifyHostName(host_name);
         }
@@ -137,51 +101,11 @@ pub fn parse(msg: []const u8, policy: Policy) ParseError![]const u8 {
 
     if (policy.bundle) |bundle| {
         const subject = subject_to_verify orelse return error.EmptyCertificateList;
-        try verifyAgainstBundle(bundle, subject, policy.now_sec);
+        try certificate_policy.verifyAgainstBundle(bundle, subject, policy.now_sec);
     }
 
     return leaf_pub_key orelse error.EmptyCertificateList;
 }
-
-const eku_server_auth_oid = [_]u8{ 0x2b, 0x06, 0x01, 0x05, 0x05, 0x07, 0x03, 0x01 };
-const key_usage_digital_signature: u4 = 0;
-
-fn verifyServerAuthPolicy(parsed: Certificate.Parsed) ParseError!void {
-    // RFC 8446 §4.4.2.2 — server certificates must permit CertificateVerify
-    // signing via KeyUsage.digitalSignature when KeyUsage is present.
-    if (!try parsed.allowsKeyUsage(key_usage_digital_signature))
-        return error.CertificateKeyUsageRejected;
-
-    // RFC 5280 §4.2.1.12 — when EKU is present it restricts certificate use;
-    // id-kp-serverAuth is required for TLS server authentication.
-    if (!try parsed.allowsExtKeyUsage(&eku_server_auth_oid))
-        return error.CertificateExtendedKeyUsageRejected;
-
-    switch (parsed.signature_algorithm) {
-        .sha256WithRSAEncryption,
-        .sha384WithRSAEncryption,
-        .sha512WithRSAEncryption,
-        .ecdsa_with_SHA256,
-        .ecdsa_with_SHA384,
-        .ecdsa_with_SHA512,
-        .curveEd25519,
-        => {},
-        else => return error.CertificateSignatureAlgorithmRejected,
-    }
-}
-
-fn verifyAgainstBundle(
-    bundle: *const Certificate.Bundle,
-    subject: Certificate.Parsed,
-    now_sec: i64,
-) ParseError!void {
-    const issuer_index = bundle.find(subject.issuer()) orelse
-        return error.CertificateIssuerNotFound;
-    const issuer_cert: Certificate = .{ .buffer = bundle.bytes.items, .index = issuer_index };
-    try subject.verify(try issuer_cert.parse(), now_sec);
-}
-
-pub const AuthError = ParseError || VerifyError;
 
 fn publicKeyFromCertificateBits(
     scheme: SignatureScheme,
@@ -222,8 +146,8 @@ fn rsaPublicKeyFromDer(pub_key: []const u8) VerifyError!*c.EVP_PKEY {
     return key;
 }
 
-const server_context = " " ** 64 ++ "TLS 1.3, server CertificateVerify\x00";
-const client_context = " " ** 64 ++ "TLS 1.3, client CertificateVerify\x00";
+pub const server_certificate_verify_context = " " ** 64 ++ "TLS 1.3, server CertificateVerify\x00";
+pub const client_certificate_verify_context = " " ** 64 ++ "TLS 1.3, client CertificateVerify\x00";
 
 pub fn certificateVerifyEncodedLen(signature: []const u8) usize {
     return 4 + 2 + 2 + signature.len;
@@ -237,7 +161,7 @@ pub fn encodeCertificateVerify(
     out: []u8,
     scheme: SignatureScheme,
     signature: []const u8,
-) CertificateVerifyEncodeError![]const u8 {
+) EncodeError![]const u8 {
     const len = certificateVerifyEncodedLen(signature);
     if (out.len < len) return error.BufferTooShort;
     var w: wire.Writer = .init(out);
@@ -248,9 +172,6 @@ pub fn encodeCertificateVerify(
     w.appendSlice(signature);
     return w.written();
 }
-
-pub const server_certificate_verify_context = server_context;
-pub const client_certificate_verify_context = client_context;
 
 pub const VerifyError = error{
     InvalidEnumTag,
@@ -272,7 +193,7 @@ pub fn verifyServerSignature(
     pub_key: []const u8,
     transcript_hash: []const u8,
 ) VerifyError!void {
-    return verifySignature(server_context, msg, pub_key, transcript_hash);
+    return verifySignature(server_certificate_verify_context, msg, pub_key, transcript_hash);
 }
 
 /// Verify a client CertificateVerify handshake message. RFC 8446 §4.4.3.
@@ -281,7 +202,7 @@ pub fn verifyClientSignature(
     pub_key: []const u8,
     transcript_hash: []const u8,
 ) VerifyError!void {
-    return verifySignature(client_context, msg, pub_key, transcript_hash);
+    return verifySignature(client_certificate_verify_context, msg, pub_key, transcript_hash);
 }
 
 fn verifySignature(
@@ -479,7 +400,7 @@ test "parse: malformed DER length is rejected, not crashed" {
     try testing.expectError(error.CertificateFieldHasInvalidLength, parse(&msg, .{}));
 }
 
-// Build a Parsed leaf carrying only the fields verifyServerAuthPolicy reads,
+// Build a Parsed leaf carrying only the fields certificate_policy.verifyServerAuth reads,
 // so policy enforcement can be tested without generating full DER fixtures.
 fn policyLeaf(
     buffer: []const u8,
@@ -508,7 +429,7 @@ fn policyLeaf(
 
 // RFC 8446 §4.4.2.2 — a server certificate whose KeyUsage extension is present
 // but omits digitalSignature cannot sign CertificateVerify and must be rejected.
-test "verifyServerAuthPolicy: KeyUsage without digitalSignature is rejected" {
+test "certificate_policy.verifyServerAuth: KeyUsage without digitalSignature is rejected" {
     // BIT STRING, 6 unused bits, 0x40 sets bit 1 (nonRepudiation) but not bit 0.
     const key_usage = "\x03\x02\x06\x40";
     const leaf = policyLeaf(
@@ -517,36 +438,39 @@ test "verifyServerAuthPolicy: KeyUsage without digitalSignature is rejected" {
         .empty,
         .ecdsa_with_SHA256,
     );
-    try testing.expectError(error.CertificateKeyUsageRejected, verifyServerAuthPolicy(leaf));
+    try testing.expectError(
+        error.CertificateKeyUsageRejected,
+        certificate_policy.verifyServerAuth(leaf),
+    );
 }
 
 // RFC 5280 §4.2.1.12 — when EKU is present it restricts allowed uses; without
 // id-kp-serverAuth the certificate must not be accepted for TLS server auth.
-test "verifyServerAuthPolicy: EKU without serverAuth is rejected" {
+test "certificate_policy.verifyServerAuth: EKU without serverAuth is rejected" {
     // SEQUENCE { OID id-kp-clientAuth (1.3.6.1.5.5.7.3.2) }
     const eku = "\x30\x0a\x06\x08\x2b\x06\x01\x05\x05\x07\x03\x02";
     const leaf = policyLeaf(eku, .empty, .{ .start = 0, .end = eku.len }, .ecdsa_with_SHA256);
     try testing.expectError(
         error.CertificateExtendedKeyUsageRejected,
-        verifyServerAuthPolicy(leaf),
+        certificate_policy.verifyServerAuth(leaf),
     );
 }
 
 // RFC 8446 §4.2.3 — only the TLS 1.3 signature algorithms are acceptable for a
 // server certificate; a legacy SHA-1/RSA cert must be rejected by policy.
-test "verifyServerAuthPolicy: unsupported signature algorithm is rejected" {
+test "certificate_policy.verifyServerAuth: unsupported signature algorithm is rejected" {
     const leaf = policyLeaf("", .empty, .empty, .sha1WithRSAEncryption);
     try testing.expectError(
         error.CertificateSignatureAlgorithmRejected,
-        verifyServerAuthPolicy(leaf),
+        certificate_policy.verifyServerAuth(leaf),
     );
 }
 
 // RFC 8446 §4.4.2.2 — a leaf with no KeyUsage/EKU restrictions and a supported
 // signature algorithm satisfies the residual server-auth policy.
-test "verifyServerAuthPolicy: unrestricted supported leaf is accepted" {
+test "certificate_policy.verifyServerAuth: unrestricted supported leaf is accepted" {
     const leaf = policyLeaf("", .empty, .empty, .ecdsa_with_SHA256);
-    try verifyServerAuthPolicy(leaf);
+    try certificate_policy.verifyServerAuth(leaf);
 }
 
 test "encodeCertificateVerify: wraps signature" {

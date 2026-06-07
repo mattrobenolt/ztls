@@ -23,8 +23,8 @@ const target_bytes: usize = 16 * 1024 * 1024;
 const handshake_iterations = 256;
 const ztls_handshake_iterations = 64;
 const openssl_replay_archive = @embedFile("test_fixtures/openssl_replay.txtar");
-const server_cert_der = @embedFile("test_fixtures/server-ecdsa/server.der");
-const server_scalar = @embedFile("test_fixtures/server-ecdsa/scalar.bin");
+const server_cert_der = @embedFile("../src/test_fixtures/server-ecdsa/server.der");
+const server_scalar = @embedFile("../src/test_fixtures/server-ecdsa/scalar.bin");
 
 const Suite = enum {
     aes_128_gcm_sha256,

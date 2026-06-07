@@ -3,9 +3,11 @@
 //! RFC 8446 §4.2.8.2, RFC 7748
 const std = @import("std");
 const assert = std.debug.assert;
+const testing = std.testing;
 
 const c = @import("c.zig").openssl;
 const memx = @import("memx.zig");
+const hex = memx.hex;
 
 pub const public_length = 32;
 pub const secret_length = 32;
@@ -86,12 +88,6 @@ pub fn sharedSecret(secret_key: SecretKey, peer_public_key: PublicKey) Error![se
     return secret;
 }
 
-fn hex(comptime bytes_len: usize, comptime encoded: []const u8) [bytes_len]u8 {
-    var out: [bytes_len]u8 = undefined;
-    _ = std.fmt.hexToBytes(&out, encoded) catch unreachable;
-    return out;
-}
-
 // RFC 7748 §5.2 — X25519 scalar multiplication test vector.
 test "sharedSecret: RFC 7748 X25519 vector" {
     const scalar: SecretKey = .init(
@@ -102,7 +98,7 @@ test "sharedSecret: RFC 7748 X25519 vector" {
     );
     const secret = try sharedSecret(scalar, peer);
     const want = hex(32, "c3da55379de9c6908e94ea4df28d084f32eccf03491c71f754b4075577a28552");
-    try std.testing.expectEqualSlices(u8, &want, &secret);
+    try testing.expectEqualSlices(u8, &want, &secret);
 }
 
 // RFC 7748 §6.1 — X25519 public keys are scalar multiplication by base point 9.
@@ -110,12 +106,12 @@ test "KeyPair.generateDeterministic: RFC 7748 public keys" {
     const alice_seed = hex(32, "77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a");
     const alice = try KeyPair.generateDeterministic(.init(alice_seed));
     const alice_pub = hex(32, "8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a");
-    try std.testing.expectEqualSlices(u8, &alice_pub, &alice.public_key.data);
+    try testing.expectEqualSlices(u8, &alice_pub, &alice.public_key.data);
 
     const bob_seed = hex(32, "5dab087e624a8a4b79e17f8b83800ee66f3bb1292618b6fd1c2f8b27ff88e0eb");
     const bob = try KeyPair.generateDeterministic(.init(bob_seed));
     const bob_pub = hex(32, "de9edb7d7b7dc1b4d35b61c2ece435373f8343c85b78674dadfc7e146f882b4f");
-    try std.testing.expectEqualSlices(u8, &bob_pub, &bob.public_key.data);
+    try testing.expectEqualSlices(u8, &bob_pub, &bob.public_key.data);
 }
 
 comptime {
