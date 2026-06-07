@@ -519,8 +519,7 @@ fn connectPair(comptime suite: Suite) !struct { client: ztls.ClientHandshake, se
 
     var signer: ztls.signature.PrivateKey = try .fromP256Scalar(server_scalar[0..32]);
     defer signer.deinit();
-    var plaintext: [8192]u8 = undefined;
-    const flight_record = try server.sendAuthenticatedFlight(&.{server_cert_der}, signer.signer(), &plaintext, &server_out);
+    const flight_record = try server.sendPreparedAuthenticatedFlight(&.{server_cert_der}, signer.signer(), &server_out);
     const ev = try client.handleRecord(server_out[0..flight_record.len], &client_out);
     const client_finished = switch (ev) {
         .write => |w| w,
@@ -604,9 +603,8 @@ fn doZtlsHandshakeSplit(comptime suite: Suite, timer: *time.Timer, split: ?*Hand
     try client.processServerHello(sh_record[ztls.frame.header_len..]);
     if (split) |s| addTime(timer, &s.client_server_hello_ns);
 
-    var plaintext: [8192]u8 = undefined;
     timer.reset();
-    const flight_record = try server.sendAuthenticatedFlight(&.{server_cert_der}, signer.signer(), &plaintext, &server_out);
+    const flight_record = try server.sendPreparedAuthenticatedFlight(&.{server_cert_der}, signer.signer(), &server_out);
     if (split) |s| addTime(timer, &s.server_flight_ns);
 
     timer.reset();

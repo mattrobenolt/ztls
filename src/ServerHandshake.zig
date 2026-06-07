@@ -312,6 +312,27 @@ pub fn sendAuthenticatedFlight(
     plaintext: []u8,
     out: []u8,
 ) FlightError![]const u8 {
+    const flight = try self.encodeAuthenticatedFlight(certs_der, signer, plaintext);
+    return self.tx.encrypt(.handshake, flight, out);
+}
+
+pub fn sendPreparedAuthenticatedFlight(
+    self: *ServerHandshake,
+    certs_der: []const []const u8,
+    signer: Signer,
+    out: []u8,
+) FlightError![]const u8 {
+    if (out.len < frame.header_len) return error.BufferTooShort;
+    const flight = try self.encodeAuthenticatedFlight(certs_der, signer, out[frame.header_len..]);
+    return self.tx.encryptPrepared(.handshake, flight.len, out);
+}
+
+fn encodeAuthenticatedFlight(
+    self: *ServerHandshake,
+    certs_der: []const []const u8,
+    signer: Signer,
+    plaintext: []u8,
+) FlightError![]const u8 {
     assert(self.state == .wait_client_finished);
     var pos: usize = 0;
 
@@ -346,7 +367,7 @@ pub fn sendAuthenticatedFlight(
             pos += fin.len;
         },
     }
-    return self.tx.encrypt(.handshake, plaintext[0..pos], out);
+    return plaintext[0..pos];
 }
 
 /// Consume the client's encrypted Finished, verify it against the transcript
