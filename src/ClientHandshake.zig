@@ -24,6 +24,7 @@ const frame = @import("frame.zig");
 pub const max_out_len = frame.max_wire_record_len;
 const hkdf = @import("hkdf.zig");
 const new_session_ticket = @import("new_session_ticket.zig");
+const PendingWrite = @import("pending_write.zig").PendingWrite;
 const RecordLayer = @import("RecordLayer.zig");
 const server_hello = @import("server_hello.zig");
 const wire = @import("wire.zig");
@@ -327,7 +328,7 @@ tx: RecordLayer = undefined,
 /// transport (Finished, KeyUpdate response, application data). Blocks further
 /// engine calls until completeWrite() acknowledges the write — so a dropped
 /// write can't silently desync the connection.
-pending_write: bool = false,
+pending_write: PendingWrite = .idle,
 /// Certificate validation policy, applied during the server flight. Defaults
 /// to no chain anchoring (signature-only). Set before driving the handshake.
 policy: certificate.Policy = .{},
@@ -380,7 +381,7 @@ pub fn deinit(self: *ClientHandshake) void {
 /// transport, clearing the pending-write block. Call after writing any
 /// `.write` event or send-method result.
 pub fn completeWrite(self: *ClientHandshake) void {
-    self.pending_write = false;
+    self.pending_write.clear();
 }
 
 pub const StartError = error{ BufferTooShort, ServerNameTooLong } || client_hello.AlpnError;
@@ -424,7 +425,7 @@ pub fn start(
     const ch = try client_hello.encode(out[frame.header_len..], random, .init(self.keypair.public_key), server_name, self.alpn_protocols);
     out[0..frame.header_len].* = mem.toBytes(frame.Header.init(.handshake, @intCast(ch.len)));
     self.injectClientHello(ch);
-    self.pending_write = true;
+    self.pending_write.mark();
     return out[0 .. frame.header_len + ch.len];
 }
 
@@ -466,14 +467,14 @@ pub fn isConnected(self: *const ClientHandshake) bool {
 /// (KeyUpdate), and surfaces a KeyUpdate response as `.write`. `record` is
 /// decrypted in place; `out` receives any record to send. RFC 8446 §5.
 pub fn handleRecord(self: *ClientHandshake, record: []u8, out: []u8) HandleError!Event {
-    if (self.pending_write) return error.PendingWrite;
+    if (self.pending_write.isPending()) return error.PendingWrite;
     const ev: Event = if (self.state == .connected)
         try self.receiveConnected(record, out)
     else if (try self.processHandshakeRecord(record, out)) |bytes|
         .{ .write = bytes }
     else
         .none;
-    if (ev == .write) self.pending_write = true;
+    if (ev == .write) self.pending_write.mark();
     return ev;
 }
 
@@ -483,7 +484,7 @@ pub const AlertError = RecordLayer.EncryptError || error{PendingWrite};
 /// keys exist this emits a plaintext alert record; after ServerHello it encrypts
 /// the alert under the current send traffic key. RFC 8446 §6.
 pub fn sendAlert(self: *ClientHandshake, description: alert.Description, out: []u8) AlertError![]const u8 {
-    if (self.pending_write) return error.PendingWrite;
+    if (self.pending_write.isPending()) return error.PendingWrite;
     var msg: [2]u8 = undefined;
     const level: alert.Level = if (description == .close_notify) .warning else .fatal;
     _ = alert.encode(&msg, level, description) catch unreachable;
@@ -492,7 +493,7 @@ pub fn sendAlert(self: *ClientHandshake, description: alert.Description, out: []
         .start, .wait_sh => plaintextAlert(&msg, out),
         else => try self.tx.encrypt(.alert, &msg, out),
     };
-    self.pending_write = true;
+    self.pending_write.mark();
     return record;
 }
 
@@ -508,17 +509,17 @@ fn plaintextAlert(msg: *const [2]u8, out: []u8) error{BufferTooShort}![]u8 {
 /// sent). RFC 8446 §5.2.
 pub fn sendApplicationData(self: *ClientHandshake, plaintext: []const u8, out: []u8) SendError![]const u8 {
     assert(self.state == .connected);
-    if (self.pending_write) return error.PendingWrite;
+    if (self.pending_write.isPending()) return error.PendingWrite;
     const record = try self.tx.encrypt(.application_data, plaintext, out);
-    self.pending_write = true;
+    self.pending_write.mark();
     return record;
 }
 
 pub fn sendPreparedApplicationData(self: *ClientHandshake, plaintext_len: usize, out: []u8) SendError![]const u8 {
     assert(self.state == .connected);
-    if (self.pending_write) return error.PendingWrite;
+    if (self.pending_write.isPending()) return error.PendingWrite;
     const record = try self.tx.encryptPrepared(.application_data, plaintext_len, out);
-    self.pending_write = true;
+    self.pending_write.mark();
     return record;
 }
 
@@ -815,13 +816,13 @@ fn receiveConnected(self: *ClientHandshake, record: []u8, out: []u8) ReceiveErro
 /// (RFC 8446 §4.6.3, §7.2). `request` asks the peer to update in return.
 pub fn sendKeyUpdate(self: *ClientHandshake, out: []u8, request: KeyUpdateRequest) SendError![]const u8 {
     assert(self.state == .connected);
-    if (self.pending_write) return error.PendingWrite;
+    if (self.pending_write.isPending()) return error.PendingWrite;
     const msg = [_]u8{ @intFromEnum(HandshakeType.key_update), 0x00, 0x00, 0x01, @intFromEnum(request) };
     const record = try self.tx.encrypt(.handshake, &msg, out);
     const next_tx = try self.suite.ratchetClientKey();
     self.tx.deinit();
     self.tx = next_tx;
-    self.pending_write = true;
+    self.pending_write.mark();
     return record;
 }
 

@@ -21,12 +21,11 @@ const trust_anchor_pem = "examples/fixtures/server-ecdsa/server.crt";
 
 const IoError = error{ IoUringFailed, PeerClosed };
 
-const debug_allocator: std.heap.DebugAllocator(.{}) = .init;
+var debug_allocator: std.heap.DebugAllocator(.{}) = .init;
 
 pub fn main() !void {
-    var gpa = debug_allocator.allocator();
-    _ = gpa; // autofix
-    defer debug_allocator.deinit();
+    const gpa = debug_allocator.allocator();
+    defer _ = debug_allocator.deinit();
     var ring: IoUring = IoUring.init(8, 0) catch |err| switch (err) {
         error.PermissionDenied, error.SystemOutdated => {
             print("[iouring] io_uring unavailable: {}\n", .{err});
@@ -55,8 +54,8 @@ pub fn main() !void {
     hs.policy.host_name = server_name;
     hs.policy.now_sec = std.time.timestamp();
     var bundle: std.crypto.Certificate.Bundle = .{};
-    defer bundle.deinit(std.heap.page_allocator);
-    try bundle.addCertsFromFilePath(std.heap.page_allocator, std.fs.cwd(), trust_anchor_pem);
+    defer bundle.deinit(gpa);
+    try bundle.addCertsFromFilePath(gpa, std.fs.cwd(), trust_anchor_pem);
     hs.policy.bundle = &bundle;
 
     var random: ztls.client_hello.Random = undefined;

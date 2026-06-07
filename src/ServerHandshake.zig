@@ -15,6 +15,7 @@ const aead = @import("aead.zig");
 const alert = @import("alert.zig");
 const ArrayBuffer = @import("array_buffer.zig").ArrayBuffer;
 const certificate = @import("certificate.zig");
+const CertificateChain = @import("certificate_chain.zig").CertificateChain;
 const CipherSuite = @import("root.zig").CipherSuite;
 const client_hello = @import("client_hello.zig");
 const ClientHandshake = @import("ClientHandshake.zig");
@@ -26,6 +27,7 @@ const finished = @import("finished.zig");
 const frame = @import("frame.zig");
 pub const max_out_len = frame.max_wire_record_len;
 const hkdf = @import("hkdf.zig");
+const PendingWrite = @import("pending_write.zig").PendingWrite;
 const RecordLayer = @import("RecordLayer.zig");
 const server_hello = @import("server_hello.zig");
 const signature = @import("signature.zig");
@@ -124,7 +126,7 @@ tx: RecordLayer = undefined,
 /// Set when an engine call hands the caller bytes that must be written before
 /// more input can be safely processed. Prevents dropped ServerHello/flight/app
 /// data from silently desynchronizing traffic keys.
-pending_write: bool = false,
+pending_write: PendingWrite = .idle,
 post_handshake_count: u8 = 0,
 /// Verification gate for the client Finished. Reaching connected requires this
 /// to be set by the Finished verifier, making the final server transition easy
@@ -176,7 +178,7 @@ pub fn clientServerName(self: *const ServerHandshake) ?[]const u8 {
 }
 
 pub fn completeWrite(self: *ServerHandshake) void {
-    self.pending_write = false;
+    self.pending_write.clear();
 }
 
 pub fn isConnected(self: *const ServerHandshake) bool {
@@ -341,7 +343,17 @@ pub fn sendAuthenticatedFlight(
     plaintext: []u8,
     out: []u8,
 ) FlightError![]const u8 {
-    const flight = try self.encodeAuthenticatedFlight(certs_der, signer, plaintext);
+    return self.sendCertificateChainFlight(.init(certs_der), signer, plaintext, out);
+}
+
+pub fn sendCertificateChainFlight(
+    self: *ServerHandshake,
+    chain: CertificateChain,
+    signer: Signer,
+    plaintext: []u8,
+    out: []u8,
+) FlightError![]const u8 {
+    const flight = try self.encodeAuthenticatedFlight(chain, signer, plaintext);
     return self.tx.encrypt(.handshake, flight, out);
 }
 
@@ -351,8 +363,17 @@ pub fn sendPreparedAuthenticatedFlight(
     signer: Signer,
     out: []u8,
 ) FlightError![]const u8 {
+    return self.sendPreparedCertificateChainFlight(.init(certs_der), signer, out);
+}
+
+pub fn sendPreparedCertificateChainFlight(
+    self: *ServerHandshake,
+    chain: CertificateChain,
+    signer: Signer,
+    out: []u8,
+) FlightError![]const u8 {
     if (out.len < frame.header_len) return error.BufferTooShort;
-    const flight = try self.encodeAuthenticatedFlight(certs_der, signer, out[frame.header_len..]);
+    const flight = try self.encodeAuthenticatedFlight(chain, signer, out[frame.header_len..]);
     return self.tx.encryptPrepared(.handshake, flight.len, out);
 }
 
@@ -362,14 +383,14 @@ pub fn sendAuthenticatedFlightBuffered(
     signer: Signer,
     out: *FlightBuffer,
 ) FlightError![]u8 {
-    const record = try self.sendPreparedAuthenticatedFlight(certs_der, signer, out.fullSlice());
+    const record = try self.sendPreparedCertificateChainFlight(.init(certs_der), signer, out.fullSlice());
     out.resize(@intCast(record.len));
     return out.slice();
 }
 
 fn encodeAuthenticatedFlight(
     self: *ServerHandshake,
-    certs_der: []const []const u8,
+    chain: CertificateChain,
     signer: Signer,
     plaintext: []u8,
 ) FlightError![]const u8 {
@@ -380,7 +401,7 @@ fn encodeAuthenticatedFlight(
     self.suite_state.update(ee);
     pos += ee.len;
 
-    const cert = try certificate.encode(plaintext[pos..], certs_der);
+    const cert = try chain.encode(plaintext[pos..]);
     self.suite_state.update(cert);
     pos += cert.len;
 
@@ -451,13 +472,13 @@ fn processClientFinishedPlaintext(self: *ServerHandshake, plaintext: []const u8)
 }
 
 pub fn handleRecord(self: *ServerHandshake, record: []u8, random: client_hello.Random, out: []u8) HandleError!Event {
-    if (self.pending_write) return error.PendingWrite;
+    if (self.pending_write.isPending()) return error.PendingWrite;
     const ev: Event = switch (self.state) {
         .wait_ch => try self.handleWaitClientHello(record, random, out),
         .wait_client_finished => try self.handleWaitClientFinished(record),
         .connected => try self.handleConnected(record, out),
     };
-    if (ev == .write) self.pending_write = true;
+    if (ev == .write) self.pending_write.mark();
     return ev;
 }
 
@@ -538,13 +559,13 @@ fn handleConnected(self: *ServerHandshake, record: []u8, out: []u8) ReceiveError
 
 pub fn sendKeyUpdate(self: *ServerHandshake, out: []u8, request: KeyUpdateRequest) SendError![]const u8 {
     assert(self.state == .connected);
-    if (self.pending_write) return error.PendingWrite;
+    if (self.pending_write.isPending()) return error.PendingWrite;
     const msg = [_]u8{ @intFromEnum(HandshakeType.key_update), 0x00, 0x00, 0x01, @intFromEnum(request) };
     const record = try self.tx.encrypt(.handshake, &msg, out);
     const next_tx = try self.suite_state.ratchetServerKey();
     self.tx.deinit();
     self.tx = next_tx;
-    self.pending_write = true;
+    self.pending_write.mark();
     return record;
 }
 
@@ -554,7 +575,7 @@ fn parseKeyUpdate(msg: []const u8) error{ UnexpectedEof, IllegalParameter }!KeyU
 }
 
 pub fn sendAlert(self: *ServerHandshake, description: alert.Description, out: []u8) AlertError![]const u8 {
-    if (self.pending_write) return error.PendingWrite;
+    if (self.pending_write.isPending()) return error.PendingWrite;
     var msg: [2]u8 = undefined;
     const level: alert.Level = if (description == .close_notify) .warning else .fatal;
     _ = alert.encode(&msg, level, description) catch unreachable;
@@ -562,7 +583,7 @@ pub fn sendAlert(self: *ServerHandshake, description: alert.Description, out: []
         .wait_ch => plaintextAlert(&msg, out),
         else => self.tx.encrypt(.alert, &msg, out),
     };
-    self.pending_write = true;
+    self.pending_write.mark();
     return record;
 }
 
@@ -576,17 +597,17 @@ fn plaintextAlert(msg: *const [2]u8, out: []u8) error{BufferTooShort}![]u8 {
 
 pub fn sendApplicationData(self: *ServerHandshake, plaintext: []const u8, out: []u8) SendError![]u8 {
     assert(self.state == .connected);
-    if (self.pending_write) return error.PendingWrite;
+    if (self.pending_write.isPending()) return error.PendingWrite;
     const record = try self.tx.encrypt(.application_data, plaintext, out);
-    self.pending_write = true;
+    self.pending_write.mark();
     return record;
 }
 
 pub fn sendPreparedApplicationData(self: *ServerHandshake, plaintext_len: usize, out: []u8) SendError![]u8 {
     assert(self.state == .connected);
-    if (self.pending_write) return error.PendingWrite;
+    if (self.pending_write.isPending()) return error.PendingWrite;
     const record = try self.tx.encryptPrepared(.application_data, plaintext_len, out);
-    self.pending_write = true;
+    self.pending_write.mark();
     return record;
 }
 
