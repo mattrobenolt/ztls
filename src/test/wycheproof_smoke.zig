@@ -11,7 +11,7 @@ fn hex(comptime len: usize, comptime encoded: []const u8) [len]u8 {
 
 // Wycheproof v1 (google-wycheproof 0.9rc5) — X25519 tcId 1, normal case.
 test "Wycheproof: X25519 shared secret tcId 1" {
-    const private = hex(32, "c8a9d5a91091ad851c668b0736c1c9a02936c0d3ad62670858088047ba057475");
+    const private: ztls.x25519.SecretKey = .init(hex(32, "c8a9d5a91091ad851c668b0736c1c9a02936c0d3ad62670858088047ba057475"));
     const public: ztls.x25519.PublicKey = .init(hex(32, "504a36999f489cd2fdbc08baff3d88fa00569ba986cba22548ffde80f9806829"));
     const shared = try ztls.x25519.sharedSecret(private, public);
     try testing.expectEqualSlices(u8, &hex(32, "436a2c040cf45fea9b29a0cb81b1f41458f863d0d61b453d0a982720d6d61320"), &shared);
@@ -19,14 +19,14 @@ test "Wycheproof: X25519 shared secret tcId 1" {
 
 // RFC 7748 §6.1 / Wycheproof low-order public keys — all-zero shared secret is rejected.
 test "Wycheproof boundary: X25519 identity element is rejected" {
-    const private = hex(32, "c8a9d5a91091ad851c668b0736c1c9a02936c0d3ad62670858088047ba057475");
+    const private: ztls.x25519.SecretKey = .init(hex(32, "c8a9d5a91091ad851c668b0736c1c9a02936c0d3ad62670858088047ba057475"));
     const public: ztls.x25519.PublicKey = .init(@splat(0));
     try testing.expectError(error.IdentityElement, ztls.x25519.sharedSecret(private, public));
 }
 
 // RFC 7748 §6.1 / Wycheproof low-order public keys — small-order (order-2) public key is rejected.
 test "Wycheproof boundary: X25519 small-order public key is rejected" {
-    const private = hex(32, "c8a9d5a91091ad851c668b0736c1c9a02936c0d3ad62670858088047ba057475");
+    const private: ztls.x25519.SecretKey = .init(hex(32, "c8a9d5a91091ad851c668b0736c1c9a02936c0d3ad62670858088047ba057475"));
     const public: ztls.x25519.PublicKey = .init(hex(32, "0100000000000000000000000000000000000000000000000000000000000000"));
     try testing.expectError(error.IdentityElement, ztls.x25519.sharedSecret(private, public));
 }

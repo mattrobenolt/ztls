@@ -496,11 +496,11 @@ fn benchDecrypt(comptime suite: Suite, comptime size: usize, timer: *time.Timer)
 const Direction = enum { client_to_server, server_to_client };
 
 fn deterministicClientKeypair() !ztls.x25519.KeyPair {
-    return .generateDeterministic(@splat(0x11));
+    return .generateDeterministic(.init(@splat(0x11)));
 }
 
 fn deterministicServerKeypair() !ztls.x25519.KeyPair {
-    return .generateDeterministic(@splat(0x22));
+    return .generateDeterministic(.init(@splat(0x22)));
 }
 
 fn connectPair(comptime suite: Suite) !struct { client: ztls.ClientHandshake, server: ztls.ServerHandshake } {
