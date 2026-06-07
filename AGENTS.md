@@ -55,6 +55,9 @@ feelings about performance are wrong until measured.
 
 ## Code Style
 
+- Prefer `ast-grep` for structural searches and mechanical refactors. Use plain
+  text tools for literal text, but reach for syntax-aware matching before ad hoc
+  regex scripts when changing code.
 - Zig only for library code. No C source files except generated bindings.
 - Use `std.debug.assert` liberally for invariants, never for input validation.
 - Error sets are explicit. No `anyerror` in public API functions.
