@@ -112,6 +112,22 @@ def record(content_type: int, body: bytes, version: bytes = b"\x03\x03") -> byte
     return bytes([content_type]) + version + len(body).to_bytes(2, "big") + body
 
 
+def minimal_client_hello_with_ext(ext_type: int, ext_body: bytes) -> bytes:
+    extensions = ext_type.to_bytes(2, "big") + len(ext_body).to_bytes(2, "big") + ext_body
+    body = (
+        b"\x03\x03"
+        + (b"\x11" * 32)
+        + b"\x00"
+        + b"\x00\x02"
+        + CipherSuite.TLS_AES_128_GCM_SHA256.to_bytes(2, "big")
+        + b"\x01\x00"
+        + len(extensions).to_bytes(2, "big")
+        + extensions
+    )
+    handshake = b"\x01" + len(body).to_bytes(3, "big") + body
+    return record(ContentType.handshake, handshake)
+
+
 def test_tls13_handshake_and_application_echo(ztls_server):
     conversation = Connect(ztls_server["host"], ztls_server["port"])
     node = conversation.add_child(ClientHelloGenerator(CIPHERS, extensions=tls13_extensions()))
@@ -179,6 +195,24 @@ def test_tls13_rejects_truncated_client_hello_record(ztls_server):
     try:
         sock.sendall(b"\x16\x03\x03\x00\xc8")
         sock.close()
+    finally:
+        sock.close()
+
+
+def test_tls13_rejects_empty_client_hello_record(ztls_server):
+    sock = raw_connect(ztls_server)
+    try:
+        sock.sendall(record(ContentType.handshake, b""))
+        expect_closed_or_alert(sock)
+    finally:
+        sock.close()
+
+
+def test_tls13_rejects_truncated_key_share_extension(ztls_server):
+    sock = raw_connect(ztls_server)
+    try:
+        sock.sendall(minimal_client_hello_with_ext(ExtensionType.key_share, b"\x00\x04\x00\x1d"))
+        expect_closed_or_alert(sock)
     finally:
         sock.close()
 
