@@ -149,7 +149,7 @@ pub fn deinit(self: *ServerHandshake) void {
         .wait_client_finished, .connected => self.suite_state.secureZero(),
         .wait_ch => {},
     }
-    std.crypto.secureZero(u8, std.mem.asBytes(&self.keypair.secret_key));
+    std.crypto.secureZero(u8, std.mem.asBytes(&self.keypair.secret_key.data));
     self.* = undefined;
 }
 
@@ -236,7 +236,7 @@ pub fn acceptClientHello(
     if (ch.alpn_protocols.len != 0 and self.alpn_protocols.len != 0 and self.selected_alpn == null) return error.NoApplicationProtocol;
     self.client_server_name = ch.server_name;
 
-    const sh = try server_hello.encode(out[frame.header_len..], random.data, ch.legacy_session_id, suite, .init(self.keypair.public_key));
+    const sh = try server_hello.encode(out[frame.header_len..], random.data, ch.legacy_session_id, suite, self.keypair.public_key);
     out[0..frame.header_len].* = mem.toBytes(frame.Header.init(.handshake, @intCast(sh.len)));
 
     try self.installHandshakeKeys(suite, ch_msg, sh, ch.public_key);
@@ -665,7 +665,7 @@ test "handleRecord: drops ChangeCipherSpec while waiting for ClientHello" {
 test "handleRecord: ClientHello returns ServerHello write and enforces pending write" {
     const client_keypair: x25519.KeyPair = .generate();
     var ch_buf: [512]u8 = undefined;
-    const ch = try client_hello.encode(&ch_buf, .zero, .init(client_keypair.public_key), null, &.{});
+    const ch = try client_hello.encode(&ch_buf, .zero, client_keypair.public_key, null, &.{});
     var record: [1024]u8 = undefined;
     record[0..frame.header_len].* = mem.toBytes(frame.Header.init(.handshake, @intCast(ch.len)));
     @memcpy(record[frame.header_len..][0..ch.len], ch);
@@ -693,7 +693,7 @@ test "acceptClientHello: emits ServerHello and installs handshake keys" {
     const client_keypair: x25519.KeyPair = .generate();
     const server_keypair: x25519.KeyPair = .generate();
     var ch_buf: [512]u8 = undefined;
-    const ch = try client_hello.encode(&ch_buf, .zero, .init(client_keypair.public_key), "example.com", &.{ "h2", "http/1.1" });
+    const ch = try client_hello.encode(&ch_buf, .zero, client_keypair.public_key, "example.com", &.{ "h2", "http/1.1" });
     var record: [1024]u8 = undefined;
     record[0..frame.header_len].* = mem.toBytes(frame.Header.init(.handshake, @intCast(ch.len)));
     @memcpy(record[frame.header_len..][0..ch.len], ch);
@@ -709,7 +709,7 @@ test "acceptClientHello: emits ServerHello and installs handshake keys" {
     try testing.expectEqual(.handshake, hdr.content_type);
     const sh = try server_hello.parse(sh_record[frame.header_len..][0..hdr.length()]);
     try testing.expectEqual(.aes_128_gcm_sha256, sh.cipher_suite);
-    try testing.expectEqualSlices(u8, &server_keypair.public_key, &sh.server_public_key.data);
+    try testing.expectEqualSlices(u8, &server_keypair.public_key.data, &sh.server_public_key.data);
 
     var client_hs = @import("ClientHandshake.zig").init(client_keypair);
     client_hs.injectClientHello(ch);
@@ -722,7 +722,7 @@ test "sendAnonymousFlightForTest: client decrypts EncryptedExtensions and Finish
     const client_keypair: x25519.KeyPair = .generate();
     const server_keypair: x25519.KeyPair = .generate();
     var ch_buf: [512]u8 = undefined;
-    const ch = try client_hello.encode(&ch_buf, .zero, .init(client_keypair.public_key), "example.com", &.{"h2"});
+    const ch = try client_hello.encode(&ch_buf, .zero, client_keypair.public_key, "example.com", &.{"h2"});
     var ch_record: [1024]u8 = undefined;
     ch_record[0..frame.header_len].* = mem.toBytes(frame.Header.init(.handshake, @intCast(ch.len)));
     @memcpy(ch_record[frame.header_len..][0..ch.len], ch);
@@ -765,7 +765,7 @@ test "sendAuthenticatedFlight: client decrypts authenticated server flight" {
     const client_keypair: x25519.KeyPair = .generate();
     const server_keypair: x25519.KeyPair = .generate();
     var ch_buf: [512]u8 = undefined;
-    const ch = try client_hello.encode(&ch_buf, .zero, .init(client_keypair.public_key), "example.com", &.{"h2"});
+    const ch = try client_hello.encode(&ch_buf, .zero, client_keypair.public_key, "example.com", &.{"h2"});
     var ch_record: [1024]u8 = undefined;
     ch_record[0..frame.header_len].* = mem.toBytes(frame.Header.init(.handshake, @intCast(ch.len)));
     @memcpy(ch_record[frame.header_len..][0..ch.len], ch);
@@ -801,7 +801,7 @@ fn connectedTestServer() !ServerHandshake {
     const client_keypair: x25519.KeyPair = .generate();
     const server_keypair: x25519.KeyPair = .generate();
     var ch_buf: [512]u8 = undefined;
-    const ch = try client_hello.encode(&ch_buf, .zero, .init(client_keypair.public_key), null, &.{});
+    const ch = try client_hello.encode(&ch_buf, .zero, client_keypair.public_key, null, &.{});
     var ch_record: [1024]u8 = undefined;
     ch_record[0..frame.header_len].* = mem.toBytes(frame.Header.init(.handshake, @intCast(ch.len)));
     @memcpy(ch_record[frame.header_len..][0..ch.len], ch);
@@ -831,7 +831,7 @@ test "sendAuthenticatedFlight: client processes CertificateVerify and Finished" 
     const client_keypair: x25519.KeyPair = .generate();
     const server_keypair: x25519.KeyPair = .generate();
     var ch_buf: [512]u8 = undefined;
-    const ch = try client_hello.encode(&ch_buf, .zero, .init(client_keypair.public_key), "ztls.server.test", &.{"h2"});
+    const ch = try client_hello.encode(&ch_buf, .zero, client_keypair.public_key, "ztls.server.test", &.{"h2"});
     var ch_record: [1024]u8 = undefined;
     ch_record[0..frame.header_len].* = mem.toBytes(frame.Header.init(.handshake, @intCast(ch.len)));
     @memcpy(ch_record[frame.header_len..][0..ch.len], ch);
@@ -863,7 +863,7 @@ test "processClientFinished: verifies Finished and installs app keys" {
     const client_keypair: x25519.KeyPair = .generate();
     const server_keypair: x25519.KeyPair = .generate();
     var ch_buf: [512]u8 = undefined;
-    const ch = try client_hello.encode(&ch_buf, .zero, .init(client_keypair.public_key), null, &.{});
+    const ch = try client_hello.encode(&ch_buf, .zero, client_keypair.public_key, null, &.{});
     var ch_record: [1024]u8 = undefined;
     ch_record[0..frame.header_len].* = mem.toBytes(frame.Header.init(.handshake, @intCast(ch.len)));
     @memcpy(ch_record[frame.header_len..][0..ch.len], ch);
@@ -986,7 +986,7 @@ test "handleRecord: KeyUpdate not at record boundary is rejected" {
 // RFC 8446 Appendix A — server state machine must reject arbitrary inbound records without panics.
 fn fuzzHandleRecord(_: void, input: []const u8) anyerror!void {
     const key_seed: [32]u8 = @splat(0x42);
-    const keypair = x25519.KeyPair.generateDeterministic(key_seed) catch unreachable;
+    const keypair = x25519.KeyPair.generateDeterministic(.init(key_seed)) catch unreachable;
     var server: ServerHandshake = .init(keypair);
     defer server.deinit();
 
@@ -1086,7 +1086,7 @@ test "in-memory authenticated client-server handshake suite matrix" {
 test "acceptClientHello: server suite preference" {
     const client_keypair: x25519.KeyPair = .generate();
     var ch_buf: [512]u8 = undefined;
-    const ch = try client_hello.encode(&ch_buf, .zero, .init(client_keypair.public_key), null, &.{});
+    const ch = try client_hello.encode(&ch_buf, .zero, client_keypair.public_key, null, &.{});
     var record: [1024]u8 = undefined;
     record[0..frame.header_len].* = mem.toBytes(frame.Header.init(.handshake, @intCast(ch.len)));
     @memcpy(record[frame.header_len..][0..ch.len], ch);
@@ -1106,7 +1106,7 @@ test "acceptClientHello: server suite preference" {
 test "acceptClientHello: exposes SNI via clientServerName" {
     const client_keypair: x25519.KeyPair = .generate();
     var ch_buf: [512]u8 = undefined;
-    const ch = try client_hello.encode(&ch_buf, .zero, .init(client_keypair.public_key), "example.com", &.{});
+    const ch = try client_hello.encode(&ch_buf, .zero, client_keypair.public_key, "example.com", &.{});
     var record: [1024]u8 = undefined;
     record[0..frame.header_len].* = mem.toBytes(frame.Header.init(.handshake, @intCast(ch.len)));
     @memcpy(record[frame.header_len..][0..ch.len], ch);
@@ -1121,7 +1121,7 @@ test "acceptClientHello: exposes SNI via clientServerName" {
 test "acceptClientHello: clientServerName is null when SNI absent" {
     const client_keypair: x25519.KeyPair = .generate();
     var ch_buf: [512]u8 = undefined;
-    const ch = try client_hello.encode(&ch_buf, .zero, .init(client_keypair.public_key), null, &.{});
+    const ch = try client_hello.encode(&ch_buf, .zero, client_keypair.public_key, null, &.{});
     var record: [1024]u8 = undefined;
     record[0..frame.header_len].* = mem.toBytes(frame.Header.init(.handshake, @intCast(ch.len)));
     @memcpy(record[frame.header_len..][0..ch.len], ch);
@@ -1135,7 +1135,7 @@ test "acceptClientHello: clientServerName is null when SNI absent" {
 test "acceptClientHello: rejects unsupported suite" {
     const client_keypair: x25519.KeyPair = .generate();
     var ch_buf: [512]u8 = undefined;
-    const ch = try client_hello.encode(&ch_buf, .zero, .init(client_keypair.public_key), null, &.{});
+    const ch = try client_hello.encode(&ch_buf, .zero, client_keypair.public_key, null, &.{});
     // Patch offered suites to unknown values. Offsets are fixed by
     // ClientHello's fixed prefix: header(4)+version(2)+random(32)+sid_len(1).
     ch_buf[41..47].* = .{ 0x12, 0x34, 0x12, 0x35, 0x12, 0x36 };

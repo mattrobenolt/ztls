@@ -28,6 +28,39 @@ pub const NamedGroup = enum(u16) {
     x25519_mlkem768 = 0x11ec,
     secp384r1_mlkem1024 = 0x11ed,
     _,
+
+    /// Wire length of the public key (key_exchange field), or null if the group
+    /// is named but not implemented yet.
+    pub fn publicKeyLen(self: NamedGroup) ?u16 {
+        return switch (self) {
+            .x25519 => x25519.public_length,
+            else => null,
+        };
+    }
+
+    /// Wire length for known future groups, even before backend math is available.
+    /// Values for the ML-KEM hybrids come from draft-ietf-tls-ecdhe-mlkem-05 §3.
+    pub fn plannedPublicKeyLen(self: NamedGroup) ?u16 {
+        return switch (self) {
+            .x25519 => x25519.public_length,
+            .secp256r1 => 65,
+            .secp384r1 => 97,
+            .x25519_mlkem768 => 32 + 1184,
+            .secp256r1_mlkem768 => 65 + 1184,
+            .secp384r1_mlkem1024 => 97 + 1568,
+            else => null,
+        };
+    }
+
+    pub fn plannedSharedSecretLen(self: NamedGroup) ?u8 {
+        return switch (self) {
+            .x25519, .secp256r1 => 32,
+            .secp384r1 => 48,
+            .x25519_mlkem768, .secp256r1_mlkem768 => 32 + 32,
+            .secp384r1_mlkem1024 => 48 + 32,
+            else => null,
+        };
+    }
 };
 
 /// Sized for the widest named group we plan to support, not a fixed 32.
@@ -43,39 +76,6 @@ pub const PublicKeyMaterial = ArrayBuffer(u8, max_public_key_len);
 pub const SharedSecretMaterial = ArrayBuffer(u8, max_shared_secret_len);
 
 pub const Error = error{ UnsupportedGroup, LibcryptoFailed, IdentityElement };
-
-/// Wire length of a group's public key (key_exchange field), or null if the
-/// group is not implemented yet.
-pub fn publicKeyLen(group: NamedGroup) ?u16 {
-    return switch (group) {
-        .x25519 => x25519.public_length,
-        else => null,
-    };
-}
-
-/// Wire length for known future groups, even before backend math is available.
-/// Values for the ML-KEM hybrids come from draft-ietf-tls-ecdhe-mlkem-05 §3.
-pub fn plannedPublicKeyLen(group: NamedGroup) ?u16 {
-    return switch (group) {
-        .x25519 => x25519.public_length,
-        .secp256r1 => 65,
-        .secp384r1 => 97,
-        .x25519_mlkem768 => 32 + 1184,
-        .secp256r1_mlkem768 => 65 + 1184,
-        .secp384r1_mlkem1024 => 97 + 1568,
-        else => null,
-    };
-}
-
-pub fn plannedSharedSecretLen(group: NamedGroup) ?u8 {
-    return switch (group) {
-        .x25519, .secp256r1 => 32,
-        .secp384r1 => 48,
-        .x25519_mlkem768, .secp256r1_mlkem768 => 32 + 32,
-        .secp384r1_mlkem1024 => 48 + 32,
-        else => null,
-    };
-}
 
 /// Caller-owned ephemeral keypair for one named group. For X25519 the secret is
 /// the raw 32-byte scalar; backend-owned key handles (EVP_PKEY) are a later
@@ -95,7 +95,7 @@ pub const KeyPair = struct {
     pub fn generateDeterministic(group: NamedGroup, seed: [32]u8) Error!KeyPair {
         switch (group) {
             .x25519 => {
-                const kp = x25519.KeyPair.generateDeterministic(seed) catch return error.LibcryptoFailed;
+                const kp = x25519.KeyPair.generateDeterministic(.init(seed)) catch return error.LibcryptoFailed;
                 return fromX25519(kp);
             },
             else => return error.UnsupportedGroup,
@@ -108,8 +108,8 @@ pub const KeyPair = struct {
             .public_key = .empty,
             .secret = .empty,
         };
-        out.public_key.appendSliceAssumeCapacity(&kp.public_key);
-        out.secret.appendSliceAssumeCapacity(&kp.secret_key);
+        out.public_key.appendSliceAssumeCapacity(&kp.public_key.data);
+        out.secret.appendSliceAssumeCapacity(&kp.secret_key.data);
         return out;
     }
 
@@ -127,8 +127,7 @@ pub const KeyPair = struct {
             .x25519 => {
                 if (peer_public.len != x25519.public_length) return error.UnsupportedGroup;
                 const peer: x25519.PublicKey = .init(peer_public[0..x25519.public_length].*);
-                var scalar: [x25519.secret_length]u8 = undefined;
-                @memcpy(&scalar, self.secret.constSlice());
+                const scalar: x25519.SecretKey = .init(self.secret.constSlice()[0..x25519.secret_length].*);
                 const ss = try x25519.sharedSecret(scalar, peer);
                 @memcpy(out[0..ss.len], &ss);
                 return out[0..ss.len];
@@ -161,11 +160,11 @@ test "NamedGroup wire identifiers" {
 // draft-ietf-tls-ecdhe-mlkem-05 §3 / §7 — hybrid group key_share sizes are
 // named now so parser/negotiation code can size buffers before backend support lands.
 test "planned future group sizes" {
-    try testing.expectEqual(@as(?u16, 1216), plannedPublicKeyLen(.x25519_mlkem768));
-    try testing.expectEqual(@as(?u16, 1249), plannedPublicKeyLen(.secp256r1_mlkem768));
-    try testing.expectEqual(@as(?u16, 1665), plannedPublicKeyLen(.secp384r1_mlkem1024));
-    try testing.expectEqual(@as(?u8, 64), plannedSharedSecretLen(.x25519_mlkem768));
-    try testing.expectEqual(@as(?u8, 80), plannedSharedSecretLen(.secp384r1_mlkem1024));
+    try testing.expectEqual(@as(?u16, 1216), NamedGroup.x25519_mlkem768.plannedPublicKeyLen());
+    try testing.expectEqual(@as(?u16, 1249), NamedGroup.secp256r1_mlkem768.plannedPublicKeyLen());
+    try testing.expectEqual(@as(?u16, 1665), NamedGroup.secp384r1_mlkem1024.plannedPublicKeyLen());
+    try testing.expectEqual(@as(?u8, 64), NamedGroup.x25519_mlkem768.plannedSharedSecretLen());
+    try testing.expectEqual(@as(?u8, 80), NamedGroup.secp384r1_mlkem1024.plannedSharedSecretLen());
 }
 
 // RFC 7748 §5.2 — X25519 keypair derives the published shared secret through the

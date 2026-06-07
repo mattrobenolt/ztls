@@ -20,29 +20,29 @@ pub const Error = error{ LibcryptoFailed, IdentityElement };
 /// Caller-owned X25519 keypair. The secret key is the raw 32-byte scalar input;
 /// OpenSSL performs the RFC 7748 clamping internally for X25519 operations.
 pub const KeyPair = struct {
-    secret_key: [secret_length]u8,
-    public_key: [public_length]u8,
+    secret_key: SecretKey,
+    public_key: PublicKey,
 
     pub fn generate() KeyPair {
         var secret_key: [secret_length]u8 = undefined;
         std.crypto.random.bytes(&secret_key);
-        return generateDeterministic(secret_key) catch unreachable;
+        return generateDeterministic(.init(secret_key)) catch unreachable;
     }
 
-    pub fn generateDeterministic(seed: [secret_length]u8) Error!KeyPair {
+    pub fn generateDeterministic(seed: SecretKey) Error!KeyPair {
         return .{ .secret_key = seed, .public_key = try publicFromSecret(seed) };
     }
 };
 
-fn privateKey(secret_key: [secret_length]u8) Error!*c.EVP_PKEY {
-    return c.EVP_PKEY_new_raw_private_key(c.EVP_PKEY_X25519, null, &secret_key, secret_key.len) orelse error.LibcryptoFailed;
+fn privateKey(secret_key: SecretKey) Error!*c.EVP_PKEY {
+    return c.EVP_PKEY_new_raw_private_key(c.EVP_PKEY_X25519, null, &secret_key.data, secret_key.data.len) orelse error.LibcryptoFailed;
 }
 
 fn publicKey(public_key: PublicKey) Error!*c.EVP_PKEY {
     return c.EVP_PKEY_new_raw_public_key(c.EVP_PKEY_X25519, null, &public_key.data, public_key.data.len) orelse error.LibcryptoFailed;
 }
 
-fn publicFromSecret(secret_key: [secret_length]u8) Error![public_length]u8 {
+fn publicFromSecret(secret_key: SecretKey) Error!PublicKey {
     const key = try privateKey(secret_key);
     defer c.EVP_PKEY_free(key);
 
@@ -50,14 +50,14 @@ fn publicFromSecret(secret_key: [secret_length]u8) Error![public_length]u8 {
     var len: usize = public_key.len;
     if (c.EVP_PKEY_get_raw_public_key(key, &public_key, &len) != 1) return error.LibcryptoFailed;
     if (len != public_key.len) return error.LibcryptoFailed;
-    return public_key;
+    return .init(public_key);
 }
 
 /// Compute the X25519 shared secret from our secret key and the peer's public key.
 /// The result feeds directly into hkdf.handshakeSecret as the DHE input.
 ///
 /// RFC 8446 §7.4.2
-pub fn sharedSecret(secret_key: [secret_length]u8, peer_public_key: PublicKey) Error![secret_length]u8 {
+pub fn sharedSecret(secret_key: SecretKey, peer_public_key: PublicKey) Error![secret_length]u8 {
     const ours = try privateKey(secret_key);
     defer c.EVP_PKEY_free(ours);
     const peer = try publicKey(peer_public_key);
@@ -85,7 +85,7 @@ fn hex(comptime bytes_len: usize, comptime encoded: []const u8) [bytes_len]u8 {
 
 // RFC 7748 §5.2 — X25519 scalar multiplication test vector.
 test "sharedSecret: RFC 7748 X25519 vector" {
-    const scalar = hex(32, "a546e36bf0527c9d3b16154b82465edd62144c0ac1fc5a18506a2244ba449ac4");
+    const scalar: SecretKey = .init(hex(32, "a546e36bf0527c9d3b16154b82465edd62144c0ac1fc5a18506a2244ba449ac4"));
     const peer: PublicKey = .init(hex(32, "e6db6867583030db3594c1a424b15f7c726624ec26b3353b10a903a6d0ab1c4c"));
     const secret = try sharedSecret(scalar, peer);
     try std.testing.expectEqualSlices(u8, &hex(32, "c3da55379de9c6908e94ea4df28d084f32eccf03491c71f754b4075577a28552"), &secret);
@@ -93,11 +93,11 @@ test "sharedSecret: RFC 7748 X25519 vector" {
 
 // RFC 7748 §6.1 — X25519 public keys are scalar multiplication by base point 9.
 test "KeyPair.generateDeterministic: RFC 7748 public keys" {
-    const alice = try KeyPair.generateDeterministic(hex(32, "77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a"));
-    try std.testing.expectEqualSlices(u8, &hex(32, "8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a"), &alice.public_key);
+    const alice = try KeyPair.generateDeterministic(.init(hex(32, "77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a")));
+    try std.testing.expectEqualSlices(u8, &hex(32, "8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a"), &alice.public_key.data);
 
-    const bob = try KeyPair.generateDeterministic(hex(32, "5dab087e624a8a4b79e17f8b83800ee66f3bb1292618b6fd1c2f8b27ff88e0eb"));
-    try std.testing.expectEqualSlices(u8, &hex(32, "de9edb7d7b7dc1b4d35b61c2ece435373f8343c85b78674dadfc7e146f882b4f"), &bob.public_key);
+    const bob = try KeyPair.generateDeterministic(.init(hex(32, "5dab087e624a8a4b79e17f8b83800ee66f3bb1292618b6fd1c2f8b27ff88e0eb")));
+    try std.testing.expectEqualSlices(u8, &hex(32, "de9edb7d7b7dc1b4d35b61c2ece435373f8343c85b78674dadfc7e146f882b4f"), &bob.public_key.data);
 }
 
 comptime {

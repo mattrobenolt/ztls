@@ -373,7 +373,7 @@ pub fn deinit(self: *ClientHandshake) void {
         .start, .wait_sh => {},
     }
     self.suite.secureZero();
-    crypto.secureZero(u8, mem.asBytes(&self.keypair.secret_key));
+    crypto.secureZero(u8, mem.asBytes(&self.keypair.secret_key.data));
     self.* = undefined;
 }
 
@@ -422,7 +422,7 @@ pub fn start(
     assert(self.state == .start);
     if (out.len < frame.header_len) return error.BufferTooShort;
     if (self.policy.host_name == null) self.policy.host_name = server_name;
-    const ch = try client_hello.encode(out[frame.header_len..], random, .init(self.keypair.public_key), server_name, self.alpn_protocols);
+    const ch = try client_hello.encode(out[frame.header_len..], random, self.keypair.public_key, server_name, self.alpn_protocols);
     out[0..frame.header_len].* = mem.toBytes(frame.Header.init(.handshake, @intCast(ch.len)));
     self.injectClientHello(ch);
     self.pending_write.mark();
@@ -882,7 +882,7 @@ const rfc8448_server_hello = [_]u8{
 // SHA-256(ClientHello || ServerHello) =
 //   860c06edc07858ee8e78f0e7428c58edd6b43f2ca3e6e95f02ed063cf0e1cad8
 test "transcript hash: RFC 8448 §3 ClientHello || ServerHello" {
-    var hs: ClientHandshake = .init(.{ .secret_key = @splat(0), .public_key = @splat(0) });
+    var hs: ClientHandshake = .init(.{ .secret_key = .zero, .public_key = .zero });
     hs.suite.update(&rfc8448_client_hello);
     hs.suite.update(&rfc8448_server_hello);
 
@@ -907,7 +907,7 @@ test "deriveHandshakeKeys: RFC 8448 §3 server handshake key/iv/finished" {
         0xd4, 0x62, 0x72, 0x90, 0x0f, 0x89, 0x49, 0x2d,
     };
 
-    var hs: ClientHandshake = .init(.{ .secret_key = @splat(0), .public_key = @splat(0) });
+    var hs: ClientHandshake = .init(.{ .secret_key = .zero, .public_key = .zero });
     hs.suite.update(&rfc8448_client_hello);
     hs.suite.update(&rfc8448_server_hello);
     // Collapse to the SHA-256 arm (as processServerHello would for this suite).
@@ -938,18 +938,18 @@ test "deriveHandshakeKeys: RFC 8448 §3 server handshake key/iv/finished" {
 // RFC 8448 §3 client ephemeral X25519 keypair (secret + the public from the
 // ClientHello key_share).
 const rfc8448_client_keypair: x25519.KeyPair = .{
-    .secret_key = .{
+    .secret_key = .init(.{
         0x49, 0xaf, 0x42, 0xba, 0x7f, 0x79, 0x94, 0x85,
         0x2d, 0x71, 0x3e, 0xf2, 0x78, 0x4b, 0xcb, 0xca,
         0xa7, 0x91, 0x1d, 0xe2, 0x6a, 0xdc, 0x56, 0x42,
         0xcb, 0x63, 0x45, 0x40, 0xe7, 0xea, 0x50, 0x05,
-    },
-    .public_key = .{
+    }),
+    .public_key = .init(.{
         0x99, 0x38, 0x1d, 0xe5, 0x60, 0xe4, 0xbd, 0x43,
         0xd2, 0x3d, 0x8e, 0x43, 0x5a, 0x7d, 0xba, 0xfe,
         0xb3, 0xc0, 0x6e, 0x51, 0xc1, 0x3c, 0xae, 0x4d,
         0x54, 0x13, 0x69, 0x1e, 0x52, 0x9a, 0xaf, 0x2c,
-    },
+    }),
 };
 
 // RFC 8446 §4.1.3, §7.1 — ServerHello processing end to end: parse, absorb,
