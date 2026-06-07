@@ -21,6 +21,7 @@ ci: ci-actions
     zig build test-openssl
     zig build test-openssl-server
     zig build test-wycheproof
+    just tlsfuzzer -q
     zig build bench -- --bench record_encrypt --suite aes_128 --size 1350
     zig build bench-evp -- --bench openssl_evp_reuse_encrypt --suite aes_128 --size 1350
     zig build bench-openssl -- --bench openssl_bio_app_client_to_server --suite aes_128 --size 1350
