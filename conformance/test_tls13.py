@@ -89,3 +89,19 @@ def test_tls13_handshake_and_application_echo(ztls_server):
     node = node.add_child(ExpectApplicationData())
     close_notify(node)
     Runner(conversation).run()
+
+
+def test_tls13_rejects_unsupported_cipher_suite(ztls_server):
+    conversation = Connect(ztls_server["host"], ztls_server["port"])
+    node = conversation.add_child(
+        ClientHelloGenerator(
+            [
+                CipherSuite.TLS_AES_128_CCM_SHA256,
+                CipherSuite.TLS_EMPTY_RENEGOTIATION_INFO_SCSV,
+            ],
+            extensions=tls13_extensions(),
+        )
+    )
+    alert = node.add_child(ExpectAlert(AlertLevel.fatal, AlertDescription.handshake_failure))
+    alert.add_child(ExpectClose())
+    Runner(conversation).run()
