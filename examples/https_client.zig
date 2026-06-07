@@ -18,7 +18,11 @@ const server_name = "ztls.server.test";
 const port: u16 = 8443;
 const trust_anchor_pem = "tests/fixtures/server-ecdsa/server.crt";
 
+var debug_allocator: std.heap.DebugAllocator(.{}) = .init;
+
 pub fn main() !void {
+    const gpa = debug_allocator.allocator();
+    defer _ = debug_allocator.deinit();
     const addr = try std.net.Address.parseIp(connect_host, port);
     const stream = std.net.tcpConnectToAddress(addr) catch |err| switch (err) {
         error.ConnectionRefused => {
@@ -40,8 +44,8 @@ pub fn main() !void {
     hs.policy.host_name = server_name;
     hs.policy.now_sec = std.time.timestamp();
     var bundle: std.crypto.Certificate.Bundle = .{};
-    defer bundle.deinit(std.heap.page_allocator);
-    try bundle.addCertsFromFilePath(std.heap.page_allocator, std.fs.cwd(), trust_anchor_pem);
+    defer bundle.deinit(gpa);
+    try bundle.addCertsFromFilePath(gpa, std.fs.cwd(), trust_anchor_pem);
     hs.policy.bundle = &bundle;
 
     var random: ztls.client_hello.Random = undefined;

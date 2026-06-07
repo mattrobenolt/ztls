@@ -12,7 +12,7 @@ const crypto = std.crypto;
 const ztls = @import("ztls");
 
 pub fn main() !void {
-    var arena_allocator: std.heap.ArenaAllocator = .init(std.heap.page_allocator);
+    var arena_allocator: std.heap.ArenaAllocator = .init(std.heap.smp_allocator);
     defer arena_allocator.deinit();
     const arena = arena_allocator.allocator();
 

@@ -22,6 +22,7 @@ const net = std.net;
 const print = std.debug.print;
 
 const ztls = @import("ztls");
+
 const harness = @import("harness.zig");
 
 const Args = struct {
@@ -121,7 +122,7 @@ fn checkExpectations(args: Args, hs: *const ztls.ServerHandshake) !void {
 }
 
 pub fn main() !void {
-    var arena_allocator: std.heap.ArenaAllocator = .init(std.heap.page_allocator);
+    var arena_allocator: std.heap.ArenaAllocator = .init(std.heap.smp_allocator);
     defer arena_allocator.deinit();
     const arena = arena_allocator.allocator();
 

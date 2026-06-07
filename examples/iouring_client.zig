@@ -26,7 +26,7 @@ var debug_allocator: std.heap.DebugAllocator(.{}) = .init;
 pub fn main() !void {
     const gpa = debug_allocator.allocator();
     defer _ = debug_allocator.deinit();
-    var ring: IoUring = IoUring.init(8, 0) catch |err| switch (err) {
+    var ring = IoUring.init(8, 0) catch |err| switch (err) {
         error.PermissionDenied, error.SystemOutdated => {
             print("[iouring] io_uring unavailable: {}\n", .{err});
             return;
