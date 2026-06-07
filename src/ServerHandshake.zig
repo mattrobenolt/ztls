@@ -11,6 +11,7 @@ const Sha384 = std.crypto.hash.sha2.Sha384;
 const mem = std.mem;
 const testing = std.testing;
 
+const array_buffer = @import("array_buffer.zig");
 const aead = @import("aead.zig");
 const alert = @import("alert.zig");
 const certificate = @import("certificate.zig");
@@ -30,6 +31,13 @@ const signature = @import("signature.zig");
 const x25519 = @import("x25519.zig");
 
 const ServerHandshake = @This();
+
+pub const max_out_len = frame.max_wire_record_len;
+pub const OutBuffer = array_buffer.ArrayBuffer(u8, max_out_len);
+/// Single caller-owned buffer for prepared authenticated server flights. The
+/// handshake plaintext is staged inside the TLS record payload region, then
+/// encrypted in place into the same backing storage.
+pub const FlightBuffer = OutBuffer;
 
 pub const State = enum {
     wait_ch,
@@ -347,6 +355,17 @@ pub fn sendPreparedAuthenticatedFlight(
     if (out.len < frame.header_len) return error.BufferTooShort;
     const flight = try self.encodeAuthenticatedFlight(certs_der, signer, out[frame.header_len..]);
     return self.tx.encryptPrepared(.handshake, flight.len, out);
+}
+
+pub fn sendAuthenticatedFlightBuffered(
+    self: *ServerHandshake,
+    certs_der: []const []const u8,
+    signer: Signer,
+    out: *FlightBuffer,
+) FlightError![]u8 {
+    const record = try self.sendPreparedAuthenticatedFlight(certs_der, signer, out.fullSlice());
+    out.resize(@intCast(record.len));
+    return out.slice();
 }
 
 fn encodeAuthenticatedFlight(

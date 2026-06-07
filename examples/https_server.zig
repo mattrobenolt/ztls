@@ -64,10 +64,10 @@ pub fn main() !void {
     var random: ztls.client_hello.Random = undefined;
     std.crypto.random.bytes(&random.data);
 
-    var storage: [ztls.RecordBuffer.recommended_storage]u8 = undefined;
-    var rb: ztls.RecordBuffer = .init(&storage);
-    var out: [4096]u8 = undefined;
-    var plaintext: [4096]u8 = undefined;
+    var storage: ztls.RecordBuffer.Storage = .empty;
+    var rb: ztls.RecordBuffer = .init(storage.fullSlice());
+    var out: ztls.ServerHandshake.OutBuffer = .empty;
+    var flight: ztls.ServerHandshake.FlightBuffer = .empty;
 
     var sent_flight = false;
     while (!hs.isConnected()) {
@@ -75,19 +75,14 @@ pub fn main() !void {
         if (n == 0) return error.ClientClosed;
         rb.advance(n);
         while (try rb.next()) |record| {
-            const ev = try hs.handleRecord(record, random, &out);
+            const ev = try hs.handleRecord(record, random, out.fullSlice());
             switch (ev) {
                 .write => |w| {
                     try conn.stream.writeAll(w);
                     hs.completeWrite();
                     if (!sent_flight and hs.state == .wait_client_finished) {
-                        const flight = try hs.sendAuthenticatedFlight(
-                            &.{cert_der},
-                            signer_api,
-                            &plaintext,
-                            &out,
-                        );
-                        try conn.stream.writeAll(flight);
+                        const flight_bytes = try hs.sendAuthenticatedFlightBuffered(&.{cert_der}, signer_api, &flight);
+                        try conn.stream.writeAll(flight_bytes);
                         sent_flight = true;
                     }
                 },
@@ -104,15 +99,15 @@ pub fn main() !void {
         if (n == 0) return error.ClientClosed;
         rb.advance(n);
         while (try rb.next()) |record| {
-            const ev = try hs.handleRecord(record, random, &out);
+            const ev = try hs.handleRecord(record, random, out.fullSlice());
             switch (ev) {
                 .application_data => |data| {
                     if (std.mem.startsWith(u8, data, "GET ")) {
-                        const rec = try hs.sendApplicationData(response, &out);
+                        const rec = try hs.sendApplicationData(response, out.fullSlice());
                         try conn.stream.writeAll(rec);
                         hs.completeWrite();
                     }
-                    const close = try hs.sendAlert(.close_notify, &out);
+                    const close = try hs.sendAlert(.close_notify, out.fullSlice());
                     try conn.stream.writeAll(close);
                     hs.completeWrite();
                     return;

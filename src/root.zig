@@ -2,6 +2,7 @@ const std = @import("std");
 
 pub const alert = @import("alert.zig");
 pub const aead = @import("aead.zig");
+pub const array_buffer = @import("array_buffer.zig");
 pub const client_hello = @import("client_hello.zig");
 pub const ClientHandshake = @import("ClientHandshake.zig");
 pub const crypto_backend = @import("crypto/backend.zig");

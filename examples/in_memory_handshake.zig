@@ -32,20 +32,20 @@ pub fn main() !void {
     server.supportAlpn(&.{"h2"});
 
     // Caller-owned buffers. The engine never allocates; we provide all storage.
-    var client_out: [1024]u8 = undefined;
-    var server_out: [4096]u8 = undefined;
-    var plaintext: [4096]u8 = undefined;
+    var client_out: ztls.ClientHandshake.OutBuffer = .empty;
+    var server_out: ztls.ServerHandshake.OutBuffer = .empty;
+    var flight: ztls.ServerHandshake.FlightBuffer = .empty;
 
     var random: ztls.client_hello.Random = undefined;
     std.crypto.random.bytes(&random.data);
 
     // 1. ClientHello — client emits its first flight.
-    const ch_record = try client.start(&client_out, random, "ztls.server.test");
+    const ch_record = try client.start(client_out.fullSlice(), random, "ztls.server.test");
     client.completeWrite();
     print("[client] ClientHello sent → state={s}\n", .{@tagName(client.state)});
 
     // 2. ServerHello — server consumes ClientHello and emits ServerHello.
-    const sh_record = try server.acceptClientHello(ch_record, random, &server_out);
+    const sh_record = try server.acceptClientHello(ch_record, random, server_out.fullSlice());
     server.completeWrite();
     print("[server] ServerHello sent → state={s}\n", .{@tagName(server.state)});
 
@@ -54,25 +54,21 @@ pub fn main() !void {
     print("[client] handshake keys installed → state={s}\n", .{@tagName(client.state)});
 
     // 4. Server sends authenticated flight: EE + Cert + CertificateVerify + Finished.
-    const flight_record = try server.sendAuthenticatedFlight(
-        &.{cert_der},
-        signer_api,
-        &plaintext,
-        &server_out,
-    );
+    const flight_record = try server.sendAuthenticatedFlightBuffered(&.{cert_der}, signer_api, &flight);
     print("[server] authenticated flight sent → state={s}\n", .{@tagName(server.state)});
 
     // 5. Client processes the encrypted flight and auto-emits its Finished.
-    const client_event = try client.handleRecord(server_out[0..flight_record.len], &client_out);
+    const client_event = try client.handleRecord(flight_record, client_out.fullSlice());
     const client_finished_record = switch (client_event) {
         .write => |w| w,
         else => return error.UnexpectedEvent,
     };
+    client_out.resize(@intCast(client_finished_record.len));
     client.completeWrite();
     print("[client] Finished sent → state={s}\n", .{@tagName(client.state)});
 
     // 6. Server verifies client Finished and reaches connected.
-    try server.processClientFinished(client_out[0..client_finished_record.len]);
+    try server.processClientFinished(client_out.slice());
     print("[server] client Finished verified → state={s}\n", .{@tagName(server.state)});
 
     // ── Verify handshake completed ───────────────────────────────────────────
@@ -83,14 +79,15 @@ pub fn main() !void {
     print("\n=== handshake complete (ALPN={s}) ===\n\n", .{client.selectedAlpnProtocol().?});
 
     // 7. Application-data round trip.
-    const ping = try client.sendApplicationData("ping", &client_out);
+    const ping = try client.sendApplicationData("ping", client_out.fullSlice());
+    client_out.resize(@intCast(ping.len));
     client.completeWrite();
-    try std.testing.expectEqualStrings("ping", try server.receiveApplicationData(client_out[0..ping.len]));
+    try std.testing.expectEqualStrings("ping", try server.receiveApplicationData(client_out.slice()));
     print("[app]    client → server: ping\n", .{});
 
-    const pong = try server.sendApplicationData("pong", &server_out);
+    const pong = try server.sendApplicationData("pong", server_out.fullSlice());
     server.completeWrite();
-    const ev = try client.handleRecord(pong, &client_out);
+    const ev = try client.handleRecord(pong, client_out.fullSlice());
     try std.testing.expectEqualStrings("pong", ev.application_data);
     print("[app]    server → client: pong\n", .{});
 

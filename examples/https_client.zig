@@ -46,11 +46,11 @@ pub fn main() !void {
 
     var random: ztls.client_hello.Random = undefined;
     std.crypto.random.bytes(&random.data);
-    var out: [1024]u8 = undefined;
-    var storage: [ztls.RecordBuffer.recommended_storage]u8 = undefined;
-    var rb: ztls.RecordBuffer = .init(&storage);
+    var out: ztls.ClientHandshake.OutBuffer = .empty;
+    var storage: ztls.RecordBuffer.Storage = .empty;
+    var rb: ztls.RecordBuffer = .init(storage.fullSlice());
 
-    try stream.writeAll(try hs.start(&out, random, server_name));
+    try stream.writeAll(try hs.start(out.fullSlice(), random, server_name));
     hs.completeWrite();
     print("[https]  ClientHello sent → state={s}\n", .{@tagName(hs.state)});
 
@@ -58,7 +58,7 @@ pub fn main() !void {
         const n = try stream.read(rb.writable());
         if (n == 0) return error.ServerClosed;
         rb.advance(n);
-        while (try rb.next()) |record| switch (try hs.handleRecord(record, &out)) {
+        while (try rb.next()) |record| switch (try hs.handleRecord(record, out.fullSlice())) {
             .write => |w| {
                 try stream.writeAll(w);
                 hs.completeWrite();
@@ -70,7 +70,7 @@ pub fn main() !void {
     print("[https]  handshake complete (ALPN={s})\n", .{hs.selectedAlpnProtocol().?});
 
     const request = "GET / HTTP/1.0\r\n\r\n";
-    try stream.writeAll(try hs.sendApplicationData(request, &out));
+    try stream.writeAll(try hs.sendApplicationData(request, out.fullSlice()));
     hs.completeWrite();
     print("[https]  sent: {s}", .{request});
 
@@ -79,7 +79,7 @@ pub fn main() !void {
         const n = try stream.read(rb.writable());
         if (n == 0) break;
         rb.advance(n);
-        while (try rb.next()) |record| switch (try hs.handleRecord(record, &out)) {
+        while (try rb.next()) |record| switch (try hs.handleRecord(record, out.fullSlice())) {
             .application_data => |data| {
                 print("[https]  received: {s}\n", .{data});
                 response_seen = true;

@@ -13,6 +13,7 @@ const mem = std.mem;
 const base64 = std.base64.standard.Decoder;
 
 const aead = @import("aead.zig");
+const array_buffer = @import("array_buffer.zig");
 const alert = @import("alert.zig");
 const certificate = @import("certificate.zig");
 const client_hello = @import("client_hello.zig");
@@ -27,6 +28,9 @@ const wire = @import("wire.zig");
 const x25519 = @import("x25519.zig");
 
 const ClientHandshake = @This();
+
+pub const max_out_len = frame.max_wire_record_len;
+pub const OutBuffer = array_buffer.ArrayBuffer(u8, max_out_len);
 
 /// RFC 8446 §4 — handshake message type. Open enum: unrecognized values pass
 /// through the reader untouched; the state machine decides what is unexpected.
