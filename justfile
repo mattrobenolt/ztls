@@ -88,6 +88,11 @@ bench-record-row SUITE="aes_128" SIZE="1350":
     zig build bench -- --bench record_encrypt_prepared --suite {{ SUITE }} --size {{ SIZE }}
     zig build bench-evp -- --bench openssl_evp_reuse_encrypt --suite {{ SUITE }} --size {{ SIZE }}
 
+[doc("Rank measured ztls handshake split rows by elapsed time")]
+[group("bench")]
+bench-handshake-hotspots SUITE="aes_128" OUT="":
+    scripts/handshake-hotspots.sh {{ SUITE }} {{ OUT }}
+
 [doc("Run full benchmark comparison set into zig-out/perf")]
 [group("bench")]
 bench-capture:
