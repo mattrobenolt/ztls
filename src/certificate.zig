@@ -27,6 +27,11 @@ pub const ParseError = error{
     CertificateIssuerNotFound,
 } || PolicyError || Certificate.ParseError || Certificate.Parsed.VerifyError || Certificate.Parsed.VerifyHostNameError;
 
+pub const LeafUsage = enum {
+    none,
+    server_auth,
+};
+
 /// Certificate validation policy.
 pub const Policy = struct {
     /// Trust anchors for chain validation. null = signature-only, no chain
@@ -39,10 +44,11 @@ pub const Policy = struct {
     /// check. ClientHandshake.start() fills this from its `server_name` when
     /// unset, so explicit policy values override SNI-derived defaults.
     host_name: ?[]const u8 = null,
-    /// Enforce TLS 1.3 server-certificate residual policy on the leaf:
-    /// KeyUsage.digitalSignature when KeyUsage is present, EKU serverAuth when
-    /// EKU is present, and a TLS 1.3-compatible certificate signature algorithm.
-    server_auth: bool = true,
+    /// Enforce TLS 1.3 certificate residual policy for the leaf's intended use.
+    /// `.server_auth` requires KeyUsage.digitalSignature when KeyUsage is present,
+    /// EKU serverAuth when EKU is present, and a TLS 1.3-compatible certificate
+    /// signature algorithm.
+    leaf_usage: LeafUsage = .server_auth,
 };
 
 /// RFC 8446 §4.2.3 signature schemes supported by ztls.
@@ -118,7 +124,10 @@ pub fn parse(msg: []const u8, policy: Policy) ParseError![]const u8 {
 
         if (cert_index == 0) {
             leaf_pub_key = parsed.pubKey();
-            if (policy.server_auth) try verifyServerAuthPolicy(parsed);
+            switch (policy.leaf_usage) {
+                .none => {},
+                .server_auth => try verifyServerAuthPolicy(parsed),
+            }
             if (policy.host_name) |host_name| try parsed.verifyHostName(host_name);
         }
         if (subject_to_verify) |subject| try subject.verify(parsed, policy.now_sec);
