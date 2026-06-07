@@ -7,6 +7,7 @@ const testing = std.testing;
 const CipherSuite = @import("root.zig").CipherSuite;
 const wire = @import("wire.zig");
 const x25519 = @import("x25519.zig");
+const NamedGroup = @import("kex.zig").NamedGroup;
 
 pub const ServerHello = struct {
     /// The negotiated cipher suite. Determines which HKDF hash to use.
@@ -76,7 +77,7 @@ pub fn encode(
     w.append(u16, 0x002e); // extensions length
     w.append(u16, 0x0033); // key_share
     w.append(u16, 0x0024);
-    w.append(u16, 0x001d); // x25519
+    w.append(NamedGroup, .x25519);
     w.append(u16, 0x0020);
     w.appendSlice(&public_key.data);
     w.append(u16, 0x002b); // supported_versions
@@ -142,7 +143,7 @@ pub fn parse(msg: []const u8) ParseError!ServerHello {
                 if (got_key_share) return error.DuplicateExtension;
                 const ext_end = r.pos + ext_len;
                 const group = try r.read(u16);
-                if (group != 0x001d) return error.UnsupportedKeyShareGroup; // x25519 only
+                if (group != @intFromEnum(NamedGroup.x25519)) return error.UnsupportedKeyShareGroup; // x25519 only
                 const key_len = try r.read(u16);
                 if (key_len != 32) return error.UnsupportedKeyShareGroup;
                 server_public_key = .init((try r.readSlice(32))[0..32].*);

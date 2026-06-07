@@ -10,14 +10,13 @@ const SignatureScheme = @import("certificate.zig").SignatureScheme;
 const memx = @import("memx.zig");
 const wire = @import("wire.zig");
 const x25519 = @import("x25519.zig");
+const kex = @import("kex.zig");
+const NamedGroup = kex.NamedGroup;
 
 pub const Random = memx.Array(32);
 
 /// RFC 8446 §4.1.2 — legacy_version is frozen at 0x0303.
 const legacy_version: u16 = 0x0303;
-
-/// RFC 8446 §4.2.7
-const NamedGroup = enum(u16) { x25519 = 0x001d };
 
 const cipher_suite_count = std.meta.tags(CipherSuite).len;
 const supported_signature_schemes = [_]SignatureScheme{
@@ -329,7 +328,7 @@ fn parseSupportedGroups(ext: []const u8) ParseError!void {
     const list_len = try r.read(u16);
     if (list_len != ext.len - 2 or list_len % 2 != 0) return error.InvalidVectorLength;
     while (r.pos < ext.len) {
-        if (try r.read(u16) == 0x001d) return;
+        if (try r.read(u16) == @intFromEnum(NamedGroup.x25519)) return;
     }
     return error.UnsupportedKeyShare;
 }
@@ -342,7 +341,7 @@ fn parseKeyShare(ext: []const u8) ParseError!x25519.PublicKey {
         const group = try r.read(u16);
         const key_len = try r.read(u16);
         const key = try r.readSlice(key_len);
-        if (group == 0x001d) {
+        if (group == @intFromEnum(NamedGroup.x25519)) {
             if (key.len != 32) return error.UnsupportedKeyShare;
             return .init(key[0..32].*);
         }

@@ -5,6 +5,7 @@ pub const aead = @import("aead.zig");
 pub const client_hello = @import("client_hello.zig");
 pub const ClientHandshake = @import("ClientHandshake.zig");
 pub const hkdf = @import("hkdf.zig");
+pub const kex = @import("kex.zig");
 pub const nonce = @import("nonce.zig");
 pub const RecordLayer = @import("RecordLayer.zig");
 pub const RecordBuffer = @import("RecordBuffer.zig");
