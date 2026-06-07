@@ -116,26 +116,13 @@ fn decodePem(arena: mem.Allocator, pem_bytes: []const u8) ![]const u8 {
     return der;
 }
 
-fn loadKey(arena: mem.Allocator, path: ?[]const u8) !ztls.signature.PrivateKey {
-    if (path) |p| {
-        const pem = try fs.cwd().readFileAlloc(arena, p, 64 * 1024);
-        const der = try decodePem(arena, pem);
-        // BoGo test certs are typically ECDSA P-256. Attempt to parse as PKCS#8
-        // and fall back to raw scalar for the embedded fixture.
-        // For now, if the file isn't found, fall back to embedded fixture.
-        _ = der;
-        // TODO: proper PKCS#8/SEC1 parsing for arbitrary BoGo test keys.
-        // Until then, use the fallback fixture for any key file.
-    }
+fn loadKey(path: ?[]const u8) !ztls.signature.PrivateKey {
+    if (path != null) return error.UnsupportedKeyFile;
     return try ztls.signature.PrivateKey.fromP256Scalar(fallback_scalar[0..32]);
 }
 
-fn loadCert(arena: mem.Allocator, path: ?[]const u8) ![]const u8 {
-    if (path) |p| {
-        const pem = try fs.cwd().readFileAlloc(arena, p, 64 * 1024);
-        const der = try decodePem(arena, pem);
-        return der;
-    }
+fn loadCert(path: ?[]const u8) ![]const u8 {
+    if (path != null) return error.UnsupportedCertFile;
     return fallback_cert_der;
 }
 
@@ -149,6 +136,39 @@ fn readRecord(stream: net.Stream, buf: []u8) ![]u8 {
     const got_payload = try stream.readAtLeast(buf[ztls.frame.header_len..][0..len], len);
     if (got_payload != len) return error.UnexpectedEof;
     return buf[0 .. ztls.frame.header_len + len];
+}
+
+fn expectVersion(version: ?[]const u8) !void {
+    if (version) |v| {
+        if (!mem.eql(u8, v, "1.3") and !mem.eql(u8, v, "TLS1.3") and !mem.eql(u8, v, "tls1.3")) return error.VersionMismatch;
+    }
+}
+
+fn suiteName(suite: ztls.CipherSuite) []const u8 {
+    return switch (suite) {
+        .aes_128_gcm_sha256 => "TLS_AES_128_GCM_SHA256",
+        .aes_256_gcm_sha384 => "TLS_AES_256_GCM_SHA384",
+        .chacha20_poly1305_sha256 => "TLS_CHACHA20_POLY1305_SHA256",
+    };
+}
+
+fn expectCipherSuite(expected: ?[]const u8, actual: ztls.CipherSuite) !void {
+    if (expected) |name| {
+        if (!mem.eql(u8, name, suiteName(actual))) return error.CipherSuiteMismatch;
+    }
+}
+
+fn expectAlpn(expected: ?[]const u8, actual: ?[]const u8) !void {
+    if (expected) |want| {
+        const got = actual orelse return error.AlpnMismatch;
+        if (!mem.eql(u8, want, got)) return error.AlpnMismatch;
+    }
+}
+
+fn checkExpectations(args: Args, hs: *const ztls.ServerHandshake) !void {
+    try expectVersion(args.expect_version);
+    try expectCipherSuite(args.expect_cipher_suite, hs.suite);
+    try expectAlpn(args.expect_alpn, hs.selectedAlpnProtocol());
 }
 
 fn sendBestEffortAlert(hs: *ztls.ServerHandshake, stream: net.Stream, err: anyerror, out: []u8) void {
@@ -178,8 +198,8 @@ pub fn main() !void {
         std.process.exit(1);
     }
 
-    const cert_der = try loadCert(arena, args.cert_file);
-    var signer = try loadKey(arena, args.key_file);
+    const cert_der = try loadCert(args.cert_file);
+    var signer = try loadKey(args.key_file);
     defer signer.deinit();
 
     const address = try net.Address.parseIp(args.host, args.port);
@@ -209,6 +229,7 @@ pub fn main() !void {
 
     var in_buf: [ztls.frame.header_len + ztls.frame.max_ciphertext_len]u8 = undefined;
     var out_buf: [ztls.frame.header_len + ztls.frame.max_plaintext_len + ztls.aead.tag_len + 1]u8 = undefined;
+    var expectations_checked = false;
 
     while (true) {
         const record = readRecord(conn.stream, &in_buf) catch |err| switch (err) {
@@ -236,14 +257,6 @@ pub fn main() !void {
                 }
             },
             .application_data => |data| {
-                if (args.expect_alpn) |expected| {
-                    if (hs.selectedAlpnProtocol()) |selected| {
-                        if (!mem.eql(u8, selected, expected)) {
-                            print("bogo_shim: ALPN mismatch: expected '{s}', got '{s}'\n", .{ expected, selected });
-                            return error.AlpnMismatch;
-                        }
-                    }
-                }
                 const response = hs.sendApplicationData(data, &out_buf) catch |err| {
                     sendBestEffortAlert(&hs, conn.stream, err, &out_buf);
                     return;
@@ -253,6 +266,14 @@ pub fn main() !void {
             },
             .closed => return,
             .none => {},
+        }
+
+        if (hs.isConnected() and !expectations_checked) {
+            checkExpectations(args, &hs) catch |err| {
+                print("bogo_shim: expectation failed: {s}\n", .{@errorName(err)});
+                return err;
+            };
+            expectations_checked = true;
         }
     }
 }

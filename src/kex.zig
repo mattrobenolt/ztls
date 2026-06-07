@@ -11,7 +11,10 @@
 /// RFC 8446 §4.2.7 (supported_groups), §4.2.8 (key_share)
 const std = @import("std");
 const assert = std.debug.assert;
+const testing = std.testing;
+const crypto = std.crypto;
 
+const memx = @import("memx.zig");
 const x25519 = @import("x25519.zig");
 
 /// RFC 8446 §4.2.7 — named group / curve identifiers used in supported_groups
@@ -35,6 +38,9 @@ pub const max_public_key_len = 1665;
 /// Widest shared secret: P-384 || ML-KEM-1024 = 48 + 32.
 /// X25519/P-256/P-384 alone remain 32/32/48.
 pub const max_shared_secret_len = 80;
+
+pub const PublicKeyMaterial = memx.Array(max_public_key_len);
+pub const SharedSecretMaterial = memx.Array(max_shared_secret_len);
 
 pub const Error = error{ UnsupportedGroup, LibcryptoFailed, IdentityElement };
 
@@ -76,19 +82,16 @@ pub fn plannedSharedSecretLen(group: NamedGroup) ?u8 {
 /// migration (PROVIDER_INTERFACE §"Facade migration rule").
 pub const KeyPair = struct {
     group: NamedGroup,
-    public_key: [max_public_key_len]u8,
-    public_key_len: u8,
-    secret: [max_shared_secret_len]u8,
+    public_key: PublicKeyMaterial,
+    public_key_len: u16,
+    secret: SharedSecretMaterial,
     secret_len: u8,
 
     pub fn generate(group: NamedGroup) Error!KeyPair {
-        switch (group) {
-            .x25519 => {
-                const kp = x25519.KeyPair.generate();
-                return fromX25519(kp);
-            },
-            else => return error.UnsupportedGroup,
-        }
+        return switch (group) {
+            .x25519 => fromX25519(.generate()),
+            else => error.UnsupportedGroup,
+        };
     }
 
     pub fn generateDeterministic(group: NamedGroup, seed: [32]u8) Error!KeyPair {
@@ -104,19 +107,19 @@ pub const KeyPair = struct {
     fn fromX25519(kp: x25519.KeyPair) KeyPair {
         var out: KeyPair = .{
             .group = .x25519,
-            .public_key = undefined,
+            .public_key = .init(undefined),
             .public_key_len = x25519.public_length,
-            .secret = undefined,
+            .secret = .init(undefined),
             .secret_len = x25519.secret_length,
         };
-        @memcpy(out.public_key[0..x25519.public_length], &kp.public_key);
-        @memcpy(out.secret[0..x25519.secret_length], &kp.secret_key);
+        @memcpy(out.public_key.data[0..x25519.public_length], &kp.public_key);
+        @memcpy(out.secret.data[0..x25519.secret_length], &kp.secret_key);
         return out;
     }
 
     /// Group-sized public key as it appears in the key_share key_exchange field.
     pub fn publicKey(self: *const KeyPair) []const u8 {
-        return self.public_key[0..self.public_key_len];
+        return self.public_key.data[0..@intCast(self.public_key_len)];
     }
 
     /// Derive the DHE shared secret into `out`, returning the group-sized slice.
@@ -129,7 +132,7 @@ pub const KeyPair = struct {
                 if (peer_public.len != x25519.public_length) return error.UnsupportedGroup;
                 const peer: x25519.PublicKey = .init(peer_public[0..x25519.public_length].*);
                 var scalar: [x25519.secret_length]u8 = undefined;
-                @memcpy(&scalar, self.secret[0..x25519.secret_length]);
+                @memcpy(&scalar, self.secret.data[0..x25519.secret_length]);
                 const ss = try x25519.sharedSecret(scalar, peer);
                 @memcpy(out[0..ss.len], &ss);
                 return out[0..ss.len];
@@ -139,7 +142,8 @@ pub const KeyPair = struct {
     }
 
     pub fn deinit(self: *KeyPair) void {
-        std.crypto.secureZero(u8, &self.secret);
+        crypto.secureZero(u8, &self.secret.data);
+        self.* = undefined;
     }
 };
 
@@ -150,22 +154,22 @@ comptime {
 
 // RFC 8446 §4.2.7 — group identifiers match the IANA-assigned wire values.
 test "NamedGroup wire identifiers" {
-    try std.testing.expectEqual(@as(u16, 0x001d), @intFromEnum(NamedGroup.x25519));
-    try std.testing.expectEqual(@as(u16, 0x0017), @intFromEnum(NamedGroup.secp256r1));
-    try std.testing.expectEqual(@as(u16, 0x0018), @intFromEnum(NamedGroup.secp384r1));
-    try std.testing.expectEqual(@as(u16, 0x11ec), @intFromEnum(NamedGroup.x25519_mlkem768));
-    try std.testing.expectEqual(@as(u16, 0x11eb), @intFromEnum(NamedGroup.secp256r1_mlkem768));
-    try std.testing.expectEqual(@as(u16, 0x11ed), @intFromEnum(NamedGroup.secp384r1_mlkem1024));
+    try testing.expectEqual(@as(u16, 0x001d), @intFromEnum(NamedGroup.x25519));
+    try testing.expectEqual(@as(u16, 0x0017), @intFromEnum(NamedGroup.secp256r1));
+    try testing.expectEqual(@as(u16, 0x0018), @intFromEnum(NamedGroup.secp384r1));
+    try testing.expectEqual(@as(u16, 0x11ec), @intFromEnum(NamedGroup.x25519_mlkem768));
+    try testing.expectEqual(@as(u16, 0x11eb), @intFromEnum(NamedGroup.secp256r1_mlkem768));
+    try testing.expectEqual(@as(u16, 0x11ed), @intFromEnum(NamedGroup.secp384r1_mlkem1024));
 }
 
 // draft-ietf-tls-ecdhe-mlkem-05 §3 / §7 — hybrid group key_share sizes are
 // named now so parser/negotiation code can size buffers before backend support lands.
 test "planned future group sizes" {
-    try std.testing.expectEqual(@as(?u16, 1216), plannedPublicKeyLen(.x25519_mlkem768));
-    try std.testing.expectEqual(@as(?u16, 1249), plannedPublicKeyLen(.secp256r1_mlkem768));
-    try std.testing.expectEqual(@as(?u16, 1665), plannedPublicKeyLen(.secp384r1_mlkem1024));
-    try std.testing.expectEqual(@as(?u8, 64), plannedSharedSecretLen(.x25519_mlkem768));
-    try std.testing.expectEqual(@as(?u8, 80), plannedSharedSecretLen(.secp384r1_mlkem1024));
+    try testing.expectEqual(@as(?u16, 1216), plannedPublicKeyLen(.x25519_mlkem768));
+    try testing.expectEqual(@as(?u16, 1249), plannedPublicKeyLen(.secp256r1_mlkem768));
+    try testing.expectEqual(@as(?u16, 1665), plannedPublicKeyLen(.secp384r1_mlkem1024));
+    try testing.expectEqual(@as(?u8, 64), plannedSharedSecretLen(.x25519_mlkem768));
+    try testing.expectEqual(@as(?u8, 80), plannedSharedSecretLen(.secp384r1_mlkem1024));
 }
 
 // RFC 7748 §5.2 — X25519 keypair derives the published shared secret through the
@@ -184,13 +188,13 @@ test "KeyPair.sharedSecret: RFC 7748 X25519 vector via NamedGroup" {
 
     var want: [32]u8 = undefined;
     _ = try std.fmt.hexToBytes(&want, "c3da55379de9c6908e94ea4df28d084f32eccf03491c71f754b4075577a28552");
-    try std.testing.expectEqualSlices(u8, &want, ss);
+    try testing.expectEqualSlices(u8, &want, ss);
 }
 
 // Unsupported groups are rejected, not crashed — the negotiation layer relies on
 // this to fall through to UnsupportedKeyShare rather than hitting UB.
 test "KeyPair.generate: unsupported groups return error" {
-    try std.testing.expectError(error.UnsupportedGroup, KeyPair.generate(.secp256r1));
-    try std.testing.expectError(error.UnsupportedGroup, KeyPair.generate(.secp384r1));
-    try std.testing.expectError(error.UnsupportedGroup, KeyPair.generate(@enumFromInt(0x9999)));
+    try testing.expectError(error.UnsupportedGroup, KeyPair.generate(.secp256r1));
+    try testing.expectError(error.UnsupportedGroup, KeyPair.generate(.secp384r1));
+    try testing.expectError(error.UnsupportedGroup, KeyPair.generate(@enumFromInt(0x9999)));
 }

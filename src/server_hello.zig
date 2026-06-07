@@ -113,7 +113,7 @@ pub fn parseHelloRetryRequest(msg: []const u8) HrrParseError!HelloRetryRequest {
     try r.skip(1); // legacy_compression_method
 
     const extensions_len = try r.read(u16);
-    if (extensions_len > msg.len - r.pos) return error.InvalidExtensionLength;
+    if (extensions_len != msg.len - r.pos) return error.InvalidExtensionLength;
     const extensions_end = r.pos + extensions_len;
 
     var selected_group: ?NamedGroup = null;
@@ -149,10 +149,8 @@ pub fn parseHelloRetryRequest(msg: []const u8) HrrParseError!HelloRetryRequest {
                 if (got_cookie) return error.DuplicateExtension;
                 if (ext_len < 2) return error.InvalidExtensionLength;
                 const cookie_len = try r.read(u16);
-                if (cookie_len == 0 or cookie_len > ext_len - 2) return error.InvalidExtensionLength;
+                if (cookie_len == 0 or cookie_len != ext_len - 2) return error.InvalidExtensionLength;
                 cookie = try r.readSlice(cookie_len);
-                // skip any trailing padding inside this extension
-                try r.skip(ext_len - 2 - cookie_len);
                 got_cookie = true;
             },
             else => try r.skip(ext_len),
@@ -492,6 +490,24 @@ test "parseHelloRetryRequest: rejects TLS 1.2 in supported_versions" {
     msg[msg.len - 2] = 0x03;
     msg[msg.len - 1] = 0x03;
     try testing.expectError(error.UnsupportedTlsVersion, parseHelloRetryRequest(&msg));
+}
+
+// RFC 8446 §4.1.4 — extensions vector must consume the whole HRR body.
+test "parseHelloRetryRequest: rejects trailing bytes after extensions" {
+    var msg: [hrr_rfc8448.len + 1]u8 = undefined;
+    @memcpy(msg[0..hrr_rfc8448.len], hrr_rfc8448);
+    msg[hrr_rfc8448.len] = 0;
+    msg[3] += 1;
+    try testing.expectError(error.InvalidExtensionLength, parseHelloRetryRequest(&msg));
+}
+
+// RFC 8446 §4.2.2 — cookie extension_data is exactly opaque cookie<1..2^16-1>.
+test "parseHelloRetryRequest: rejects cookie extension trailing bytes" {
+    var msg = hrr_rfc8448[0..hrr_rfc8448.len].*;
+    // RFC 8448 HRR cookie extension_data length is 0x74, cookie vector length
+    // is 0x72. Shrink the vector by one while leaving extension length intact.
+    msg[54] = 0x71;
+    try testing.expectError(error.InvalidExtensionLength, parseHelloRetryRequest(&msg));
 }
 
 // RFC 8446 §4.1.4 — rejects HRR with no supported_versions.
