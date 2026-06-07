@@ -278,7 +278,7 @@ fn makeHandshakeArm(
     comptime Hash: type,
     transcript: Hash,
     aead_key: aead.Keys,
-    dhe: *const hkdf.SharedSecret,
+    dhe: []const u8,
 ) HashArm(H, Hash) {
     const handshake_secret = H.handshakeSecret(H.early_secret, dhe);
     const th = transcript.peek();

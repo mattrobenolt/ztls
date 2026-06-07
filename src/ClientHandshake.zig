@@ -20,7 +20,6 @@ const encrypted_extensions = @import("encrypted_extensions.zig");
 const finished = @import("finished.zig");
 const frame = @import("frame.zig");
 const hkdf = @import("hkdf.zig");
-const SharedSecret = hkdf.SharedSecret;
 const new_session_ticket = @import("new_session_ticket.zig");
 const RecordLayer = @import("RecordLayer.zig");
 const server_hello = @import("server_hello.zig");
@@ -35,6 +34,7 @@ pub const HandshakeType = enum(u8) {
     new_session_ticket = 0x04,
     server_hello = 0x02,
     encrypted_extensions = 0x08,
+    certificate_request = 0x0d, // RFC 8446 §4.3.2
     certificate = 0x0b,
     certificate_verify = 0x0f,
     finished = 0x14,
@@ -276,7 +276,7 @@ const Suite = union(enum) {
     /// secret rooted there — traffic keys and both finished keys — because the
     /// running hash moves on and cannot be rewound. The handshake secret and
     /// finished keys are retained in the arm; the RecordLayers are returned.
-    fn deriveHandshakeKeys(self: *Suite, dhe: *const SharedSecret) aead.Error!HandshakeKeys {
+    fn deriveHandshakeKeys(self: *Suite, dhe: []const u8) aead.Error!HandshakeKeys {
         switch (self.*) {
             .buffering => unreachable,
             inline .sha256, .sha384 => |*s| {
@@ -899,12 +899,12 @@ test "transcript hash: RFC 8448 §3 ClientHello || ServerHello" {
 // Vectors from RFC 8448 §3. The DHE shared secret and the resulting server
 // handshake write_key / write_iv and server finished_key are ground truth.
 test "deriveHandshakeKeys: RFC 8448 §3 server handshake key/iv/finished" {
-    const dhe: SharedSecret = .init(.{
+    const dhe = [_]u8{
         0x8b, 0xd4, 0x05, 0x4f, 0xb5, 0x5b, 0x9d, 0x63,
         0xfd, 0xfb, 0xac, 0xf9, 0xf0, 0x4b, 0x9f, 0x0d,
         0x35, 0xe6, 0xd6, 0x3f, 0x53, 0x75, 0x63, 0xef,
         0xd4, 0x62, 0x72, 0x90, 0x0f, 0x89, 0x49, 0x2d,
-    });
+    };
 
     var hs: ClientHandshake = .init(.{ .secret_key = @splat(0), .public_key = @splat(0) });
     hs.suite.update(&rfc8448_client_hello);

@@ -7,7 +7,6 @@ const c = @cImport({
     @cInclude("openssl/evp.h");
 });
 
-const hkdf = @import("hkdf.zig");
 const memx = @import("memx.zig");
 
 pub const public_length = 32;
@@ -58,7 +57,7 @@ fn publicFromSecret(secret_key: [secret_length]u8) Error![public_length]u8 {
 /// The result feeds directly into hkdf.handshakeSecret as the DHE input.
 ///
 /// RFC 8446 §7.4.2
-pub fn sharedSecret(secret_key: [secret_length]u8, peer_public_key: PublicKey) Error!hkdf.SharedSecret {
+pub fn sharedSecret(secret_key: [secret_length]u8, peer_public_key: PublicKey) Error![secret_length]u8 {
     const ours = try privateKey(secret_key);
     defer c.EVP_PKEY_free(ours);
     const peer = try publicKey(peer_public_key);
@@ -75,8 +74,7 @@ pub fn sharedSecret(secret_key: [secret_length]u8, peer_public_key: PublicKey) E
     if (len != secret.len) return error.LibcryptoFailed;
 
     if (std.crypto.timing_safe.eql([secret_length]u8, secret, @splat(0))) return error.IdentityElement;
-    const out: hkdf.SharedSecret = .init(secret);
-    return out;
+    return secret;
 }
 
 fn hex(comptime bytes_len: usize, comptime encoded: []const u8) [bytes_len]u8 {
@@ -90,7 +88,7 @@ test "sharedSecret: RFC 7748 X25519 vector" {
     const scalar = hex(32, "a546e36bf0527c9d3b16154b82465edd62144c0ac1fc5a18506a2244ba449ac4");
     const peer: PublicKey = .init(hex(32, "e6db6867583030db3594c1a424b15f7c726624ec26b3353b10a903a6d0ab1c4c"));
     const secret = try sharedSecret(scalar, peer);
-    try std.testing.expectEqualSlices(u8, &hex(32, "c3da55379de9c6908e94ea4df28d084f32eccf03491c71f754b4075577a28552"), &secret.data);
+    try std.testing.expectEqualSlices(u8, &hex(32, "c3da55379de9c6908e94ea4df28d084f32eccf03491c71f754b4075577a28552"), &secret);
 }
 
 // RFC 7748 §6.1 — X25519 public keys are scalar multiplication by base point 9.

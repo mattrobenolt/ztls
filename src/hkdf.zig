@@ -22,11 +22,6 @@ pub const HkdfSha256 = Hkdf(HmacSha256);
 /// TLS_AES_256_GCM_SHA384.
 pub const HkdfSha384 = Hkdf(HmacSha384);
 
-/// Raw ECDH shared secret output.
-/// TODO: replace with a proper typed result from the key exchange layer
-/// (X25519, P-256) once implemented.
-pub const SharedSecret = memx.Array(32);
-
 fn Hkdf(comptime Hmac: type) type {
     const H = crypto.kdf.hkdf.Hkdf(Hmac);
 
@@ -123,10 +118,12 @@ fn Hkdf(comptime Hmac: type) type {
         /// RFC 8446 §7.1 — HandshakeSecret.
         ///
         /// Mixes the DHE shared secret into the key schedule.
-        /// `dhe` is the raw ECDH output (32 bytes for X25519/P-256).
-        pub fn handshakeSecret(early: Prk, dhe: *const SharedSecret) Prk {
+        /// `dhe` is the raw ECDH output: 32 bytes for X25519/P-256, 48 for
+        /// P-384. The key exchange layer owns the sizing; the key schedule
+        /// just extracts over whatever bytes it is given.
+        pub fn handshakeSecret(early: Prk, dhe: []const u8) Prk {
             const salt = deriveSecret(early, "derived", &empty_hash);
-            return .init(H.extract(&salt.data, &dhe.data));
+            return .init(H.extract(&salt.data, dhe));
         }
 
         /// RFC 8446 §7.1 — MasterSecret.
@@ -212,12 +209,12 @@ fn Hkdf(comptime Hmac: type) type {
 //   server_write_key: 3fce516009c21727d0f2e4e86ee403bc  (16 bytes)
 //   server_write_iv:  5d313eb2671276ee13000b30          (12 bytes)
 
-const dhe_rfc8448: SharedSecret = .init(.{
+const dhe_rfc8448 = [_]u8{
     0x8b, 0xd4, 0x05, 0x4f, 0xb5, 0x5b, 0x9d, 0x63,
     0xfd, 0xfb, 0xac, 0xf9, 0xf0, 0x4b, 0x9f, 0x0d,
     0x35, 0xe6, 0xd6, 0x3f, 0x53, 0x75, 0x63, 0xef,
     0xd4, 0x62, 0x72, 0x90, 0x0f, 0x89, 0x49, 0x2d,
-});
+};
 
 const transcript_hs_rfc8448: HkdfSha256.Prk = .init(.{
     0x86, 0x0c, 0x06, 0xed, 0xc0, 0x78, 0x58, 0xee,
