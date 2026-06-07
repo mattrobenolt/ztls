@@ -111,6 +111,10 @@ tx: RecordLayer = undefined,
 /// data from silently desynchronizing traffic keys.
 pending_write: bool = false,
 post_handshake_count: u8 = 0,
+/// Verification gate for the client Finished. Reaching connected requires this
+/// to be set by the Finished verifier, making the final server transition easy
+/// to audit.
+client_finished_verified: bool = false,
 
 pub fn init(keypair: x25519.KeyPair) ServerHandshake {
     return .{ .keypair = keypair };
@@ -392,6 +396,7 @@ fn processClientFinishedPlaintext(self: *ServerHandshake, plaintext: []const u8)
             const H = @TypeOf(s.*).Hkdf;
             const th = s.transcript.peek();
             try finished.verify(@TypeOf(s.transcript), msg.raw, &s.client_finished_key.data, &th);
+            self.client_finished_verified = true;
             const master = H.masterSecret(s.handshake_secret);
             s.client_app_secret = H.clientApplicationTrafficSecret(master, &.init(th));
             s.server_app_secret = H.serverApplicationTrafficSecret(master, &.init(th));
@@ -405,6 +410,7 @@ fn processClientFinishedPlaintext(self: *ServerHandshake, plaintext: []const u8)
             s.transcript.update(msg.raw);
         },
     }
+    if (!self.client_finished_verified) return error.UnexpectedMessage;
     self.state = .connected;
 }
 
@@ -824,6 +830,7 @@ test "processClientFinished: verifies Finished and installs app keys" {
     const fin_record = try client_tx.encrypt(.handshake, fin, &fin_wire);
     try server.processClientFinished(fin_wire[0..fin_record.len]);
     try testing.expectEqual(.connected, server.state);
+    try testing.expect(server.client_finished_verified);
     try testing.expectEqual(@as(u64, 0), server.rx.seq);
     try testing.expectEqual(@as(u64, 0), server.tx.seq);
 }
