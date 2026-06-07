@@ -20,9 +20,15 @@ ci: ci-actions
     zig build test
     zig build test-openssl
     zig build test-openssl-server
+    zig build test-wycheproof
     zig build bench -- --bench record_encrypt --suite aes_128 --size 1350
     zig build bench-evp -- --bench openssl_evp_reuse_encrypt --suite aes_128 --size 1350
     zig build bench-openssl -- --bench openssl_bio_app_client_to_server --suite aes_128 --size 1350
+
+[doc("Run Wycheproof boundary smoke vectors")]
+[group("test")]
+wycheproof:
+    zig build test-wycheproof
 
 [doc("Run tlsfuzzer TLS 1.3 conformance smoke tests")]
 [group("test")]

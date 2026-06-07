@@ -399,7 +399,9 @@ Every error path is tested. Fuzzing is not optional.
 - **Wycheproof** (https://github.com/C2SP/wycheproof) — integration vectors at
   the libcrypto boundary (AEAD tag/AAD/nonce handling, X25519 identity-element
   rejection, ECDSA DER verification), not proof that ztls implements primitive
-  crypto. These are JSON files; write a test harness to consume them.
+  crypto. Initial boundary smoke vectors run with `zig build test-wycheproof`;
+  expand this into a full JSON-vector harness as the supported primitive surface
+  grows.
 - **bettertls** (https://github.com/Netflix/bettertls) — name constraints and
   path-building correctness for certificate validation.
 

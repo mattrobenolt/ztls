@@ -88,6 +88,18 @@ pub fn build(b: *std.Build) void {
     const tlsfuzzer_server_step = b.step("tlsfuzzer-server", "Build the tlsfuzzer TCP server");
     tlsfuzzer_server_step.dependOn(&install_tlsfuzzer_server.step);
 
+    const wycheproof_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/test/wycheproof_smoke.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{.{ .name = "ztls", .module = mod }},
+        }),
+    });
+    const run_wycheproof = b.addRunArtifact(wycheproof_tests);
+    const wycheproof_step = b.step("test-wycheproof", "Run Wycheproof boundary smoke vectors");
+    wycheproof_step.dependOn(&run_wycheproof.step);
+
     const replay_fixtures_exe = b.addExecutable(.{
         .name = "generate_replay_fixtures",
         .root_module = b.createModule(.{
