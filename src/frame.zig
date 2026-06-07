@@ -202,3 +202,23 @@ test "writeInnerPlaintext: buffer too short" {
     const content = [_]u8{ 1, 2, 3 };
     try testing.expectError(error.BufferTooShort, writeInnerPlaintext(&buf, &content, .handshake, 0));
 }
+
+// RFC 8446 §5.1 — TLSPlaintext header is 5 bytes: content_type (1) + legacy_version
+// (2) + length (2). parseHeader must never panic on arbitrary input.
+fn fuzzParseHeader(_: void, input: []const u8) anyerror!void {
+    _ = parseHeader(input) catch {};
+}
+
+test "fuzz: parseHeader handles arbitrary input" {
+    const corpus: []const []const u8 = &.{
+        // valid handshake record header
+        &.{ 22, 0x03, 0x03, 0x00, 0x10 },
+        // valid application_data record header (max length)
+        &.{ 23, 0x03, 0x03, 0x40, 0x00 },
+        // truncated
+        &.{ 23, 0x03 },
+        // empty
+        &.{},
+    };
+    try testing.fuzz({}, fuzzParseHeader, .{ .corpus = corpus });
+}

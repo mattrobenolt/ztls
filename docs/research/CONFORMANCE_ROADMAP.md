@@ -190,11 +190,13 @@ support (capabilities, PROVIDER_INTERFACE §5).
 ## Fuzzing expansion — TODO-3aec61dd
 
 **Current fuzz surfaces:** `server_hello.parse`, `certificate.parse`,
-`new_session_ticket.parse`, client `HandshakeReader`, client decrypted
-`processFlight`, server `handleRecord` initial state (see CORRECTNESS.md).
+`new_session_ticket.parse`, `client_hello.parse`, `frame.parseHeader`,
+client `HandshakeReader`, client decrypted `processFlight`, server
+`handleRecord` initial state (see CORRECTNESS.md).
 
-**Cheap high-value additions (candidates):** `client_hello.parse` byte fuzz,
-`RecordLayer` record-header/length fuzz, alert parse fuzz.
+**Cheap high-value additions (candidates):** `RecordLayer` full record fuzz
+(needs valid-ish ciphertext; lower value since decrypt always fails on random
+AAD); broader `alert.parse` corpus vectors.
 
 **Acceptance criteria:** each new target rejects arbitrary input without panic
 under `zig build test -- --fuzz`; added to the CORRECTNESS.md fuzz inventory.
@@ -255,7 +257,7 @@ at least scripted in `just`.
 | TODO-55fe53a8 | Client cert auth | Open. Prereqs enumerated. |
 | TODO-bff0601f | Client-auth OpenSSL tests | Open. Blocked on TODO-55fe53a8. |
 | TODO-e458fa4a | Future/PQ groups | Open. Blocked on group abstraction + KEM seam. |
-| TODO-3aec61dd | Fuzzing expansion | Open. Cheap incremental targets identified. |
+| TODO-3aec61dd | Fuzzing expansion | Partial. `client_hello.parse` and `frame.parseHeader` added; remaining candidates documented above. |
 | TODO-86ff7908 | Wycheproof expansion | Open. No structural blocker. |
 | TODO-8842b110 | TLS-Anvil | Open. Needs wrappers + justified skip list. |
 | TODO-9a7143c2 | tlsfuzzer lockstep | Open. No structural blocker. |

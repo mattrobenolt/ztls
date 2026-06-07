@@ -85,6 +85,8 @@ Current fuzz surfaces include:
 - `server_hello.parse`
 - `certificate.parse`
 - `new_session_ticket.parse`
+- `client_hello.parse`
+- `frame.parseHeader` (TLSPlaintext record header)
 - client `HandshakeReader`
 - client decrypted `processFlight`
 - server `handleRecord` in the initial state
