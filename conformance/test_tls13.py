@@ -7,6 +7,7 @@ from tlsfuzzer.expect import (
     ExpectClose,
     ExpectEncryptedExtensions,
     ExpectFinished,
+    ExpectKeyUpdate,
     ExpectServerHello,
 )
 from tlsfuzzer.helpers import key_share_gen
@@ -16,6 +17,8 @@ from tlsfuzzer.messages import (
     ClientHelloGenerator,
     Connect,
     FinishedGenerator,
+    KeyUpdateGenerator,
+    RawSocketWriteGenerator,
 )
 from tlsfuzzer.runner import Runner
 from tlslite.constants import (
@@ -24,7 +27,9 @@ from tlslite.constants import (
     AlertLevel,
     CipherSuite,
     ExtensionType,
+    ContentType,
     GroupName,
+    KeyUpdateMessageType,
     SignatureScheme,
 )
 from tlslite.extensions import (
@@ -73,6 +78,12 @@ def tls13_handshake(node):
     return node
 
 
+def expect_alert_or_close(node, level, description):
+    alert = node.add_child(ExpectAlert(level, description))
+    alert.next_sibling = ExpectClose()
+    alert.add_child(ExpectClose())
+
+
 def close_notify(node):
     send = node.add_child(AlertGenerator(AlertLevel.warning, AlertDescription.close_notify))
     alert = send.add_child(ExpectAlert())
@@ -88,6 +99,40 @@ def test_tls13_handshake_and_application_echo(ztls_server):
     node = node.add_child(ApplicationDataGenerator(bytearray(b"ztls tlsfuzzer smoke\n")))
     node = node.add_child(ExpectApplicationData())
     close_notify(node)
+    Runner(conversation).run()
+
+
+def test_tls13_keyupdate_update_requested(ztls_server):
+    conversation = Connect(ztls_server["host"], ztls_server["port"])
+    node = conversation.add_child(ClientHelloGenerator(CIPHERS, extensions=tls13_extensions()))
+    node = tls13_handshake(node)
+    node = node.add_child(KeyUpdateGenerator(message_type=KeyUpdateMessageType.update_requested))
+    node = node.add_child(ApplicationDataGenerator(bytearray(b"after key update\n")))
+    node = node.add_child(ExpectKeyUpdate(message_type=KeyUpdateMessageType.update_not_requested))
+    node = node.add_child(ExpectApplicationData())
+    close_notify(node)
+    Runner(conversation).run()
+
+
+def test_tls13_corrupted_app_data_record_is_rejected(ztls_server):
+    conversation = Connect(ztls_server["host"], ztls_server["port"])
+    node = conversation.add_child(ClientHelloGenerator(CIPHERS, extensions=tls13_extensions()))
+    node = tls13_handshake(node)
+    node = node.add_child(RawSocketWriteGenerator(data=bytearray(b"\x17\x03\x03\x00\x20" + b"\xaa" * 32)))
+    expect_alert_or_close(node, AlertLevel.fatal, AlertDescription.bad_record_mac)
+    Runner(conversation).run()
+
+
+def test_tls13_oversized_record_is_rejected(ztls_server):
+    oversized_len = 0x4101
+    oversized_record = bytearray(bytes([ContentType.application_data]) + b"\x03\x03")
+    oversized_record.extend(oversized_len.to_bytes(2, "big"))
+    oversized_record.extend(b"\x00" * 16)
+    conversation = Connect(ztls_server["host"], ztls_server["port"])
+    node = conversation.add_child(ClientHelloGenerator(CIPHERS, extensions=tls13_extensions()))
+    node = tls13_handshake(node)
+    node = node.add_child(RawSocketWriteGenerator(data=oversized_record))
+    expect_alert_or_close(node, AlertLevel.fatal, (AlertDescription.record_overflow, AlertDescription.decode_error))
     Runner(conversation).run()
 
 
