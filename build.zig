@@ -150,7 +150,7 @@ pub fn build(b: *Build) void {
     // --- zig-benchmark integration ---
     const benchmark_dep: *Build.Dependency = b.dependency("benchmark", .{
         .target = target,
-        .optimize = optimize,
+        .optimize = .ReleaseFast,
     });
     const benchmark = @import("benchmark");
     const c_mod = b.createModule(.{
