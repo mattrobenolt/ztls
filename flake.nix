@@ -63,6 +63,8 @@
                 pkg-config
                 rustToolchain
                 uv
+                opentofu
+                rsync
                 txtar
                 zig_0_15
                 zigdoc

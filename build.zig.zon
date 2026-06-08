@@ -11,6 +11,10 @@
             .hash = "txtar-0.1.0-RyJLBJ5rAABCV5lD0YSt048wd3l9Nk9a4_TnEnm0MZ9P",
             .lazy = true,
         },
+        .benchmark = .{
+            .url = "git+https://github.com/mattrobenolt/zig-benchmark#7f04517296bccce240bdd554ea2af4fafd688cf9",
+            .hash = "benchmark-0.1.0-JS72VvXoAAAUtVctVt4VJngzawKXYgDXcHw40v5sO2qI",
+        },
     },
     .paths = .{
         "build.zig",

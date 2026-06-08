@@ -3,9 +3,9 @@ set lazy
 fmt_paths := "src/ examples/ bench/ build.zig"
 conformance_dir := "conformance"
 
-bench_suite := "aes_128"
+bench_suite := "TLS_AES_128_GCM_SHA256"
 bench_size := "1350"
-bench_filter := "aes_128"
+bench_filter := "Encrypt"
 bench_bin := "record_protection_bench"
 
 anvil_version := "1.5.0"
@@ -72,9 +72,9 @@ ci: check-actions lint check-no-alloc check-fixtures check-conformance-python
     zig build test-openssl-server
     zig build test-wycheproof
     just tlsfuzzer -q
-    zig build bench -- --bench record_encrypt --suite {{ bench_suite }} --size {{ bench_size }}
-    zig build bench-evp -- --bench openssl_evp_reuse_encrypt --suite {{ bench_suite }} --size {{ bench_size }}
-    zig build bench-openssl -- --bench openssl_bio_app_client_to_server --suite {{ bench_suite }} --size {{ bench_size }}
+    zig build bench -- --filter RecordEncrypt/{{ bench_suite }}/{{ bench_size }}
+    zig build bench-evp -- --filter Encrypt/{{ bench_suite }}/{{ bench_size }}
+    zig build bench-openssl -- --filter BioAppClientToServer/{{ bench_suite }}/{{ bench_size }}
 
 [doc("Run Wycheproof boundary smoke vectors")]
 [group("check")]
@@ -143,9 +143,9 @@ bogo: bogo-fetch
 [doc("List ztls, OpenSSL EVP, OpenSSL memory-BIO, and rustls benchmark rows")]
 [group("bench")]
 bench-list:
-    zig build bench -- --list
-    zig build bench-evp -- --list
-    zig build bench-openssl -- --list
+    zig build bench -- --filter ".*"
+    zig build bench-evp -- --filter ".*"
+    zig build bench-openssl -- --filter ".*"
     zig build bench-rustls -- --list
 
 [doc("Run comparable ztls, OpenSSL EVP, OpenSSL memory-BIO, and rustls benchmark rows")]
@@ -159,21 +159,21 @@ bench-compare filter=bench_filter:
 [doc("Run one exact app-data row for ztls and OpenSSL memory BIO")]
 [group("bench")]
 bench-app-row suite=bench_suite size=bench_size:
-    zig build bench -- --bench ztls_app_client_to_server --suite {{ suite }} --size {{ size }}
-    zig build bench -- --bench ztls_app_prepared_client_to_server --suite {{ suite }} --size {{ size }}
-    zig build bench-openssl -- --bench openssl_bio_app_client_to_server --suite {{ suite }} --size {{ size }}
+    zig build bench -- --filter AppClientToServer/{{ suite }}/{{ size }}
+    zig build bench -- --filter AppPreparedClientToServer/{{ suite }}/{{ size }}
+    zig build bench-openssl -- --filter BioAppClientToServer/{{ suite }}/{{ size }}
 
 [doc("Run one exact record-crypto row for ztls and OpenSSL EVP reuse")]
 [group("bench")]
 bench-record-row suite=bench_suite size=bench_size:
-    zig build bench -- --bench record_encrypt --suite {{ suite }} --size {{ size }}
-    zig build bench -- --bench record_encrypt_prepared --suite {{ suite }} --size {{ size }}
-    zig build bench-evp -- --bench openssl_evp_reuse_encrypt --suite {{ suite }} --size {{ size }}
+    zig build bench -- --filter RecordEncrypt/{{ suite }}/{{ size }}
+    zig build bench -- --filter RecordEncryptPrepared/{{ suite }}/{{ size }}
+    zig build bench-evp -- --filter Encrypt/{{ suite }}/{{ size }}
 
 [doc("Rank measured ztls handshake split rows by elapsed time")]
 [group("bench")]
 bench-handshake-hotspots suite=bench_suite out="":
-    scripts/handshake-hotspots.sh {{ suite }} {{ out }}
+    @echo "TODO: reimplement for Go benchmark format"
 
 [doc("Run full benchmark comparison set into zig-out/perf")]
 [group("bench")]
@@ -183,16 +183,16 @@ bench-capture:
 
     mkdir -p zig-out/perf
     stamp=$(date +%Y%m%d-%H%M%S)
-    zig build bench > "zig-out/perf/ztls-all-${stamp}.csv"
-    zig build bench-evp > "zig-out/perf/evp-all-${stamp}.csv"
-    zig build bench-openssl > "zig-out/perf/bio-all-${stamp}.csv"
-    zig build bench-rustls > "zig-out/perf/rustls-all-${stamp}.csv"
+    zig build bench > "zig-out/perf/ztls-${stamp}.txt"
+    zig build bench-evp > "zig-out/perf/evp-${stamp}.txt"
+    zig build bench-openssl > "zig-out/perf/bio-${stamp}.txt"
+    zig build bench-rustls > "zig-out/perf/rustls-${stamp}.txt"
     echo "${stamp}"
 
-[doc("Analyze captured ztls/OpenSSL benchmark CSVs")]
+[doc("Compare benchmark captures with benchstat")]
 [group("bench")]
-bench-analyze *args:
-    nu scripts/analyze-bench.nu {{ args }}
+benchstat a b:
+    benchstat {{ a }} {{ b }}
 
 [doc("Build benchmark binaries used for perf, callgrind, and disassembly")]
 [group("bench")]

@@ -2,177 +2,144 @@ const std = @import("std");
 const mem = std.mem;
 const doNotOptimizeAway = mem.doNotOptimizeAway;
 
-const bench = @import("bench_harness.zig");
+const bench = @import("benchmark");
 const aead = @import("aead.zig");
 const frame = @import("frame.zig");
 const memx = @import("memx.zig");
-const wire = @import("wire.zig");
 const NewSessionTicket = @import("NewSessionTicket.zig");
+const wire = @import("wire.zig");
 
-pub fn main() !void {
-    try bench.run(.{
-        .pkg = "ztls/bench/micro",
-        .cases = &.{
-            bench.case("BenchmarkLastIndexNonZero/no_padding_16", lastIndexNoPadding16),
-            bench.case("BenchmarkLastIndexNonZero/padding_1_16", lastIndexPadding1_16),
-            bench.case("BenchmarkLastIndexNonZero/padding_16_128", lastIndexPadding16_128),
-            bench.case("BenchmarkLastIndexNonZero/padding_128_1350", lastIndexPadding128_1350),
-            bench.case("BenchmarkLastIndexNonZero/all_zero_1350", lastIndexAllZero1350),
-            bench.case("BenchmarkNonceConstruct/vector", nonceConstruct),
-            bench.case("BenchmarkParseHeader/current", parseHeader),
-            bench.case("BenchmarkWireReader/u8", wireReaderU8),
-            bench.case("BenchmarkWireReader/u16", wireReaderU16),
-            bench.case("BenchmarkWireReader/u24", wireReaderU24),
-            bench.case("BenchmarkWireReader/safe_sequence", wireReaderSafeSequence),
-            bench.case("BenchmarkWireReader/assume_sequence", wireReaderAssumeSequence),
-            bench.case("BenchmarkNewSessionTicket/parse_current", newSessionTicketParseCurrent),
-        },
-    });
-}
-
-fn lastIndexNoPadding16(b: *bench.B) void {
+pub fn benchmarkLastIndexNonZeroNoPadding16(b: *bench.B) !void {
     var buf: [16]u8 = @splat(0);
     buf[15] = 23;
-    b.resetTimer();
-    while (b.next()) {
-        buf[0] = @truncate(b.i);
-        doNotOptimizeAway(memx.lastIndexOfNonZero(&buf));
+    while (try b.loop()) {
+        buf[0] = @truncate(b.n);
+        b.keepAlive(memx.lastIndexOfNonZero(&buf));
     }
 }
 
-fn lastIndexPadding1_16(b: *bench.B) void {
+pub fn benchmarkLastIndexNonZeroPadding1_16(b: *bench.B) !void {
     var buf: [16]u8 = @splat(0);
     buf[14] = 23;
-    b.resetTimer();
-    while (b.next()) {
-        buf[0] = @truncate(b.i);
-        doNotOptimizeAway(memx.lastIndexOfNonZero(&buf));
+    while (try b.loop()) {
+        buf[0] = @truncate(b.n);
+        b.keepAlive(memx.lastIndexOfNonZero(&buf));
     }
 }
 
-fn lastIndexPadding16_128(b: *bench.B) void {
+pub fn benchmarkLastIndexNonZeroPadding16_128(b: *bench.B) !void {
     var buf: [128]u8 = @splat(0);
     buf[111] = 23;
-    b.resetTimer();
-    while (b.next()) {
-        buf[0] = @truncate(b.i);
-        doNotOptimizeAway(memx.lastIndexOfNonZero(&buf));
+    while (try b.loop()) {
+        buf[0] = @truncate(b.n);
+        b.keepAlive(memx.lastIndexOfNonZero(&buf));
     }
 }
 
-fn lastIndexPadding128_1350(b: *bench.B) void {
+pub fn benchmarkLastIndexNonZeroPadding128_1350(b: *bench.B) !void {
     var buf: [1350]u8 = @splat(0);
     buf[1221] = 23;
-    b.resetTimer();
-    while (b.next()) {
-        buf[0] = @truncate(b.i);
-        doNotOptimizeAway(memx.lastIndexOfNonZero(&buf));
+    while (try b.loop()) {
+        buf[0] = @truncate(b.n);
+        b.keepAlive(memx.lastIndexOfNonZero(&buf));
     }
 }
 
-fn lastIndexAllZero1350(b: *bench.B) void {
+pub fn benchmarkLastIndexNonZeroAllZero1350(b: *bench.B) !void {
     var buf: [1350]u8 = @splat(0);
-    b.resetTimer();
-    while (b.next()) {
-        buf[0] = @truncate(b.i);
+    while (try b.loop()) {
+        buf[0] = @truncate(b.n);
         buf[0] = 0;
-        doNotOptimizeAway(memx.lastIndexOfNonZero(&buf));
+        b.keepAlive(memx.lastIndexOfNonZero(&buf));
     }
 }
 
-fn nonceConstruct(b: *bench.B) void {
+pub fn benchmarkNonceConstructVector(b: *bench.B) !void {
     const iv: aead.Iv = .init(@splat(0xab));
     var seq: u64 = 0;
-    b.resetTimer();
-    while (b.next()) {
-        doNotOptimizeAway(aead.construct(&iv, seq));
+    while (try b.loop()) {
+        b.keepAlive(aead.construct(&iv, seq));
         seq +%= 1;
     }
 }
 
-fn parseHeader(b: *bench.B) void {
+pub fn benchmarkParseHeaderCurrent(b: *bench.B) !void {
     var input = [_]u8{ 23, 0x03, 0x03, 0x40, 0x00 };
-    b.resetTimer();
-    while (b.next()) {
-        input[4] = @truncate(b.i);
-        doNotOptimizeAway(frame.parseHeader(&input) catch unreachable);
+    while (try b.loop()) {
+        input[4] = @truncate(b.n);
+        b.keepAlive(frame.parseHeader(&input) catch unreachable);
     }
 }
 
-fn wireReaderU8(b: *bench.B) void {
+pub fn benchmarkWireReaderU8(b: *bench.B) !void {
     var input = [_]u8{0xab};
-    b.resetTimer();
-    while (b.next()) {
-        input[0] = @truncate(b.i);
+    while (try b.loop()) {
+        input[0] = @truncate(b.n);
         var r: wire.Reader = .init(&input);
-        doNotOptimizeAway(r.read(u8) catch unreachable);
+        b.keepAlive(r.read(u8) catch unreachable);
     }
 }
 
-fn wireReaderU16(b: *bench.B) void {
+pub fn benchmarkWireReaderU16(b: *bench.B) !void {
     var input = [_]u8{ 0x12, 0x34 };
-    b.resetTimer();
-    while (b.next()) {
-        input[1] = @truncate(b.i);
+    while (try b.loop()) {
+        input[1] = @truncate(b.n);
         var r: wire.Reader = .init(&input);
-        doNotOptimizeAway(r.read(u16) catch unreachable);
+        b.keepAlive(r.read(u16) catch unreachable);
     }
 }
 
-fn wireReaderU24(b: *bench.B) void {
+pub fn benchmarkWireReaderU24(b: *bench.B) !void {
     var input = [_]u8{ 0x12, 0x34, 0x56 };
-    b.resetTimer();
-    while (b.next()) {
-        input[2] = @truncate(b.i);
+    while (try b.loop()) {
+        input[2] = @truncate(b.n);
         var r: wire.Reader = .init(&input);
-        doNotOptimizeAway(r.read(u24) catch unreachable);
+        b.keepAlive(r.read(u24) catch unreachable);
     }
 }
 
-fn wireReaderSafeSequence(b: *bench.B) void {
+pub fn benchmarkWireReaderSafeSequence(b: *bench.B) !void {
     var input = [_]u8{
         0x02, 0x00, 0x00, 0x26, 0x03, 0x03,
     } ++ [_]u8{0xaa} ** 32 ++ [_]u8{
         0x00, 0x13, 0x01, 0x00, 0x04, 0x00, 0xff, 0xff,
     };
-    b.resetTimer();
-    while (b.next()) {
-        input[1] = @truncate(b.i);
-        var r: wire.Reader = .init(input[0 .. input.len - (b.i & 1)]);
+    while (try b.loop()) {
+        input[1] = @truncate(b.n);
+        var reader: wire.Reader = .init(input[0 .. input.len - (b.n & 1)]);
         var sum: usize = 0;
-        sum +%= tryRead(u8, &r);
-        sum +%= tryRead(u24, &r);
-        r.skip(2) catch unreachable;
-        sum +%= (r.readSlice(32) catch unreachable)[b.i & 31];
-        sum +%= tryRead(u8, &r);
-        sum +%= tryRead(u16, &r);
-        r.skip(1) catch unreachable;
-        sum +%= tryRead(u16, &r);
-        doNotOptimizeAway(sum);
+        sum +%= tryRead(u8, &reader);
+        sum +%= tryRead(u24, &reader);
+        reader.skip(2) catch unreachable;
+        sum +%= (reader.readSlice(32) catch unreachable)[b.n & 31];
+        sum +%= tryRead(u8, &reader);
+        sum +%= tryRead(u16, &reader);
+        reader.skip(1) catch unreachable;
+        sum +%= tryRead(u16, &reader);
+        b.keepAlive(sum);
     }
 }
 
-fn wireReaderAssumeSequence(b: *bench.B) void {
+pub fn benchmarkWireReaderAssumeSequence(b: *bench.B) !void {
     var input = [_]u8{
         0x02, 0x00, 0x00, 0x26, 0x03, 0x03,
     } ++ [_]u8{0xaa} ** 32 ++ [_]u8{
         0x00, 0x13, 0x01, 0x00, 0x04, 0x00, 0xff, 0xff,
     };
-    b.resetTimer();
-    while (b.next()) {
-        input[1] = @truncate(b.i);
-        var r: wire.Reader = .init(input[0 .. input.len - (b.i & 1)]);
-        if (r.remaining().len < input.len - 1) unreachable;
+    while (try b.loop()) {
+        input[1] = @truncate(b.n);
+        var reader: wire.Reader = .init(input[0 .. input.len - (b.n & 1)]);
+        if (reader.remaining().len < input.len - 1) unreachable;
         var sum: usize = 0;
-        sum +%= r.assumeRead(u8);
-        sum +%= r.assumeRead(u24);
-        r.assumeSkip(2);
-        sum +%= r.assumeReadSlice(32)[b.i & 31];
-        sum +%= r.assumeRead(u8);
-        sum +%= r.assumeRead(u16);
-        r.assumeSkip(1);
-        sum +%= r.assumeRead(u16);
-        doNotOptimizeAway(sum);
+        sum +%= reader.assumeRead(u8);
+        sum +%= reader.assumeRead(u24);
+        reader.assumeSkip(2);
+        sum +%= reader.assumeReadSlice(32)[b.n & 31];
+        sum +%= reader.assumeRead(u8);
+        sum +%= reader.assumeRead(u16);
+        reader.assumeSkip(1);
+        sum +%= reader.assumeRead(u16);
+        b.keepAlive(sum);
     }
 }
 
@@ -203,15 +170,14 @@ fn makeTicketCorpus() TicketCorpus {
     return corpus;
 }
 
-fn newSessionTicketParseCurrent(b: *bench.B) void {
+pub fn benchmarkNewSessionTicketParseCurrent(b: *bench.B) !void {
     var corpus = makeTicketCorpus();
-    b.resetTimer();
-    while (b.next()) {
-        const slot = b.i & (ticket_corpus_len - 1);
-        corpus.bufs[slot][13] = @truncate(b.i);
+    while (try b.loop()) {
+        const slot = b.n & (ticket_corpus_len - 1);
+        corpus.bufs[slot][13] = @truncate(b.n);
         const input = corpus.bufs[slot][0..corpus.lens[slot]];
-        doNotOptimizeAway(input.ptr);
-        doNotOptimizeAway(consumeTicket(parseNewSessionTicketNoInline(input) catch unreachable));
+        b.keepAlive(input.ptr);
+        b.keepAlive(consumeTicket(parseNewSessionTicketNoInline(input) catch unreachable));
     }
 }
 
@@ -260,7 +226,7 @@ fn writeTicket(
 }
 
 noinline fn parseNewSessionTicketNoInline(msg: []const u8) NewSessionTicket.ParseError!NewSessionTicket {
-    return NewSessionTicket.parse(msg);
+    return .parse(msg);
 }
 
 fn consumeTicket(ticket: NewSessionTicket) usize {

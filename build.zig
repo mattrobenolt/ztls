@@ -147,33 +147,53 @@ pub fn build(b: *Build) void {
     );
     replay_fixtures_step.dependOn(&run_replay_fixtures.step);
 
-    const bench_mod = b.addModule("ztls_bench", .{
-        .root_source_file = b.path("src/root.zig"),
+    // --- zig-benchmark integration ---
+    const benchmark_dep: *Build.Dependency = b.dependency("benchmark", .{
         .target = target,
-        .optimize = .ReleaseFast,
+        .optimize = optimize,
     });
-    bench_mod.link_libc = true;
-    bench_mod.linkSystemLibrary("crypto", .{});
-    const bench_root = b.createModule(.{
+    const benchmark = @import("benchmark");
+    const c_mod = b.createModule(.{
+        .root_source_file = b.path("bench/c.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    c_mod.link_libc = true;
+    c_mod.linkSystemLibrary("crypto", .{});
+    const c_ssl_mod = b.createModule(.{
+        .root_source_file = b.path("bench/c_ssl.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    c_ssl_mod.link_libc = true;
+    c_ssl_mod.linkSystemLibrary("ssl", .{});
+    c_ssl_mod.linkSystemLibrary("crypto", .{});
+
+    // record-protection benchmarks
+    const record_bench_root = b.createModule(.{
         .root_source_file = b.path("bench/record_protection.zig"),
         .target = target,
         .optimize = .ReleaseFast,
-        .imports = &.{.{ .name = "ztls", .module = bench_mod }},
+        .imports = &.{
+            .{ .name = "ztls", .module = mod },
+            .{ .name = "c", .module = c_mod },
+        },
     });
-    if (txtar_mod) |tm| bench_root.addImport("txtar", tm);
-    const bench_exe = b.addExecutable(.{
+    if (txtar_mod) |tm| record_bench_root.addImport("txtar", tm);
+    const record_bench_test = benchmark.addTest(b, .{
         .name = "record_protection_bench",
-        .root_module = bench_root,
+        .dependency = benchmark_dep,
+        .root_module = record_bench_root,
     });
-    const run_bench = b.addRunArtifact(bench_exe);
-    if (b.args) |args| run_bench.addArgs(args);
+    const run_record_bench = b.addRunArtifact(record_bench_test);
+    if (b.args) |args| run_record_bench.addArgs(args);
     const bench_step = b.step("bench", "Run performance benchmarks");
-    bench_step.dependOn(&run_bench.step);
-
-    const install_bench = b.addInstallArtifact(bench_exe, .{});
+    bench_step.dependOn(&run_record_bench.step);
+    const record_bench_install = b.addInstallArtifact(record_bench_test, .{});
     const bench_bin_step = b.step("bench-bin", "Build the benchmark binary for profiling");
-    bench_bin_step.dependOn(&install_bench.step);
+    bench_bin_step.dependOn(&record_bench_install.step);
 
+    // micro-benchmarks
     const micro_bench_root = b.createModule(.{
         .root_source_file = b.path("src/micro_bench.zig"),
         .target = target,
@@ -181,71 +201,74 @@ pub fn build(b: *Build) void {
     });
     micro_bench_root.link_libc = true;
     micro_bench_root.linkSystemLibrary("crypto", .{});
-    const micro_bench_exe = b.addExecutable(.{
-        .name = "ztls_micro_bench",
+    const micro_bench_test = benchmark.addTest(b, .{
+        .name = "micro_bench",
+        .dependency = benchmark_dep,
         .root_module = micro_bench_root,
     });
-    const run_micro_bench = b.addRunArtifact(micro_bench_exe);
+    const run_micro_bench = b.addRunArtifact(micro_bench_test);
     if (b.args) |args| run_micro_bench.addArgs(args);
     const micro_bench_step = b.step("bench-micro", "Run Go-style ztls microbenchmarks");
     micro_bench_step.dependOn(&run_micro_bench.step);
-
-    const install_micro_bench = b.addInstallArtifact(micro_bench_exe, .{});
+    const micro_bench_install = b.addInstallArtifact(micro_bench_test, .{});
     const micro_bench_bin_step = b.step("bench-micro-bin", "Build the microbenchmark binary for profiling");
-    micro_bench_bin_step.dependOn(&install_micro_bench.step);
-
+    micro_bench_bin_step.dependOn(&micro_bench_install.step);
     const micro_bench_disasm = b.addSystemCommand(&.{
         "sh",
         "-c",
-        "mkdir -p zig-out/bench && objdump -d zig-out/bin/ztls_micro_bench > zig-out/bench/ztls_micro_bench.asm",
+        "mkdir -p zig-out/bench && objdump -d zig-out/bin/micro_bench > zig-out/bench/micro_bench.asm",
     });
-    micro_bench_disasm.step.dependOn(&install_micro_bench.step);
-    const micro_bench_disasm_step = b.step("bench-micro-disasm", "Write microbenchmark disassembly to zig-out/bench/ztls_micro_bench.asm");
+    micro_bench_disasm.step.dependOn(&micro_bench_install.step);
+    const micro_bench_disasm_step = b.step("bench-micro-disasm", "Write microbenchmark disassembly to zig-out/bench/micro_bench.asm");
     micro_bench_disasm_step.dependOn(&micro_bench_disasm.step);
 
-    const benchstat = b.addSystemCommand(&.{"benchstat"});
-    if (b.args) |args| benchstat.addArgs(args);
-    const benchstat_step = b.step("benchstat", "Run golang.org/x/perf/cmd/benchstat via go run");
-    benchstat_step.dependOn(&benchstat.step);
-
-    const evp_bench_mod = b.createModule(.{
+    // OpenSSL EVP benchmarks
+    const evp_bench_root = b.createModule(.{
+        .root_source_file = b.path("bench/evp.zig"),
         .target = target,
         .optimize = .ReleaseFast,
-        .link_libc = true,
+        .imports = &.{
+            .{ .name = "ztls", .module = mod },
+            .{ .name = "c", .module = c_mod },
+        },
     });
-    const evp_bench = b.addExecutable(.{
-        .name = "openssl_evp_bench",
-        .root_module = evp_bench_mod,
+    const evp_bench_test = benchmark.addTest(b, .{
+        .name = "evp_bench",
+        .dependency = benchmark_dep,
+        .root_module = evp_bench_root,
     });
-    evp_bench.addCSourceFile(.{ .file = b.path("bench/openssl_evp.c"), .flags = &.{"-O3"} });
-    evp_bench.linkLibC();
-    evp_bench.linkSystemLibrary("crypto");
-    const run_evp_bench = b.addRunArtifact(evp_bench);
+    const run_evp_bench = b.addRunArtifact(evp_bench_test);
     if (b.args) |args| run_evp_bench.addArgs(args);
     const evp_bench_step = b.step("bench-evp", "Run OpenSSL EVP AEAD benchmarks");
     evp_bench_step.dependOn(&run_evp_bench.step);
-    const install_evp_bench = b.addInstallArtifact(evp_bench, .{});
+    const install_evp_bench = b.addInstallArtifact(evp_bench_test, .{});
     const evp_bench_bin_step = b.step("bench-evp-bin", "Build the OpenSSL EVP benchmark binary");
     evp_bench_bin_step.dependOn(&install_evp_bench.step);
 
-    const bio_bench_mod = b.createModule(.{
+    // OpenSSL BIO (libssl) benchmarks
+    const bio_bench_root = b.createModule(.{
+        .root_source_file = b.path("bench/bio.zig"),
         .target = target,
         .optimize = .ReleaseFast,
-        .link_libc = true,
+        .imports = &.{
+            .{ .name = "ztls", .module = mod },
+            .{ .name = "c", .module = c_mod },
+            .{ .name = "c_ssl", .module = c_ssl_mod },
+        },
     });
-    const bio_bench = b.addExecutable(.{
-        .name = "openssl_bio_bench",
-        .root_module = bio_bench_mod,
+    const bio_bench_exe = benchmark.addTest(b, .{
+        .name = "bio_bench",
+        .dependency = benchmark_dep,
+        .root_module = bio_bench_root,
     });
-    bio_bench.addCSourceFile(.{ .file = b.path("bench/openssl_bio.c"), .flags = &.{"-O3"} });
-    bio_bench.linkLibC();
-    bio_bench.linkSystemLibrary("ssl");
-    bio_bench.linkSystemLibrary("crypto");
-    const run_bio_bench = b.addRunArtifact(bio_bench);
+    bio_bench_exe.linkLibC();
+    bio_bench_exe.linkSystemLibrary("ssl");
+    bio_bench_exe.linkSystemLibrary("crypto");
+    const run_bio_bench = b.addRunArtifact(bio_bench_exe);
     if (b.args) |args| run_bio_bench.addArgs(args);
     const bio_bench_step = b.step("bench-openssl", "Run OpenSSL libssl memory BIO benchmarks");
     bio_bench_step.dependOn(&run_bio_bench.step);
-    const install_bio_bench = b.addInstallArtifact(bio_bench, .{});
+    const install_bio_bench = b.addInstallArtifact(bio_bench_exe, .{});
     const bio_bench_bin_step = b.step(
         "bench-openssl-bin",
         "Build the OpenSSL memory BIO benchmark binary",

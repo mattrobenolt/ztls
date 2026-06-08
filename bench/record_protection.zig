@@ -1,14 +1,9 @@
 const std = @import("std");
 const assert = std.debug.assert;
 const mem = std.mem;
-const doNotOptimizeAway = mem.doNotOptimizeAway;
-const Io = std.Io;
 const heap = std.heap;
-const ascii = std.ascii;
-const time = std.time;
-const builtin = @import("builtin");
 
-const txtar = @import("txtar");
+const bench = @import("benchmark");
 const ztls = @import("ztls");
 const Aead = ztls.aead.Aead;
 const Iv = ztls.aead.Iv;
@@ -19,9 +14,6 @@ const frame = ztls.frame;
 const rfc8448 = @import("rfc8448.zig");
 
 const sizes = [_]usize{ 16, 128, 1350, 8192, frame.max_plaintext_len };
-const target_bytes: usize = 16 * 1024 * 1024;
-const handshake_iterations = 256;
-const ztls_handshake_iterations = 64;
 const openssl_replay_archive = @embedFile("test_fixtures/openssl_replay.txtar");
 const server_cert_der = @embedFile("test_fixtures/server-ecdsa/server.der");
 const server_scalar = @embedFile("test_fixtures/server-ecdsa/scalar.bin");
@@ -64,346 +56,28 @@ const Suite = enum {
     }
 };
 
-const Args = struct {
-    filter: ?[]const u8 = null,
-    bench: ?[]const u8 = null,
-    suite: ?[]const u8 = null,
-    size: ?usize = null,
-    list: bool = false,
-};
-
-const Result = struct {
-    bytes: usize,
-    iterations: usize,
-    ns: u64,
-
-    fn mbPerSec(self: Result) f64 {
-        const mib = @as(f64, @floatFromInt(self.bytes)) / (1024.0 * 1024.0);
-        const sec = @as(f64, @floatFromInt(self.ns)) / time.ns_per_s;
-        return mib / sec;
-    }
-
-    fn opsPerSec(self: Result) f64 {
-        const sec = @as(f64, @floatFromInt(self.ns)) / time.ns_per_s;
-        return @as(f64, @floatFromInt(self.iterations)) / sec;
-    }
-};
-
-pub fn main() !void {
-    const args = try parseArgs();
-
-    var stdout_buf: [4096]u8 = undefined;
-    var stdout_file = std.fs.File.stdout().writer(&stdout_buf);
-    const stdout = &stdout_file.interface;
-    defer stdout.flush() catch {};
-
-    try stdout.print("# ztls record protection benchmark\n", .{});
-    try stdout.print("# zig {s}\n", .{builtin.zig_version_string});
-    try stdout.print("# arch {s}\n", .{@tagName(builtin.cpu.arch)});
-    try stdout.print("# os {s}\n", .{@tagName(builtin.os.tag)});
-    try stdout.print("# cpu {s}\n", .{builtin.cpu.model.name});
-    try stdout.print("# optimize {s}\n", .{@tagName(builtin.mode)});
-    try stdout.print("# crypto openssl\n", .{});
-    try stdout.print("benchmark,suite,size,iterations,bytes,elapsed_ns,mib_per_sec\n", .{});
-    try stdout.flush();
-
-    if (args.list) return listBenchmarks(stdout);
-
-    var timer = try time.Timer.start();
-
-    if (matches(args, "parse_header", "none", frame.header_len)) {
-        const header = benchParseHeader(&timer);
-        try stdout.print("parse_header,none,{d},{d},{d},{d},{d:.2}\n", .{
-            frame.header_len,
-            header.iterations,
-            header.bytes,
-            header.ns,
-            header.mbPerSec(),
-        });
-        try stdout.flush();
-    }
-
-    if (matches(args, "record_buffer_next", "none", frame.header_len)) {
-        const records = try benchRecordBuffer(&timer);
-        try stdout.print("record_buffer_next,none,{d},{d},{d},{d},{d:.2}\n", .{
-            frame.header_len,
-            records.iterations,
-            records.bytes,
-            records.ns,
-            records.mbPerSec(),
-        });
-        try stdout.flush();
-    }
-
-    inline for (.{
-        Suite.aes_128_gcm_sha256,
-        Suite.aes_256_gcm_sha384,
-        Suite.chacha20_poly1305_sha256,
-    }) |suite| {
-        if (matches(args, "client_handshake_replay", suite.name(), 879)) {
-            const replay = try benchClientHandshakeReplay(suite, &timer);
-            try stdout.print("client_handshake_replay,{s},{d},{d},{d},{d},{d:.2}\n", .{
-                suite.name(),
-                replay.bytes / replay.iterations,
-                replay.iterations,
-                replay.bytes,
-                replay.ns,
-                replay.opsPerSec(),
-            });
-            try stdout.flush();
-        }
-
-        if (matches(args, "ztls_handshake", suite.name(), 1)) {
-            const full = try benchZtlsHandshake(suite, &timer);
-            try stdout.print("ztls_handshake,{s},{d},{d},{d},{d},{d:.2}\n", .{
-                suite.name(),
-                full.bytes / full.iterations,
-                full.iterations,
-                full.bytes,
-                full.ns,
-                full.opsPerSec(),
-            });
-            try stdout.flush();
-        }
-
-        if (matches(args, "ztls_handshake_split", suite.name(), 1)) {
-            const split = try benchZtlsHandshakeSplit(suite, &timer);
-            try printHandshakeSplit(suite, stdout, split);
-            try stdout.flush();
-        }
-    }
-
-    inline for (.{
-        Suite.aes_128_gcm_sha256,
-        Suite.aes_256_gcm_sha384,
-        Suite.chacha20_poly1305_sha256,
-    }) |suite| {
-        inline for (sizes) |size| {
-            if (matches(args, "record_encrypt", suite.name(), size)) {
-                const enc = try benchEncrypt(suite, size, &timer);
-                try stdout.print("record_encrypt,{s},{d},{d},{d},{d},{d:.2}\n", .{
-                    suite.name(),
-                    size,
-                    enc.iterations,
-                    enc.bytes,
-                    enc.ns,
-                    enc.mbPerSec(),
-                });
-                try stdout.flush();
-            }
-
-            if (matches(args, "record_decrypt", suite.name(), size)) {
-                const dec = try benchDecrypt(suite, size, &timer);
-                try stdout.print("record_decrypt,{s},{d},{d},{d},{d},{d:.2}\n", .{
-                    suite.name(),
-                    size,
-                    dec.iterations,
-                    dec.bytes,
-                    dec.ns,
-                    dec.mbPerSec(),
-                });
-                try stdout.flush();
-            }
-
-            if (matches(args, "record_encrypt_prepared", suite.name(), size)) {
-                const enc = try benchEncryptPrepared(suite, size, &timer);
-                try stdout.print("record_encrypt_prepared,{s},{d},{d},{d},{d},{d:.2}\n", .{
-                    suite.name(),
-                    size,
-                    enc.iterations,
-                    enc.bytes,
-                    enc.ns,
-                    enc.mbPerSec(),
-                });
-                try stdout.flush();
-            }
-
-            if (matches(args, "ztls_app_client_to_server", suite.name(), size)) {
-                const c2s = try benchZtlsAppData(suite, size, .client_to_server, &timer);
-                try stdout.print("ztls_app_client_to_server,{s},{d},{d},{d},{d},{d:.2}\n", .{
-                    suite.name(),
-                    size,
-                    c2s.iterations,
-                    c2s.bytes,
-                    c2s.ns,
-                    c2s.mbPerSec(),
-                });
-                try stdout.flush();
-            }
-
-            if (matches(args, "ztls_app_prepared_client_to_server", suite.name(), size)) {
-                const c2s = try benchZtlsAppDataPrepared(suite, size, &timer);
-                const prepared_fmt = "ztls_app_prepared_client_to_server" ++
-                    ",{s},{d},{d},{d},{d},{d:.2}\n";
-                try stdout.print(prepared_fmt, .{
-                    suite.name(),
-                    size,
-                    c2s.iterations,
-                    c2s.bytes,
-                    c2s.ns,
-                    c2s.mbPerSec(),
-                });
-                try stdout.flush();
-            }
-
-            if (matches(args, "ztls_app_server_to_client", suite.name(), size)) {
-                const s2c = try benchZtlsAppData(suite, size, .server_to_client, &timer);
-                try stdout.print("ztls_app_server_to_client,{s},{d},{d},{d},{d},{d:.2}\n", .{
-                    suite.name(),
-                    size,
-                    s2c.iterations,
-                    s2c.bytes,
-                    s2c.ns,
-                    s2c.mbPerSec(),
-                });
-                try stdout.flush();
-            }
-
-            if (matches(args, "ztls_app_ping_pong", suite.name(), size)) {
-                const ping_pong = try benchZtlsPingPong(suite, size, &timer);
-                try stdout.print("ztls_app_ping_pong,{s},{d},{d},{d},{d},{d:.2}\n", .{
-                    suite.name(),
-                    size,
-                    ping_pong.iterations,
-                    ping_pong.bytes,
-                    ping_pong.ns,
-                    ping_pong.mbPerSec(),
-                });
-                try stdout.flush();
-            }
-        }
-    }
+fn nameBuf(buf: []u8, suite: Suite, size: usize) ![]const u8 {
+    return try std.fmt.bufPrint(buf, "{s}/{d}", .{ suite.name(), size });
 }
 
-fn parseArgs() !Args {
-    var result: Args = .{};
-    var it = std.process.args();
-    _ = it.next();
-    while (it.next()) |arg| {
-        if (mem.eql(u8, arg, "--list")) {
-            result.list = true;
-        } else if (mem.eql(u8, arg, "--filter")) {
-            result.filter = it.next() orelse return error.MissingFilter;
-        } else if (mem.startsWith(u8, arg, "--filter=")) {
-            result.filter = arg["--filter=".len..];
-        } else if (mem.eql(u8, arg, "--bench")) {
-            result.bench = it.next() orelse return error.MissingBench;
-        } else if (mem.startsWith(u8, arg, "--bench=")) {
-            result.bench = arg["--bench=".len..];
-        } else if (mem.eql(u8, arg, "--suite")) {
-            result.suite = it.next() orelse return error.MissingSuite;
-        } else if (mem.startsWith(u8, arg, "--suite=")) {
-            result.suite = arg["--suite=".len..];
-        } else if (mem.eql(u8, arg, "--size")) {
-            result.size = try std.fmt.parseInt(
-                usize,
-                it.next() orelse return error.MissingSize,
-                10,
-            );
-        } else if (mem.startsWith(u8, arg, "--size=")) {
-            result.size = try std.fmt.parseInt(
-                usize,
-                arg["--size=".len..],
-                10,
-            );
-        } else {
-            return error.UnknownArgument;
-        }
-    }
-    return result;
-}
-
-fn matches(args: Args, benchmark: []const u8, suite: []const u8, size: usize) bool {
-    if (args.bench) |b| if (!ascii.eqlIgnoreCase(benchmark, b)) return false;
-    if (args.suite) |s| if (ascii.indexOfIgnoreCase(suite, s) == null) return false;
-    if (args.size) |z| if (size != z) return false;
-    const f = args.filter orelse return true;
-    return ascii.indexOfIgnoreCase(benchmark, f) != null or
-        ascii.indexOfIgnoreCase(suite, f) != null;
-}
-
-fn listBenchmarks(stdout: *Io.Writer) !void {
-    try stdout.print("parse_header,none\n", .{});
-    try stdout.print("record_buffer_next,none\n", .{});
-    inline for (.{
-        Suite.aes_128_gcm_sha256,
-        Suite.aes_256_gcm_sha384,
-        Suite.chacha20_poly1305_sha256,
-    }) |suite| {
-        try stdout.print("client_handshake_replay,{s}\n", .{suite.name()});
-        try stdout.print("ztls_handshake,{s}\n", .{suite.name()});
-        try stdout.print("ztls_handshake_split,{s}\n", .{suite.name()});
-    }
-    inline for (.{
-        Suite.aes_128_gcm_sha256,
-        Suite.aes_256_gcm_sha384,
-        Suite.chacha20_poly1305_sha256,
-    }) |suite| {
-        try stdout.print("record_encrypt,{s}\n", .{suite.name()});
-        try stdout.print("record_decrypt,{s}\n", .{suite.name()});
-        try stdout.print("record_encrypt_prepared,{s}\n", .{suite.name()});
-        try stdout.print("ztls_app_client_to_server,{s}\n", .{suite.name()});
-        try stdout.print("ztls_app_prepared_client_to_server,{s}\n", .{suite.name()});
-        try stdout.print("ztls_app_server_to_client,{s}\n", .{suite.name()});
-        try stdout.print("ztls_app_ping_pong,{s}\n", .{suite.name()});
-    }
-}
-
-fn benchParseHeader(timer: *time.Timer) Result {
-    const iterations = 64 * 1024 * 1024;
+pub fn benchmarkParseHeader(b: *bench.B) !void {
     const record = [_]u8{ 0x17, 0x03, 0x03, 0x00, 0x16 } ++ [_]u8{0} ** 22;
-
-    timer.reset();
-    for (0..iterations) |_| {
+    while (try b.loop()) {
         const header = frame.parseHeader(&record) catch unreachable;
-        doNotOptimizeAway(header);
+        b.keepAlive(header);
     }
-    const ns = timer.read();
-
-    return .{ .bytes = iterations * frame.header_len, .iterations = iterations, .ns = ns };
 }
 
-fn benchRecordBuffer(timer: *time.Timer) !Result {
-    const iterations = 8 * 1024 * 1024;
+pub fn benchmarkRecordBufferNext(b: *bench.B) !void {
     const record = [_]u8{ 0x17, 0x03, 0x03, 0x00, 0x01, 0x00 };
     var storage: [RecordBuffer.min_storage]u8 = undefined;
-
-    timer.reset();
-    for (0..iterations) |_| {
+    while (try b.loop()) {
         var rb: RecordBuffer = .init(&storage);
         @memcpy(rb.writable()[0..record.len], &record);
         rb.advance(record.len);
-        const next = (try rb.next()).?;
-        doNotOptimizeAway(next.ptr);
+        const next = (rb.next() catch unreachable).?;
+        b.keepAlive(next.ptr);
     }
-    const ns = timer.read();
-
-    return .{ .bytes = iterations * record.len, .iterations = iterations, .ns = ns };
-}
-
-fn benchClientHandshakeReplay(comptime suite: Suite, timer: *time.Timer) !Result {
-    var fixture_scratch: [8192]u8 = undefined;
-    var fba: heap.FixedBufferAllocator = .init(&fixture_scratch);
-    var records_buf: [2048]u8 = undefined;
-    const records = try fixture(fba.allocator(), suite.fixtureName(), &records_buf);
-
-    var out: [1024]u8 = undefined;
-
-    // Warm up certificate parsing/signature verification and code paths once.
-    try replayHandshake(records, &out);
-
-    timer.reset();
-    for (0..handshake_iterations) |_| {
-        try replayHandshake(records, &out);
-    }
-    const ns = timer.read();
-
-    const bytes_per_replay = try clientHelloLen() + records.len;
-    return .{
-        .bytes = bytes_per_replay * handshake_iterations,
-        .iterations = handshake_iterations,
-        .ns = ns,
-    };
 }
 
 fn replayHandshake(records: []const u8, out: []u8) !void {
@@ -426,13 +100,26 @@ fn replayHandshake(records: []const u8, out: []u8) !void {
     if (!hs.isConnected()) return error.HandshakeIncomplete;
 }
 
-fn clientHelloLen() !usize {
-    var hs: ztls.ClientHandshake = .init(rfc8448.client_keypair);
-    var out: [512]u8 = undefined;
-    return (try hs.start(&out, rfc8448.client_random, rfc8448.replay_host_name)).len;
+fn benchClientHandshakeReplay(comptime suite: Suite) bench.Function {
+    return struct {
+        pub fn benchFn(b: *bench.B) !void {
+            var fixture_scratch: [8192]u8 = undefined;
+            var fba: heap.FixedBufferAllocator = .init(&fixture_scratch);
+            var records_buf: [2048]u8 = undefined;
+            const records = fixture(fba.allocator(), suite.fixtureName(), &records_buf) catch unreachable;
+            var out: [1024]u8 = undefined;
+
+            replayHandshake(records, &out) catch unreachable;
+
+            while (try b.loop()) {
+                replayHandshake(records, &out) catch unreachable;
+            }
+        }
+    }.benchFn;
 }
 
 fn fixture(alloc: mem.Allocator, name: []const u8, out: []u8) ![]u8 {
+    const txtar = @import("txtar");
     var archive = try txtar.parse(alloc, openssl_replay_archive);
     defer archive.deinit(alloc);
     for (archive.files) |f| {
@@ -444,91 +131,6 @@ fn fixture(alloc: mem.Allocator, name: []const u8, out: []u8) ![]u8 {
     }
     return error.FixtureNotFound;
 }
-
-fn benchEncrypt(comptime suite: Suite, comptime size: usize, timer: *time.Timer) !Result {
-    const iterations = @max(256, target_bytes / size);
-    var plaintext: [size]u8 = @splat(0xab);
-    var out: [RecordLayer.overhead + size]u8 = undefined;
-    var tx: RecordLayer = try .init(suite.aead(), Iv.zero);
-    defer tx.deinit();
-
-    // Warm up without measuring first-use effects.
-    for (0..32) |_| _ = try tx.encrypt(.application_data, &plaintext, &out);
-
-    timer.reset();
-    for (0..iterations) |_| {
-        const record = try tx.encrypt(.application_data, &plaintext, &out);
-        doNotOptimizeAway(record.ptr);
-    }
-    const ns = timer.read();
-
-    return .{ .bytes = iterations * size, .iterations = iterations, .ns = ns };
-}
-
-fn benchEncryptPrepared(comptime suite: Suite, comptime size: usize, timer: *time.Timer) !Result {
-    const iterations = @max(256, target_bytes / size);
-    var out: [RecordLayer.overhead + size]u8 = undefined;
-    var tx: RecordLayer = try .init(suite.aead(), Iv.zero);
-    defer tx.deinit();
-
-    out[frame.header_len..][0..size].* = @splat(0xab);
-
-    // Warm up without measuring first-use effects.
-    for (0..32) |_| _ = try tx.encryptPrepared(.application_data, size, &out);
-
-    timer.reset();
-    for (0..iterations) |_| {
-        const record = try tx.encryptPrepared(.application_data, size, &out);
-        doNotOptimizeAway(record.ptr);
-    }
-    const ns = timer.read();
-
-    return .{ .bytes = iterations * size, .iterations = iterations, .ns = ns };
-}
-
-fn benchDecrypt(comptime suite: Suite, comptime size: usize, timer: *time.Timer) !Result {
-    const iterations = @max(256, target_bytes / size);
-    const record_len = RecordLayer.overhead + size;
-    const allocator = heap.smp_allocator;
-    const records = try allocator.alloc(u8, iterations * record_len);
-    defer allocator.free(records);
-
-    var plaintext: [size]u8 = @splat(0xcd);
-
-    var tx: RecordLayer = try .init(suite.aead(), .zero);
-    defer tx.deinit();
-    for (0..iterations) |i| {
-        const record = try tx.encrypt(
-            .application_data,
-            &plaintext,
-            records[i * record_len ..][0..record_len],
-        );
-        assert(record.len == record_len);
-    }
-
-    var rx: RecordLayer = try .init(suite.aead(), .zero);
-    defer rx.deinit();
-
-    // Warm up using a separate one-record layer so the measured sequence stays aligned.
-    var warm_record: [record_len]u8 = undefined;
-    var warm_tx: RecordLayer = try .init(suite.aead(), .zero);
-    defer warm_tx.deinit();
-    var warm_rx: RecordLayer = try .init(suite.aead(), .zero);
-    defer warm_rx.deinit();
-    const warm = try warm_tx.encrypt(.application_data, &plaintext, &warm_record);
-    _ = try warm_rx.decrypt(warm);
-
-    timer.reset();
-    for (0..iterations) |i| {
-        const decrypted = try rx.decrypt(records[i * record_len ..][0..record_len]);
-        doNotOptimizeAway(decrypted.content.ptr);
-    }
-    const ns = timer.read();
-
-    return .{ .bytes = iterations * size, .iterations = iterations, .ns = ns };
-}
-
-const Direction = enum { client_to_server, server_to_client };
 
 fn deterministicClientKeypair() !ztls.x25519.KeyPair {
     return .generateDeterministic(.init(@splat(0x11)));
@@ -542,13 +144,13 @@ fn connectPair(comptime suite: Suite) !struct {
     client: ztls.ClientHandshake,
     server: ztls.ServerHandshake,
 } {
-    var client: ztls.ClientHandshake = .init(try deterministicClientKeypair());
+    var client: ztls.ClientHandshake = ztls.ClientHandshake.init(try deterministicClientKeypair());
     client.policy.host_name = "ztls.server.test";
     var client_out: [4096]u8 = undefined;
     const ch_record = try client.start(&client_out, rfc8448.client_random, "ztls.server.test");
     client.completeWrite();
 
-    var server: ztls.ServerHandshake = .init(try deterministicServerKeypair());
+    var server: ztls.ServerHandshake = ztls.ServerHandshake.init(try deterministicServerKeypair());
     const suites = [_]ztls.CipherSuite{suite.cipherSuite()};
     server.supportSuites(&suites);
     var server_out: [8192]u8 = undefined;
@@ -573,238 +175,459 @@ fn connectPair(comptime suite: Suite) !struct {
     return .{ .client = client, .server = server };
 }
 
-fn benchZtlsHandshake(comptime suite: Suite, timer: *time.Timer) !Result {
-    try doZtlsHandshake(suite);
-
-    timer.reset();
-    for (0..ztls_handshake_iterations) |_| try doZtlsHandshake(suite);
-    const ns = timer.read();
-
-    return .{
-        .bytes = ztls_handshake_iterations,
-        .iterations = ztls_handshake_iterations,
-        .ns = ns,
-    };
-}
-
-const HandshakeSplit = struct {
-    iterations: usize,
-    client_start_ns: u64 = 0,
-    server_accept_ns: u64 = 0,
-    client_server_hello_ns: u64 = 0,
-    server_flight_ns: u64 = 0,
-    client_flight_ns: u64 = 0,
-    server_finished_ns: u64 = 0,
-};
-
-fn printHandshakeSplit(comptime suite: Suite, stdout: *Io.Writer, split: HandshakeSplit) !void {
-    try printHandshakeSplitRow(
-        suite,
-        stdout,
-        "ztls_handshake_client_start",
-        split.iterations,
-        split.client_start_ns,
-    );
-    try printHandshakeSplitRow(
-        suite,
-        stdout,
-        "ztls_handshake_server_accept",
-        split.iterations,
-        split.server_accept_ns,
-    );
-    try printHandshakeSplitRow(
-        suite,
-        stdout,
-        "ztls_handshake_client_server_hello",
-        split.iterations,
-        split.client_server_hello_ns,
-    );
-    try printHandshakeSplitRow(
-        suite,
-        stdout,
-        "ztls_handshake_server_flight",
-        split.iterations,
-        split.server_flight_ns,
-    );
-    try printHandshakeSplitRow(
-        suite,
-        stdout,
-        "ztls_handshake_client_flight",
-        split.iterations,
-        split.client_flight_ns,
-    );
-    try printHandshakeSplitRow(
-        suite,
-        stdout,
-        "ztls_handshake_server_finished",
-        split.iterations,
-        split.server_finished_ns,
-    );
-}
-
-fn printHandshakeSplitRow(
-    comptime suite: Suite,
-    stdout: *Io.Writer,
-    name: []const u8,
-    iterations: usize,
-    ns: u64,
-) !void {
-    const result: Result = .{ .bytes = iterations, .iterations = iterations, .ns = ns };
-    try stdout.print("{s},{s},1,{d},{d},{d},{d:.2}\n", .{
-        name, suite.name(), iterations, iterations, ns, result.opsPerSec(),
-    });
-}
-
-fn benchZtlsHandshakeSplit(comptime suite: Suite, timer: *time.Timer) !HandshakeSplit {
-    try doZtlsHandshakeSplit(suite, timer, null);
-
-    var split: HandshakeSplit = .{ .iterations = ztls_handshake_iterations };
-    for (0..ztls_handshake_iterations) |_| try doZtlsHandshakeSplit(suite, timer, &split);
-    return split;
-}
-
-fn addTime(timer: *time.Timer, total: *u64) void {
-    total.* += timer.read();
-}
-
-fn doZtlsHandshakeSplit(comptime suite: Suite, timer: *time.Timer, split: ?*HandshakeSplit) !void {
-    var signer: ztls.signature.PrivateKey = try .fromP256Scalar(server_scalar[0..32]);
-    defer signer.deinit();
-
-    var client: ztls.ClientHandshake = .init(try deterministicClientKeypair());
-    defer client.deinit();
-    client.policy.host_name = "ztls.server.test";
-    var client_out: [4096]u8 = undefined;
-    timer.reset();
-    const ch_record = try client.start(&client_out, rfc8448.client_random, "ztls.server.test");
-    if (split) |s| addTime(timer, &s.client_start_ns);
-    client.completeWrite();
-
-    var server: ztls.ServerHandshake = .init(try deterministicServerKeypair());
-    defer server.deinit();
-    const suites = [_]ztls.CipherSuite{suite.cipherSuite()};
-    server.supportSuites(&suites);
-    var server_out: [8192]u8 = undefined;
-    timer.reset();
-    const sh_record = try server.acceptClientHello(ch_record, rfc8448.client_random, &server_out);
-    if (split) |s| addTime(timer, &s.server_accept_ns);
-
-    timer.reset();
-    try client.processServerHello(sh_record[ztls.frame.header_len..]);
-    if (split) |s| addTime(timer, &s.client_server_hello_ns);
-
-    timer.reset();
-    const flight_record = try server.sendPreparedAuthenticatedFlight(
-        &.{server_cert_der},
-        signer.signer(),
-        &server_out,
-    );
-    if (split) |s| addTime(timer, &s.server_flight_ns);
-
-    timer.reset();
-    const ev = try client.handleRecord(server_out[0..flight_record.len], &client_out);
-    if (split) |s| addTime(timer, &s.client_flight_ns);
-    const client_finished = switch (ev) {
-        .write => |w| w,
-        else => return error.UnexpectedEvent,
-    };
-
-    timer.reset();
-    try server.processClientFinished(client_out[0..client_finished.len]);
-    if (split) |s| addTime(timer, &s.server_finished_ns);
-    client.completeWrite();
-    if (!client.isConnected() or !server.isConnected()) return error.HandshakeIncomplete;
-}
-
-fn doZtlsHandshake(comptime suite: Suite) !void {
-    var pair = try connectPair(suite);
-    defer pair.client.deinit();
-    defer pair.server.deinit();
-    doNotOptimizeAway(&pair.client);
-    doNotOptimizeAway(&pair.server);
-}
-
-fn benchZtlsAppData(
-    comptime suite: Suite,
-    comptime size: usize,
-    comptime direction: Direction,
-    timer: *time.Timer,
-) !Result {
-    const iterations = @max(256, target_bytes / size);
-    var pair = try connectPair(suite);
-    defer pair.client.deinit();
-    defer pair.server.deinit();
-    var payload: [size]u8 = @splat(0xa5);
-    var wire: [RecordLayer.overhead + size]u8 = undefined;
-    var out: [RecordLayer.overhead + size]u8 = undefined;
-
-    timer.reset();
-    for (0..iterations) |_| switch (direction) {
-        .client_to_server => {
-            const record = try pair.client.sendApplicationData(&payload, &wire);
-            pair.client.completeWrite();
-            const plain = try pair.server.receiveApplicationData(wire[0..record.len]);
-            doNotOptimizeAway(plain.ptr);
-        },
-        .server_to_client => {
-            const record = try pair.server.sendApplicationData(&payload, &wire);
-            pair.server.completeWrite();
-            const ev = try pair.client.handleRecord(wire[0..record.len], &out);
-            doNotOptimizeAway(ev.application_data.ptr);
-        },
-    };
-    const ns = timer.read();
-
-    return .{ .bytes = iterations * size, .iterations = iterations, .ns = ns };
-}
-
-fn benchZtlsAppDataPrepared(
-    comptime suite: Suite,
-    comptime size: usize,
-    timer: *time.Timer,
-) !Result {
-    const iterations = @max(256, target_bytes / size);
-    var pair = try connectPair(suite);
-    defer pair.client.deinit();
-    defer pair.server.deinit();
-    var wire: [RecordLayer.overhead + size]u8 = undefined;
-    wire[frame.header_len..][0..size].* = @splat(0xa5);
-
-    timer.reset();
-    for (0..iterations) |_| {
-        const record = try pair.client.sendPreparedApplicationData(size, &wire);
-        pair.client.completeWrite();
-        const plain = try pair.server.receiveApplicationData(wire[0..record.len]);
-        doNotOptimizeAway(plain.ptr);
+pub fn benchmarkClientHandshakeReplay(b: *bench.B) !void {
+    inline for ([_]Suite{ .aes_128_gcm_sha256, .aes_256_gcm_sha384, .chacha20_poly1305_sha256 }) |suite| {
+        _ = try b.run(suite.name(), benchClientHandshakeReplay(suite));
     }
-    const ns = timer.read();
-
-    return .{ .bytes = iterations * size, .iterations = iterations, .ns = ns };
 }
 
-fn benchZtlsPingPong(comptime suite: Suite, comptime size: usize, timer: *time.Timer) !Result {
-    const iterations = @max(256, target_bytes / (size * 2));
-    var pair = try connectPair(suite);
-    defer pair.client.deinit();
-    defer pair.server.deinit();
-    var payload: [size]u8 = @splat(0x5a);
-    var client_wire: [RecordLayer.overhead + size]u8 = undefined;
-    var server_wire: [RecordLayer.overhead + size]u8 = undefined;
-    var client_out: [RecordLayer.overhead + size]u8 = undefined;
+fn benchZtlsHandshake(comptime suite: Suite) bench.Function {
+    return struct {
+        pub fn benchFn(b: *bench.B) !void {
+            _ = connectPair(suite) catch unreachable;
+            while (try b.loop()) {
+                var pair = connectPair(suite) catch unreachable;
+                pair.client.deinit();
+                pair.server.deinit();
+                b.keepAlive(&pair.client);
+                b.keepAlive(&pair.server);
+            }
+        }
+    }.benchFn;
+}
 
-    timer.reset();
-    for (0..iterations) |_| {
-        const c = try pair.client.sendApplicationData(&payload, &client_wire);
-        pair.client.completeWrite();
-        const got = try pair.server.receiveApplicationData(client_wire[0..c.len]);
-        doNotOptimizeAway(got.ptr);
-
-        const s = try pair.server.sendApplicationData(&payload, &server_wire);
-        pair.server.completeWrite();
-        const ev = try pair.client.handleRecord(server_wire[0..s.len], &client_out);
-        doNotOptimizeAway(ev.application_data.ptr);
+pub fn benchmarkHandshake(b: *bench.B) !void {
+    var name_buf: [80]u8 = undefined;
+    inline for ([_]Suite{ .aes_128_gcm_sha256, .aes_256_gcm_sha384, .chacha20_poly1305_sha256 }) |suite| {
+        const name = try std.fmt.bufPrint(&name_buf, "impl=ztls/suite={s}", .{suite.name()});
+        _ = try b.run(name, benchZtlsHandshake(suite));
     }
-    const ns = timer.read();
+}
 
-    return .{ .bytes = iterations * size * 2, .iterations = iterations, .ns = ns };
+fn benchHandshakeClientStart(comptime suite: Suite) bench.Function {
+    _ = suite;
+    return struct {
+        pub fn benchFn(b: *bench.B) !void {
+            while (try b.loop()) {
+                var client: ztls.ClientHandshake = ztls.ClientHandshake.init(deterministicClientKeypair() catch unreachable);
+                client.policy.host_name = "ztls.server.test";
+                var client_out: [4096]u8 = undefined;
+                const ch = client.start(&client_out, rfc8448.client_random, "ztls.server.test") catch unreachable;
+                b.keepAlive(ch.ptr);
+                client.deinit();
+            }
+        }
+    }.benchFn;
+}
+
+pub fn benchmarkHandshakeClientStart(b: *bench.B) !void {
+    inline for ([_]Suite{ .aes_128_gcm_sha256, .aes_256_gcm_sha384, .chacha20_poly1305_sha256 }) |suite| {
+        _ = try b.run(suite.name(), benchHandshakeClientStart(suite));
+    }
+}
+
+fn benchHandshakeServerAccept(comptime suite: Suite) bench.Function {
+    return struct {
+        pub fn benchFn(b: *bench.B) !void {
+            var client: ztls.ClientHandshake = ztls.ClientHandshake.init(deterministicClientKeypair() catch unreachable);
+            client.policy.host_name = "ztls.server.test";
+            var client_out: [4096]u8 = undefined;
+            const ch_record = client.start(&client_out, rfc8448.client_random, "ztls.server.test") catch unreachable;
+            client.completeWrite();
+
+            while (try b.loop()) {
+                var server: ztls.ServerHandshake = ztls.ServerHandshake.init(deterministicServerKeypair() catch unreachable);
+                const suites = [_]ztls.CipherSuite{suite.cipherSuite()};
+                server.supportSuites(&suites);
+                var server_out: [8192]u8 = undefined;
+                _ = server.acceptClientHello(ch_record, rfc8448.client_random, &server_out) catch unreachable;
+                b.keepAlive(&server);
+                server.deinit();
+            }
+            client.deinit();
+        }
+    }.benchFn;
+}
+
+pub fn benchmarkHandshakeServerAccept(b: *bench.B) !void {
+    inline for ([_]Suite{ .aes_128_gcm_sha256, .aes_256_gcm_sha384, .chacha20_poly1305_sha256 }) |suite| {
+        _ = try b.run(suite.name(), benchHandshakeServerAccept(suite));
+    }
+}
+
+fn benchHandshakeClientServerHello(comptime suite: Suite) bench.Function {
+    return struct {
+        pub fn benchFn(b: *bench.B) !void {
+            var client: ztls.ClientHandshake = .init(deterministicClientKeypair() catch unreachable);
+            client.policy.host_name = "ztls.server.test";
+            var client_out: [4096]u8 = undefined;
+            const ch_record = client.start(&client_out, rfc8448.client_random, "ztls.server.test") catch unreachable;
+            client.completeWrite();
+
+            var server: ztls.ServerHandshake = .init(deterministicServerKeypair() catch unreachable);
+            const suites = [_]ztls.CipherSuite{suite.cipherSuite()};
+            server.supportSuites(&suites);
+            var server_out: [8192]u8 = undefined;
+            const sh_record = server.acceptClientHello(ch_record, rfc8448.client_random, &server_out) catch unreachable;
+
+            while (try b.loop()) {
+                var c: ztls.ClientHandshake = .init(deterministicClientKeypair() catch unreachable);
+                c.processServerHello(sh_record[ztls.frame.header_len..]) catch unreachable;
+                b.keepAlive(&c);
+                c.deinit();
+            }
+            server.deinit();
+            client.deinit();
+        }
+    }.benchFn;
+}
+
+pub fn benchmarkHandshakeClientServerHello(b: *bench.B) !void {
+    inline for ([_]Suite{ .aes_128_gcm_sha256, .aes_256_gcm_sha384, .chacha20_poly1305_sha256 }) |suite| {
+        _ = try b.run(suite.name(), benchHandshakeClientServerHello(suite));
+    }
+}
+
+fn benchHandshakeServerFlight(comptime suite: Suite) bench.Function {
+    return struct {
+        pub fn benchFn(b: *bench.B) !void {
+            var client: ztls.ClientHandshake = .init(deterministicClientKeypair() catch unreachable);
+            client.policy.host_name = "ztls.server.test";
+            var client_out: [4096]u8 = undefined;
+            const ch_record = client.start(&client_out, rfc8448.client_random, "ztls.server.test") catch unreachable;
+            client.completeWrite();
+
+            var server: ztls.ServerHandshake = .init(deterministicServerKeypair() catch unreachable);
+            const suites = [_]ztls.CipherSuite{suite.cipherSuite()};
+            server.supportSuites(&suites);
+            var server_out: [8192]u8 = undefined;
+            const sh_record = server.acceptClientHello(ch_record, rfc8448.client_random, &server_out) catch unreachable;
+
+            var client2: ztls.ClientHandshake = .init(deterministicClientKeypair() catch unreachable);
+            client2.processServerHello(sh_record[ztls.frame.header_len..]) catch unreachable;
+
+            var signer: ztls.signature.PrivateKey = ztls.signature.PrivateKey.fromP256Scalar(server_scalar[0..32]) catch unreachable;
+            defer signer.deinit();
+
+            while (try b.loop()) {
+                var s: ztls.ServerHandshake = .init(deterministicServerKeypair() catch unreachable);
+                s.supportSuites(&suites);
+                var so: [8192]u8 = undefined;
+                _ = s.sendPreparedAuthenticatedFlight(
+                    &.{server_cert_der},
+                    signer.signer(),
+                    &so,
+                ) catch unreachable;
+                b.keepAlive(&s);
+                s.deinit();
+            }
+            client2.deinit();
+            server.deinit();
+            client.deinit();
+        }
+    }.benchFn;
+}
+
+pub fn benchmarkHandshakeServerFlight(b: *bench.B) !void {
+    inline for ([_]Suite{ .aes_128_gcm_sha256, .aes_256_gcm_sha384, .chacha20_poly1305_sha256 }) |suite| {
+        _ = try b.run(suite.name(), benchHandshakeServerFlight(suite));
+    }
+}
+
+fn benchHandshakeClientFlight(comptime suite: Suite) bench.Function {
+    return struct {
+        pub fn benchFn(b: *bench.B) !void {
+            var client: ztls.ClientHandshake = ztls.ClientHandshake.init(deterministicClientKeypair() catch unreachable);
+            client.policy.host_name = "ztls.server.test";
+            var client_out: [4096]u8 = undefined;
+            const ch_record = client.start(&client_out, rfc8448.client_random, "ztls.server.test") catch unreachable;
+            client.completeWrite();
+
+            var server: ztls.ServerHandshake = ztls.ServerHandshake.init(deterministicServerKeypair() catch unreachable);
+            const suites = [_]ztls.CipherSuite{suite.cipherSuite()};
+            server.supportSuites(&suites);
+            var server_out: [8192]u8 = undefined;
+            const sh_record = server.acceptClientHello(ch_record, rfc8448.client_random, &server_out) catch unreachable;
+
+            var client2: ztls.ClientHandshake = ztls.ClientHandshake.init(deterministicClientKeypair() catch unreachable);
+            client2.processServerHello(sh_record[ztls.frame.header_len..]) catch unreachable;
+
+            var signer: ztls.signature.PrivateKey = ztls.signature.PrivateKey.fromP256Scalar(server_scalar[0..32]) catch unreachable;
+            defer signer.deinit();
+            const flight_record = server.sendPreparedAuthenticatedFlight(
+                &.{server_cert_der},
+                signer.signer(),
+                &server_out,
+            ) catch unreachable;
+
+            while (try b.loop()) {
+                var c: ztls.ClientHandshake = ztls.ClientHandshake.init(deterministicClientKeypair() catch unreachable);
+                c.processServerHello(sh_record[ztls.frame.header_len..]) catch unreachable;
+                var co: [4096]u8 = undefined;
+                const ev = c.handleRecord(server_out[0..flight_record.len], &co) catch unreachable;
+                const cf = switch (ev) {
+                    .write => |w| w,
+                    else => continue,
+                };
+                b.keepAlive(cf.ptr);
+                c.deinit();
+            }
+            server.deinit();
+            client.deinit();
+        }
+    }.benchFn;
+}
+
+pub fn benchmarkHandshakeClientFlight(b: *bench.B) !void {
+    inline for ([_]Suite{ .aes_128_gcm_sha256, .aes_256_gcm_sha384, .chacha20_poly1305_sha256 }) |suite| {
+        _ = try b.run(suite.name(), benchHandshakeClientFlight(suite));
+    }
+}
+
+fn benchHandshakeServerFinished(comptime suite: Suite) bench.Function {
+    return struct {
+        pub fn benchFn(b: *bench.B) !void {
+            var pair = connectPair(suite) catch unreachable;
+            pair.client.deinit();
+            pair.server.deinit();
+
+            while (try b.loop()) {
+                var pair2 = connectPair(suite) catch unreachable;
+                pair2.client.deinit();
+                pair2.server.deinit();
+                b.keepAlive(&pair2.client);
+                b.keepAlive(&pair2.server);
+            }
+        }
+    }.benchFn;
+}
+
+pub fn benchmarkHandshakeServerFinished(b: *bench.B) !void {
+    inline for ([_]Suite{ .aes_128_gcm_sha256, .aes_256_gcm_sha384, .chacha20_poly1305_sha256 }) |suite| {
+        _ = try b.run(suite.name(), benchHandshakeServerFinished(suite));
+    }
+}
+
+fn benchEncrypt(comptime suite: Suite, comptime size: usize) bench.Function {
+    return struct {
+        pub fn benchFn(b: *bench.B) !void {
+            var plaintext: [size]u8 = @splat(0xab);
+            var out: [RecordLayer.overhead + size]u8 = undefined;
+            var tx: RecordLayer = RecordLayer.init(suite.aead(), Iv.zero) catch unreachable;
+            defer tx.deinit();
+
+            for (0..32) |_| _ = tx.encrypt(.application_data, &plaintext, &out) catch unreachable;
+
+            b.setBytes(size);
+            while (try b.loop()) {
+                const record = tx.encrypt(.application_data, &plaintext, &out) catch unreachable;
+                b.keepAlive(record.ptr);
+            }
+        }
+    }.benchFn;
+}
+
+pub fn benchmarkRecordEncrypt(b: *bench.B) !void {
+    var name_buf: [80]u8 = undefined;
+    inline for ([_]Suite{ .aes_128_gcm_sha256, .aes_256_gcm_sha384, .chacha20_poly1305_sha256 }) |suite| {
+        inline for (sizes) |size| {
+            const name = try nameBuf(&name_buf, suite, size);
+            _ = try b.run(name, benchEncrypt(suite, size));
+        }
+    }
+}
+
+fn benchDecrypt(comptime suite: Suite, comptime size: usize) bench.Function {
+    return struct {
+        pub fn benchFn(b: *bench.B) !void {
+            const record_len = RecordLayer.overhead + size;
+            const allocator = heap.smp_allocator;
+            const records = allocator.alloc(u8, 4096 * record_len) catch unreachable;
+            defer allocator.free(records);
+
+            var plaintext: [size]u8 = @splat(0xcd);
+            var tx: RecordLayer = RecordLayer.init(suite.aead(), .zero) catch unreachable;
+            defer tx.deinit();
+            for (0..4096) |i| {
+                const record = tx.encrypt(.application_data, &plaintext, records[i * record_len ..][0..record_len]) catch unreachable;
+                assert(record.len == record_len);
+            }
+
+            var rx: RecordLayer = RecordLayer.init(suite.aead(), .zero) catch unreachable;
+            defer rx.deinit();
+
+            var warm_record: [record_len]u8 = undefined;
+            var warm_tx: RecordLayer = RecordLayer.init(suite.aead(), .zero) catch unreachable;
+            defer warm_tx.deinit();
+            var warm_rx: RecordLayer = RecordLayer.init(suite.aead(), .zero) catch unreachable;
+            defer warm_rx.deinit();
+            const warm = warm_tx.encrypt(.application_data, &plaintext, &warm_record) catch unreachable;
+            _ = warm_rx.decrypt(warm) catch unreachable;
+
+            b.setBytes(size);
+            var idx: usize = 0;
+            while (try b.loop()) {
+                const decrypted = rx.decrypt(records[idx * record_len ..][0..record_len]) catch unreachable;
+                b.keepAlive(decrypted.content.ptr);
+                idx = (idx + 1) % 4096;
+            }
+        }
+    }.benchFn;
+}
+
+pub fn benchmarkRecordDecrypt(b: *bench.B) !void {
+    var name_buf: [80]u8 = undefined;
+    inline for ([_]Suite{ .aes_128_gcm_sha256, .aes_256_gcm_sha384, .chacha20_poly1305_sha256 }) |suite| {
+        inline for (sizes) |size| {
+            const name = try nameBuf(&name_buf, suite, size);
+            _ = try b.run(name, benchDecrypt(suite, size));
+        }
+    }
+}
+
+fn benchEncryptPrepared(comptime suite: Suite, comptime size: usize) bench.Function {
+    return struct {
+        pub fn benchFn(b: *bench.B) !void {
+            var out: [RecordLayer.overhead + size]u8 = undefined;
+            var tx: RecordLayer = RecordLayer.init(suite.aead(), Iv.zero) catch unreachable;
+            defer tx.deinit();
+            out[frame.header_len..][0..size].* = @splat(0xab);
+
+            for (0..32) |_| _ = tx.encryptPrepared(.application_data, size, &out) catch unreachable;
+
+            b.setBytes(size);
+            while (try b.loop()) {
+                const record = tx.encryptPrepared(.application_data, size, &out) catch unreachable;
+                b.keepAlive(record.ptr);
+            }
+        }
+    }.benchFn;
+}
+
+pub fn benchmarkRecordEncryptPrepared(b: *bench.B) !void {
+    var name_buf: [80]u8 = undefined;
+    inline for ([_]Suite{ .aes_128_gcm_sha256, .aes_256_gcm_sha384, .chacha20_poly1305_sha256 }) |suite| {
+        inline for (sizes) |size| {
+            const name = try nameBuf(&name_buf, suite, size);
+            _ = try b.run(name, benchEncryptPrepared(suite, size));
+        }
+    }
+}
+
+const Direction = enum { client_to_server, server_to_client };
+
+fn benchZtlsAppData(comptime suite: Suite, comptime size: usize, comptime direction: Direction) bench.Function {
+    return struct {
+        pub fn benchFn(b: *bench.B) !void {
+            var pair = connectPair(suite) catch unreachable;
+            defer pair.client.deinit();
+            defer pair.server.deinit();
+            var payload: [size]u8 = @splat(0xa5);
+            var wire: [RecordLayer.overhead + size]u8 = undefined;
+            var out: [RecordLayer.overhead + size]u8 = undefined;
+
+            b.setBytes(size);
+            while (try b.loop()) switch (direction) {
+                .client_to_server => {
+                    const record = pair.client.sendApplicationData(&payload, &wire) catch unreachable;
+                    pair.client.completeWrite();
+                    const plain = pair.server.receiveApplicationData(wire[0..record.len]) catch unreachable;
+                    b.keepAlive(plain.ptr);
+                },
+                .server_to_client => {
+                    const record = pair.server.sendApplicationData(&payload, &wire) catch unreachable;
+                    pair.server.completeWrite();
+                    const ev = pair.client.handleRecord(wire[0..record.len], &out) catch unreachable;
+                    b.keepAlive(ev.application_data.ptr);
+                },
+            };
+        }
+    }.benchFn;
+}
+
+pub fn benchmarkAppClientToServer(b: *bench.B) !void {
+    var name_buf: [80]u8 = undefined;
+    inline for ([_]Suite{ .aes_128_gcm_sha256, .aes_256_gcm_sha384, .chacha20_poly1305_sha256 }) |suite| {
+        inline for (sizes) |size| {
+            const name = try std.fmt.bufPrint(&name_buf, "impl=ztls/suite={s}/size={d}", .{ suite.name(), size });
+            _ = try b.run(name, benchZtlsAppData(suite, size, .client_to_server));
+        }
+    }
+}
+
+pub fn benchmarkAppServerToClient(b: *bench.B) !void {
+    var name_buf: [80]u8 = undefined;
+    inline for ([_]Suite{ .aes_128_gcm_sha256, .aes_256_gcm_sha384, .chacha20_poly1305_sha256 }) |suite| {
+        inline for (sizes) |size| {
+            const name = try std.fmt.bufPrint(&name_buf, "impl=ztls/suite={s}/size={d}", .{ suite.name(), size });
+            _ = try b.run(name, benchZtlsAppData(suite, size, .server_to_client));
+        }
+    }
+}
+
+fn benchZtlsAppDataPrepared(comptime suite: Suite, comptime size: usize) bench.Function {
+    return struct {
+        pub fn benchFn(b: *bench.B) !void {
+            var pair = connectPair(suite) catch unreachable;
+            defer pair.client.deinit();
+            defer pair.server.deinit();
+            var wire: [RecordLayer.overhead + size]u8 = undefined;
+            wire[frame.header_len..][0..size].* = @splat(0xa5);
+
+            b.setBytes(size);
+            while (try b.loop()) {
+                const record = pair.client.sendPreparedApplicationData(size, &wire) catch unreachable;
+                pair.client.completeWrite();
+                const plain = pair.server.receiveApplicationData(wire[0..record.len]) catch unreachable;
+                b.keepAlive(plain.ptr);
+            }
+        }
+    }.benchFn;
+}
+
+pub fn benchmarkAppPreparedClientToServer(b: *bench.B) !void {
+    var name_buf: [80]u8 = undefined;
+    inline for ([_]Suite{ .aes_128_gcm_sha256, .aes_256_gcm_sha384, .chacha20_poly1305_sha256 }) |suite| {
+        inline for (sizes) |size| {
+            const name = try nameBuf(&name_buf, suite, size);
+            _ = try b.run(name, benchZtlsAppDataPrepared(suite, size));
+        }
+    }
+}
+
+fn benchZtlsPingPong(comptime suite: Suite, comptime size: usize) bench.Function {
+    return struct {
+        pub fn benchFn(b: *bench.B) !void {
+            var pair = connectPair(suite) catch unreachable;
+            defer pair.client.deinit();
+            defer pair.server.deinit();
+            var payload: [size]u8 = @splat(0x5a);
+            var client_wire: [RecordLayer.overhead + size]u8 = undefined;
+            var server_wire: [RecordLayer.overhead + size]u8 = undefined;
+            var client_out: [RecordLayer.overhead + size]u8 = undefined;
+
+            b.setBytes(size * 2);
+            while (try b.loop()) {
+                const c = pair.client.sendApplicationData(&payload, &client_wire) catch unreachable;
+                pair.client.completeWrite();
+                const got = pair.server.receiveApplicationData(client_wire[0..c.len]) catch unreachable;
+                b.keepAlive(got.ptr);
+
+                const s = pair.server.sendApplicationData(&payload, &server_wire) catch unreachable;
+                pair.server.completeWrite();
+                const ev = pair.client.handleRecord(server_wire[0..s.len], &client_out) catch unreachable;
+                b.keepAlive(ev.application_data.ptr);
+            }
+        }
+    }.benchFn;
+}
+
+pub fn benchmarkAppPingPong(b: *bench.B) !void {
+    var name_buf: [80]u8 = undefined;
+    inline for ([_]Suite{ .aes_128_gcm_sha256, .aes_256_gcm_sha384, .chacha20_poly1305_sha256 }) |suite| {
+        inline for (sizes) |size| {
+            const name = try std.fmt.bufPrint(&name_buf, "impl=ztls/suite={s}/size={d}", .{ suite.name(), size });
+            _ = try b.run(name, benchZtlsPingPong(suite, size));
+        }
+    }
 }
