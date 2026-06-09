@@ -1,70 +1,34 @@
+# Taxonomy
+# --------
+# build:   zig build handles Zig compilation, linking, and module creation.
+#          Never add recipes that compile Zig code — that's build.zig's job.
+# check:   fast local gates: unit tests, lint, allocator policy, fixture
+#          consistency, workflow checks. Every CI gate lives here.
+# interop: ztls against ground-truth peers (OpenSSL s_client/s_server).
+#          Invoked via zig build test-openssl / test-openssl-server.
+# conformance: external suite façade — tlsfuzzer, TLS-Anvil, BoGo.
+#          Shim executables are built in zig build; just runs the suites.
+# bench:   benchmark execution, capture, comparison, profiling, disasm.
+# fixtures: generated test/bench artifacts and their verification.
+#          Thin wrappers around scripts/.
+# examples: human-facing example runs. Exercises the Sans-I/O API.
+# scripts: standalone automation in scripts/. just recipes call them;
+#          never embed shell/Python in the justfile.
+# tools:   fetch/build third-party tools not already in the devshell.
+#          These live under scripts/ or are system commands.
+
 set lazy
 
-fmt_paths := "src/ examples/ bench/ build.zig"
-conformance_dir := "conformance"
-
-bench_suite := "TLS_AES_128_GCM_SHA256"
-bench_size := "1350"
-bench_filter := "Encrypt"
-bench_bin := "record_protection_bench"
-
-anvil_version := "1.5.0"
-anvil_dir := "zig-out/tools/tls-anvil"
-anvil_zip := f"{{anvil_dir}}/TLS-Anvil-v{{anvil_version}}.zip"
-anvil_url := f"https://github.com/tls-attacker/TLS-Anvil/releases/download/v{{anvil_version}}/TLS-Anvil-v{{anvil_version}}.zip"
-
-bogo_dir := "zig-out/tools/boringssl"
+import 'just/check.just'
+import 'just/bench.just'
+import 'just/tooling.just'
 
 [doc("Show available recipes")]
 [private]
 default:
     @just --list
 
-[doc("Run unit tests")]
-[group("check")]
-test:
-    zig build test --summary all
-
-[doc("Check GitHub Actions pins and workflow lint")]
-[group("check")]
-check-actions:
-    pinact run --fix=false --no-api .github/workflows/*.yml
-    zizmor .github
-
-[doc("Assert the ztls-owned engine is allocator-free")]
-[group("check")]
-check-no-alloc:
-    ast-grep scan --rule rules/no-ztls-owned-allocations.yml src --globs '*.zig' --globs '!src/test/**' --report-style short
-
-[doc("Check duplicated package-local server fixtures match")]
-[group("check")]
-[script("bash")]
-check-fixtures:
-    set -euo pipefail
-    canonical="tests/fixtures/server-ecdsa"
-    for dir in src/test/fixtures/server-ecdsa src/test_fixtures/server-ecdsa bench/test_fixtures/server-ecdsa examples/fixtures/server-ecdsa; do
-        cmp -s "$canonical/server.der" "$dir/server.der"
-        cmp -s "$canonical/scalar.bin" "$dir/scalar.bin"
-        if [[ -f "$dir/server.crt" ]]; then
-            cmp -s "$canonical/server.crt" "$dir/server.crt"
-        fi
-    done
-
-[doc("Run ziglint, excluding vendored cryptox")]
-[group("check")]
-lint:
-    ziglint build.zig examples bench $(fd --extension zig --exclude cryptox . src)
-
-[doc("Check Python conformance tests with ruff and ty")]
-[group("check")]
-[working-directory("conformance")]
-check-conformance-python:
-    uv run ruff format --check .
-    uv run ruff check .
-    uv run ty check .
-
-[doc("Run unit, interop, formatting, benchmark smoke, and workflow checks")]
-[group("check")]
+[doc("Run all CI gates: unit, interop, format, benchmark smoke, and conformance")]
 ci: check-actions lint check-no-alloc check-fixtures check-conformance-python
     zig fmt --check {{ fmt_paths }}
     zig build test
@@ -75,218 +39,3 @@ ci: check-actions lint check-no-alloc check-fixtures check-conformance-python
     zig build bench -- --filter RecordEncrypt/{{ bench_suite }}/{{ bench_size }}
     zig build bench-evp -- --filter Encrypt/{{ bench_suite }}/{{ bench_size }}
     zig build bench-openssl -- --filter BioAppClientToServer/{{ bench_suite }}/{{ bench_size }}
-
-[doc("Run Wycheproof boundary smoke vectors")]
-[group("check")]
-wycheproof:
-    zig build test-wycheproof
-
-[doc("Run tlsfuzzer TLS 1.3 conformance smoke tests")]
-[group("conformance")]
-[working-directory("conformance")]
-tlsfuzzer *args: build-tlsfuzzer-server
-    uv run pytest {{ args }}
-
-[doc("Run strict tlsfuzzer lockstep conversations")]
-[group("conformance")]
-[working-directory("conformance")]
-tlsfuzzer-lockstep: build-tlsfuzzer-server
-    uv run pytest -q -m lockstep
-
-[doc("Download TLS-Anvil release JAR and dependencies")]
-[group("conformance")]
-[script("bash")]
-anvil-fetch:
-    set -euo pipefail
-
-    mkdir -p {{ anvil_dir }}
-    if [[ -f {{ anvil_dir }}/apps/TLS-Anvil.jar ]]; then
-        echo "TLS-Anvil already fetched"
-        exit 0
-    fi
-
-    curl -sL -o {{ anvil_zip }} {{ anvil_url }}
-    uv run --script - <<'PY'
-    # /// script
-    # requires-python = ">=3.14"
-    # dependencies = []
-    # ///
-    import zipfile
-
-    with zipfile.ZipFile('{{ anvil_zip }}') as archive:
-        archive.extractall('{{ anvil_dir }}/')
-    PY
-    @echo "TLS-Anvil fetched to {{ anvil_dir }}/"
-
-[doc("Run TLS-Anvil server tests")]
-[group("conformance")]
-[working-directory("conformance")]
-anvil-server: anvil-fetch build-tlsfuzzer-server
-    ./run_anvil_server.py
-
-[doc("Run TLS-Anvil client tests")]
-[group("conformance")]
-[working-directory("conformance")]
-anvil-client: anvil-fetch build-tls-anvil-client
-    ./run_anvil_client.py
-
-[doc("Clone BoringSSL and build the BoGo runner")]
-[group("conformance")]
-bogo-fetch: bogo-clone bogo-build-runner
-
-[doc("Run BoGo tests against the ztls shim")]
-[group("conformance")]
-bogo: bogo-fetch
-    zig build bogo-shim
-    {{ conformance_dir }}/run_bogo.sh
-
-[doc("List ztls, OpenSSL EVP, OpenSSL memory-BIO, and rustls benchmark rows")]
-[group("bench")]
-bench-list:
-    zig build bench -- --filter ".*"
-    zig build bench-evp -- --filter ".*"
-    zig build bench-openssl -- --filter ".*"
-    zig build bench-rustls -- --list
-
-[doc("Run comparable ztls, OpenSSL EVP, OpenSSL memory-BIO, and rustls benchmark rows")]
-[group("bench")]
-bench-compare filter=bench_filter:
-    zig build bench -- --filter {{ filter }}
-    zig build bench-evp -- --filter {{ filter }}
-    zig build bench-openssl -- --filter {{ filter }}
-    zig build bench-rustls -- --filter {{ filter }}
-
-[doc("Run one exact app-data row for ztls and OpenSSL memory BIO")]
-[group("bench")]
-bench-app-row suite=bench_suite size=bench_size:
-    zig build bench -- --filter AppClientToServer/{{ suite }}/{{ size }}
-    zig build bench -- --filter AppPreparedClientToServer/{{ suite }}/{{ size }}
-    zig build bench-openssl -- --filter BioAppClientToServer/{{ suite }}/{{ size }}
-
-[doc("Run one exact record-crypto row for ztls and OpenSSL EVP reuse")]
-[group("bench")]
-bench-record-row suite=bench_suite size=bench_size:
-    zig build bench -- --filter RecordEncrypt/{{ suite }}/{{ size }}
-    zig build bench -- --filter RecordEncryptPrepared/{{ suite }}/{{ size }}
-    zig build bench-evp -- --filter Encrypt/{{ suite }}/{{ size }}
-
-[doc("Rank measured ztls handshake split rows by elapsed time")]
-[group("bench")]
-bench-handshake-hotspots suite=bench_suite out="":
-    @echo "TODO: reimplement for Go benchmark format"
-
-[doc("Run full benchmark comparison set into zig-out/perf")]
-[group("bench")]
-[script("bash")]
-bench-capture:
-    set -euo pipefail
-
-    mkdir -p zig-out/perf
-    stamp=$(date +%Y%m%d-%H%M%S)
-    zig build bench > "zig-out/perf/ztls-${stamp}.txt"
-    zig build bench-evp > "zig-out/perf/evp-${stamp}.txt"
-    zig build bench-openssl > "zig-out/perf/bio-${stamp}.txt"
-    zig build bench-rustls > "zig-out/perf/rustls-${stamp}.txt"
-    echo "${stamp}"
-
-[doc("Compare benchmark captures with benchstat")]
-[group("bench")]
-benchstat a b:
-    benchstat {{ a }} {{ b }}
-
-[doc("Build benchmark binaries used for perf, callgrind, and disassembly")]
-[group("bench")]
-bench-bins:
-    zig build bench-bin bench-evp-bin bench-openssl-bin bench-rustls-bin
-
-[doc("Disassemble an installed benchmark binary to a file")]
-[group("bench")]
-bench-disasm bin=bench_bin out=f"zig-out/{{bin}}.asm": bench-bins
-    objdump -d zig-out/bin/{{ bin }} > {{ out }}
-    @echo {{ out }}
-
-[doc("Disassemble the libcrypto linked by an installed benchmark binary")]
-[group("bench")]
-[linux]
-bench-disasm-libcrypto bin=bench_bin out="zig-out/libcrypto.asm": bench-bins
-    objdump -d $(ldd zig-out/bin/{{ bin }} | awk '/libcrypto/{print $3; exit}') > {{ out }}
-    @echo {{ out }}
-
-[doc("Record a perf profile for an installed benchmark binary")]
-[group("bench")]
-[linux]
-bench-perf bin=bench_bin *args: bench-bins
-    perf record --call-graph dwarf --output zig-out/{{ bin }}.perf.data -- zig-out/bin/{{ bin }} {{ args }}
-    @echo zig-out/{{ bin }}.perf.data
-
-[doc("Run example program")]
-[group("demo")]
-example example *args:
-    zig build example-{{ example }} -- {{ args }}
-
-[doc("Generate test key and self-signed ECDSA P-256 certificate")]
-[group("fixtures")]
-gen-cert:
-    mkdir -p tests/fixtures
-    openssl req -x509 -newkey ec \
-        -pkeyopt ec_paramgen_curve:P-256 \
-        -keyout tests/fixtures/server.key \
-        -out tests/fixtures/server.crt \
-        -days 3650 \
-        -nodes \
-        -subj "/CN=test.local" \
-        -sha256
-    openssl x509 -in tests/fixtures/server.crt -outform DER -out tests/fixtures/server.crt.der
-
-[doc("Generate TLS 1.3 CertificateVerify content and sign it with the test key")]
-[group("fixtures")]
-gen-cv-sig: gen-cert
-    #!/usr/bin/env -S uv run --script
-    # /// script
-    # requires-python = ">=3.14"
-    # dependencies = []
-    # ///
-    import hashlib, pathlib, subprocess
-
-    transcript_hash = hashlib.sha256(b"test transcript").digest()
-    content = b" " * 64 + b"TLS 1.3, server CertificateVerify\x00" + transcript_hash
-    content_file = pathlib.Path("tests/fixtures/cv_content.bin")
-    content_file.write_bytes(content)
-
-    subprocess.run([
-        "openssl", "dgst", "-sha256",
-        "-sign", "tests/fixtures/server.key",
-        "-out", "tests/fixtures/cv.sig",
-        str(content_file),
-    ], check=True)
-
-[doc("Generate all test fixtures")]
-[group("fixtures")]
-gen-fixtures: gen-cert gen-cv-sig
-
-[doc("Build the tlsfuzzer server shim")]
-[private]
-build-tlsfuzzer-server:
-    zig build tlsfuzzer-server
-
-[doc("Build the TLS-Anvil client shim")]
-[private]
-build-tls-anvil-client:
-    zig build tls-anvil-client
-
-[doc("Clone BoringSSL if it is not already present")]
-[private]
-[script("bash")]
-bogo-clone:
-    set -euo pipefail
-
-    mkdir -p zig-out/tools
-    if [[ ! -d {{ bogo_dir }} ]]; then
-        git clone --depth 1 https://github.com/google/boringssl.git {{ bogo_dir }}
-    fi
-
-[doc("Build the BoGo runner")]
-[private]
-[working-directory("zig-out/tools/boringssl/ssl/test/runner")]
-bogo-build-runner:
-    go build -o runner .
