@@ -343,7 +343,9 @@ These are not feature work; they stop the bleeding and make the rest legible.
    files now cite the canonical GitHub issues (#1–#5), not duplicate pi todos.
 3. **Consolidate `docs/research/`.** Apply the reconciliation kill-list tracked
    in #20; status moves here, mechanism stays there.
-4. **Define the build.zig / justfile taxonomy.** Apply the taxonomy audit tracked
-   in #21; do not grow ad-hoc recipe/build-step surfaces.
+4. **PARTIAL — Define the build.zig / justfile taxonomy.** Structural split
+   landed (b890380): `src/build/` modules, `scripts/`, and `just/` sub-files
+   with a taxonomy header. Benchmark naming consistency and interop wrapper
+   surface remain open in #21.
 5. **Unify the conformance façade.** Track the `just conformance <suite>` shape
    and normalized result format in #9.
