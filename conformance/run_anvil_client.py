@@ -8,9 +8,9 @@
 import sys
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
-CLIENT_BIN = REPO_ROOT / "zig-out" / "bin" / "ztls_tls_anvil_client"
-ANVIL_DIR = REPO_ROOT / "zig-out" / "tools" / "tls-anvil"
+CONF_DIR = Path(__file__).resolve().parent
+CLIENT_BIN = CONF_DIR / "zig-out" / "bin" / "anvil_client"
+ANVIL_DIR = CONF_DIR / "zig-out" / "tools" / "tls-anvil"
 ANVIL_JAR = ANVIL_DIR / "apps" / "TLS-Anvil.jar"
 
 
@@ -24,7 +24,7 @@ def main() -> int:
         return 1
 
     if not CLIENT_BIN.exists():
-        eprint(f"expected client binary at {CLIENT_BIN}; run 'zig build tls-anvil-client'")
+        eprint(f"expected client binary at {CLIENT_BIN}; run 'zig build anvil-client' from conformance/")
         return 1
 
     eprint("TLS-Anvil client test runner scaffold is present; full runner is not wired yet")

@@ -14,10 +14,13 @@ fmt:
 _build-shim:
     zig build tlsfuzzer-server
 
-# Build the TLS-Anvil client shim. Shared dep of anvil-client.
 [private]
 _build-anvil-client:
-    zig build tls-anvil-client
+    zig build anvil-client
+
+[private]
+_build-bogo:
+    zig build bogo
 
 [doc("Run tlsfuzzer TLS 1.3 conformance smoke tests")]
 tlsfuzzer *args: _build-shim
@@ -29,7 +32,7 @@ tlsfuzzer-lockstep: _build-shim
 
 [doc("Download TLS-Anvil release JAR and dependencies")]
 anvil-fetch:
-    ../scripts/anvil-fetch.sh
+    ./anvil-fetch.sh
 
 [doc("Run TLS-Anvil server tests")]
 anvil-server: anvil-fetch _build-shim
@@ -41,9 +44,8 @@ anvil-client: anvil-fetch _build-anvil-client
 
 [doc("Clone BoringSSL and build the BoGo runner")]
 bogo-fetch:
-    ../scripts/bogo-fetch.sh
+    ./bogo-fetch.sh
 
 [doc("Run BoGo tests against the ztls shim")]
-bogo: bogo-fetch
-    zig build bogo-shim
+bogo: bogo-fetch _build-bogo
     ./run_bogo.sh

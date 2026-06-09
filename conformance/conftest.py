@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
-SERVER_BIN = REPO_ROOT / "zig-out" / "bin" / "ztls_tlsfuzzer_server"
+CONF_DIR = Path(__file__).resolve().parent
+SERVER_BIN = CONF_DIR / "zig-out" / "bin" / "tlsfuzzer_server"
 
 
 def _wait_for_ready(proc: subprocess.Popen, host: str, port: int, timeout_s: float = 5.0) -> None:
@@ -46,7 +46,7 @@ def _wait_for_ready(proc: subprocess.Popen, host: str, port: int, timeout_s: flo
 @pytest.fixture(scope="session")
 def ztls_server():
     if not SERVER_BIN.exists():
-        pytest.fail(f"missing {SERVER_BIN}; run `zig build tlsfuzzer-server` first", pytrace=False)
+        pytest.fail(f"missing {SERVER_BIN}; run `zig build tlsfuzzer-server` from conformance/ first", pytrace=False)
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.bind(("127.0.0.1", 0))
         port = sock.getsockname()[1]

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")"
 
 anvil_version="1.5.0"
 anvil_dir="zig-out/tools/tls-anvil"

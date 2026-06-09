@@ -9,11 +9,11 @@ import json
 import sys
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
-SERVER_BIN = REPO_ROOT / "zig-out" / "bin" / "ztls_tlsfuzzer_server"
-ANVIL_DIR = REPO_ROOT / "zig-out" / "tools" / "tls-anvil"
+CONF_DIR = Path(__file__).resolve().parent
+SERVER_BIN = CONF_DIR / "zig-out" / "bin" / "tlsfuzzer_server"
+ANVIL_DIR = CONF_DIR / "zig-out" / "tools" / "tls-anvil"
 ANVIL_JAR = ANVIL_DIR / "apps" / "TLS-Anvil.jar"
-SKIP_LIST = REPO_ROOT / "conformance" / "anvil-skip-list.json"
+SKIP_LIST = CONF_DIR / "anvil-skip-list.json"
 
 
 def eprint(msg: str) -> None:
@@ -36,7 +36,7 @@ def main() -> int:
         return 1
 
     if not SERVER_BIN.exists():
-        eprint(f"expected server binary at {SERVER_BIN}; run 'zig build tlsfuzzer-server'")
+        eprint(f"expected server binary at {SERVER_BIN}; run 'zig build tlsfuzzer-server' from conformance/")
         return 1
 
     eprint("TLS-Anvil server test runner scaffold is present; full runner is not wired yet")

@@ -4,7 +4,6 @@ const Target = std.Target;
 const builtin = @import("builtin");
 
 const bench_mod = @import("src/build/bench.zig");
-const conformance = @import("src/build/conformance.zig");
 const examples_mod = @import("src/build/examples.zig");
 const fixtures = @import("src/build/fixtures.zig");
 const tests = @import("src/build/tests.zig");
@@ -74,12 +73,6 @@ pub fn build(b: *Build) void {
         .optimize = optimize,
         .ztls_mod = mod,
         .test_mod = test_mod,
-    });
-
-    conformance.addSteps(b, .{
-        .target = target,
-        .optimize = optimize,
-        .ztls_mod = mod,
     });
 
     bench_mod.addSteps(b, .{

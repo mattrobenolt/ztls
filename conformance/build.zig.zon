@@ -1,0 +1,16 @@
+.{
+    .name = .ztls_conformance,
+    .version = "0.0.0",
+    .fingerprint = 0x27259297da489a11,
+    .minimum_zig_version = "0.15.2",
+    .dependencies = .{
+        .ztls = .{
+            .path = "../",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}
