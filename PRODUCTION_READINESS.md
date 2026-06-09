@@ -13,13 +13,11 @@ works; only this one says *whether it is done and how we know*.
   and point to this file.
 - **Living document.** It is expected to change every time a claim's evidence
   changes. A stale readiness doc is worse than none.
-- **Work items live in pi todos.** This doc references canonical pi todo IDs.
-  It does not duplicate their bodies. Each gap below points at the todo that
-  tracks closing it.
-- **Consistency is enforced, not hoped for.** A `check-todos` gate (Phase 1)
-  fails CI when a cited todo ID does not resolve, when two cited IDs cover the
-  same feature, or when a skip-list cites a todo whose status contradicts the
-  skip.
+- **Work items live in GitHub Issues.** This doc references canonical issue
+  numbers. It does not duplicate their bodies. Each gap below points at the
+  issue that tracks closing it.
+- **Consistency is enforced, not hoped for.** Cited issue numbers must resolve,
+  and active work cited from committed files must point at open issues.
 
 ## Status vocabulary
 
@@ -107,18 +105,18 @@ consumption-for-rejection, not resumption.
   does in response" does not exist. *(new todo needed)*
 - **Client-side negative testing is absent — structural.** tlsfuzzer exercises
   the server only; client behavior against a *malicious server* is untested.
-  *(todo b361304c, e28e71b8)*
+  *(todo #17, #15)*
 - **No written threat model.** "Done" for a TLS library includes an enumerated,
   in-scope attack list with documented responses. *(new todo needed)*
 - **External runners not gated.** BoGo and TLS-Anvil shims exist but are not in
-  `just ci`; their value scales with feature surface. *(todos dae1ed86,
-  8842b110, 9a7143c2)*
+  `just ci`; their value scales with feature surface. *(todos #9,
+  #9, #9)*
 - **Fuzz surface gaps:** post-auth server `handleRecord`, `alert.parse`,
-  `RecordLayer.decrypt` are unwired. *(todo c6515bed, 3aec61dd)*
+  `RecordLayer.decrypt` are unwired. *(todo #7, #7)*
 - **Specific unproven behaviors in the supported surface:** replayed-record
-  rejection *(93c88b9c)*, systematic alert testing *(e28e71b8)*, KeyUpdate
-  simultaneity *(085abf2a)*, record-boundary edge cases *(e51389ad)*, name
-  constraints parsed-but-not-enforced *(13d021c9)*.
+  rejection *(#14)*, systematic alert testing *(#15)*, KeyUpdate
+  simultaneity *(#16)*, record-boundary edge cases *(#18)*, name
+  constraints parsed-but-not-enforced *(#8)*.
 
 ---
 
@@ -159,22 +157,22 @@ Sans-I/O API is pleasant across every I/O model ztls claims to support.
 **Gaps:**
 
 - **epoll is entirely absent.** No client or server example covers the Linux
-  readiness cell for epoll. *(todo 2f422916)*
+  readiness cell for epoll. *(todo #19)*
 - **io_uring is client-only.** `examples/iouring_client.zig` exists, but there is
-  no matching io_uring server example. *(todo 2f422916)*
+  no matching io_uring server example. *(todo #19)*
 - **The manual network examples can pass without proving TLS.** `https_client`,
   `https_server`, and `iouring_client` intentionally exit successfully when the
   peer is absent/unavailable, which is friendly for demos but weak evidence for
-  production readiness. *(todo 2f422916)*
+  production readiness. *(todo #19)*
 - **Examples are not CI-gated as runnable examples.** `just ci` formats and
   lints `examples/`, but does not execute even the deterministic examples such
-  as `tcp_loopback` and `in_memory_handshake`. *(todo 2f422916)*
+  as `tcp_loopback` and `in_memory_handshake`. *(todo #19)*
 - **Ergonomics are possible, not yet pleasant.** Real users must hand-roll the
   drive loop around `RecordBuffer`, remember to call `completeWrite()` after
   every emitted record, juggle distinct `OutBuffer` / `FlightBuffer` types, and
   interpret state transitions through event switches. `tcp_loopback.zig` is
   idiomatic enough Zig, but it is still a recipe a user copies carefully rather
-  than a small obvious adapter they can trust. *(todo 2f422916)*
+  than a small obvious adapter they can trust. *(todo #19)*
 
 ---
 
@@ -219,27 +217,27 @@ comparisons measure equivalent work*. This is the project's justification.
   setup included/excluded, handshake/app-data split, and row-by-row rationale.
   The docs say the memory-BIO rows are the closest current comparison, and they
   correctly label EVP rows as not a TLS comparison, but they do not yet make the
-  apples-to-apples case falsifiable. *(todo 5054599a)*
+  apples-to-apples case falsifiable. *(todo #12)*
 - **Full comparison is not one command on benchmark hardware.** Locally,
   `just bench-capture` captures all four harnesses, but the AWS path is a manual
   provisioning/deploy/SSH/remote-command/pullback/benchstat ritual. The remote
   README snippet captures only ztls and OpenSSL BIO, omitting EVP and rustls, so
   it is not even the full local comparison transplanted to EC2. *(todo
-  335b9300)*
+  #11)*
 - **No defined hardware matrix.** `infra/bench/` provisions one instance type
   (`c7i.large`) and notes that lower-noise runs should use `c7i.2xlarge` or
   larger, but there is no committed matrix of instance families/sizes,
   architectures, CPU pinning policy, repetitions, or acceptance thresholds.
-  *(todo 335b9300)*
+  *(todo #11)*
 - **Documented analysis command is missing.** `docs/research/PERFORMANCE.md`
   tells users to run `just bench-analyze` and says it consumes captures, but the
   justfile has no `bench-analyze` recipe and grep found no implementation. That
-  breaks the documented capture-to-ratio workflow. *(todo a8c6e098)*
+  breaks the documented capture-to-ratio workflow. *(todo #13)*
 - **Published results with provenance are absent.** The repo has harnesses and
   workflow notes, but no committed ztls-vs-libssl-vs-rustls result set with the
   required machine, flags, date, Zig version, target/CPU, git revision, and
   backend/library versions. Without that, Pillar 5 has no trustworthy input.
-  *(todo 07eba50a)*
+  *(todo #10)*
 
 ---
 
@@ -278,32 +276,32 @@ each passing the same correctness and interop gates.
   from `src/aead.zig`, `src/x25519.zig`, `src/signature.zig`, and
   `src/certificate.zig`. This contradicts the first-class aws-lc design target
   in practice: aws-lc is named, but not selectable or protected from OpenSSL-only
-  assumptions. *(todo 2df0532e)*
+  assumptions. *(todo #22)*
 - **aws-lc has no implementation or validation lane.** A second backend requires
   an aws-lc build input/CI lane, one implementation file behind the facade, and
   the same unit, Wycheproof, interop, conformance, and benchmark gates as
-  OpenSSL. *(todo 2df0532e)*
+  OpenSSL. *(todo #22)*
 - **OpenSSL-only API choices block aws-lc compatibility.** `src/certificate.zig`
   uses `EC_KEY_new_by_curve_name`, `o2i_ECPublicKey`, `EVP_PKEY_assign_EC_KEY`,
   `d2i_RSAPublicKey`, and `EVP_PKEY_assign_RSA`; `src/signature.zig` uses
   `EC_GROUP` / `EC_POINT` / `EC_KEY` construction for P-256 test signing. These
   need backend-portable key construction (`EVP_PKEY_fromdata`, raw-key helpers,
-  or backend-specific implementations hidden behind the seam). *(todo 2df0532e)*
+  or backend-specific implementations hidden behind the seam). *(todo #22)*
 - **Capability gating does not exist.** Cipher suites are enumerated directly
   from `CipherSuite`; `client_hello.zig` always advertises only X25519 but not
   through a backend capability table; `kex.zig` names future P-256/P-384/PQ
   groups while `publicKeyLen()` returns a real length only for X25519. A backend
   cannot currently narrow suites/groups/signature schemes for missing algorithms,
-  FIPS posture, or provider-version differences. *(todo 2df0532e)*
+  FIPS posture, or provider-version differences. *(todo #22)*
 - **Named-group/key-exchange shape is still X25519-only.** Handshake code stores
   `x25519.KeyPair`, wire encoding writes `.x25519`, and shared secrets are fixed
   at 32 bytes; P-256/P-384 and PQ/hybrid groups require variable-length
   key-share/public-key/shared-secret plumbing before aws-lc capability differences
-  can be tested honestly. *(todo 2df0532e)*
+  can be tested honestly. *(todo #22)*
 - **The facade contract is not enforced by tests.** Existing tests prove OpenSSL
   behavior, but there is no backend matrix that runs the same primitive vectors,
   interop harnesses, and conformance shims for every enabled provider. *(todo
-  2df0532e)*
+  #22)*
 
 ---
 
@@ -346,11 +344,11 @@ These are not feature work; they stop the bleeding and make the rest legible.
 
    | Feature | Deferral todo | Slice todo |
    |---|---|---|
-   | HelloRetryRequest | d254dfa2 | 26b50566 |
-   | PSK / resumption | 1cd51100 | 6afc9ec7 |
-   | 0-RTT policy | b3d94b1f | c3fcc172 |
-   | Client cert auth | 55fe53a8 | cac6cc77 |
-   | Extension negotiation | 391e747f | 5e048d7d |
+   | HelloRetryRequest | #1 | #1 |
+   | PSK / resumption | #2 | #2 |
+   | 0-RTT policy | #3 | #3 |
+   | Client cert auth | #4 | #4 |
+   | Extension negotiation | #5 | #5 |
 
 2. **Decide the canonical-ID policy** and repoint skip-lists + roadmap to one ID
    per feature.
@@ -379,27 +377,27 @@ These are not feature work; they stop the bleeding and make the rest legible.
      handshake, app data, KeyUpdate, interop, fuzzing, alerts, X.509, ALPN,
      usage limits, HRR, and NewSessionTicket. **Classification: (a) status
      assertion to DELETE.** Keep any mechanism that is still useful elsewhere,
-     but the done/partial ladder belongs only here. *(todo 19d8ec23)*
+     but the done/partial ladder belongs only here. *(todo #20)*
    - **Severity: high — `docs/research/CORRECTNESS.md` is a parallel Pillar 1
      evidence/status page.** `CI-gated checks`, `tlsfuzzer Current coverage`,
      `Fuzzing Current fuzz surfaces`, `Known gaps in the supported surface`, and
      `External suite policy` all assert supported surface, current coverage,
      known gaps, and todo dispositions already summarized in Pillar 1. **Classification:
      (a) status assertions to DELETE or reduce to mechanism/runbook.** Keep suite
-     mechanics and commands only if they do not claim readiness. *(todo 19d8ec23)*
+     mechanics and commands only if they do not claim readiness. *(todo #20)*
    - **Severity: high — `docs/research/CONFORMANCE_ROADMAP.md` asserts current
      supported/out-of-scope surface and todo disposition.** The opening
      `Currently supported surface`, per-feature `Current behavior`, and
      `Disposition summary` duplicate Pillar 1 and the immediate duplicate-todo
      cleanup item. **Classification: mixed (a)/(b).** Delete supported-surface
      and disposition assertions; keep prerequisites, acceptance criteria, and
-     observable wire behavior only where needed to define future work. *(todo 19d8ec23)*
+     observable wire behavior only where needed to define future work. *(todo #20)*
    - **Severity: high — `docs/research/bettertls.md` has a status table.**
      `Current ztls status` lists Partial / Not implemented for name constraints,
      path building, and name-form enforcement, duplicating Pillar 1's certificate
      gap. **Classification: (a) status assertion to DELETE.** Keep the
      bettertls mechanism, validation scope, and pre-integration checklist.
-     *(covered by TODO-13d021c9 for implementation; docs cleanup todo still
+     *(covered by #8 for implementation; docs cleanup todo still
      needed)*
    - **Severity: medium — `docs/research/API_ROADMAP.md` contradicts current
      ergonomics evidence.** It says the canonical API examples deliberately avoid
@@ -409,14 +407,14 @@ These are not feature work; they stop the bleeding and make the rest legible.
      `tcp_loopback`, and `iouring_client` as existing proof points, while still
      rating them `PARTIAL`. **Classification: (c) stale / out-of-date content to
      fix or remove.** Keep wrapper acceptance criteria and drive-loop mechanics;
-     delete or rewrite the stale canonical-example/status claims. *(todo 19d8ec23)*
+     delete or rewrite the stale canonical-example/status claims. *(todo #20)*
    - **Severity: medium — `docs/research/PERFORMANCE.md` duplicates Pillar 3
      harness inventory and contains a stale command.** It asserts current harness
      scope, current full-suite target, benchmark rows, and says `just
      bench-analyze` exists; Pillar 3 already records the missing recipe as a
      gap. **Classification: mixed (a)/(c)/(b).** Delete current-status inventory,
      fix/remove the stale `bench-analyze` workflow, and keep methodology,
-     prior-art, row definitions, and profiling mechanics. *(TODO-a8c6e098 for
+     prior-art, row definitions, and profiling mechanics. *(#13 for
      stale benchmark analysis; broader docs cleanup todo still needed)*
    - **Severity: medium — `docs/research/CRYPTO_ROADMAP.md` duplicates Pillar 4
      provider state and Pillar 3 performance caveats.** `Current evidence`,
@@ -424,8 +422,8 @@ These are not feature work; they stop the bleeding and make the rest legible.
      `Success criteria` assert backend status and performance direction in a
      roadmap doc. **Classification: mixed (a)/(b).** Keep backend allocation
      contract, facade requirements, and milestone mechanics; move/delete current
-     evidence/status claims unless this spine cites them. *(TODO-2df0532e
-     covers provider work; docs cleanup is TODO-19d8ec23)*
+     evidence/status claims unless this spine cites them. *(#22
+     covers provider work; docs cleanup is #20)*
    - **Severity: low — duplicated libcrypto allocation/no-allocator contract
      appears in `DESIGN.md`, `CRYPTO_ROADMAP.md`, and AGENTS.md.** This is mostly
      mechanism/policy, not readiness status, but the wording is repeated enough
@@ -445,7 +443,7 @@ These are not feature work; they stop the bleeding and make the rest legible.
    - **The kill-list has not been applied.** A single docs cleanup todo now
      covers this reconciliation pass; the next step is to delete/rewrite the
      status assertions deliberately, not opportunistically while doing feature
-     work. *(todo 19d8ec23)*
+     work. *(todo #20)*
 4. **Define the build.zig / justfile taxonomy** so new tools have a required
    home instead of being appended ad-hoc.
 
@@ -504,37 +502,37 @@ These are not feature work; they stop the bleeding and make the rest legible.
    - **Severity: medium — conformance façade is split.** `justfile` exposes
      tlsfuzzer, TLS-Anvil, and BoGo through separate verbs and output shapes,
      while `build.zig` exposes only shim-build steps. This overlaps with the
-     separate cleanup item to unify the conformance façade. *(todo cf7dd126;
-     taxonomy surface in ff2141d1)*
+     separate cleanup item to unify the conformance façade. *(todo #9;
+     taxonomy surface in #21)*
    - **Severity: medium — benchmark naming mixes subject and action.** `bench`
      means ztls record/app benchmark in `build.zig`, while `bench-evp`,
      `bench-openssl`, and `bench-rustls` name comparison subjects; binary steps
      use both singular `bench-bin` and subject-suffixed `bench-*-bin`; just adds
      row selectors and profiling tools on top. This is workable but not a
-     taxonomy. *(todo a8c6e098 covers the broken documented bench-analysis path;
-     broader taxonomy cleanup is tracked by ff2141d1)*
+     taxonomy. *(todo #13 covers the broken documented bench-analysis path;
+     broader taxonomy cleanup is tracked by #21)*
    - **Severity: medium — documented benchmark analysis is dead.** The readiness
      performance audit already found docs pointing at `just bench-analyze`, but
      the justfile has no such recipe. This audit confirms the recipe is absent
-     from the build/just taxonomy. *(todo a8c6e098)*
+     from the build/just taxonomy. *(todo #13)*
    - **Severity: low — `bench-handshake-hotspots` is a placeholder recipe.** It
      prints `TODO: reimplement for Go benchmark format` and produces no analysis.
      It is visible in the bench group, so users can run a dead one-off. *(todo
-     a8c6e098 if kept as benchmark-analysis work; otherwise ff2141d1)*
+     #13 if kept as benchmark-analysis work; otherwise #21)*
    - **Severity: low — fixture generation is split by fixture type.** Replay
      fixtures are a `zig build` step; certificate/CV fixtures are just recipes;
      fixture consistency checking is a check recipe. The split may be justified,
      but the taxonomy does not say where future generated fixtures belong.
-     *(todo ff2141d1)*
+     *(todo #21)*
    - **Severity: low — examples have run steps and asm steps, but the Linux-only
      io_uring example has no matching asm step.** This may be intentional, but
-     it is an inconsistency in the generated example surface. *(todo ff2141d1
+     it is an inconsistency in the generated example surface. *(todo #21
      only if example-asm is meant to be universal)*
    - **Severity: low — interop lives outside the conformance group.** OpenSSL
      client/server interop is invoked directly from `just ci` through build
      steps, not wrapped by just recipes or grouped with external conformance.
      The split is understandable, but not named by a taxonomy. *(todo
-     ff2141d1)*
+     #21)*
 
    **Proposed taxonomy:**
 
@@ -566,7 +564,7 @@ These are not feature work; they stop the bleeding and make the rest legible.
 
    - **No canonical taxonomy is implemented.** The map above is only an audit
      artifact; cleanup still needs a deliberate rename/rehome pass and a policy
-     for where new recipes land. *(todo ff2141d1)*
+     for where new recipes land. *(todo #21)*
 5. **Unify the conformance façade.** One `just conformance <suite>` interface
    and one result format over the polyglot runners (the Go/JVM/Python/Rust stays
    under the hood; the interface and output unify).

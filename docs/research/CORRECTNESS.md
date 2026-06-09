@@ -125,12 +125,12 @@ but not proven."
 
 | Gap | Rationale | Status |
 |-----|-----------|--------|
-| Replayed record rejection | AEAD nonce reuse prevents decryption, but no test exercises it explicitly. | Tracked at TODO-93c88b9c |
-| Systematic client-side alert testing | Only `.decode_error` and `.close_notify` are unit-tested; most alert paths are uncovered. Client-side negative testing (malicious server) is absent. | Tracked at TODO-e28e71b8, TODO-b361304c |
-| KeyUpdate simultaneity | Both sides can send KeyUpdate simultaneously; only individual-initiated cases are tested. | Tracked at TODO-085abf2a |
-| Record boundary edge cases | Zero-length app data, exact max-fragment records, various truncation offsets. | Tracked at TODO-e51389ad |
-| Fuzz surface expansion | Post-auth server handleRecord, alert.parse, RecordLayer.decrypt. | Tracked at TODO-c6515bed |
-| Certificate chain depth | Name constraints parsed but not enforced. Path building is linear with no backtracking. Path length constraints not checked. | Tracked at TODO-13d021c9 (Name constraints), deferred as non-blocking |
+| Replayed record rejection | AEAD nonce reuse prevents decryption, but no test exercises it explicitly. | Tracked at #14 |
+| Systematic client-side alert testing | Only `.decode_error` and `.close_notify` are unit-tested; most alert paths are uncovered. Client-side negative testing (malicious server) is absent. | Tracked at #15, #17 |
+| KeyUpdate simultaneity | Both sides can send KeyUpdate simultaneously; only individual-initiated cases are tested. | Tracked at #16 |
+| Record boundary edge cases | Zero-length app data, exact max-fragment records, various truncation offsets. | Tracked at #18 |
+| Fuzz surface expansion | Post-auth server handleRecord, alert.parse, RecordLayer.decrypt. | Tracked at #7 |
+| Certificate chain depth | Name constraints parsed but not enforced. Path building is linear with no backtracking. Path length constraints not checked. | Tracked at #8 (Name constraints), deferred as non-blocking |
 
 ## External suite policy
 

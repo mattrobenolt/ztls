@@ -28,7 +28,7 @@ are therefore absent by design, not disabled conformance gaps.
 
 ---
 
-## HelloRetryRequest — TODO-d254dfa2, TODO-13a46a83
+## HelloRetryRequest — #1, #1
 
 **Current behavior (honest):**
 - Client: `server_hello.parse` detects the HRR magic random and returns
@@ -56,17 +56,17 @@ are therefore absent by design, not disabled conformance gaps.
   `unexpected_message`.
 - Transcript hash uses the `message_hash` synthetic for ClientHello1; verified
   against OpenSSL interop in both roles.
-- tlsfuzzer HRR conversations added to `conformance/` (TODO-13a46a83) and gated
+- tlsfuzzer HRR conversations added to `conformance/` (#1) and gated
   in `just ci`.
 
 ---
 
-## NewSessionTicket consumption / storage — TODO-64f4d3df
+## NewSessionTicket consumption / storage — #2
 
 **Current behavior:** parsed and discarded (see supported surface above). No
 ticket store, no `ticket_age_add` accounting, no `max_early_data_size`.
 
-**Prerequisites:** depends on PSK/resumption (TODO-1cd51100) for the only
+**Prerequisites:** depends on PSK/resumption (#2) for the only
 consumer of a stored ticket. Standalone ticket storage with no resumption path
 is dead state and should not be built first.
 
@@ -76,10 +76,10 @@ exercised by the resumption flow below.
 
 ---
 
-## PSK / resumption — TODO-1cd51100
+## PSK / resumption — #2
 
 **Prerequisites:**
-- NewSessionTicket storage (TODO-64f4d3df).
+- NewSessionTicket storage (#2).
 - Key schedule extension: binder derivation (RFC 8446 §4.2.11.2), `psk_ke` and
   `psk_dhe_ke` modes, `Derive-Secret`/`HKDF-Expand-Label` for `res binder`,
   `ext binder`, and the early/handshake/master flow with PSK input.
@@ -95,9 +95,9 @@ exercised by the resumption flow below.
 
 ---
 
-## 0-RTT / early data — TODO-b3d94b1f
+## 0-RTT / early data — #3
 
-**Prerequisites:** PSK/resumption (TODO-1cd51100) complete; `early_data`
+**Prerequisites:** PSK/resumption (#2) complete; `early_data`
 extension; early traffic secret derivation; `end_of_early_data` message;
 anti-replay policy (single-use tickets and/or a bounded replay window). This is
 a **policy** decision as much as a protocol one — Sans-I/O ztls cannot own a
@@ -115,7 +115,7 @@ reviewed.
 
 ---
 
-## Extension negotiation hardening — TODO-391e747f
+## Extension negotiation hardening — #5
 
 **Current behavior:** ztls parses `server_name`, `supported_versions`,
 `supported_groups`, `key_share`, and `alpn`, rejects duplicates of every
@@ -136,12 +136,12 @@ suite exercises it. Until adopted, "ignored" is the documented behavior.
 
 ---
 
-## Post-handshake messages beyond KeyUpdate — TODO-613d4fed
+## Post-handshake messages beyond KeyUpdate — #23
 
 **Current behavior:** KeyUpdate fully handled; NewSessionTicket parsed/ignored.
 Post-handshake CertificateRequest (client auth) is not handled.
 
-**Prerequisites:** client cert auth (TODO-55fe53a8) for post-handshake auth;
+**Prerequisites:** client cert auth (#4) for post-handshake auth;
 otherwise no remaining post-handshake message types are in scope.
 
 **Acceptance criteria:** covered by the client-auth criteria below; no separate
@@ -149,7 +149,7 @@ work item once KeyUpdate (done) and post-handshake auth are accounted for.
 
 ---
 
-## Client certificate authentication — TODO-55fe53a8, TODO-bff0601f
+## Client certificate authentication — #4, #4
 
 **Prerequisites:**
 - `CertificateRequest` parse (client) / emit (server), incl.
@@ -162,7 +162,7 @@ work item once KeyUpdate (done) and post-handshake auth are accounted for.
 
 **Acceptance criteria:**
 - Mutual-auth handshake interops with `openssl s_server -Verify` and
-  `openssl s_client -cert` in both roles (TODO-bff0601f).
+  `openssl s_client -cert` in both roles (#4).
 - Missing/invalid client cert produces the correct alert
   (`certificate_required` / `bad_certificate`).
 - RFC-cited unit tests for CertificateRequest parse/emit and client
@@ -170,7 +170,7 @@ work item once KeyUpdate (done) and post-handshake auth are accounted for.
 
 ---
 
-## Future / PQ named groups — TODO-e458fa4a
+## Future / PQ named groups — #6
 
 **Prerequisites:** named-group abstraction from PROVIDER_INTERFACE §3
 (`NamedGroup` enum, `max_public_key_len`/`max_shared_secret_len` sizing, removal
@@ -179,7 +179,7 @@ of the hard-wired `x25519.KeyPair` in the handshakes) and the KEM seam from §
 support (capabilities, PROVIDER_INTERFACE §5).
 
 **Acceptance criteria:**
-- Group negotiation selects among ≥2 groups; HRR (TODO-d254dfa2) handles the
+- Group negotiation selects among ≥2 groups; HRR (#1) handles the
   no-shared-group case.
 - Hybrid X25519MLKEM768 shared secret matches the backend reference and interops
   with an OpenSSL build that supports it.
@@ -187,7 +187,7 @@ support (capabilities, PROVIDER_INTERFACE §5).
 
 ---
 
-## Fuzzing expansion — TODO-3aec61dd
+## Fuzzing expansion — #7
 
 **Current fuzz surfaces:** `server_hello.parse`, `certificate.parse`,
 `new_session_ticket.parse`, `client_hello.parse`, `frame.parseHeader`,
@@ -203,7 +203,7 @@ under `zig build test -- --fuzz`; added to the CORRECTNESS.md fuzz inventory.
 
 ---
 
-## Wycheproof expansion — TODO-86ff7908
+## Wycheproof expansion — #24
 
 **Current:** boundary smoke vectors for AEAD AAD/nonce/tag, X25519
 identity/low-order rejection, ECDSA DER verification.
@@ -218,24 +218,24 @@ not implement primitives).
 
 ---
 
-## External runners — TLS-Anvil (TODO-8842b110), tlsfuzzer lockstep
-## (TODO-9a7143c2), BoGo shim (TODO-dae1ed86)
+## External runners — TLS-Anvil (#9), tlsfuzzer lockstep
+## (#9), BoGo shim (#9)
 
 These broaden matrix coverage. Their value scales with the feature surface
 above; running them now mostly exercises features ztls intentionally does not
 implement.
 
-**TLS-Anvil (TODO-8842b110):** Java/JUnit runner. Prerequisite: a stable TCP
+**TLS-Anvil (#9):** Java/JUnit runner. Prerequisite: a stable TCP
 wrapper for both roles (the `ztls_tlsfuzzer_server` pattern, plus a client
 wrapper). Acceptance: Anvil's TLS 1.3 server-and-client suites run in CI with a
 documented, justified skip list mapping each skip to an unimplemented feature.
 
-**tlsfuzzer lockstep (TODO-9a7143c2):** tighter request/response stepping than
+**tlsfuzzer lockstep (#9):** tighter request/response stepping than
 the current conversation harness. Prerequisite: none beyond the existing
 fixture. Acceptance: lockstep mode runs the current conversations deterministically
 and is gated in `just tlsfuzzer`.
 
-**BoGo shim (TODO-dae1ed86):** BoringSSL's `runner` drives a shim binary over a
+**BoGo shim (#9):** BoringSSL's `runner` drives a shim binary over a
 defined CLI/stdio protocol. Prerequisite: a ztls shim implementing the BoGo
 shim contract for both roles. Acceptance: BoGo runs against the shim with a
 documented skip/expected-failure list tied to unimplemented features, gated or
@@ -247,33 +247,33 @@ at least scripted in `just`.
 
 | TODO | Feature | Disposition |
 |------|---------|-------------|
-| TODO-d254dfa2 | HRR | Open. Blocked on multi-group support; current reject-path documented + tested. |
-| TODO-13a46a83 | HRR tlsfuzzer | Open. Blocked on TODO-d254dfa2. |
-| TODO-64f4d3df | NewSessionTicket consumption | Open. Blocked on resumption; parse-and-ignore documented. |
-| TODO-1cd51100 | PSK/resumption | Open. Prereqs enumerated. |
-| TODO-b3d94b1f | 0-RTT policy | Open. Replay-safety boundary must be written before any impl. |
-| TODO-391e747f | Extension negotiation | Open. Scope decision pending; current ignore-unknown behavior documented. |
-| TODO-613d4fed | Post-handshake | Open, folds into client-auth; KeyUpdate done. |
-| TODO-55fe53a8 | Client cert auth | Open. Prereqs enumerated. |
-| TODO-bff0601f | Client-auth OpenSSL tests | Open. Blocked on TODO-55fe53a8. |
-| TODO-e458fa4a | Future/PQ groups | Open. Blocked on group abstraction + KEM seam. |
-| TODO-3aec61dd | Fuzzing expansion (future features) | Partial. `client_hello.parse` and `frame.parseHeader` added; remaining candidates documented above. |
-| TODO-86ff7908 | Wycheproof expansion | Open. No structural blocker. |
-| TODO-8842b110 | TLS-Anvil | Open. Needs wrappers + justified skip list. |
-| TODO-9a7143c2 | tlsfuzzer lockstep | Open. No structural blocker. |
-| TODO-dae1ed86 | BoGo shim | Open. Needs shim binary. |
+| #1 | HRR | Open. Blocked on multi-group support; current reject-path documented + tested. |
+| #1 | HRR tlsfuzzer | Open. Blocked on #1. |
+| #2 | NewSessionTicket consumption | Open. Blocked on resumption; parse-and-ignore documented. |
+| #2 | PSK/resumption | Open. Prereqs enumerated. |
+| #3 | 0-RTT policy | Open. Replay-safety boundary must be written before any impl. |
+| #5 | Extension negotiation | Open. Scope decision pending; current ignore-unknown behavior documented. |
+| #23 | Post-handshake | Open, folds into client-auth; KeyUpdate done. |
+| #4 | Client cert auth | Open. Prereqs enumerated. |
+| #4 | Client-auth OpenSSL tests | Open. Blocked on #4. |
+| #6 | Future/PQ groups | Open. Blocked on group abstraction + KEM seam. |
+| #7 | Fuzzing expansion (future features) | Partial. `client_hello.parse` and `frame.parseHeader` added; remaining candidates documented above. |
+| #24 | Wycheproof expansion | Open. No structural blocker. |
+| #9 | TLS-Anvil | Open. Needs wrappers + justified skip list. |
+| #9 | tlsfuzzer lockstep | Open. No structural blocker. |
+| #9 | BoGo shim | Open. Needs shim binary. |
 
 **Correctness gaps in the supported surface (see CORRECTNESS.md):**
 
 | TODO | Feature | Disposition |
 |------|---------|-------------|
-| TODO-93c88b9c | Replayed-record rejection test | Open. One unit test. |
-| TODO-e28e71b8 | Systematic client-side alert testing | Open. Multiple unit tests or harness. |
-| TODO-b361304c | Client-side negative test harness | Open. Minimal: targeted unit tests. Full: TLS-Anvil/BoGo client shim. |
-| TODO-085abf2a | KeyUpdate simultaneity test | Open. One integration test. |
-| TODO-e51389ad | Record boundary edge case expansion | Open. ~5 unit tests. |
-| TODO-c6515bed | Fuzz surface expansion (current surface) | Open. Post-auth server handleRecord, alert.parse. |
-| TODO-13d021c9 | Name constraints enforcement | Open. Deferred; parsed but not enforced. BetterTls path blocked. |
+| #14 | Replayed-record rejection test | Open. One unit test. |
+| #15 | Systematic client-side alert testing | Open. Multiple unit tests or harness. |
+| #17 | Client-side negative test harness | Open. Minimal: targeted unit tests. Full: TLS-Anvil/BoGo client shim. |
+| #16 | KeyUpdate simultaneity test | Open. One integration test. |
+| #18 | Record boundary edge case expansion | Open. ~5 unit tests. |
+| #7 | Fuzz surface expansion (current surface) | Open. Post-auth server handleRecord, alert.parse. |
+| #8 | Name constraints enforcement | Open. Deferred; parsed but not enforced. BetterTls path blocked. |
 
 No TODO in the "future features" slice can be honestly closed as "implemented."
 No TODO in the "correctness gaps" slice can be honestly closed as "tested."

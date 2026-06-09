@@ -1,7 +1,7 @@
 # Provider interface design (libcrypto-family backends)
 
-Status: design milestone for TODO-dd650791 (+ TODO-28a2091a no-allocator
-guardrail, TODO-ea7c998a zeroization/lifetime audit). This document fixes the
+Status: design milestone decided in the provider-interface milestone, together
+with the no-allocator guardrail and zeroization/lifetime audit. This document fixes the
 ztls-owned crypto facade *shape* so the next implementation slice can land
 without rediscovering crypto-roadmap context. It does **not** change TLS
 behavior, and it does not implement AWS-LC, P-256, HRR, PQ, PSK, or client auth.
@@ -285,7 +285,7 @@ context. Map at the seam to ztls error sets and TLS alerts:
 
 ---
 
-## No-allocator invariant (TODO-28a2091a)
+## No-allocator invariant
 
 Check: `just no-alloc`, wired into `just ci`, runs ast-grep with
 `rules/no-ztls-owned-allocations.yml` over core `src/*.zig` while excluding
@@ -313,7 +313,7 @@ ast-grep scan --rule rules/no-ztls-owned-allocations.yml src \
 
 ---
 
-## Zeroization and lifetime audit (TODO-ea7c998a)
+## Zeroization and lifetime audit
 
 ### What is zeroed today
 

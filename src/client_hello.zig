@@ -509,7 +509,7 @@ test "parse: rejects malformed ClientHello" {
 
 // RFC 8446 §4.1.4 — when the client offers no key_share for a group the server
 // supports, a conformant server sends HelloRetryRequest. ztls does not implement
-// the HRR path (see docs/research/CONFORMANCE_ROADMAP.md, TODO-d254dfa2); instead
+// the HRR path (see docs/research/CONFORMANCE_ROADMAP.md, #1); instead
 // it rejects the ClientHello with error.UnsupportedKeyShare. This test pins that
 // honest current behavior so it cannot silently change without a roadmap update.
 test "parse: no shared group is rejected (HRR not implemented)" {
