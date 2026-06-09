@@ -82,17 +82,14 @@ behind a readiness claim, update `PRODUCTION_READINESS.md` in the same commit. A
 claim whose evidence moved but whose status didn't is a lie. Closing a gap means
 updating the dashboard, not just landing the code.
 
-**Search the todo store before creating a todo.** Before opening a new pi todo,
-search existing todos for the same feature by tag and topic. Extend the record
-that exists; never fork a parallel one. Two todos for one feature is precisely
-the failure that produced the duplicate-record mess. If you find two todos
-covering the same work, reconcile them — do not add a third.
+**Search open GitHub issues before filing one; extend the existing issue, don't
+fork a parallel one. Two issues for one feature is the failure that produced the
+duplicate-record mess — do not reproduce it.**
 
-**Cited todo IDs must resolve, and their status must be honest.** Every
-`TODO-xxxxxxxx` referenced in a committed file must point at a real pi todo whose
-status is consistent with the reference. A skip-list that cites a `closed` todo
-for an unimplemented feature is a contradiction, not documentation.
-`check-todos` enforces this.
+**Committed files cite GitHub issues (#NN), never pi todos. Every cited issue
+must resolve via `gh issue view`, and be open if cited as active work. pi todos
+are ephemeral execution scratch — break an issue into todos to delegate to
+subagents; never reference a pi todo from a committed artifact.**
 
 **"Closed" means proven, not "a slice landed."** If you did partial work, the
 todo and the readiness doc say partial. Never close a todo or upgrade a status on
