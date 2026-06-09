@@ -213,30 +213,8 @@ The engine has no threads, no callbacks, no I/O. It's a struct you poke.
 - Owns the read/write buffers
 - Drives the state machine loop
 
-### What We've Built
+### Consumer-facing API shape
 
-```
-ztls
-├── frame.zig                — wire format: header parse/encode, ContentType, DecryptedRecord
-├── nonce.zig                — per-record nonce: XOR of IV with big-endian seq number
-├── aead.zig                 — AEAD wrapper: Keys enum, Aead union, encrypt/decrypt
-├── memx.zig                 — stdlib extensions: big-endian int helpers, SIMD scan
-├── wire.zig                 — Writer/Reader for TLS wire format encoding/decoding
-├── RecordLayer.zig          — stateful encrypt/decrypt for one connection direction
-├── hkdf.zig                 — HKDF key schedule: early/handshake/master secrets, traffic keys
-├── x25519.zig               — X25519 key exchange, sharedSecret
-├── client_hello.zig         — ClientHello encoding
-├── server_hello.zig         — ServerHello parsing
-├── encrypted_extensions.zig — EncryptedExtensions parsing
-├── certificate.zig          — Certificate + CertificateVerify parsing/signature verification
-├── cryptox/Certificate.zig  — Zig std-derived X.509 parser with DER bounds fix
-├── finished.zig             — Finished: hash-parameterized verify and encode
-├── ClientHandshake.zig      — client TLS 1.3 state machine + public connection API
-├── RecordBuffer.zig         — I/O-agnostic stream-to-record framing helper
-└── root.zig                 — public API surface, CipherSuite
-```
-
-Key consumer-facing primitives:
 
 ```zig
 // High-level client connection API: caller owns buffers and transport.
@@ -318,52 +296,10 @@ Backend design implications:
   where the backend supports them, while ztls handles TLS negotiation and
   transcript semantics.
 
-Current primitive/backend state:
-- AEAD record protection uses OpenSSL/libcrypto EVP.
-- X25519 and certificate signature verification/signing use OpenSSL/libcrypto
-  EVP. Those must remain provider-backed; do not add std.crypto fallback paths.
-- HKDF-SHA256/HKDF-SHA384 and transcript hashing intentionally use Zig stdlib
-  today. They are not a competing backend unless provider policy, measurement,
-  or backend agility makes a facade worthwhile.
-- `std.crypto.Certificate`-derived parser in `cryptox/` still provides X.509
-  parsing with a local DER bounds fix until the parser/policy boundary is
-  revisited.
-
 X.509 validation uses caller-owned policy: `Policy.bundle` anchors the parsed
 chain to a trust root, `Policy.now_sec` checks validity periods, and
 `Policy.host_name` verifies the leaf SAN/CN. Loading OS trust stores remains a
 caller/wrapper responsibility because ztls library code does no I/O.
-
----
-
-## Build Order
-
-- ✅ 1. Record frame parser — wire format parse/emit, no crypto (`frame.zig`)
-- ✅ 2. AEAD wrapper — OpenSSL EVP AEAD (`aead.zig`)
-- ✅ 3. Nonce construction — XOR of IV with seq number (`nonce.zig`)
-- ✅ 4. Encrypted record encode/decode — `RecordLayer.zig` (Layer 1 complete)
-- ✅ 5. HKDF key schedule — `hkdf.zig`, full ladder + traffic secrets, RFC 8448 §3 vectors
-- ✅ 6. ClientHello construction — `client_hello.zig`, `wire.zig` Writer, `x25519.zig`
-- ✅ 7. ServerHello parsing + key_share extraction — `server_hello.zig`, `wire.zig` Reader
-- ✅ 8. EncryptedExtensions, Certificate, CertificateVerify — `encrypted_extensions.zig`, `certificate.zig`
-- ✅ 9. Finished message verify/send — `finished.zig`
-- ✅ 10. Application data read/write (post-handshake state machine)
-- ✅ 11. KeyUpdate
-- ✅ 12. Integration test against a real server (`openssl s_server`)
-- ✅ 13. Cipher-suite agility: AES-128-GCM/SHA256, AES-256-GCM/SHA384, ChaCha20-Poly1305/SHA256
-- ✅ 14. Parser fuzzing baseline + malformed-DER regression guard
-- ✅ 15. Initial performance harness (`zig build bench`, record/framing benchmarks)
-- ✅ 16. Cross-record handshake-message reassembly via caller-owned storage
-- ✅ 17. TLS alert parsing and explicit alert emission
-- ✅ 18. X.509 policy: caller-owned trust bundle, validity time, hostname verification
-- ✅ 19. ALPN ClientHello offer + EncryptedExtensions selection validation
-- ✅ 20. Record-layer AEAD usage limits before KeyUpdate is required (§5.5)
-- ◐ 21. HelloRetryRequest: detected and rejected cleanly; retry path remains future work
-- ◐ 22. NewSessionTicket: parsed and ignored; PSK/session resumption remains future work
-
-Next correctness targets: server-side ztls, fuller external conformance suites,
-and longer-horizon PSK/session resumption work. Full HelloRetryRequest retry
-support only matters once ztls offers more than X25519 or implements cookie retry.
 
 ---
 
@@ -401,10 +337,7 @@ Every error path is tested. Fuzzing is not optional.
 
 - **tlsfuzzer** (https://github.com/tlsfuzzer/tlsfuzzer) — RFC conformance and
   protocol fuzzer. Runs Python scripts against a live server. The active TLS 1.3
-  suite lives in `conformance/` and runs with `just tlsfuzzer`; it covers the
-  supported server surface: mandatory cipher suites, handshake, application data,
-  KeyUpdate, alerts, malformed ClientHello, record limits, and ALPN/cipher
-  negotiation failures.
+  suite lives in `conformance/` and runs with `just tlsfuzzer`.
 - **TLS-Anvil** (https://github.com/tls-attacker/TLS-Anvil) — ~408 RFC-based
   client and server tests for TLS 1.3. Java/JUnit based. Useful for broad future
   matrix coverage, especially once ztls implements HRR, PSK/resumption, 0-RTT,
@@ -414,24 +347,12 @@ Every error path is tested. Fuzzing is not optional.
   rejection, ECDSA DER verification), not proof that ztls implements primitive
   crypto. Boundary smoke vectors run with `zig build test-wycheproof`.
 - **bettertls** (https://github.com/Netflix/bettertls) — name constraints and
-  path-building correctness for certificate validation. ztls now parses the
-  Name Constraints extension (RFC 5280 §4.2.1.10) into the X.509 `Parsed`
-  struct, but subtree enforcement during chain validation is not yet
-  implemented. A bettertls inventory is maintained in
+  path-building correctness for certificate validation. A bettertls inventory is maintained in
   `docs/research/bettertls.md`.
 
 ### Benchmarks
 
-See `docs/research/CORRECTNESS.md` for the active correctness/conformance evidence and `docs/research/PERFORMANCE.md` for the benchmark plan and prior-art notes.
-Current harness:
-
-- `zig build bench` — wall-time CSV-ish rows for record protection, framing, and generated-OpenSSL client handshake replay across all three mandatory suites.
-- `zig build bench-bin` — installs `zig-out/bin/record_protection_bench` for perf/callgrind.
-- `record_protection_bench --list` / `--filter <substring>` — isolate scenarios.
-
-Next benchmark target: add comparison/profiling workflows around the replay and record scenarios, not more ad hoc timers.
-
----
+See `docs/research/PERFORMANCE.md` for the benchmark methodology and prior-art notes.
 
 ## Open Questions
 
@@ -455,8 +376,8 @@ Next benchmark target: add comparison/profiling workflows around the replay and 
    provider-backed signature algorithms, but ztls/wrappers still own trust bundle
    provisioning, hostname policy, and any OS trust-store I/O.
 
-6. **SNI and ALPN**: SNI is supported and also seeds hostname verification by
-   default. ALPN is supported through caller-owned offered protocol slices;
-   ztls encodes ClientHello, validates the server's EncryptedExtensions
-   selection against the offered list, and copies the selected protocol into
-   `ClientHandshake` so the result does not borrow the decrypted record buffer.
+6. **SNI and ALPN shape**: SNI should seed hostname verification by default.
+   ALPN should use caller-owned offered protocol slices, validate the server's
+   EncryptedExtensions selection against the offered list, and copy the selected
+   protocol into handshake state so the result does not borrow the decrypted
+   record buffer.

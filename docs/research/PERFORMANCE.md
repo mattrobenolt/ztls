@@ -59,18 +59,16 @@ Start with layers that exist today:
    through a deterministic client-side handshake. This measures exactly the
    client work we own today: transcript hashing, key schedule, certificate
    parse, signature verify, Finished validation, and client Finished generation.
-   It is not a full client/server benchmark until ztls has a server.
-   Implemented today for all three mandatory suites as `client_handshake_replay`.
+   Keep this row separate from full client/server benchmarks so the measurement
+   boundary stays explicit.
 
 4. **Full in-memory connection**
 
-   ztls now has a server-side skeleton, so `zig build bench` includes
-   rustls-style no-I/O scenarios over in-memory client/server state machines:
+   Use rustls-style no-I/O scenarios over in-memory client/server state machines:
    full authenticated handshake, client-to-server application data,
    server-to-client application data, and ping/pong small-record loops.
-   Comparable baselines live in separate harnesses: `zig build bench-openssl`
-   for OpenSSL/libssl memory BIO and `zig build bench-rustls` for rustls
-   client/server connections over in-memory buffers.
+   Keep OpenSSL/libssl memory-BIO and rustls rows in separate harnesses so each
+   comparison names its measurement boundary.
 
 ## Methodology
 
@@ -89,26 +87,6 @@ Start with layers that exist today:
 - Prefer instruction-count regression tracking later. Wall-time in containers or
   laptops is useful for development, not for 1% claims.
 
-## Initial harness scope
-
-The first `zig build bench` is deliberately boring:
-
-- record encrypt/decrypt throughput for all three AEADs at fixed record sizes;
-- record framing/parser rows for cheap non-crypto surfaces;
-- deterministic generated-OpenSSL client handshake replay for all three suites;
-- ztls in-memory authenticated client/server handshake and app-data rows;
-- OpenSSL EVP raw AEAD rows via `zig build bench-evp`;
-- OpenSSL/libssl memory-BIO rows via `zig build bench-openssl`;
-- rustls in-memory client/server rows via `zig build bench-rustls`;
-- no network;
-- no allocations in library code; benchmark-only scratch allocation is fine;
-- CSV rows written to stdout.
-
-Future benchmark additions should stay as separate named rows instead of
-stuffing unrelated work into one timing loop. The current full-suite target is
-small enough for routine checks; use `--filter`/`bench-bin` for profiling-grade
-single-scenario runs.
-
 ## Profiling tools
 
 The devshell includes Linux-only `perf` and `valgrind`/`callgrind_annotate`.
@@ -122,7 +100,6 @@ Typical local flow:
 
 ```sh
 just bench-capture
-just bench-analyze
 just bench-compare aes_128
 just bench-app-row aes_128 1350
 just bench-record-row aes_128 1350
@@ -132,13 +109,6 @@ just bench-disasm-libcrypto record_protection_bench zig-out/libcrypto.asm
 just bench-perf record_protection_bench --filter record_encrypt --filter aes_128
 perf report --input zig-out/record_protection_bench.perf.data
 ```
-
-`bench-capture` writes timestamped CSV-ish files under `zig-out/perf/` for
-ztls, OpenSSL EVP, and OpenSSL memory BIO. `bench-analyze` consumes the latest
-capture by default and emits structured ratios for ztls-vs-BIO app data,
-ztls-vs-EVP-reuse record crypto, handshake ops/sec, split handshake timing, and
-worst-ratio rows sorted first. Pass explicit files with `--ztls`, `--evp`, and
-`--bio` when comparing older runs.
 
 All benchmark binaries accept fuzzy `--filter` plus structured filters:
 `--bench <name>`, `--suite <substring>`, and `--size <bytes>`. `--bench` is an

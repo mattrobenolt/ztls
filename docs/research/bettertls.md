@@ -16,16 +16,6 @@ outcomes (accept/reject).
 3. **Critical extension handling** — rejection of unrecognized critical
    extensions is also tested indirectly.
 
-## Current ztls status
-
-| Feature | Status | Notes |
-|---------|--------|-------|
-| Name Constraints parsing | Partial | Extension value is extracted during DER parse (`Parsed.nameConstraints`). Inner structure (permittedSubtrees, excludedSubtrees, GeneralSubtree) is not yet parsed. |
-| Name Constraints enforcement | Not implemented | Chain validation (`certificate.zig`) does not intersect leaf/intermediate names against CA subtrees. |
-| Path building | Partial | ztls walks the chain linearly and anchors to a caller-provided `Bundle`. It does not backtrack or try alternate paths. |
-| DNS name constraints | Not implemented | No name-matching logic for `dNSName` subtrees. |
-| IP address constraints | Not implemented | No `iPAddress` subtree matching. |
-| Directory/URI constraints | Not implemented | Not relevant for TLS server auth; low priority. |
 
 ## Why enforcement is deferred
 

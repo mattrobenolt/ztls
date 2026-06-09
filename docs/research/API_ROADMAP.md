@@ -2,13 +2,6 @@
 
 ztls core stays Sans-I/O: no sockets, no event loop, no allocator-owned TLS buffers. API proof work should therefore live in examples or wrapper packages, not in the TLS engine.
 
-## Implemented proof points
-
-- `examples/full_handshake.zig` drives the public client handshake API against RFC 8448 records and proves application keys are live.
-- `examples/in_memory_handshake.zig` drives a ztls client and ztls server through a full authenticated in-memory handshake, ALPN negotiation, and application-data ping/pong.
-- `docs/USAGE.md` documents the caller-owned drive loop, `RecordBuffer`, pending-write interlock, events, certificate policy, SNI, ALPN, server signing, and close semantics.
-
-These are the canonical API examples for the current core surface. They deliberately avoid `std.net`, io_uring, HTTP parsing, and runtime-specific adapters.
 
 ## HTTPS wrapper acceptance criteria
 
@@ -21,7 +14,6 @@ A basic HTTPS server/client wrapper belongs outside the core or in examples that
 - keeps TLS buffers caller-owned and does not add allocator use to `src/`;
 - has at least one real-socket integration test connecting the wrapper to ztls or OpenSSL.
 
-Until that wrapper exists, `examples/in_memory_handshake.zig` is the supported server API proof, not an HTTPS server claim.
 
 ## io_uring client proof
 

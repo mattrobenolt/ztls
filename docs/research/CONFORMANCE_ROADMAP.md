@@ -9,35 +9,9 @@ Read alongside `CORRECTNESS.md` (what is supported and how it is proven),
 `DESIGN.md` (testing strategy), and `PROVIDER_INTERFACE.md` (backend seams for
 groups/suites/PQ).
 
-## Currently supported surface (evidence in CORRECTNESS.md)
-
-- TLS 1.3 full handshake over X25519, three mandatory cipher suites.
-- Certificate-authenticated server flight; client verifies Certificate,
-  CertificateVerify, and server Finished before promoting to application keys.
-- Application data, alerts, `close_notify`.
-- Post-handshake **KeyUpdate** (both directions, request/no-request, flood
-  bound, record-boundary enforcement).
-- **NewSessionTicket** is parsed for structural validity and then ignored
-  (`src/new_session_ticket.zig`, `ClientHandshake.handleRecord` →
-  `.new_session_ticket => _ = try new_session_ticket.parse(msg.raw)`). Ticket
-  contents are not stored and resumption is not offered. This is consumption for
-  rejection of malformed input, not resumption support.
-
-Anything below is out of the advertised surface. Tests asserting these features
-are therefore absent by design, not disabled conformance gaps.
-
----
 
 ## HelloRetryRequest — #1, #1
 
-**Current behavior (honest):**
-- Client: `server_hello.parse` detects the HRR magic random and returns
-  `error.HelloRetryRequest` (`src/server_hello.zig`, tested
-  `test "parse: rejects HelloRetryRequest"`). ztls never follows the retry.
-- Server: when a ClientHello offers no X25519 key_share/group, ztls returns
-  `error.UnsupportedKeyShare` instead of emitting HRR
-  (`client_hello.parseKeyShare` / `parseSupportedGroups`, pinned by
-  `test "parse: no shared group is rejected (HRR not implemented)"`).
 
 **Prerequisites:**
 - More than one named group implemented (PROVIDER_INTERFACE §3) — HRR only has a
@@ -63,8 +37,6 @@ are therefore absent by design, not disabled conformance gaps.
 
 ## NewSessionTicket consumption / storage — #2
 
-**Current behavior:** parsed and discarded (see supported surface above). No
-ticket store, no `ticket_age_add` accounting, no `max_early_data_size`.
 
 **Prerequisites:** depends on PSK/resumption (#2) for the only
 consumer of a stored ticket. Standalone ticket storage with no resumption path
@@ -117,15 +89,6 @@ reviewed.
 
 ## Extension negotiation hardening — #5
 
-**Current behavior:** ztls parses `server_name`, `supported_versions`,
-`supported_groups`, `key_share`, and `alpn`, rejects duplicates of every
-recognized type (RFC 8446 §4.2), and ignores unknown extensions (RFC 8446
-§4.1.2). Both the duplicate `supported_groups` rejection and the
-ignore-unknown path are pinned by tests in `src/client_hello.zig`
-(`test "parse: rejects duplicate supported_groups"`,
-`test "parse: ignores unknown extension"`). It does not negotiate
-`max_fragment_length`, `record_size_limit`, `signature_algorithms_cert`,
-`status_request`, etc.
 
 **Prerequisites:** decide which extensions are in scope. `record_size_limit`
 (RFC 8449) is the highest-value candidate given the caller-owned-buffer design.
@@ -138,8 +101,6 @@ suite exercises it. Until adopted, "ignored" is the documented behavior.
 
 ## Post-handshake messages beyond KeyUpdate — #23
 
-**Current behavior:** KeyUpdate fully handled; NewSessionTicket parsed/ignored.
-Post-handshake CertificateRequest (client auth) is not handled.
 
 **Prerequisites:** client cert auth (#4) for post-handshake auth;
 otherwise no remaining post-handshake message types are in scope.
@@ -189,10 +150,6 @@ support (capabilities, PROVIDER_INTERFACE §5).
 
 ## Fuzzing expansion — #7
 
-**Current fuzz surfaces:** `server_hello.parse`, `certificate.parse`,
-`new_session_ticket.parse`, `client_hello.parse`, `frame.parseHeader`,
-client `HandshakeReader`, client decrypted `processFlight`, server
-`handleRecord` initial state (see CORRECTNESS.md).
 
 **Cheap high-value additions (candidates):** `RecordLayer` full record fuzz
 (needs valid-ish ciphertext; lower value since decrypt always fails on random
@@ -205,8 +162,6 @@ under `zig build test -- --fuzz`; added to the CORRECTNESS.md fuzz inventory.
 
 ## Wycheproof expansion — #24
 
-**Current:** boundary smoke vectors for AEAD AAD/nonce/tag, X25519
-identity/low-order rejection, ECDSA DER verification.
 
 **Prerequisites:** none structural; this is widening vector coverage at the
 existing libcrypto boundary, not new protocol surface.
@@ -243,41 +198,3 @@ at least scripted in `just`.
 
 ---
 
-## Disposition summary
-
-| TODO | Feature | Disposition |
-|------|---------|-------------|
-| #1 | HRR | Open. Blocked on multi-group support; current reject-path documented + tested. |
-| #1 | HRR tlsfuzzer | Open. Blocked on #1. |
-| #2 | NewSessionTicket consumption | Open. Blocked on resumption; parse-and-ignore documented. |
-| #2 | PSK/resumption | Open. Prereqs enumerated. |
-| #3 | 0-RTT policy | Open. Replay-safety boundary must be written before any impl. |
-| #5 | Extension negotiation | Open. Scope decision pending; current ignore-unknown behavior documented. |
-| #23 | Post-handshake | Open, folds into client-auth; KeyUpdate done. |
-| #4 | Client cert auth | Open. Prereqs enumerated. |
-| #4 | Client-auth OpenSSL tests | Open. Blocked on #4. |
-| #6 | Future/PQ groups | Open. Blocked on group abstraction + KEM seam. |
-| #7 | Fuzzing expansion (future features) | Partial. `client_hello.parse` and `frame.parseHeader` added; remaining candidates documented above. |
-| #24 | Wycheproof expansion | Open. No structural blocker. |
-| #9 | TLS-Anvil | Open. Needs wrappers + justified skip list. |
-| #9 | tlsfuzzer lockstep | Open. No structural blocker. |
-| #9 | BoGo shim | Open. Needs shim binary. |
-
-**Correctness gaps in the supported surface (see CORRECTNESS.md):**
-
-| TODO | Feature | Disposition |
-|------|---------|-------------|
-| #14 | Replayed-record rejection test | Open. One unit test. |
-| #15 | Systematic client-side alert testing | Open. Multiple unit tests or harness. |
-| #17 | Client-side negative test harness | Open. Minimal: targeted unit tests. Full: TLS-Anvil/BoGo client shim. |
-| #16 | KeyUpdate simultaneity test | Open. One integration test. |
-| #18 | Record boundary edge case expansion | Open. ~5 unit tests. |
-| #7 | Fuzz surface expansion (current surface) | Open. Post-auth server handleRecord, alert.parse. |
-| #8 | Name constraints enforcement | Open. Deferred; parsed but not enforced. BetterTls path blocked. |
-
-No TODO in the "future features" slice can be honestly closed as "implemented."
-No TODO in the "correctness gaps" slice can be honestly closed as "tested."
-Each is given explicit prerequisites and acceptance criteria so future work starts
-from a known boundary rather than rediscovering scope.
-</content>
-</invoke>

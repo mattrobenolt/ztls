@@ -16,33 +16,6 @@ libcrypto-family primitive APIs without importing libssl machinery, without
 giving up ztls' Sans-I/O state-machine boundary, and while being honest that
 production backends may link libc and allocate inside backend/provider code.
 
-## Current evidence
-
-All useful numbers must come from native CPU builds. Generic AArch64 selects
-software AES/GHASH in Zig 0.15.2 on the current Apple-Silicon Linux VM and is
-not comparable to OpenSSL. The benchmark binary must report a real CPU model and
-objdump must show hardware crypto instructions.
-
-On the current AArch64 host, native `record_protection_bench` contains:
-
-- `aese` / `aesmc` for AES rounds;
-- `pmull` / `pmull2` for GHASH.
-
-That changes the read substantially. ztls AES-GCM is in the same arena as
-OpenSSL EVP, not orders of magnitude behind. OpenSSL still wins on large bulk
-records, while ztls is competitive or faster on small records where EVP/libssl
-setup overhead dominates.
-
-The bigger pure-crypto hole was ChaCha20-Poly1305. `std.crypto`'s AArch64
-ChaCha path is scalar in Zig 0.15.2, while OpenSSL uses NEON implementations for
-ChaCha and Poly1305. AEAD record protection now routes through OpenSSL EVP for
-AES-GCM and ChaCha20-Poly1305 instead of carrying a local native ChaCha assembly
-backend.
-
-Handshake latency is a separate problem. Full handshakes are dominated by
-certificate parsing/signature verification, X25519, HKDF/transcript hashing, and
-server signing. AEAD changes will not move handshake numbers much.
-
 ## Backend allocation contract: honest, explicit, bounded
 
 OpenSSL 3 EVP cannot honestly be described as allocation-free. `EVP_CIPHER_CTX`
@@ -210,26 +183,8 @@ Requirements:
 
 ## Success criteria
 
-A production crypto backend is worth calling successful only when:
-
-- OpenSSL/libcrypto backend support exists behind ztls-owned facades;
-- AWS-LC compatibility remains an explicit design target and has CI/benchmark
-  coverage once the backend lands;
-- OpenSSL compatibility/interop remains covered by harnesses and benchmark rows;
-- AES-GCM and ChaCha20-Poly1305 meet libcrypto-class throughput on supported
-  AArch64 and x86_64 targets, with exact targets recorded per benchmark run;
-- full ztls app-data rows match or beat OpenSSL memory-BIO rows for small and
-  MTU-sized records where realistic;
-- all relevant Wycheproof/RFC vectors pass for every enabled backend;
-- ztls remains Sans-I/O and caller-buffered;
-- ztls-owned code remains allocator-free, while backend/provider-owned allocation
-  is explicitly documented for production libcrypto-family builds;
-- instruction/profile checks catch accidental scalar fallback;
-- the design has an explicit provider-backed path for future PQ/hybrid KEX and
-  signatures rather than ztls-owned PQ primitive implementations.
-
-Until the remaining backend-sensitive primitives are provider-backed,
-`std.crypto` usage in X25519 and signature paths is migration debt. `std.crypto`
-for hashing/HKDF is ordinary implementation detail unless provider/FIPS policy
-makes it otherwise. OpenSSL EVP/libssl rows remain compatibility and performance
-floors, not the whole production architecture by themselves.
+A production crypto backend is worth calling successful only when the backend
+facade, provider matrix, allocation contract, vector coverage, interop coverage,
+benchmark methodology, and PQ/hybrid extension path all have reproducible
+evidence. The authoritative status for those criteria lives in
+`PRODUCTION_READINESS.md`.
