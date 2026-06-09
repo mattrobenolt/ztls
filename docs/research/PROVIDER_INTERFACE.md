@@ -1,10 +1,8 @@
 # Provider interface design (libcrypto-family backends)
 
-Status: design milestone decided in the provider-interface milestone, together
-with the no-allocator guardrail and zeroization/lifetime audit. This document fixes the
-ztls-owned crypto facade *shape* so the next implementation slice can land
-without rediscovering crypto-roadmap context. It does **not** change TLS
-behavior, and it does not implement AWS-LC, P-256, HRR, PQ, PSK, or client auth.
+This document specifies the ztls-owned crypto facade *shape* for
+libcrypto-family backends. It records the interface contract, ownership rules,
+and acceptance criteria without asserting implementation status.
 
 Read first: `AGENTS.md`, `docs/research/DESIGN.md` (§ Crypto backends),
 `docs/research/CRYPTO_ROADMAP.md`. Supporting research lives in
@@ -17,14 +15,12 @@ Read first: `AGENTS.md`, `docs/research/DESIGN.md` (§ Crypto backends),
 
 The goal is a narrow, ztls-owned Zig facade for primitive crypto so that
 backend choice (OpenSSL first, AWS-LC first-class, BoringSSL possible later)
-never leaks into the handshake state machines. Today `@cImport("openssl/...")`
-is duplicated across `src/aead.zig`, `src/x25519.zig`, `src/signature.zig`, and
-`src/cryptox/Certificate.zig` / `src/certificate.zig`. There is no backend seam.
-That is the architectural debt this design targets.
+never leaks into the handshake state machines. Backend-specific C imports belong
+behind the facade; handshake code should depend only on ztls-owned Zig types.
 
-Non-goals for this milestone: no second backend, no new named groups, no KEM
-wiring, no API behavior change. Where this doc proposes a Zig type or signature,
-it is a *target shape* for a later writer, not code landed here.
+Non-goals for this interface spec: no second backend, no new named groups, no
+KEM wiring, no API behavior change. Where this doc proposes a Zig type or
+signature, it is a target shape for implementation work.
 
 Design principle (from the research): **define the interface in one-shot,
 caller-buffer terms — not EVP terms.** That shape is the natural TLS 1.3 record
@@ -100,18 +96,15 @@ Lifecycle and rekey rules:
   cache it; never use the `EVP_aes_*_gcm()` convenience getters in the hot path
   (provider name-search penalty on OpenSSL 3).
 - **Rekey / KeyUpdate.** A key update tears down the old `Ctx` (freeing backend
-  state, wiping ztls-visible key bytes) and installs a fresh one. This is exactly
-  what `RecordLayer.deinit()` + re-`init()` does today; the facade must preserve
-  it. No old provider state may survive a rekey.
-- This already-clean `src/aead.zig` seam is the model: a `src/crypto/aead.zig`
-  should re-export it rather than rebuild it.
+  state, wiping ztls-visible key bytes) and installs a fresh one. The facade must
+  preserve that lifecycle: no old provider state may survive a rekey.
+- Keep one AEAD seam; a `src/crypto/aead.zig` facade should expose the record
+  operation shape rather than duplicating record-layer policy.
 
 ### 2. HKDF / hash policy
 
 The TLS 1.3 key schedule (RFC 8446 §7.1) needs HKDF-Extract and HKDF-Expand as
-*distinct* steps. `src/hkdf.zig` already implements the ladder on `std.crypto`.
-
-Policy: **HKDF/HMAC/SHA-256/SHA-384 and transcript hashing stay on `std.crypto`
+*distinct* steps. Policy: **HKDF/HMAC/SHA-256/SHA-384 and transcript hashing stay on `std.crypto`
 by default.** Per CRYPTO_ROADMAP §4 this is intentional implementation detail,
 not migration debt, until a concrete provider/FIPS requirement appears. Moving it
 only makes sense for FIPS posture.
@@ -125,17 +118,15 @@ pub fn expand(hash: Hash, prk: Prk, info: []const u8, out: []u8) void;     // la
 
 This maps directly to BoringSSL/AWS-LC `HKDF_extract`/`HKDF_expand` (no alloc),
 and to OpenSSL via a cached `EVP_KDF` with `EXTRACT_ONLY`/`EXPAND_ONLY` modes
-(avoid the slower `EVP_PKEY_HKDF` bridge). The RFC 8448 Finished/HKDF vectors
-already in `hkdf.zig` are the conformance gate for any such move.
+(avoid the slower `EVP_PKEY_HKDF` bridge). RFC 8448 Finished/HKDF vectors are the conformance gate for any such move.
 
 ### 3. Key exchange — named groups and shared-secret sizing
 
-Currently X25519 is hard-wired: `ClientHandshake`/`ServerHandshake` store
-`keypair: x25519.KeyPair`, and `hkdf.SharedSecret = memx.Array(32)` (the one
-in-code TODO, `src/hkdf.zig:26`). X25519 and P-256 both output 32 bytes so the
-fixed type accidentally works; P-384 (48 bytes) breaks it.
+Named-group plumbing must not assume 32-byte public keys or shared secrets.
+X25519 and P-256 both output 32-byte shared secrets, but P-384 outputs 48 bytes
+and hybrid groups need still wider public-key/ciphertext sizing.
 
-Facade shape (flat keypair/derive; DH today, KEM seam reserved):
+Facade shape (flat keypair/derive for DH-style groups, KEM seam reserved):
 
 ```zig
 pub const NamedGroup = enum(u16) {
@@ -159,11 +150,10 @@ pub const KeyPair = struct {
 };
 ```
 
-Shared-secret sizing decision: change `hkdf.handshakeSecret` to take
-`dhe: []const u8` instead of `*const SharedSecret`, and delete the fixed
-`SharedSecret` type. Two call sites (`ClientHandshake.processServerHello`,
-`ServerHandshake.installHandshakeKeys`) and the RFC 8448 test vectors update.
-This is the unblock for P-256/P-384 and is the resolution of `src/hkdf.zig:26`.
+Shared-secret sizing decision: `hkdf.handshakeSecret` should take
+`dhe: []const u8` instead of a fixed-size shared-secret type. Call sites and
+RFC 8448 test vectors should follow that slice-shaped contract. This unblocks
+P-256/P-384 and future hybrid groups.
 
 Backend mapping: AWS-LC/BoringSSL implement KEX with flat allocation-free funcs
 (`X25519_keypair`, `X25519`); OpenSSL implements the same shape behind the
@@ -188,10 +178,10 @@ X25519MLKEM768 (`0x11ec`), SecP256r1MLKEM768 (`0x11eb`), SecP384r1MLKEM1024
 
 ### 4. Signatures and signing
 
-`src/signature.zig` already exposes a vtable `Signer` (scheme + opaque context +
-`sign` fn) — that *is* the provider interface for signing, and callers supply
-key material through it. Verification (`certificate.zig`) uses
-`EVP_DigestVerify*`. This is the most source-compatible area across backends.
+Signing should stay behind a vtable-shaped interface: scheme + opaque context +
+`sign` function, with callers supplying key material through it. Verification
+should expose a backend-neutral function and hide backend-specific public-key
+construction.
 
 Facade shape:
 
@@ -203,14 +193,11 @@ pub fn verify(scheme: SignatureScheme, pubkey: PublicKey,
 
 Schemes required for TLS 1.3 server auth: rsa_pss_rsae_sha256/384/512, ECDSA
 P-256/384, Ed25519 (one-shot `EVP_DigestVerify`, no streaming). Backend caveat:
-the public-key construction helpers in `certificate.zig`
-(`ecPublicKeyFromSec1` via `EC_KEY_new_by_curve_name` + `EVP_PKEY_assign_EC_KEY`,
-`rsaPublicKeyFromDer` via `d2i_RSAPublicKey`) and `signature.zig`
-(`p256KeyFromScalar`) use **OpenSSL-3-deprecated APIs not present in AWS-LC's
-public surface**. The backend-portable replacement is `EVP_PKEY_fromdata` with
-`OSSL_PARAM` (or `EVP_PKEY_new_raw_public_key` for raw keys, as `x25519.zig`
-already does). This is a correctness item for AWS-LC compat — flagged here, not
-fixed in this milestone.
+OpenSSL-3-deprecated key-construction APIs such as `EC_KEY_*`,
+`EVP_PKEY_assign_EC_KEY`, `d2i_RSAPublicKey`, and `EVP_PKEY_assign_RSA` should
+not appear above the backend seam; AWS-LC does not expose the same public
+surface. The backend-portable replacement is `EVP_PKEY_fromdata` with
+`OSSL_PARAM`, or `EVP_PKEY_new_raw_public_key` for raw keys.
 
 ### 5. Capabilities — suites / groups / signature schemes / FIPS / PQ
 
@@ -242,7 +229,7 @@ model; OpenSSL fetches by name — prefetch and cache all handles at backend ini
   libcrypto-family builds link libc and may allocate inside backend/provider code
   during init, context setup, provider fetch, or primitive ops. Heap objects with
   explicit frees: `EVP_CIPHER_CTX`, `EVP_PKEY`, `EVP_PKEY_CTX`, `EVP_KDF[_CTX]`,
-  `EVP_MD_CTX`, fetched `EVP_CIPHER*`/`EVP_MD*`. These live behind the facade and
+  `EVP_MD_CTX`, fetched `EVP_CIPHER*`/`EVP_MD*`. Backend-owned objects live behind the facade and
   must never leak into ztls buffer ownership. Do not describe EVP/provider paths
   as no-allocation (DESIGN.md § Crypto backends).
 - **Allocation-free per-op** on AWS-LC/BoringSSL: `EVP_AEAD_CTX_seal/open` after
@@ -264,18 +251,16 @@ context. Map at the seam to ztls error sets and TLS alerts:
 | ML-KEM length / encap-key check | `error.IllegalParameter` | `illegal_parameter` |
 | All-zero X25519 result | `error.IdentityElement` | `internal_error` |
 
-`src/x25519.zig` already does this (`error.LibcryptoFailed`,
-`error.IdentityElement`); the facade generalizes that pattern.
+Use the same mapping consistently for every backend implementation.
 
 ---
 
 ## How this unblocks the roadmap
 
 - **P-256/P-384** (CRYPTO_ROADMAP §5): the `NamedGroup` + variable-length
-  shared-secret shape and the `hkdf.handshakeSecret([]const u8)` change remove
-  the fixed-32 assumption. `client_hello.zig` key_share encoding and
-  `server_hello.zig` parsing must carry the group id (called out as a dependency,
-  not done here).
+  shared-secret shape and the `hkdf.handshakeSecret([]const u8)` contract remove
+  the fixed-32 assumption. ClientHello key_share encoding and ServerHello
+  parsing must carry the group id.
 - **HRR**: only meaningful once more than one useful group exists; the named-group
   facade is its prerequisite.
 - **PQ/hybrid** (§7): the reserved KEM seam + ztls-owned hybrid combiner means PQ
@@ -287,65 +272,47 @@ context. Map at the seam to ztls error sets and TLS alerts:
 
 ## No-allocator invariant
 
-Check: `just no-alloc`, wired into `just ci`, runs ast-grep with
-`rules/no-ztls-owned-allocations.yml` over core `src/*.zig` while excluding
-`src/test/**` harnesses that legitimately use testing allocators.
-
-The rule rejects ztls-owned allocation ingress in the TLS engine:
+The no-allocator check should reject ztls-owned allocation ingress in the TLS
+engine:
 
 - `std.heap` and direct `@import("std").heap` use,
 - `std.mem.Allocator` and direct `@import("std").mem.Allocator` use,
 - bare libc `malloc`/`calloc`/`realloc` and `c.malloc`/`c.calloc`/`c.realloc`,
 - bare `free(...)` / `c.free(...)`.
 
-Exit 0 clean, exit 1 on violation. Backend-owned libcrypto destructors such as
-`c.EVP_*_free`, `c.EC_*_free`, `c.X509_*_free`, and friends are intentionally
-allowed: structurally they are not `free(...)`/`c.free(...)`, and they release
-backend-owned objects rather than ztls-owned TLS buffers. Current state: clean
-for core `src/` with `src/test/**` excluded.
-
-The direct command is:
-
-```sh
-ast-grep scan --rule rules/no-ztls-owned-allocations.yml src \
-  --globs '*.zig' --globs '!src/test/**' --report-style short
-```
+Exit 0 means clean; exit 1 means violation. Backend-owned libcrypto destructors
+such as `c.EVP_*_free`, `c.EC_*_free`, `c.X509_*_free`, and friends are
+intentionally allowed: structurally they are not `free(...)`/`c.free(...)`, and
+they release backend-owned objects rather than ztls-owned TLS buffers.
 
 ---
 
-## Zeroization and lifetime audit
+## Zeroization and lifetime rules
 
-### What is zeroed today
-
-- **Traffic keys / IV.** `RecordLayer.deinit()` (`src/RecordLayer.zig:40-47`)
-  calls `std.crypto.secureZero` over the caller-visible `aead` key union and the
-  `iv`, then frees both `EVP_CIPHER_CTX`s via `Aead.Context.deinit`
-  (`src/aead.zig:122-125`). Tested: `RecordLayer.zig:199` "deinit: clears
-  caller-visible traffic key material".
-- **X25519 ephemeral secret.** Today `ClientHandshake`/`ServerHandshake`
-  `deinit()` call `std.crypto.secureZero` over the raw `keypair.secret_key`
-  bytes. `x25519.zig` itself creates and frees a transient `EVP_PKEY`
-  (`EVP_PKEY_free`) per `sharedSecret` call (`src/x25519.zig:48,63,65`).
-- **Signature private keys.** `signature.PrivateKey.deinit` frees the `EVP_PKEY`
-  (`src/signature.zig:43`); `signEcdsaP256Sha256` frees its per-call
-  `EVP_MD_CTX` (`src/signature.zig:65`). Caller-owned; not stored in handshake
-  structs.
-- **Certificate verify.** `certificate.zig` frees the per-verify `EVP_PKEY` and
-  `EVP_MD_CTX` (`src/certificate.zig:251,254`) and uses `errdefer
-  EVP_PKEY_free` on the construction paths (`:149,:160`).
+- **ztls-visible traffic keys / IVs.** Record-layer teardown must call
+  `std.crypto.secureZero` or an equivalent over ztls-visible key bytes and IVs,
+  and must free backend-owned AEAD contexts.
+- **KEX ephemeral secrets.** Raw scalar bytes held by ztls must be securely
+  zeroed. Backend-owned private keys must be released through the backend free
+  path that owns their cleanse semantics.
+- **Signature private keys.** Caller/backend-owned signing keys must have an
+  explicit `deinit` path. Per-call signing contexts must be freed on both
+  success and error paths.
+- **Certificate verification objects.** Public keys, verification contexts, and
+  partially-constructed backend objects must be released with `defer`/`errdefer`
+  discipline at the seam.
 
 ### Backend-owned state relying on libcrypto free/cleanse semantics
 
-- `EVP_CIPHER_CTX_free` cleanses the cipher key/round-key material internally;
-  ztls does not (and cannot) reach inside the opaque ctx. ztls's responsibility
-  is wiping its *own* copy of the key bytes (done in `RecordLayer.deinit`) and
-  always calling the free function. OpenSSL secret-zeroization primitive is
+- `EVP_CIPHER_CTX_free` cleanses cipher key/round-key material internally; ztls
+  does not and cannot reach inside opaque provider contexts. ztls's
+  responsibility is wiping its own copy of key bytes and always calling the
+  backend free function. OpenSSL secret-zeroization primitive is
   `OPENSSL_cleanse`; ztls relies on the ctx free path for backend-internal
   secrets.
 - `EVP_PKEY_free` releases and cleanses private-key material for KEX and signing
-  keys. The transient-`EVP_PKEY`-per-call pattern in `x25519.zig` is correct but
-  re-allocates each handshake; the facade's `KeyPair` that holds the `EVP_PKEY`
-  for its lifetime would reduce churn and centralize the free.
+  keys. A facade `KeyPair` that owns an `EVP_PKEY` should centralize that free
+  path rather than spreading transient ownership through handshake code.
 
 ### Caveats and rules going forward
 
@@ -356,21 +323,18 @@ ast-grep scan --rule rules/no-ztls-owned-allocations.yml src \
 - **Deinit ordering.** Free backend ctx (which cleanses internal secrets) and
   `secureZero` ztls-visible key bytes in the same `deinit`; order between them is
   immaterial since they target disjoint memory, but both must run on every path.
-  `errdefer` must free partially-constructed backend objects (the construction
-  paths already do this).
+  `errdefer` must free partially-constructed backend objects.
 - **Rekey.** KeyUpdate must `deinit` the old `RecordLayer` (free old ctx + wipe
   old keys) before installing the new one. No old provider state survives.
-- **Facade migration rule.** When the X25519 `secureZero(secret_key)` path moves
-  to a `kex.KeyPair` holding an `EVP_PKEY`, `deinit` must switch from raw
+- **Facade migration rule.** When raw X25519 secret ownership moves to a
+  `kex.KeyPair` holding an `EVP_PKEY`, `deinit` must switch from raw
   `secureZero` to `EVP_PKEY_free` (which cleanses) plus zeroing any ztls-held
   scalar copy. Do not leave both the raw-bytes wipe and a leaked `EVP_PKEY`.
 
-### Residual zeroization gaps (tracked, not fixed here)
+### Residual zeroization limits
 
 - ztls cannot guarantee backend-internal scratch (e.g. provider algorithm
   contexts) is cleansed beyond what the library's free path does. This is
   accepted per the documented backend contract.
-- Transcript-hash state and transient key-schedule locals on `std.crypto` are
-  not individually `secureZero`d today. Long-lived `ClientHandshake` secrets are
-  wiped in `deinit`; if a FIPS/zeroization policy lands, the remaining transient
-  key-schedule intermediates are the next audit target.
+- Transcript-hash state and transient key-schedule locals need an explicit
+  policy decision if stricter zeroization requirements are adopted.
