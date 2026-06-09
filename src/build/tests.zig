@@ -42,16 +42,4 @@ pub fn addSteps(b: *Build, opts: struct {
         "Run the openssl s_client interop test",
     );
     server_interop_step.dependOn(&run_server_interop.step);
-
-    const wycheproof_tests = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/test/wycheproof_smoke.zig"),
-            .target = opts.target,
-            .optimize = opts.optimize,
-            .imports = &.{.{ .name = "ztls", .module = mod }},
-        }),
-    });
-    const run_wycheproof = b.addRunArtifact(wycheproof_tests);
-    const wycheproof_step = b.step("test-wycheproof", "Run Wycheproof boundary smoke vectors");
-    wycheproof_step.dependOn(&run_wycheproof.step);
 }

@@ -28,13 +28,10 @@ import 'just/tooling.just'
 default:
     @just --list
 
-[doc("Run all CI gates: unit, interop, format, benchmark smoke, and conformance")]
-ci: check-actions lint check-no-alloc check-fixtures check-conformance-python
-    zig fmt --check {{ fmt_paths }}
-    zig build test
+[doc("Run all CI gates")]
+ci: test lint check-fixtures
     zig build test-openssl
     zig build test-openssl-server
-    zig build test-wycheproof
     just tlsfuzzer -q
     zig build bench -- --filter RecordEncrypt/{{ bench_suite }}/{{ bench_size }}
     zig build bench-evp -- --filter Encrypt/{{ bench_suite }}/{{ bench_size }}

@@ -1,8 +1,7 @@
 const std = @import("std");
 const testing = std.testing;
 
-const ztls = @import("ztls");
-
+const ztls = @import("../root.zig");
 const hex = @import("harness.zig").hex;
 
 // Wycheproof v1 (google-wycheproof 0.9rc5) — X25519 tcId 1, normal case.

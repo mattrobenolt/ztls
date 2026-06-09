@@ -26,4 +26,5 @@ pub const Random = memx.Array(32);
 
 test {
     std.testing.refAllDeclsRecursive(@This());
+    _ = @import("test/wycheproof_smoke.zig");
 }
