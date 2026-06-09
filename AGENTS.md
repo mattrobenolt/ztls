@@ -69,6 +69,43 @@ missing the updated environment.
 
 ---
 
+## Project State and Continuity
+
+**Read `PRODUCTION_READINESS.md` before starting any task.** It is the single
+source of truth for what is done, what "done" means, and what is still unproven.
+Status lives there and nowhere else. Every other document describes mechanism;
+none of them asserts whether something is finished. If you catch another doc
+claiming done/not-done, that line is a bug — delete it and point to the spine.
+
+**Write state back in the same change.** When your work changes the evidence
+behind a readiness claim, update `PRODUCTION_READINESS.md` in the same commit. A
+claim whose evidence moved but whose status didn't is a lie. Closing a gap means
+updating the dashboard, not just landing the code.
+
+**Search the todo store before creating a todo.** Before opening a new pi todo,
+search existing todos for the same feature by tag and topic. Extend the record
+that exists; never fork a parallel one. Two todos for one feature is precisely
+the failure that produced the duplicate-record mess. If you find two todos
+covering the same work, reconcile them — do not add a third.
+
+**Cited todo IDs must resolve, and their status must be honest.** Every
+`TODO-xxxxxxxx` referenced in a committed file must point at a real pi todo whose
+status is consistent with the reference. A skip-list that cites a `closed` todo
+for an unimplemented feature is a contradiction, not documentation.
+`check-todos` enforces this.
+
+**"Closed" means proven, not "a slice landed."** If you did partial work, the
+todo and the readiness doc say partial. Never close a todo or upgrade a status on
+the strength of a commit that only moves toward the goal. Honest partial beats
+false done.
+
+**New artifacts go in the existing taxonomy.** Don't invent new top-level docs,
+`build.zig` sections, `justfile` groups, or example layouts. Find the home the
+structure already defines. If none fits, that is a design decision to raise
+explicitly — not to improvise into the tree.
+
+---
+
 ## Code Style
 
 - Prefer `ast-grep` for structural searches and mechanical refactors. Use plain
@@ -198,3 +235,9 @@ resolved from the declared type on the left.
   now." File it, measure it, and fix it or explicitly defer it with a note on
   what's blocking.
 - Don't use `std.log` or print-debugging in library code. Use test assertions.
+- Don't assert project status anywhere except `PRODUCTION_READINESS.md`.
+- Don't create a todo without first searching for an existing one on the same
+  feature. Extend, don't fork.
+- Don't close a todo or raise a readiness status on partial work. Say partial.
+- Don't invent a new top-level home for a file when the taxonomy already defines
+  one. Raise it instead of improvising.
