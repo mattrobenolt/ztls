@@ -257,14 +257,27 @@ at least scripted in `just`.
 | TODO-55fe53a8 | Client cert auth | Open. Prereqs enumerated. |
 | TODO-bff0601f | Client-auth OpenSSL tests | Open. Blocked on TODO-55fe53a8. |
 | TODO-e458fa4a | Future/PQ groups | Open. Blocked on group abstraction + KEM seam. |
-| TODO-3aec61dd | Fuzzing expansion | Partial. `client_hello.parse` and `frame.parseHeader` added; remaining candidates documented above. |
+| TODO-3aec61dd | Fuzzing expansion (future features) | Partial. `client_hello.parse` and `frame.parseHeader` added; remaining candidates documented above. |
 | TODO-86ff7908 | Wycheproof expansion | Open. No structural blocker. |
 | TODO-8842b110 | TLS-Anvil | Open. Needs wrappers + justified skip list. |
 | TODO-9a7143c2 | tlsfuzzer lockstep | Open. No structural blocker. |
 | TODO-dae1ed86 | BoGo shim | Open. Needs shim binary. |
 
-No TODO in this slice can be honestly closed as "implemented." Each is given
-explicit prerequisites and acceptance criteria so future work starts from a
-known boundary rather than rediscovering scope.
+**Correctness gaps in the supported surface (see CORRECTNESS.md):**
+
+| TODO | Feature | Disposition |
+|------|---------|-------------|
+| TODO-93c88b9c | Replayed-record rejection test | Open. One unit test. |
+| TODO-e28e71b8 | Systematic client-side alert testing | Open. Multiple unit tests or harness. |
+| TODO-b361304c | Client-side negative test harness | Open. Minimal: targeted unit tests. Full: TLS-Anvil/BoGo client shim. |
+| TODO-085abf2a | KeyUpdate simultaneity test | Open. One integration test. |
+| TODO-e51389ad | Record boundary edge case expansion | Open. ~5 unit tests. |
+| TODO-c6515bed | Fuzz surface expansion (current surface) | Open. Post-auth server handleRecord, alert.parse. |
+| TODO-13d021c9 | Name constraints enforcement | Open. Deferred; parsed but not enforced. BetterTls path blocked. |
+
+No TODO in the "future features" slice can be honestly closed as "implemented."
+No TODO in the "correctness gaps" slice can be honestly closed as "tested."
+Each is given explicit prerequisites and acceptance criteria so future work starts
+from a known boundary rather than rediscovering scope.
 </content>
 </invoke>

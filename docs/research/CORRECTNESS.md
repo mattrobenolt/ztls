@@ -59,6 +59,9 @@ Current coverage:
 This is protocol conformance evidence: it checks real wire behavior, alerts, and
 state transitions against an independently maintained TLS test framework.
 
+**Caveat:** tlsfuzzer tests the ztls server only. Client-side alert/state
+behavior against a malicious server is not covered by this runner.
+
 ## Wycheproof boundary vectors
 
 `zig build test-wycheproof` runs selected Wycheproof v1 vectors at ztls's
@@ -96,6 +99,10 @@ wire bytes first enter the Sans-I/O server. Post-auth behavior is covered by
 unit tests and tlsfuzzer conversations, where records are cryptographically
 valid enough to reach the state-machine paths under test.
 
+**Known gap:** post-handshake server `handleRecord` is not fuzzed (needs a valid
+handshake first). `alert.parse` and `RecordLayer.decrypt` fuzz targets are also
+unwired.
+
 ## Verification gates
 
 The client and server handshakes carry explicit verification gates:
@@ -108,6 +115,22 @@ The client and server handshakes carry explicit verification gates:
 This mirrors rustls's proof-token idea in a Zig-appropriate form: the final
 connected transition has an auditable local condition rather than relying on a
 large implicit control-flow argument.
+
+## Known gaps in the supported surface
+
+These are features within the advertised surface (TLS 1.3 handshake + app data +
+KeyUpdate + alerts) that are believed to work but lack systematic testing, or
+have structural TODOs. They are not unimplemented features; they are "implemented
+but not proven."
+
+| Gap | Rationale | Status |
+|-----|-----------|--------|
+| Replayed record rejection | AEAD nonce reuse prevents decryption, but no test exercises it explicitly. | Tracked at TODO-93c88b9c |
+| Systematic client-side alert testing | Only `.decode_error` and `.close_notify` are unit-tested; most alert paths are uncovered. Client-side negative testing (malicious server) is absent. | Tracked at TODO-e28e71b8, TODO-b361304c |
+| KeyUpdate simultaneity | Both sides can send KeyUpdate simultaneously; only individual-initiated cases are tested. | Tracked at TODO-085abf2a |
+| Record boundary edge cases | Zero-length app data, exact max-fragment records, various truncation offsets. | Tracked at TODO-e51389ad |
+| Fuzz surface expansion | Post-auth server handleRecord, alert.parse, RecordLayer.decrypt. | Tracked at TODO-c6515bed |
+| Certificate chain depth | Name constraints parsed but not enforced. Path building is linear with no backtracking. Path length constraints not checked. | Tracked at TODO-13d021c9 (Name constraints), deferred as non-blocking |
 
 ## External suite policy
 
