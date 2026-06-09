@@ -10,51 +10,21 @@ pub fn build(b: *std.Build) void {
     });
     const ztls_mod = ztls_dep.module("ztls");
 
-    {
+    inline for (.{
+        .{ .name = "tlsfuzzer_server", .src = "src/tlsfuzzer_server.zig" },
+        .{ .name = "anvil_client", .src = "src/anvil_client.zig" },
+        .{ .name = "bogo", .src = "src/bogo.zig" },
+    }) |entry| {
         const exe = b.addExecutable(.{
-            .name = "tlsfuzzer_server",
+            .name = entry.name,
             .root_module = b.createModule(.{
-                .root_source_file = b.path("src/tlsfuzzer_server.zig"),
+                .root_source_file = b.path(entry.src),
                 .target = target,
                 .optimize = optimize,
                 .imports = &.{.{ .name = "ztls", .module = ztls_mod }},
             }),
         });
         exe.linkLibC();
-        const install = b.addInstallArtifact(exe, .{});
-        const step = b.step("tlsfuzzer-server", "Build the tlsfuzzer server harness");
-        step.dependOn(&install.step);
-    }
-
-    {
-        const exe = b.addExecutable(.{
-            .name = "anvil_client",
-            .root_module = b.createModule(.{
-                .root_source_file = b.path("src/anvil_client.zig"),
-                .target = target,
-                .optimize = optimize,
-                .imports = &.{.{ .name = "ztls", .module = ztls_mod }},
-            }),
-        });
-        exe.linkLibC();
-        const install = b.addInstallArtifact(exe, .{});
-        const step = b.step("anvil-client", "Build the TLS-Anvil client harness");
-        step.dependOn(&install.step);
-    }
-
-    {
-        const exe = b.addExecutable(.{
-            .name = "bogo",
-            .root_module = b.createModule(.{
-                .root_source_file = b.path("src/bogo.zig"),
-                .target = target,
-                .optimize = optimize,
-                .imports = &.{.{ .name = "ztls", .module = ztls_mod }},
-            }),
-        });
-        exe.linkLibC();
-        const install = b.addInstallArtifact(exe, .{});
-        const step = b.step("bogo", "Build the BoGo harness");
-        step.dependOn(&install.step);
+        b.installArtifact(exe);
     }
 }

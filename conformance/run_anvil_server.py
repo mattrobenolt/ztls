@@ -36,7 +36,9 @@ def main() -> int:
         return 1
 
     if not SERVER_BIN.exists():
-        eprint(f"expected server binary at {SERVER_BIN}; run 'zig build tlsfuzzer-server' from conformance/")
+        eprint(
+            f"expected server binary at {SERVER_BIN}; run 'zig build tlsfuzzer-server' from conformance/"
+        )
         return 1
 
     eprint("TLS-Anvil server test runner scaffold is present; full runner is not wired yet")

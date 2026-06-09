@@ -9,25 +9,16 @@ fmt:
     uv run ruff format .
     uv run ruff check --fix .
 
-# Build the tlsfuzzer server shim. Shared dep of tlsfuzzer, tlsfuzzer-lockstep, and anvil-server.
 [private]
-_build-shim:
-    zig build tlsfuzzer-server
-
-[private]
-_build-anvil-client:
-    zig build anvil-client
-
-[private]
-_build-bogo:
-    zig build bogo
+_build:
+    zig build
 
 [doc("Run tlsfuzzer TLS 1.3 conformance smoke tests")]
-tlsfuzzer *args: _build-shim
+tlsfuzzer *args: _build
     uv run pytest {{ args }}
 
 [doc("Run strict tlsfuzzer lockstep conversations")]
-tlsfuzzer-lockstep: _build-shim
+tlsfuzzer-lockstep: _build
     uv run pytest -q -m lockstep
 
 [doc("Download TLS-Anvil release JAR and dependencies")]
@@ -35,11 +26,11 @@ anvil-fetch:
     ./anvil-fetch.sh
 
 [doc("Run TLS-Anvil server tests")]
-anvil-server: anvil-fetch _build-shim
+anvil-server: anvil-fetch _build
     ./run_anvil_server.py
 
 [doc("Run TLS-Anvil client tests")]
-anvil-client: anvil-fetch _build-anvil-client
+anvil-client: anvil-fetch _build
     ./run_anvil_client.py
 
 [doc("Clone BoringSSL and build the BoGo runner")]
@@ -47,5 +38,5 @@ bogo-fetch:
     ./bogo-fetch.sh
 
 [doc("Run BoGo tests against the ztls shim")]
-bogo: bogo-fetch _build-bogo
+bogo: bogo-fetch _build
     ./run_bogo.sh

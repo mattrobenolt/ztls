@@ -24,7 +24,9 @@ def main() -> int:
         return 1
 
     if not CLIENT_BIN.exists():
-        eprint(f"expected client binary at {CLIENT_BIN}; run 'zig build anvil-client' from conformance/")
+        eprint(
+            f"expected client binary at {CLIENT_BIN}; run 'zig build anvil-client' from conformance/"
+        )
         return 1
 
     eprint("TLS-Anvil client test runner scaffold is present; full runner is not wired yet")
