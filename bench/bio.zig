@@ -156,7 +156,11 @@ pub fn benchmarkHandshake(b: *bench.B) !void {
 
 const Direction = enum { client_to_server, server_to_client, ping_pong };
 
-fn benchApp(comptime suite: []const u8, comptime size: usize, comptime dir: Direction) bench.Function {
+fn benchApp(
+    comptime suite: []const u8,
+    comptime size: usize,
+    comptime dir: Direction,
+) bench.Function {
     return struct {
         pub fn benchFn(b: *bench.B) !void {
             const ctxs = makeContexts(suite);
@@ -204,7 +208,11 @@ pub fn benchmarkAppClientToServer(b: *bench.B) !void {
     var name_buf: [80]u8 = undefined;
     inline for (suites) |suite| {
         inline for (sizes) |size| {
-            const name = try std.fmt.bufPrint(&name_buf, "impl=openssl/suite={s}/size={d}", .{ suite, size });
+            const name = try std.fmt.bufPrint(
+                &name_buf,
+                "impl=openssl/suite={s}/size={d}",
+                .{ suite, size },
+            );
             _ = try b.run(name, benchApp(suite, size, .client_to_server));
         }
     }
@@ -215,7 +223,11 @@ pub fn benchmarkAppServerToClient(b: *bench.B) !void {
     var name_buf: [80]u8 = undefined;
     inline for (suites) |suite| {
         inline for (sizes) |size| {
-            const name = try std.fmt.bufPrint(&name_buf, "impl=openssl/suite={s}/size={d}", .{ suite, size });
+            const name = try std.fmt.bufPrint(
+                &name_buf,
+                "impl=openssl/suite={s}/size={d}",
+                .{ suite, size },
+            );
             _ = try b.run(name, benchApp(suite, size, .server_to_client));
         }
     }
@@ -226,7 +238,11 @@ pub fn benchmarkAppPingPong(b: *bench.B) !void {
     var name_buf: [80]u8 = undefined;
     inline for (suites) |suite| {
         inline for (sizes) |size| {
-            const name = try std.fmt.bufPrint(&name_buf, "impl=openssl/suite={s}/size={d}", .{ suite, size });
+            const name = try std.fmt.bufPrint(
+                &name_buf,
+                "impl=openssl/suite={s}/size={d}",
+                .{ suite, size },
+            );
             _ = try b.run(name, benchApp(suite, size, .ping_pong));
         }
     }

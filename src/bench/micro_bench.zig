@@ -19,7 +19,7 @@ pub fn benchmarkLastIndexNonZeroNoPadding16(b: *bench.B) !void {
     }
 }
 
-pub fn benchmarkLastIndexNonZeroPadding1_16(b: *bench.B) !void {
+pub fn benchmarkLastIndexNonZeroPadding1To16(b: *bench.B) !void {
     var buf: [16]u8 = @splat(0);
     buf[14] = 23;
     while (try b.loop()) {
@@ -28,7 +28,7 @@ pub fn benchmarkLastIndexNonZeroPadding1_16(b: *bench.B) !void {
     }
 }
 
-pub fn benchmarkLastIndexNonZeroPadding16_128(b: *bench.B) !void {
+pub fn benchmarkLastIndexNonZeroPadding16To128(b: *bench.B) !void {
     var buf: [128]u8 = @splat(0);
     buf[111] = 23;
     while (try b.loop()) {
@@ -37,7 +37,7 @@ pub fn benchmarkLastIndexNonZeroPadding16_128(b: *bench.B) !void {
     }
 }
 
-pub fn benchmarkLastIndexNonZeroPadding128_1350(b: *bench.B) !void {
+pub fn benchmarkLastIndexNonZeroPadding128To1350(b: *bench.B) !void {
     var buf: [1350]u8 = @splat(0);
     buf[1221] = 23;
     while (try b.loop()) {
@@ -226,7 +226,9 @@ fn writeTicket(
     return w.pos;
 }
 
-noinline fn parseNewSessionTicketNoInline(msg: []const u8) NewSessionTicket.ParseError!NewSessionTicket {
+noinline fn parseNewSessionTicketNoInline(
+    msg: []const u8,
+) NewSessionTicket.ParseError!NewSessionTicket {
     return .parse(msg);
 }
 
@@ -240,18 +242,18 @@ fn tryRead(comptime T: type, r: *wire.Reader) usize {
     return r.read(T) catch unreachable;
 }
 
-export fn ztls_bench_nonce_construct() void {
+export fn ztlsBenchNonceConstruct() void {
     const iv: aead.Iv = .init(@splat(0xab));
     doNotOptimizeAway(aead.construct(&iv, 0x12345678));
 }
 
-export fn ztls_bench_last_index_non_zero() void {
+export fn ztlsBenchLastIndexNonZero() void {
     var buf: [128]u8 = @splat(0);
     buf[111] = 23;
     doNotOptimizeAway(memx.lastIndexOfNonZero(&buf));
 }
 
-export fn ztls_bench_parse_header() void {
+export fn ztlsBenchParseHeader() void {
     const input = [_]u8{ 23, 0x03, 0x03, 0x40, 0x00 };
     doNotOptimizeAway(frame.parseHeader(&input) catch unreachable);
 }

@@ -2,8 +2,6 @@ const std = @import("std");
 
 const bench = @import("benchmark");
 const c = @import("c").openssl;
-const ztls = @import("ztls");
-
 const Suite = struct {
     name: []const u8,
     cipher: *const fn () callconv(.c) ?*const c.EVP_CIPHER,
@@ -13,14 +11,37 @@ const Suite = struct {
 };
 
 const suites = [_]Suite{
-    .{ .name = "AES_128_GCM", .cipher = c.EVP_aes_128_gcm, .key_len = 16, .iv_len = 12, .tag_len = 16 },
-    .{ .name = "AES_256_GCM", .cipher = c.EVP_aes_256_gcm, .key_len = 32, .iv_len = 12, .tag_len = 16 },
-    .{ .name = "CHACHA20_POLY1305", .cipher = c.EVP_chacha20_poly1305, .key_len = 32, .iv_len = 12, .tag_len = 16 },
+    .{
+        .name = "AES_128_GCM",
+        .cipher = c.EVP_aes_128_gcm,
+        .key_len = 16,
+        .iv_len = 12,
+        .tag_len = 16,
+    },
+    .{
+        .name = "AES_256_GCM",
+        .cipher = c.EVP_aes_256_gcm,
+        .key_len = 32,
+        .iv_len = 12,
+        .tag_len = 16,
+    },
+    .{
+        .name = "CHACHA20_POLY1305",
+        .cipher = c.EVP_chacha20_poly1305,
+        .key_len = 32,
+        .iv_len = 12,
+        .tag_len = 16,
+    },
 };
 
 const sizes = [_]usize{ 16, 32, 64, 128, 256, 512, 1024, 1350, 8192, 16384 };
 
-fn setupEVP(comptime suite: Suite, buf: []u8, nonce: *[12]u8, tag: *[16]u8) ?*c.EVP_CIPHER_CTX {
+fn setupEvp(
+    comptime suite: Suite,
+    buf: []u8,
+    nonce: *[12]u8,
+    tag: *[16]u8,
+) ?*c.EVP_CIPHER_CTX {
     _ = c.ERR_clear_error();
 
     const ctx = c.EVP_CIPHER_CTX_new() orelse return null;
@@ -57,7 +78,7 @@ fn encryptClosure(comptime suite: Suite, comptime size: usize) bench.Function {
             var nonce: [12]u8 = @splat(0xad);
             var tag: [16]u8 = undefined;
 
-            const ctx = setupEVP(suite, &buf, &nonce, &tag) orelse return error.OpenSSLInit;
+            const ctx = setupEvp(suite, &buf, &nonce, &tag) orelse return error.OpenSSLInit;
             defer c.EVP_CIPHER_CTX_free(ctx);
 
             b.setBytes(buf.len);
@@ -79,14 +100,21 @@ fn decryptClosure(comptime suite: Suite, comptime size: usize) bench.Function {
             var nonce: [12]u8 = @splat(0xad);
             var tag: [16]u8 = undefined;
 
-            const enc_ctx = setupEVP(suite, &buf, &nonce, &tag) orelse return error.OpenSSLInit;
+            const enc_ctx = setupEvp(suite, &buf, &nonce, &tag) orelse return error.OpenSSLInit;
             defer c.EVP_CIPHER_CTX_free(enc_ctx);
 
             const dec_ctx = c.EVP_CIPHER_CTX_new() orelse return error.OpenSSLInit;
             defer c.EVP_CIPHER_CTX_free(dec_ctx);
             var key: [suite.key_len]u8 = @splat(0xab);
-            if (c.EVP_CipherInit_ex2(dec_ctx, suite.cipher(), &key, &nonce, 0, null) != 1) return error.OpenSSLInit;
-            if (c.EVP_CIPHER_CTX_ctrl(dec_ctx, c.EVP_CTRL_GCM_SET_IVLEN, @intCast(suite.iv_len), null) != 1) return error.OpenSSLInit;
+            if (c.EVP_CipherInit_ex2(dec_ctx, suite.cipher(), &key, &nonce, 0, null) != 1) {
+                return error.OpenSSLInit;
+            }
+            if (c.EVP_CIPHER_CTX_ctrl(
+                dec_ctx,
+                c.EVP_CTRL_GCM_SET_IVLEN,
+                @intCast(suite.iv_len),
+                null,
+            ) != 1) return error.OpenSSLInit;
 
             var out_len: c_int = 0;
             const aad = "tls13_record";
@@ -115,8 +143,15 @@ fn bulkEncryptOnceClosure(comptime suite: Suite, comptime size: usize) bench.Fun
             var key: [suite.key_len]u8 = @splat(0xab);
             nonce = @splat(0xad);
 
-            if (c.EVP_CipherInit_ex2(ctx, suite.cipher(), &key, &nonce, 1, null) != 1) return error.OpenSSLInit;
-            if (c.EVP_CIPHER_CTX_ctrl(ctx, c.EVP_CTRL_GCM_SET_IVLEN, @intCast(suite.iv_len), null) != 1) return error.OpenSSLInit;
+            if (c.EVP_CipherInit_ex2(ctx, suite.cipher(), &key, &nonce, 1, null) != 1) {
+                return error.OpenSSLInit;
+            }
+            if (c.EVP_CIPHER_CTX_ctrl(
+                ctx,
+                c.EVP_CTRL_GCM_SET_IVLEN,
+                @intCast(suite.iv_len),
+                null,
+            ) != 1) return error.OpenSSLInit;
 
             var out_len: c_int = 0;
             const aad = "tls13_record";
@@ -141,14 +176,21 @@ fn bulkDecryptOnceClosure(comptime suite: Suite, comptime size: usize) bench.Fun
             var nonce: [12]u8 = @splat(0xad);
             var tag: [16]u8 = undefined;
 
-            const enc_ctx = setupEVP(suite, &buf, &nonce, &tag) orelse return error.OpenSSLInit;
+            const enc_ctx = setupEvp(suite, &buf, &nonce, &tag) orelse return error.OpenSSLInit;
             defer c.EVP_CIPHER_CTX_free(enc_ctx);
 
             const dec_ctx = c.EVP_CIPHER_CTX_new() orelse return error.OpenSSLInit;
             defer c.EVP_CIPHER_CTX_free(dec_ctx);
             var key: [suite.key_len]u8 = @splat(0xab);
-            if (c.EVP_CipherInit_ex2(dec_ctx, suite.cipher(), &key, &nonce, 0, null) != 1) return error.OpenSSLInit;
-            if (c.EVP_CIPHER_CTX_ctrl(dec_ctx, c.EVP_CTRL_GCM_SET_IVLEN, @intCast(suite.iv_len), null) != 1) return error.OpenSSLInit;
+            if (c.EVP_CipherInit_ex2(dec_ctx, suite.cipher(), &key, &nonce, 0, null) != 1) {
+                return error.OpenSSLInit;
+            }
+            if (c.EVP_CIPHER_CTX_ctrl(
+                dec_ctx,
+                c.EVP_CTRL_GCM_SET_IVLEN,
+                @intCast(suite.iv_len),
+                null,
+            ) != 1) return error.OpenSSLInit;
 
             var out_len: c_int = 0;
             const aad = "tls13_record";

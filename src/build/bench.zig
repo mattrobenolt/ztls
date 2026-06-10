@@ -3,7 +3,7 @@ const Build = std.Build;
 
 const benchmark = @import("benchmark");
 
-const Options = struct {
+pub const Options = struct {
     target: Build.ResolvedTarget,
     ztls_mod: *Build.Module,
     c_mod: *Build.Module,

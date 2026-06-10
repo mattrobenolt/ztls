@@ -281,7 +281,12 @@ fn serve(stream: net.Stream, suite: ztls.CipherSuite) !void {
     }
 }
 
-fn sendResponse(stream: net.Stream, hs: *ztls.ServerHandshake, request: []const u8, out: []u8) !void {
+fn sendResponse(
+    stream: net.Stream,
+    hs: *ztls.ServerHandshake,
+    request: []const u8,
+    out: []u8,
+) !void {
     if (!mem.startsWith(u8, request, "GET ")) return error.UnexpectedRequest;
     const rec = try hs.sendApplicationData(response, out);
     try stream.writeAll(rec);

@@ -4,6 +4,7 @@ const mem = std.mem;
 const heap = std.heap;
 
 const bench = @import("benchmark");
+const txtar = @import("txtar");
 
 const ztls = @import("../root.zig");
 const Aead = ztls.aead.Aead;
@@ -13,6 +14,11 @@ const RecordLayer = ztls.RecordLayer;
 const frame = ztls.frame;
 const rfc8448 = @import("rfc8448.zig");
 
+const all_suites = [_]Suite{
+    .aes_128_gcm_sha256,
+    .aes_256_gcm_sha384,
+    .chacha20_poly1305_sha256,
+};
 const sizes = [_]usize{ 16, 128, 1350, 8192, frame.max_plaintext_len };
 const openssl_replay_archive = @embedFile("../test_fixtures/openssl_replay.txtar");
 const server_cert_der = @embedFile("../test_fixtures/server-ecdsa/server.der");
@@ -57,7 +63,7 @@ const Suite = enum {
 };
 
 fn nameBuf(buf: []u8, suite: Suite, size: usize) ![]const u8 {
-    return try std.fmt.bufPrint(buf, "{s}/{d}", .{ suite.name(), size });
+    return std.fmt.bufPrint(buf, "{s}/{d}", .{ suite.name(), size });
 }
 
 pub fn benchmarkParseHeader(b: *bench.B) !void {
@@ -106,7 +112,11 @@ fn benchClientHandshakeReplay(comptime suite: Suite) bench.Function {
             var fixture_scratch: [8192]u8 = undefined;
             var fba: heap.FixedBufferAllocator = .init(&fixture_scratch);
             var records_buf: [2048]u8 = undefined;
-            const records = fixture(fba.allocator(), suite.fixtureName(), &records_buf) catch unreachable;
+            const records = fixture(
+                fba.allocator(),
+                suite.fixtureName(),
+                &records_buf,
+            ) catch unreachable;
             var out: [1024]u8 = undefined;
 
             replayHandshake(records, &out) catch unreachable;
@@ -119,7 +129,6 @@ fn benchClientHandshakeReplay(comptime suite: Suite) bench.Function {
 }
 
 fn fixture(alloc: mem.Allocator, name: []const u8, out: []u8) ![]u8 {
-    const txtar = @import("txtar");
     var archive = try txtar.parse(alloc, openssl_replay_archive);
     defer archive.deinit(alloc);
     for (archive.files) |f| {
@@ -138,6 +147,14 @@ fn deterministicClientKeypair() !ztls.x25519.KeyPair {
 
 fn deterministicServerKeypair() !ztls.x25519.KeyPair {
     return .generateDeterministic(.init(@splat(0x22)));
+}
+
+fn deterministicClientHandshake() ztls.ClientHandshake {
+    return .init(deterministicClientKeypair() catch unreachable);
+}
+
+fn deterministicServerHandshake() ztls.ServerHandshake {
+    return .init(deterministicServerKeypair() catch unreachable);
 }
 
 fn connectPair(comptime suite: Suite) !struct {
@@ -176,7 +193,7 @@ fn connectPair(comptime suite: Suite) !struct {
 }
 
 pub fn benchmarkClientHandshakeReplay(b: *bench.B) !void {
-    inline for ([_]Suite{ .aes_128_gcm_sha256, .aes_256_gcm_sha384, .chacha20_poly1305_sha256 }) |suite| {
+    inline for (all_suites) |suite| {
         _ = try b.run(suite.name(), benchClientHandshakeReplay(suite));
     }
 }
@@ -198,7 +215,7 @@ fn benchZtlsHandshake(comptime suite: Suite) bench.Function {
 
 pub fn benchmarkHandshake(b: *bench.B) !void {
     var name_buf: [80]u8 = undefined;
-    inline for ([_]Suite{ .aes_128_gcm_sha256, .aes_256_gcm_sha384, .chacha20_poly1305_sha256 }) |suite| {
+    inline for (all_suites) |suite| {
         const name = try std.fmt.bufPrint(&name_buf, "impl=ztls/suite={s}", .{suite.name()});
         _ = try b.run(name, benchZtlsHandshake(suite));
     }
@@ -209,10 +226,14 @@ fn benchHandshakeClientStart(comptime suite: Suite) bench.Function {
     return struct {
         pub fn benchFn(b: *bench.B) !void {
             while (try b.loop()) {
-                var client: ztls.ClientHandshake = ztls.ClientHandshake.init(deterministicClientKeypair() catch unreachable);
+                var client: ztls.ClientHandshake = deterministicClientHandshake();
                 client.policy.host_name = "ztls.server.test";
                 var client_out: [4096]u8 = undefined;
-                const ch = client.start(&client_out, rfc8448.client_random, "ztls.server.test") catch unreachable;
+                const ch = client.start(
+                    &client_out,
+                    rfc8448.client_random,
+                    "ztls.server.test",
+                ) catch unreachable;
                 b.keepAlive(ch.ptr);
                 client.deinit();
             }
@@ -221,7 +242,7 @@ fn benchHandshakeClientStart(comptime suite: Suite) bench.Function {
 }
 
 pub fn benchmarkHandshakeClientStart(b: *bench.B) !void {
-    inline for ([_]Suite{ .aes_128_gcm_sha256, .aes_256_gcm_sha384, .chacha20_poly1305_sha256 }) |suite| {
+    inline for (all_suites) |suite| {
         _ = try b.run(suite.name(), benchHandshakeClientStart(suite));
     }
 }
@@ -229,18 +250,26 @@ pub fn benchmarkHandshakeClientStart(b: *bench.B) !void {
 fn benchHandshakeServerAccept(comptime suite: Suite) bench.Function {
     return struct {
         pub fn benchFn(b: *bench.B) !void {
-            var client: ztls.ClientHandshake = ztls.ClientHandshake.init(deterministicClientKeypair() catch unreachable);
+            var client: ztls.ClientHandshake = deterministicClientHandshake();
             client.policy.host_name = "ztls.server.test";
             var client_out: [4096]u8 = undefined;
-            const ch_record = client.start(&client_out, rfc8448.client_random, "ztls.server.test") catch unreachable;
+            const ch_record = client.start(
+                &client_out,
+                rfc8448.client_random,
+                "ztls.server.test",
+            ) catch unreachable;
             client.completeWrite();
 
             while (try b.loop()) {
-                var server: ztls.ServerHandshake = ztls.ServerHandshake.init(deterministicServerKeypair() catch unreachable);
+                var server: ztls.ServerHandshake = deterministicServerHandshake();
                 const suites = [_]ztls.CipherSuite{suite.cipherSuite()};
                 server.supportSuites(&suites);
                 var server_out: [8192]u8 = undefined;
-                _ = server.acceptClientHello(ch_record, rfc8448.client_random, &server_out) catch unreachable;
+                _ = server.acceptClientHello(
+                    ch_record,
+                    rfc8448.client_random,
+                    &server_out,
+                ) catch unreachable;
                 b.keepAlive(&server);
                 server.deinit();
             }
@@ -250,7 +279,7 @@ fn benchHandshakeServerAccept(comptime suite: Suite) bench.Function {
 }
 
 pub fn benchmarkHandshakeServerAccept(b: *bench.B) !void {
-    inline for ([_]Suite{ .aes_128_gcm_sha256, .aes_256_gcm_sha384, .chacha20_poly1305_sha256 }) |suite| {
+    inline for (all_suites) |suite| {
         _ = try b.run(suite.name(), benchHandshakeServerAccept(suite));
     }
 }
@@ -258,20 +287,28 @@ pub fn benchmarkHandshakeServerAccept(b: *bench.B) !void {
 fn benchHandshakeClientServerHello(comptime suite: Suite) bench.Function {
     return struct {
         pub fn benchFn(b: *bench.B) !void {
-            var client: ztls.ClientHandshake = .init(deterministicClientKeypair() catch unreachable);
+            var client: ztls.ClientHandshake = deterministicClientHandshake();
             client.policy.host_name = "ztls.server.test";
             var client_out: [4096]u8 = undefined;
-            const ch_record = client.start(&client_out, rfc8448.client_random, "ztls.server.test") catch unreachable;
+            const ch_record = client.start(
+                &client_out,
+                rfc8448.client_random,
+                "ztls.server.test",
+            ) catch unreachable;
             client.completeWrite();
 
-            var server: ztls.ServerHandshake = .init(deterministicServerKeypair() catch unreachable);
+            var server: ztls.ServerHandshake = deterministicServerHandshake();
             const suites = [_]ztls.CipherSuite{suite.cipherSuite()};
             server.supportSuites(&suites);
             var server_out: [8192]u8 = undefined;
-            const sh_record = server.acceptClientHello(ch_record, rfc8448.client_random, &server_out) catch unreachable;
+            const sh_record = server.acceptClientHello(
+                ch_record,
+                rfc8448.client_random,
+                &server_out,
+            ) catch unreachable;
 
             while (try b.loop()) {
-                var c: ztls.ClientHandshake = .init(deterministicClientKeypair() catch unreachable);
+                var c: ztls.ClientHandshake = deterministicClientHandshake();
                 c.processServerHello(sh_record[ztls.frame.header_len..]) catch unreachable;
                 b.keepAlive(&c);
                 c.deinit();
@@ -283,7 +320,7 @@ fn benchHandshakeClientServerHello(comptime suite: Suite) bench.Function {
 }
 
 pub fn benchmarkHandshakeClientServerHello(b: *bench.B) !void {
-    inline for ([_]Suite{ .aes_128_gcm_sha256, .aes_256_gcm_sha384, .chacha20_poly1305_sha256 }) |suite| {
+    inline for (all_suites) |suite| {
         _ = try b.run(suite.name(), benchHandshakeClientServerHello(suite));
     }
 }
@@ -291,26 +328,36 @@ pub fn benchmarkHandshakeClientServerHello(b: *bench.B) !void {
 fn benchHandshakeServerFlight(comptime suite: Suite) bench.Function {
     return struct {
         pub fn benchFn(b: *bench.B) !void {
-            var client: ztls.ClientHandshake = .init(deterministicClientKeypair() catch unreachable);
+            var client: ztls.ClientHandshake = deterministicClientHandshake();
             client.policy.host_name = "ztls.server.test";
             var client_out: [4096]u8 = undefined;
-            const ch_record = client.start(&client_out, rfc8448.client_random, "ztls.server.test") catch unreachable;
+            const ch_record = client.start(
+                &client_out,
+                rfc8448.client_random,
+                "ztls.server.test",
+            ) catch unreachable;
             client.completeWrite();
 
-            var server: ztls.ServerHandshake = .init(deterministicServerKeypair() catch unreachable);
+            var server: ztls.ServerHandshake = deterministicServerHandshake();
             const suites = [_]ztls.CipherSuite{suite.cipherSuite()};
             server.supportSuites(&suites);
             var server_out: [8192]u8 = undefined;
-            const sh_record = server.acceptClientHello(ch_record, rfc8448.client_random, &server_out) catch unreachable;
+            const sh_record = server.acceptClientHello(
+                ch_record,
+                rfc8448.client_random,
+                &server_out,
+            ) catch unreachable;
 
-            var client2: ztls.ClientHandshake = .init(deterministicClientKeypair() catch unreachable);
+            var client2: ztls.ClientHandshake = deterministicClientHandshake();
             client2.processServerHello(sh_record[ztls.frame.header_len..]) catch unreachable;
 
-            var signer: ztls.signature.PrivateKey = ztls.signature.PrivateKey.fromP256Scalar(server_scalar[0..32]) catch unreachable;
+            var signer: ztls.signature.PrivateKey = ztls.signature.PrivateKey.fromP256Scalar(
+                server_scalar[0..32],
+            ) catch unreachable;
             defer signer.deinit();
 
             while (try b.loop()) {
-                var s: ztls.ServerHandshake = .init(deterministicServerKeypair() catch unreachable);
+                var s: ztls.ServerHandshake = deterministicServerHandshake();
                 s.supportSuites(&suites);
                 var so: [8192]u8 = undefined;
                 _ = s.sendPreparedAuthenticatedFlight(
@@ -329,7 +376,7 @@ fn benchHandshakeServerFlight(comptime suite: Suite) bench.Function {
 }
 
 pub fn benchmarkHandshakeServerFlight(b: *bench.B) !void {
-    inline for ([_]Suite{ .aes_128_gcm_sha256, .aes_256_gcm_sha384, .chacha20_poly1305_sha256 }) |suite| {
+    inline for (all_suites) |suite| {
         _ = try b.run(suite.name(), benchHandshakeServerFlight(suite));
     }
 }
@@ -337,22 +384,32 @@ pub fn benchmarkHandshakeServerFlight(b: *bench.B) !void {
 fn benchHandshakeClientFlight(comptime suite: Suite) bench.Function {
     return struct {
         pub fn benchFn(b: *bench.B) !void {
-            var client: ztls.ClientHandshake = ztls.ClientHandshake.init(deterministicClientKeypair() catch unreachable);
+            var client: ztls.ClientHandshake = deterministicClientHandshake();
             client.policy.host_name = "ztls.server.test";
             var client_out: [4096]u8 = undefined;
-            const ch_record = client.start(&client_out, rfc8448.client_random, "ztls.server.test") catch unreachable;
+            const ch_record = client.start(
+                &client_out,
+                rfc8448.client_random,
+                "ztls.server.test",
+            ) catch unreachable;
             client.completeWrite();
 
-            var server: ztls.ServerHandshake = ztls.ServerHandshake.init(deterministicServerKeypair() catch unreachable);
+            var server: ztls.ServerHandshake = deterministicServerHandshake();
             const suites = [_]ztls.CipherSuite{suite.cipherSuite()};
             server.supportSuites(&suites);
             var server_out: [8192]u8 = undefined;
-            const sh_record = server.acceptClientHello(ch_record, rfc8448.client_random, &server_out) catch unreachable;
+            const sh_record = server.acceptClientHello(
+                ch_record,
+                rfc8448.client_random,
+                &server_out,
+            ) catch unreachable;
 
-            var client2: ztls.ClientHandshake = ztls.ClientHandshake.init(deterministicClientKeypair() catch unreachable);
+            var client2: ztls.ClientHandshake = deterministicClientHandshake();
             client2.processServerHello(sh_record[ztls.frame.header_len..]) catch unreachable;
 
-            var signer: ztls.signature.PrivateKey = ztls.signature.PrivateKey.fromP256Scalar(server_scalar[0..32]) catch unreachable;
+            var signer: ztls.signature.PrivateKey = ztls.signature.PrivateKey.fromP256Scalar(
+                server_scalar[0..32],
+            ) catch unreachable;
             defer signer.deinit();
             const flight_record = server.sendPreparedAuthenticatedFlight(
                 &.{server_cert_der},
@@ -361,7 +418,7 @@ fn benchHandshakeClientFlight(comptime suite: Suite) bench.Function {
             ) catch unreachable;
 
             while (try b.loop()) {
-                var c: ztls.ClientHandshake = ztls.ClientHandshake.init(deterministicClientKeypair() catch unreachable);
+                var c: ztls.ClientHandshake = deterministicClientHandshake();
                 c.processServerHello(sh_record[ztls.frame.header_len..]) catch unreachable;
                 var co: [4096]u8 = undefined;
                 const ev = c.handleRecord(server_out[0..flight_record.len], &co) catch unreachable;
@@ -379,7 +436,7 @@ fn benchHandshakeClientFlight(comptime suite: Suite) bench.Function {
 }
 
 pub fn benchmarkHandshakeClientFlight(b: *bench.B) !void {
-    inline for ([_]Suite{ .aes_128_gcm_sha256, .aes_256_gcm_sha384, .chacha20_poly1305_sha256 }) |suite| {
+    inline for (all_suites) |suite| {
         _ = try b.run(suite.name(), benchHandshakeClientFlight(suite));
     }
 }
@@ -403,7 +460,7 @@ fn benchHandshakeServerFinished(comptime suite: Suite) bench.Function {
 }
 
 pub fn benchmarkHandshakeServerFinished(b: *bench.B) !void {
-    inline for ([_]Suite{ .aes_128_gcm_sha256, .aes_256_gcm_sha384, .chacha20_poly1305_sha256 }) |suite| {
+    inline for (all_suites) |suite| {
         _ = try b.run(suite.name(), benchHandshakeServerFinished(suite));
     }
 }
@@ -429,7 +486,7 @@ fn benchEncrypt(comptime suite: Suite, comptime size: usize) bench.Function {
 
 pub fn benchmarkRecordEncrypt(b: *bench.B) !void {
     var name_buf: [80]u8 = undefined;
-    inline for ([_]Suite{ .aes_128_gcm_sha256, .aes_256_gcm_sha384, .chacha20_poly1305_sha256 }) |suite| {
+    inline for (all_suites) |suite| {
         inline for (sizes) |size| {
             const name = try nameBuf(&name_buf, suite, size);
             _ = try b.run(name, benchEncrypt(suite, size));
@@ -449,7 +506,11 @@ fn benchDecrypt(comptime suite: Suite, comptime size: usize) bench.Function {
             var tx: RecordLayer = RecordLayer.init(suite.aead(), .zero) catch unreachable;
             defer tx.deinit();
             for (0..4096) |i| {
-                const record = tx.encrypt(.application_data, &plaintext, records[i * record_len ..][0..record_len]) catch unreachable;
+                const record = tx.encrypt(
+                    .application_data,
+                    &plaintext,
+                    records[i * record_len ..][0..record_len],
+                ) catch unreachable;
                 assert(record.len == record_len);
             }
 
@@ -461,13 +522,19 @@ fn benchDecrypt(comptime suite: Suite, comptime size: usize) bench.Function {
             defer warm_tx.deinit();
             var warm_rx: RecordLayer = RecordLayer.init(suite.aead(), .zero) catch unreachable;
             defer warm_rx.deinit();
-            const warm = warm_tx.encrypt(.application_data, &plaintext, &warm_record) catch unreachable;
+            const warm = warm_tx.encrypt(
+                .application_data,
+                &plaintext,
+                &warm_record,
+            ) catch unreachable;
             _ = warm_rx.decrypt(warm) catch unreachable;
 
             b.setBytes(size);
             var idx: usize = 0;
             while (try b.loop()) {
-                const decrypted = rx.decrypt(records[idx * record_len ..][0..record_len]) catch unreachable;
+                const decrypted = rx.decrypt(
+                    records[idx * record_len ..][0..record_len],
+                ) catch unreachable;
                 b.keepAlive(decrypted.content.ptr);
                 idx = (idx + 1) % 4096;
             }
@@ -477,7 +544,7 @@ fn benchDecrypt(comptime suite: Suite, comptime size: usize) bench.Function {
 
 pub fn benchmarkRecordDecrypt(b: *bench.B) !void {
     var name_buf: [80]u8 = undefined;
-    inline for ([_]Suite{ .aes_128_gcm_sha256, .aes_256_gcm_sha384, .chacha20_poly1305_sha256 }) |suite| {
+    inline for (all_suites) |suite| {
         inline for (sizes) |size| {
             const name = try nameBuf(&name_buf, suite, size);
             _ = try b.run(name, benchDecrypt(suite, size));
@@ -506,7 +573,7 @@ fn benchEncryptPrepared(comptime suite: Suite, comptime size: usize) bench.Funct
 
 pub fn benchmarkRecordEncryptPrepared(b: *bench.B) !void {
     var name_buf: [80]u8 = undefined;
-    inline for ([_]Suite{ .aes_128_gcm_sha256, .aes_256_gcm_sha384, .chacha20_poly1305_sha256 }) |suite| {
+    inline for (all_suites) |suite| {
         inline for (sizes) |size| {
             const name = try nameBuf(&name_buf, suite, size);
             _ = try b.run(name, benchEncryptPrepared(suite, size));
@@ -516,7 +583,11 @@ pub fn benchmarkRecordEncryptPrepared(b: *bench.B) !void {
 
 const Direction = enum { client_to_server, server_to_client };
 
-fn benchZtlsAppData(comptime suite: Suite, comptime size: usize, comptime direction: Direction) bench.Function {
+fn benchZtlsAppData(
+    comptime suite: Suite,
+    comptime size: usize,
+    comptime direction: Direction,
+) bench.Function {
     return struct {
         pub fn benchFn(b: *bench.B) !void {
             var pair = connectPair(suite) catch unreachable;
@@ -529,15 +600,26 @@ fn benchZtlsAppData(comptime suite: Suite, comptime size: usize, comptime direct
             b.setBytes(size);
             while (try b.loop()) switch (direction) {
                 .client_to_server => {
-                    const record = pair.client.sendApplicationData(&payload, &wire) catch unreachable;
+                    const record = pair.client.sendApplicationData(
+                        &payload,
+                        &wire,
+                    ) catch unreachable;
                     pair.client.completeWrite();
-                    const plain = pair.server.receiveApplicationData(wire[0..record.len]) catch unreachable;
+                    const plain = pair.server.receiveApplicationData(
+                        wire[0..record.len],
+                    ) catch unreachable;
                     b.keepAlive(plain.ptr);
                 },
                 .server_to_client => {
-                    const record = pair.server.sendApplicationData(&payload, &wire) catch unreachable;
+                    const record = pair.server.sendApplicationData(
+                        &payload,
+                        &wire,
+                    ) catch unreachable;
                     pair.server.completeWrite();
-                    const ev = pair.client.handleRecord(wire[0..record.len], &out) catch unreachable;
+                    const ev = pair.client.handleRecord(
+                        wire[0..record.len],
+                        &out,
+                    ) catch unreachable;
                     b.keepAlive(ev.application_data.ptr);
                 },
             };
@@ -547,9 +629,13 @@ fn benchZtlsAppData(comptime suite: Suite, comptime size: usize, comptime direct
 
 pub fn benchmarkAppClientToServer(b: *bench.B) !void {
     var name_buf: [80]u8 = undefined;
-    inline for ([_]Suite{ .aes_128_gcm_sha256, .aes_256_gcm_sha384, .chacha20_poly1305_sha256 }) |suite| {
+    inline for (all_suites) |suite| {
         inline for (sizes) |size| {
-            const name = try std.fmt.bufPrint(&name_buf, "impl=ztls/suite={s}/size={d}", .{ suite.name(), size });
+            const name = try std.fmt.bufPrint(
+                &name_buf,
+                "impl=ztls/suite={s}/size={d}",
+                .{ suite.name(), size },
+            );
             _ = try b.run(name, benchZtlsAppData(suite, size, .client_to_server));
         }
     }
@@ -557,9 +643,13 @@ pub fn benchmarkAppClientToServer(b: *bench.B) !void {
 
 pub fn benchmarkAppServerToClient(b: *bench.B) !void {
     var name_buf: [80]u8 = undefined;
-    inline for ([_]Suite{ .aes_128_gcm_sha256, .aes_256_gcm_sha384, .chacha20_poly1305_sha256 }) |suite| {
+    inline for (all_suites) |suite| {
         inline for (sizes) |size| {
-            const name = try std.fmt.bufPrint(&name_buf, "impl=ztls/suite={s}/size={d}", .{ suite.name(), size });
+            const name = try std.fmt.bufPrint(
+                &name_buf,
+                "impl=ztls/suite={s}/size={d}",
+                .{ suite.name(), size },
+            );
             _ = try b.run(name, benchZtlsAppData(suite, size, .server_to_client));
         }
     }
@@ -576,9 +666,14 @@ fn benchZtlsAppDataPrepared(comptime suite: Suite, comptime size: usize) bench.F
 
             b.setBytes(size);
             while (try b.loop()) {
-                const record = pair.client.sendPreparedApplicationData(size, &wire) catch unreachable;
+                const record = pair.client.sendPreparedApplicationData(
+                    size,
+                    &wire,
+                ) catch unreachable;
                 pair.client.completeWrite();
-                const plain = pair.server.receiveApplicationData(wire[0..record.len]) catch unreachable;
+                const plain = pair.server.receiveApplicationData(
+                    wire[0..record.len],
+                ) catch unreachable;
                 b.keepAlive(plain.ptr);
             }
         }
@@ -587,7 +682,7 @@ fn benchZtlsAppDataPrepared(comptime suite: Suite, comptime size: usize) bench.F
 
 pub fn benchmarkAppPreparedClientToServer(b: *bench.B) !void {
     var name_buf: [80]u8 = undefined;
-    inline for ([_]Suite{ .aes_128_gcm_sha256, .aes_256_gcm_sha384, .chacha20_poly1305_sha256 }) |suite| {
+    inline for (all_suites) |suite| {
         inline for (sizes) |size| {
             const name = try nameBuf(&name_buf, suite, size);
             _ = try b.run(name, benchZtlsAppDataPrepared(suite, size));
@@ -610,12 +705,17 @@ fn benchZtlsPingPong(comptime suite: Suite, comptime size: usize) bench.Function
             while (try b.loop()) {
                 const c = pair.client.sendApplicationData(&payload, &client_wire) catch unreachable;
                 pair.client.completeWrite();
-                const got = pair.server.receiveApplicationData(client_wire[0..c.len]) catch unreachable;
+                const got = pair.server.receiveApplicationData(
+                    client_wire[0..c.len],
+                ) catch unreachable;
                 b.keepAlive(got.ptr);
 
                 const s = pair.server.sendApplicationData(&payload, &server_wire) catch unreachable;
                 pair.server.completeWrite();
-                const ev = pair.client.handleRecord(server_wire[0..s.len], &client_out) catch unreachable;
+                const ev = pair.client.handleRecord(
+                    server_wire[0..s.len],
+                    &client_out,
+                ) catch unreachable;
                 b.keepAlive(ev.application_data.ptr);
             }
         }
@@ -624,9 +724,13 @@ fn benchZtlsPingPong(comptime suite: Suite, comptime size: usize) bench.Function
 
 pub fn benchmarkAppPingPong(b: *bench.B) !void {
     var name_buf: [80]u8 = undefined;
-    inline for ([_]Suite{ .aes_128_gcm_sha256, .aes_256_gcm_sha384, .chacha20_poly1305_sha256 }) |suite| {
+    inline for (all_suites) |suite| {
         inline for (sizes) |size| {
-            const name = try std.fmt.bufPrint(&name_buf, "impl=ztls/suite={s}/size={d}", .{ suite.name(), size });
+            const name = try std.fmt.bufPrint(
+                &name_buf,
+                "impl=ztls/suite={s}/size={d}",
+                .{ suite.name(), size },
+            );
             _ = try b.run(name, benchZtlsPingPong(suite, size));
         }
     }
