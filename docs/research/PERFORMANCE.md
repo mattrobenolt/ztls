@@ -100,9 +100,7 @@ Typical local flow:
 
 ```sh
 just bench-capture
-just bench-compare aes_128
-just bench-app-row aes_128 1350
-just bench-record-row aes_128 1350
+just bench
 just bench-bins
 just bench-disasm record_protection_bench zig-out/record_protection_bench.asm
 just bench-disasm-libcrypto record_protection_bench zig-out/libcrypto.asm
@@ -143,7 +141,7 @@ callgrind_annotate callgrind.out
 For raw OpenSSL crypto comparison:
 
 ```sh
-just bench-compare aes_128
+just bench
 # or only the raw EVP harness:
 zig build bench-evp
 zig build bench-evp-bin

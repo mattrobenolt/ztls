@@ -188,9 +188,9 @@ comparisons measure equivalent work*. This is the project's justification.
   parser/framing throughput, deterministic client handshake replay, full
   in-memory ztls connection rows, OpenSSL EVP raw-AEAD rows, OpenSSL/libssl
   memory-BIO rows, and rustls in-memory client/server rows.
-- `justfile` has useful local recipes: `bench-list`, `bench-compare`,
-  `bench-app-row`, `bench-record-row`, `bench-capture`, `benchstat`,
-  `bench-bins`, `bench-disasm`, `bench-disasm-libcrypto`, and `bench-perf`.
+- `justfile` has useful local recipes: `bench`, `bench-list`,
+  `bench-capture`, `benchstat`, `bench-bins`, `bench-disasm`,
+  `bench-disasm-libcrypto`, and `bench-perf`.
   `just ci` smoke-runs one ztls record row, one EVP row, and one OpenSSL BIO
   app-data row; it does not run rustls.
 - `just bench-capture` is the closest local full-comparison command: it writes

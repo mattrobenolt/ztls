@@ -16,7 +16,7 @@ The authoritative readiness status and evidence summary lives in `PRODUCTION_REA
 ## tlsfuzzer
 
 `conformance/` contains a pytest/tlsfuzzer suite. The fixture starts
-`zig-out/bin/ztls_tlsfuzzer_server`, a thin TCP wrapper around the Sans-I/O
+`conformance/zig-out/bin/tlsfuzzer_server`, a thin TCP wrapper around the Sans-I/O
 `ServerHandshake`, on an ephemeral localhost port and fails if the server process
 crashes before or during any test.
 

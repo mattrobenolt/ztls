@@ -261,7 +261,7 @@ fn verifySignature(
         return error.SignatureVerificationFailed;
 }
 
-// Fixtures generated with: just gen-fixtures
+// Fixtures generated with: scripts/gen-fixtures.sh
 // Transcript hash: SHA-256("test transcript")
 
 const fixture_cert_der = @embedFile("test_fixtures/server.crt.der");

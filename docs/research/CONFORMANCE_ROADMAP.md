@@ -181,7 +181,7 @@ above; running them now mostly exercises features ztls intentionally does not
 implement.
 
 **TLS-Anvil (#9):** Java/JUnit runner. Prerequisite: a stable TCP
-wrapper for both roles (the `ztls_tlsfuzzer_server` pattern, plus a client
+wrapper for both roles (the `tlsfuzzer_server` pattern, plus a client
 wrapper). Acceptance: Anvil's TLS 1.3 server-and-client suites run in CI with a
 documented, justified skip list mapping each skip to an unimplemented feature.
 

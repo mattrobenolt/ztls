@@ -22,7 +22,7 @@ def _wait_for_ready(proc: subprocess.Popen, host: str, port: int, timeout_s: flo
     while time.monotonic() < deadline:
         if proc.poll() is not None:
             raise RuntimeError(
-                f"ztls_tlsfuzzer_server exited early rc={proc.returncode}: {captured.decode(errors='replace')!r}"
+                f"tlsfuzzer_server exited early rc={proc.returncode}: {captured.decode(errors='replace')!r}"
             )
         try:
             chunk = proc.stdout.read(4096)
@@ -39,7 +39,7 @@ def _wait_for_ready(proc: subprocess.Popen, host: str, port: int, timeout_s: flo
                 pass
         time.sleep(0.05)
     raise RuntimeError(
-        f"ztls_tlsfuzzer_server not ready on {host}:{port}; output={captured.decode(errors='replace')!r}"
+        f"tlsfuzzer_server not ready on {host}:{port}; output={captured.decode(errors='replace')!r}"
     )
 
 
@@ -73,11 +73,11 @@ def _server_alive(request):
         return
     proc = request.getfixturevalue("ztls_server")["proc"]
     if proc.poll() is not None:
-        pytest.fail(f"ztls_tlsfuzzer_server died before test rc={proc.returncode}", pytrace=False)
+        pytest.fail(f"tlsfuzzer_server died before test rc={proc.returncode}", pytrace=False)
     yield
     if proc.poll() is not None:
         captured = proc.stdout.read() if proc.stdout else b""
         pytest.fail(
-            f"ztls_tlsfuzzer_server died during test rc={proc.returncode}: {captured.decode(errors='replace')!r}",
+            f"tlsfuzzer_server died during test rc={proc.returncode}: {captured.decode(errors='replace')!r}",
             pytrace=False,
         )
