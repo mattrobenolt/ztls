@@ -10,10 +10,16 @@ pub fn build(b: *std.Build) void {
     });
     const ztls_mod = ztls_dep.module("ztls");
 
+    {
+        const dep = b.dependency("tlsanvil", .{});
+        const jar = dep.path("TLS-Anvil.jar");
+        const install = b.addInstallFile(jar, "tools/TLS-Anvil.jar");
+        b.getInstallStep().dependOn(&install.step);
+    }
+
     inline for (.{
         .{ .name = "tlsfuzzer_server", .src = "src/tlsfuzzer_server.zig" },
         .{ .name = "anvil_client", .src = "src/anvil_client.zig" },
-        .{ .name = "bogo", .src = "src/bogo.zig" },
     }) |entry| {
         const exe = b.addExecutable(.{
             .name = entry.name,

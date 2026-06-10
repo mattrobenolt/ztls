@@ -7,6 +7,10 @@
         .ztls = .{
             .path = "../",
         },
+        .tlsanvil = .{
+            .url = "https://github.com/tls-attacker/TLS-Anvil/releases/download/v1.5.0/TLS-Anvil-v1.5.0.zip",
+            .hash = "N-V-__8AAACiugX9TDNHS4gUMmDdAre7aDQZEvrSeorGViEk",
+        },
     },
     .paths = .{
         "build.zig",

@@ -45,11 +45,6 @@ def _wait_for_ready(proc: subprocess.Popen, host: str, port: int, timeout_s: flo
 
 @pytest.fixture(scope="session")
 def ztls_server():
-    if not SERVER_BIN.exists():
-        pytest.fail(
-            f"missing {SERVER_BIN}; run `zig build tlsfuzzer-server` from conformance/ first",
-            pytrace=False,
-        )
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.bind(("127.0.0.1", 0))
         port = sock.getsockname()[1]

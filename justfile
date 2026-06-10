@@ -33,7 +33,7 @@ example example *args:
 ci: test lint
     zig build test-openssl
     zig build test-openssl-server
-    cd conformance && just tlsfuzzer -q
+    just conformance/tlsfuzzer -v
     zig build bench -- --filter RecordEncrypt/{{ bench_suite }}/{{ bench_size }}
     zig build bench-evp -- --filter Encrypt/{{ bench_suite }}/{{ bench_size }}
     zig build bench-openssl -- --filter BioAppClientToServer/{{ bench_suite }}/{{ bench_size }}
