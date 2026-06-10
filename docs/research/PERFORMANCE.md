@@ -96,17 +96,26 @@ Containerized Linux may expose only a subset of perf events; if hardware cycles
 show as unsupported, use callgrind for instruction counts or rerun on bare
 metal.
 
-Typical local flow:
+Typical local development flow:
 
 ```sh
-just bench-capture
-just bench
-just bench-bins
-just bench-disasm record_protection_bench zig-out/record_protection_bench.asm
-just bench-disasm-libcrypto record_protection_bench zig-out/libcrypto.asm
-just bench-perf record_protection_bench --filter record_encrypt --filter aes_128
+just bench --filter RecordEncrypt/TLS_AES_128_GCM_SHA256/1350
+just bench-disasm
+just bench-disasm-libcrypto
+just bench-perf --filter record_encrypt --filter aes_128
 perf report --input zig-out/record_protection_bench.perf.data
 ```
+
+Full comparison captures are a separate workflow:
+
+```sh
+just bench-capture --count=5
+```
+
+Each capture writes one run directory under `zig-out/perf/<timestamp>/` with
+`metadata.txt`, `ztls.txt`, `evp.txt`, `libssl.txt`, and `rustls.txt`. This shape
+is intended for remote benchmark hosts: rsync the run directory back, then run
+`benchstat` over the captured files.
 
 All benchmark binaries accept fuzzy `--filter` plus structured filters:
 `--bench <name>`, `--suite <substring>`, and `--size <bytes>`. `--bench` is an
@@ -141,8 +150,6 @@ callgrind_annotate callgrind.out
 For raw OpenSSL crypto comparison:
 
 ```sh
-just bench
-# or only the raw EVP harness:
 zig build bench-evp
 zig build bench-evp-bin
 zig-out/bin/openssl_evp_bench --filter aes_128

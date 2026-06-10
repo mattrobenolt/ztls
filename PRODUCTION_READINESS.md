@@ -188,21 +188,21 @@ comparisons measure equivalent work*. This is the project's justification.
   parser/framing throughput, deterministic client handshake replay, full
   in-memory ztls connection rows, OpenSSL EVP raw-AEAD rows, OpenSSL/libssl
   memory-BIO rows, and rustls in-memory client/server rows.
-- `justfile` has useful local recipes: `bench`, `bench-list`,
-  `bench-capture`, `benchstat`, `bench-bins`, `bench-disasm`,
-  `bench-disasm-libcrypto`, and `bench-perf`.
-  `just ci` smoke-runs one ztls record row, one EVP row, and one OpenSSL BIO
-  app-data row; it does not run rustls.
-- `just bench-capture` is the closest local full-comparison command: it writes
-  timestamped ztls, EVP, BIO, and rustls captures under `zig-out/perf/`.
+- `justfile` has useful local recipes: `bench` for ztls rows,
+  `bench-capture` for local full-comparison captures, and profiling helpers
+  `bench-disasm`, `bench-disasm-libcrypto`, and `bench-perf`. `just ci` no
+  longer runs benchmark measurements; benchmarks are not correctness evidence
+  on uncontrolled CI runners.
+- `just bench-capture` writes a timestamped run directory under `zig-out/perf/`
+  with metadata plus ztls, EVP, libssl memory-BIO, and rustls captures.
 - `infra/bench/` is an OpenTofu/NixOS EC2 host recipe with a pinned-ish shape:
   region `us-west-2`, default `c7i.large`, generated ED25519 SSH key,
   public VPC/subnet/security group, Nix flakes enabled, ASLR disabled, and some
   noisy services masked.
 - The AWS README documents the actual remote ritual today: `cd infra/bench`,
-  `tofu init`, `tofu apply`, rsync the repo, SSH to the instance, run a manual
-  `nix develop -c bash -c '...'` benchmark snippet, rsync `zig-out/perf/` back,
-  then run `benchstat` locally.
+  `tofu init`, `tofu apply`, rsync the repo, SSH to the instance, run
+  `just bench-capture --count=5`, rsync `zig-out/perf/` back, then run
+  `benchstat` locally.
 - The local benchmark docs require metadata: target, CPU model, Zig version,
   optimization mode, and git revision. AGENTS.md separately requires committed
   benchmark numbers to include machine + flags + date.
@@ -218,21 +218,18 @@ comparisons measure equivalent work*. This is the project's justification.
   The docs say the memory-BIO rows are the closest current comparison, and they
   correctly label EVP rows as not a TLS comparison, but they do not yet make the
   apples-to-apples case falsifiable. *(todo #12)*
-- **Full comparison is not one command on benchmark hardware.** Locally,
-  `just bench-capture` captures all four harnesses, but the AWS path is a manual
-  provisioning/deploy/SSH/remote-command/pullback/benchstat ritual. The remote
-  README snippet captures only ztls and OpenSSL BIO, omitting EVP and rustls, so
-  it is not even the full local comparison transplanted to EC2. *(todo
-  #11)*
+- **Full benchmark workflow is still manually orchestrated.** The remote path
+  now uses the same `just bench-capture` command as local runs, but provisioning,
+  deploy, SSH execution, pullback, and benchstat analysis are still manual steps.
+  *(todo #11)*
 - **No defined hardware matrix.** `infra/bench/` provisions one instance type
   (`c7i.large`) and notes that lower-noise runs should use `c7i.2xlarge` or
   larger, but there is no committed matrix of instance families/sizes,
   architectures, CPU pinning policy, repetitions, or acceptance thresholds.
   *(todo #11)*
-- **Documented analysis command is missing.** `docs/research/PERFORMANCE.md`
-  tells users to run `just bench-analyze` and says it consumes captures, but the
-  justfile has no `bench-analyze` recipe and grep found no implementation. That
-  breaks the documented capture-to-ratio workflow. *(todo #13)*
+- **Capture analysis remains manual.** Local and remote workflows still rely on
+  hand-written `benchstat` invocations over captured files. There is no committed
+  one-command capture-to-ratio workflow. *(todo #13)*
 - **Published results with provenance are absent.** The repo has harnesses and
   workflow notes, but no committed ztls-vs-libssl-vs-rustls result set with the
   required machine, flags, date, Zig version, target/CPU, git revision, and
@@ -343,9 +340,10 @@ These are not feature work; they stop the bleeding and make the rest legible.
    files now cite the canonical GitHub issues (#1–#5), not duplicate pi todos.
 3. **Consolidate `docs/research/`.** Apply the reconciliation kill-list tracked
    in #20; status moves here, mechanism stays there.
-4. **PARTIAL — Define the build.zig / justfile taxonomy.** Structural split
-   landed (b890380): `src/build/` modules, `scripts/`, and `just/` sub-files
-   with a taxonomy header. Benchmark naming consistency and interop wrapper
-   surface remain open in #21.
-5. **Unify the conformance façade.** Track the `just conformance <suite>` shape
+4. **PARTIAL — Define workspace ownership for build.zig / just recipes.**
+   Structural split landed (b890380): `src/build/` modules and root `just/`
+   sub-files exist, while domain subprojects such as `conformance/` own their
+   local workflows and root delegates to them. Benchmark naming consistency and
+   interop wrapper surface remain open in #21.
+5. **Unify the conformance façade.** Track the `just conformance/<recipe>` shape
    and normalized result format in #9.

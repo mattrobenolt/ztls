@@ -96,10 +96,10 @@ todo and the readiness doc say partial. Never close a todo or upgrade a status o
 the strength of a commit that only moves toward the goal. Honest partial beats
 false done.
 
-**New artifacts go in the existing taxonomy.** Don't invent new top-level docs,
-`build.zig` sections, `justfile` groups, or example layouts. Find the home the
-structure already defines. If none fits, that is a design decision to raise
-explicitly — not to improvise into the tree.
+**Respect workspace ownership.** The root is the ztls library workspace; domain
+subprojects such as `conformance/` own their local build/test/fmt/lint workflows
+and should be usable from inside that directory. Root just recipes may delegate
+to subprojects, but don't smear subproject details back into the root.
 
 ---
 
@@ -139,11 +139,10 @@ path tests are not optional.
 ztls client to a ztls server in memory and exercise both directions against
 `openssl s_server` / `openssl s_client` as ground-truth peers.
 
-**Conformance tests** — see `docs/research/DESIGN.md` § Testing Strategy.
-Active external coverage includes tlsfuzzer, Wycheproof boundary smoke tests,
-TLS-Anvil shims, BoGo shims, and the bettertls inventory. When a suite covers
-something we implement, we either run it or keep an explicit skip/inventory for
-unsupported surface area.
+**Conformance tests** live under `conformance/` as a discrete subproject with
+its own `build.zig`, `justfile`, Python environment, and harness code. The root
+workspace delegates to `just conformance/ci`; when working on conformance, `cd
+conformance` and use its local `just fmt`, `just lint`, and suite recipes.
 
 ---
 

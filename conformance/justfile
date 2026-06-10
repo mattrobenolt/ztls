@@ -2,29 +2,56 @@
 default:
     @just --list
 
+[doc("Format conformance code")]
+fmt: fmt-python fmt-zig fmt-just
+
+[doc("Lint conformance code")]
+lint: lint-python lint-zig lint-just
+
+[doc("Format Python code")]
+fmt-python:
+    uv run ruff format .
+    uv run ruff check --fix .
+
 [doc("Lint Python code")]
-lint:
+lint-python:
     uv run ruff format --check .
     uv run ruff check .
     uv run ty check .
 
-[doc("Format Python code")]
-fmt:
-    uv run ruff format .
-    uv run ruff check --fix .
+[doc("Format Zig harness code")]
+fmt-zig:
+    zig fmt build.zig src/
+
+[doc("Lint Zig harness code")]
+lint-zig:
+    zig fmt --check build.zig src/
+    ziglint build.zig src/
+
+[doc("Format Justfile")]
+fmt-just:
+    just --fmt --unstable --justfile justfile
+
+[doc("Lint Justfile")]
+lint-just:
+    just --check --fmt --unstable --justfile justfile
 
 [private]
-_build:
+build:
     zig build
 
 [doc("Run tlsfuzzer TLS 1.3 conformance smoke tests")]
-tlsfuzzer *args: _build
+tlsfuzzer *args: build
     uv run pytest {{ args }}
 
+[doc("Run all CI gates")]
+ci:
+    just tlsfuzzer -v
+
 [doc("Run TLS-Anvil server tests")]
-anvil-server: _build
+anvil-server: build
     @echo "TODO: TLS-Anvil server runner not yet wired"
 
 [doc("Run TLS-Anvil client tests")]
-anvil-client: _build
+anvil-client: build
     @echo "TODO: TLS-Anvil client runner not yet wired"

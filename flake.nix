@@ -57,7 +57,6 @@
                 go
                 jdk
                 just
-                nushell
                 openssl
                 pinact
                 pkg-config

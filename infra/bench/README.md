@@ -1,6 +1,6 @@
 # EC2 NixOS benchmark host (OpenTofu)
 
-Single NixOS instance for running ztls benchmarks. Clone of the proven fuckscram infra pattern.
+Single NixOS instance for running ztls benchmark captures on less-noisy hardware.
 
 ## Prerequisites
 
@@ -23,39 +23,52 @@ rsync -avz --exclude .git --exclude zig-out --exclude .zig-cache \
   . root@$(tofu output -raw instance_ip):/root/ztls/
 ```
 
-SSH in and run comparison captures:
+SSH in and run a full comparison capture:
 
 ```bash
 ssh -i infra/bench/bench.pem -o StrictHostKeyChecking=no \
   root@$(tofu output -raw instance_ip)
 
 cd ztls
-nix develop -c bash -c '
-  mkdir -p zig-out/perf
-  stamp=$(date +%Y%m%d-%H%M%S)
-  zig build bench -- --count=5 > "zig-out/perf/ztls-${stamp}.txt"
-  zig build bench-openssl -- --count=5 > "zig-out/perf/bio-${stamp}.txt"
-  echo "${stamp}"
-'
+just bench-capture --count=5
 ```
 
-Pull results back and compare with benchstat:
+`just bench-capture` writes one timestamped run directory:
+
+```text
+zig-out/perf/YYYYMMDD-HHMMSS/
+  metadata.txt
+  ztls.txt
+  evp.txt
+  libssl.txt
+  rustls.txt
+```
+
+Pull results back:
 
 ```bash
 rsync -avz \
   -e "ssh -i infra/bench/bench.pem -o StrictHostKeyChecking=no" \
   root@$(tofu output -raw instance_ip):/root/ztls/zig-out/perf/ \
   zig-out/perf/
+```
 
+Compare captures with benchstat:
+
+```bash
+run=zig-out/perf/YYYYMMDD-HHMMSS
 benchstat -row ".name /suite /size" -col /impl \
-  ztls=zig-out/perf/ztls-YYYYMMDD-HHMMSS.txt \
-  openssl=zig-out/perf/bio-YYYYMMDD-HHMMSS.txt
+  ztls=${run}/ztls.txt \
+  evp=${run}/evp.txt \
+  libssl=${run}/libssl.txt \
+  rustls=${run}/rustls.txt
 ```
 
 ## Instance sizing
 
 Default is `c7i.large` (1 physical core, 2 SMT threads) for cheap quick runs.
 It does **not** let you:
+
 - Disable Turbo Boost (no `intel_pstate` exposed by hypervisor)
 - Set a performance CPU governor (no cpufreq driver in VM)
 - Isolate 2 physical cores with `cset` (only 1 core available)
@@ -68,9 +81,11 @@ For lower-noise runs, switch to `c7i.2xlarge` or larger in `variables.tf` —
 ## Notes
 
 - Benchmark binaries build with `ReleaseFast`.
+- `just bench` runs ztls benchmarks only and passes arguments through to the ztls harness.
+- `just bench-capture` captures ztls, raw EVP, libssl memory-BIO, and rustls rows.
 - Filter syntax: `--filter 'BenchmarkHandshake/*,BenchmarkAppClientToServer/*'`
-- Both benchmark suites use the same OpenSSL libcrypto backend. Differences come
-  from record-framing overhead, not crypto implementation.
+- `metadata.txt` records timestamp, git revision/dirty state, Zig version, kernel,
+  and available CPU information.
 - `configuration.nix` is applied on first boot only. If you change it, recreate
   the instance with `tofu destroy && tofu apply`.
 

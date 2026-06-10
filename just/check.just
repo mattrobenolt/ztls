@@ -5,11 +5,13 @@ test:
 
 [doc("Format all code")]
 [group("check")]
-fmt: fmt-zig fmt-actions fmt-conformance
+fmt: fmt-zig fmt-actions fmt-just
+    just conformance/fmt
 
 [doc("Check formatting and lint (for CI)")]
 [group("check")]
-lint: lint-zig lint-actions lint-conformance
+lint: lint-zig lint-actions lint-just
+    just conformance/lint
 
 [doc("Format Zig code")]
 [group("check")]
@@ -22,13 +24,14 @@ lint-zig:
     ziglint build.zig examples bench $(fd --extension zig --exclude cryptox . src)
     ast-grep scan --rule rules/no-ztls-owned-allocations.yml src --globs '*.zig' --globs '!src/test/**' --report-style short
 
-[private]
-fmt-conformance:
-    just conformance/fmt
+[doc("Format Justfiles")]
+[group("check")]
+fmt-just:
+    @fd '(^justfile$|\.just$)' -tf -x just --fmt --unstable --justfile {}
 
-[private]
-lint-conformance:
-    just conformance/lint
+[group("check")]
+lint-just:
+    @fd '(^justfile$|\.just$)' -tf -x just --check --fmt --unstable --justfile {}
 
 [doc("Auto-fix GitHub Actions workflows")]
 [group("check")]
