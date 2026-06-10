@@ -1,5 +1,3 @@
-const std = @import("std");
-
 pub const aead = @import("aead.zig");
 pub const alert = @import("alert.zig");
 pub const certificate = @import("certificate.zig");
@@ -23,8 +21,3 @@ pub const x25519 = @import("x25519.zig");
 
 /// RFC 8446 §4.1.2 — ClientHello random bytes.
 pub const Random = memx.Array(32);
-
-test {
-    std.testing.refAllDeclsRecursive(@This());
-    _ = @import("test/wycheproof_smoke.zig");
-}

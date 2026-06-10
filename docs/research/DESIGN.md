@@ -337,7 +337,8 @@ Every error path is tested. Fuzzing is not optional.
 
 - **tlsfuzzer** (https://github.com/tlsfuzzer/tlsfuzzer) — RFC conformance and
   protocol fuzzer. Runs Python scripts against a live server. The active TLS 1.3
-  suite lives in `conformance/` and runs with `just tlsfuzzer`.
+  suite lives in `conformance/` and runs from the root with
+  `just conformance/tlsfuzzer`.
 - **TLS-Anvil** (https://github.com/tls-attacker/TLS-Anvil) — ~408 RFC-based
   client and server tests for TLS 1.3. Java/JUnit based. Useful for broad future
   matrix coverage, especially once ztls implements HRR, PSK/resumption, 0-RTT,
@@ -345,7 +346,7 @@ Every error path is tested. Fuzzing is not optional.
 - **Wycheproof** (https://github.com/C2SP/wycheproof) — integration vectors at
   the libcrypto boundary (AEAD tag/AAD/nonce handling, X25519 identity-element
   rejection, ECDSA DER verification), not proof that ztls implements primitive
-  crypto. Boundary smoke vectors run with `zig build test-wycheproof`.
+  crypto. Boundary smoke vectors run with `zig build test`.
 - **bettertls** (https://github.com/Netflix/bettertls) — name constraints and
   path-building correctness for certificate validation. A bettertls inventory is maintained in
   `docs/research/bettertls.md`.

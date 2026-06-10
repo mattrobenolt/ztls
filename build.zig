@@ -5,7 +5,6 @@ const builtin = @import("builtin");
 
 const bench_mod = @import("src/build/bench.zig");
 const examples_mod = @import("src/build/examples.zig");
-const fixtures = @import("src/build/fixtures.zig");
 const tests = @import("src/build/tests.zig");
 
 fn nativeTarget() Target.Query {
@@ -34,13 +33,13 @@ pub fn build(b: *Build) void {
     mod.linkSystemLibrary("crypto", .{});
 
     const test_mod = b.createModule(.{
-        .root_source_file = b.path("src/root.zig"),
+        .root_source_file = b.path("src/test.zig"),
         .target = target,
         .optimize = optimize,
     });
     test_mod.link_libc = true;
     test_mod.linkSystemLibrary("crypto", .{});
-    const txtar_mod: ?*Build.Module = if (b.lazyDependency("txtar", .{
+    const txtar_mod = if (b.lazyDependency("txtar", .{
         .target = target,
         .optimize = optimize,
     })) |dep| dep.module("txtar") else null;
@@ -63,15 +62,12 @@ pub fn build(b: *Build) void {
     c_ssl_mod.linkSystemLibrary("ssl", .{});
     c_ssl_mod.linkSystemLibrary("crypto", .{});
 
-    const benchmark_dep: *Build.Dependency = b.dependency("benchmark", .{
+    const benchmark_dep = b.dependency("benchmark", .{
         .target = target,
         .optimize = .ReleaseFast,
     });
 
     tests.addSteps(b, .{
-        .target = target,
-        .optimize = optimize,
-        .ztls_mod = mod,
         .test_mod = test_mod,
     });
 
@@ -82,12 +78,6 @@ pub fn build(b: *Build) void {
         .c_ssl_mod = c_ssl_mod,
         .benchmark_dep = benchmark_dep,
         .txtar_mod = txtar_mod,
-    });
-
-    fixtures.addSteps(b, .{
-        .target = target,
-        .optimize = optimize,
-        .ztls_mod = mod,
     });
 
     examples_mod.addSteps(b, .{

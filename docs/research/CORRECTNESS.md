@@ -23,7 +23,7 @@ crashes before or during any test.
 Run directly with:
 
 ```sh
-just tlsfuzzer -q
+just conformance/tlsfuzzer -q
 ```
 
 The suite is protocol conformance evidence: it checks real wire behavior, alerts, and
@@ -34,8 +34,8 @@ behavior against a malicious server is not covered by this runner.
 
 ## Wycheproof boundary vectors
 
-`zig build test-wycheproof` runs selected Wycheproof v1 vectors at ztls's
-libcrypto boundary. These tests do **not** claim that ztls implements primitive
+`zig build test` runs selected Wycheproof v1 vectors at ztls's libcrypto
+boundary. These tests do **not** claim that ztls implements primitive
 crypto. ztls does not implement AES-GCM, ChaCha20-Poly1305, X25519, or ECDSA
 primitives. The purpose is to verify wrapper behavior:
 

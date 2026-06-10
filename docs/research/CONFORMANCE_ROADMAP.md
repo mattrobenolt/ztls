@@ -168,8 +168,8 @@ existing libcrypto boundary, not new protocol surface.
 
 **Acceptance criteria:** additional Wycheproof groups (e.g. full AES-GCM/ChaCha
 vector files, X25519 test groups, ECDSA edge cases) loaded and gated in
-`zig build test-wycheproof`, still framed as wrapper-behavior tests (ztls does
-not implement primitives).
+`zig build test`, still framed as wrapper-behavior tests (ztls does not
+implement primitives).
 
 ---
 
@@ -188,7 +188,7 @@ documented, justified skip list mapping each skip to an unimplemented feature.
 **tlsfuzzer lockstep (#9):** tighter request/response stepping than
 the current conversation harness. Prerequisite: none beyond the existing
 fixture. Acceptance: lockstep mode runs the current conversations deterministically
-and is gated in `just tlsfuzzer`.
+and is gated in `just conformance/tlsfuzzer`.
 
 **BoGo shim (#9):** BoringSSL's `runner` drives a shim binary over a
 defined CLI/stdio protocol. Prerequisite: a ztls shim implementing the BoGo

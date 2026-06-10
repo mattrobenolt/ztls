@@ -4,19 +4,19 @@ const mem = std.mem;
 const heap = std.heap;
 
 const bench = @import("benchmark");
-const ztls = @import("ztls");
+
+const ztls = @import("../root.zig");
 const Aead = ztls.aead.Aead;
 const Iv = ztls.aead.Iv;
 const RecordBuffer = ztls.RecordBuffer;
 const RecordLayer = ztls.RecordLayer;
 const frame = ztls.frame;
-
 const rfc8448 = @import("rfc8448.zig");
 
 const sizes = [_]usize{ 16, 128, 1350, 8192, frame.max_plaintext_len };
-const openssl_replay_archive = @embedFile("test_fixtures/openssl_replay.txtar");
-const server_cert_der = @embedFile("test_fixtures/server-ecdsa/server.der");
-const server_scalar = @embedFile("test_fixtures/server-ecdsa/scalar.bin");
+const openssl_replay_archive = @embedFile("../test_fixtures/openssl_replay.txtar");
+const server_cert_der = @embedFile("../test_fixtures/server-ecdsa/server.der");
+const server_scalar = @embedFile("../test_fixtures/server-ecdsa/scalar.bin");
 
 const Suite = enum {
     aes_128_gcm_sha256,

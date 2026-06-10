@@ -3,11 +3,12 @@ const mem = std.mem;
 const doNotOptimizeAway = mem.doNotOptimizeAway;
 
 const bench = @import("benchmark");
-const aead = @import("aead.zig");
-const frame = @import("frame.zig");
-const memx = @import("memx.zig");
-const NewSessionTicket = @import("NewSessionTicket.zig");
-const wire = @import("wire.zig");
+
+const aead = @import("../aead.zig");
+const frame = @import("../frame.zig");
+const memx = @import("../memx.zig");
+const NewSessionTicket = @import("../NewSessionTicket.zig");
+const wire = @import("../wire.zig");
 
 pub fn benchmarkLastIndexNonZeroNoPadding16(b: *bench.B) !void {
     var buf: [16]u8 = @splat(0);

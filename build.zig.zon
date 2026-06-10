@@ -12,8 +12,8 @@
             .lazy = true,
         },
         .benchmark = .{
-            .url = "git+https://github.com/mattrobenolt/zig-benchmark#7f04517296bccce240bdd554ea2af4fafd688cf9",
-            .hash = "benchmark-0.1.0-JS72VvXoAAAUtVctVt4VJngzawKXYgDXcHw40v5sO2qI",
+            .url = "git+https://github.com/mattrobenolt/zig-benchmark#6e7e9ab7ed8bd8147c491ac53a1d326633a5c47a",
+            .hash = "benchmark-0.1.0-JS72VvXxAACo8j9BYddbkivgNHXIeD1V27013BuCtW-_",
         },
     },
     .paths = .{

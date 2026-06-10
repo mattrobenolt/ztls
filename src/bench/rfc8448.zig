@@ -1,8 +1,9 @@
-const ztls = @import("ztls");
+const client_hello = @import("../client_hello.zig");
+const x25519 = @import("../x25519.zig");
 
 pub const replay_host_name = "test.local";
 
-pub const client_random: ztls.client_hello.Random = .{ .data = .{
+pub const client_random: client_hello.Random = .{ .data = .{
     0xcb, 0x34, 0xec, 0xb1, 0xe7, 0x81, 0x63, 0xba,
     0x1c, 0x38, 0xc6, 0xda, 0xcb, 0x19, 0x6a, 0x6d,
     0xff, 0xa2, 0x1a, 0x8d, 0x99, 0x12, 0xec, 0x18,
@@ -11,7 +12,7 @@ pub const client_random: ztls.client_hello.Random = .{ .data = .{
 
 // RFC 8448 §3 client ephemeral X25519 keypair. Reusing it makes the generated
 // ClientHello deterministic, so captured OpenSSL records can be replayed.
-pub const client_keypair: ztls.x25519.KeyPair = .{
+pub const client_keypair: x25519.KeyPair = .{
     .secret_key = .init(.{
         0x49, 0xaf, 0x42, 0xba, 0x7f, 0x79, 0x94, 0x85,
         0x2d, 0x71, 0x3e, 0xf2, 0x78, 0x4b, 0xcb, 0xca,

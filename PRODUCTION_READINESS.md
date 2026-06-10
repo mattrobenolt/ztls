@@ -85,8 +85,8 @@ consumption-for-rejection, not resumption.
 
 - RFC-cited unit tests; every test names its spec section (AGENTS.md mandate).
 - RFC 8448 known-answer vectors for the key schedule and transcript.
-- OpenSSL interop, both directions (`test-openssl`, `test-openssl-server`).
-- tlsfuzzer conformance, CI-gated (`just tlsfuzzer`).
+- OpenSSL interop in both directions, covered by `zig build test`.
+- tlsfuzzer conformance, CI-gated (`just conformance/tlsfuzzer`).
 - Wycheproof boundary vectors at the libcrypto seam.
 - Fuzzing on the major parsers.
 - Explicit verification gates (client must verify Certificate / CertificateVerify
@@ -340,10 +340,12 @@ These are not feature work; they stop the bleeding and make the rest legible.
    files now cite the canonical GitHub issues (#1–#5), not duplicate pi todos.
 3. **Consolidate `docs/research/`.** Apply the reconciliation kill-list tracked
    in #20; status moves here, mechanism stays there.
-4. **PARTIAL — Define workspace ownership for build.zig / just recipes.**
-   Structural split landed (b890380): `src/build/` modules and root `just/`
-   sub-files exist, while domain subprojects such as `conformance/` own their
-   local workflows and root delegates to them. Benchmark naming consistency and
-   interop wrapper surface remain open in #21.
+4. **DONE — Define workspace ownership for build.zig / just recipes.**
+   `src/build/` modules and root `just/` sub-files exist, while domain
+   subprojects such as `conformance/` own their local workflows and root
+   delegates to them. Benchmark recipes separate ztls development runs from full
+   comparison captures, OpenSSL interop runs as normal Zig tests instead of
+   standalone build-step binaries, and `tests/fixtures/` is the only real
+   fixture source tree.
 5. **Unify the conformance façade.** Track the `just conformance/<recipe>` shape
    and normalized result format in #9.

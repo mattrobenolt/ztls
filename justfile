@@ -16,6 +16,4 @@ example example *args:
 
 [doc("Run all CI gates")]
 ci: test lint
-    zig build test-openssl
-    zig build test-openssl-server
     just conformance/ci

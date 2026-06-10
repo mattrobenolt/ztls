@@ -7,10 +7,13 @@ const std = @import("std");
 const fs = std.fs;
 const mem = std.mem;
 const Child = std.process.Child;
+const net = std.net;
+const time = std.time;
+const heap = std.heap;
+const sleep = std.Thread.sleep;
+const Allocator = std.mem.Allocator;
 
 const ztls = @import("ztls");
-
-const harness = @import("harness.zig");
 
 const host = "127.0.0.1";
 const replay_host_name = "test.local";
@@ -49,8 +52,19 @@ const client_random: ztls.client_hello.Random = .{ .data = .{
     0xa2, 0xef, 0x62, 0x83, 0x02, 0x4d, 0xec, 0xe7,
 } };
 
+pub fn connectWithRetry(port: u16) !net.Stream {
+    const addr: net.Address = try .parseIp("127.0.0.1", port);
+    for (0..100) |_| {
+        return net.tcpConnectToAddress(addr) catch {
+            sleep(20 * time.ns_per_ms);
+            continue;
+        };
+    }
+    return error.ServerNeverCameUp;
+}
+
 pub fn main() !void {
-    var arena_allocator: std.heap.ArenaAllocator = .init(std.heap.smp_allocator);
+    var arena_allocator: heap.ArenaAllocator = .init(heap.smp_allocator);
     defer arena_allocator.deinit();
     const arena = arena_allocator.allocator();
 
@@ -73,11 +87,11 @@ pub fn main() !void {
     }
 }
 
-fn captureSuite(arena: std.mem.Allocator, suite: []const u8, port: u16) ![]u8 {
+fn captureSuite(arena: Allocator, suite: []const u8, port: u16) ![]u8 {
     var server = try startServer(arena, suite, port);
     defer _ = server.kill() catch {};
 
-    const stream = try harness.connectWithRetry(port);
+    const stream = try connectWithRetry(port);
     defer stream.close();
 
     var hs: ztls.ClientHandshake = .init(client_keypair);

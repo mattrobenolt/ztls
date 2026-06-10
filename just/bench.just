@@ -15,19 +15,19 @@ bench-bin:
 [doc("Disassemble the ztls benchmark binary")]
 [group("bench")]
 bench-disasm: bench-bin
-    objdump -d zig-out/bin/record_protection_bench > zig-out/record_protection_bench.asm
-    @echo zig-out/record_protection_bench.asm
+    objdump -d zig-out/bin/benchmark > zig-out/benchmark.asm
+    @echo zig-out/benchmark.asm
 
 [doc("Disassemble libcrypto linked by the ztls benchmark binary")]
 [group("bench")]
 [linux]
 bench-disasm-libcrypto: bench-bin
-    objdump -d $(ldd zig-out/bin/record_protection_bench | awk '/libcrypto/{print $3; exit}') > zig-out/libcrypto.asm
+    objdump -d $(ldd zig-out/bin/benchmark | awk '/libcrypto/{print $3; exit}') > zig-out/libcrypto.asm
     @echo zig-out/libcrypto.asm
 
 [doc("Record a perf profile for the ztls benchmark binary")]
 [group("bench")]
 [linux]
 bench-perf *args: bench-bin
-    perf record --call-graph dwarf --output zig-out/record_protection_bench.perf.data -- zig-out/bin/record_protection_bench {{ args }}
-    @echo zig-out/record_protection_bench.perf.data
+    perf record --call-graph dwarf --output zig-out/benchmark.perf.data -- zig-out/bin/benchmark {{ args }}
+    @echo zig-out/benchmark.perf.data

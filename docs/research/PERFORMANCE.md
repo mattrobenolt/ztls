@@ -103,7 +103,7 @@ just bench --filter RecordEncrypt/TLS_AES_128_GCM_SHA256/1350
 just bench-disasm
 just bench-disasm-libcrypto
 just bench-perf --filter record_encrypt --filter aes_128
-perf report --input zig-out/record_protection_bench.perf.data
+perf report --input zig-out/benchmark.perf.data
 ```
 
 Full comparison captures are a separate workflow:
@@ -133,7 +133,7 @@ The raw Zig build steps remain available when you want to bypass `just`:
 ```sh
 zig build bench
 zig build bench-bin
-perf record --call-graph dwarf ./zig-out/bin/record_protection_bench
+perf record --call-graph dwarf ./zig-out/bin/benchmark
 perf report
 ```
 
@@ -143,7 +143,7 @@ suite; callgrind is deterministic but slow.
 ```sh
 zig build bench-bin
 valgrind --tool=callgrind --callgrind-out-file=callgrind.out \
-  ./zig-out/bin/record_protection_bench --filter chacha20
+  ./zig-out/bin/benchmark --filter chacha20
 callgrind_annotate callgrind.out
 ```
 

@@ -34,6 +34,6 @@ mkdir -p "${run_dir}"
 zig build bench -- "$@" > "${run_dir}/ztls.txt"
 zig build bench-evp -- "$@" > "${run_dir}/evp.txt"
 zig build bench-openssl -- "$@" > "${run_dir}/libssl.txt"
-zig build bench-rustls -- "$@" > "${run_dir}/rustls.txt"
+cargo run --release --manifest-path bench/rustls/Cargo.toml -- "$@" > "${run_dir}/rustls.txt"
 
 echo "${run_dir}"
