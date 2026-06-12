@@ -13,6 +13,10 @@ just ci
 
 The authoritative readiness status and evidence summary lives in `PRODUCTION_READINESS.md`.
 
+`NEGATIVE_SPACE.md` is the supported-surface catalogue of malformed and
+malicious peer inputs: each row names ztls's response and the test evidence or
+an explicit gap.
+
 ## tlsfuzzer
 
 `conformance/` contains a pytest/tlsfuzzer suite. The fixture starts

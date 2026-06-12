@@ -3,6 +3,7 @@
 Design notes, RFC references, and prior art for ztls.
 
 - [`DESIGN.md`](DESIGN.md) — architecture, goals, API sketch, build order
+- [`NEGATIVE_SPACE.md`](NEGATIVE_SPACE.md) — malformed/malicious peer input inventory
 - [`rfcs/`](rfcs/) — full RFC text files for offline reference
   - `rfc8446-tls13.txt` — TLS 1.3 (the main one)
   - `rfc5869-hkdf.txt` — HKDF

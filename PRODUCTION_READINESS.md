@@ -59,7 +59,7 @@ ztls is production-ready when all six pillars are `PROVEN`:
 
 | Pillar | Status | One-line |
 |---|---|---|
-| 1. Correctness | `PARTIAL` | Strong layered evidence; MUST-coverage, negative-space, and threat-model artifacts are the structural holes. |
+| 1. Correctness | `PARTIAL` | Strong layered evidence; MUST-coverage and threat-model artifacts are the structural holes. |
 | 2. Ergonomics | `PARTIAL` | `std.net.Stream` examples cover both roles; io_uring has a client-only proof; epoll is absent and examples are not CI-gated. |
 | 3. Performance | `PARTIAL` | Rich bench harness exists; equivalence methodology and reproducible hardware-matrix results are missing. |
 | 4. Providers | `PARTIAL` | OpenSSL primitives are live, but the provider seam is mostly aspirational: no backend selection, no second backend, no capability table. |
@@ -95,6 +95,9 @@ consumption-for-rejection, not resumption.
   encrypted records, client-emitted alert descriptions, peer fatal alerts,
   illegal pre-handshake application data, unexpected post-handshake inner content
   types, and truncated-record framing robustness.
+- `docs/research/NEGATIVE_SPACE.md` inventories supported-surface malformed and
+  malicious peer inputs, mapping each to ztls's response and evidence or an
+  explicit gap.
 - Explicit verification gates (client must verify Certificate / CertificateVerify
   / Finished before promoting to app keys; server must verify client Finished).
 
@@ -106,9 +109,6 @@ consumption-for-rejection, not resumption.
   ztls lacks: a table mapping every RFC 8446 normative requirement to the
   test(s) that prove it or the decision that scopes it out. Until this exists,
   "proven correct" cannot be claimed. *(#25)*
-- **No negative-space inventory.** TLS's danger lives in everything that must
-  fail. A single enumeration of "every way a peer can be malicious × what ztls
-  does in response" does not exist. *(#26)*
 - **No written threat model.** "Done" for a TLS library includes an enumerated,
   in-scope attack list with documented responses. *(#27)*
 - **External runners not gated.** BoGo and TLS-Anvil shims exist but are not in
