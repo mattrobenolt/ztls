@@ -113,7 +113,7 @@ pub fn parseHelloRetryRequest(msg: []const u8) HrrParseError!HelloRetryRequest {
     if (r.remaining().len < session_id_len + 2 + 1 + 2) return error.UnexpectedEof;
     r.assumeSkip(session_id_len); // legacy_session_id_echo
 
-    const cipher_suite = try r.read(CipherSuite);
+    const cipher_suite = CipherSuite.fromWire(r.assumeRead(u16)) orelse return error.InvalidEnumTag;
     r.assumeSkip(1); // legacy_compression_method
 
     const extensions_len = r.assumeRead(u16);
@@ -243,7 +243,7 @@ pub fn parse(msg: []const u8) ParseError!ServerHello {
     if (r.remaining().len < session_id_len + 2 + 1 + 2) return error.UnexpectedEof;
     r.assumeSkip(session_id_len); // legacy_session_id_echo
 
-    const cipher_suite = try r.read(CipherSuite);
+    const cipher_suite = CipherSuite.fromWire(r.assumeRead(u16)) orelse return error.InvalidEnumTag;
     r.assumeSkip(1); // legacy_compression_method
 
     // Extensions
@@ -385,6 +385,15 @@ test "parse: rejects mismatched handshake length" {
     try testing.expectError(error.InvalidHandshakeLength, parse(&msg));
 }
 
+// RFC 8446 Appendix B.4 — unknown cipher-suite code points are rejected, not
+// treated as enum-unreachable input.
+test "parse: rejects unknown cipher suite" {
+    var msg = server_hello_rfc8448[0..server_hello_rfc8448.len].*;
+    msg[39] = 0x13;
+    msg[40] = 0x04;
+    try testing.expectError(error.InvalidEnumTag, parse(&msg));
+}
+
 test "parse: rejects oversized extensions block" {
     var msg = server_hello_rfc8448[0..server_hello_rfc8448.len].*;
     msg[42] = 0xff;
@@ -504,6 +513,14 @@ test "parseHelloRetryRequest: rejects TLS 1.2 in supported_versions" {
     msg[msg.len - 2] = 0x03;
     msg[msg.len - 1] = 0x03;
     try testing.expectError(error.UnsupportedTlsVersion, parseHelloRetryRequest(&msg));
+}
+
+// RFC 8446 Appendix B.4 — unknown HRR cipher-suite code points are rejected.
+test "parseHelloRetryRequest: rejects unknown cipher suite" {
+    var msg = hrr_rfc8448[0..hrr_rfc8448.len].*;
+    msg[39] = 0x13;
+    msg[40] = 0x04;
+    try testing.expectError(error.InvalidEnumTag, parseHelloRetryRequest(&msg));
 }
 
 // RFC 8446 §4.1.4 — extensions vector must consume the whole HRR body.
