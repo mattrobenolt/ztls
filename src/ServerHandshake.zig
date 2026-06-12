@@ -895,6 +895,47 @@ fn connectedTestServer() !ServerHandshake {
     return server;
 }
 
+const ConnectedTestPair = struct {
+    client: ClientHandshake,
+    server: ServerHandshake,
+};
+
+fn connectedTestPair() !ConnectedTestPair {
+    const client_keypair: x25519.KeyPair = .generate();
+    const server_keypair: x25519.KeyPair = .generate();
+
+    var client: ClientHandshake = .init(client_keypair);
+    client.policy.host_name = "ztls.server.test";
+    var client_out: [1024]u8 = undefined;
+    const ch_record = try client.start(&client_out, .zero, "ztls.server.test");
+    client.completeWrite();
+
+    var server: ServerHandshake = .init(server_keypair);
+    var server_out: [4096]u8 = undefined;
+    const sh_record = try server.acceptClientHello(ch_record, .zero, &server_out);
+    try client.processServerHello(sh_record[frame.header_len..]);
+
+    var signer = try signature.PrivateKey.fromP256Scalar(server_ecdsa_scalar[0..32]);
+    defer signer.deinit();
+    const signer_api = signer.signer();
+    var plaintext: [4096]u8 = undefined;
+    const flight_record = try server.sendAuthenticatedFlight(
+        &.{server_ecdsa_cert_der},
+        signer_api,
+        &plaintext,
+        &server_out,
+    );
+    const client_event = try client.handleRecord(server_out[0..flight_record.len], &client_out);
+    const client_finished_record = switch (client_event) {
+        .write => |w| w,
+        else => return error.UnexpectedEvent,
+    };
+    client.completeWrite();
+    try server.processClientFinished(client_out[0..client_finished_record.len]);
+
+    return .{ .client = client, .server = server };
+}
+
 test "sendAuthenticatedFlight: client processes CertificateVerify and Finished" {
     const client_keypair: x25519.KeyPair = .generate();
     const server_keypair: x25519.KeyPair = .generate();
@@ -1092,6 +1133,102 @@ test "handleRecord: KeyUpdate not at record boundary is rejected" {
         error.UnexpectedMessage,
         server.handleRecord(rx_buf[0..wire_rec.len], .zero, &out),
     );
+}
+
+// RFC 8446 §5.2, Appendix A — connected endpoints accept application data,
+// KeyUpdate, and alerts; other protected content types are unexpected records.
+test "handleRecord: illegal post-handshake inner content type is rejected" {
+    var server = try connectedTestServer();
+    var client_tx = try server.rx.clone();
+    defer client_tx.deinit();
+
+    var wire_buf: [64]u8 = undefined;
+    const wire_rec = try client_tx.encrypt(.change_cipher_spec, "", &wire_buf);
+    var rx_buf: [64]u8 = undefined;
+    @memcpy(rx_buf[0..wire_rec.len], wire_rec);
+    var out: [64]u8 = undefined;
+    try testing.expectError(
+        error.UnexpectedRecord,
+        server.handleRecord(rx_buf[0..wire_rec.len], .zero, &out),
+    );
+}
+
+// RFC 8446 §4.6.3 — simultaneous KeyUpdate messages are legal; each side
+// ratchets independent send/receive traffic keys and remains connected.
+test "key update: simultaneous update_requested remains connected" {
+    var pair = try connectedTestPair();
+    try testing.expect(pair.client.isConnected());
+    try testing.expect(pair.server.isConnected());
+
+    var client_update_buf: [64]u8 = undefined;
+    const client_update = try pair.client.sendKeyUpdate(&client_update_buf, .update_requested);
+    var client_update_wire: [64]u8 = undefined;
+    @memcpy(client_update_wire[0..client_update.len], client_update);
+    pair.client.completeWrite();
+
+    var server_update_buf: [64]u8 = undefined;
+    const server_update = try pair.server.sendKeyUpdate(&server_update_buf, .update_requested);
+    var server_update_wire: [64]u8 = undefined;
+    @memcpy(server_update_wire[0..server_update.len], server_update);
+    pair.server.completeWrite();
+
+    var server_out: [64]u8 = undefined;
+    const server_event = try pair.server.handleRecord(
+        client_update_wire[0..client_update.len],
+        .zero,
+        &server_out,
+    );
+    const server_response = switch (server_event) {
+        .write => |w| w,
+        else => return error.UnexpectedEvent,
+    };
+    var server_response_wire: [64]u8 = undefined;
+    @memcpy(server_response_wire[0..server_response.len], server_response);
+    pair.server.completeWrite();
+
+    var client_out: [64]u8 = undefined;
+    const client_event = try pair.client.handleRecord(
+        server_update_wire[0..server_update.len],
+        &client_out,
+    );
+    const client_response = switch (client_event) {
+        .write => |w| w,
+        else => return error.UnexpectedEvent,
+    };
+    var client_response_wire: [64]u8 = undefined;
+    @memcpy(client_response_wire[0..client_response.len], client_response);
+    pair.client.completeWrite();
+
+    try testing.expectEqual(
+        ClientHandshake.Event.none,
+        try pair.client.handleRecord(server_response_wire[0..server_response.len], &client_out),
+    );
+    try testing.expectEqual(
+        Event.none,
+        try pair.server.handleRecord(
+            client_response_wire[0..client_response.len],
+            .zero,
+            &server_out,
+        ),
+    );
+
+    var client_app_buf: [64]u8 = undefined;
+    const client_app = try pair.client.sendApplicationData("client pong", &client_app_buf);
+    var client_app_wire: [64]u8 = undefined;
+    @memcpy(client_app_wire[0..client_app.len], client_app);
+    pair.client.completeWrite();
+    try testing.expectEqualStrings(
+        "client pong",
+        try pair.server.receiveApplicationData(client_app_wire[0..client_app.len]),
+    );
+
+    var server_app_buf: [64]u8 = undefined;
+    const server_app = try pair.server.sendApplicationData("server pong", &server_app_buf);
+    var server_app_wire: [64]u8 = undefined;
+    @memcpy(server_app_wire[0..server_app.len], server_app);
+    pair.server.completeWrite();
+    const app_event = try pair.client.handleRecord(server_app_wire[0..server_app.len], &client_out);
+    try testing.expectEqualStrings("server pong", app_event.application_data);
 }
 
 // RFC 8446 Appendix A — server state machine must reject arbitrary inbound

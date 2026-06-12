@@ -307,6 +307,64 @@ test "encrypt/decrypt: sequence numbers advance" {
     try testing.expectEqual(@as(u64, 3), rx.seq);
 }
 
+// RFC 8446 §5.2, §5.3 — replaying ciphertext under a later sequence number
+// fails AEAD authentication and does not advance the receive sequence again.
+test "decrypt: replayed record is rejected" {
+    const key: Aes128GcmKey = .init(@splat(0x01));
+    const iv: Iv = .init(@splat(0x02));
+    var tx: RecordLayer = try .init(.{ .aes_128_gcm_sha256 = key }, iv);
+    defer tx.deinit();
+    var rx: RecordLayer = try .init(.{ .aes_128_gcm_sha256 = key }, iv);
+    defer rx.deinit();
+
+    var wire: [frame.header_len + 5 + 1 + tag_len]u8 = undefined;
+    const record = try tx.encrypt(.application_data, "hello", &wire);
+    var replay: [wire.len]u8 = undefined;
+    @memcpy(replay[0..record.len], record);
+
+    _ = try rx.decrypt(record);
+    try testing.expectEqual(@as(u64, 1), rx.seq);
+    try testing.expectError(error.AuthenticationFailed, rx.decrypt(replay[0..record.len]));
+    try testing.expectEqual(@as(u64, 1), rx.seq);
+}
+
+// RFC 8446 §5.2 — zero-length application data is protected as an inner
+// plaintext containing only the real content type byte.
+test "encrypt/decrypt: zero-length application data" {
+    const key: Aes128GcmKey = .init(@splat(0xab));
+    const iv: Iv = .init(@splat(0xcd));
+    var tx: RecordLayer = try .init(.{ .aes_128_gcm_sha256 = key }, iv);
+    defer tx.deinit();
+    var rx: RecordLayer = try .init(.{ .aes_128_gcm_sha256 = key }, iv);
+    defer rx.deinit();
+
+    var buf: [frame.header_len + 1 + tag_len]u8 = undefined;
+    const record = try tx.encrypt(.application_data, "", &buf);
+    const dec = try rx.decrypt(record);
+
+    try testing.expectEqual(.application_data, dec.content_type);
+    try testing.expectEqual(@as(usize, 0), dec.content.len);
+}
+
+// RFC 8446 §5.2 — TLSInnerPlaintext length is the application fragment plus
+// the inner content type, and the encrypted record carries the AEAD tag.
+test "encrypt/decrypt: maximum plaintext fragment length" {
+    var tx: RecordLayer = try .init(.{ .aes_128_gcm_sha256 = .zero }, .zero);
+    defer tx.deinit();
+    var rx: RecordLayer = try .init(.{ .aes_128_gcm_sha256 = .zero }, .zero);
+    defer rx.deinit();
+
+    var plaintext: [frame.max_plaintext_len]u8 = @splat(0xaa);
+    var buf: [frame.header_len + frame.max_plaintext_len + 1 + tag_len]u8 = undefined;
+    const record = try tx.encrypt(.application_data, &plaintext, &buf);
+    const dec = try rx.decrypt(record);
+
+    try testing.expectEqual(@as(usize, buf.len), record.len);
+    try testing.expectEqual(.application_data, dec.content_type);
+    try testing.expectEqualSlices(u8, &plaintext, dec.content);
+}
+
+// RFC 8446 §5.2 — encrypted records carry outer content type application_data.
 test "decrypt: wrong content type" {
     var rl: RecordLayer = try .init(.{ .aes_128_gcm_sha256 = .zero }, .zero);
     defer rl.deinit();
@@ -314,6 +372,7 @@ test "decrypt: wrong content type" {
     try testing.expectError(error.UnexpectedContentType, rl.decrypt(&buf));
 }
 
+// RFC 8446 §5.2 — TLSCiphertext must carry an AEAD tag plus inner content type.
 test "decrypt: payload shorter than tag" {
     var rl: RecordLayer = try .init(.{ .aes_128_gcm_sha256 = .zero }, .zero);
     defer rl.deinit();
@@ -321,6 +380,7 @@ test "decrypt: payload shorter than tag" {
     try testing.expectError(error.RecordTooShort, rl.decrypt(&buf));
 }
 
+// RFC 8446 §5.3 — sequence numbers cannot wrap within one traffic key.
 test "decrypt: sequence number overflow" {
     var rl: RecordLayer = try .init(.{ .aes_128_gcm_sha256 = .zero }, .zero);
     defer rl.deinit();

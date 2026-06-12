@@ -115,7 +115,8 @@ just bench-capture --count=5
 Each capture writes one run directory under `zig-out/perf/<timestamp>/` with
 `metadata.txt`, `ztls.txt`, `evp.txt`, `libssl.txt`, and `rustls.txt`. This shape
 is intended for remote benchmark hosts: rsync the run directory back, then run
-`benchstat` over the captured files.
+`just bench-analyze zig-out/perf/<timestamp>` to compare the captured files with
+`benchstat`.
 
 All benchmark binaries accept fuzzy `--filter` plus structured filters:
 `--bench <name>`, `--suite <substring>`, and `--size <bytes>`. `--bench` is an

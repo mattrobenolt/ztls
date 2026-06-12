@@ -127,6 +127,22 @@ test "next: record split across two fills" {
     try testing.expectEqualSlices(u8, &.{ 0x01, 0x02, 0x03, 0x04 }, r[5..9]);
 }
 
+fn expectIncomplete(data: []const u8) !void {
+    var storage: [min_storage]u8 = undefined;
+    var rb: RecordBuffer = .init(&storage);
+    @memcpy(rb.writable()[0..data.len], data);
+    rb.advance(data.len);
+    try testing.expectEqual(@as(?[]u8, null), try rb.next());
+}
+
+// RFC 8446 §5.1 — a TLS record is unavailable until the complete header and
+// declared fragment bytes have arrived.
+test "next: truncated records return null" {
+    try expectIncomplete(&.{ 23, 0x03, 0x03, 0x00 });
+    try expectIncomplete(&.{ 23, 0x03, 0x03, 0x00, 0x01 });
+    try expectIncomplete(&.{ 23, 0x03, 0x03, 0x00, 0x04, 0x01, 0x02, 0x03 });
+}
+
 test "next: in-place mutation of a returned record survives across next()" {
     var storage: [min_storage]u8 = undefined;
     var rb: RecordBuffer = .init(&storage);

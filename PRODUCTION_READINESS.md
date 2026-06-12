@@ -113,10 +113,10 @@ consumption-for-rejection, not resumption.
   #9, #9)*
 - **Fuzz surface gaps:** post-auth server `handleRecord`, `alert.parse`,
   `RecordLayer.decrypt` are unwired. *(todo #7, #7)*
-- **Specific unproven behaviors in the supported surface:** replayed-record
-  rejection *(#14)*, systematic alert testing *(#15)*, KeyUpdate
-  simultaneity *(#16)*, record-boundary edge cases *(#18)*, name
-  constraints parsed-but-not-enforced *(#8)*.
+- **Remaining specific unproven behaviors in the supported surface:** systematic
+  alert testing *(#15)* and name constraints parsed-but-not-enforced *(#8)*.
+  Replayed-record rejection, KeyUpdate simultaneity, and record-boundary edge
+  cases now have focused regression tests.
 
 ---
 
@@ -189,12 +189,14 @@ comparisons measure equivalent work*. This is the project's justification.
   in-memory ztls connection rows, OpenSSL EVP raw-AEAD rows, OpenSSL/libssl
   memory-BIO rows, and rustls in-memory client/server rows.
 - `justfile` has useful local recipes: `bench` for ztls rows,
-  `bench-capture` for local full-comparison captures, and profiling helpers
-  `bench-disasm`, `bench-disasm-libcrypto`, and `bench-perf`. `just ci` no
-  longer runs benchmark measurements; benchmarks are not correctness evidence
-  on uncontrolled CI runners.
+  `bench-capture` for local full-comparison captures, `bench-analyze` for
+  `benchstat` comparison of captures, and profiling helpers `bench-disasm`,
+  `bench-disasm-libcrypto`, and `bench-perf`. `just ci` no longer runs benchmark
+  measurements; benchmarks are not correctness evidence on uncontrolled CI
+  runners.
 - `just bench-capture` writes a timestamped run directory under `zig-out/perf/`
-  with metadata plus ztls, EVP, libssl memory-BIO, and rustls captures.
+  with metadata plus ztls, EVP, libssl memory-BIO, and rustls captures;
+  `just bench-analyze <capture>` compares those captures with `benchstat`.
 - `infra/bench/` is an OpenTofu/NixOS EC2 host recipe with a pinned-ish shape:
   region `us-west-2`, default `c7i.large`, generated ED25519 SSH key,
   public VPC/subnet/security group, Nix flakes enabled, ASLR disabled, and some
@@ -202,7 +204,7 @@ comparisons measure equivalent work*. This is the project's justification.
 - The AWS README documents the actual remote ritual today: `cd infra/bench`,
   `tofu init`, `tofu apply`, rsync the repo, SSH to the instance, run
   `just bench-capture --count=5`, rsync `zig-out/perf/` back, then run
-  `benchstat` locally.
+  `just bench-analyze <capture>` locally.
 - The local benchmark docs require metadata: target, CPU model, Zig version,
   optimization mode, and git revision. AGENTS.md separately requires committed
   benchmark numbers to include machine + flags + date.
@@ -217,24 +219,21 @@ comparisons measure equivalent work*. This is the project's justification.
   setup included/excluded, handshake/app-data split, and row-by-row rationale.
   The docs say the memory-BIO rows are the closest current comparison, and they
   correctly label EVP rows as not a TLS comparison, but they do not yet make the
-  apples-to-apples case falsifiable. *(todo #12)*
+  apples-to-apples case falsifiable. *(#12)*
 - **Full benchmark workflow is still manually orchestrated.** The remote path
-  now uses the same `just bench-capture` command as local runs, but provisioning,
-  deploy, SSH execution, pullback, and benchstat analysis are still manual steps.
-  *(todo #11)*
+  now uses the same `just bench-capture` and `just bench-analyze` commands as
+  local runs, but provisioning, deploy, SSH execution, and pullback are still
+  manual steps. *(#11)*
 - **No defined hardware matrix.** `infra/bench/` provisions one instance type
   (`c7i.large`) and notes that lower-noise runs should use `c7i.2xlarge` or
   larger, but there is no committed matrix of instance families/sizes,
   architectures, CPU pinning policy, repetitions, or acceptance thresholds.
-  *(todo #11)*
-- **Capture analysis remains manual.** Local and remote workflows still rely on
-  hand-written `benchstat` invocations over captured files. There is no committed
-  one-command capture-to-ratio workflow. *(todo #13)*
+  *(#11)*
 - **Published results with provenance are absent.** The repo has harnesses and
   workflow notes, but no committed ztls-vs-libssl-vs-rustls result set with the
   required machine, flags, date, Zig version, target/CPU, git revision, and
   backend/library versions. Without that, Pillar 5 has no trustworthy input.
-  *(todo #10)*
+  *(#10)*
 
 ---
 

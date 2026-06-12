@@ -56,13 +56,11 @@ rsync -avz \
 Compare captures with benchstat:
 
 ```bash
-run=zig-out/perf/YYYYMMDD-HHMMSS
-benchstat -row ".name /suite /size" -col /impl \
-  ztls=${run}/ztls.txt \
-  evp=${run}/evp.txt \
-  libssl=${run}/libssl.txt \
-  rustls=${run}/rustls.txt
+just bench-analyze zig-out/perf/YYYYMMDD-HHMMSS
 ```
+
+With no argument, `just bench-analyze` uses the newest capture under
+`zig-out/perf/`.
 
 ## Instance sizing
 

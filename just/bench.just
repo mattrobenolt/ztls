@@ -8,6 +8,11 @@ bench *args:
 bench-capture *args:
     @scripts/bench-capture.sh {{ args }}
 
+[doc("Analyze a benchmark capture with benchstat")]
+[group("bench")]
+bench-analyze capture="":
+    @scripts/bench-analyze.sh {{ capture }}
+
 [private]
 bench-bin:
     zig build bench-bin
