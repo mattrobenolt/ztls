@@ -67,6 +67,7 @@ The authoritative readiness state remains `PRODUCTION_READINESS.md`.
 | Handshake message spans encrypted records without caller buffer | `error.UnexpectedEof` | `ClientHandshake.zig`: `processFlight: handshake message spanning records needs buffer` | covered |
 | Handshake message spans encrypted records with caller buffer | Reassembled and processed | `ClientHandshake.zig`: `processFlight: reassembles handshake message split across records` | covered |
 | Certificate malformed DER, bad chain, hostname mismatch, key-usage/EKU rejection | Certificate parse/policy errors | `certificate.zig` parser/policy tests; Wycheproof boundary tests | partial — not every path is driven through `ClientHandshake` |
+| Certificate arrives with no trust bundle and no explicit insecure opt-in | `error.MissingTrustAnchor` | `certificate.zig`: `parse: rejects missing trust anchor by default`; `ClientHandshake.zig`: `processFlight: rejects unanchored Certificate by default` | covered |
 | Server Certificate request_context is non-empty | Not explicitly rejected in server-certificate parsing | none | gap |
 | Leaf public key exceeds retained buffer | `error.CertificateKeyTooLarge` | path exists | partial — no dedicated unit test |
 | Post-handshake NewSessionTicket malformed | Ticket parser error | `ClientHandshake.zig`: `handleRecord: malformed NewSessionTicket is rejected`; `NewSessionTicket.zig` negative tests | covered |

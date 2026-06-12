@@ -122,6 +122,7 @@ fn clientInterop(stream: net.Stream) !void {
 
     var hs: ztls.ClientHandshake = .init(kp);
     hs.offerAlpn(&.{alpn_protocol});
+    hs.policy.insecure_no_chain_anchor = true;
 
     var out: [1024]u8 = undefined;
     var storage: ztls.RecordBuffer.Storage = .empty;

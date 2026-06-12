@@ -117,13 +117,14 @@ client handshake completes. The caller must provide the trust bundle and policy;
 ztls does not load OS roots.
 
 Important current boundary: chain anchoring only happens when
-`certificate.Policy.bundle` is set. The default client policy is signature-only:
-it verifies CertificateVerify key possession, applies leaf certificate policy,
-and `ClientHandshake.start()` fills `Policy.host_name` from SNI when no explicit
-hostname is set, but a null bundle does not authenticate the chain to any trust
-root. In that mode, ztls does not defend against an active MITM presenting a
-self-signed certificate for the target hostname. Making this an explicit safe API
-choice is tracked by #28.
+`certificate.Policy.bundle` is set. A client policy with neither a bundle nor
+the explicit `insecure_no_chain_anchor` test/demo opt-in rejects the Certificate
+with `error.MissingTrustAnchor`. The insecure opt-in still verifies
+CertificateVerify key possession, applies leaf certificate policy, and lets
+`ClientHandshake.start()` fill `Policy.host_name` from SNI when no explicit
+hostname is set, but it does not authenticate the chain to any trust root. In
+that mode, ztls does not defend against an active MITM presenting a self-signed
+certificate for the target hostname.
 
 Evidence:
 
@@ -205,9 +206,10 @@ error.
 
 ztls does not load system trust stores and does not own private-key storage. The
 caller supplies `certificate.Policy` and server `Signer` implementations. If the
-caller does not supply a trust bundle, client connections are not authenticated
-to any root and are vulnerable to active MITM certificate substitution (#28).
-ztls cannot protect keys outside its own structs or backend handles.
+caller explicitly sets `insecure_no_chain_anchor`, client connections are not
+authenticated to any root and are vulnerable to active MITM certificate
+substitution. ztls cannot protect keys outside its own structs or backend
+handles.
 
 ### Side-channel resistance
 
@@ -242,7 +244,6 @@ features until their tracking issues land.
 |---|---|---|
 | RFC 8446 MUST coverage is not mapped row-by-row | Completeness proof | #25 |
 | RFC 5280 name constraints are parsed but not enforced | Certificate policy | #8 |
-| Client chain anchoring is optional and default policy is signature-only | API misuse / certificate policy | #28 |
 | TLS-Anvil / BoGo external runners are not CI-gated | External conformance breadth | #9 |
 | ServerHello downgrade sentinel is not explicitly checked | Defense-in-depth / MUST matrix | #25 |
 | Legacy session ID parse caps need dedicated enforcement/tests | Parser hardening | `NEGATIVE_SPACE.md` gap |

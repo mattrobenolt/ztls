@@ -270,8 +270,9 @@ tx: RecordLayer = undefined,
 /// engine calls until completeWrite() acknowledges the write — so a dropped
 /// write can't silently desync the connection.
 pending_write: PendingWrite = .idle,
-/// Certificate validation policy, applied during the server flight. Defaults
-/// to no chain anchoring (signature-only). Set before driving the handshake.
+/// Certificate validation policy, applied during the server flight. Set a trust
+/// bundle or the explicit insecure_no_chain_anchor test/demo opt-in before
+/// processing the server Certificate.
 policy: certificate.Policy = .{},
 /// Leaf public key extracted from the Certificate message, copied here so it
 /// survives until CertificateVerify (which may arrive in a later record —
@@ -961,6 +962,7 @@ fn rfc8448Fixture(name: []const u8, out: []u8) []u8 {
 
 fn flightReadyClient() !ClientHandshake {
     var hs: ClientHandshake = .init(rfc8448_client_keypair);
+    hs.policy.insecure_no_chain_anchor = true;
     hs.injectClientHello(&rfc8448_client_hello);
     try hs.processServerHello(&rfc8448_server_hello);
     return hs;
@@ -993,8 +995,8 @@ fn expectPlaintextAlert(record: []const u8, description: alert.Description) !voi
 // One call exercises EncryptedExtensions parsing, RSA-PSS CertificateVerify
 // over the through-Certificate transcript, and the server Finished MAC over the
 // through-CertificateVerify transcript — all against genuine RFC 8448 §3 bytes.
-// The default policy (.{}) skips chain anchoring; the CV signature check still
-// runs and passes because §3's cert and CV are internally consistent.
+// RFC 8448 uses self-contained test certificates; tests that drive the full
+// Certificate message opt into signature-only chain handling explicitly.
 test "processFlight: stores selected ALPN" {
     var hs: ClientHandshake = .init(rfc8448_client_keypair);
     hs.offerAlpn(&.{ "h2", "http/1.1" });
@@ -1007,7 +1009,7 @@ test "processFlight: stores selected ALPN" {
         0x00, 0x05, 0x00, 0x03,
         0x02, 'h',  '2',
     };
-    try hs.processFlight(&ee, .{});
+    try hs.processFlight(&ee, hs.policy);
     try testing.expectEqualStrings("h2", hs.selectedAlpnProtocol().?);
     try testing.expectEqual(.wait_cert, hs.state);
 }
@@ -1024,16 +1026,30 @@ test "processFlight: rejects unoffered ALPN" {
         0x00, 0x05, 0x00, 0x03,
         0x02, 'h',  '2',
     };
-    try testing.expectError(error.UnofferedAlpnProtocol, hs.processFlight(&ee, .{}));
+    try testing.expectError(error.UnofferedAlpnProtocol, hs.processFlight(&ee, hs.policy));
 }
 
-test "processFlight: RFC 8448 §3 full server flight to connected" {
+test "processFlight: rejects unanchored Certificate by default" {
     var hs: ClientHandshake = .init(rfc8448_client_keypair);
     hs.injectClientHello(&rfc8448_client_hello);
     try hs.processServerHello(&rfc8448_server_hello);
 
     var flight_buf: [1024]u8 = undefined;
-    try hs.processFlight(rfc8448Fixture("server_flight.b64", &flight_buf), .{});
+    try testing.expectError(
+        error.MissingTrustAnchor,
+        hs.processFlight(rfc8448Fixture("server_flight.b64", &flight_buf), hs.policy),
+    );
+    try testing.expectEqual(.wait_cert, hs.state);
+}
+
+test "processFlight: RFC 8448 §3 full server flight to connected" {
+    var hs: ClientHandshake = .init(rfc8448_client_keypair);
+    hs.policy.insecure_no_chain_anchor = true;
+    hs.injectClientHello(&rfc8448_client_hello);
+    try hs.processServerHello(&rfc8448_server_hello);
+
+    var flight_buf: [1024]u8 = undefined;
+    try hs.processFlight(rfc8448Fixture("server_flight.b64", &flight_buf), hs.policy);
     try testing.expectEqual(.send_finished, hs.state);
     try testing.expectEqual(.finished_verified, hs.server_flight_progress);
 }
@@ -1048,13 +1064,14 @@ test "processFlight: handshake message spanning records needs buffer" {
 
     var flight_buf: [1024]u8 = undefined;
     const flight = rfc8448Fixture("server_flight.b64", &flight_buf);
-    try testing.expectError(error.UnexpectedEof, hs.processFlight(flight[0..2], .{}));
+    try testing.expectError(error.UnexpectedEof, hs.processFlight(flight[0..2], hs.policy));
 }
 
 // RFC 8446 §5.1 — handshake messages MAY be split across records. Caller-owned
 // reassembly storage keeps ztls allocation-free while supporting large flights.
 test "processFlight: reassembles handshake message split across records" {
     var hs: ClientHandshake = .init(rfc8448_client_keypair);
+    hs.policy.insecure_no_chain_anchor = true;
     var reassembly: [1024]u8 = undefined;
     hs.useHandshakeBuffer(&reassembly);
     hs.injectClientHello(&rfc8448_client_hello);
@@ -1062,22 +1079,23 @@ test "processFlight: reassembles handshake message split across records" {
 
     var flight_buf: [1024]u8 = undefined;
     const flight = rfc8448Fixture("server_flight.b64", &flight_buf);
-    try hs.processFlight(flight[0..2], .{});
+    try hs.processFlight(flight[0..2], hs.policy);
     try testing.expectEqual(@as(usize, 2), hs.handshake_buf.len);
-    try hs.processFlight(flight[2..], .{});
+    try hs.processFlight(flight[2..], hs.policy);
     try testing.expectEqual(@as(usize, 0), hs.handshake_buf.len);
     try testing.expectEqual(.send_finished, hs.state);
 }
 
 test "processFlight: RFC 8448 §3 flight split one message per record" {
     var hs: ClientHandshake = .init(rfc8448_client_keypair);
+    hs.policy.insecure_no_chain_anchor = true;
     hs.injectClientHello(&rfc8448_client_hello);
     try hs.processServerHello(&rfc8448_server_hello);
 
     var flight_buf: [1024]u8 = undefined;
     var hr: HandshakeReader = .init(rfc8448Fixture("server_flight.b64", &flight_buf));
     while (try hr.next()) |msg| {
-        try hs.processFlight(msg.raw, .{});
+        try hs.processFlight(msg.raw, hs.policy);
     }
     try testing.expectEqual(.send_finished, hs.state);
 }
@@ -1106,7 +1124,7 @@ test "processFlight: rejects Finished before EncryptedExtensions" {
     const bad_finished: [4 + 32]u8 = .{
         @intFromEnum(HandshakeType.finished), 0x00, 0x00, 0x20,
     } ++ @as([32]u8, @splat(0xaa));
-    try testing.expectError(error.UnexpectedMessage, hs.processFlight(&bad_finished, .{}));
+    try testing.expectError(error.UnexpectedMessage, hs.processFlight(&bad_finished, hs.policy));
     try testing.expectEqual(.wait_ee, hs.state);
 
     var peer = try hs.tx.clone();
@@ -1124,9 +1142,9 @@ test "processFlight: rejects wrong CertificateVerify signature" {
     var flight_buf: [1024]u8 = undefined;
     var hr: HandshakeReader = .init(rfc8448Fixture("server_flight.b64", &flight_buf));
     const ee = (try hr.next()).?;
-    try hs.processFlight(ee.raw, .{});
+    try hs.processFlight(ee.raw, hs.policy);
     const cert = (try hr.next()).?;
-    try hs.processFlight(cert.raw, .{});
+    try hs.processFlight(cert.raw, hs.policy);
     const cv = (try hr.next()).?;
 
     var bad_cv: [512]u8 = undefined;
@@ -1134,7 +1152,7 @@ test "processFlight: rejects wrong CertificateVerify signature" {
     bad_cv[cv.raw.len - 1] ^= 0xff;
     try testing.expectError(
         error.SignatureVerificationFailed,
-        hs.processFlight(bad_cv[0..cv.raw.len], .{}),
+        hs.processFlight(bad_cv[0..cv.raw.len], hs.policy),
     );
     try testing.expectEqual(.wait_cv, hs.state);
 
@@ -1153,11 +1171,11 @@ test "processFlight: rejects wrong server Finished verify_data" {
     var flight_buf: [1024]u8 = undefined;
     var hr: HandshakeReader = .init(rfc8448Fixture("server_flight.b64", &flight_buf));
     const ee = (try hr.next()).?;
-    try hs.processFlight(ee.raw, .{});
+    try hs.processFlight(ee.raw, hs.policy);
     const cert = (try hr.next()).?;
-    try hs.processFlight(cert.raw, .{});
+    try hs.processFlight(cert.raw, hs.policy);
     const cv = (try hr.next()).?;
-    try hs.processFlight(cv.raw, .{});
+    try hs.processFlight(cv.raw, hs.policy);
     const fin = (try hr.next()).?;
 
     var bad_fin: [64]u8 = undefined;
@@ -1165,7 +1183,7 @@ test "processFlight: rejects wrong server Finished verify_data" {
     bad_fin[4] ^= 0xff;
     try testing.expectError(
         error.InvalidVerifyData,
-        hs.processFlight(bad_fin[0..fin.raw.len], .{}),
+        hs.processFlight(bad_fin[0..fin.raw.len], hs.policy),
     );
     try testing.expectEqual(.wait_finished, hs.state);
 
@@ -1301,10 +1319,11 @@ const rfc8448_client_finished = [_]u8{
 // write key.
 test "clientFinished: RFC 8448 §3 emits Finished and upgrades to app keys" {
     var hs: ClientHandshake = .init(rfc8448_client_keypair);
+    hs.policy.insecure_no_chain_anchor = true;
     hs.injectClientHello(&rfc8448_client_hello);
     try hs.processServerHello(&rfc8448_server_hello);
     var flight_buf: [1024]u8 = undefined;
-    try hs.processFlight(rfc8448Fixture("server_flight.b64", &flight_buf), .{});
+    try hs.processFlight(rfc8448Fixture("server_flight.b64", &flight_buf), hs.policy);
 
     // Mirror of the encryptor: client handshake-traffic key at seq 0.
     var peer = try hs.tx.clone();
@@ -1333,10 +1352,11 @@ test "clientFinished: RFC 8448 §3 emits Finished and upgrades to app keys" {
 // nextTrafficSecret vector in hkdf.zig).
 test "ratchetClientKey: RFC 8446 §7.2 next application write key" {
     var hs: ClientHandshake = .init(rfc8448_client_keypair);
+    hs.policy.insecure_no_chain_anchor = true;
     hs.injectClientHello(&rfc8448_client_hello);
     try hs.processServerHello(&rfc8448_server_hello);
     var flight_buf: [1024]u8 = undefined;
-    try hs.processFlight(rfc8448Fixture("server_flight.b64", &flight_buf), .{});
+    try hs.processFlight(rfc8448Fixture("server_flight.b64", &flight_buf), hs.policy);
     var out: [128]u8 = undefined;
     _ = try hs.clientFinished(&out);
 
@@ -1351,10 +1371,11 @@ test "ratchetClientKey: RFC 8446 §7.2 next application write key" {
 // Drive the RFC 8448 §3 handshake to connected; rx/tx carry application keys.
 fn connectedTestClient() !ClientHandshake {
     var hs: ClientHandshake = .init(rfc8448_client_keypair);
+    hs.policy.insecure_no_chain_anchor = true;
     hs.injectClientHello(&rfc8448_client_hello);
     try hs.processServerHello(&rfc8448_server_hello);
     var flight_buf: [1024]u8 = undefined;
-    try hs.processFlight(rfc8448Fixture("server_flight.b64", &flight_buf), .{});
+    try hs.processFlight(rfc8448Fixture("server_flight.b64", &flight_buf), hs.policy);
     var out: [128]u8 = undefined;
     _ = try hs.clientFinished(&out);
     return hs;
@@ -1585,6 +1606,7 @@ test "start: explicit hostname policy overrides server_name" {
 // Finished.
 test "handleRecord: drives RFC 8448 §3 handshake to connected" {
     var hs: ClientHandshake = .init(rfc8448_client_keypair);
+    hs.policy.insecure_no_chain_anchor = true;
     hs.injectClientHello(&rfc8448_client_hello);
 
     var out: [256]u8 = undefined;
@@ -1682,7 +1704,7 @@ fn fuzzProcessFlight(_: void, input: []const u8) anyerror!void {
     var hs: ClientHandshake = .init(rfc8448_client_keypair);
     hs.injectClientHello(&rfc8448_client_hello);
     hs.processServerHello(&rfc8448_server_hello) catch return;
-    _ = hs.processFlight(input, .{}) catch return;
+    _ = hs.processFlight(input, hs.policy) catch return;
 }
 
 test "fuzz: processFlight handles arbitrary decrypted bytes" {

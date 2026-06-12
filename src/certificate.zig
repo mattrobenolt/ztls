@@ -20,6 +20,7 @@ pub const ParseError = error{
     InvalidHandshakeType,
     EmptyCertificateList,
     CertificateIssuerNotFound,
+    MissingTrustAnchor,
 } || PolicyError ||
     Certificate.ParseError ||
     Certificate.Parsed.VerifyError ||
@@ -54,8 +55,8 @@ pub fn encode(out: []u8, certs_der: []const []const u8) EncodeError![]const u8 {
 
 /// Parse a Certificate handshake message and extract the leaf certificate
 /// public key as a slice into `msg`. The caller must keep `msg` alive until
-/// verifySignature has been called. Optionally validates the chain against
-/// the policy's trust bundle.
+/// verifySignature has been called. Chain anchoring requires a trust bundle or
+/// the explicit insecure_no_chain_anchor test/demo opt-in.
 ///
 /// RFC 8446 §4.4.2
 // ziglint-ignore: Z015 -- ParseError is a public error-set alias.
@@ -105,9 +106,11 @@ pub fn parse(msg: []const u8, policy: Policy) ParseError![]const u8 {
         cert_index += 1;
     }
 
+    const subject = subject_to_verify orelse return error.EmptyCertificateList;
     if (policy.bundle) |bundle| {
-        const subject = subject_to_verify orelse return error.EmptyCertificateList;
         try certificate_policy.verifyAgainstBundle(bundle, subject, policy.now_sec);
+    } else if (!policy.insecure_no_chain_anchor) {
+        return error.MissingTrustAnchor;
     }
 
     return leaf_pub_key orelse error.EmptyCertificateList;
@@ -294,7 +297,9 @@ const test_transcript_hash = blk: {
 
 test "parse: extracts public key from ECDSA P-256 certificate" {
     var buf: [1024]u8 = undefined;
-    const pub_key = try parse(buildCertMsg(&buf, fixture_cert_der), .{});
+    const pub_key = try parse(buildCertMsg(&buf, fixture_cert_der), .{
+        .insecure_no_chain_anchor = true,
+    });
     try testing.expect(pub_key.len > 0);
 }
 
@@ -309,13 +314,20 @@ test "encode: round trips certificate chain" {
     var buf: [4096]u8 = undefined;
     const msg = try encode(&buf, &.{ chain_leaf_der, chain_intermediate_der });
     try testing.expectEqual(encodedLen(&.{ chain_leaf_der, chain_intermediate_der }), msg.len);
-    const pub_key = try parse(msg, .{ .host_name = "chain.test", .now_sec = 1_780_300_000 });
+    const pub_key = try parse(msg, .{
+        .host_name = "chain.test",
+        .now_sec = 1_780_300_000,
+        .insecure_no_chain_anchor = true,
+    });
     try testing.expect(pub_key.len > 0);
 }
 
 test "parse: validates hostname" {
     var buf: [1024]u8 = undefined;
-    const pub_key = try parse(buildCertMsg(&buf, fixture_cert_der), .{ .host_name = "test.local" });
+    const pub_key = try parse(buildCertMsg(&buf, fixture_cert_der), .{
+        .host_name = "test.local",
+        .insecure_no_chain_anchor = true,
+    });
     try testing.expect(pub_key.len > 0);
 }
 
@@ -324,6 +336,14 @@ test "parse: rejects hostname mismatch" {
     try testing.expectError(
         error.CertificateHostMismatch,
         parse(buildCertMsg(&buf, fixture_cert_der), .{ .host_name = "wrong.local" }),
+    );
+}
+
+test "parse: rejects missing trust anchor by default" {
+    var buf: [1024]u8 = undefined;
+    try testing.expectError(
+        error.MissingTrustAnchor,
+        parse(buildCertMsg(&buf, fixture_cert_der), .{ .host_name = "test.local" }),
     );
 }
 
@@ -491,14 +511,18 @@ test "encodeCertificateVerify: wraps signature" {
 
 test "verifySignature: valid ECDSA P-256 signature" {
     var cert_buf: [1024]u8 = undefined;
-    const pub_key = try parse(buildCertMsg(&cert_buf, fixture_cert_der), .{});
+    const pub_key = try parse(buildCertMsg(&cert_buf, fixture_cert_der), .{
+        .insecure_no_chain_anchor = true,
+    });
     var cv_buf: [512]u8 = undefined;
     try verifyServerSignature(buildCvMsg(&cv_buf, fixture_cv_sig), pub_key, &test_transcript_hash);
 }
 
 test "verifySignature: wrong transcript hash" {
     var cert_buf: [1024]u8 = undefined;
-    const pub_key = try parse(buildCertMsg(&cert_buf, fixture_cert_der), .{});
+    const pub_key = try parse(buildCertMsg(&cert_buf, fixture_cert_der), .{
+        .insecure_no_chain_anchor = true,
+    });
     var cv_buf: [512]u8 = undefined;
     const bad_hash: [32]u8 = @splat(0);
     try testing.expectError(
@@ -510,7 +534,9 @@ test "verifySignature: wrong transcript hash" {
 // RFC 8446 §4.4.3 — CertificateVerify context string binds the endpoint role.
 test "verifySignature: server signature is not valid for client context" {
     var cert_buf: [1024]u8 = undefined;
-    const pub_key = try parse(buildCertMsg(&cert_buf, fixture_cert_der), .{});
+    const pub_key = try parse(buildCertMsg(&cert_buf, fixture_cert_der), .{
+        .insecure_no_chain_anchor = true,
+    });
     var cv_buf: [512]u8 = undefined;
     try testing.expectError(
         error.SignatureVerificationFailed,
@@ -520,7 +546,9 @@ test "verifySignature: server signature is not valid for client context" {
 
 test "verifySignature: wrong handshake type" {
     var cert_buf: [1024]u8 = undefined;
-    const pub_key = try parse(buildCertMsg(&cert_buf, fixture_cert_der), .{});
+    const pub_key = try parse(buildCertMsg(&cert_buf, fixture_cert_der), .{
+        .insecure_no_chain_anchor = true,
+    });
     var cv_buf: [512]u8 = undefined;
     _ = buildCvMsg(&cv_buf, fixture_cv_sig);
     cv_buf[0] = 0x01;
@@ -535,7 +563,9 @@ test "verifySignature: wrong handshake type" {
 // enforcement is not yet implemented.
 test "parse: extracts critical name constraints" {
     var buf: [1024]u8 = undefined;
-    const pub_key = try parse(buildCertMsg(&buf, name_constraints_der), .{});
+    const pub_key = try parse(buildCertMsg(&buf, name_constraints_der), .{
+        .insecure_no_chain_anchor = true,
+    });
     try testing.expect(pub_key.len > 0);
 
     // Verify the extension was extracted by parsing the leaf directly.
@@ -550,7 +580,9 @@ test "parse: extracts critical name constraints" {
 // RFC 5280 §4.2.1.10 — non-critical Name Constraints are also parsed.
 test "parse: extracts non-critical name constraints" {
     var buf: [1024]u8 = undefined;
-    const pub_key = try parse(buildCertMsg(&buf, name_constraints_noncritical_der), .{});
+    const pub_key = try parse(buildCertMsg(&buf, name_constraints_noncritical_der), .{
+        .insecure_no_chain_anchor = true,
+    });
     try testing.expect(pub_key.len > 0);
 
     const cert: Certificate = .{ .buffer = name_constraints_noncritical_der, .index = 0 };

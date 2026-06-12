@@ -150,7 +150,9 @@ fn deterministicServerKeypair() !ztls.x25519.KeyPair {
 }
 
 fn deterministicClientHandshake() ztls.ClientHandshake {
-    return .init(deterministicClientKeypair() catch unreachable);
+    var client: ztls.ClientHandshake = .init(deterministicClientKeypair() catch unreachable);
+    client.policy.insecure_no_chain_anchor = true;
+    return client;
 }
 
 fn deterministicServerHandshake() ztls.ServerHandshake {
@@ -163,6 +165,7 @@ fn connectPair(comptime suite: Suite) !struct {
 } {
     var client: ztls.ClientHandshake = ztls.ClientHandshake.init(try deterministicClientKeypair());
     client.policy.host_name = "ztls.server.test";
+    client.policy.insecure_no_chain_anchor = true;
     var client_out: [4096]u8 = undefined;
     const ch_record = try client.start(&client_out, rfc8448.client_random, "ztls.server.test");
     client.completeWrite();
@@ -228,6 +231,7 @@ fn benchHandshakeClientStart(comptime suite: Suite) bench.Function {
             while (try b.loop()) {
                 var client: ztls.ClientHandshake = deterministicClientHandshake();
                 client.policy.host_name = "ztls.server.test";
+                client.policy.insecure_no_chain_anchor = true;
                 var client_out: [4096]u8 = undefined;
                 const ch = client.start(
                     &client_out,
@@ -252,6 +256,7 @@ fn benchHandshakeServerAccept(comptime suite: Suite) bench.Function {
         pub fn benchFn(b: *bench.B) !void {
             var client: ztls.ClientHandshake = deterministicClientHandshake();
             client.policy.host_name = "ztls.server.test";
+            client.policy.insecure_no_chain_anchor = true;
             var client_out: [4096]u8 = undefined;
             const ch_record = client.start(
                 &client_out,
@@ -289,6 +294,7 @@ fn benchHandshakeClientServerHello(comptime suite: Suite) bench.Function {
         pub fn benchFn(b: *bench.B) !void {
             var client: ztls.ClientHandshake = deterministicClientHandshake();
             client.policy.host_name = "ztls.server.test";
+            client.policy.insecure_no_chain_anchor = true;
             var client_out: [4096]u8 = undefined;
             const ch_record = client.start(
                 &client_out,
@@ -330,6 +336,7 @@ fn benchHandshakeServerFlight(comptime suite: Suite) bench.Function {
         pub fn benchFn(b: *bench.B) !void {
             var client: ztls.ClientHandshake = deterministicClientHandshake();
             client.policy.host_name = "ztls.server.test";
+            client.policy.insecure_no_chain_anchor = true;
             var client_out: [4096]u8 = undefined;
             const ch_record = client.start(
                 &client_out,
@@ -386,6 +393,7 @@ fn benchHandshakeClientFlight(comptime suite: Suite) bench.Function {
         pub fn benchFn(b: *bench.B) !void {
             var client: ztls.ClientHandshake = deterministicClientHandshake();
             client.policy.host_name = "ztls.server.test";
+            client.policy.insecure_no_chain_anchor = true;
             var client_out: [4096]u8 = undefined;
             const ch_record = client.start(
                 &client_out,
@@ -455,6 +463,7 @@ fn serverFinishedInput(comptime suite: Suite) !ServerFinishedInput {
     var client: ztls.ClientHandshake = deterministicClientHandshake();
     defer client.deinit();
     client.policy.host_name = "ztls.server.test";
+    client.policy.insecure_no_chain_anchor = true;
     var client_out: [4096]u8 = undefined;
     const ch_record = try client.start(&client_out, rfc8448.client_random, "ztls.server.test");
     client.completeWrite();

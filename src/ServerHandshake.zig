@@ -906,6 +906,7 @@ fn connectedTestPair() !ConnectedTestPair {
 
     var client: ClientHandshake = .init(client_keypair);
     client.policy.host_name = "ztls.server.test";
+    client.policy.insecure_no_chain_anchor = true;
     var client_out: [1024]u8 = undefined;
     const ch_record = try client.start(&client_out, .zero, "ztls.server.test");
     client.completeWrite();
@@ -976,6 +977,7 @@ test "sendAuthenticatedFlight: client processes CertificateVerify and Finished" 
     var client: ClientHandshake = .init(client_keypair);
     client.offerAlpn(&.{"h2"});
     client.policy.host_name = "ztls.server.test";
+    client.policy.insecure_no_chain_anchor = true;
     client.injectClientHello(ch);
     try client.processServerHello(sh_record[frame.header_len..]);
     const dec = try client.rx.decrypt(flight_out[0..flight_record.len]);
@@ -1321,6 +1323,7 @@ fn expectInMemoryAuthenticatedHandshake(suite: CipherSuite) !void {
     var client: ClientHandshake = .init(client_keypair);
     client.offerAlpn(&.{"h2"});
     client.policy.host_name = "ztls.server.test";
+    client.policy.insecure_no_chain_anchor = true;
     var client_out: [1024]u8 = undefined;
     const ch_record = try client.start(&client_out, .zero, "ztls.server.test");
     client.completeWrite();

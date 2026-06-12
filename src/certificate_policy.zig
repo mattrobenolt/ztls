@@ -16,10 +16,14 @@ pub const LeafUsage = enum {
 
 /// Certificate validation policy.
 pub const Policy = struct {
-    /// Trust anchors for chain validation. null = signature-only, no chain
-    /// anchoring (the leaf public key is still extracted and the CV signature
-    /// still verified).
+    /// Trust anchors for chain validation. If null, certificate parsing fails
+    /// unless insecure_no_chain_anchor is set. That opt-in still extracts the
+    /// leaf public key and lets CertificateVerify prove key possession, but it
+    /// does not authenticate the chain to any trust root.
     bundle: ?*const Certificate.Bundle = null,
+    /// Explicit test/demo escape hatch for self-signed fixtures. Production
+    /// clients should leave this false and provide bundle.
+    insecure_no_chain_anchor: bool = false,
     /// Current time in seconds since the Unix epoch, for validity checks.
     now_sec: i64 = 0,
     /// DNS name expected in the leaf certificate SAN/CN. null = no hostname

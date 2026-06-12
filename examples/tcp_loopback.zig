@@ -135,6 +135,7 @@ fn clientRun(client_keypair: ztls.x25519.KeyPair, actual_port: u16) !void {
     // For a real deployment, load the OS trust store or a known root.
     // Here the server uses a self-signed test fixture, so we skip chain
     // anchoring and rely on hostname + signature verification only.
+    hs.policy.insecure_no_chain_anchor = true;
 
     var random: ztls.client_hello.Random = undefined;
     std.crypto.random.bytes(&random.data);

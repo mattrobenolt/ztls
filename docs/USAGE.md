@@ -215,11 +215,14 @@ The client validates the server certificate chain against a caller-owned policy:
 
 ```zig
 client.policy.host_name = "example.com";     // SAN/CN check
-client.policy.bundle = &.{root_der};          // trust-anchor anchoring
+client.policy.bundle = &bundle;               // trust-anchor anchoring
 client.policy.now_sec = std.time.timestamp(); // validity-period check
 ```
 
-Policy defaults are permissive (signature-only, no anchoring). Set at least `host_name` before `start()`.
+A client policy without `bundle` rejects the server Certificate unless the caller
+explicitly sets `insecure_no_chain_anchor = true` for a test/demo fixture. That
+mode still verifies CertificateVerify key possession, but it does not
+authenticate the chain to any trust root.
 
 ## Close semantics
 
