@@ -56,14 +56,12 @@ zig build test -- --fuzz
 Fuzz inventories and remaining gaps are tracked in `PRODUCTION_READINESS.md`; add new
 targets there when their evidence changes.
 
-The server `handleRecord` fuzz target covers the pre-auth boundary where raw
-wire bytes first enter the Sans-I/O server. Post-auth behavior is covered by
-unit tests and tlsfuzzer conversations, where records are cryptographically
-valid enough to reach the state-machine paths under test.
-
-**Known gap:** post-handshake server `handleRecord` is not fuzzed (needs a valid
-handshake first). `alert.parse` and `RecordLayer.decrypt` fuzz targets are also
-unwired.
+The server `handleRecord` fuzz targets cover both the pre-auth boundary where
+raw wire bytes first enter the Sans-I/O server and the connected post-auth
+record-dispatch boundary. Post-auth fuzz seeds include cryptographically valid
+application-data and KeyUpdate records so mutation can reach encrypted dispatch
+paths instead of only AEAD authentication failures. `alert.parse` and
+`RecordLayer.decrypt` are also fuzzed as local parser/record-boundary surfaces.
 
 ## Verification gates
 

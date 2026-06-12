@@ -860,8 +860,8 @@ test "sendAuthenticatedFlight: client decrypts authenticated server flight" {
 }
 
 fn connectedTestServer() !ServerHandshake {
-    const client_keypair: x25519.KeyPair = .generate();
-    const server_keypair: x25519.KeyPair = .generate();
+    const client_keypair: x25519.KeyPair = try .generateDeterministic(.init(@splat(0x11)));
+    const server_keypair: x25519.KeyPair = try .generateDeterministic(.init(@splat(0x22)));
     var ch_buf: [512]u8 = undefined;
     const ch = try client_hello.encode(&ch_buf, .zero, client_keypair.public_key, null, &.{});
     var ch_record: [1024]u8 = undefined;
@@ -1250,6 +1250,46 @@ fn fuzzHandleRecord(_: void, input: []const u8) anyerror!void {
 // RFC 8446 Appendix A — malformed server inputs are covered by fuzzing.
 test "fuzz: ServerHandshake.handleRecord rejects arbitrary input" {
     try testing.fuzz({}, fuzzHandleRecord, .{});
+}
+
+// RFC 8446 Appendix A — connected-state encrypted dispatch must reject
+// arbitrary post-auth records without panics.
+fn fuzzConnectedHandleRecord(_: void, input: []const u8) anyerror!void {
+    var server = try connectedTestServer();
+    defer server.deinit();
+
+    var record_buf: [frame.max_wire_record_len + 64]u8 = undefined;
+    const n = @min(input.len, record_buf.len);
+    @memcpy(record_buf[0..n], input[0..n]);
+    var out: [4096]u8 = undefined;
+    _ = server.handleRecord(record_buf[0..n], .zero, &out) catch return;
+}
+
+test "fuzz: connected ServerHandshake.handleRecord rejects arbitrary input" {
+    var server = try connectedTestServer();
+    defer server.deinit();
+
+    var app_tx = try server.rx.clone();
+    defer app_tx.deinit();
+    var app_buf: [64]u8 = undefined;
+    const app = try app_tx.encrypt(.application_data, "fuzz", &app_buf);
+
+    var ku_tx = try server.rx.clone();
+    defer ku_tx.deinit();
+    var ku_buf: [64]u8 = undefined;
+    const ku_msg = [_]u8{
+        @intFromEnum(HandshakeType.key_update),          0x00, 0x00, 0x01,
+        @intFromEnum(KeyUpdateRequest.update_requested),
+    };
+    const ku = try ku_tx.encrypt(.handshake, &ku_msg, &ku_buf);
+
+    const corpus: []const []const u8 = &.{
+        app,
+        ku,
+        &.{},
+        &.{ 23, 0x03, 0x03, 0x00, 0x04 },
+    };
+    try testing.fuzz({}, fuzzConnectedHandleRecord, .{ .corpus = corpus });
 }
 
 test "application data: server sends and receives" {

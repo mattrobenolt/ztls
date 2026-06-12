@@ -105,6 +105,10 @@ pub fn decrypt(self: *RecordLayer, buf: []u8) DecryptError!DecryptedRecord {
     }
 
     const payload_len = hdr.length();
+    if (buf.len - frame.header_len < payload_len) {
+        @branchHint(.cold);
+        return error.BufferTooShort;
+    }
     if (payload_len <= tag_len) {
         @branchHint(.cold);
         return error.RecordTooShort;
@@ -380,6 +384,14 @@ test "decrypt: payload shorter than tag" {
     try testing.expectError(error.RecordTooShort, rl.decrypt(&buf));
 }
 
+// RFC 8446 §5.2 — the record length field must fit in the received buffer.
+test "decrypt: truncated ciphertext record" {
+    var rl: RecordLayer = try .init(.{ .aes_128_gcm_sha256 = .zero }, .zero);
+    defer rl.deinit();
+    var buf = [_]u8{ 23, 0x03, 0x03, 0x00, 0x20 } ++ [_]u8{0} ** 8;
+    try testing.expectError(error.BufferTooShort, rl.decrypt(&buf));
+}
+
 // RFC 8446 §5.3 — sequence numbers cannot wrap within one traffic key.
 test "decrypt: sequence number overflow" {
     var rl: RecordLayer = try .init(.{ .aes_128_gcm_sha256 = .zero }, .zero);
@@ -387,4 +399,27 @@ test "decrypt: sequence number overflow" {
     rl.seq = std.math.maxInt(u64);
     var buf = [_]u8{ 23, 0x03, 0x03, 0x00, 0x14 } ++ [_]u8{0} ** 20;
     try testing.expectError(error.SequenceNumberOverflow, rl.decrypt(&buf));
+}
+
+// RFC 8446 §5.2 — record decryption must reject arbitrary TLSCiphertext bytes
+// without panics, out-of-bounds access, or sequence desynchronization.
+fn fuzzDecrypt(_: void, input: []const u8) anyerror!void {
+    var rl: RecordLayer = try .init(.{ .aes_128_gcm_sha256 = .zero }, .zero);
+    defer rl.deinit();
+
+    var buf: [frame.max_wire_record_len + 64]u8 = undefined;
+    const n = @min(input.len, buf.len);
+    @memcpy(buf[0..n], input[0..n]);
+    _ = rl.decrypt(buf[0..n]) catch return;
+}
+
+// RFC 8446 §5.2 — malformed encrypted records are covered by fuzzing.
+test "fuzz: decrypt handles arbitrary input" {
+    const tag_only = [_]u8{ 23, 0x03, 0x03, 0x00, 0x10 } ++ @as([16]u8, @splat(0));
+    const corpus: []const []const u8 = &.{
+        &.{},
+        &.{ 23, 0x03, 0x03, 0x00, 0x04 },
+        &tag_only,
+    };
+    try testing.fuzz({}, fuzzDecrypt, .{ .corpus = corpus });
 }

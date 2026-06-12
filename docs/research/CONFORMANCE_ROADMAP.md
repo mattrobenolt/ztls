@@ -148,18 +148,6 @@ support (capabilities, PROVIDER_INTERFACE §5).
 
 ---
 
-## Fuzzing expansion — #7
-
-
-**Cheap high-value additions (candidates):** `RecordLayer` full record fuzz
-(needs valid-ish ciphertext; lower value since decrypt always fails on random
-AAD); broader `alert.parse` corpus vectors.
-
-**Acceptance criteria:** each new target rejects arbitrary input without panic
-under `zig build test -- --fuzz`; added to the CORRECTNESS.md fuzz inventory.
-
----
-
 ## Wycheproof expansion — #24
 
 

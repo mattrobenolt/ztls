@@ -88,7 +88,8 @@ consumption-for-rejection, not resumption.
 - OpenSSL interop in both directions, covered by `zig build test`.
 - tlsfuzzer conformance, CI-gated (`just conformance/tlsfuzzer`).
 - Wycheproof boundary vectors at the libcrypto seam.
-- Fuzzing on the major parsers.
+- Fuzzing on the major parsers plus record decrypt and server `handleRecord`
+  pre-auth/post-auth dispatch.
 - Explicit verification gates (client must verify Certificate / CertificateVerify
   / Finished before promoting to app keys; server must verify client Finished).
 
@@ -111,8 +112,6 @@ consumption-for-rejection, not resumption.
 - **External runners not gated.** BoGo and TLS-Anvil shims exist but are not in
   `just ci`; their value scales with feature surface. *(todos #9,
   #9, #9)*
-- **Fuzz surface gaps:** post-auth server `handleRecord`, `alert.parse`,
-  `RecordLayer.decrypt` are unwired. *(todo #7, #7)*
 - **Remaining specific unproven behaviors in the supported surface:** systematic
   alert testing *(#15)* and name constraints parsed-but-not-enforced *(#8)*.
   Replayed-record rejection, KeyUpdate simultaneity, and record-boundary edge
