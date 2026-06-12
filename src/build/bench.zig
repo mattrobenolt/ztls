@@ -20,6 +20,7 @@ pub fn addSteps(b: *Build, opts: Options) void {
 }
 
 fn addZtlsBenchmarks(b: *Build, opts: Options) void {
+    const txtar_mod = opts.txtar_mod orelse return;
     const mod = b.createModule(.{
         .root_source_file = b.path("src/bench.zig"),
         .target = opts.target,
@@ -27,7 +28,7 @@ fn addZtlsBenchmarks(b: *Build, opts: Options) void {
         .link_libc = true,
         .imports = &.{
             .{ .name = "ztls", .module = opts.ztls_mod },
-            .{ .name = "txtar", .module = opts.txtar_mod.? },
+            .{ .name = "txtar", .module = txtar_mod },
         },
     });
     mod.linkSystemLibrary("crypto", .{});
