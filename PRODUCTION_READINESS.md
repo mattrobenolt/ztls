@@ -59,7 +59,7 @@ ztls is production-ready when all six pillars are `PROVEN`:
 
 | Pillar | Status | One-line |
 |---|---|---|
-| 1. Correctness | `PARTIAL` | Strong layered evidence; client-side negative testing and a MUST-coverage matrix are the structural holes. |
+| 1. Correctness | `PARTIAL` | Strong layered evidence; MUST-coverage, negative-space, and threat-model artifacts are the structural holes. |
 | 2. Ergonomics | `PARTIAL` | `std.net.Stream` examples cover both roles; io_uring has a client-only proof; epoll is absent and examples are not CI-gated. |
 | 3. Performance | `PARTIAL` | Rich bench harness exists; equivalence methodology and reproducible hardware-matrix results are missing. |
 | 4. Providers | `PARTIAL` | OpenSSL primitives are live, but the provider seam is mostly aspirational: no backend selection, no second backend, no capability table. |
@@ -90,10 +90,11 @@ consumption-for-rejection, not resumption.
 - Wycheproof boundary vectors at the libcrypto seam.
 - Fuzzing on the major parsers plus record decrypt and server `handleRecord`
   pre-auth/post-auth dispatch.
-- Targeted client-side bad-server tests for the top handshake/alert failure
-  paths: unexpected flight messages, bad Finished MAC, AEAD auth failure,
-  plaintext/encrypted fatal alerts, and application data before handshake
-  completion.
+- Targeted client-side bad-server tests for malformed ServerHello, unexpected
+  flight messages, bad CertificateVerify and Finished checks, corrupted
+  encrypted records, client-emitted alert descriptions, peer fatal alerts,
+  illegal pre-handshake application data, unexpected post-handshake inner content
+  types, and truncated-record framing robustness.
 - Explicit verification gates (client must verify Certificate / CertificateVerify
   / Finished before promoting to app keys; server must verify client Finished).
 
@@ -108,18 +109,15 @@ consumption-for-rejection, not resumption.
 - **No negative-space inventory.** TLS's danger lives in everything that must
   fail. A single enumeration of "every way a peer can be malicious × what ztls
   does in response" does not exist. *(#26)*
-- **Client-side negative testing is not yet systematic.** Targeted unit tests
-  now cover the top bad-server handshake/alert paths, but there is no reusable
-  malformed-server-flight harness or external client runner yet. *(#17, #15)*
 - **No written threat model.** "Done" for a TLS library includes an enumerated,
   in-scope attack list with documented responses. *(#27)*
 - **External runners not gated.** BoGo and TLS-Anvil shims exist but are not in
   `just ci`; their value scales with feature surface. *(todos #9,
   #9, #9)*
-- **Remaining specific unproven behaviors in the supported surface:** systematic
-  alert testing *(#15)* and name constraints parsed-but-not-enforced *(#8)*.
-  Replayed-record rejection, KeyUpdate simultaneity, and record-boundary edge
-  cases now have focused regression tests.
+- **Remaining specific unproven behavior in the supported surface:** name
+  constraints are parsed but not enforced *(#8)*. Replayed-record rejection,
+  KeyUpdate simultaneity, record-boundary edge cases, fuzz surfaces, and
+  targeted client bad-server paths now have focused regression tests.
 
 ---
 

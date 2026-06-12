@@ -980,6 +980,15 @@ fn expectEncryptedAlert(
     try testing.expectEqual(description, a.description);
 }
 
+fn expectPlaintextAlert(record: []const u8, description: alert.Description) !void {
+    const hdr = try frame.parseHeader(record);
+    try testing.expectEqual(frame.ContentType.alert, hdr.content_type);
+    try testing.expectEqual(@as(u16, 2), hdr.length());
+    const a = try alert.parse(record[frame.header_len..][0..hdr.length()]);
+    try testing.expectEqual(alert.Level.fatal, a.level);
+    try testing.expectEqual(description, a.description);
+}
+
 // RFC 8446 §4.3-§4.4 — the full encrypted flight driven by the live transcript.
 // One call exercises EncryptedExtensions parsing, RSA-PSS CertificateVerify
 // over the through-Certificate transcript, and the server Finished MAC over the
@@ -1073,6 +1082,21 @@ test "processFlight: RFC 8448 §3 flight split one message per record" {
     try testing.expectEqual(.send_finished, hs.state);
 }
 
+// RFC 8446 §4.1.3 — a malformed ServerHello is a decode_error failure.
+test "handleRecord: malformed ServerHello is rejected" {
+    var hs: ClientHandshake = .init(rfc8448_client_keypair);
+    defer hs.deinit();
+    hs.injectClientHello(&rfc8448_client_hello);
+
+    var sh_record = [_]u8{ 0x16, 0x03, 0x03, 0x00, 0x04 } ++ rfc8448_server_hello[0..4].*;
+    var out: [64]u8 = undefined;
+    try testing.expectError(error.InvalidHandshakeLength, hs.handleRecord(&sh_record, &out));
+    try testing.expectEqual(.wait_sh, hs.state);
+
+    const rec = try hs.sendAlert(.decode_error, &out);
+    try expectPlaintextAlert(rec, .decode_error);
+}
+
 // RFC 8446 §4 — EncryptedExtensions is the first encrypted server flight
 // message; Finished in wait_ee is an unexpected_message failure.
 test "processFlight: rejects Finished before EncryptedExtensions" {
@@ -1090,6 +1114,35 @@ test "processFlight: rejects Finished before EncryptedExtensions" {
     var out: [64]u8 = undefined;
     const rec = try hs.sendAlert(.unexpected_message, &out);
     try expectEncryptedAlert(&peer, rec, .unexpected_message);
+}
+
+// RFC 8446 §4.4.3 — a bad CertificateVerify signature is a decrypt_error alert.
+test "processFlight: rejects wrong CertificateVerify signature" {
+    var hs = try flightReadyClient();
+    defer hs.deinit();
+
+    var flight_buf: [1024]u8 = undefined;
+    var hr: HandshakeReader = .init(rfc8448Fixture("server_flight.b64", &flight_buf));
+    const ee = (try hr.next()).?;
+    try hs.processFlight(ee.raw, .{});
+    const cert = (try hr.next()).?;
+    try hs.processFlight(cert.raw, .{});
+    const cv = (try hr.next()).?;
+
+    var bad_cv: [512]u8 = undefined;
+    @memcpy(bad_cv[0..cv.raw.len], cv.raw);
+    bad_cv[cv.raw.len - 1] ^= 0xff;
+    try testing.expectError(
+        error.SignatureVerificationFailed,
+        hs.processFlight(bad_cv[0..cv.raw.len], .{}),
+    );
+    try testing.expectEqual(.wait_cv, hs.state);
+
+    var peer = try hs.tx.clone();
+    defer peer.deinit();
+    var out: [64]u8 = undefined;
+    const rec = try hs.sendAlert(.decrypt_error, &out);
+    try expectEncryptedAlert(&peer, rec, .decrypt_error);
 }
 
 // RFC 8446 §4.4.4 — a bad server Finished MAC is a decrypt_error alert.
@@ -1153,6 +1206,21 @@ test "handleRecord: encrypted fatal alert during server flight" {
     try testing.expectEqual(.wait_ee, hs.state);
 }
 
+// RFC 8446 §5 — a record length that exceeds the supplied bytes is incomplete.
+test "handleRecord: truncated encrypted flight is rejected" {
+    var hs = try flightReadyClient();
+    defer hs.deinit();
+
+    var flight_buf: [1024]u8 = undefined;
+    const flight = rfc8448Fixture("server_flight_record.b64", &flight_buf);
+    var out: [128]u8 = undefined;
+    try testing.expectError(
+        error.IncompleteRecord,
+        hs.handleRecord(flight[0 .. flight.len - 1], &out),
+    );
+    try testing.expectEqual(.wait_ee, hs.state);
+}
+
 // RFC 8446 §5.2 — AEAD authentication failure maps to bad_record_mac.
 test "handleRecord: corrupted encrypted flight is rejected" {
     var hs = try flightReadyClient();
@@ -1170,6 +1238,28 @@ test "handleRecord: corrupted encrypted flight is rejected" {
     defer peer.deinit();
     const rec = try hs.sendAlert(.bad_record_mac, &out);
     try expectEncryptedAlert(&peer, rec, .bad_record_mac);
+}
+
+// RFC 8446 §5.2 — unexpected inner content types are rejected after the handshake.
+test "handleRecord: post-handshake unexpected inner content type is rejected" {
+    var hs = try connectedTestClient();
+    defer hs.deinit();
+
+    var server_tx = try hs.rx.clone();
+    defer server_tx.deinit();
+    var rec_buf: [64]u8 = undefined;
+    const rec = try server_tx.encrypt(.change_cipher_spec, "bad", &rec_buf);
+
+    var wire: [64]u8 = undefined;
+    @memcpy(wire[0..rec.len], rec);
+    var out: [64]u8 = undefined;
+    try testing.expectError(error.UnexpectedRecord, hs.handleRecord(wire[0..rec.len], &out));
+    try testing.expectEqual(.connected, hs.state);
+
+    var peer = try hs.tx.clone();
+    defer peer.deinit();
+    const alert_rec = try hs.sendAlert(.unexpected_message, &out);
+    try expectEncryptedAlert(&peer, alert_rec, .unexpected_message);
 }
 
 // RFC 8446 §4.3 — application data is illegal before the handshake completes.
