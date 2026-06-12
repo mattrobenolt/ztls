@@ -148,16 +148,19 @@ support (capabilities, PROVIDER_INTERFACE §5).
 
 ---
 
-## Wycheproof expansion — #24
+## Wycheproof boundary-vector policy
 
+Current Wycheproof tests live in `src/wycheproof.zig` and exercise ztls wrapper
+behavior at the libcrypto boundary: X25519 normal and low-order public keys,
+AES-GCM AAD/tag plumbing, and ChaCha20-Poly1305 AAD/tag plumbing. ztls does not
+implement those primitives, so mirroring full primitive vector suites is not a
+current readiness gate.
 
-**Prerequisites:** none structural; this is widening vector coverage at the
-existing libcrypto boundary, not new protocol surface.
-
-**Acceptance criteria:** additional Wycheproof groups (e.g. full AES-GCM/ChaCha
-vector files, X25519 test groups, ECDSA edge cases) loaded and gated in
-`zig build test`, still framed as wrapper-behavior tests (ztls does not
-implement primitives).
+Expand Wycheproof coverage when the ztls wrapper surface grows: new named
+groups, new AEAD suites, new signature schemes, or a second libcrypto-family
+backend. Track that expansion in the feature/provider issue that grows the
+surface, so vector scope follows actual API risk instead of becoming standalone
+conformance busywork.
 
 ---
 
