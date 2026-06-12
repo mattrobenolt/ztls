@@ -90,6 +90,10 @@ consumption-for-rejection, not resumption.
 - Wycheproof boundary vectors at the libcrypto seam.
 - Fuzzing on the major parsers plus record decrypt and server `handleRecord`
   pre-auth/post-auth dispatch.
+- Targeted client-side bad-server tests for the top handshake/alert failure
+  paths: unexpected flight messages, bad Finished MAC, AEAD auth failure,
+  plaintext/encrypted fatal alerts, and application data before handshake
+  completion.
 - Explicit verification gates (client must verify Certificate / CertificateVerify
   / Finished before promoting to app keys; server must verify client Finished).
 
@@ -104,9 +108,9 @@ consumption-for-rejection, not resumption.
 - **No negative-space inventory.** TLS's danger lives in everything that must
   fail. A single enumeration of "every way a peer can be malicious × what ztls
   does in response" does not exist. *(#26)*
-- **Client-side negative testing is absent — structural.** tlsfuzzer exercises
-  the server only; client behavior against a *malicious server* is untested.
-  *(todo #17, #15)*
+- **Client-side negative testing is not yet systematic.** Targeted unit tests
+  now cover the top bad-server handshake/alert paths, but there is no reusable
+  malformed-server-flight harness or external client runner yet. *(#17, #15)*
 - **No written threat model.** "Done" for a TLS library includes an enumerated,
   in-scope attack list with documented responses. *(#27)*
 - **External runners not gated.** BoGo and TLS-Anvil shims exist but are not in

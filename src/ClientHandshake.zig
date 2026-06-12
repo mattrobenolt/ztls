@@ -959,6 +959,27 @@ fn rfc8448Fixture(name: []const u8, out: []u8) []u8 {
     unreachable;
 }
 
+fn flightReadyClient() !ClientHandshake {
+    var hs: ClientHandshake = .init(rfc8448_client_keypair);
+    hs.injectClientHello(&rfc8448_client_hello);
+    try hs.processServerHello(&rfc8448_server_hello);
+    return hs;
+}
+
+fn expectEncryptedAlert(
+    peer: *RecordLayer,
+    record: []const u8,
+    description: alert.Description,
+) !void {
+    var buf: [128]u8 = undefined;
+    @memcpy(buf[0..record.len], record);
+    const dec = try peer.decrypt(buf[0..record.len]);
+    try testing.expectEqual(frame.ContentType.alert, dec.content_type);
+    const a = try alert.parse(dec.content);
+    try testing.expectEqual(alert.Level.fatal, a.level);
+    try testing.expectEqual(description, a.description);
+}
+
 // RFC 8446 §4.3-§4.4 — the full encrypted flight driven by the live transcript.
 // One call exercises EncryptedExtensions parsing, RSA-PSS CertificateVerify
 // over the through-Certificate transcript, and the server Finished MAC over the
@@ -1050,6 +1071,127 @@ test "processFlight: RFC 8448 §3 flight split one message per record" {
         try hs.processFlight(msg.raw, .{});
     }
     try testing.expectEqual(.send_finished, hs.state);
+}
+
+// RFC 8446 §4 — EncryptedExtensions is the first encrypted server flight
+// message; Finished in wait_ee is an unexpected_message failure.
+test "processFlight: rejects Finished before EncryptedExtensions" {
+    var hs = try flightReadyClient();
+    defer hs.deinit();
+
+    const bad_finished: [4 + 32]u8 = .{
+        @intFromEnum(HandshakeType.finished), 0x00, 0x00, 0x20,
+    } ++ @as([32]u8, @splat(0xaa));
+    try testing.expectError(error.UnexpectedMessage, hs.processFlight(&bad_finished, .{}));
+    try testing.expectEqual(.wait_ee, hs.state);
+
+    var peer = try hs.tx.clone();
+    defer peer.deinit();
+    var out: [64]u8 = undefined;
+    const rec = try hs.sendAlert(.unexpected_message, &out);
+    try expectEncryptedAlert(&peer, rec, .unexpected_message);
+}
+
+// RFC 8446 §4.4.4 — a bad server Finished MAC is a decrypt_error alert.
+test "processFlight: rejects wrong server Finished verify_data" {
+    var hs = try flightReadyClient();
+    defer hs.deinit();
+
+    var flight_buf: [1024]u8 = undefined;
+    var hr: HandshakeReader = .init(rfc8448Fixture("server_flight.b64", &flight_buf));
+    const ee = (try hr.next()).?;
+    try hs.processFlight(ee.raw, .{});
+    const cert = (try hr.next()).?;
+    try hs.processFlight(cert.raw, .{});
+    const cv = (try hr.next()).?;
+    try hs.processFlight(cv.raw, .{});
+    const fin = (try hr.next()).?;
+
+    var bad_fin: [64]u8 = undefined;
+    @memcpy(bad_fin[0..fin.raw.len], fin.raw);
+    bad_fin[4] ^= 0xff;
+    try testing.expectError(
+        error.InvalidVerifyData,
+        hs.processFlight(bad_fin[0..fin.raw.len], .{}),
+    );
+    try testing.expectEqual(.wait_finished, hs.state);
+
+    var peer = try hs.tx.clone();
+    defer peer.deinit();
+    var out: [64]u8 = undefined;
+    const rec = try hs.sendAlert(.decrypt_error, &out);
+    try expectEncryptedAlert(&peer, rec, .decrypt_error);
+}
+
+// RFC 8446 §6 — a fatal plaintext alert during wait_sh aborts the handshake.
+test "handleRecord: plaintext fatal alert in wait_sh" {
+    var hs: ClientHandshake = .init(rfc8448_client_keypair);
+    defer hs.deinit();
+    hs.injectClientHello(&rfc8448_client_hello);
+
+    var alert_record = [_]u8{ 0x15, 0x03, 0x03, 0x00, 0x02, 0x02, 0x28 };
+    var out: [64]u8 = undefined;
+    try testing.expectError(error.PeerAlert, hs.handleRecord(&alert_record, &out));
+    try testing.expectEqual(.wait_sh, hs.state);
+}
+
+// RFC 8446 §6.2 — encrypted fatal alerts during the server flight abort.
+test "handleRecord: encrypted fatal alert during server flight" {
+    var hs = try flightReadyClient();
+    defer hs.deinit();
+
+    var server_tx = try hs.rx.clone();
+    defer server_tx.deinit();
+    const fatal = [_]u8{ 0x02, 0x28 }; // fatal, handshake_failure
+    var rec_buf: [64]u8 = undefined;
+    const rec = try server_tx.encrypt(.alert, &fatal, &rec_buf);
+
+    var wire: [64]u8 = undefined;
+    @memcpy(wire[0..rec.len], rec);
+    var out: [64]u8 = undefined;
+    try testing.expectError(error.PeerAlert, hs.handleRecord(wire[0..rec.len], &out));
+    try testing.expectEqual(.wait_ee, hs.state);
+}
+
+// RFC 8446 §5.2 — AEAD authentication failure maps to bad_record_mac.
+test "handleRecord: corrupted encrypted flight is rejected" {
+    var hs = try flightReadyClient();
+    defer hs.deinit();
+
+    var flight_buf: [1024]u8 = undefined;
+    const flight = rfc8448Fixture("server_flight_record.b64", &flight_buf);
+    flight[flight.len - 1] ^= 0xff;
+
+    var out: [128]u8 = undefined;
+    try testing.expectError(error.AuthenticationFailed, hs.handleRecord(flight, &out));
+    try testing.expectEqual(.wait_ee, hs.state);
+
+    var peer = try hs.tx.clone();
+    defer peer.deinit();
+    const rec = try hs.sendAlert(.bad_record_mac, &out);
+    try expectEncryptedAlert(&peer, rec, .bad_record_mac);
+}
+
+// RFC 8446 §4.3 — application data is illegal before the handshake completes.
+test "handleRecord: encrypted application data during server flight is rejected" {
+    var hs = try flightReadyClient();
+    defer hs.deinit();
+
+    var server_tx = try hs.rx.clone();
+    defer server_tx.deinit();
+    var rec_buf: [64]u8 = undefined;
+    const rec = try server_tx.encrypt(.application_data, "early", &rec_buf);
+
+    var wire: [64]u8 = undefined;
+    @memcpy(wire[0..rec.len], rec);
+    var out: [64]u8 = undefined;
+    try testing.expectError(error.UnexpectedRecord, hs.handleRecord(wire[0..rec.len], &out));
+    try testing.expectEqual(.wait_ee, hs.state);
+
+    var peer = try hs.tx.clone();
+    defer peer.deinit();
+    const alert_rec = try hs.sendAlert(.unexpected_message, &out);
+    try expectEncryptedAlert(&peer, alert_rec, .unexpected_message);
 }
 
 // RFC 8448 §3 client Finished handshake message (verify_data over the
