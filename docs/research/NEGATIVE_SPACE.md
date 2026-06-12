@@ -2,8 +2,9 @@
 
 This is the catalogue of supported-surface peer malice and malformed input: what
 must fail, how ztls responds, and which evidence proves the response. It is not
-the RFC MUST matrix (#25) and not the threat model (`THREAT_MODEL.md`). It is
-the lower-level "what happens if the peer does this bad thing?" map.
+the RFC MUST matrix (`RFC8446_MUST_MATRIX.md`) and not the threat model
+(`THREAT_MODEL.md`). It is the lower-level "what happens if the peer does this
+bad thing?" map.
 
 Statuses in this file are local to a row:
 
@@ -42,7 +43,7 @@ The authoritative readiness state remains `PRODUCTION_READINESS.md`.
 | Alert payload shorter than two bytes | `error.UnexpectedEof` | `alert.zig`: `parse: truncated`; fuzz `alert.parse` | covered |
 | `close_notify` | `.closed` in connected state or no-op during handshake | `ClientHandshake.zig` / `ServerHandshake.zig`: `handleRecord: close_notify returns closed`; send-alert tests | covered |
 | Fatal or non-close alert from peer | `error.PeerAlert` | `ClientHandshake.zig`: plaintext/encrypted fatal alert tests; `ServerHandshake.zig`: fatal alert tests | covered |
-| Unknown alert description or warning-level non-close alert | Treated as peer error unless it is exactly `close_notify` | Dispatch checks `isCloseNotify()` only | partial — no dedicated unit test |
+| Unknown alert description or warning-level non-close alert | Not proven to be treated as an error alert in all cases | `alert.isFatal()` currently depends on fatal level | gap |
 
 ## Client-side bad server behavior
 
@@ -141,7 +142,7 @@ client runner.
 
 These are deliberately not closed by writing the inventory:
 
-- RFC MUST-to-test matrix remains #25.
+- RFC MUST matrix exists, but its `GAP`/`PARTIAL` rows remain #25 follow-up.
 - Name constraints are parsed but not enforced (#8).
 - BoGo/TLS-Anvil execution remains #9.
 - HRR, PSK/resumption, 0-RTT, client certificates, and PQ/non-X25519 groups are

@@ -13,6 +13,8 @@ just ci
 
 The authoritative readiness status and evidence summary lives in `PRODUCTION_READINESS.md`.
 
+`RFC8446_MUST_MATRIX.md` maps TLS 1.3 normative requirements to tests,
+implementation gaps, or explicit out-of-scope feature decisions.
 `NEGATIVE_SPACE.md` is the supported-surface catalogue of malformed and
 malicious peer inputs: each row names ztls's response and the test evidence or
 an explicit gap. `THREAT_MODEL.md` defines the attacker capabilities,

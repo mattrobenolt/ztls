@@ -3,6 +3,7 @@
 Design notes, RFC references, and prior art for ztls.
 
 - [`DESIGN.md`](DESIGN.md) — architecture, goals, API sketch, build order
+- [`RFC8446_MUST_MATRIX.md`](RFC8446_MUST_MATRIX.md) — normative TLS 1.3 requirement-to-evidence matrix
 - [`NEGATIVE_SPACE.md`](NEGATIVE_SPACE.md) — malformed/malicious peer input inventory
 - [`THREAT_MODEL.md`](THREAT_MODEL.md) — attacker model, defended classes, and boundaries
 - [`rfcs/`](rfcs/) — full RFC text files for offline reference

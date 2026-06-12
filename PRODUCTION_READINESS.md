@@ -59,7 +59,7 @@ ztls is production-ready when all six pillars are `PROVEN`:
 
 | Pillar | Status | One-line |
 |---|---|---|
-| 1. Correctness | `PARTIAL` | Strong layered evidence; the MUST-coverage matrix and name-constraints enforcement are the structural holes. |
+| 1. Correctness | `PARTIAL` | Strong layered evidence; the MUST matrix now exists and exposes remaining gaps, with name-constraints enforcement still the largest supported-surface hole. |
 | 2. Ergonomics | `PARTIAL` | `std.net.Stream` examples cover both roles; io_uring has a client-only proof; epoll is absent and examples are not CI-gated. |
 | 3. Performance | `PARTIAL` | Rich bench harness exists; equivalence methodology and reproducible hardware-matrix results are missing. |
 | 4. Providers | `PARTIAL` | OpenSSL primitives are live, but the provider seam is mostly aspirational: no backend selection, no second backend, no capability table. |
@@ -95,6 +95,9 @@ consumption-for-rejection, not resumption.
   encrypted records, client-emitted alert descriptions, peer fatal alerts,
   illegal pre-handshake application data, unexpected post-handshake inner content
   types, and truncated-record framing robustness.
+- `docs/research/RFC8446_MUST_MATRIX.md` maps TLS 1.3 normative requirements
+  to tests, implementation gaps, caller-boundary decisions, or explicit
+  out-of-scope feature issues.
 - `docs/research/NEGATIVE_SPACE.md` inventories supported-surface malformed and
   malicious peer inputs, mapping each to ztls's response and evidence or an
   explicit gap.
@@ -107,10 +110,10 @@ consumption-for-rejection, not resumption.
 
 **Gaps (this is the punch-list that converts dread into work):**
 
-- **No MUST-coverage matrix.** The single highest-value correctness artifact
-  ztls lacks: a table mapping every RFC 8446 normative requirement to the
-  test(s) that prove it or the decision that scopes it out. Until this exists,
-  "proven correct" cannot be claimed. *(#25)*
+- **MUST-coverage gaps remain.** `docs/research/RFC8446_MUST_MATRIX.md`
+  exists, but it deliberately leaves rows as `GAP`/`PARTIAL` where evidence or
+  enforcement is missing. Correctness cannot move to `PROVEN` until those rows
+  are closed or explicitly scoped out. *(#25)*
 - **External runners not gated.** BoGo and TLS-Anvil shims exist but are not in
   `just ci`; their value scales with feature surface. *(todos #9,
   #9, #9)*

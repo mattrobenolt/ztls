@@ -9,8 +9,8 @@ between TLS logic and the libcrypto-family backend.
 This document names the adversary ztls is designed against, the attack classes
 ztls currently defends, the evidence for those defenses, and the boundaries that
 remain caller responsibility or open project work. The lower-level malformed
-input catalogue lives in `NEGATIVE_SPACE.md`; the normative RFC MUST matrix is
-tracked separately by #25.
+input catalogue lives in `NEGATIVE_SPACE.md`; the normative RFC MUST matrix
+lives in `RFC8446_MUST_MATRIX.md`.
 
 ## Supported surface covered here
 
@@ -27,8 +27,9 @@ The current threat model covers the implemented TLS 1.3 surface:
 - NewSessionTicket is parsed for structural validity and discarded until PSK /
   resumption exists (#2).
 - HelloRetryRequest (#1), PSK/resumption (#2), 0-RTT (#3), client auth (#4),
-  non-X25519 / PQ groups (#6), and TLS extensions beyond the current surface
-  (#5) are explicitly outside the current implemented surface.
+  and non-X25519 / PQ groups (#6) are explicitly outside the current
+  implemented surface. Extension behavior beyond the current surface is tracked
+  by the feature issue that introduces that extension.
 
 ## In-scope adversary capabilities
 
@@ -162,7 +163,7 @@ Evidence:
 Gap: the ServerHello downgrade sentinel in the last eight bytes of
 `server_random` is not explicitly checked. Since ztls cannot negotiate TLS 1.2,
 this is defense-in-depth rather than an exploitable downgrade path in the
-current surface, but the RFC MUST coverage matrix (#25) must account for it.
+current surface, but the RFC MUST matrix accounts for it as a gap.
 
 ### KeyUpdate abuse and post-handshake control traffic
 
@@ -242,7 +243,7 @@ features until their tracking issues land.
 
 | Gap | Boundary | Tracking |
 |---|---|---|
-| RFC 8446 MUST coverage is not mapped row-by-row | Completeness proof | #25 |
+| RFC 8446 MUST matrix has `GAP`/`PARTIAL` rows | Completeness proof | #25 |
 | RFC 5280 name constraints are parsed but not enforced | Certificate policy | #8 |
 | TLS-Anvil / BoGo external runners are not CI-gated | External conformance breadth | #9 |
 | ServerHello downgrade sentinel is not explicitly checked | Defense-in-depth / MUST matrix | #25 |
