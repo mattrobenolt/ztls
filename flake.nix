@@ -54,6 +54,7 @@
                 ast-grep
                 benchstat
                 curl
+                fd
                 go
                 jdk
                 just
