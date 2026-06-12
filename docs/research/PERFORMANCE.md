@@ -70,6 +70,62 @@ Start with layers that exist today:
    Keep OpenSSL/libssl memory-BIO and rustls rows in separate harnesses so each
    comparison names its measurement boundary.
 
+## Equivalence methodology
+
+Benchmark rows are only comparable when the row names describe the same TLS
+work, not just when `benchstat` can place them in adjacent columns. The analysis
+script normalizes ztls, libssl, rustls, and EVP output into one table; this
+section defines which normalized rows are legitimate apples-to-apples
+comparisons.
+
+A comparable row must have the same protocol phase, the same cipher suite, the
+same payload size when payload exists, and no kernel I/O in the timed path. The
+transport model differs by implementation — caller-owned buffers for ztls,
+memory BIOs for libssl, and in-memory `Vec<u8>` transfer buffers for rustls —
+but every comparable row measures TLS work over deterministic memory transport,
+not sockets.
+
+| Row group | ztls row | libssl memory-BIO row | rustls row | Comparison status |
+| --- | --- | --- | --- | --- |
+| Full handshake | `Handshake` | `Handshake` | `rustls_handshake` | Comparable across all three. Full TLS 1.3 handshake, no resumption, X25519, server-only EC P-256 certificate, in-memory transport, no certificate-chain policy in ztls/rustls and `SSL_VERIFY_NONE` for libssl. |
+| ClientHello construction | `HandshakeClientStart` | — | `rustls_handshake_client_start` | Comparable between ztls and rustls only. Both measure initial ClientHello construction and key-share generation. libssl does not expose this split below `SSL_do_handshake`. |
+| Server accepts ClientHello | `HandshakeServerAccept` | — | `rustls_handshake_server_accept` | Comparable between ztls and rustls only. Both consume the ClientHello and construct the ServerHello-side response point. libssl is opaque here. |
+| Client processes ServerHello | `HandshakeClientServerHello` | — | — | ztls-only profiling row. rustls processes more of the encrypted server flight in the next client step, so there is no honest rustls peer. |
+| Server authenticated flight | `HandshakeServerFlight` | — | `rustls_handshake_server_flight` | Comparable between ztls and rustls only. Both construct the encrypted server handshake flight. libssl is opaque here. |
+| Client Finished flight | `HandshakeClientFlight` | — | `rustls_handshake_client_flight` | Comparable with a documented caveat: both consume the encrypted server flight and emit the client Finished flight, but rustls performs certificate verification policy in this phase while ztls deliberately keeps certificate-chain policy outside the core engine. |
+| Server verifies client Finished | `HandshakeServerFinished` | — | `rustls_handshake_server_finished` | Comparable between ztls and rustls only. Both consume the client's Finished flight and complete the server side of the handshake. libssl is opaque here. |
+| App data client→server | `AppClientToServer` | `AppClientToServer` | `rustls_app_client_to_server` | Comparable across all three. Each iteration writes one application payload from client to server and reads the same plaintext on the server side over memory transport. |
+| App data server→client | `AppServerToClient` | `AppServerToClient` | `rustls_app_server_to_client` | Comparable across all three. Same as client→server with direction reversed. |
+| App data ping-pong | `AppPingPong` | `AppPingPong` | `rustls_app_ping_pong` | Comparable across all three. One client→server payload and one server→client payload per iteration; bytes/op is doubled. |
+| Prepared app data | `AppPreparedClientToServer` | — | — | ztls-only optimization row for the caller-owned prepared-send path. No cross-implementation peer. |
+| Prepared record encrypt | `RecordEncryptPrepared` | — | — | ztls-only optimization row for `RecordLayer.encryptPrepared`. No cross-implementation peer. |
+
+The application-data rows use the shared payload sizes `16`, `128`, `1350`,
+`8192`, and `16384` bytes across ztls, libssl, and rustls. The suite names are
+normalized as TLS 1.3 suite names in every harness: `TLS_AES_128_GCM_SHA256`,
+`TLS_AES_256_GCM_SHA384`, and `TLS_CHACHA20_POLY1305_SHA256`. Session tickets
+and resumption are disabled for comparison rows: ztls does not implement
+resumption yet, libssl calls `SSL_CTX_set_num_tickets(server_ctx, 0)`, and
+rustls sets `server.send_tls13_tickets = 0`.
+
+EVP rows are deliberately not TLS-to-TLS rows. `RecordEncrypt` /
+`RecordDecrypt` in ztls include TLS record framing, the inner content-type byte,
+AAD construction, sequence-number-to-nonce construction, and AEAD
+encrypt/decrypt. EVP `Encrypt` / `Decrypt` and `BulkEncryptOnce` /
+`BulkDecryptOnce` measure only the raw OpenSSL AEAD primitive boundary with a
+hard-coded AAD shape. They are useful as a crypto floor for interpreting ztls
+record overhead, but they must not be presented as libssl or rustls equivalents.
+
+Parser and framing microbenchmarks are also intentionally non-comparable:
+`frame.parseHeader`, `RecordBuffer.next`, `server_hello.parse`, certificate
+parsing, `WireReader`, `NewSessionTicket.parse`, nonce construction, and
+SIMD/memory helper rows are ztls regression signals, not external TLS library
+comparisons.
+
+When publishing numbers, include only the comparable row groups in
+ztls-vs-libssl-vs-rustls tables. Put ztls-only and EVP rows in separate tables
+with labels that describe their narrower boundary.
+
 ## Methodology
 
 - Build benchmarks with `-Doptimize=ReleaseFast` and a native CPU target. The

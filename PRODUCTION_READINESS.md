@@ -183,10 +183,12 @@ comparisons measure equivalent work*. This is the project's justification.
 
 **Current evidence (real, but not yet decisive):**
 
-- `docs/research/PERFORMANCE.md` lays out the intended layers: record protection,
-  parser/framing throughput, deterministic client handshake replay, full
-  in-memory ztls connection rows, OpenSSL EVP raw-AEAD rows, OpenSSL/libssl
-  memory-BIO rows, and rustls in-memory client/server rows.
+- `docs/research/PERFORMANCE.md` lays out the intended layers and row-by-row
+  equivalence methodology: record protection, parser/framing throughput,
+  deterministic client handshake replay, full in-memory ztls connection rows,
+  OpenSSL EVP raw-AEAD rows, OpenSSL/libssl memory-BIO rows, and rustls
+  in-memory client/server rows. It defines which rows are comparable across
+  ztls/libssl/rustls and which are intentionally ztls-only or raw-crypto rows.
 - `justfile` has useful local recipes: `bench` for ztls rows,
   `bench-capture` for local full-comparison captures, `bench-analyze` for
   `benchstat` comparison of captures, and profiling helpers `bench-disasm`,
@@ -212,13 +214,6 @@ comparisons measure equivalent work*. This is the project's justification.
 
 **Gaps:**
 
-- **Equivalence methodology is the headline gap.** There is no written matrix
-  proving that ztls, OpenSSL/libssl memory-BIO, and rustls rows measure the same
-  work: identical measurement boundary, payload sizes, suites, buffer strategy,
-  setup included/excluded, handshake/app-data split, and row-by-row rationale.
-  The docs say the memory-BIO rows are the closest current comparison, and they
-  correctly label EVP rows as not a TLS comparison, but they do not yet make the
-  apples-to-apples case falsifiable. *(#12)*
 - **Full benchmark workflow is still manually orchestrated.** The remote path
   now uses the same `just bench-capture` and `just bench-analyze` commands as
   local runs, but provisioning, deploy, SSH execution, and pullback are still

@@ -441,19 +441,73 @@ pub fn benchmarkHandshakeClientFlight(b: *bench.B) !void {
     }
 }
 
+const ServerFinishedInput = struct {
+    server: ztls.ServerHandshake,
+    record_buf: [128]u8,
+    record_len: usize,
+
+    fn record(self: *ServerFinishedInput) []u8 {
+        return self.record_buf[0..self.record_len];
+    }
+};
+
+fn serverFinishedInput(comptime suite: Suite) !ServerFinishedInput {
+    var client: ztls.ClientHandshake = deterministicClientHandshake();
+    defer client.deinit();
+    client.policy.host_name = "ztls.server.test";
+    var client_out: [4096]u8 = undefined;
+    const ch_record = try client.start(&client_out, rfc8448.client_random, "ztls.server.test");
+    client.completeWrite();
+
+    var server: ztls.ServerHandshake = deterministicServerHandshake();
+    errdefer server.deinit();
+    const suites = [_]ztls.CipherSuite{suite.cipherSuite()};
+    server.supportSuites(&suites);
+    var server_out: [8192]u8 = undefined;
+    const sh_record = try server.acceptClientHello(ch_record, rfc8448.client_random, &server_out);
+    try client.processServerHello(sh_record[ztls.frame.header_len..]);
+
+    var signer: ztls.signature.PrivateKey = try .fromP256Scalar(server_scalar[0..32]);
+    defer signer.deinit();
+    const flight_record = try server.sendPreparedAuthenticatedFlight(
+        &.{server_cert_der},
+        signer.signer(),
+        &server_out,
+    );
+    const ev = try client.handleRecord(server_out[0..flight_record.len], &client_out);
+    const client_finished = switch (ev) {
+        .write => |w| w,
+        else => return error.UnexpectedEvent,
+    };
+
+    var input: ServerFinishedInput = .{
+        .server = server,
+        .record_buf = undefined,
+        .record_len = client_finished.len,
+    };
+    @memcpy(input.record_buf[0..client_finished.len], client_out[0..client_finished.len]);
+    input.server.client_server_name = null;
+    return input;
+}
+
 fn benchHandshakeServerFinished(comptime suite: Suite) bench.Function {
     return struct {
         pub fn benchFn(b: *bench.B) !void {
-            var pair = connectPair(suite) catch unreachable;
-            pair.client.deinit();
-            pair.server.deinit();
+            var warm = serverFinishedInput(suite) catch unreachable;
+            warm.server.processClientFinished(warm.record()) catch unreachable;
+            warm.server.deinit();
 
             while (try b.loop()) {
-                var pair2 = connectPair(suite) catch unreachable;
-                pair2.client.deinit();
-                pair2.server.deinit();
-                b.keepAlive(&pair2.client);
-                b.keepAlive(&pair2.server);
+                b.stopTimer();
+                var input = serverFinishedInput(suite) catch unreachable;
+                b.startTimer();
+
+                input.server.processClientFinished(input.record()) catch unreachable;
+                b.keepAlive(&input.server);
+
+                b.stopTimer();
+                input.server.deinit();
+                b.startTimer();
             }
         }
     }.benchFn;
