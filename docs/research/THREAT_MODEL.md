@@ -91,7 +91,9 @@ Evidence:
 The client must verify Certificate, CertificateVerify, and server Finished before
 it can send its own Finished and promote to application traffic keys. The server
 must verify client Finished before it promotes to connected/application keys.
-Bad CertificateVerify signatures and bad Finished MACs stop the handshake.
+Bad CertificateVerify signatures and bad Finished MACs stop the handshake. The
+server-side bad-Finished rejection path is structurally enforced, but dedicated
+state-machine negative tests are still a gap below.
 
 Evidence:
 
@@ -113,6 +115,15 @@ ztls can verify server certificate chains against caller-provided trust anchors
 and enforce hostname, KeyUsage, EKU, and signature-algorithm policy before the
 client handshake completes. The caller must provide the trust bundle and policy;
 ztls does not load OS roots.
+
+Important current boundary: chain anchoring only happens when
+`certificate.Policy.bundle` is set. The default client policy is signature-only:
+it verifies CertificateVerify key possession, applies leaf certificate policy,
+and `ClientHandshake.start()` fills `Policy.host_name` from SNI when no explicit
+hostname is set, but a null bundle does not authenticate the chain to any trust
+root. In that mode, ztls does not defend against an active MITM presenting a
+self-signed certificate for the target hostname. Making this an explicit safe API
+choice is tracked by #28.
 
 Evidence:
 
@@ -193,8 +204,10 @@ error.
 ### Trust-store and private-key lifecycle
 
 ztls does not load system trust stores and does not own private-key storage. The
-caller supplies `certificate.Policy` and server `Signer` implementations. ztls
-cannot protect keys outside its own structs or backend handles.
+caller supplies `certificate.Policy` and server `Signer` implementations. If the
+caller does not supply a trust bundle, client connections are not authenticated
+to any root and are vulnerable to active MITM certificate substitution (#28).
+ztls cannot protect keys outside its own structs or backend handles.
 
 ### Side-channel resistance
 
@@ -229,6 +242,7 @@ features until their tracking issues land.
 |---|---|---|
 | RFC 8446 MUST coverage is not mapped row-by-row | Completeness proof | #25 |
 | RFC 5280 name constraints are parsed but not enforced | Certificate policy | #8 |
+| Client chain anchoring is optional and default policy is signature-only | API misuse / certificate policy | #28 |
 | TLS-Anvil / BoGo external runners are not CI-gated | External conformance breadth | #9 |
 | ServerHello downgrade sentinel is not explicitly checked | Defense-in-depth / MUST matrix | #25 |
 | Legacy session ID parse caps need dedicated enforcement/tests | Parser hardening | `NEGATIVE_SPACE.md` gap |

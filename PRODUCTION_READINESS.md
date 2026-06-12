@@ -59,7 +59,7 @@ ztls is production-ready when all six pillars are `PROVEN`:
 
 | Pillar | Status | One-line |
 |---|---|---|
-| 1. Correctness | `PARTIAL` | Strong layered evidence; the MUST-coverage matrix and name-constraints enforcement are the structural holes. |
+| 1. Correctness | `PARTIAL` | Strong layered evidence; the MUST-coverage matrix, certificate-policy default, and name-constraints enforcement are the structural holes. |
 | 2. Ergonomics | `PARTIAL` | `std.net.Stream` examples cover both roles; io_uring has a client-only proof; epoll is absent and examples are not CI-gated. |
 | 3. Performance | `PARTIAL` | Rich bench harness exists; equivalence methodology and reproducible hardware-matrix results are missing. |
 | 4. Providers | `PARTIAL` | OpenSSL primitives are live, but the provider seam is mostly aspirational: no backend selection, no second backend, no capability table. |
@@ -114,8 +114,9 @@ consumption-for-rejection, not resumption.
 - **External runners not gated.** BoGo and TLS-Anvil shims exist but are not in
   `just ci`; their value scales with feature surface. *(todos #9,
   #9, #9)*
-- **Remaining specific unproven behavior in the supported surface:** name
-  constraints are parsed but not enforced *(#8)*. Replayed-record rejection,
+- **Remaining specific unproven behavior in the supported surface:** client
+  chain anchoring is optional and the default policy is signature-only *(#28)*;
+  name constraints are parsed but not enforced *(#8)*. Replayed-record rejection,
   KeyUpdate simultaneity, record-boundary edge cases, fuzz surfaces, and
   targeted client bad-server paths now have focused regression tests.
 
