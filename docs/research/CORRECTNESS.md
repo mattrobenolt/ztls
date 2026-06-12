@@ -15,7 +15,8 @@ The authoritative readiness status and evidence summary lives in `PRODUCTION_REA
 
 `NEGATIVE_SPACE.md` is the supported-surface catalogue of malformed and
 malicious peer inputs: each row names ztls's response and the test evidence or
-an explicit gap.
+an explicit gap. `THREAT_MODEL.md` defines the attacker capabilities,
+defended attack classes, non-goals, and caller responsibilities.
 
 ## tlsfuzzer
 

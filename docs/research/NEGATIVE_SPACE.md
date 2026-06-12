@@ -2,8 +2,8 @@
 
 This is the catalogue of supported-surface peer malice and malformed input: what
 must fail, how ztls responds, and which evidence proves the response. It is not
-the RFC MUST matrix (#25) and not the threat model (#27). It is the lower-level
-"what happens if the peer does this bad thing?" map.
+the RFC MUST matrix (#25) and not the threat model (`THREAT_MODEL.md`). It is
+the lower-level "what happens if the peer does this bad thing?" map.
 
 Statuses in this file are local to a row:
 
@@ -141,7 +141,6 @@ client runner.
 These are deliberately not closed by writing the inventory:
 
 - RFC MUST-to-test matrix remains #25.
-- Threat model remains #27.
 - Name constraints are parsed but not enforced (#8).
 - BoGo/TLS-Anvil execution remains #9.
 - HRR, PSK/resumption, 0-RTT, client certificates, and PQ/non-X25519 groups are
