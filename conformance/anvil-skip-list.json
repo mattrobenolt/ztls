@@ -3,35 +3,35 @@
   "skip": [
     {
       "pattern": "*HelloRetryRequest*",
-      "reason": "HRR not implemented (TODO-26b50566)"
+      "reason": "HelloRetryRequest is deferred (#1)"
     },
     {
       "pattern": "*Psk*",
-      "reason": "PSK/resumption not implemented (TODO-6afc9ec7)"
+      "reason": "PSK/resumption is deferred (#2)"
     },
     {
       "pattern": "*0Rtt*",
-      "reason": "0-RTT not implemented (TODO-c3fcc172)"
+      "reason": "0-RTT is deferred (#3)"
     },
     {
       "pattern": "*ClientAuth*",
-      "reason": "Client certificate auth not implemented (TODO-cac6cc77)"
+      "reason": "Client certificate auth is deferred (#4)"
     },
     {
       "pattern": "*RecordSizeLimit*",
-      "reason": "record_size_limit extension not implemented (TODO-5e048d7d)"
+      "reason": "record_size_limit is outside the current supported surface (#9)"
     },
     {
       "pattern": "*SessionTicket*",
-      "reason": "NewSessionTicket is parsed and ignored; resumption not implemented (TODO-6afc9ec7)"
+      "reason": "NewSessionTicket is parsed and ignored; resumption is deferred (#2)"
     },
     {
       "pattern": "*EarlyData*",
-      "reason": "0-RTT/early data not implemented (TODO-c3fcc172)"
+      "reason": "0-RTT/early data is deferred (#3)"
     },
     {
       "pattern": "*MaxFragmentLength*",
-      "reason": "max_fragment_length extension not implemented (TODO-5e048d7d)"
+      "reason": "max_fragment_length is outside the current supported surface (#9)"
     },
     {
       "pattern": "*DTLS*",

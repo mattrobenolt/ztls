@@ -1,3 +1,5 @@
+import json
+import re
 import subprocess
 
 from conftest import CONF_DIR
@@ -23,3 +25,12 @@ def test_tls_anvil_cli_dependencies_are_installed():
     assert result.returncode != 0
     assert "NoClassDefFoundError" not in output
     assert "The following option is required: [-connect]" in output
+
+
+def test_tls_anvil_skip_list_uses_github_issue_refs():
+    skip_list = json.loads((CONF_DIR / "anvil-skip-list.json").read_text())
+    for entry in skip_list["skip"]:
+        reason = entry["reason"]
+        assert "TODO-" not in reason
+        if "deferred" in reason or "supported surface" in reason:
+            assert re.search(r"#\d+", reason), reason
