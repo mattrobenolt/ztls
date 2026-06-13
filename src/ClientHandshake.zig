@@ -528,7 +528,9 @@ pub fn alertForError(err: anyerror) alert.Description {
         error.UnsupportedExtension => .unsupported_extension,
         error.UnsupportedTlsVersion => .protocol_version,
         error.UnsupportedCipherSuite => .handshake_failure,
-        error.NoApplicationProtocol => .no_application_protocol,
+        error.NoApplicationProtocol,
+        error.UnofferedAlpnProtocol,
+        => .no_application_protocol,
         error.DuplicateExtension,
         error.DuplicateKeyShare,
         error.InvalidCompressionMethod,
@@ -1309,6 +1311,7 @@ test "alertForError: parser and semantic failures map to protocol alerts" {
         .{ .err = error.UnsupportedTlsVersion, .description = .protocol_version },
         .{ .err = error.UnsupportedCipherSuite, .description = .handshake_failure },
         .{ .err = error.NoApplicationProtocol, .description = .no_application_protocol },
+        .{ .err = error.UnofferedAlpnProtocol, .description = .no_application_protocol },
         .{ .err = error.DuplicateExtension, .description = .illegal_parameter },
         .{ .err = error.DuplicateKeyShare, .description = .illegal_parameter },
         .{ .err = error.InvalidCompressionMethod, .description = .illegal_parameter },
@@ -1372,6 +1375,28 @@ test "processFlight: rejects empty server Certificate list" {
     var out: [64]u8 = undefined;
     const rec = try hs.sendAlert(.decode_error, &out);
     try expectEncryptedAlert(&peer, rec, .decode_error);
+}
+
+// RFC 8446 §4.2 — extension responses not offered in ClientHello abort with
+// unsupported_extension.
+test "processFlight: rejects unsolicited EncryptedExtensions ALPN" {
+    var hs = try flightReadyClient();
+    defer hs.deinit();
+
+    const bad_ee = [_]u8{
+        @intFromEnum(HandshakeType.encrypted_extensions), 0x00, 0x00, 0x0b,
+        0x00,                                             0x09, 0x00, 0x10,
+        0x00,                                             0x05, 0x00, 0x03,
+        0x02,                                             'h',  '2',
+    };
+    try testing.expectError(error.UnsupportedExtension, hs.processFlight(&bad_ee, hs.policy));
+    try testing.expectEqual(.wait_ee, hs.state);
+
+    var peer = try hs.tx.clone();
+    defer peer.deinit();
+    var out: [64]u8 = undefined;
+    const rec = try hs.sendAlert(alertForError(error.UnsupportedExtension), &out);
+    try expectEncryptedAlert(&peer, rec, .unsupported_extension);
 }
 
 // RFC 8446 §4.4.2.1 — unrequested CertificateEntry response extensions are

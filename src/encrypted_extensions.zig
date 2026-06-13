@@ -16,6 +16,7 @@ pub const ParseError = error{
     InvalidHandshakeLength,
     InvalidExtensionLength,
     UnexpectedExtension,
+    UnsupportedExtension,
     DuplicateExtension,
     EmptyAlpnProtocol,
     TooManyAlpnProtocols,
@@ -117,7 +118,7 @@ pub fn parse(msg: []const u8, offered_alpn: []const []const u8) ParseError!Parse
 }
 
 fn parseAlpn(ext: []const u8, offered: []const []const u8) ParseError![]const u8 {
-    if (offered.len == 0) return error.UnexpectedExtension;
+    if (offered.len == 0) return error.UnsupportedExtension;
     if (ext.len < 3) return error.InvalidExtensionLength;
     var r: wire.Reader = .init(ext);
     const list_len = r.assumeRead(u16);
@@ -171,7 +172,7 @@ test "parse: rejects unsolicited ALPN" {
         0x00, 0x05, 0x00, 0x03,
         0x02, 'h',  '2',
     };
-    try testing.expectError(error.UnexpectedExtension, parse(&msg, &.{}));
+    try testing.expectError(error.UnsupportedExtension, parse(&msg, &.{}));
 }
 
 test "parse: rejects unoffered ALPN" {
