@@ -91,10 +91,13 @@ pub fn parse(msg: []const u8, offered_alpn: []const []const u8) ParseError!Parse
             },
             // RFC 8446 §4.2 — recognized extensions sent in a message where
             // they are not specified are semantic errors, not ignorable grease.
+            .status_request,
             .signature_algorithms,
             .padding,
             .pre_shared_key,
             .early_data,
+            .status_request_v2,
+            .signed_certificate_timestamp,
             .supported_versions,
             .cookie,
             .psk_key_exchange_modes,

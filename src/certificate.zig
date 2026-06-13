@@ -12,6 +12,7 @@ const wire = @import("wire.zig");
 const c = @import("c.zig").openssl;
 const ArrayBuffer = @import("array_buffer.zig").ArrayBuffer;
 const certificate_policy = @import("certificate_policy.zig");
+const ExtensionType = @import("extension_type.zig").ExtensionType;
 pub const SignatureScheme = @import("signature_scheme.zig").SignatureScheme;
 pub const LeafUsage = certificate_policy.LeafUsage;
 pub const Policy = certificate_policy.Policy;
@@ -22,6 +23,10 @@ pub const ParseError = error{
     InvalidHandshakeType,
     UnexpectedCertificateRequestContext,
     EmptyCertificateList,
+    InvalidExtensionLength,
+    DuplicateExtension,
+    UnsupportedExtension,
+    UnexpectedExtension,
     CertificateIssuerNotFound,
     MissingTrustAnchor,
     CertificateChainTooLong,
@@ -94,7 +99,7 @@ pub fn parse(msg: []const u8, policy: Policy) ParseError![]const u8 {
         const cert_der = r.assumeReadSlice(cert_len);
         const ext_len = r.assumeRead(u16);
         if (r.remaining().len < ext_len) return error.UnexpectedEof;
-        r.assumeSkip(ext_len);
+        try parseCertificateEntryExtensions(r.assumeReadSlice(ext_len));
 
         const cert: Certificate = .{ .buffer = cert_der, .index = 0 };
         const parsed = try cert.parse();
@@ -128,6 +133,36 @@ pub fn parse(msg: []const u8, policy: Policy) ParseError![]const u8 {
     }
 
     return leaf_pub_key orelse error.EmptyCertificateList;
+}
+
+fn parseCertificateEntryExtensions(exts: []const u8) ParseError!void {
+    var r: wire.Reader = .init(exts);
+    var got_status_request = false;
+    var got_sct = false;
+    var unsupported = false;
+    while (r.remaining().len != 0) {
+        if (r.remaining().len < 4) return error.InvalidExtensionLength;
+        const ext_type = r.assumeRead(ExtensionType);
+        const ext_len = r.assumeRead(u16);
+        if (r.remaining().len < ext_len) return error.InvalidExtensionLength;
+        r.assumeSkip(ext_len);
+
+        switch (ext_type) {
+            .status_request => {
+                if (got_status_request) return error.DuplicateExtension;
+                got_status_request = true;
+                unsupported = true;
+            },
+            .signed_certificate_timestamp => {
+                if (got_sct) return error.DuplicateExtension;
+                got_sct = true;
+                unsupported = true;
+            },
+            .status_request_v2 => return error.UnexpectedExtension,
+            else => {},
+        }
+    }
+    if (unsupported) return error.UnsupportedExtension;
 }
 
 fn verifyChainNameConstraints(
@@ -333,6 +368,16 @@ fn buildCvMsg(buf: []u8, sig: []const u8) []const u8 {
     return encodeCertificateVerify(buf, .ecdsa_secp256r1_sha256, sig) catch unreachable;
 }
 
+fn appendLeafCertificateExtensions(msg: []u8, msg_len: usize, extensions: []const u8) []const u8 {
+    const ext_len_pos = msg_len - 2;
+    @memcpy(msg[msg_len..][0..extensions.len], extensions);
+    const ext_len: u16 = @intCast(extensions.len);
+    msg[ext_len_pos..][0..2].* = .{ @intCast(ext_len >> 8), @intCast(ext_len & 0xff) };
+    incrementU24(msg[1..4], @intCast(extensions.len));
+    incrementU24(msg[5..8], @intCast(extensions.len));
+    return msg[0 .. msg_len + extensions.len];
+}
+
 fn incrementU24(field: *[3]u8, n: u24) void {
     const value: u24 = (@as(u24, field[0]) << 16) |
         (@as(u24, field[1]) << 8) |
@@ -400,6 +445,83 @@ test "encode: round trips certificate chain" {
     try testing.expect(pub_key.len > 0);
 }
 
+// RFC 8446 §4.4.2.1 — ztls does not request or consume OCSP responses today,
+// so a server CertificateEntry status_request extension is unsupported.
+test "parse: rejects unsupported CertificateEntry status_request" {
+    var buf: [2048]u8 = undefined;
+    const msg = buildCertMsg(&buf, fixture_cert_der);
+    const ext = [_]u8{ 0x00, 0x05, 0x00, 0x00 };
+    const with_ext = appendLeafCertificateExtensions(&buf, msg.len, &ext);
+    try testing.expectError(
+        error.UnsupportedExtension,
+        parse(with_ext, .{ .insecure_no_chain_anchor = true }),
+    );
+}
+
+// RFC 8446 §4.4.2.1 — ztls does not request or consume SCTs today, so a server
+// CertificateEntry signed_certificate_timestamp extension is unsupported.
+test "parse: rejects unsupported CertificateEntry SCT" {
+    var buf: [2048]u8 = undefined;
+    const msg = buildCertMsg(&buf, fixture_cert_der);
+    const ext = [_]u8{ 0x00, 0x12, 0x00, 0x00 };
+    const with_ext = appendLeafCertificateExtensions(&buf, msg.len, &ext);
+    try testing.expectError(
+        error.UnsupportedExtension,
+        parse(with_ext, .{ .insecure_no_chain_anchor = true }),
+    );
+}
+
+// RFC 8446 §4.4.2.1 — TLS 1.3 servers must not send status_request_v2 in a
+// Certificate message.
+test "parse: rejects forbidden CertificateEntry status_request_v2" {
+    var buf: [2048]u8 = undefined;
+    const msg = buildCertMsg(&buf, fixture_cert_der);
+    const ext = [_]u8{ 0x00, 0x11, 0x00, 0x00 };
+    const with_ext = appendLeafCertificateExtensions(&buf, msg.len, &ext);
+    try testing.expectError(
+        error.UnexpectedExtension,
+        parse(with_ext, .{ .insecure_no_chain_anchor = true }),
+    );
+}
+
+// RFC 8446 §4.2 — duplicate extensions are forbidden in extension blocks.
+test "parse: rejects duplicate CertificateEntry status_request" {
+    var buf: [2048]u8 = undefined;
+    const msg = buildCertMsg(&buf, fixture_cert_der);
+    const ext = [_]u8{
+        0x00, 0x05, 0x00, 0x00,
+        0x00, 0x05, 0x00, 0x00,
+    };
+    const with_ext = appendLeafCertificateExtensions(&buf, msg.len, &ext);
+    try testing.expectError(
+        error.DuplicateExtension,
+        parse(with_ext, .{ .insecure_no_chain_anchor = true }),
+    );
+}
+
+// RFC 8446 §4.2 — extension blocks must be well-formed vectors.
+test "parse: rejects malformed CertificateEntry extension length" {
+    var buf: [2048]u8 = undefined;
+    const msg = buildCertMsg(&buf, fixture_cert_der);
+    const ext = [_]u8{ 0xbe, 0xef, 0x00, 0x02, 0xaa };
+    const with_ext = appendLeafCertificateExtensions(&buf, msg.len, &ext);
+    try testing.expectError(
+        error.InvalidExtensionLength,
+        parse(with_ext, .{ .insecure_no_chain_anchor = true }),
+    );
+}
+
+// RFC 8446 §4.2 — unknown extensions are ignorable when they are otherwise
+// well-formed.
+test "parse: ignores unknown CertificateEntry extension" {
+    var buf: [2048]u8 = undefined;
+    const msg = buildCertMsg(&buf, fixture_cert_der);
+    const ext = [_]u8{ 0xbe, 0xef, 0x00, 0x01, 0xaa };
+    const with_ext = appendLeafCertificateExtensions(&buf, msg.len, &ext);
+    const pub_key = try parse(with_ext, .{ .insecure_no_chain_anchor = true });
+    try testing.expect(pub_key.len > 0);
+}
+
 test "parse: validates hostname" {
     var buf: [1024]u8 = undefined;
     const pub_key = try parse(buildCertMsg(&buf, fixture_cert_der), .{
@@ -450,6 +572,22 @@ test "parse: validates leaf-intermediate-root chain" {
         .{ .bundle = &bundle, .now_sec = 1_780_300_000, .host_name = "chain.test" },
     );
     try testing.expect(pub_key.len > 0);
+}
+
+// RFC 8446 §4.4.2 — the sender certificate is the first CertificateEntry.
+test "parse: rejects chain with intermediate before leaf" {
+    var bundle: Certificate.Bundle = .{};
+    defer bundle.deinit(testing.allocator);
+    try bundle.addCertsFromFilePath(testing.allocator, std.fs.cwd(), chain_root_pem);
+
+    var buf: [4096]u8 = undefined;
+    try testing.expectError(
+        error.CertificateKeyUsageRejected,
+        parse(
+            buildCertChainMsg(&buf, &.{ chain_intermediate_der, chain_leaf_der }),
+            .{ .bundle = &bundle, .now_sec = 1_780_300_000, .host_name = "chain.test" },
+        ),
+    );
 }
 
 test "parse: rejects chain with missing intermediate" {

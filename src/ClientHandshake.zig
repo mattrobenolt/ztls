@@ -1072,6 +1072,16 @@ fn incrementU24(field: *[3]u8, n: u24) void {
     field[2] = @intCast(updated & 0xff);
 }
 
+fn appendLeafCertificateExtensions(msg: []u8, msg_len: usize, extensions: []const u8) []const u8 {
+    const ext_len_pos = msg_len - 2;
+    @memcpy(msg[msg_len..][0..extensions.len], extensions);
+    const ext_len: u16 = @intCast(extensions.len);
+    msg[ext_len_pos..][0..2].* = .{ @intCast(ext_len >> 8), @intCast(ext_len & 0xff) };
+    incrementU24(msg[1..4], @intCast(extensions.len));
+    incrementU24(msg[5..8], @intCast(extensions.len));
+    return msg[0 .. msg_len + extensions.len];
+}
+
 fn encryptAllZeroInnerForTest(tx: *RecordLayer, inner_len: usize, out: []u8) ![]u8 {
     const total = frame.header_len + inner_len + aead.tag_len;
     const header: frame.Header = .init(.application_data, @intCast(inner_len + aead.tag_len));
@@ -1190,6 +1200,33 @@ test "processFlight: rejects empty server Certificate list" {
     var out: [64]u8 = undefined;
     const rec = try hs.sendAlert(.decode_error, &out);
     try expectEncryptedAlert(&peer, rec, .decode_error);
+}
+
+// RFC 8446 §4.4.2.1 — unrequested CertificateEntry response extensions are
+// unsupported_extension failures for the current client policy.
+test "processFlight: rejects unrequested server CertificateEntry status_request" {
+    var hs = try flightReadyClient();
+    defer hs.deinit();
+
+    var flight_buf: [1024]u8 = undefined;
+    var hr: HandshakeReader = .init(rfc8448Fixture("server_flight.b64", &flight_buf));
+    const ee = (try hr.next()).?;
+    try hs.processFlight(ee.raw, hs.policy);
+    const cert = (try hr.next()).?;
+
+    var bad_cert: [2048]u8 = undefined;
+    @memcpy(bad_cert[0..cert.raw.len], cert.raw);
+    const ext = [_]u8{ 0x00, 0x05, 0x00, 0x00 };
+    const with_ext = appendLeafCertificateExtensions(&bad_cert, cert.raw.len, &ext);
+
+    try testing.expectError(error.UnsupportedExtension, hs.processFlight(with_ext, hs.policy));
+    try testing.expectEqual(.wait_cert, hs.state);
+
+    var peer = try hs.tx.clone();
+    defer peer.deinit();
+    var out: [64]u8 = undefined;
+    const rec = try hs.sendAlert(.unsupported_extension, &out);
+    try expectEncryptedAlert(&peer, rec, .unsupported_extension);
 }
 
 test "processFlight: RFC 8448 §3 full server flight to connected" {

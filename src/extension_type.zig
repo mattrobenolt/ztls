@@ -4,9 +4,12 @@
 
 pub const ExtensionType = enum(u16) {
     server_name = 0x0000,
+    status_request = 0x0005,
     supported_groups = 0x000a,
     signature_algorithms = 0x000d,
     alpn = 0x0010,
+    status_request_v2 = 0x0011,
+    signed_certificate_timestamp = 0x0012,
     padding = 0x0015,
     pre_shared_key = 0x0029,
     early_data = 0x002a,

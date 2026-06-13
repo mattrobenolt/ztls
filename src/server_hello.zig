@@ -194,9 +194,12 @@ pub fn parseHelloRetryRequest(msg: []const u8) HrrParseError!HelloRetryRequest {
             else => {
                 switch (ext_type) {
                     .server_name,
+                    .status_request,
                     .supported_groups,
                     .signature_algorithms,
                     .alpn,
+                    .status_request_v2,
+                    .signed_certificate_timestamp,
                     .padding,
                     .pre_shared_key,
                     .early_data,
@@ -354,9 +357,12 @@ pub fn parseWithSessionIdEcho(
             else => {
                 switch (ext_type) {
                     .server_name,
+                    .status_request,
                     .supported_groups,
                     .signature_algorithms,
                     .alpn,
+                    .status_request_v2,
+                    .signed_certificate_timestamp,
                     .padding,
                     .pre_shared_key,
                     .early_data,
