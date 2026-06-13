@@ -55,6 +55,7 @@
                 benchstat
                 curl
                 fd
+                git
                 go
                 jdk
                 just
