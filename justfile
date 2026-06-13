@@ -15,5 +15,5 @@ example example *args:
     zig build example-{{ example }} -- {{ args }}
 
 [doc("Run all CI gates")]
-ci: test lint
+ci: test lint examples-ci
     just conformance/ci

@@ -146,36 +146,36 @@ Sans-I/O API is pleasant across every I/O model ztls claims to support.
   `example-iouring_client`.
 - `examples/tcp_loopback.zig` is the strongest ergonomics proof: real TCP
   loopback, ztls client + server, full handshake, application data, and clean
-  `close_notify` in one command.
+  `close_notify` in one command; `just ci` now runs it through `examples-ci`.
 - `examples/in_memory_handshake.zig` proves the pure Sans-I/O client/server path
-  without sockets, including application data both directions, but no shutdown.
+  without sockets, including application data both directions, and `just ci` now
+  runs it through `examples-ci`.
 - `examples/full_handshake.zig`, `handshake_keys.zig`, `key_schedule.zig`, and
   `record_protection.zig` are educational protocol/crypto demos, not I/O-model
   cells.
-- `.github/workflows/` does not run any `example-*` step. CI formats/lints
-  `examples/`, but does not execute the examples.
+- `just ci` runs deterministic TLS smoke examples through `examples-ci`:
+  `example-tcp_loopback` and `example-in_memory_handshake`. CI still does not
+  execute manual peer-dependent demos such as `https_client`, `https_server`, or
+  `iouring_client`.
 
 **Status:** `PARTIAL`
 
 **Gaps:**
 
 - **epoll is entirely absent.** No client or server example covers the Linux
-  readiness cell for epoll. *(todo #19)*
+  readiness cell for epoll. *(#19)*
 - **io_uring is client-only.** `examples/iouring_client.zig` exists, but there is
-  no matching io_uring server example. *(todo #19)*
+  no matching io_uring server example. *(#19)*
 - **The manual network examples can pass without proving TLS.** `https_client`,
   `https_server`, and `iouring_client` intentionally exit successfully when the
   peer is absent/unavailable, which is friendly for demos but weak evidence for
-  production readiness. *(todo #19)*
-- **Examples are not CI-gated as runnable examples.** `just ci` formats and
-  lints `examples/`, but does not execute even the deterministic examples such
-  as `tcp_loopback` and `in_memory_handshake`. *(todo #19)*
+  production readiness. *(#19)*
 - **Ergonomics are possible, not yet pleasant.** Real users must hand-roll the
   drive loop around `RecordBuffer`, remember to call `completeWrite()` after
   every emitted record, juggle distinct `OutBuffer` / `FlightBuffer` types, and
   interpret state transitions through event switches. `tcp_loopback.zig` is
   idiomatic enough Zig, but it is still a recipe a user copies carefully rather
-  than a small obvious adapter they can trust. *(todo #19)*
+  than a small obvious adapter they can trust. *(#19)*
 
 ---
 

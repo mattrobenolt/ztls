@@ -8,6 +8,12 @@ test:
 fmt: fmt-zig fmt-actions fmt-just
     just conformance/fmt
 
+[doc("Run deterministic examples as TLS smoke tests")]
+[group("examples")]
+examples-ci:
+    zig build example-tcp_loopback --summary all
+    zig build example-in_memory_handshake --summary all
+
 [doc("Check formatting and lint (for CI)")]
 [group("check")]
 lint: lint-zig lint-actions lint-just
