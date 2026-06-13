@@ -443,6 +443,16 @@ test "encode: legacy_session_id is empty" {
     try testing.expectEqual(@as(u8, 0), encoded[session_id_len_offset]);
 }
 
+// RFC 8446 §4.2.7 — the current client surface advertises X25519 as its
+// supported ECDHE group.
+test "encode: supported_groups contains X25519" {
+    var buf: [512]u8 = undefined;
+    const encoded = try encode(&buf, .zero, .zero, null, &.{});
+    const ext = try findExtension(encoded, .supported_groups);
+    try testing.expectEqualSlices(u8, &.{ 0x00, 0x02, 0x00, 0x1d }, ext);
+}
+
+// RFC 8446 §4.2.8 — the current client surface sends one X25519 KeyShareEntry.
 test "encode: key_share contains public key" {
     const key: x25519.PublicKey = .init(.{
         0x99, 0x38, 0x1d, 0xe5, 0x60, 0xe4, 0xbd, 0x43,
