@@ -59,7 +59,7 @@ ztls is production-ready when all six pillars are `PROVEN`:
 
 | Pillar | Status | One-line |
 |---|---|---|
-| 1. Correctness | `PARTIAL` | Strong layered evidence; the MUST matrix now exists and exposes remaining gaps, with name constraints enforced for supported GeneralName forms. |
+| 1. Correctness | `PARTIAL` | Strong layered evidence; the RFC 8446 MUST matrix has no `GAP`/`PARTIAL` rows for the current supported surface, but external conformance runners are not fully CI-gated. |
 | 2. Ergonomics | `PARTIAL` | `std.net.Stream` examples cover both roles; io_uring has a client-only proof; epoll is absent and examples are not CI-gated. |
 | 3. Performance | `PARTIAL` | Rich bench harness exists; equivalence methodology and reproducible hardware-matrix results are missing. |
 | 4. Providers | `PARTIAL` | OpenSSL primitives are live, but the provider seam is mostly aspirational: no backend selection, no second backend, no capability table. |
@@ -96,8 +96,8 @@ consumption-for-rejection, not resumption.
   illegal pre-handshake application data, unexpected post-handshake inner content
   types, and truncated-record framing robustness.
 - `docs/research/RFC8446_MUST_MATRIX.md` maps TLS 1.3 normative requirements
-  to tests, implementation gaps, caller-boundary decisions, or explicit
-  out-of-scope feature issues.
+  to tests, caller-boundary decisions, or explicit out-of-scope feature issues;
+  no supported-surface row remains `GAP` or `PARTIAL`.
 - `docs/research/NEGATIVE_SPACE.md` inventories supported-surface malformed and
   malicious peer inputs, mapping each to ztls's response and evidence or an
   explicit gap.
@@ -114,19 +114,12 @@ consumption-for-rejection, not resumption.
 
 **Gaps (this is the punch-list that converts dread into work):**
 
-- **MUST-coverage gaps remain.** `docs/research/RFC8446_MUST_MATRIX.md`
-  exists, but it deliberately leaves rows as `GAP`/`PARTIAL` where evidence or
-  enforcement is missing. Correctness cannot move to `PROVEN` until those rows
-  are closed or explicitly scoped out. *(#25)*
 - **External runners not gated.** BoGo and TLS-Anvil shims exist but are not in
-  `just ci`; their value scales with feature surface. *(todos #9,
-  #9, #9)*
-- **Remaining specific unproven behavior in the supported surface:** the
-  `GAP`/`PARTIAL` rows in `docs/research/RFC8446_MUST_MATRIX.md` remain the
-  active correctness punch-list. Replayed-record rejection, KeyUpdate
-  simultaneity, record-boundary edge cases, fuzz surfaces, trust-policy opt-in
-  behavior, name-constraints enforcement, and targeted client bad-server paths
-  now have focused regression tests.
+  `just ci`; their value scales with feature surface. *(#9)*
+- **Correctness remains `PARTIAL` until external conformance is CI-gated.** The
+  RFC 8446 MUST matrix is closed for the current supported surface; future
+  feature work that changes TLS scope must reopen the relevant rows in the same
+  change.
 
 ---
 
