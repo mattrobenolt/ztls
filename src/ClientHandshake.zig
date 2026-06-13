@@ -19,6 +19,7 @@ const alert = @import("alert.zig");
 const array_buffer = @import("array_buffer.zig");
 const ArrayBuffer = array_buffer.ArrayBuffer;
 const certificate = @import("certificate.zig");
+const CipherSuite = @import("root.zig").CipherSuite;
 const client_hello = @import("client_hello.zig");
 const encrypted_extensions = @import("encrypted_extensions.zig");
 const finished = @import("finished.zig");
@@ -50,6 +51,7 @@ const ClientHandshake = @This();
 const max_leaf_pub_key = 1024;
 const LeafPublicKeyBuffer = ArrayBuffer(u8, max_leaf_pub_key);
 const LegacySessionIdBuffer = ArrayBuffer(u8, 32);
+const OfferedSuitesBuffer = ArrayBuffer(CipherSuite, 8);
 const SelectedAlpnBuffer = ArrayBuffer(u8, 255);
 const HandshakeBuffer = array_buffer.SliceBuffer(u8);
 
@@ -290,6 +292,8 @@ post_handshake_count: u8 = 0,
 server_flight_progress: ServerFlightProgress = .none,
 /// ClientHello legacy_session_id expected back in ServerHello.
 legacy_session_id: LegacySessionIdBuffer = .empty,
+/// Recognized cipher suites offered in ClientHello.
+offered_suites: OfferedSuitesBuffer = .empty,
 /// ALPN protocols offered in ClientHello. Caller-owned, must live until start().
 alpn_protocols: client_hello.AlpnProtocols = &.{},
 selected_alpn: SelectedAlpnBuffer = .empty,
@@ -385,10 +389,17 @@ pub fn start(
 pub fn injectClientHello(self: *ClientHandshake, client_hello_msg: []const u8) void {
     assert(self.state == .start);
     self.legacy_session_id.clear();
+    self.offered_suites.clear();
     const parsed = client_hello.parse(client_hello_msg) catch null;
     if (parsed) |ch| {
         self.legacy_session_id.appendSlice(ch.legacy_session_id) catch
             self.legacy_session_id.clear();
+        var i: usize = 0;
+        while (i < ch.cipher_suites.len) : (i += 2) {
+            const wire_suite = std.mem.readInt(u16, ch.cipher_suites[i..][0..2], .big);
+            const suite = CipherSuite.fromWire(wire_suite) orelse continue;
+            self.offered_suites.append(suite) catch break;
+        }
     }
     self.suite.update(client_hello_msg);
     self.state = .wait_sh;
@@ -538,6 +549,13 @@ pub const ServerHelloError = server_hello.ParseError || aead.Error || error{
     LibcryptoFailed,
 };
 
+fn offeredSuite(self: *const ClientHandshake, suite: CipherSuite) bool {
+    for (self.offered_suites.constSlice()) |offered| {
+        if (offered == suite) return true;
+    }
+    return false;
+}
+
 /// Process the server's ServerHello: parse it, absorb it into the transcript,
 /// compute the DHE shared secret, and install the handshake-traffic keys.
 /// RFC 8446 §4.1.3, §7.1. Advances wait_sh -> wait_ee.
@@ -545,6 +563,7 @@ pub const ServerHelloError = server_hello.ParseError || aead.Error || error{
 pub fn processServerHello(self: *ClientHandshake, msg: []const u8) ServerHelloError!void {
     assert(self.state == .wait_sh);
     const sh = try server_hello.parseWithSessionIdEcho(msg, self.legacy_session_id.constSlice());
+    if (!self.offeredSuite(sh.cipher_suite)) return error.UnsupportedCipherSuite;
     // Collapse the dual transcript to the negotiated hash's arm, carrying over
     // the hasher that already absorbed ClientHello.
     const b = self.suite.buffering;
@@ -967,6 +986,24 @@ test "processServerHello: rejects mismatched session id echo" {
         .zero,
     );
     try testing.expectError(error.InvalidSessionIdEcho, hs.processServerHello(sh));
+}
+
+// RFC 8446 §4.1.3 — ServerHello must select a cipher suite offered by ClientHello.
+test "processServerHello: rejects unoffered cipher suite" {
+    var hs: ClientHandshake = .init(.generate());
+    var ch_buf: [512]u8 = undefined;
+    const ch = try client_hello.encode(&ch_buf, .zero, hs.keypair.public_key, null, &.{});
+    // Keep TLS_AES_128_GCM_SHA256 and replace the other recognized suites with unknowns.
+    ch_buf[43..47].* = .{ 0x12, 0x34, 0x56, 0x78 };
+    hs.injectClientHello(ch);
+
+    var sh_buf: [128]u8 = undefined;
+    const sh = try server_hello.encode(&sh_buf, @splat(0xab), &.{}, .aes_256_gcm_sha384, .zero);
+    try testing.expectError(error.UnsupportedCipherSuite, hs.processServerHello(sh));
+
+    var out: [64]u8 = undefined;
+    const rec = try hs.sendAlert(.illegal_parameter, &out);
+    try expectPlaintextAlert(rec, .illegal_parameter);
 }
 
 // RFC 8448 §3 vectors, base64-encoded inside a txtar archive (decoded at test
