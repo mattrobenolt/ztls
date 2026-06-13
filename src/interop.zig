@@ -303,19 +303,7 @@ fn sendBestEffortAlert(
     err: anyerror,
     out: []u8,
 ) void {
-    const description: ztls.alert.Description = switch (err) {
-        error.AuthenticationFailed => .bad_record_mac,
-        error.UnsupportedCipherSuite => .handshake_failure,
-        error.NoApplicationProtocol => .no_application_protocol,
-        error.UnexpectedRecord, error.UnexpectedMessage => .unexpected_message,
-        error.IllegalParameter => .illegal_parameter,
-        error.IncompleteRecord,
-        error.UnexpectedEof,
-        error.RecordTooShort,
-        error.InvalidInnerPlaintext,
-        => .decode_error,
-        else => .internal_error,
-    };
+    const description = ztls.ServerHandshake.alertForError(err);
     const alert_record = hs.sendAlert(description, out) catch return;
     stream.writeAll(alert_record) catch return;
 }

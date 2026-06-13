@@ -195,6 +195,50 @@ pub const HandleError =
     ReceiveError || alert.ParseError || error{PendingWrite};
 pub const AlertError = RecordLayer.EncryptError || error{ BufferTooShort, PendingWrite };
 
+pub fn alertForError(err: anyerror) alert.Description {
+    return switch (err) {
+        error.AuthenticationFailed => .bad_record_mac,
+        error.SignatureVerificationFailed,
+        error.InvalidVerifyData,
+        => .decrypt_error,
+        error.EmptyCertificateList,
+        error.InvalidAlertLength,
+        error.InvalidEncoding,
+        error.InvalidEnumTag,
+        error.InvalidExtensionLength,
+        error.InvalidHandshakeLength,
+        error.InvalidVectorLength,
+        error.UnexpectedEof,
+        error.IncompleteRecord,
+        error.RecordTooShort,
+        error.InvalidInnerPlaintext,
+        => .decode_error,
+        error.MissingExtension,
+        error.MissingSignatureAlgorithmsExtension,
+        => .missing_extension,
+        error.UnsupportedExtension => .unsupported_extension,
+        error.UnsupportedTlsVersion => .protocol_version,
+        error.UnsupportedCipherSuite,
+        error.UnsupportedKeyShare,
+        => .handshake_failure,
+        error.NoApplicationProtocol => .no_application_protocol,
+        error.DuplicateExtension,
+        error.DuplicateKeyShare,
+        error.InvalidCompressionMethod,
+        error.InvalidLegacyVersion,
+        error.UnexpectedCertificateRequestContext,
+        error.UnexpectedExtension,
+        error.IllegalParameter,
+        error.UnsupportedSignatureScheme,
+        => .illegal_parameter,
+        error.InvalidHandshakeType,
+        error.UnexpectedRecord,
+        error.UnexpectedMessage,
+        => .unexpected_message,
+        else => .internal_error,
+    };
+}
+
 /// Consume a plaintext ClientHello record and emit a plaintext ServerHello
 /// record. The returned bytes must be written before continuing the handshake.
 /// Installs handshake traffic keys for the encrypted server flight.
@@ -662,6 +706,32 @@ fn chooseSuite(self: *const ServerHandshake, ch: client_hello.Parsed) ?CipherSui
 const test_cert_der = @embedFile("test_fixtures/server.crt.der");
 const server_ecdsa_cert_der = @embedFile("test_fixtures/server-ecdsa/server.der");
 const server_ecdsa_scalar = @embedFile("test_fixtures/server-ecdsa/scalar.bin");
+
+// RFC 8446 §6.2 — server-side ClientHello parser and negotiation failures map
+// to the alert descriptions callers should send through the Sans-I/O API.
+test "alertForError: parser and negotiation failures map to protocol alerts" {
+    const cases = [_]struct {
+        err: anyerror,
+        description: alert.Description,
+    }{
+        .{ .err = error.UnexpectedEof, .description = .decode_error },
+        .{ .err = error.InvalidHandshakeLength, .description = .decode_error },
+        .{ .err = error.InvalidVectorLength, .description = .decode_error },
+        .{ .err = error.InvalidEnumTag, .description = .decode_error },
+        .{ .err = error.InvalidHandshakeType, .description = .unexpected_message },
+        .{ .err = error.UnexpectedRecord, .description = .unexpected_message },
+        .{ .err = error.MissingExtension, .description = .missing_extension },
+        .{ .err = error.UnsupportedTlsVersion, .description = .protocol_version },
+        .{ .err = error.UnsupportedCipherSuite, .description = .handshake_failure },
+        .{ .err = error.UnsupportedKeyShare, .description = .handshake_failure },
+        .{ .err = error.NoApplicationProtocol, .description = .no_application_protocol },
+        .{ .err = error.DuplicateExtension, .description = .illegal_parameter },
+        .{ .err = error.DuplicateKeyShare, .description = .illegal_parameter },
+        .{ .err = error.InvalidCompressionMethod, .description = .illegal_parameter },
+        .{ .err = error.UnexpectedExtension, .description = .illegal_parameter },
+    };
+    for (cases) |case| try testing.expectEqual(case.description, alertForError(case.err));
+}
 
 // RFC 8446 §6 — alerts before handshake protection are plaintext records.
 test "sendAlert: plaintext fatal alert before ClientHello" {
