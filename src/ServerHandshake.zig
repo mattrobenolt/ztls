@@ -545,6 +545,7 @@ fn handleWaitClientFinished(self: *ServerHandshake, record: []u8) HandleError!Ev
             return error.PeerAlert;
         },
         .application_data => {},
+        .handshake => return error.UnexpectedMessage,
         else => return error.UnexpectedRecord,
     }
 
@@ -1066,6 +1067,69 @@ test "processClientFinished: verifies Finished and installs app keys" {
     try testing.expectEqual(.connected, server.state);
     try testing.expectEqual(@as(u64, 0), server.rx.seq);
     try testing.expectEqual(@as(u64, 0), server.tx.seq);
+}
+
+// RFC 8446 §4.1.2 — TLS 1.3 has no renegotiation; a second ClientHello is an
+// unexpected_message after the first ClientHello.
+test "handleRecord: rejects second plaintext ClientHello before Finished" {
+    const client_keypair: x25519.KeyPair = .generate();
+    var ch_buf: [512]u8 = undefined;
+    const ch = try client_hello.encode(&ch_buf, .zero, client_keypair.public_key, null, &.{});
+    var ch_record: [1024]u8 = undefined;
+    const header: frame.Header = .init(.handshake, @intCast(ch.len));
+    header.write(ch_record[0..frame.header_len]);
+    @memcpy(ch_record[frame.header_len..][0..ch.len], ch);
+
+    var server: ServerHandshake = .init(.generate());
+    var sh_out: [256]u8 = undefined;
+    _ = try server.acceptClientHello(ch_record[0 .. frame.header_len + ch.len], .zero, &sh_out);
+    var flight_out: [512]u8 = undefined;
+    _ = try server.sendAnonymousFlightForTest(&flight_out);
+
+    try testing.expectError(
+        error.UnexpectedMessage,
+        server.handleRecord(ch_record[0 .. frame.header_len + ch.len], .zero, &sh_out),
+    );
+
+    var peer = try server.tx.clone();
+    defer peer.deinit();
+    const rec = try server.sendAlert(.unexpected_message, &sh_out);
+    var rec_buf: [64]u8 = undefined;
+    @memcpy(rec_buf[0..rec.len], rec);
+    const dec = try peer.decrypt(rec_buf[0..rec.len]);
+    try testing.expectEqual(.alert, dec.content_type);
+    const a = try alert.parse(dec.content);
+    try testing.expectEqual(.unexpected_message, a.description);
+}
+
+// RFC 8446 §4.1.2 — a protected ClientHello after connection establishment is
+// still renegotiation and must be rejected.
+test "handleRecord: rejects protected ClientHello after connected" {
+    var server = try connectedTestServer();
+    var client_tx = try server.rx.clone();
+    defer client_tx.deinit();
+
+    const client_hello_type = @intFromEnum(HandshakeType.client_hello);
+    const renegotiate = [_]u8{ client_hello_type, 0x00, 0x00, 0x00 };
+    var wire_buf: [64]u8 = undefined;
+    const wire_rec = try client_tx.encrypt(.handshake, &renegotiate, &wire_buf);
+    var rx_buf: [64]u8 = undefined;
+    @memcpy(rx_buf[0..wire_rec.len], wire_rec);
+    var out: [64]u8 = undefined;
+    try testing.expectError(
+        error.UnexpectedMessage,
+        server.handleRecord(rx_buf[0..wire_rec.len], .zero, &out),
+    );
+
+    var peer = try server.tx.clone();
+    defer peer.deinit();
+    const rec = try server.sendAlert(.unexpected_message, &out);
+    var rec_buf: [64]u8 = undefined;
+    @memcpy(rec_buf[0..rec.len], rec);
+    const dec = try peer.decrypt(rec_buf[0..rec.len]);
+    try testing.expectEqual(.alert, dec.content_type);
+    const a = try alert.parse(dec.content);
+    try testing.expectEqual(.unexpected_message, a.description);
 }
 
 // RFC 8446 §4.6.3 — KeyUpdate is post-handshake only.
