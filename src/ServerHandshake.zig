@@ -1462,3 +1462,25 @@ test "acceptClientHello: rejects unsupported suite" {
         hs.acceptClientHello(record[0 .. frame.header_len + ch.len], .zero, &out),
     );
 }
+
+// RFC 8446 §4.1.2, §9.3 — servers ignore unknown cipher-suite code points and
+// negotiate a recognized alternative from the same ClientHello vector.
+test "acceptClientHello: ignores unknown cipher suites in mixed list" {
+    const client_keypair: x25519.KeyPair = .generate();
+    var ch_buf: [512]u8 = undefined;
+    const ch = try client_hello.encode(&ch_buf, .zero, client_keypair.public_key, null, &.{});
+    // unknown, TLS_AES_256_GCM_SHA384, unknown
+    ch_buf[41..47].* = .{ 0x12, 0x34, 0x13, 0x02, 0x56, 0x78 };
+
+    var record: [1024]u8 = undefined;
+    const header: frame.Header = .init(.handshake, @intCast(ch.len));
+    header.write(record[0..frame.header_len]);
+    @memcpy(record[frame.header_len..][0..ch.len], ch);
+
+    var hs: ServerHandshake = .init(.generate());
+    var out: [256]u8 = undefined;
+    const sh_record = try hs.acceptClientHello(record[0 .. frame.header_len + ch.len], .zero, &out);
+    const sh_hdr = try frame.parseHeader(sh_record);
+    const sh = try server_hello.parse(sh_record[frame.header_len..][0..sh_hdr.length()]);
+    try testing.expectEqual(.aes_256_gcm_sha384, sh.cipher_suite);
+}

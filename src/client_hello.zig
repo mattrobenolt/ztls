@@ -402,6 +402,14 @@ test "encode: cipher suites" {
     try testing.expectEqualSlices(u8, &.{ 0x13, 0x02 }, encoded[cs_offset + 6 ..][0..2]);
 }
 
+// RFC 8446 §4.1.2 — without compatibility mode, legacy_session_id is empty.
+test "encode: legacy_session_id is empty" {
+    var buf: [512]u8 = undefined;
+    const encoded = try encode(&buf, .zero, .zero, null, &.{});
+    const session_id_len_offset = 38; // header(4) + legacy_version(2) + random(32)
+    try testing.expectEqual(@as(u8, 0), encoded[session_id_len_offset]);
+}
+
 test "encode: key_share contains public key" {
     const key: x25519.PublicKey = .init(.{
         0x99, 0x38, 0x1d, 0xe5, 0x60, 0xe4, 0xbd, 0x43,
@@ -442,6 +450,13 @@ test "encode: SNI absent when server_name is null" {
     const with = try encode(&buf, .zero, .zero, "example.com", &.{});
     const without = try encode(&buf, .zero, .zero, null, &.{});
     try testing.expect(with.len > without.len);
+}
+
+test "encode: supported_versions contains TLS 1.3" {
+    var buf: [512]u8 = undefined;
+    const encoded = try encode(&buf, .zero, .zero, null, &.{});
+    const ext = try findExtension(encoded, .supported_versions);
+    try testing.expectEqualSlices(u8, &.{ 0x02, 0x03, 0x04 }, ext);
 }
 
 test "encode: ALPN present when protocols set" {
@@ -489,6 +504,31 @@ test "parse: encoded ClientHello" {
     try testing.expectEqualStrings("http/1.1", parsed.selectAlpn(&.{ "http/1.1", "h2" }).?);
     try testing.expectEqualStrings("h2", parsed.selectAlpn(&.{"h2"}).?);
     try testing.expectEqual(@as(?[]const u8, null), parsed.selectAlpn(&.{"bogus"}));
+}
+
+test "parse: ignores legacy_version" {
+    var buf: [512]u8 = undefined;
+    const encoded = try encode(&buf, .zero, .zero, null, &.{});
+    buf[4] = 0x03;
+    buf[5] = 0x01;
+    _ = try parse(buf[0..encoded.len]);
+}
+
+test "parse: rejects missing supported_versions" {
+    var buf: [512]u8 = undefined;
+    const encoded = try encode(&buf, .zero, .zero, null, &.{});
+    const offset = try findExtensionOffset(encoded, .supported_versions);
+    buf[offset + 1] = @intFromEnum(ExtensionType.padding);
+    try testing.expectError(error.UnsupportedTlsVersion, parse(buf[0..encoded.len]));
+}
+
+test "parse: rejects supported_versions without TLS 1.3" {
+    var buf: [512]u8 = undefined;
+    const encoded = try encode(&buf, .zero, .zero, null, &.{});
+    const ext = try findExtension(buf[0..encoded.len], .supported_versions);
+    ext[1] = 0x03;
+    ext[2] = 0x03;
+    try testing.expectError(error.UnsupportedTlsVersion, parse(buf[0..encoded.len]));
 }
 
 test "parse: rejects malformed ClientHello" {
@@ -576,6 +616,34 @@ test "encode: server_name too long" {
 const compression_len_offset = 47;
 const compression_method_offset = 48;
 const extensions_len_offset = 49;
+const extensions_offset = extensions_len_offset + 2;
+
+fn findExtensionOffset(msg: []const u8, ext_type: ExtensionType) !usize {
+    var r: wire.Reader = .init(msg);
+    r.assumeSkip(1 + 3 + 2 + 32);
+    const session_id_len = r.assumeRead(u8);
+    r.assumeSkip(session_id_len);
+    const cipher_suites_len = r.assumeRead(u16);
+    r.assumeSkip(cipher_suites_len);
+    const compression_len = r.assumeRead(u8);
+    r.assumeSkip(compression_len);
+    const extensions_len = r.assumeRead(u16);
+    const extensions_end = r.pos + extensions_len;
+    while (r.pos < extensions_end) {
+        const offset = r.pos;
+        const current = r.assumeRead(ExtensionType);
+        const ext_len = r.assumeRead(u16);
+        if (current == ext_type) return offset;
+        r.assumeSkip(ext_len);
+    }
+    return error.MissingExtension;
+}
+
+fn findExtension(msg: []u8, ext_type: ExtensionType) ![]u8 {
+    const offset = try findExtensionOffset(msg, ext_type);
+    const ext_len = memx.readInt(u16, msg[offset + 2 ..][0..2]);
+    return msg[offset + 4 ..][0..ext_len];
+}
 
 // Append `ext` to the extension block of an encoded ClientHello, fixing the
 // handshake body length (u24 at [1..4]) and extensions_len (u16) fields.
@@ -612,6 +680,13 @@ test "parse: ignores unknown extension" {
     const new_len = appendExtension(&buf, encoded.len, &unknown_ext);
     const parsed = try parse(buf[0..new_len]);
     try testing.expect(parsed.offersSuite(.aes_128_gcm_sha256));
+}
+
+// RFC 8446 §9.3 — endpoints ignore unrecognized parameters while still using
+// recognized alternatives from the same vector.
+test "parse: ignores unknown supported_groups entries" {
+    const groups = [_]u8{ 0x00, 0x04, 0x6a, 0x6a, 0x00, 0x1d };
+    try parseSupportedGroups(&groups);
 }
 
 // RFC 8446 §4.1.2 — ClientHello parse must never crash or panic on arbitrary

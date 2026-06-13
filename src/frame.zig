@@ -126,6 +126,14 @@ test "parseHeader: application_data record (TLSCiphertext)" {
     try testing.expectEqual(@as(u16, 16), h.length());
 }
 
+// RFC 8446 §5.1 — recipients ignore legacy_record_version.
+test "parseHeader: ignores legacy_record_version" {
+    const buf = [_]u8{ 22, 0x03, 0x01, 0x00, 0x10 } ++ [_]u8{0} ** 16;
+    const h = try parseHeader(&buf);
+    try testing.expectEqual(ContentType.handshake, h.content_type);
+    try testing.expectEqual(@as(u16, 16), h.length());
+}
+
 test "parseHeader: buffer too short" {
     const buf = [_]u8{ 23, 0x03, 0x03, 0x00 }; // only 4 bytes
     try testing.expectError(error.BufferTooShort, parseHeader(&buf));
@@ -158,6 +166,14 @@ test "Header.init round-trips with parseHeader" {
     const h = try parseHeader(&buf);
     try testing.expectEqual(ContentType.handshake, h.content_type);
     try testing.expectEqual(@as(u16, 512), h.length());
+}
+
+// RFC 8446 §5.1 — records ztls emits use TLS 1.2 legacy_record_version.
+test "Header.write: emits TLS 1.2 legacy_record_version" {
+    var buf: [header_len]u8 = undefined;
+    Header.init(.handshake, 512).write(&buf);
+    try testing.expectEqual(@as(u8, 0x03), buf[1]);
+    try testing.expectEqual(@as(u8, 0x03), buf[2]);
 }
 
 // RFC 8446 §5.1 — TLSPlaintext header is 5 bytes: content_type (1) + legacy_version
