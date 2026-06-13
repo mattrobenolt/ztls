@@ -4,6 +4,7 @@
 const std = @import("std");
 const testing = std.testing;
 
+const handshake = @import("handshake.zig");
 const SignatureScheme = @import("signature_scheme.zig").SignatureScheme;
 const wire = @import("wire.zig");
 
@@ -37,7 +38,7 @@ pub const SchemeIterator = struct {
     pub fn next(self: *SchemeIterator) ParseError!?SignatureScheme {
         if (self.r.remaining().len == 0) return null;
         if (self.r.remaining().len < 2) return error.UnexpectedEof;
-        return @enumFromInt(self.r.assumeRead(u16));
+        return self.r.assumeRead(SignatureScheme);
     }
 };
 
@@ -53,7 +54,7 @@ pub fn encode(out: []u8, sig_algs: []const SignatureScheme) EncodeError![]const 
     if (out.len < len) return error.BufferTooShort;
 
     var w: wire.Writer = .init(out);
-    w.append(u8, 0x0d);
+    w.append(handshake.Type, .certificate_request);
     w.append(u24, @intCast(len - 4));
     w.append(u8, 0x00); // empty request_context
 
@@ -71,8 +72,8 @@ pub fn encode(out: []u8, sig_algs: []const SignatureScheme) EncodeError![]const 
 pub fn parse(msg: []const u8) ParseError!Parsed {
     if (msg.len < 4 + 1 + 2) return error.UnexpectedEof;
     var r: wire.Reader = .init(msg);
-    const handshake_type = r.assumeRead(u8);
-    if (handshake_type != 0x0d) return error.InvalidHandshakeType;
+    const handshake_type = r.assumeRead(handshake.Type);
+    if (handshake_type != .certificate_request) return error.InvalidHandshakeType;
     const body_len = r.assumeRead(u24);
     if (body_len != msg.len - 4) return error.InvalidHandshakeLength;
 

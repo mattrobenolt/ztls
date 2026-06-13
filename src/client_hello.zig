@@ -9,6 +9,7 @@ const mem = std.mem;
 const alpn_mod = @import("alpn.zig");
 pub const AlpnProtocols = alpn_mod.Protocols;
 pub const AlpnError = alpn_mod.Error;
+const handshake = @import("handshake.zig");
 const kex = @import("kex.zig");
 const NamedGroup = kex.NamedGroup;
 const root = @import("root.zig");
@@ -154,7 +155,7 @@ pub fn encode(
     var w: wire.Writer = .init(out);
 
     // Handshake header (RFC 8446 §4)
-    w.append(u8, 0x01); // client_hello
+    w.append(handshake.Type, .client_hello);
     w.append(u24, @intCast(body_fixed_len + ext_len));
 
     // ClientHello body (RFC 8446 §4.1.2)
@@ -225,8 +226,8 @@ pub fn encode(
 pub fn parse(msg: []const u8) ParseError!Parsed {
     if (msg.len < handshake_header_len + 2 + 32 + 1 + 2 + 1 + 2) return error.UnexpectedEof;
     var r: wire.Reader = .init(msg);
-    const handshake_type = r.assumeRead(u8);
-    if (handshake_type != 0x01) return error.InvalidHandshakeType;
+    const handshake_type = r.assumeRead(handshake.Type);
+    if (handshake_type != .client_hello) return error.InvalidHandshakeType;
     const body_len = r.assumeRead(u24);
     if (body_len != msg.len - handshake_header_len) return error.InvalidHandshakeLength;
 

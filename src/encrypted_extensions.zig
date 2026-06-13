@@ -5,6 +5,7 @@ const std = @import("std");
 const mem = std.mem;
 const testing = std.testing;
 
+const handshake = @import("handshake.zig");
 const wire = @import("wire.zig");
 
 pub const ParseError = error{
@@ -60,11 +61,11 @@ pub fn encode(out: []u8, alpn_protocol: ?[]const u8) EncodeError![]const u8 {
     if (out.len < len) return error.BufferTooShort;
 
     var w: wire.Writer = .init(out);
-    w.append(u8, 0x08);
+    w.append(handshake.Type, .encrypted_extensions);
     w.append(u24, @intCast(len - 4));
     w.append(u16, @intCast(len - 6));
     if (alpn_protocol) |p| {
-        w.append(u16, 0x0010);
+        w.append(ExtensionType, .alpn);
         w.append(u16, @intCast(2 + 1 + p.len));
         w.append(u16, @intCast(1 + p.len));
         w.append(u8, @intCast(p.len));
@@ -83,8 +84,8 @@ pub fn parse(msg: []const u8, offered_alpn: []const []const u8) ParseError!Parse
     if (msg.len < 6) return error.UnexpectedEof;
 
     var r: wire.Reader = .init(msg);
-    const handshake_type = r.assumeRead(u8);
-    if (handshake_type != 0x08) return error.InvalidHandshakeType;
+    const handshake_type = r.assumeRead(handshake.Type);
+    if (handshake_type != .encrypted_extensions) return error.InvalidHandshakeType;
     const body_len = r.assumeRead(u24);
     if (body_len != msg.len - 4) return error.InvalidHandshakeLength;
 
@@ -96,7 +97,7 @@ pub fn parse(msg: []const u8, offered_alpn: []const []const u8) ParseError!Parse
     var result: Parsed = .{};
     while (r.pos < extensions_end) {
         if (extensions_end - r.pos < 4) return error.InvalidExtensionLength;
-        const ext_type: ExtensionType = @enumFromInt(r.assumeRead(u16));
+        const ext_type = r.assumeRead(ExtensionType);
         const ext_len = r.assumeRead(u16);
         if (r.pos + ext_len > extensions_end) return error.InvalidExtensionLength;
         const ext = r.assumeReadSlice(ext_len);

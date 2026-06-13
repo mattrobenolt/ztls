@@ -7,6 +7,7 @@
 const std = @import("std");
 const testing = std.testing;
 
+const handshake = @import("handshake.zig");
 const wire = @import("wire.zig");
 
 const NewSessionTicket = @This();
@@ -33,8 +34,8 @@ pub fn parse(msg: []const u8) ParseError!NewSessionTicket {
     if (msg.len < 4) return error.UnexpectedEof;
 
     var r: wire.Reader = .init(msg);
-    const handshake_type = r.assumeRead(u8);
-    if (handshake_type != 0x04) return error.InvalidHandshakeType;
+    const handshake_type = r.assumeRead(handshake.Type);
+    if (handshake_type != .new_session_ticket) return error.InvalidHandshakeType;
     const body_len = r.assumeRead(u24);
     if (body_len != msg.len - 4) return error.InvalidHandshakeLength;
     if (body_len < 4 + 4 + 1 + 2 + 2) return error.UnexpectedEof;

@@ -65,8 +65,9 @@ pub fn sendKeyUpdate(
 /// RFC 8446 §4 — handshake message type. Open enum: unrecognized values pass
 /// through the reader untouched; the state machine decides what is unexpected.
 pub const Type = enum(u8) {
-    new_session_ticket = 0x04,
+    client_hello = 0x01,
     server_hello = 0x02,
+    new_session_ticket = 0x04,
     encrypted_extensions = 0x08,
     certificate_request = 0x0d,
     certificate = 0x0b,
@@ -108,14 +109,14 @@ pub const Reader = struct {
             self.r.pos = begin;
             return error.UnexpectedEof;
         }
-        const msg_type = self.r.assumeRead(u8);
+        const msg_type = self.r.assumeRead(Type);
         const len = self.r.assumeRead(u24);
         if (self.r.remaining().len < len) {
             self.r.pos = begin;
             return error.UnexpectedEof;
         }
         _ = self.r.assumeReadSlice(len);
-        return .{ .type = @enumFromInt(msg_type), .raw = self.r.buf[begin..self.r.pos] };
+        return .{ .type = msg_type, .raw = self.r.buf[begin..self.r.pos] };
     }
 };
 

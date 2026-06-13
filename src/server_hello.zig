@@ -6,6 +6,7 @@ const testing = std.testing;
 const mem = std.mem;
 
 const CipherSuite = @import("root.zig").CipherSuite;
+const handshake = @import("handshake.zig");
 const NamedGroup = @import("kex.zig").NamedGroup;
 const wire = @import("wire.zig");
 const x25519 = @import("x25519.zig");
@@ -109,8 +110,8 @@ pub fn parseHelloRetryRequest(msg: []const u8) HrrParseError!HelloRetryRequest {
     if (msg.len < 4) return error.UnexpectedEof;
     var r: wire.Reader = .init(msg);
 
-    const handshake_type = r.assumeRead(u8);
-    if (handshake_type != 0x02) return error.InvalidHandshakeType;
+    const handshake_type = r.assumeRead(handshake.Type);
+    if (handshake_type != .server_hello) return error.InvalidHandshakeType;
     const body_len = r.assumeRead(u24);
     if (body_len != msg.len - 4) return error.InvalidHandshakeLength;
     if (body_len < 2 + 32 + 1 + 2 + 1 + 2) return error.UnexpectedEof;
@@ -205,7 +206,7 @@ pub fn encode(
     if (out.len < len) return error.BufferTooShort;
 
     var w: wire.Writer = .init(out);
-    w.append(u8, 0x02);
+    w.append(handshake.Type, .server_hello);
     w.append(u24, @intCast(len - 4));
     w.append(u16, 0x0303);
     w.appendSlice(&random);
@@ -244,8 +245,8 @@ pub fn parseWithSessionIdEcho(
     var r: wire.Reader = .init(msg);
 
     // Handshake header (RFC 8446 §4)
-    const handshake_type = r.assumeRead(u8);
-    if (handshake_type != 0x02) return error.InvalidHandshakeType;
+    const handshake_type = r.assumeRead(handshake.Type);
+    if (handshake_type != .server_hello) return error.InvalidHandshakeType;
     const body_len = r.assumeRead(u24);
     if (body_len != msg.len - 4) return error.InvalidHandshakeLength;
     if (body_len < 2 + 32 + 1 + 2 + 1 + 2) return error.UnexpectedEof;

@@ -6,6 +6,7 @@ const Sha256 = std.crypto.hash.sha2.Sha256;
 const testing = std.testing;
 
 const Certificate = @import("cryptox/Certificate.zig");
+const handshake = @import("handshake.zig");
 const wire = @import("wire.zig");
 
 const c = @import("c.zig").openssl;
@@ -44,7 +45,7 @@ pub fn encode(out: []u8, certs_der: []const []const u8) EncodeError![]const u8 {
     if (out.len < len) return error.BufferTooShort;
     var w: wire.Writer = .init(out);
     const list_len = len - 4 - 1 - 3;
-    w.append(u8, 0x0b);
+    w.append(handshake.Type, .certificate);
     w.append(u24, @intCast(len - 4));
     w.append(u8, 0x00);
     w.append(u24, @intCast(list_len));
@@ -67,8 +68,8 @@ pub fn parse(msg: []const u8, policy: Policy) ParseError![]const u8 {
     if (msg.len < 4 + 1 + 3) return error.UnexpectedEof;
     var r: wire.Reader = .init(msg);
 
-    const handshake_type = r.assumeRead(u8);
-    if (handshake_type != 0x0b) return error.InvalidHandshakeType;
+    const handshake_type = r.assumeRead(handshake.Type);
+    if (handshake_type != .certificate) return error.InvalidHandshakeType;
     r.assumeSkip(3); // body length
 
     const ctx_len = r.assumeRead(u8);
@@ -212,7 +213,7 @@ pub fn encodeCertificateVerify(
     const len = certificateVerifyEncodedLen(signature);
     if (out.len < len) return error.BufferTooShort;
     var w: wire.Writer = .init(out);
-    w.append(u8, 0x0f);
+    w.append(handshake.Type, .certificate_verify);
     w.append(u24, @intCast(len - 4));
     w.append(SignatureScheme, scheme);
     w.append(u16, @intCast(signature.len));
@@ -261,8 +262,8 @@ fn verifySignature(
     if (msg.len < 4 + 2 + 2) return error.UnexpectedEof;
     var r: wire.Reader = .init(msg);
 
-    const handshake_type = r.assumeRead(u8);
-    if (handshake_type != 0x0f) return error.InvalidHandshakeType;
+    const handshake_type = r.assumeRead(handshake.Type);
+    if (handshake_type != .certificate_verify) return error.InvalidHandshakeType;
     r.assumeSkip(3);
 
     const scheme = try r.read(SignatureScheme);
