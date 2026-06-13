@@ -270,6 +270,7 @@ pub fn parse(msg: []const u8) ParseError!Parsed {
     var got_server_name = false;
     var got_alpn = false;
     var got_supported_groups = false;
+    var got_signature_algorithms = false;
 
     while (r.pos < extensions_end) {
         if (extensions_end - r.pos < 4) return error.InvalidExtensionLength;
@@ -299,6 +300,11 @@ pub fn parse(msg: []const u8) ParseError!Parsed {
                 try parseSupportedVersions(ext);
                 got_supported_versions = true;
             },
+            .signature_algorithms => {
+                if (got_signature_algorithms) return error.DuplicateExtension;
+                try parseSignatureAlgorithms(ext);
+                got_signature_algorithms = true;
+            },
             .key_share => {
                 if (got_key_share) return error.DuplicateExtension;
                 parsed.public_key = try parseKeyShare(ext);
@@ -309,7 +315,8 @@ pub fn parse(msg: []const u8) ParseError!Parsed {
     }
     if (r.pos != extensions_end) return error.InvalidExtensionLength;
     if (!got_supported_versions) return error.UnsupportedTlsVersion;
-    if (!got_key_share) return error.MissingExtension;
+    if (!got_supported_groups or !got_signature_algorithms or !got_key_share)
+        return error.MissingExtension;
     return parsed;
 }
 
@@ -357,6 +364,14 @@ fn parseSupportedGroups(ext: []const u8) ParseError!void {
         if (r.assumeRead(u16) == @intFromEnum(NamedGroup.x25519)) return;
     }
     return error.UnsupportedKeyShare;
+}
+
+fn parseSignatureAlgorithms(ext: []const u8) ParseError!void {
+    if (ext.len < 2) return error.InvalidVectorLength;
+    var r: wire.Reader = .init(ext);
+    const list_len = r.assumeRead(u16);
+    if (list_len == 0 or list_len != ext.len - 2 or list_len % 2 != 0)
+        return error.InvalidVectorLength;
 }
 
 fn parseKeyShare(ext: []const u8) ParseError!x25519.PublicKey {
@@ -531,6 +546,32 @@ test "parse: rejects supported_versions without TLS 1.3" {
     try testing.expectError(error.UnsupportedTlsVersion, parse(buf[0..encoded.len]));
 }
 
+// RFC 8446 §9.2 — certificate-authenticated ECDHE ClientHello requires
+// supported_groups, signature_algorithms, and key_share.
+test "parse: rejects missing supported_groups" {
+    var buf: [512]u8 = undefined;
+    const encoded = try encode(&buf, .zero, .zero, null, &.{});
+    const offset = try findExtensionOffset(encoded, .supported_groups);
+    buf[offset + 1] = @intFromEnum(ExtensionType.padding);
+    try testing.expectError(error.MissingExtension, parse(buf[0..encoded.len]));
+}
+
+test "parse: rejects missing signature_algorithms" {
+    var buf: [512]u8 = undefined;
+    const encoded = try encode(&buf, .zero, .zero, null, &.{});
+    const offset = try findExtensionOffset(encoded, .signature_algorithms);
+    buf[offset + 1] = @intFromEnum(ExtensionType.padding);
+    try testing.expectError(error.MissingExtension, parse(buf[0..encoded.len]));
+}
+
+test "parse: rejects malformed signature_algorithms" {
+    var buf: [512]u8 = undefined;
+    const encoded = try encode(&buf, .zero, .zero, null, &.{});
+    const ext = try findExtension(buf[0..encoded.len], .signature_algorithms);
+    ext[1] = 0;
+    try testing.expectError(error.InvalidVectorLength, parse(buf[0..encoded.len]));
+}
+
 test "parse: rejects malformed ClientHello" {
     var buf: [512]u8 = undefined;
     const encoded = try encode(&buf, .zero, .zero, null, &.{});
@@ -666,6 +707,15 @@ test "parse: rejects duplicate supported_groups" {
     const encoded = try encode(&buf, .zero, .zero, null, &.{});
     const dup_supported_groups = [_]u8{ 0x00, 0x0a, 0x00, 0x04, 0x00, 0x02, 0x00, 0x1d };
     const new_len = appendExtension(&buf, encoded.len, &dup_supported_groups);
+    try testing.expectError(error.DuplicateExtension, parse(buf[0..new_len]));
+}
+
+// RFC 8446 §4.2 — duplicate recognized extensions are rejected.
+test "parse: rejects duplicate signature_algorithms" {
+    var buf: [512]u8 = undefined;
+    const encoded = try encode(&buf, .zero, .zero, null, &.{});
+    const dup_sig_algs = [_]u8{ 0x00, 0x0d, 0x00, 0x02, 0x00, 0x02 };
+    const new_len = appendExtension(&buf, encoded.len, &dup_sig_algs);
     try testing.expectError(error.DuplicateExtension, parse(buf[0..new_len]));
 }
 
