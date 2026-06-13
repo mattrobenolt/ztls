@@ -6,9 +6,11 @@ const testing = std.testing;
 const mem = std.mem;
 
 const CipherSuite = @import("root.zig").CipherSuite;
+const CompressionMethod = @import("compression_method.zig").CompressionMethod;
 const ExtensionType = @import("extension_type.zig").ExtensionType;
 const handshake = @import("handshake.zig");
 const NamedGroup = @import("kex.zig").NamedGroup;
+const ProtocolVersion = @import("protocol_version.zig").ProtocolVersion;
 const wire = @import("wire.zig");
 const x25519 = @import("x25519.zig");
 
@@ -117,8 +119,8 @@ pub fn parseHelloRetryRequest(msg: []const u8) HrrParseError!HelloRetryRequest {
     if (body_len != msg.len - 4) return error.InvalidHandshakeLength;
     if (body_len < 2 + 32 + 1 + 2 + 1 + 2) return error.UnexpectedEof;
 
-    const legacy_version = r.assumeRead(u16);
-    if (legacy_version != 0x0303) return error.InvalidLegacyVersion;
+    const legacy_version = r.assumeRead(ProtocolVersion);
+    if (legacy_version != .tls_1_2) return error.InvalidLegacyVersion;
     const random = r.assumeReadSlice(32);
     if (!mem.eql(u8, random, &hello_retry_request_random)) return error.NotHelloRetryRequest;
 
@@ -127,8 +129,8 @@ pub fn parseHelloRetryRequest(msg: []const u8) HrrParseError!HelloRetryRequest {
     r.assumeSkip(session_id_len); // legacy_session_id_echo
 
     const cipher_suite = CipherSuite.fromWire(r.assumeRead(u16)) orelse return error.InvalidEnumTag;
-    const compression_method = r.assumeRead(u8);
-    if (compression_method != 0) return error.InvalidCompressionMethod;
+    const compression_method = r.assumeRead(CompressionMethod);
+    if (compression_method != .no_compression) return error.InvalidCompressionMethod;
 
     const extensions_len = r.assumeRead(u16);
     if (extensions_len != msg.len - r.pos) return error.InvalidExtensionLength;
@@ -151,8 +153,8 @@ pub fn parseHelloRetryRequest(msg: []const u8) HrrParseError!HelloRetryRequest {
             .supported_versions => {
                 if (got_supported_versions) return error.DuplicateExtension;
                 if (ext_len != 2) return error.InvalidExtensionLength;
-                const version = r.assumeRead(u16);
-                if (version != 0x0304) return error.UnsupportedTlsVersion;
+                const version = r.assumeRead(ProtocolVersion);
+                if (version != .tls_1_3) return error.UnsupportedTlsVersion;
                 got_supported_versions = true;
             },
             // key_share: in HRR carries a single NamedGroup (selected_group).
@@ -209,12 +211,12 @@ pub fn encode(
     var w: wire.Writer = .init(out);
     w.append(handshake.Type, .server_hello);
     w.append(u24, @intCast(len - 4));
-    w.append(u16, 0x0303);
+    w.append(ProtocolVersion, .tls_1_2);
     w.appendSlice(&random);
     w.append(u8, @intCast(session_id_echo.len));
     w.appendSlice(session_id_echo);
     w.append(CipherSuite, cipher_suite);
-    w.append(u8, 0x00);
+    w.append(CompressionMethod, .no_compression);
 
     w.append(u16, 0x002e); // extensions length
     w.append(ExtensionType, .key_share);
@@ -224,7 +226,7 @@ pub fn encode(
     w.appendSlice(&public_key.data);
     w.append(ExtensionType, .supported_versions);
     w.append(u16, 0x0002);
-    w.append(u16, 0x0304);
+    w.append(ProtocolVersion, .tls_1_3);
     return w.written();
 }
 
@@ -256,8 +258,8 @@ pub fn parseWithSessionIdEcho(
     // ServerHello with a fixed Random value; detect it explicitly so callers
     // get a clean unsupported-feature error instead of a misleading key_share
     // parse failure. RFC 8446 §4.1.3.
-    const legacy_version = r.assumeRead(u16);
-    if (legacy_version != 0x0303) return error.InvalidLegacyVersion;
+    const legacy_version = r.assumeRead(ProtocolVersion);
+    if (legacy_version != .tls_1_2) return error.InvalidLegacyVersion;
     const random = r.assumeReadSlice(32);
     if (mem.eql(u8, random, &hello_retry_request_random)) return error.HelloRetryRequest;
 
@@ -269,8 +271,8 @@ pub fn parseWithSessionIdEcho(
     }
 
     const cipher_suite = CipherSuite.fromWire(r.assumeRead(u16)) orelse return error.InvalidEnumTag;
-    const compression_method = r.assumeRead(u8);
-    if (compression_method != 0) return error.InvalidCompressionMethod;
+    const compression_method = r.assumeRead(CompressionMethod);
+    if (compression_method != .no_compression) return error.InvalidCompressionMethod;
 
     // Extensions
     const extensions_len = r.assumeRead(u16);
@@ -292,8 +294,8 @@ pub fn parseWithSessionIdEcho(
             .supported_versions => {
                 if (got_supported_versions) return error.DuplicateExtension;
                 if (ext_len != 2) return error.InvalidExtensionLength;
-                const version = r.assumeRead(u16);
-                if (version != 0x0304) return error.UnsupportedTlsVersion;
+                const version = r.assumeRead(ProtocolVersion);
+                if (version != .tls_1_3) return error.UnsupportedTlsVersion;
                 got_supported_versions = true;
             },
             // key_share (RFC 8446 §4.2.8)

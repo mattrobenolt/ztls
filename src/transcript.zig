@@ -4,6 +4,8 @@
 const std = @import("std");
 const testing = std.testing;
 
+const handshake = @import("handshake.zig");
+
 /// Construct the synthetic "message_hash" handshake message that replaces
 /// ClientHello1 in the running transcript hash when a HelloRetryRequest is
 /// received.  RFC 8446 §4.4.1:
@@ -25,7 +27,7 @@ pub fn messageHashSynthetic(
     ch1_hash: [digest_len]u8,
 ) [4 + digest_len]u8 {
     var out: [4 + digest_len]u8 = undefined;
-    out[0] = 0xfe; // HandshakeType message_hash (RFC 8446 §4)
+    out[0] = @intFromEnum(handshake.Type.message_hash);
     out[1] = 0x00;
     out[2] = 0x00;
     out[3] = @intCast(digest_len); // body length: fits in one byte for SHA-256/384
@@ -46,7 +48,7 @@ test "messageHashSynthetic: SHA-256 header" {
     const hash = [_]u8{0xab} ** 32;
     const msg = messageHashSynthetic(32, hash);
     try testing.expectEqual(@as(usize, 36), msg.len);
-    try testing.expectEqual(@as(u8, 0xfe), msg[0]);
+    try testing.expectEqual(@intFromEnum(handshake.Type.message_hash), msg[0]);
     try testing.expectEqual(@as(u8, 0x00), msg[1]);
     try testing.expectEqual(@as(u8, 0x00), msg[2]);
     try testing.expectEqual(@as(u8, 32), msg[3]);
@@ -57,7 +59,7 @@ test "messageHashSynthetic: SHA-384 header" {
     const hash = [_]u8{0xcd} ** 48;
     const msg = messageHashSynthetic(48, hash);
     try testing.expectEqual(@as(usize, 52), msg.len);
-    try testing.expectEqual(@as(u8, 0xfe), msg[0]);
+    try testing.expectEqual(@intFromEnum(handshake.Type.message_hash), msg[0]);
     try testing.expectEqual(@as(u8, 0x00), msg[2]);
     try testing.expectEqual(@as(u8, 48), msg[3]);
     try testing.expectEqualSlices(u8, &hash, msg[4..]);
@@ -100,7 +102,7 @@ test "messageHashSynthetic: RFC 8448 §5 ClientHello1 SHA-256" {
 
     const msg = messageHashSynthetic(32, ch1_hash);
     // header
-    try testing.expectEqual(@as(u8, 0xfe), msg[0]);
+    try testing.expectEqual(@intFromEnum(handshake.Type.message_hash), msg[0]);
     try testing.expectEqual(@as(u8, 0x00), msg[1]);
     try testing.expectEqual(@as(u8, 0x00), msg[2]);
     try testing.expectEqual(@as(u8, 32), msg[3]);

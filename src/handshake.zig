@@ -44,9 +44,11 @@ pub fn sendKeyUpdate(
 ) SendError![]u8 {
     assert(self.state == .connected);
     if (self.pending_write.isPending()) return error.PendingWrite;
-    const msg = [_]u8{
-        @intFromEnum(Type.key_update), 0x00, 0x00, 0x01, @intFromEnum(request),
-    };
+    var msg: [5]u8 = undefined;
+    var writer: wire.Writer = .init(&msg);
+    writer.append(Type, .key_update);
+    writer.append(u24, 1);
+    writer.append(KeyUpdateRequest, request);
     const record = try self.tx.encrypt(.handshake, &msg, out);
     const suite = if (@hasField(@TypeOf(self.*), "suite_state"))
         &self.suite_state
@@ -74,6 +76,7 @@ pub const Type = enum(u8) {
     certificate_verify = 0x0f,
     finished = 0x14,
     key_update = 0x18,
+    message_hash = 0xfe,
     _,
 };
 

@@ -9,10 +9,12 @@ const mem = std.mem;
 const alpn_mod = @import("alpn.zig");
 pub const AlpnProtocols = alpn_mod.Protocols;
 pub const AlpnError = alpn_mod.Error;
+const CompressionMethod = @import("compression_method.zig").CompressionMethod;
 const ExtensionType = @import("extension_type.zig").ExtensionType;
 const handshake = @import("handshake.zig");
 const kex = @import("kex.zig");
 const NamedGroup = kex.NamedGroup;
+const ProtocolVersion = @import("protocol_version.zig").ProtocolVersion;
 const root = @import("root.zig");
 const CipherSuite = root.CipherSuite;
 pub const Random = root.Random;
@@ -21,8 +23,8 @@ const SignatureScheme = @import("signature_scheme.zig").SignatureScheme;
 const wire = @import("wire.zig");
 const x25519 = @import("x25519.zig");
 
-/// RFC 8446 §4.1.2 — legacy_version is frozen at 0x0303.
-const legacy_version: u16 = 0x0303;
+/// RFC 8446 §4.1.2 — legacy_version is frozen at TLS 1.2.
+const legacy_version: ProtocolVersion = .tls_1_2;
 
 const cipher_suite_count = std.meta.tags(CipherSuite).len;
 const supported_signature_schemes = [_]SignatureScheme{
@@ -35,6 +37,11 @@ const sig_scheme_count = supported_signature_schemes.len;
 
 const handshake_header_len = 4;
 const ext_header_len = 2 + 2; // extension type + data length field
+const SniNameType = enum(u8) {
+    host_name = 0,
+    _,
+};
+
 const sni_overhead = 2 + 1 + 2; // ServerNameList length + NameType + name length field
 
 const body_fixed_len =
@@ -160,13 +167,13 @@ pub fn encode(
     w.append(u24, @intCast(body_fixed_len + ext_len));
 
     // ClientHello body (RFC 8446 §4.1.2)
-    w.append(u16, legacy_version);
+    w.append(ProtocolVersion, legacy_version);
     w.appendSlice(&random.data);
     w.append(u8, 0x00); // legacy_session_id: empty
     w.append(u16, cipher_suite_count * 2);
     inline for (std.meta.tags(CipherSuite)) |cs| w.append(CipherSuite, cs);
     w.append(u8, 0x01); // legacy_compression_methods length
-    w.append(u8, 0x00); // no compression
+    w.append(CompressionMethod, .no_compression);
     w.append(u16, ext_len);
 
     // server_name (RFC 8446 §4.2, RFC 6066 §3)
@@ -178,7 +185,7 @@ pub fn encode(
         w.append(ExtensionType, .server_name);
         w.append(u16, ext_data_len);
         w.append(u16, list_len);
-        w.append(u8, 0x00); // NameType: host_name
+        w.append(SniNameType, .host_name);
         w.append(u16, name_len);
         w.appendSlice(name);
     }
@@ -199,7 +206,7 @@ pub fn encode(
     w.append(ExtensionType, .supported_versions);
     w.append(u16, 3);
     w.append(u8, 0x02); // versions list length
-    w.append(u16, 0x0304); // TLS 1.3
+    w.append(ProtocolVersion, .tls_1_3);
 
     // supported_groups (RFC 8446 §4.2.7)
     w.append(ExtensionType, .supported_groups);
@@ -246,8 +253,8 @@ pub fn parse(msg: []const u8) ParseError!Parsed {
     const compression_len = r.assumeRead(u8);
     if (compression_len != 1) return error.InvalidCompressionMethod;
     if (r.remaining().len < compression_len + 2) return error.UnexpectedEof;
-    const compression_method = r.assumeRead(u8);
-    if (compression_method != 0) return error.InvalidCompressionMethod;
+    const compression_method = r.assumeRead(CompressionMethod);
+    if (compression_method != .no_compression) return error.InvalidCompressionMethod;
 
     const extensions_len = r.assumeRead(u16);
     if (extensions_len > msg.len - r.pos) return error.InvalidExtensionLength;
@@ -313,12 +320,12 @@ fn parseSni(ext: []const u8) ParseError!?[]const u8 {
     if (list_len != ext.len - 2) return error.InvalidExtensionLength;
     if (list_len == 0) return null;
     if (r.remaining().len < 1 + 2) return error.InvalidVectorLength;
-    const name_type = r.assumeRead(u8);
+    const name_type = r.assumeRead(SniNameType);
     const name_len = r.assumeRead(u16);
     if (r.remaining().len < name_len) return error.InvalidVectorLength;
     const name = r.assumeReadSlice(name_len);
     if (r.pos != ext.len) return error.InvalidVectorLength;
-    if (name_type != 0x00) return null;
+    if (name_type != .host_name) return null;
     return name;
 }
 
@@ -336,7 +343,7 @@ fn parseSupportedVersions(ext: []const u8) ParseError!void {
     const list_len = r.assumeRead(u8);
     if (list_len != ext.len - 1 or list_len % 2 != 0) return error.InvalidVectorLength;
     while (r.pos < ext.len) {
-        if (r.assumeRead(u16) == 0x0304) return;
+        if (r.assumeRead(ProtocolVersion) == .tls_1_3) return;
     }
     return error.UnsupportedTlsVersion;
 }

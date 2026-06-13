@@ -20,6 +20,7 @@ const assert = std.debug.assert;
 
 const ArrayBuffer = @import("array_buffer.zig").ArrayBuffer;
 const memx = @import("memx.zig");
+const ProtocolVersion = @import("protocol_version.zig").ProtocolVersion;
 
 /// RFC 8446 §5.1 — maximum plaintext fragment length.
 pub const max_plaintext_len = 1 << 14; // 16384
@@ -36,9 +37,9 @@ pub const header_len = 5;
 pub const max_wire_record_len = header_len + max_ciphertext_len;
 pub const OutBuffer = ArrayBuffer(u8, max_wire_record_len);
 
-/// RFC 8446 §5.1 — legacy_record_version is fixed at 0x0303 (TLS 1.2)
-/// for all TLS 1.3 records after the initial ClientHello.
-const legacy_record_version: u16 = 0x0303;
+/// RFC 8446 §5.1 — legacy_record_version is fixed at TLS 1.2 for all TLS 1.3
+/// records after the initial ClientHello.
+const legacy_record_version: ProtocolVersion = .tls_1_2;
 
 /// RFC 8446 Appendix B.1
 pub const ContentType = enum(u8) {
@@ -61,7 +62,7 @@ pub const Header = extern struct {
     /// Always 0x0303 on the wire for TLS 1.3. Frozen for middlebox compatibility;
     /// actual version negotiation happens in the supported_versions extension.
     /// Not exposed — no caller should branch on this.
-    legacy_version_be: [2]u8 = memx.toBytes(u16, legacy_record_version),
+    legacy_version_be: [2]u8 = memx.toBytes(u16, @intFromEnum(legacy_record_version)),
     /// Big-endian payload length. Use length() to read as native u16.
     length_be: [2]u8,
 
