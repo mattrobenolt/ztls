@@ -13,8 +13,17 @@ pub fn build(b: *std.Build) void {
     {
         const dep = b.dependency("tlsanvil", .{});
         const jar = dep.path("TLS-Anvil.jar");
-        const install = b.addInstallFile(jar, "tools/TLS-Anvil.jar");
-        b.getInstallStep().dependOn(&install.step);
+        const install_jar = b.addInstallFile(jar, "tools/TLS-Anvil.jar");
+        // TLS-Anvil's manifest references adjacent lib/*.jar entries; install
+        // them with the main jar so `java -jar zig-out/tools/TLS-Anvil.jar`
+        // reaches the CLI instead of failing during class loading.
+        const install_lib = b.addInstallDirectory(.{
+            .source_dir = dep.path("lib"),
+            .install_dir = .{ .custom = "tools" },
+            .install_subdir = "lib",
+        });
+        b.getInstallStep().dependOn(&install_jar.step);
+        b.getInstallStep().dependOn(&install_lib.step);
     }
 
     inline for (.{
