@@ -1164,6 +1164,52 @@ test "processFlight: rejects Finished before EncryptedExtensions" {
     try expectEncryptedAlert(&peer, rec, .unexpected_message);
 }
 
+// RFC 8446 §4.4.3 — CertificateVerify must appear after Certificate.
+test "processFlight: rejects CertificateVerify before Certificate" {
+    var hs = try flightReadyClient();
+    defer hs.deinit();
+
+    var flight_buf: [1024]u8 = undefined;
+    var hr: HandshakeReader = .init(rfc8448Fixture("server_flight.b64", &flight_buf));
+    const ee = (try hr.next()).?;
+    try hs.processFlight(ee.raw, hs.policy);
+    _ = (try hr.next()).?; // Certificate
+    const cv = (try hr.next()).?;
+
+    try testing.expectError(error.UnexpectedMessage, hs.processFlight(cv.raw, hs.policy));
+    try testing.expectEqual(.wait_cert, hs.state);
+
+    var peer = try hs.tx.clone();
+    defer peer.deinit();
+    var out: [64]u8 = undefined;
+    const rec = try hs.sendAlert(.unexpected_message, &out);
+    try expectEncryptedAlert(&peer, rec, .unexpected_message);
+}
+
+// RFC 8446 §4.4.3 — Finished must not appear before CertificateVerify.
+test "processFlight: rejects Finished before CertificateVerify" {
+    var hs = try flightReadyClient();
+    defer hs.deinit();
+
+    var flight_buf: [1024]u8 = undefined;
+    var hr: HandshakeReader = .init(rfc8448Fixture("server_flight.b64", &flight_buf));
+    const ee = (try hr.next()).?;
+    try hs.processFlight(ee.raw, hs.policy);
+    const cert = (try hr.next()).?;
+    try hs.processFlight(cert.raw, hs.policy);
+    _ = (try hr.next()).?; // CertificateVerify
+    const fin = (try hr.next()).?;
+
+    try testing.expectError(error.UnexpectedMessage, hs.processFlight(fin.raw, hs.policy));
+    try testing.expectEqual(.wait_cv, hs.state);
+
+    var peer = try hs.tx.clone();
+    defer peer.deinit();
+    var out: [64]u8 = undefined;
+    const rec = try hs.sendAlert(.unexpected_message, &out);
+    try expectEncryptedAlert(&peer, rec, .unexpected_message);
+}
+
 // RFC 8446 §4.4.3 — a bad CertificateVerify signature is a decrypt_error alert.
 test "processFlight: rejects wrong CertificateVerify signature" {
     var hs = try flightReadyClient();
