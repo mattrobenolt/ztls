@@ -3,6 +3,7 @@ const std = @import("std");
 const testing = std.testing;
 
 const c = @import("crypto/c_openssl.zig").openssl;
+const openssl_key = @import("crypto/openssl_key.zig");
 const SignatureScheme = @import("signature_scheme.zig").SignatureScheme;
 
 pub const SignError = error{ BufferTooShort, IdentityElement, LibcryptoFailed, NonCanonical };
@@ -34,7 +35,10 @@ pub const PrivateKey = struct {
     }
 
     pub fn fromP256Scalar(scalar: *const [32]u8) SignError!PrivateKey {
-        return .{ .scheme = .ecdsa_secp256r1_sha256, .key = try p256KeyFromScalar(scalar) };
+        return .{
+            .scheme = .ecdsa_secp256r1_sha256,
+            .key = try openssl_key.p256KeyFromScalar(scalar),
+        };
     }
 
     pub fn deinit(self: *PrivateKey) void {
@@ -82,30 +86,6 @@ pub const PrivateKey = struct {
         return out[0..len];
     }
 };
-
-fn p256KeyFromScalar(scalar: *const [32]u8) SignError!*c.EVP_PKEY {
-    const group = c.EC_GROUP_new_by_curve_name(c.NID_X9_62_prime256v1) orelse
-        return error.LibcryptoFailed;
-    defer c.EC_GROUP_free(group);
-
-    const priv = c.BN_bin2bn(scalar, scalar.len, null) orelse return error.LibcryptoFailed;
-    defer c.BN_free(priv);
-
-    const public = c.EC_POINT_new(group) orelse return error.LibcryptoFailed;
-    defer c.EC_POINT_free(public);
-    if (c.EC_POINT_mul(group, public, priv, null, null, null) != 1) return error.LibcryptoFailed;
-
-    const ec = c.EC_KEY_new_by_curve_name(c.NID_X9_62_prime256v1) orelse
-        return error.LibcryptoFailed;
-    errdefer c.EC_KEY_free(ec);
-    if (c.EC_KEY_set_private_key(ec, priv) != 1) return error.LibcryptoFailed;
-    if (c.EC_KEY_set_public_key(ec, public) != 1) return error.LibcryptoFailed;
-
-    const pkey = c.EVP_PKEY_new() orelse return error.LibcryptoFailed;
-    errdefer c.EVP_PKEY_free(pkey);
-    if (c.EVP_PKEY_assign_EC_KEY(pkey, ec) != 1) return error.LibcryptoFailed;
-    return pkey;
-}
 
 const rsa_pss_key_pem = @embedFile("test_fixtures/rsa_pss/server.key");
 

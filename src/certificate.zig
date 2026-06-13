@@ -13,6 +13,7 @@ const c = @import("crypto/c_openssl.zig").openssl;
 const ArrayBuffer = @import("array_buffer.zig").ArrayBuffer;
 const certificate_policy = @import("certificate_policy.zig");
 const extension_type = @import("extension_type.zig");
+const openssl_key = @import("crypto/openssl_key.zig");
 const ExtensionType = extension_type.ExtensionType;
 pub const SignatureScheme = @import("signature_scheme.zig").SignatureScheme;
 pub const LeafUsage = certificate_policy.LeafUsage;
@@ -218,38 +219,14 @@ fn publicKeyFromCertificateBits(
     pub_key: []const u8,
 ) VerifyError!*c.EVP_PKEY {
     return switch (scheme) {
-        .ecdsa_secp256r1_sha256 => ecPublicKeyFromSec1(c.NID_X9_62_prime256v1, pub_key),
-        .ecdsa_secp384r1_sha384 => ecPublicKeyFromSec1(c.NID_secp384r1, pub_key),
+        .ecdsa_secp256r1_sha256 => openssl_key.ecPublicKeyFromSec1(.secp256r1, pub_key),
+        .ecdsa_secp384r1_sha384 => openssl_key.ecPublicKeyFromSec1(.secp384r1, pub_key),
         .rsa_pss_rsae_sha256,
         .rsa_pss_rsae_sha384,
         .rsa_pss_rsae_sha512,
-        => rsaPublicKeyFromDer(pub_key),
+        => openssl_key.rsaPublicKeyFromDer(pub_key),
         else => error.UnsupportedSignatureScheme,
     };
-}
-
-fn ecPublicKeyFromSec1(nid: c_int, pub_key: []const u8) VerifyError!*c.EVP_PKEY {
-    var ec: ?*c.EC_KEY = c.EC_KEY_new_by_curve_name(nid) orelse return error.InvalidEncoding;
-    errdefer c.EC_KEY_free(ec);
-    var ptr: [*c]const u8 = pub_key.ptr;
-    if (c.o2i_ECPublicKey(&ec, &ptr, @intCast(pub_key.len)) == null) return error.InvalidEncoding;
-
-    const key = c.EVP_PKEY_new() orelse return error.SignatureVerificationFailed;
-    errdefer c.EVP_PKEY_free(key);
-    if (c.EVP_PKEY_assign_EC_KEY(key, ec) != 1) return error.SignatureVerificationFailed;
-    return key;
-}
-
-fn rsaPublicKeyFromDer(pub_key: []const u8) VerifyError!*c.EVP_PKEY {
-    var ptr: [*c]const u8 = pub_key.ptr;
-    const rsa = c.d2i_RSAPublicKey(null, &ptr, @intCast(pub_key.len)) orelse
-        return error.InvalidEncoding;
-    errdefer c.RSA_free(rsa);
-
-    const key = c.EVP_PKEY_new() orelse return error.SignatureVerificationFailed;
-    errdefer c.EVP_PKEY_free(key);
-    if (c.EVP_PKEY_assign_RSA(key, rsa) != 1) return error.SignatureVerificationFailed;
-    return key;
 }
 
 pub const server_certificate_verify_context = " " ** 64 ++ "TLS 1.3, server CertificateVerify\x00";

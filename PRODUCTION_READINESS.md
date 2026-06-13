@@ -243,8 +243,9 @@ each passing the same correctness and interop gates.
 **Current evidence (real, but thin):**
 
 - OpenSSL/libcrypto is the only working backend. The concrete binding is
-  centralized in `src/crypto/c_openssl.zig`, but OpenSSL types and calls still
-  leak directly into primitive modules.
+  centralized in `src/crypto/c_openssl.zig`; OpenSSL key-construction fast paths
+  live in `src/crypto/openssl_key.zig`, but OpenSSL EVP calls still leak into
+  primitive modules.
 - `src/aead.zig` is the strongest seam: `RecordLayer` owns TLS nonce/AAD/sequence
   work and calls `Aead.encrypt` / `Aead.decrypt`; the module reuses
   `EVP_CIPHER_CTX` values rather than allocating them per record.
@@ -253,8 +254,8 @@ each passing the same correctness and interop gates.
 - `src/signature.zig` has a useful caller-facing `Signer` vtable for server
   signing, but the concrete `PrivateKey` helper is OpenSSL-specific.
 - `src/certificate.zig` performs CertificateVerify verification with OpenSSL EVP
-  and deprecated EC/RSA construction helpers; certificate parsing/path policy is
-  still ztls/std-derived code.
+  and delegates public-key construction to `src/crypto/openssl_key.zig`;
+  certificate parsing/path policy is still ztls/std-derived code.
 - `-Dcrypto-backend=openssl` selects the current backend at build time, and
   named-but-unimplemented backends fail clearly instead of silently falling back.
   `src/crypto/backend.zig` still does not dispatch primitive implementations.
@@ -270,19 +271,22 @@ each passing the same correctness and interop gates.
   implemented and no selected backend module dispatches primitives through
   `src/crypto/backend.zig`; OpenSSL calls are compiled directly through
   `src/crypto/c_openssl.zig` from `src/aead.zig`, `src/x25519.zig`,
-  `src/signature.zig`, and `src/certificate.zig`. This contradicts the
-  first-class aws-lc design target in practice: aws-lc is named and rejected
-  clearly, but not implemented. *(#22)*
+  `src/signature.zig`, `src/certificate.zig`, and backend-specific helpers such
+  as `src/crypto/openssl_key.zig`. This contradicts the first-class aws-lc
+  design target in practice: aws-lc is named and rejected clearly, but not
+  implemented. *(#22)*
 - **aws-lc has no implementation or validation lane.** A second backend requires
   an aws-lc build input/CI lane, one implementation file behind the facade, and
   the same unit, Wycheproof, interop, conformance, and benchmark gates as
   OpenSSL. *(#22)*
-- **OpenSSL-only API choices block aws-lc compatibility.** `src/certificate.zig`
-  uses `EC_KEY_new_by_curve_name`, `o2i_ECPublicKey`, `EVP_PKEY_assign_EC_KEY`,
-  `d2i_RSAPublicKey`, and `EVP_PKEY_assign_RSA`; `src/signature.zig` uses
-  `EC_GROUP` / `EC_POINT` / `EC_KEY` construction for P-256 test signing. These
-  need backend-portable key construction (`EVP_PKEY_fromdata`, raw-key helpers,
-  or backend-specific implementations hidden behind the seam). *(#22)*
+- **OpenSSL-only API choices still need backend dispatch.** The OpenSSL EC/RSA
+  key-construction fast paths are isolated in `src/crypto/openssl_key.zig` rather
+  than smeared through certificate/signature code, but there is still no selected
+  backend interface that lets aws-lc provide its own measured implementation.
+  A scratch measurement on OpenSSL 3.6.2 showed the current construction path is
+  faster than naive `EVP_PKEY_fromdata`/decoder replacements, so portability must
+  come through backend-specific fast paths, not an unmeasured lowest-common API.
+  *(#22)*
 - **Capability gating does not exist.** Cipher suites are enumerated directly
   from `CipherSuite`; `client_hello.zig` always advertises only X25519 but not
   through a backend capability table; `kex.zig` names future P-256/P-384/PQ
