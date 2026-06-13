@@ -33,6 +33,12 @@ pub const ParseError = error{
     HelloRetryRequest,
     /// supported_versions extension does not include TLS 1.3 (0x0304).
     UnsupportedTlsVersion,
+    /// legacy_version is not the TLS 1.3 compatibility value 0x0303.
+    InvalidLegacyVersion,
+    /// legacy_session_id_echo does not match the ClientHello legacy_session_id.
+    InvalidSessionIdEcho,
+    /// legacy_compression_method is not null compression.
+    InvalidCompressionMethod,
     /// key_share extension uses a group other than x25519, or wrong key length.
     UnsupportedKeyShareGroup,
     /// A required extension (supported_versions or key_share) was absent.
@@ -81,6 +87,10 @@ pub const HrrParseError = error{
     InvalidEnumTag,
     /// supported_versions extension does not contain TLS 1.3 (0x0304).
     UnsupportedTlsVersion,
+    /// legacy_version is not the TLS 1.3 compatibility value 0x0303.
+    InvalidLegacyVersion,
+    /// legacy_compression_method is not null compression.
+    InvalidCompressionMethod,
     /// A required extension was absent or malformed.
     MissingExtension,
 };
@@ -105,7 +115,8 @@ pub fn parseHelloRetryRequest(msg: []const u8) HrrParseError!HelloRetryRequest {
     if (body_len != msg.len - 4) return error.InvalidHandshakeLength;
     if (body_len < 2 + 32 + 1 + 2 + 1 + 2) return error.UnexpectedEof;
 
-    r.assumeSkip(2); // legacy_version
+    const legacy_version = r.assumeRead(u16);
+    if (legacy_version != 0x0303) return error.InvalidLegacyVersion;
     const random = r.assumeReadSlice(32);
     if (!mem.eql(u8, random, &hello_retry_request_random)) return error.NotHelloRetryRequest;
 
@@ -114,7 +125,8 @@ pub fn parseHelloRetryRequest(msg: []const u8) HrrParseError!HelloRetryRequest {
     r.assumeSkip(session_id_len); // legacy_session_id_echo
 
     const cipher_suite = CipherSuite.fromWire(r.assumeRead(u16)) orelse return error.InvalidEnumTag;
-    r.assumeSkip(1); // legacy_compression_method
+    const compression_method = r.assumeRead(u8);
+    if (compression_method != 0) return error.InvalidCompressionMethod;
 
     const extensions_len = r.assumeRead(u16);
     if (extensions_len != msg.len - r.pos) return error.InvalidExtensionLength;
@@ -221,6 +233,13 @@ pub fn encode(
 ///
 /// RFC 8446 §4.1.3
 pub fn parse(msg: []const u8) ParseError!ServerHello {
+    return parseWithSessionIdEcho(msg, null);
+}
+
+pub fn parseWithSessionIdEcho(
+    msg: []const u8,
+    expected_session_id: ?[]const u8,
+) ParseError!ServerHello {
     if (msg.len < 4) return error.UnexpectedEof;
     var r: wire.Reader = .init(msg);
 
@@ -235,16 +254,21 @@ pub fn parse(msg: []const u8) ParseError!ServerHello {
     // ServerHello with a fixed Random value; detect it explicitly so callers
     // get a clean unsupported-feature error instead of a misleading key_share
     // parse failure. RFC 8446 §4.1.3.
-    r.assumeSkip(2); // legacy_version
+    const legacy_version = r.assumeRead(u16);
+    if (legacy_version != 0x0303) return error.InvalidLegacyVersion;
     const random = r.assumeReadSlice(32);
     if (mem.eql(u8, random, &hello_retry_request_random)) return error.HelloRetryRequest;
 
     const session_id_len = r.assumeRead(u8);
     if (r.remaining().len < session_id_len + 2 + 1 + 2) return error.UnexpectedEof;
-    r.assumeSkip(session_id_len); // legacy_session_id_echo
+    const session_id_echo = r.assumeReadSlice(session_id_len);
+    if (expected_session_id) |expected| {
+        if (!mem.eql(u8, session_id_echo, expected)) return error.InvalidSessionIdEcho;
+    }
 
     const cipher_suite = CipherSuite.fromWire(r.assumeRead(u16)) orelse return error.InvalidEnumTag;
-    r.assumeSkip(1); // legacy_compression_method
+    const compression_method = r.assumeRead(u8);
+    if (compression_method != 0) return error.InvalidCompressionMethod;
 
     // Extensions
     const extensions_len = r.assumeRead(u16);
@@ -426,6 +450,28 @@ test "parse: unsupported TLS version" {
     try testing.expectError(error.UnsupportedTlsVersion, parse(&msg));
 }
 
+// RFC 8446 §4.1.3 — TLS 1.3 ServerHello legacy_version is frozen at 0x0303.
+test "parse: rejects invalid legacy version" {
+    var msg = server_hello_rfc8448[0..server_hello_rfc8448.len].*;
+    msg[4] = 0x03;
+    msg[5] = 0x01;
+    try testing.expectError(error.InvalidLegacyVersion, parse(&msg));
+}
+
+// RFC 8446 §4.1.3 — legacy_session_id_echo must match the ClientHello value.
+test "parse: rejects mismatched session id echo" {
+    var out: [128]u8 = undefined;
+    const msg = try encode(&out, @splat(0xab), &.{ 1, 2 }, .aes_128_gcm_sha256, .zero);
+    try testing.expectError(error.InvalidSessionIdEcho, parseWithSessionIdEcho(msg, &.{ 1, 3 }));
+}
+
+// RFC 8446 §4.1.3 — TLS 1.3 ServerHello legacy_compression_method is zero.
+test "parse: rejects non-zero compression method" {
+    var msg = server_hello_rfc8448[0..server_hello_rfc8448.len].*;
+    msg[41] = 0x01;
+    try testing.expectError(error.InvalidCompressionMethod, parse(&msg));
+}
+
 // Fuzz target: parse must reject arbitrary bytes with an error, never crash
 // (no panic/overflow/OOB). Run with `zig build test --fuzz`.
 fn fuzzParse(_: void, input: []const u8) anyerror!void {
@@ -513,6 +559,21 @@ test "parseHelloRetryRequest: rejects TLS 1.2 in supported_versions" {
     msg[msg.len - 2] = 0x03;
     msg[msg.len - 1] = 0x03;
     try testing.expectError(error.UnsupportedTlsVersion, parseHelloRetryRequest(&msg));
+}
+
+// RFC 8446 §4.1.4 — HRR uses the ServerHello legacy_version field.
+test "parseHelloRetryRequest: rejects invalid legacy version" {
+    var msg = hrr_rfc8448[0..hrr_rfc8448.len].*;
+    msg[4] = 0x03;
+    msg[5] = 0x01;
+    try testing.expectError(error.InvalidLegacyVersion, parseHelloRetryRequest(&msg));
+}
+
+// RFC 8446 §4.1.4 — HRR uses the ServerHello legacy_compression_method field.
+test "parseHelloRetryRequest: rejects non-zero compression method" {
+    var msg = hrr_rfc8448[0..hrr_rfc8448.len].*;
+    msg[41] = 0x01;
+    try testing.expectError(error.InvalidCompressionMethod, parseHelloRetryRequest(&msg));
 }
 
 // RFC 8446 Appendix B.4 — unknown HRR cipher-suite code points are rejected.

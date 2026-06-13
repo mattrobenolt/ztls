@@ -56,6 +56,9 @@ The authoritative readiness state remains `PRODUCTION_READINESS.md`.
 | ServerHello missing required extensions | `error.MissingExtension` | `server_hello.zig`: `parse: missing extensions` | covered |
 | ServerHello duplicate singleton extensions | `error.DuplicateExtension` | `server_hello.zig`: duplicate supported_versions/key_share tests | covered |
 | ServerHello unsupported `supported_versions` value | `error.UnsupportedTlsVersion` | `server_hello.zig`: `parse: unsupported TLS version` | covered |
+| ServerHello invalid `legacy_version` | `error.InvalidLegacyVersion` | `server_hello.zig`: `parse: rejects invalid legacy version` | covered |
+| ServerHello mismatched `legacy_session_id_echo` | `error.InvalidSessionIdEcho` | `server_hello.zig`: `parse: rejects mismatched session id echo`; `ClientHandshake.zig`: `processServerHello: rejects mismatched session id echo` | covered |
+| ServerHello non-zero `legacy_compression_method` | `error.InvalidCompressionMethod` | `server_hello.zig`: `parse: rejects non-zero compression method` | covered |
 | ServerHello unsupported or malformed key_share group/length | `error.UnsupportedKeyShareGroup` | Parser path exists | partial — no dedicated unit test |
 | ServerHello legacy session id longer than 32 bytes | Not explicitly capped by parser | none | gap |
 | ServerHello downgrade sentinel in random | Not explicitly checked | none | gap |

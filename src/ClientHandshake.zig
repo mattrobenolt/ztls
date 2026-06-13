@@ -49,6 +49,7 @@ const ClientHandshake = @This();
 /// (~525-byte DER) with margin; ECDSA P-256/P-384 are far smaller.
 const max_leaf_pub_key = 1024;
 const LeafPublicKeyBuffer = ArrayBuffer(u8, max_leaf_pub_key);
+const LegacySessionIdBuffer = ArrayBuffer(u8, 32);
 const SelectedAlpnBuffer = ArrayBuffer(u8, 255);
 const HandshakeBuffer = array_buffer.SliceBuffer(u8);
 
@@ -287,6 +288,8 @@ post_handshake_count: u8 = 0,
 /// Ordered verification progress through the server flight. Finished emission
 /// requires Certificate, CertificateVerify, and Finished to verify in sequence.
 server_flight_progress: ServerFlightProgress = .none,
+/// ClientHello legacy_session_id expected back in ServerHello.
+legacy_session_id: LegacySessionIdBuffer = .empty,
 /// ALPN protocols offered in ClientHello. Caller-owned, must live until start().
 alpn_protocols: client_hello.AlpnProtocols = &.{},
 selected_alpn: SelectedAlpnBuffer = .empty,
@@ -381,6 +384,12 @@ pub fn start(
 /// ClientHello (and tests driving fixed vectors); most use start() instead.
 pub fn injectClientHello(self: *ClientHandshake, client_hello_msg: []const u8) void {
     assert(self.state == .start);
+    self.legacy_session_id.clear();
+    const parsed = client_hello.parse(client_hello_msg) catch null;
+    if (parsed) |ch| {
+        self.legacy_session_id.appendSlice(ch.legacy_session_id) catch
+            self.legacy_session_id.clear();
+    }
     self.suite.update(client_hello_msg);
     self.state = .wait_sh;
 }
@@ -530,7 +539,7 @@ pub const ServerHelloError = server_hello.ParseError || aead.Error || error{
 // ziglint-ignore: Z015 -- ServerHelloError is a public error-set alias.
 pub fn processServerHello(self: *ClientHandshake, msg: []const u8) ServerHelloError!void {
     assert(self.state == .wait_sh);
-    const sh = try server_hello.parse(msg);
+    const sh = try server_hello.parseWithSessionIdEcho(msg, self.legacy_session_id.constSlice());
     // Collapse the dual transcript to the negotiated hash's arm, carrying over
     // the hasher that already absorbed ClientHello.
     const b = self.suite.buffering;
@@ -937,6 +946,22 @@ test "processServerHello: RFC 8448 §3 installs server handshake keys" {
         0x3f, 0xce, 0x51, 0x60, 0x09, 0xc2, 0x17, 0x27,
         0xd0, 0xf2, 0xe4, 0xe8, 0x6e, 0xe4, 0x03, 0xbc,
     }, &hs.rx.aead.aes_128_gcm_sha256.data);
+}
+
+// RFC 8446 §4.1.3 — ServerHello legacy_session_id_echo must match ClientHello.
+test "processServerHello: rejects mismatched session id echo" {
+    var hs: ClientHandshake = .init(rfc8448_client_keypair);
+    hs.injectClientHello(&rfc8448_client_hello);
+
+    var sh_buf: [128]u8 = undefined;
+    const sh = try server_hello.encode(
+        &sh_buf,
+        @splat(0xab),
+        &.{0x01},
+        .aes_128_gcm_sha256,
+        .zero,
+    );
+    try testing.expectError(error.InvalidSessionIdEcho, hs.processServerHello(sh));
 }
 
 // RFC 8448 §3 vectors, base64-encoded inside a txtar archive (decoded at test
