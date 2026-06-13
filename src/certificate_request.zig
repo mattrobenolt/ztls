@@ -4,7 +4,8 @@
 const std = @import("std");
 const testing = std.testing;
 
-const ExtensionType = @import("extension_type.zig").ExtensionType;
+const extension_type = @import("extension_type.zig");
+const ExtensionType = extension_type.ExtensionType;
 const handshake = @import("handshake.zig");
 const SignatureScheme = @import("signature_scheme.zig").SignatureScheme;
 const wire = @import("wire.zig");
@@ -84,7 +85,9 @@ pub fn parse(msg: []const u8) ParseError!Parsed {
     const exts_total_len = r.assumeRead(u16);
     if (exts_total_len != r.remaining().len) return error.InvalidExtensionLength;
 
-    var extensions: wire.Reader = .init(r.assumeReadSlice(exts_total_len));
+    const extensions_raw = r.assumeReadSlice(exts_total_len);
+    try extension_type.rejectDuplicateExtensions(extensions_raw);
+    var extensions: wire.Reader = .init(extensions_raw);
     var signature_schemes_raw: ?[]const u8 = null;
     var certificate_authorities_raw: []const u8 = &.{};
 

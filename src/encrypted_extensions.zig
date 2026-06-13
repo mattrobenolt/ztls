@@ -5,7 +5,8 @@ const std = @import("std");
 const mem = std.mem;
 const testing = std.testing;
 
-const ExtensionType = @import("extension_type.zig").ExtensionType;
+const extension_type = @import("extension_type.zig");
+const ExtensionType = extension_type.ExtensionType;
 const handshake = @import("handshake.zig");
 const wire = @import("wire.zig");
 
@@ -75,6 +76,7 @@ pub fn parse(msg: []const u8, offered_alpn: []const []const u8) ParseError!Parse
     const extensions_len = r.assumeRead(u16);
     if (extensions_len != body_len - 2) return error.InvalidExtensionLength;
     const extensions_end = r.pos + extensions_len;
+    try extension_type.rejectDuplicateExtensions(msg[r.pos..extensions_end]);
 
     var result: Parsed = .{};
     while (r.pos < extensions_end) {

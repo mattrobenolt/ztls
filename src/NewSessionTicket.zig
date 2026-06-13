@@ -7,7 +7,8 @@
 const std = @import("std");
 const testing = std.testing;
 
-const ExtensionType = @import("extension_type.zig").ExtensionType;
+const extension_type = @import("extension_type.zig");
+const ExtensionType = extension_type.ExtensionType;
 const handshake = @import("handshake.zig");
 const wire = @import("wire.zig");
 
@@ -25,7 +26,7 @@ pub const ParseError = error{
     InvalidHandshakeLength,
     EmptyTicket,
     InvalidExtensionLength,
-    DuplicateEarlyData,
+    DuplicateExtension,
 };
 
 /// Parse a complete NewSessionTicket handshake message including its 4-byte
@@ -52,17 +53,19 @@ pub fn parse(msg: []const u8) ParseError!NewSessionTicket {
     const ticket = r.assumeReadSlice(ticket_len);
     const extensions_len = r.assumeRead(u16);
     if (extensions_len != r.remaining().len) return error.InvalidExtensionLength;
-    var extensions: wire.Reader = .init(r.assumeReadSlice(extensions_len));
+    const extensions_raw = r.assumeReadSlice(extensions_len);
+    try extension_type.rejectDuplicateExtensions(extensions_raw);
+    var extensions: wire.Reader = .init(extensions_raw);
     var max_early_data_size: ?u32 = null;
     while (extensions.remaining().len != 0) {
         if (extensions.remaining().len < 4) return error.InvalidExtensionLength;
-        const extension_type = extensions.assumeRead(ExtensionType);
+        const ext_type = extensions.assumeRead(ExtensionType);
         const extension_len = extensions.assumeRead(u16);
         if (extension_len > extensions.remaining().len) return error.InvalidExtensionLength;
         const extension = extensions.assumeReadSlice(extension_len);
-        switch (extension_type) {
+        switch (ext_type) {
             .early_data => {
-                if (max_early_data_size != null) return error.DuplicateEarlyData;
+                if (max_early_data_size != null) return error.DuplicateExtension;
                 if (extension.len != 4) return error.InvalidExtensionLength;
                 var er: wire.Reader = .init(extension);
                 max_early_data_size = er.assumeRead(u32);
@@ -143,7 +146,7 @@ test "parse: rejects duplicate early_data extension" {
         0x04, 0x00, 0x00, 0x20,
         0x00,
     };
-    try testing.expectError(error.DuplicateEarlyData, parse(&msg));
+    try testing.expectError(error.DuplicateExtension, parse(&msg));
 }
 
 // RFC 8446 §4.6.1 — early_data has exactly four bytes of extension_data.

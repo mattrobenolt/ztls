@@ -2,6 +2,36 @@
 //!
 //! RFC 8446 §4.2 and related extension RFCs.
 
+const std = @import("std");
+const testing = std.testing;
+
+const memx = @import("memx.zig");
+
+pub const DuplicateExtensionError = error{ InvalidExtensionLength, DuplicateExtension };
+
+pub fn rejectDuplicateExtensions(extensions: []const u8) DuplicateExtensionError!void {
+    var outer: usize = 0;
+    while (outer < extensions.len) {
+        if (extensions.len - outer < 4) return error.InvalidExtensionLength;
+        const ext_type = memx.readInt(u16, extensions[outer..][0..2]);
+        const ext_len = memx.readInt(u16, extensions[outer + 2 ..][0..2]);
+        const next = outer + 4 + ext_len;
+        if (next > extensions.len) return error.InvalidExtensionLength;
+
+        var inner: usize = next;
+        while (inner < extensions.len) {
+            if (extensions.len - inner < 4) return error.InvalidExtensionLength;
+            if (memx.readInt(u16, extensions[inner..][0..2]) == ext_type)
+                return error.DuplicateExtension;
+            const inner_len = memx.readInt(u16, extensions[inner + 2 ..][0..2]);
+            inner += 4 + inner_len;
+            if (inner > extensions.len) return error.InvalidExtensionLength;
+        }
+
+        outer = next;
+    }
+}
+
 pub const ExtensionType = enum(u16) {
     server_name = 0x0000,
     status_request = 0x0005,
@@ -23,3 +53,26 @@ pub const ExtensionType = enum(u16) {
     key_share = 0x0033,
     _,
 };
+
+// RFC 8446 §4.2 — an extension block must not contain the same ExtensionType
+// more than once, including unknown extension types.
+test "rejectDuplicateExtensions: rejects duplicate unknown type" {
+    const extensions = [_]u8{
+        0xab, 0xcd, 0x00, 0x01, 0x00,
+        0x00, 0x15, 0x00, 0x00, 0xab,
+        0xcd, 0x00, 0x00,
+    };
+    try testing.expectError(error.DuplicateExtension, rejectDuplicateExtensions(&extensions));
+}
+
+// RFC 8446 §4.2 — extension blocks are vectors of type/length/value entries.
+test "rejectDuplicateExtensions: rejects malformed block" {
+    try testing.expectError(
+        error.InvalidExtensionLength,
+        rejectDuplicateExtensions(&.{ 0x00, 0x15, 0x00 }),
+    );
+    try testing.expectError(
+        error.InvalidExtensionLength,
+        rejectDuplicateExtensions(&.{ 0x00, 0x15, 0x00, 0x02, 0x00 }),
+    );
+}

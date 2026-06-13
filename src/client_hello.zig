@@ -10,7 +10,8 @@ const alpn_mod = @import("alpn.zig");
 pub const AlpnProtocols = alpn_mod.Protocols;
 pub const AlpnError = alpn_mod.Error;
 const CompressionMethod = @import("compression_method.zig").CompressionMethod;
-const ExtensionType = @import("extension_type.zig").ExtensionType;
+const extension_type = @import("extension_type.zig");
+const ExtensionType = extension_type.ExtensionType;
 const handshake = @import("handshake.zig");
 const kex = @import("kex.zig");
 const NamedGroup = kex.NamedGroup;
@@ -266,6 +267,7 @@ pub fn parse(msg: []const u8) ParseError!Parsed {
     const extensions_len = r.assumeRead(u16);
     if (extensions_len > msg.len - r.pos) return error.InvalidExtensionLength;
     const extensions_end = r.pos + extensions_len;
+    try extension_type.rejectDuplicateExtensions(msg[r.pos..extensions_end]);
 
     var parsed: Parsed = .{
         .cipher_suites = cipher_suites,

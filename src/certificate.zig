@@ -12,7 +12,8 @@ const wire = @import("wire.zig");
 const c = @import("c.zig").openssl;
 const ArrayBuffer = @import("array_buffer.zig").ArrayBuffer;
 const certificate_policy = @import("certificate_policy.zig");
-const ExtensionType = @import("extension_type.zig").ExtensionType;
+const extension_type = @import("extension_type.zig");
+const ExtensionType = extension_type.ExtensionType;
 pub const SignatureScheme = @import("signature_scheme.zig").SignatureScheme;
 pub const LeafUsage = certificate_policy.LeafUsage;
 pub const Policy = certificate_policy.Policy;
@@ -156,6 +157,7 @@ fn verifyChainCertificateSignatureAlgorithms(
 }
 
 fn parseCertificateEntryExtensions(exts: []const u8) ParseError!void {
+    try extension_type.rejectDuplicateExtensions(exts);
     var r: wire.Reader = .init(exts);
     var got_status_request = false;
     var got_sct = false;

@@ -7,7 +7,8 @@ const mem = std.mem;
 
 const CipherSuite = @import("root.zig").CipherSuite;
 const CompressionMethod = @import("compression_method.zig").CompressionMethod;
-const ExtensionType = @import("extension_type.zig").ExtensionType;
+const extension_type = @import("extension_type.zig");
+const ExtensionType = extension_type.ExtensionType;
 const handshake = @import("handshake.zig");
 const NamedGroup = @import("kex.zig").NamedGroup;
 const ProtocolVersion = @import("protocol_version.zig").ProtocolVersion;
@@ -151,6 +152,7 @@ pub fn parseHelloRetryRequest(msg: []const u8) HrrParseError!HelloRetryRequest {
     const extensions_len = r.assumeRead(u16);
     if (extensions_len != msg.len - r.pos) return error.InvalidExtensionLength;
     const extensions_end = r.pos + extensions_len;
+    try extension_type.rejectDuplicateExtensions(msg[r.pos..extensions_end]);
 
     var selected_group: ?NamedGroup = null;
     var cookie: ?[]const u8 = null;
@@ -315,6 +317,7 @@ pub fn parseWithSessionIdEcho(
     const extensions_len = r.assumeRead(u16);
     if (extensions_len > msg.len - r.pos) return error.InvalidExtensionLength;
     const extensions_end = r.pos + extensions_len;
+    try extension_type.rejectDuplicateExtensions(msg[r.pos..extensions_end]);
 
     var got_supported_versions = false;
     var server_public_key: x25519.PublicKey = undefined;
