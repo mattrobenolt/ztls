@@ -448,6 +448,59 @@ pub fn handleRecord(self: *ClientHandshake, record: []u8, out: []u8) HandleError
 
 pub const AlertError = RecordLayer.EncryptError || error{PendingWrite};
 
+pub fn alertForError(err: anyerror) alert.Description {
+    return switch (err) {
+        error.AuthenticationFailed => .bad_record_mac,
+        error.SignatureVerificationFailed,
+        error.InvalidVerifyData,
+        => .decrypt_error,
+        error.EmptyCertificateList,
+        error.InvalidExtensionLength,
+        error.UnexpectedEof,
+        error.IncompleteRecord,
+        error.RecordTooShort,
+        error.InvalidInnerPlaintext,
+        => .decode_error,
+        error.MissingTrustAnchor,
+        error.CertificateIssuerNotFound,
+        => .unknown_ca,
+        error.CertificateExpired,
+        error.CertificateNotYetValid,
+        => .certificate_expired,
+        error.CertificateKeyUsageRejected,
+        error.CertificateExtendedKeyUsageRejected,
+        error.CertificateSignatureAlgorithmRejected,
+        error.CertificateSignatureAlgorithmUnsupported,
+        error.UnsupportedCertificateVersion,
+        => .unsupported_certificate,
+        error.CertificateHostMismatch,
+        error.CertificateNameConstraintViolation,
+        error.CertificateNameConstraintUnsupported,
+        => .certificate_unknown,
+        error.CertificateFieldHasInvalidLength,
+        error.CertificateFieldHasWrongDataType,
+        error.CertificateHasInvalidBitString,
+        error.CertificateTimeInvalid,
+        error.CertificateHasUnrecognizedObjectId,
+        error.CertificateIssuerMismatch,
+        error.CertificatePublicKeyInvalid,
+        error.CertificateSignatureAlgorithmMismatch,
+        error.CertificateSignatureInvalidLength,
+        error.InvalidSignature,
+        => .bad_certificate,
+        error.UnsupportedExtension => .unsupported_extension,
+        error.UnexpectedCertificateRequestContext,
+        error.UnexpectedExtension,
+        error.IllegalParameter,
+        error.UnsupportedCipherSuite,
+        => .illegal_parameter,
+        error.UnexpectedRecord,
+        error.UnexpectedMessage,
+        => .unexpected_message,
+        else => .internal_error,
+    };
+}
+
 /// Encode a TLS alert record (then completeWrite() once sent). Before handshake
 /// keys exist this emits a plaintext alert record; after ServerHello it encrypts
 /// the alert under the current send traffic key. RFC 8446 §6.
@@ -1145,6 +1198,43 @@ test "processFlight: rejects unanchored Certificate by default" {
         hs.processFlight(rfc8448Fixture("server_flight.b64", &flight_buf), hs.policy),
     );
     try testing.expectEqual(.wait_cert, hs.state);
+
+    var peer = try hs.tx.clone();
+    defer peer.deinit();
+    var out: [64]u8 = undefined;
+    const rec = try hs.sendAlert(alertForError(error.MissingTrustAnchor), &out);
+    try expectEncryptedAlert(&peer, rec, .unknown_ca);
+}
+
+// RFC 8446 §4.4.2.2, §6.2 — certificate-processing failures are mapped to
+// certificate-related alerts for callers to send through the Sans-I/O API.
+test "alertForError: certificate failures map to certificate alerts" {
+    const cases = [_]struct {
+        err: anyerror,
+        description: alert.Description,
+    }{
+        .{ .err = error.MissingTrustAnchor, .description = .unknown_ca },
+        .{ .err = error.CertificateIssuerNotFound, .description = .unknown_ca },
+        .{ .err = error.CertificateExpired, .description = .certificate_expired },
+        .{ .err = error.CertificateNotYetValid, .description = .certificate_expired },
+        .{
+            .err = error.CertificateKeyUsageRejected,
+            .description = .unsupported_certificate,
+        },
+        .{
+            .err = error.CertificateExtendedKeyUsageRejected,
+            .description = .unsupported_certificate,
+        },
+        .{
+            .err = error.CertificateSignatureAlgorithmRejected,
+            .description = .unsupported_certificate,
+        },
+        .{ .err = error.CertificateHostMismatch, .description = .certificate_unknown },
+        .{ .err = error.CertificateNameConstraintViolation, .description = .certificate_unknown },
+        .{ .err = error.CertificateFieldHasInvalidLength, .description = .bad_certificate },
+        .{ .err = error.InvalidSignature, .description = .bad_certificate },
+    };
+    for (cases) |case| try testing.expectEqual(case.description, alertForError(case.err));
 }
 
 // RFC 8446 §4.4.2 — server Certificate request_context is always empty.
