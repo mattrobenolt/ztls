@@ -8,6 +8,16 @@ bench *args:
 bench-capture *args:
     @scripts/bench-capture.sh {{ args }}
 
+[doc("Capture a full benchmark comparison with default provenance flags")]
+[group("bench")]
+bench-capture-default:
+    @scripts/bench-capture.sh --count=5 --benchtime=500ms
+
+[doc("Validate benchmark capture/analyze plumbing quickly; not benchmark evidence")]
+[group("bench")]
+bench-smoke:
+    @capture=$(scripts/bench-capture.sh --count=1 --benchtime=1x); scripts/bench-analyze.sh "$capture"
+
 [doc("Analyze a benchmark capture with benchstat")]
 [group("bench")]
 bench-analyze capture="":

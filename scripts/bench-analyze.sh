@@ -24,6 +24,12 @@ for file in ztls.txt evp.txt libssl.txt rustls.txt; do
   fi
 done
 
+if [[ -f "${run}/metadata.txt" ]]; then
+  echo "# capture=${run}"
+  sed -n '/^$/q; p' "${run}/metadata.txt" | sed 's/^/# /'
+  echo
+fi
+
 tmp_dir=""
 cleanup() {
   if [[ -n "${tmp_dir}" ]]; then

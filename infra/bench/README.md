@@ -30,7 +30,7 @@ ssh -i infra/bench/bench.pem -o StrictHostKeyChecking=no \
   root@$(tofu output -raw instance_ip)
 
 cd ztls
-just bench-capture --count=5
+just bench-capture-default
 ```
 
 `just bench-capture` writes one timestamped run directory:
@@ -62,6 +62,17 @@ just bench-analyze zig-out/perf/YYYYMMDD-HHMMSS
 With no argument, `just bench-analyze` uses the newest capture under
 `zig-out/perf/`.
 
+## Local workflow sanity check
+
+Use `just bench-smoke` to validate the capture/analyze plumbing on the current
+host. It runs only one `AppPingPong` iteration per row, so it is useful for
+checking scripts and metadata but is not benchmark evidence for #10.
+
+Use `just bench-capture-default` for a local full-comparison capture with the
+same default flags expected on the EC2 host: `--count=5 --benchtime=500ms`.
+Local captures are still workflow sanity checks; committed performance evidence
+requires the EC2 benchmark host and full provenance.
+
 ## Instance sizing
 
 Default is `c7i.large` (1 physical core, 2 SMT threads) for cheap quick runs.
@@ -81,9 +92,11 @@ For lower-noise runs, switch to `c7i.2xlarge` or larger in `variables.tf` —
 - Benchmark binaries build with `ReleaseFast`.
 - `just bench` runs ztls benchmarks only and passes arguments through to the ztls harness.
 - `just bench-capture` captures ztls, raw EVP, libssl memory-BIO, and rustls rows.
+- `just bench-capture-default` captures all comparison rows with `--count=5 --benchtime=500ms`.
 - Filter syntax: `--filter 'BenchmarkHandshake/*,BenchmarkAppClientToServer/*'`
-- `metadata.txt` records timestamp, git revision/dirty state, Zig version, kernel,
-  and available CPU information.
+- `metadata.txt` records timestamp, git revision/dirty state, Zig version,
+  optimization mode, OpenSSL/rustls/benchstat provenance, kernel, and available
+  CPU information.
 - `configuration.nix` is applied on first boot only. If you change it, recreate
   the instance with `tofu destroy && tofu apply`.
 

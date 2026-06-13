@@ -7,10 +7,22 @@ run_dir="zig-out/perf/${stamp}"
 mkdir -p "${run_dir}"
 
 rustls_version() {
-  awk '
-    $1 == "name" && $3 == "\"rustls\"" { in_rustls = 1; next }
-    in_rustls && $1 == "version" { gsub("\"", "", $3); print $3; exit }
-  ' bench/rustls/Cargo.lock
+  if [[ -f bench/rustls/Cargo.lock ]]; then
+    awk '
+      $1 == "name" && $3 == "\"rustls\"" { in_rustls = 1; next }
+      in_rustls && $1 == "version" { gsub("\"", "", $3); print $3; exit }
+    ' bench/rustls/Cargo.lock
+    return
+  fi
+
+  (cd bench/rustls && cargo tree --package rustls --depth 0 2>/dev/null | awk 'NR == 1 { print $2 }')
+}
+
+cpu_governor() {
+  local governor=/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor
+  if [[ -r "${governor}" ]]; then
+    cat "${governor}"
+  fi
 }
 
 run_rustls() {
@@ -53,16 +65,29 @@ run_rustls() {
     echo "git_dirty=true"
   fi
   echo "zig_version=$(zig version)"
+  echo "zig_optimization_mode=ReleaseFast"
+  echo "openssl_variant=openssl"
   echo "openssl_version=$(openssl version)"
+  echo "rustls_profile=release"
   echo "rustls_version=$(rustls_version)"
+  governor="$(cpu_governor)"
+  if [[ -n "${governor}" ]]; then
+    echo "cpu_governor=${governor}"
+  fi
   if command -v rustc >/dev/null 2>&1; then
     echo "rustc_version=$(rustc --version)"
   fi
   if command -v benchstat >/dev/null 2>&1; then
-    echo "benchstat_path=$(command -v benchstat)"
+    benchstat_path="$(command -v benchstat)"
+    echo "benchstat_path=${benchstat_path}"
   fi
   if command -v go >/dev/null 2>&1; then
     echo "go_version=$(go version)"
+    if [[ -n "${benchstat_path:-}" ]]; then
+      echo
+      echo "[benchstat]"
+      go version -m "${benchstat_path}" 2>/dev/null || true
+    fi
   fi
   echo "uname=$(uname -a)"
   if command -v lscpu >/dev/null 2>&1; then
