@@ -165,7 +165,7 @@ perf report --input zig-out/benchmark.perf.data
 Full comparison captures are a separate workflow:
 
 ```sh
-just bench-capture --count=5
+just bench-capture-default
 ```
 
 Each capture writes one run directory under `zig-out/perf/<timestamp>/` with
@@ -173,6 +173,11 @@ Each capture writes one run directory under `zig-out/perf/<timestamp>/` with
 is intended for remote benchmark hosts: rsync the run directory back, then run
 `just bench-analyze zig-out/perf/<timestamp>` to compare the captured files with
 `benchstat`.
+
+Committed capture evidence lives under `docs/research/perf/`. The first EC2
+result set is `docs/research/perf/20260613-182405-ec2-c7i-large/`, captured on a
+clean `c7i.large` benchmark host with raw ztls/EVP/libssl/rustls outputs and the
+benchstat analysis committed together.
 
 All benchmark binaries accept fuzzy `--filter` plus structured filters:
 `--bench <name>`, `--suite <substring>`, and `--size <bytes>`. `--bench` is an

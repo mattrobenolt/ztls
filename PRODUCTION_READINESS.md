@@ -194,22 +194,27 @@ comparisons measure equivalent work*. This is the project's justification.
   in-memory client/server rows. It defines which rows are comparable across
   ztls/libssl/rustls and which are intentionally ztls-only or raw-crypto rows.
 - `justfile` has useful local recipes: `bench` for ztls rows,
-  `bench-capture` for local full-comparison captures, `bench-analyze` for
-  `benchstat` comparison of captures, and profiling helpers `bench-disasm`,
+  `bench-capture` / `bench-capture-default` for full-comparison captures,
+  `bench-analyze` for `benchstat` comparison of captures, and profiling helpers `bench-disasm`,
   `bench-disasm-libcrypto`, and `bench-perf`. `just ci` no longer runs benchmark
   measurements; benchmarks are not correctness evidence on uncontrolled CI
   runners.
-- `just bench-capture` writes a timestamped run directory under `zig-out/perf/`
-  with metadata plus ztls, EVP, libssl memory-BIO, and rustls captures;
-  `just bench-analyze <capture>` compares those captures with `benchstat`.
+- `just bench-capture-default` writes a timestamped run directory under
+  `zig-out/perf/` with metadata plus ztls, EVP, libssl memory-BIO, and rustls
+  captures; `just bench-analyze <capture>` compares those captures with
+  `benchstat`.
 - `infra/bench/` is an OpenTofu/NixOS EC2 host recipe with a pinned-ish shape:
   region `us-west-2`, default `c7i.large`, generated ED25519 SSH key,
   public VPC/subnet/security group, Nix flakes enabled, ASLR disabled, and some
   noisy services masked.
 - The AWS README documents the actual remote ritual today: `cd infra/bench`,
-  `tofu init`, `tofu apply`, rsync the repo, SSH to the instance, run
-  `just bench-capture --count=5`, rsync `zig-out/perf/` back, then run
-  `just bench-analyze <capture>` locally.
+  `tofu init`, `tofu apply`, rsync the repo including `.git`, SSH to the
+  instance, run `just bench-capture-default` inside the flake devshell, rsync
+  `zig-out/perf/` back, then run `just bench-analyze <capture>` locally.
+- `docs/research/perf/20260613-182405-ec2-c7i-large/` is the first committed
+  EC2 result set, with raw ztls/EVP/libssl/rustls outputs, `metadata.txt`, and
+  `benchstat.txt`. It was captured on a clean `c7i.large` host at git revision
+  `c7097426cfad938c609b626c56790ec9e1115952` with `--count=5 --benchtime=500ms`.
 - The local benchmark docs require metadata: target, CPU model, Zig version,
   optimization mode, and git revision. AGENTS.md separately requires committed
   benchmark numbers to include machine + flags + date.
@@ -227,11 +232,11 @@ comparisons measure equivalent work*. This is the project's justification.
   larger, but there is no committed matrix of instance families/sizes,
   architectures, CPU pinning policy, repetitions, or acceptance thresholds.
   *(#11)*
-- **Published results with provenance are absent.** The repo has harnesses and
-  workflow notes, but no committed ztls-vs-libssl-vs-rustls result set with the
-  required machine, flags, date, Zig version, target/CPU, git revision, and
-  backend/library versions. Without that, Pillar 5 has no trustworthy input.
-  *(#10)*
+- **Published results are only a first single-host data point.** The repo now
+  has one committed EC2 `c7i.large` result set with full provenance, but Pillar 3
+  still needs the #11 hardware matrix, one-command remote workflow, repetitions
+  policy, acceptance thresholds, and follow-up analysis before performance claims
+  become marketing-grade.
 
 ---
 
