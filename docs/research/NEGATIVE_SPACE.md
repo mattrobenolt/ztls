@@ -86,6 +86,7 @@ The authoritative readiness state remains `PRODUCTION_READINESS.md`.
 |---|---|---|---|
 | Garbage or non-TLS input before ClientHello | Parser/state error, no panic | tlsfuzzer garbage pre-handshake tests; `ServerHandshake.handleRecord` fuzz target | covered |
 | Truncated ClientHello record | Framing returns incomplete/null or parse error | tlsfuzzer truncated ClientHello tests | covered |
+| Malformed ClientHello compression methods | `error.InvalidCompressionMethod` | `client_hello.zig`: `parse: rejects malformed compression methods` | covered |
 | Empty ClientHello record | Rejected | tlsfuzzer empty ClientHello test | covered |
 | ChangeCipherSpec before ClientHello | Silently discarded per RFC 8446 Appendix D.4 | `ServerHandshake.zig`: `handleRecord: drops ChangeCipherSpec while waiting for ClientHello` | covered |
 | application_data before connected | `error.UnexpectedRecord` | `ServerHandshake.zig`: `handleRecord: rejects application_data before connected` | covered |

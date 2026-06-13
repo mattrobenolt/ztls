@@ -99,6 +99,7 @@ pub const ParseError = error{
     InvalidVectorLength,
     InvalidExtensionLength,
     InvalidEnumTag,
+    InvalidCompressionMethod,
     DuplicateExtension,
     MissingExtension,
     UnsupportedTlsVersion,
@@ -241,9 +242,10 @@ pub fn parse(msg: []const u8) ParseError!Parsed {
     const cipher_suites = r.assumeReadSlice(cipher_suites_len);
 
     const compression_len = r.assumeRead(u8);
-    if (compression_len == 0) return error.InvalidVectorLength;
+    if (compression_len != 1) return error.InvalidCompressionMethod;
     if (r.remaining().len < compression_len + 2) return error.UnexpectedEof;
-    r.assumeSkip(compression_len);
+    const compression_method = r.assumeRead(u8);
+    if (compression_method != 0) return error.InvalidCompressionMethod;
 
     const extensions_len = r.assumeRead(u16);
     if (extensions_len > msg.len - r.pos) return error.InvalidExtensionLength;
@@ -507,6 +509,27 @@ test "parse: rejects malformed ClientHello" {
     try testing.expectError(error.MissingExtension, parse(no_key_share[0..encoded.len]));
 }
 
+// RFC 8446 §4.1.2 — legacy_compression_methods must contain exactly one zero.
+test "parse: rejects malformed compression methods" {
+    var buf: [512]u8 = undefined;
+    const encoded = try encode(&buf, .zero, .zero, null, &.{});
+
+    var empty_methods: [512]u8 = undefined;
+    @memcpy(empty_methods[0..encoded.len], encoded);
+    empty_methods[compression_len_offset] = 0;
+    try testing.expectError(error.InvalidCompressionMethod, parse(empty_methods[0..encoded.len]));
+
+    var extra_method: [512]u8 = undefined;
+    @memcpy(extra_method[0..encoded.len], encoded);
+    extra_method[compression_len_offset] = 2;
+    try testing.expectError(error.InvalidCompressionMethod, parse(extra_method[0..encoded.len]));
+
+    var non_zero_method: [512]u8 = undefined;
+    @memcpy(non_zero_method[0..encoded.len], encoded);
+    non_zero_method[compression_method_offset] = 1;
+    try testing.expectError(error.InvalidCompressionMethod, parse(non_zero_method[0..encoded.len]));
+}
+
 // RFC 8446 §4.1.4 — when the client offers no key_share for a group the server
 // supports, a conformant server sends HelloRetryRequest. ztls does not implement
 // the HRR path (see docs/research/CONFORMANCE_ROADMAP.md, #1); instead
@@ -538,10 +561,11 @@ test "encode: server_name too long" {
     try testing.expectError(error.ServerNameTooLong, encode(&buf, .zero, .zero, long_name, &.{}));
 }
 
-// Offsets into an encoded ClientHello with an empty session_id, the three fixed
-// cipher suites, and a single compression byte: handshake_header(4) +
-// legacy_version(2) + random(32) + session_id_len(1) + cipher_suites_len(2) +
-// cipher_suites(6) + compression_len(1) + compression(1) = 49.
+// Offsets into an encoded ClientHello with an empty session_id and the three
+// fixed cipher suites: handshake_header(4) + legacy_version(2) + random(32) +
+// session_id_len(1) + cipher_suites_len(2) + cipher_suites(6) = 47.
+const compression_len_offset = 47;
+const compression_method_offset = 48;
 const extensions_len_offset = 49;
 
 // Append `ext` to the extension block of an encoded ClientHello, fixing the

@@ -49,7 +49,7 @@ than promoting them to MUSTs.
 | R004-006 | §4.1.2 | ClientHello `legacy_version` must be 0x0303. | PROVEN | `src/client_hello.zig` test `encode: handshake type and legacy version`. | Initial record-layer legacy version is separate and covered under record rows. |
 | R004-007 | §4.1.2 | ClientHello compatibility-mode `legacy_session_id` must be non-empty/32 bytes; otherwise zero-length; generated value should be unpredictable. | PARTIAL | `src/server_hello.zig` test `encode: echoes session id`; full handshake tests require echo to work. | ztls emits a zero-length ClientHello `legacy_session_id` today; there is no direct ClientHello encode assertion for that policy or any compatibility-mode generation path. |
 | R004-008 | §4.1.2 | Server must ignore unrecognized cipher suites and process recognized alternatives. | GAP | `src/ServerHandshake.zig` test `acceptClientHello: rejects unsupported suite` proves only the all-unsupported case. | Mixed known/unknown-list behavior is not tested. |
-| R004-009 | §4.1.2 | ClientHello `legacy_compression_methods` must contain exactly one zero byte; server must abort with `illegal_parameter` on any other value. | GAP | Client encode path emits the compatibility value. | No targeted server rejection test for non-zero or malformed compression methods; alert mapping is unproven. |
+| R004-009 | §4.1.2 | ClientHello `legacy_compression_methods` must contain exactly one zero byte; server must abort with `illegal_parameter` on any other value. | PROVEN | Client encode path emits the compatibility value; `src/client_hello.zig` test `parse: rejects malformed compression methods`. | End-to-end alert description mapping remains covered by R006-005. |
 | R004-010 | §4.1.2, §9.3 | Servers must ignore unrecognized ClientHello extensions. | PROVEN | `src/client_hello.zig` test `parse: ignores unknown extension`. | Applies to server parser for ClientHello. |
 | R004-011 | §4.1.2, §4.2.1 | TLS 1.3 server must negotiate from `supported_versions`, ignore `legacy_version`, ignore unknown versions, and abort nonconforming ClientHello with `missing_extension` when required extensions are absent. | PARTIAL | `src/client_hello.zig` tests `parse: encoded ClientHello`, `parse: rejects malformed ClientHello`; full server tests parse ztls ClientHello. | Missing-`supported_versions`, unknown-version, and ignore-legacy-version behavior need direct tests. |
 | R004-012 | §4.1.2 | TLS 1.2-or-earlier compatibility parsing of ClientHello extensions after `legacy_compression_methods`. | N/A | ztls is TLS 1.3 only. | No TLS 1.2 fallback. |
@@ -134,8 +134,7 @@ for the next correctness slice:
 
 - ServerHello downgrade-sentinel check is not explicitly implemented/tested.
 - ClientHello parser/server path needs direct tests for missing
-  `supported_versions`, malformed/non-zero compression methods, and mixed
-  unknown/known cipher-suite lists.
+  `supported_versions` and mixed unknown/known cipher-suite lists.
 - Server Certificate with non-empty `certificate_request_context`, empty
   certificate_list alert mapping, CertificateEntry extension validation, and
   intermediate signature-algorithm policy need clearer decisions/tests.
