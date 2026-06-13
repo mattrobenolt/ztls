@@ -110,6 +110,7 @@ pub const ParseError = error{
     InvalidEnumTag,
     InvalidCompressionMethod,
     DuplicateExtension,
+    DuplicateKeyShare,
     MissingExtension,
     UnsupportedTlsVersion,
     UnsupportedKeyShare,
@@ -379,6 +380,7 @@ fn parseKeyShare(ext: []const u8) ParseError!x25519.PublicKey {
     var r: wire.Reader = .init(ext);
     const client_shares_len = r.assumeRead(u16);
     if (client_shares_len != ext.len - 2) return error.InvalidVectorLength;
+    var public_key: ?x25519.PublicKey = null;
     while (r.pos < ext.len) {
         if (r.remaining().len < 4) return error.InvalidVectorLength;
         const group = r.assumeRead(u16);
@@ -386,11 +388,12 @@ fn parseKeyShare(ext: []const u8) ParseError!x25519.PublicKey {
         if (r.remaining().len < key_len) return error.InvalidVectorLength;
         const key = r.assumeReadSlice(key_len);
         if (group == @intFromEnum(NamedGroup.x25519)) {
+            if (public_key != null) return error.DuplicateKeyShare;
             if (key.len != 32) return error.UnsupportedKeyShare;
-            return .init(key[0..32].*);
+            public_key = .init(key[0..32].*);
         }
     }
-    return error.UnsupportedKeyShare;
+    return public_key orelse error.UnsupportedKeyShare;
 }
 
 test "encode: size matches encodedLen" {
@@ -638,6 +641,14 @@ test "parse: no shared group is rejected (HRR not implemented)" {
         if (msg[i] == 0x00 and msg[i + 1] == 0x1d) msg[i + 1] = 0x18;
     }
     try testing.expectError(error.UnsupportedKeyShare, parse(msg));
+}
+
+// RFC 8446 §4.2.8 — ClientHello must not contain duplicate KeyShareEntry groups.
+test "parse: rejects duplicate x25519 key share entries" {
+    const key_shares = [_]u8{ 0x00, 0x48 } ++
+        [_]u8{ 0x00, 0x1d, 0x00, 0x20 } ++ [_]u8{0xaa} ** 32 ++
+        [_]u8{ 0x00, 0x1d, 0x00, 0x20 } ++ [_]u8{0xbb} ** 32;
+    try testing.expectError(error.DuplicateKeyShare, parseKeyShare(&key_shares));
 }
 
 test "encode: buffer too short" {

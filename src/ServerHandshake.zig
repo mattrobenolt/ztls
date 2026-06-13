@@ -1673,3 +1673,27 @@ test "acceptClientHello: ignores unknown cipher suites in mixed list" {
     const sh = try server_hello.parse(sh_record[frame.header_len..][0..sh_hdr.length()]);
     try testing.expectEqual(.aes_256_gcm_sha384, sh.cipher_suite);
 }
+
+// RFC 8446 §2 — the server must not emit an ephemeral share for a group not
+// offered by the client.
+test "acceptClientHello: rejects ClientHello with no shared group" {
+    const client_keypair: x25519.KeyPair = .generate();
+    var ch_buf: [512]u8 = undefined;
+    const ch = try client_hello.encode(&ch_buf, .zero, client_keypair.public_key, null, &.{});
+    var i: usize = 0;
+    while (i + 1 < ch.len) : (i += 1) {
+        if (ch_buf[i] == 0x00 and ch_buf[i + 1] == 0x1d) ch_buf[i + 1] = 0x18;
+    }
+
+    var record: [1024]u8 = undefined;
+    const header: frame.Header = .init(.handshake, @intCast(ch.len));
+    header.write(record[0..frame.header_len]);
+    @memcpy(record[frame.header_len..][0..ch.len], ch);
+
+    var hs: ServerHandshake = .init(.generate());
+    var out: [256]u8 = undefined;
+    try testing.expectError(
+        error.UnsupportedKeyShare,
+        hs.acceptClientHello(record[0 .. frame.header_len + ch.len], .zero, &out),
+    );
+}
