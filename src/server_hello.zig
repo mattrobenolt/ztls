@@ -37,6 +37,8 @@ pub const ParseError = error{
     HelloRetryRequest,
     /// supported_versions extension does not include TLS 1.3 (0x0304).
     UnsupportedTlsVersion,
+    /// Semantic protocol violation requiring illegal_parameter.
+    IllegalParameter,
     /// legacy_version is not the TLS 1.3 compatibility value 0x0303.
     InvalidLegacyVersion,
     /// legacy_session_id_echo does not match the ClientHello legacy_session_id.
@@ -57,6 +59,16 @@ const hello_retry_request_random = [_]u8{
     0xc2, 0xa2, 0x11, 0x16, 0x7a, 0xbb, 0x8c, 0x5e,
     0x07, 0x9e, 0x09, 0xe2, 0xc8, 0xa8, 0x33, 0x9c,
 };
+
+const downgrade_tls12 = "DOWNGRD\x01".*;
+const downgrade_tls11_or_below = "DOWNGRD\x00".*;
+
+fn hasDowngradeSentinel(random: []const u8) bool {
+    if (random.len != 32) return false;
+    const tail = random[24..32];
+    return mem.eql(u8, tail, &downgrade_tls12) or
+        mem.eql(u8, tail, &downgrade_tls11_or_below);
+}
 
 /// A parsed HelloRetryRequest message.  RFC 8446 §4.1.4.
 ///
@@ -317,7 +329,10 @@ pub fn parseWithSessionIdEcho(
                 if (got_supported_versions) return error.DuplicateExtension;
                 if (ext_len != 2) return error.InvalidExtensionLength;
                 const version = r.assumeRead(ProtocolVersion);
-                if (version != .tls_1_3) return error.UnsupportedTlsVersion;
+                if (version != .tls_1_3) {
+                    if (hasDowngradeSentinel(random)) return error.IllegalParameter;
+                    return error.UnsupportedTlsVersion;
+                }
                 got_supported_versions = true;
             },
             // key_share (RFC 8446 §4.2.8)
@@ -360,6 +375,7 @@ pub fn parseWithSessionIdEcho(
     }
     if (r.pos != extensions_end) return error.InvalidExtensionLength;
 
+    if (!got_supported_versions and hasDowngradeSentinel(random)) return error.IllegalParameter;
     if (!got_supported_versions or !got_key_share) return error.MissingExtension;
 
     return .{
@@ -523,6 +539,25 @@ test "parse: unsupported TLS version" {
     msg[msg.len - 2] = 0x03;
     msg[msg.len - 1] = 0x03;
     try testing.expectError(error.UnsupportedTlsVersion, parse(&msg));
+}
+
+// RFC 8446 §4.1.3 — TLS 1.3 clients abort if a TLS 1.2-or-below ServerHello
+// carries the downgrade sentinel in Random.
+test "parse: rejects TLS 1.2 downgrade sentinel" {
+    var msg = server_hello_rfc8448[0..server_hello_rfc8448.len].*;
+    msg[msg.len - 2] = 0x03;
+    msg[msg.len - 1] = 0x03;
+    msg[30..38].* = downgrade_tls12;
+    try testing.expectError(error.IllegalParameter, parse(&msg));
+}
+
+// RFC 8446 §4.1.3 — the alternate sentinel covers TLS 1.1 and below.
+test "parse: rejects TLS 1.1 downgrade sentinel" {
+    var msg = server_hello_rfc8448[0..server_hello_rfc8448.len].*;
+    msg[msg.len - 2] = 0x03;
+    msg[msg.len - 1] = 0x02;
+    msg[30..38].* = downgrade_tls11_or_below;
+    try testing.expectError(error.IllegalParameter, parse(&msg));
 }
 
 // RFC 8446 §4.1.3 — TLS 1.3 ServerHello legacy_version is frozen at 0x0303.
