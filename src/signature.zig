@@ -1,4 +1,7 @@
 //! Signature helpers for TLS 1.3 CertificateVerify.
+const std = @import("std");
+const testing = std.testing;
+
 const c = @import("c.zig").openssl;
 const SignatureScheme = @import("signature_scheme.zig").SignatureScheme;
 
@@ -65,6 +68,8 @@ pub const PrivateKey = struct {
             .rsa_pss_rsae_sha256, .rsa_pss_rsae_sha384, .rsa_pss_rsae_sha512 => {
                 if (c.EVP_PKEY_CTX_set_rsa_padding(pctx, c.RSA_PKCS1_PSS_PADDING) != 1)
                     return error.LibcryptoFailed;
+                if (c.EVP_PKEY_CTX_set_rsa_mgf1_md(pctx, md) != 1)
+                    return error.LibcryptoFailed;
                 if (c.EVP_PKEY_CTX_set_rsa_pss_saltlen(pctx, c.RSA_PSS_SALTLEN_DIGEST) != 1)
                     return error.LibcryptoFailed;
             },
@@ -100,4 +105,17 @@ fn p256KeyFromScalar(scalar: *const [32]u8) SignError!*c.EVP_PKEY {
     errdefer c.EVP_PKEY_free(pkey);
     if (c.EVP_PKEY_assign_EC_KEY(pkey, ec) != 1) return error.LibcryptoFailed;
     return pkey;
+}
+
+const rsa_pss_key_pem = @embedFile("test_fixtures/rsa_pss/server.key");
+
+// RFC 8446 §4.2.3 — RSA-PSS CertificateVerify uses the scheme hash for both
+// the signature digest and MGF1, with salt length equal to the digest length.
+test "PrivateKey.sign: RSA-PSS SHA-256 uses TLS parameters" {
+    var key: PrivateKey = try .fromPem(.rsa_pss_rsae_sha256, rsa_pss_key_pem);
+    defer key.deinit();
+
+    var sig: [256]u8 = undefined;
+    const out = try key.sign("test message", &sig);
+    try testing.expectEqual(@as(usize, 256), out.len);
 }

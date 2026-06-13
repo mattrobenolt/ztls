@@ -366,6 +366,8 @@ fn verifySignature(
         .rsa_pss_rsae_sha256, .rsa_pss_rsae_sha384, .rsa_pss_rsae_sha512 => {
             if (c.EVP_PKEY_CTX_set_rsa_padding(pctx, c.RSA_PKCS1_PSS_PADDING) != 1)
                 return error.SignatureVerificationFailed;
+            if (c.EVP_PKEY_CTX_set_rsa_mgf1_md(pctx, md) != 1)
+                return error.SignatureVerificationFailed;
             if (c.EVP_PKEY_CTX_set_rsa_pss_saltlen(pctx, c.RSA_PSS_SALTLEN_DIGEST) != 1)
                 return error.SignatureVerificationFailed;
         },
@@ -384,6 +386,9 @@ fn verifySignature(
 
 const fixture_cert_der = @embedFile("test_fixtures/server.crt.der");
 const fixture_cv_sig = @embedFile("test_fixtures/cv.sig");
+const fixture_rsa_pss_cert_der = @embedFile("test_fixtures/rsa_pss/server.crt.der");
+const fixture_rsa_pss_cv_sig = @embedFile("test_fixtures/rsa_pss/cv.sig");
+const fixture_rsa_pss_cv_salt20_sig = @embedFile("test_fixtures/rsa_pss/cv-salt20.sig");
 const chain_root_pem = "tests/fixtures/chain/root.crt";
 const chain_leaf_der = @embedFile("test_fixtures/chain/leaf.der");
 const chain_intermediate_der = @embedFile("test_fixtures/chain/intermediate.der");
@@ -953,6 +958,41 @@ test "verifySignature: valid ECDSA P-256 signature" {
     });
     var cv_buf: [512]u8 = undefined;
     try verifyServerSignature(buildCvMsg(&cv_buf, fixture_cv_sig), pub_key, &test_transcript_hash);
+}
+
+// RFC 8446 §4.2.3 — rsa_pss_rsae_sha256 uses RSASSA-PSS with SHA-256,
+// MGF1(SHA-256), and salt length equal to the digest length.
+test "verifySignature: valid RSA-PSS SHA-256 signature" {
+    var cert_buf: [2048]u8 = undefined;
+    const pub_key = try parse(buildCertMsg(&cert_buf, fixture_rsa_pss_cert_der), .{
+        .insecure_no_chain_anchor = true,
+    });
+    var cv_buf: [512]u8 = undefined;
+    const cv = try encodeCertificateVerify(
+        &cv_buf,
+        .rsa_pss_rsae_sha256,
+        fixture_rsa_pss_cv_sig,
+    );
+    try verifyServerSignature(cv, pub_key, &test_transcript_hash);
+}
+
+// RFC 8446 §4.2.3 — RSA-PSS CertificateVerify salt length is the hash output
+// length, not an arbitrary PSS salt length accepted by generic RSA-PSS.
+test "verifySignature: rejects RSA-PSS signature with wrong salt length" {
+    var cert_buf: [2048]u8 = undefined;
+    const pub_key = try parse(buildCertMsg(&cert_buf, fixture_rsa_pss_cert_der), .{
+        .insecure_no_chain_anchor = true,
+    });
+    var cv_buf: [512]u8 = undefined;
+    const cv = try encodeCertificateVerify(
+        &cv_buf,
+        .rsa_pss_rsae_sha256,
+        fixture_rsa_pss_cv_salt20_sig,
+    );
+    try testing.expectError(
+        error.SignatureVerificationFailed,
+        verifyServerSignature(cv, pub_key, &test_transcript_hash),
+    );
 }
 
 test "verifySignature: wrong transcript hash" {

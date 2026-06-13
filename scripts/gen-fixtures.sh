@@ -33,3 +33,32 @@ openssl dgst -sha256 \
     -sign tests/fixtures/server.key \
     -out tests/fixtures/cv.sig \
     tests/fixtures/cv_content.bin
+
+# RSA key/certificate for TLS 1.3 RSA-PSS CertificateVerify coverage.
+mkdir -p tests/fixtures/rsa_pss
+openssl req -x509 -newkey rsa:2048 \
+    -keyout tests/fixtures/rsa_pss/server.key \
+    -out tests/fixtures/rsa_pss/server.crt \
+    -days 3650 \
+    -nodes \
+    -subj "/CN=rsa-pss.test" \
+    -sha256
+openssl x509 \
+    -in tests/fixtures/rsa_pss/server.crt \
+    -outform DER \
+    -out tests/fixtures/rsa_pss/server.crt.der
+cp tests/fixtures/cv_content.bin tests/fixtures/rsa_pss/cv_content.bin
+openssl dgst -sha256 \
+    -sigopt rsa_padding_mode:pss \
+    -sigopt rsa_pss_saltlen:digest \
+    -sigopt rsa_mgf1_md:sha256 \
+    -sign tests/fixtures/rsa_pss/server.key \
+    -out tests/fixtures/rsa_pss/cv.sig \
+    tests/fixtures/rsa_pss/cv_content.bin
+openssl dgst -sha256 \
+    -sigopt rsa_padding_mode:pss \
+    -sigopt rsa_pss_saltlen:20 \
+    -sigopt rsa_mgf1_md:sha256 \
+    -sign tests/fixtures/rsa_pss/server.key \
+    -out tests/fixtures/rsa_pss/cv-salt20.sig \
+    tests/fixtures/rsa_pss/cv_content.bin
