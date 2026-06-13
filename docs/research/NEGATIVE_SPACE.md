@@ -43,7 +43,7 @@ The authoritative readiness state remains `PRODUCTION_READINESS.md`.
 | Alert payload shorter than two bytes | `error.UnexpectedEof` | `alert.zig`: `parse: truncated`; fuzz `alert.parse` | covered |
 | `close_notify` | `.closed` in connected state or no-op during handshake | `ClientHandshake.zig` / `ServerHandshake.zig`: `handleRecord: close_notify returns closed`; send-alert tests | covered |
 | Fatal or non-close alert from peer | `error.PeerAlert` | `ClientHandshake.zig`: plaintext/encrypted fatal alert tests; `ServerHandshake.zig`: fatal alert tests | covered |
-| Unknown alert description or warning-level non-close alert | Not proven to be treated as an error alert in all cases | `alert.isFatal()` currently depends on fatal level | gap |
+| Unknown alert description or warning-level §6.2 alert | Treated as a TLS 1.3 error/fatal alert regardless of the legacy AlertLevel byte | `alert.zig`: `parse: warning-level error alert is fatal`, `parse: unknown alert description is fatal` | covered |
 
 ## Client-side bad server behavior
 

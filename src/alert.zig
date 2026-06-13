@@ -52,7 +52,10 @@ pub const Alert = struct {
     }
 
     pub inline fn isFatal(self: Alert) bool {
-        return self.level == .fatal and !self.isCloseNotify();
+        return switch (self.description) {
+            .close_notify, .user_canceled => false,
+            else => true,
+        };
     }
 };
 
@@ -90,12 +93,28 @@ test "parse: close_notify" {
     try testing.expect(a.isCloseNotify());
 }
 
-// RFC 8446 §6.2 — error alerts
-test "parse: fatal unexpected_message" {
-    const a = try parse(&.{ 2, 10 });
-    try testing.expectEqual(.fatal, a.level);
+// RFC 8446 §6.2 — error alerts are treated as fatal regardless of the legacy
+// AlertLevel byte.
+test "parse: warning-level error alert is fatal" {
+    const a = try parse(&.{ 1, 10 });
+    try testing.expectEqual(.warning, a.level);
     try testing.expectEqual(.unexpected_message, a.description);
     try testing.expect(a.isFatal());
+}
+
+// RFC 8446 §6.2 — unknown alert descriptions are error alerts in TLS 1.3.
+test "parse: unknown alert description is fatal" {
+    const a = try parse(&.{ 1, 222 });
+    try testing.expectEqual(@as(u8, 222), @intFromEnum(a.description));
+    try testing.expect(a.isFatal());
+}
+
+// RFC 8446 §6.1 — user_canceled is a closure alert, not a §6.2 fatal alert.
+test "parse: user_canceled is not fatal" {
+    const a = try parse(&.{ 1, 90 });
+    try testing.expectEqual(.warning, a.level);
+    try testing.expectEqual(.user_canceled, a.description);
+    try testing.expect(!a.isFatal());
 }
 
 test "parse: truncated" {
