@@ -528,9 +528,7 @@ pub fn alertForError(err: anyerror) alert.Description {
         error.UnsupportedExtension => .unsupported_extension,
         error.UnsupportedTlsVersion => .protocol_version,
         error.UnsupportedCipherSuite => .handshake_failure,
-        error.NoApplicationProtocol,
-        error.UnofferedAlpnProtocol,
-        => .no_application_protocol,
+        error.NoApplicationProtocol => .no_application_protocol,
         error.DuplicateExtension,
         error.DuplicateKeyShare,
         error.InvalidCompressionMethod,
@@ -539,6 +537,7 @@ pub fn alertForError(err: anyerror) alert.Description {
         error.UnexpectedCertificateRequestContext,
         error.UnexpectedExtension,
         error.IllegalParameter,
+        error.UnofferedAlpnProtocol,
         error.UnsupportedKeyShareGroup,
         error.UnsupportedSignatureScheme,
         => .illegal_parameter,
@@ -1311,13 +1310,13 @@ test "alertForError: parser and semantic failures map to protocol alerts" {
         .{ .err = error.UnsupportedTlsVersion, .description = .protocol_version },
         .{ .err = error.UnsupportedCipherSuite, .description = .handshake_failure },
         .{ .err = error.NoApplicationProtocol, .description = .no_application_protocol },
-        .{ .err = error.UnofferedAlpnProtocol, .description = .no_application_protocol },
         .{ .err = error.DuplicateExtension, .description = .illegal_parameter },
         .{ .err = error.DuplicateKeyShare, .description = .illegal_parameter },
         .{ .err = error.InvalidCompressionMethod, .description = .illegal_parameter },
         .{ .err = error.InvalidLegacyVersion, .description = .illegal_parameter },
         .{ .err = error.InvalidSessionIdEcho, .description = .illegal_parameter },
         .{ .err = error.UnexpectedExtension, .description = .illegal_parameter },
+        .{ .err = error.UnofferedAlpnProtocol, .description = .illegal_parameter },
     };
     for (cases) |case| try testing.expectEqual(case.description, alertForError(case.err));
 }
