@@ -114,7 +114,7 @@ The authoritative readiness state remains `PRODUCTION_READINESS.md`.
 | client `HandshakeReader` and decrypted flight processing | `ClientHandshake.zig`: fuzz targets | covered |
 | server `handleRecord` pre-auth and post-auth | `ServerHandshake.zig`: fuzz targets | covered |
 | Certificate parsing and verification | Unit tests and indirect client-flight fuzz | partial — no standalone certificate fuzz target |
-| EncryptedExtensions parsing | Unit tests and indirect client-flight fuzz | partial — no standalone parser fuzz target |
+| EncryptedExtensions parsing | Unit tests cover ALPN, unsolicited ALPN, malformed lengths, and forbidden TLS 1.3 extension placements; indirect client-flight fuzz covers state-machine dispatch | partial — no standalone parser fuzz target |
 
 ## Verification gates
 

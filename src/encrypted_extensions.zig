@@ -23,6 +23,25 @@ pub const Parsed = struct {
     alpn_protocol: ?[]const u8 = null,
 };
 
+const ExtensionType = enum(u16) {
+    server_name = 0x0000,
+    supported_groups = 0x000a,
+    signature_algorithms = 0x000d,
+    alpn = 0x0010,
+    padding = 0x0015,
+    pre_shared_key = 0x0029,
+    early_data = 0x002a,
+    supported_versions = 0x002b,
+    cookie = 0x002c,
+    psk_key_exchange_modes = 0x002d,
+    certificate_authorities = 0x002f,
+    oid_filters = 0x0030,
+    post_handshake_auth = 0x0031,
+    signature_algorithms_cert = 0x0032,
+    key_share = 0x0033,
+    _,
+};
+
 pub const EncodeError = error{ BufferTooShort, EmptyAlpnProtocol, AlpnProtocolTooLong };
 
 pub fn encodedLen(alpn_protocol: ?[]const u8) usize {
@@ -77,16 +96,31 @@ pub fn parse(msg: []const u8, offered_alpn: []const []const u8) ParseError!Parse
     var result: Parsed = .{};
     while (r.pos < extensions_end) {
         if (extensions_end - r.pos < 4) return error.InvalidExtensionLength;
-        const ext_type = r.assumeRead(u16);
+        const ext_type: ExtensionType = @enumFromInt(r.assumeRead(u16));
         const ext_len = r.assumeRead(u16);
         if (r.pos + ext_len > extensions_end) return error.InvalidExtensionLength;
         const ext = r.assumeReadSlice(ext_len);
 
         switch (ext_type) {
-            0x0010 => {
+            .alpn => {
                 if (result.alpn_protocol != null) return error.DuplicateExtension;
                 result.alpn_protocol = try parseAlpn(ext, offered_alpn);
             },
+            // RFC 8446 §4.2 — recognized extensions sent in a message where
+            // they are not specified are semantic errors, not ignorable grease.
+            .signature_algorithms,
+            .padding,
+            .pre_shared_key,
+            .early_data,
+            .supported_versions,
+            .cookie,
+            .psk_key_exchange_modes,
+            .certificate_authorities,
+            .oid_filters,
+            .post_handshake_auth,
+            .signature_algorithms_cert,
+            .key_share,
+            => return error.UnexpectedExtension,
             else => {},
         }
     }
@@ -184,6 +218,40 @@ test "parse: rejects multiple ALPN protocols" {
         '/',  '3',
     };
     try testing.expectError(error.TooManyAlpnProtocols, parse(&msg, &.{ "h2", "spdy/3" }));
+}
+
+// RFC 8446 §4.2 — extensions recognized for other handshake messages are
+// forbidden in EncryptedExtensions.
+test "parse: rejects forbidden supported_versions extension" {
+    const msg = [_]u8{
+        0x08, 0x00, 0x00, 0x08,
+        0x00, 0x06, 0x00, 0x2b,
+        0x00, 0x02, 0x03, 0x04,
+    };
+    try testing.expectError(error.UnexpectedExtension, parse(&msg, &.{}));
+}
+
+// RFC 8446 §4.2 — key_share belongs in ClientHello, ServerHello, and HRR, not
+// EncryptedExtensions.
+test "parse: rejects forbidden key_share extension" {
+    const msg = [_]u8{
+        0x08, 0x00, 0x00, 0x08,
+        0x00, 0x06, 0x00, 0x33,
+        0x00, 0x02, 0x00, 0x1d,
+    };
+    try testing.expectError(error.UnexpectedExtension, parse(&msg, &.{}));
+}
+
+// RFC 8446 §4.2.7 — supported_groups is allowed in EncryptedExtensions; the
+// client must not act on it until handshake completion.
+test "parse: ignores supported_groups extension" {
+    const msg = [_]u8{
+        0x08, 0x00, 0x00, 0x0a,
+        0x00, 0x08, 0x00, 0x0a,
+        0x00, 0x04, 0x00, 0x02,
+        0x00, 0x1d,
+    };
+    _ = try parse(&msg, &.{});
 }
 
 test "parse: wrong handshake type" {
