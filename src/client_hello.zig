@@ -9,6 +9,7 @@ const mem = std.mem;
 const alpn_mod = @import("alpn.zig");
 pub const AlpnProtocols = alpn_mod.Protocols;
 pub const AlpnError = alpn_mod.Error;
+const ExtensionType = @import("extension_type.zig").ExtensionType;
 const handshake = @import("handshake.zig");
 const kex = @import("kex.zig");
 const NamedGroup = kex.NamedGroup;
@@ -174,7 +175,7 @@ pub fn encode(
         const entry_len: u16 = 1 + 2 + name_len; // NameType + name length field + name
         const list_len: u16 = entry_len;
         const ext_data_len: u16 = 2 + entry_len; // ServerNameList length field + entry
-        w.append(u16, 0x0000);
+        w.append(ExtensionType, .server_name);
         w.append(u16, ext_data_len);
         w.append(u16, list_len);
         w.append(u8, 0x00); // NameType: host_name
@@ -185,7 +186,7 @@ pub fn encode(
     // application_layer_protocol_negotiation (RFC 7301 §3.1)
     if (alpn_protocols.len != 0) {
         const ext_data_len = try alpnExtDataLen(alpn_protocols);
-        w.append(u16, 0x0010);
+        w.append(ExtensionType, .alpn);
         w.append(u16, ext_data_len);
         w.append(u16, ext_data_len - 2);
         for (alpn_protocols) |protocol| {
@@ -195,25 +196,25 @@ pub fn encode(
     }
 
     // supported_versions (RFC 8446 §4.2.1)
-    w.append(u16, 0x002b);
+    w.append(ExtensionType, .supported_versions);
     w.append(u16, 3);
     w.append(u8, 0x02); // versions list length
     w.append(u16, 0x0304); // TLS 1.3
 
     // supported_groups (RFC 8446 §4.2.7)
-    w.append(u16, 0x000a);
+    w.append(ExtensionType, .supported_groups);
     w.append(u16, 4);
     w.append(u16, 2); // named_group_list length
     w.append(NamedGroup, .x25519);
 
     // signature_algorithms (RFC 8446 §4.2.3)
-    w.append(u16, 0x000d);
+    w.append(ExtensionType, .signature_algorithms);
     w.append(u16, 2 + sig_scheme_count * 2);
     w.append(u16, sig_scheme_count * 2);
     inline for (supported_signature_schemes) |s| w.append(SignatureScheme, s);
 
     // key_share (RFC 8446 §4.2.8)
-    w.append(u16, 0x0033);
+    w.append(ExtensionType, .key_share);
     w.append(u16, 2 + 2 + 2 + 32);
     w.append(u16, 2 + 2 + 32);
     w.append(NamedGroup, .x25519);
@@ -265,33 +266,33 @@ pub fn parse(msg: []const u8) ParseError!Parsed {
 
     while (r.pos < extensions_end) {
         if (extensions_end - r.pos < 4) return error.InvalidExtensionLength;
-        const ext_type = r.assumeRead(u16);
+        const ext_type = r.assumeRead(ExtensionType);
         const ext_len = r.assumeRead(u16);
         if (ext_len > extensions_end - r.pos) return error.InvalidExtensionLength;
         const ext = r.assumeReadSlice(ext_len);
 
         switch (ext_type) {
-            0x0000 => {
+            .server_name => {
                 if (got_server_name) return error.DuplicateExtension;
                 parsed.server_name = try parseSni(ext);
                 got_server_name = true;
             },
-            0x000a => {
+            .supported_groups => {
                 if (got_supported_groups) return error.DuplicateExtension;
                 try parseSupportedGroups(ext);
                 got_supported_groups = true;
             },
-            0x0010 => {
+            .alpn => {
                 if (got_alpn) return error.DuplicateExtension;
                 parsed.alpn_protocols = try parseAlpn(ext);
                 got_alpn = true;
             },
-            0x002b => {
+            .supported_versions => {
                 if (got_supported_versions) return error.DuplicateExtension;
                 try parseSupportedVersions(ext);
                 got_supported_versions = true;
             },
-            0x0033 => {
+            .key_share => {
                 if (got_key_share) return error.DuplicateExtension;
                 parsed.public_key = try parseKeyShare(ext);
                 got_key_share = true;

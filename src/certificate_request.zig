@@ -4,6 +4,7 @@
 const std = @import("std");
 const testing = std.testing;
 
+const ExtensionType = @import("extension_type.zig").ExtensionType;
 const handshake = @import("handshake.zig");
 const SignatureScheme = @import("signature_scheme.zig").SignatureScheme;
 const wire = @import("wire.zig");
@@ -60,7 +61,7 @@ pub fn encode(out: []u8, sig_algs: []const SignatureScheme) EncodeError![]const 
 
     const sig_algs_ext_len = 2 + 2 + 2 + sig_algs.len * 2;
     w.append(u16, @intCast(sig_algs_ext_len));
-    w.append(u16, 0x000d); // signature_algorithms
+    w.append(ExtensionType, .signature_algorithms);
     w.append(u16, @intCast(2 + sig_algs.len * 2));
     w.append(u16, @intCast(sig_algs.len * 2));
     for (sig_algs) |scheme| w.append(SignatureScheme, scheme);
@@ -89,13 +90,13 @@ pub fn parse(msg: []const u8) ParseError!Parsed {
 
     while (extensions.remaining().len != 0) {
         if (extensions.remaining().len < 4) return error.InvalidExtensionLength;
-        const ext_type = extensions.assumeRead(u16);
+        const ext_type = extensions.assumeRead(ExtensionType);
         const ext_len = extensions.assumeRead(u16);
         if (ext_len > extensions.remaining().len) return error.InvalidExtensionLength;
         const ext_data = extensions.assumeReadSlice(ext_len);
 
         switch (ext_type) {
-            0x000d => {
+            .signature_algorithms => {
                 if (signature_schemes_raw != null) return error.DuplicateExtension;
                 var er: wire.Reader = .init(ext_data);
                 if (er.remaining().len < 2) return error.InvalidExtensionLength;
@@ -105,7 +106,7 @@ pub fn parse(msg: []const u8) ParseError!Parsed {
                 signature_schemes_raw = er.assumeReadSlice(list_len);
                 if (er.remaining().len != 0) return error.InvalidExtensionLength;
             },
-            0x002f => {
+            .certificate_authorities => {
                 if (certificate_authorities_raw.len != 0) return error.DuplicateExtension;
                 certificate_authorities_raw = ext_data;
             },

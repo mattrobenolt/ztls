@@ -7,6 +7,7 @@
 const std = @import("std");
 const testing = std.testing;
 
+const ExtensionType = @import("extension_type.zig").ExtensionType;
 const handshake = @import("handshake.zig");
 const wire = @import("wire.zig");
 
@@ -55,12 +56,12 @@ pub fn parse(msg: []const u8) ParseError!NewSessionTicket {
     var max_early_data_size: ?u32 = null;
     while (extensions.remaining().len != 0) {
         if (extensions.remaining().len < 4) return error.InvalidExtensionLength;
-        const extension_type = extensions.assumeRead(u16);
+        const extension_type = extensions.assumeRead(ExtensionType);
         const extension_len = extensions.assumeRead(u16);
         if (extension_len > extensions.remaining().len) return error.InvalidExtensionLength;
         const extension = extensions.assumeReadSlice(extension_len);
         switch (extension_type) {
-            0x002a => {
+            .early_data => {
                 if (max_early_data_size != null) return error.DuplicateEarlyData;
                 if (extension.len != 4) return error.InvalidExtensionLength;
                 var er: wire.Reader = .init(extension);

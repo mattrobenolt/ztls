@@ -7,6 +7,7 @@ pub const CertificateChain = certificate_chain.CertificateChain;
 pub const CipherSuite = @import("cipher_suite.zig").CipherSuite;
 pub const client_hello = @import("client_hello.zig");
 pub const ClientHandshake = @import("ClientHandshake.zig");
+pub const ExtensionType = @import("extension_type.zig").ExtensionType;
 pub const frame = @import("frame.zig");
 pub const hkdf = @import("hkdf.zig");
 pub const kex = @import("kex.zig");

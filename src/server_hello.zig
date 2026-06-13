@@ -6,6 +6,7 @@ const testing = std.testing;
 const mem = std.mem;
 
 const CipherSuite = @import("root.zig").CipherSuite;
+const ExtensionType = @import("extension_type.zig").ExtensionType;
 const handshake = @import("handshake.zig");
 const NamedGroup = @import("kex.zig").NamedGroup;
 const wire = @import("wire.zig");
@@ -141,13 +142,13 @@ pub fn parseHelloRetryRequest(msg: []const u8) HrrParseError!HelloRetryRequest {
 
     while (r.pos < extensions_end) {
         if (extensions_end - r.pos < 4) return error.InvalidExtensionLength;
-        const ext_type = r.assumeRead(u16);
+        const ext_type = r.assumeRead(ExtensionType);
         const ext_len = r.assumeRead(u16);
         if (ext_len > extensions_end - r.pos) return error.InvalidExtensionLength;
 
         switch (ext_type) {
             // supported_versions (RFC 8446 §4.2.1)
-            0x002b => {
+            .supported_versions => {
                 if (got_supported_versions) return error.DuplicateExtension;
                 if (ext_len != 2) return error.InvalidExtensionLength;
                 const version = r.assumeRead(u16);
@@ -156,14 +157,14 @@ pub fn parseHelloRetryRequest(msg: []const u8) HrrParseError!HelloRetryRequest {
             },
             // key_share: in HRR carries a single NamedGroup (selected_group).
             // RFC 8446 §4.2.8 KeyShareHelloRetryRequest.
-            0x0033 => {
+            .key_share => {
                 if (got_key_share) return error.DuplicateExtension;
                 if (ext_len != 2) return error.InvalidExtensionLength;
                 selected_group = try r.read(NamedGroup);
                 got_key_share = true;
             },
             // cookie (RFC 8446 §4.2.2) — opaque<1..2^16-1>.
-            0x002c => {
+            .cookie => {
                 if (got_cookie) return error.DuplicateExtension;
                 if (ext_len < 2) return error.InvalidExtensionLength;
                 const cookie_len = r.assumeRead(u16);
@@ -216,12 +217,12 @@ pub fn encode(
     w.append(u8, 0x00);
 
     w.append(u16, 0x002e); // extensions length
-    w.append(u16, 0x0033); // key_share
+    w.append(ExtensionType, .key_share);
     w.append(u16, 0x0024);
     w.append(NamedGroup, .x25519);
     w.append(u16, 0x0020);
     w.appendSlice(&public_key.data);
-    w.append(u16, 0x002b); // supported_versions
+    w.append(ExtensionType, .supported_versions);
     w.append(u16, 0x0002);
     w.append(u16, 0x0304);
     return w.written();
@@ -282,13 +283,13 @@ pub fn parseWithSessionIdEcho(
 
     while (r.pos < extensions_end) {
         if (extensions_end - r.pos < 4) return error.InvalidExtensionLength;
-        const ext_type = r.assumeRead(u16);
+        const ext_type = r.assumeRead(ExtensionType);
         const ext_len = r.assumeRead(u16);
         if (ext_len > extensions_end - r.pos) return error.InvalidExtensionLength;
 
         switch (ext_type) {
             // supported_versions (RFC 8446 §4.2.1)
-            0x002b => {
+            .supported_versions => {
                 if (got_supported_versions) return error.DuplicateExtension;
                 if (ext_len != 2) return error.InvalidExtensionLength;
                 const version = r.assumeRead(u16);
@@ -296,7 +297,7 @@ pub fn parseWithSessionIdEcho(
                 got_supported_versions = true;
             },
             // key_share (RFC 8446 §4.2.8)
-            0x0033 => {
+            .key_share => {
                 if (got_key_share) return error.DuplicateExtension;
                 const ext_end = r.pos + ext_len;
                 if (ext_len < 4) return error.InvalidExtensionLength;
