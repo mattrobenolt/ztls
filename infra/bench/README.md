@@ -19,7 +19,7 @@ revision, and avoid preserving the local UID/GID into `/root/ztls`:
 
 ```bash
 rsync -az --delete --no-owner --no-group \
-  --exclude zig-out --exclude .zig-cache --exclude .terraform \
+  --exclude .envrc.local --exclude zig-out --exclude .zig-cache --exclude .terraform \
   --exclude conformance/.venv --exclude conformance/.zig-cache --exclude conformance/zig-out \
   -e "ssh -i infra/bench/bench.pem -o StrictHostKeyChecking=no" \
   . root@$(tofu output -raw instance_ip):/root/ztls/
@@ -32,6 +32,7 @@ ssh -i infra/bench/bench.pem -o StrictHostKeyChecking=no \
   root@$(tofu output -raw instance_ip)
 
 cd ztls
+rm -f /root/ztls/.envrc.local
 chown -R root:root /root/ztls
 nix --extra-experimental-features "nix-command flakes" develop --command \
   bash -lc 'git status --short && git rev-parse HEAD && just bench-capture-default'
