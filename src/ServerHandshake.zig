@@ -456,7 +456,7 @@ fn encodeAuthenticatedFlight(
 // ziglint-ignore: Z015 -- ClientFinishedError is a public error-set alias.
 pub fn processClientFinished(self: *ServerHandshake, record: []u8) ClientFinishedError!void {
     assert(self.state == .wait_client_finished);
-    const dec = try self.rx.decrypt(record);
+    const dec = try handshake.decryptProtected(&self.rx, record);
     if (dec.content_type != .handshake) return error.UnexpectedRecord;
     return self.processClientFinishedPlaintext(dec.content);
 }
@@ -552,7 +552,7 @@ fn handleWaitClientFinished(self: *ServerHandshake, record: []u8) HandleError!Ev
         else => return error.UnexpectedRecord,
     }
 
-    const dec = try self.rx.decrypt(record);
+    const dec = try handshake.decryptProtected(&self.rx, record);
     return switch (dec.content_type) {
         .handshake => blk: {
             try self.processClientFinishedPlaintext(dec.content);
@@ -567,7 +567,7 @@ fn handleWaitClientFinished(self: *ServerHandshake, record: []u8) HandleError!Ev
 }
 
 fn handleConnected(self: *ServerHandshake, record: []u8, out: []u8) ReceiveError!Event {
-    const dec = try self.rx.decrypt(record);
+    const dec = try handshake.decryptProtected(&self.rx, record);
     switch (dec.content_type) {
         .application_data => {
             self.post_handshake_count = 0;
@@ -647,7 +647,7 @@ pub fn sendPreparedApplicationData(
 // ziglint-ignore: Z015 -- ReceiveError is a public error-set alias.
 pub fn receiveApplicationData(self: *ServerHandshake, record: []u8) ReceiveError![]const u8 {
     assert(self.state == .connected);
-    const dec = try self.rx.decrypt(record);
+    const dec = try handshake.decryptProtected(&self.rx, record);
     if (dec.content_type != .application_data) return error.UnexpectedRecord;
     return dec.content;
 }
@@ -914,6 +914,20 @@ test "sendAuthenticatedFlight: client decrypts authenticated server flight" {
     try testing.expectEqual(.certificate_verify, (try hr.next()).?.type);
     try testing.expectEqual(.finished, (try hr.next()).?.type);
     try testing.expectEqual(@as(?HandshakeReader.Message, null), try hr.next());
+}
+
+fn encryptAllZeroInnerForTest(tx: *RecordLayer, inner_len: usize, out: []u8) ![]u8 {
+    const total = frame.header_len + inner_len + aead.tag_len;
+    const header: frame.Header = .init(.application_data, @intCast(inner_len + aead.tag_len));
+    out[0..frame.header_len].* = mem.toBytes(header);
+    const inner = out[frame.header_len..][0..inner_len];
+    @memset(inner, 0);
+    var tag: aead.Tag = undefined;
+    const npub = aead.construct(&tx.iv, tx.seq);
+    try tx.aead.encrypt(&tx.ctx, inner, &tag, inner, out[0..frame.header_len], &npub);
+    out[frame.header_len + inner_len ..][0..aead.tag_len].* = tag.data;
+    tx.seq += 1;
+    return out[0..total];
 }
 
 fn connectedTestServer() !ServerHandshake {
@@ -1324,6 +1338,34 @@ test "handleRecord: zero-length encrypted handshake is rejected" {
         error.UnexpectedMessage,
         server.handleRecord(rx_buf[0..wire_rec.len], .zero, &out),
     );
+}
+
+// RFC 8446 §5.4 — all-zero TLSInnerPlaintext has no content type and maps to
+// unexpected_message.
+test "handleRecord: all-zero inner plaintext maps to unexpected_message" {
+    var server = try connectedTestServer();
+    var client_tx = try server.rx.clone();
+    defer client_tx.deinit();
+
+    var wire_buf: [64]u8 = undefined;
+    const wire_rec = try encryptAllZeroInnerForTest(&client_tx, 3, &wire_buf);
+    var rx_buf: [64]u8 = undefined;
+    @memcpy(rx_buf[0..wire_rec.len], wire_rec);
+    var out: [64]u8 = undefined;
+    try testing.expectError(
+        error.UnexpectedMessage,
+        server.handleRecord(rx_buf[0..wire_rec.len], .zero, &out),
+    );
+
+    var peer = try server.tx.clone();
+    defer peer.deinit();
+    const alert_record = try server.sendAlert(.unexpected_message, &out);
+    var alert_buf: [64]u8 = undefined;
+    @memcpy(alert_buf[0..alert_record.len], alert_record);
+    const dec = try peer.decrypt(alert_buf[0..alert_record.len]);
+    try testing.expectEqual(.alert, dec.content_type);
+    const a = try alert.parse(dec.content);
+    try testing.expectEqual(.unexpected_message, a.description);
 }
 
 // RFC 8446 §5.2, Appendix A — connected endpoints accept application data,

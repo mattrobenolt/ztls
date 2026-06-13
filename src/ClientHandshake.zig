@@ -492,7 +492,7 @@ pub fn sendPreparedApplicationData(
 
 pub const ProcessError = frame.ParseError || RecordLayer.DecryptError ||
     ServerHelloError || FlightError || SendError || alert.ParseError ||
-    error{ IncompleteRecord, UnexpectedRecord, PeerAlert };
+    error{ IncompleteRecord, UnexpectedRecord, UnexpectedMessage, PeerAlert };
 
 // Handshake-phase inbound: drive the flight from one record, returning the
 // client Finished to send when the flight completes, else null.
@@ -523,7 +523,7 @@ fn processHandshakeRecord(
         // isn't installed until ServerHello, so reject app-data before wait_ee.
         .application_data => {
             if (self.state == .start or self.state == .wait_sh) return error.UnexpectedRecord;
-            const dec = try self.rx.decrypt(record);
+            const dec = try handshake.decryptProtected(&self.rx, record);
             switch (dec.content_type) {
                 .handshake => {
                     if (dec.content.len == 0) return error.UnexpectedMessage;
@@ -775,7 +775,7 @@ pub const ReceiveError = RecordLayer.DecryptError || SendError || alert.ParseErr
 // key ratchets after the KeyUpdate is consumed.
 fn receiveConnected(self: *ClientHandshake, record: []u8, out: []u8) ReceiveError!Event {
     assert(self.state == .connected);
-    const dec = try self.rx.decrypt(record);
+    const dec = try handshake.decryptProtected(&self.rx, record);
     switch (dec.content_type) {
         .application_data => {
             self.post_handshake_count = 0;
@@ -1070,6 +1070,20 @@ fn incrementU24(field: *[3]u8, n: u24) void {
     field[0] = @intCast(updated >> 16);
     field[1] = @intCast((updated >> 8) & 0xff);
     field[2] = @intCast(updated & 0xff);
+}
+
+fn encryptAllZeroInnerForTest(tx: *RecordLayer, inner_len: usize, out: []u8) ![]u8 {
+    const total = frame.header_len + inner_len + aead.tag_len;
+    const header: frame.Header = .init(.application_data, @intCast(inner_len + aead.tag_len));
+    out[0..frame.header_len].* = mem.toBytes(header);
+    const inner = out[frame.header_len..][0..inner_len];
+    @memset(inner, 0);
+    var tag: aead.Tag = undefined;
+    const npub = aead.construct(&tx.iv, tx.seq);
+    try tx.aead.encrypt(&tx.ctx, inner, &tag, inner, out[0..frame.header_len], &npub);
+    out[frame.header_len + inner_len ..][0..aead.tag_len].* = tag.data;
+    tx.seq += 1;
+    return out[0..total];
 }
 
 // RFC 8446 §4.3-§4.4 — the full encrypted flight driven by the live transcript.
@@ -1932,6 +1946,28 @@ test "handleRecord: zero-length encrypted handshake is rejected" {
     @memcpy(wire[0..rec.len], rec);
     var out: [64]u8 = undefined;
     try testing.expectError(error.UnexpectedMessage, hs.handleRecord(wire[0..rec.len], &out));
+}
+
+// RFC 8446 §5.4 — all-zero TLSInnerPlaintext has no content type and maps to
+// unexpected_message.
+test "handleRecord: all-zero inner plaintext maps to unexpected_message" {
+    var hs = try connectedTestClient();
+    defer hs.deinit();
+
+    var server_tx = try hs.rx.clone();
+    defer server_tx.deinit();
+    var rec_buf: [64]u8 = undefined;
+    const rec = try encryptAllZeroInnerForTest(&server_tx, 3, &rec_buf);
+
+    var wire: [64]u8 = undefined;
+    @memcpy(wire[0..rec.len], rec);
+    var out: [64]u8 = undefined;
+    try testing.expectError(error.UnexpectedMessage, hs.handleRecord(wire[0..rec.len], &out));
+
+    var peer = try hs.tx.clone();
+    defer peer.deinit();
+    const alert_record = try hs.sendAlert(.unexpected_message, &out);
+    try expectEncryptedAlert(&peer, alert_record, .unexpected_message);
 }
 
 // rx isn't installed until ServerHello; an encrypted record arriving in wait_sh

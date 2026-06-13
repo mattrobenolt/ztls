@@ -17,6 +17,16 @@ pub fn validateChangeCipherSpec(fragment: []const u8) error{UnexpectedRecord}!vo
     if (fragment.len != 1 or fragment[0] != 0x01) return error.UnexpectedRecord;
 }
 
+pub fn decryptProtected(
+    rx: *RecordLayer,
+    record: []u8,
+) (RecordLayer.DecryptError || error{UnexpectedMessage})!RecordLayer.DecryptedRecord {
+    return rx.decrypt(record) catch |err| switch (err) {
+        error.InvalidInnerPlaintext => error.UnexpectedMessage,
+        else => err,
+    };
+}
+
 // ziglint-ignore: Z015 -- SendError is public; ziglint does not follow imported error-set aliases.
 pub fn sendApplicationData(self: anytype, plaintext: []const u8, out: []u8) SendError![]u8 {
     assert(self.state == .connected);
