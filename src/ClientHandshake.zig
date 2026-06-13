@@ -1288,6 +1288,27 @@ test "handleRecord: encrypted fatal alert during server flight" {
     try testing.expectEqual(.wait_ee, hs.state);
 }
 
+// RFC 8446 §4.6.3 — KeyUpdate is post-handshake only.
+test "handleRecord: rejects server KeyUpdate before Finished" {
+    var hs = try flightReadyClient();
+    defer hs.deinit();
+
+    var server_tx = try hs.rx.clone();
+    defer server_tx.deinit();
+    const ku = [_]u8{
+        @intFromEnum(HandshakeType.key_update),              0x00, 0x00, 0x01,
+        @intFromEnum(KeyUpdateRequest.update_not_requested),
+    };
+    var rec_buf: [64]u8 = undefined;
+    const rec = try server_tx.encrypt(.handshake, &ku, &rec_buf);
+
+    var wire: [64]u8 = undefined;
+    @memcpy(wire[0..rec.len], rec);
+    var out: [64]u8 = undefined;
+    try testing.expectError(error.UnexpectedMessage, hs.handleRecord(wire[0..rec.len], &out));
+    try testing.expectEqual(.wait_ee, hs.state);
+}
+
 // RFC 8446 §5 — a record length that exceeds the supplied bytes is incomplete.
 test "handleRecord: truncated encrypted flight is rejected" {
     var hs = try flightReadyClient();
@@ -1517,8 +1538,12 @@ test "handleRecord: KeyUpdate not at record boundary is rejected" {
     var server_tx = try hs.rx.clone();
     defer server_tx.deinit();
 
-    // [KeyUpdate][KeyUpdate] in one record.
-    const two_kus = [_]u8{ 0x18, 0x00, 0x00, 0x01, 0x00 } ++ [_]u8{ 0x18, 0x00, 0x00, 0x01, 0x00 };
+    const ku_t = @intFromEnum(HandshakeType.key_update);
+    const ku_nr = @intFromEnum(KeyUpdateRequest.update_not_requested);
+    const two_kus = [_]u8{
+        ku_t, 0x00, 0x00, 0x01, ku_nr,
+        ku_t, 0x00, 0x00, 0x01, ku_nr,
+    };
     var buf: [64]u8 = undefined;
     const wire_rec = try server_tx.encrypt(.handshake, &two_kus, &buf);
 
@@ -1529,6 +1554,22 @@ test "handleRecord: KeyUpdate not at record boundary is rejected" {
         error.UnexpectedMessage,
         hs.handleRecord(rx_buf[0..wire_rec.len], &out),
     );
+}
+
+// RFC 8446 §4.6.3 — KeyUpdateRequest only defines values 0 and 1.
+test "handleRecord: invalid server KeyUpdate request is rejected" {
+    var hs = try connectedTestClient();
+    var server_tx = try hs.rx.clone();
+    defer server_tx.deinit();
+
+    const invalid_ku = [_]u8{ @intFromEnum(HandshakeType.key_update), 0x00, 0x00, 0x01, 0x02 };
+    var buf: [64]u8 = undefined;
+    const wire_rec = try server_tx.encrypt(.handshake, &invalid_ku, &buf);
+
+    var rx_buf: [64]u8 = undefined;
+    @memcpy(rx_buf[0..wire_rec.len], wire_rec);
+    var out: [64]u8 = undefined;
+    try testing.expectError(error.IllegalParameter, hs.handleRecord(rx_buf[0..wire_rec.len], &out));
 }
 
 // RFC 8446 §6.1 — close_notify is the only alert that cleanly closes.

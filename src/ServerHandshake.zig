@@ -1068,6 +1068,40 @@ test "processClientFinished: verifies Finished and installs app keys" {
     try testing.expectEqual(@as(u64, 0), server.tx.seq);
 }
 
+// RFC 8446 §4.6.3 — KeyUpdate is post-handshake only.
+test "handleRecord: rejects client KeyUpdate before Finished" {
+    const client_keypair: x25519.KeyPair = .generate();
+    var ch_buf: [512]u8 = undefined;
+    const ch = try client_hello.encode(&ch_buf, .zero, client_keypair.public_key, null, &.{});
+    var ch_record: [1024]u8 = undefined;
+    const header: frame.Header = .init(.handshake, @intCast(ch.len));
+    header.write(ch_record[0..frame.header_len]);
+    @memcpy(ch_record[frame.header_len..][0..ch.len], ch);
+
+    var server: ServerHandshake = .init(.generate());
+    var sh_out: [256]u8 = undefined;
+    _ = try server.acceptClientHello(ch_record[0 .. frame.header_len + ch.len], .zero, &sh_out);
+    var flight_out: [512]u8 = undefined;
+    _ = try server.sendAnonymousFlightForTest(&flight_out);
+
+    var client_tx = try server.rx.clone();
+    defer client_tx.deinit();
+    const ku = [_]u8{
+        @intFromEnum(HandshakeType.key_update),              0x00, 0x00, 0x01,
+        @intFromEnum(KeyUpdateRequest.update_not_requested),
+    };
+    var wire_buf: [64]u8 = undefined;
+    const wire_rec = try client_tx.encrypt(.handshake, &ku, &wire_buf);
+    var rx_buf: [64]u8 = undefined;
+    @memcpy(rx_buf[0..wire_rec.len], wire_rec);
+    var out: [64]u8 = undefined;
+    try testing.expectError(
+        error.UnexpectedMessage,
+        server.handleRecord(rx_buf[0..wire_rec.len], .zero, &out),
+    );
+    try testing.expectEqual(.wait_client_finished, server.state);
+}
+
 // RFC 8446 §4.6.3 — a client KeyUpdate(update_requested) ratchets the
 // server receive key and elicits a server KeyUpdate(update_not_requested),
 // encrypted under the old send key.
@@ -1177,6 +1211,24 @@ test "handleRecord: KeyUpdate not at record boundary is rejected" {
     var out: [64]u8 = undefined;
     try testing.expectError(
         error.UnexpectedMessage,
+        server.handleRecord(rx_buf[0..wire_rec.len], .zero, &out),
+    );
+}
+
+// RFC 8446 §4.6.3 — KeyUpdateRequest only defines values 0 and 1.
+test "handleRecord: invalid client KeyUpdate request is rejected" {
+    var server = try connectedTestServer();
+    var client_tx = try server.rx.clone();
+    defer client_tx.deinit();
+
+    const invalid_ku = [_]u8{ @intFromEnum(HandshakeType.key_update), 0x00, 0x00, 0x01, 0x02 };
+    var wire_buf: [64]u8 = undefined;
+    const wire_rec = try client_tx.encrypt(.handshake, &invalid_ku, &wire_buf);
+    var rx_buf: [64]u8 = undefined;
+    @memcpy(rx_buf[0..wire_rec.len], wire_rec);
+    var out: [64]u8 = undefined;
+    try testing.expectError(
+        error.IllegalParameter,
         server.handleRecord(rx_buf[0..wire_rec.len], .zero, &out),
     );
 }
