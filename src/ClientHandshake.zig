@@ -199,7 +199,8 @@ const Suite = union(enum) {
                     &th,
                 );
 
-                const master = H.masterSecret(s.handshake_secret);
+                var master = H.masterSecret(s.handshake_secret);
+                defer master.secureZero();
                 s.client_app_secret = H.clientApplicationTrafficSecret(master, &.init(th));
                 s.server_app_secret = H.serverApplicationTrafficSecret(master, &.init(th));
 
@@ -208,6 +209,7 @@ const Suite = union(enum) {
                 var tx = try H.makeRecordLayer(s.aead, s.client_app_secret);
                 errdefer tx.deinit();
                 const rx = try H.makeRecordLayer(s.aead, s.server_app_secret);
+                s.forgetHandshakeSecrets();
 
                 return .{
                     .finished = fin,
@@ -252,10 +254,12 @@ const Suite = union(enum) {
                 s.handshake_secret = H.handshakeSecret(H.early_secret, dhe);
 
                 const th = s.transcript.peek();
-                const client_secret =
+                var client_secret =
                     H.clientHandshakeTrafficSecret(s.handshake_secret, &.init(th));
-                const server_secret =
+                defer client_secret.secureZero();
+                var server_secret =
                     H.serverHandshakeTrafficSecret(s.handshake_secret, &.init(th));
+                defer server_secret.secureZero();
 
                 s.client_finished_key = H.finishedKey(client_secret);
                 s.server_finished_key = H.finishedKey(server_secret);
@@ -1879,6 +1883,17 @@ test "ratchetClientKey: RFC 8446 §7.2 next application write key" {
     }, &rl.aead.aes_128_gcm_sha256.data);
 }
 
+fn expectHandshakeSecretsZero(suite: *const Suite) !void {
+    switch (suite.*) {
+        .buffering => unreachable,
+        inline .sha256, .sha384 => |*s| {
+            try testing.expect(mem.allEqual(u8, mem.asBytes(&s.handshake_secret), 0));
+            try testing.expect(mem.allEqual(u8, mem.asBytes(&s.client_finished_key), 0));
+            try testing.expect(mem.allEqual(u8, mem.asBytes(&s.server_finished_key), 0));
+        },
+    }
+}
+
 // Drive the RFC 8448 §3 handshake to connected; rx/tx carry application keys.
 fn connectedTestClient() !ClientHandshake {
     var hs: ClientHandshake = .init(rfc8448_client_keypair);
@@ -1889,6 +1904,7 @@ fn connectedTestClient() !ClientHandshake {
     try hs.processFlight(rfc8448Fixture("server_flight.b64", &flight_buf), hs.policy);
     var out: [128]u8 = undefined;
     _ = try hs.clientFinished(&out);
+    try expectHandshakeSecretsZero(&hs.suite);
     return hs;
 }
 

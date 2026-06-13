@@ -23,13 +23,25 @@ pub fn HashArm(comptime Hkdf_: type, comptime Hash: type) type {
             std.crypto.secureZero(u8, mem.asBytes(self));
         }
 
+        pub fn forgetHandshakeSecrets(self: *Self) void {
+            self.handshake_secret.secureZero();
+            self.client_finished_key.secureZero();
+            self.server_finished_key.secureZero();
+        }
+
         pub fn ratchetClientKey(self: *Self) aead.Error!RecordLayer {
-            self.client_app_secret = Hkdf.nextTrafficSecret(self.client_app_secret);
+            var next_secret = Hkdf.nextTrafficSecret(self.client_app_secret);
+            defer next_secret.secureZero();
+            self.client_app_secret.secureZero();
+            self.client_app_secret = next_secret;
             return Hkdf.makeRecordLayer(self.aead, self.client_app_secret);
         }
 
         pub fn ratchetServerKey(self: *Self) aead.Error!RecordLayer {
-            self.server_app_secret = Hkdf.nextTrafficSecret(self.server_app_secret);
+            var next_secret = Hkdf.nextTrafficSecret(self.server_app_secret);
+            defer next_secret.secureZero();
+            self.server_app_secret.secureZero();
+            self.server_app_secret = next_secret;
             return Hkdf.makeRecordLayer(self.aead, self.server_app_secret);
         }
     };

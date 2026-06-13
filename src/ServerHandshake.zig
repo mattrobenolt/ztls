@@ -319,8 +319,10 @@ fn installHandshakeKeys(
         inline .sha256, .sha384 => |s| {
             const H = @TypeOf(s).Hkdf;
             const th = s.transcript.peek();
-            const client_secret = H.clientHandshakeTrafficSecret(s.handshake_secret, &.init(th));
-            const server_secret = H.serverHandshakeTrafficSecret(s.handshake_secret, &.init(th));
+            var client_secret = H.clientHandshakeTrafficSecret(s.handshake_secret, &.init(th));
+            defer client_secret.secureZero();
+            var server_secret = H.serverHandshakeTrafficSecret(s.handshake_secret, &.init(th));
+            defer server_secret.secureZero();
             var rx = try H.makeRecordLayer(s.aead, client_secret);
             errdefer rx.deinit();
             const tx = try H.makeRecordLayer(s.aead, server_secret);
@@ -337,17 +339,21 @@ fn makeHandshakeArm(
     aead_key: CipherSuite,
     dhe: []const u8,
 ) HashArm(H, Hash) {
-    const handshake_secret = H.handshakeSecret(H.early_secret, dhe);
+    var handshake_secret = H.handshakeSecret(H.early_secret, dhe);
     const th = transcript.peek();
-    const client_secret = H.clientHandshakeTrafficSecret(handshake_secret, &.init(th));
-    const server_secret = H.serverHandshakeTrafficSecret(handshake_secret, &.init(th));
-    return .{
+    var client_secret = H.clientHandshakeTrafficSecret(handshake_secret, &.init(th));
+    var server_secret = H.serverHandshakeTrafficSecret(handshake_secret, &.init(th));
+    const arm: HashArm(H, Hash) = .{
         .transcript = transcript,
         .aead = aead_key,
         .handshake_secret = handshake_secret,
         .client_finished_key = H.finishedKey(client_secret),
         .server_finished_key = H.finishedKey(server_secret),
     };
+    handshake_secret.secureZero();
+    client_secret.secureZero();
+    server_secret.secureZero();
+    return arm;
 }
 
 // Test-only helper for anonymous handshakes. Keep private: TLS server callers
@@ -521,7 +527,8 @@ fn processClientFinishedPlaintext(
             const H = @TypeOf(s.*).Hkdf;
             const th = s.transcript.peek();
             try finished.verify(@TypeOf(s.transcript), msg.raw, &s.client_finished_key.data, &th);
-            const master = H.masterSecret(s.handshake_secret);
+            var master = H.masterSecret(s.handshake_secret);
+            defer master.secureZero();
             s.client_app_secret = H.clientApplicationTrafficSecret(master, &.init(th));
             s.server_app_secret = H.serverApplicationTrafficSecret(master, &.init(th));
             var next_rx = try H.makeRecordLayer(s.aead, s.client_app_secret);
@@ -532,6 +539,7 @@ fn processClientFinishedPlaintext(
             self.rx = next_rx;
             self.tx = next_tx;
             s.transcript.update(msg.raw);
+            s.forgetHandshakeSecrets();
         },
     }
     self.state = .connected;
@@ -1002,6 +1010,16 @@ fn encryptAllZeroInnerForTest(tx: *RecordLayer, inner_len: usize, out: []u8) ![]
     return out[0..total];
 }
 
+fn expectHandshakeSecretsZero(server: *const ServerHandshake) !void {
+    switch (server.suite_state) {
+        inline .sha256, .sha384 => |*s| {
+            try testing.expect(mem.allEqual(u8, mem.asBytes(&s.handshake_secret), 0));
+            try testing.expect(mem.allEqual(u8, mem.asBytes(&s.client_finished_key), 0));
+            try testing.expect(mem.allEqual(u8, mem.asBytes(&s.server_finished_key), 0));
+        },
+    }
+}
+
 fn connectedTestServer() !ServerHandshake {
     const client_keypair: x25519.KeyPair = try .generateDeterministic(.init(@splat(0x11)));
     const server_keypair: x25519.KeyPair = try .generateDeterministic(.init(@splat(0x22)));
@@ -1035,6 +1053,7 @@ fn connectedTestServer() !ServerHandshake {
     var fin_wire: [128]u8 = undefined;
     const fin_record = try client_tx.encrypt(.handshake, fin, &fin_wire);
     try server.processClientFinished(fin_wire[0..fin_record.len]);
+    try expectHandshakeSecretsZero(&server);
     return server;
 }
 
@@ -1076,6 +1095,7 @@ fn connectedTestPair() !ConnectedTestPair {
     };
     client.completeWrite();
     try server.processClientFinished(client_out[0..client_finished_record.len]);
+    try expectHandshakeSecretsZero(&server);
 
     return .{ .client = client, .server = server };
 }
