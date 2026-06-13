@@ -45,6 +45,8 @@ pub const ParseError = error{
     InvalidCompressionMethod,
     /// key_share extension uses a group other than x25519, or wrong key length.
     UnsupportedKeyShareGroup,
+    /// A recognized extension appeared in a message where TLS 1.3 does not allow it.
+    UnexpectedExtension,
     /// A required extension (supported_versions or key_share) was absent.
     MissingExtension,
 };
@@ -95,6 +97,8 @@ pub const HrrParseError = error{
     InvalidLegacyVersion,
     /// legacy_compression_method is not null compression.
     InvalidCompressionMethod,
+    /// A recognized extension appeared in a message where TLS 1.3 does not allow it.
+    UnexpectedExtension,
     /// A required extension was absent or malformed.
     MissingExtension,
 };
@@ -175,7 +179,25 @@ pub fn parseHelloRetryRequest(msg: []const u8) HrrParseError!HelloRetryRequest {
                 cookie = r.assumeReadSlice(cookie_len);
                 got_cookie = true;
             },
-            else => r.assumeSkip(ext_len),
+            else => {
+                switch (ext_type) {
+                    .server_name,
+                    .supported_groups,
+                    .signature_algorithms,
+                    .alpn,
+                    .padding,
+                    .pre_shared_key,
+                    .early_data,
+                    .psk_key_exchange_modes,
+                    .certificate_authorities,
+                    .oid_filters,
+                    .post_handshake_auth,
+                    .signature_algorithms_cert,
+                    => return error.UnexpectedExtension,
+                    else => {},
+                }
+                r.assumeSkip(ext_len);
+            },
         }
     }
 
@@ -314,7 +336,26 @@ pub fn parseWithSessionIdEcho(
                 if (r.pos != ext_end) return error.InvalidExtensionLength;
                 got_key_share = true;
             },
-            else => r.assumeSkip(ext_len),
+            else => {
+                switch (ext_type) {
+                    .server_name,
+                    .supported_groups,
+                    .signature_algorithms,
+                    .alpn,
+                    .padding,
+                    .pre_shared_key,
+                    .early_data,
+                    .cookie,
+                    .psk_key_exchange_modes,
+                    .certificate_authorities,
+                    .oid_filters,
+                    .post_handshake_auth,
+                    .signature_algorithms_cert,
+                    => return error.UnexpectedExtension,
+                    else => {},
+                }
+                r.assumeSkip(ext_len);
+            },
         }
     }
     if (r.pos != extensions_end) return error.InvalidExtensionLength;
@@ -444,6 +485,36 @@ test "parse: rejects duplicate key_share" {
     dup[3] += key_share.len;
     dup[43] += key_share.len;
     try testing.expectError(error.DuplicateExtension, parse(&dup));
+}
+
+// RFC 8446 §9.3 — unknown extension code points are ignored.
+test "parse: ignores unknown extension" {
+    const unknown = [_]u8{ 0x5a, 0x5a, 0x00, 0x01, 0x00 };
+    const msg = server_hello_rfc8448 ++ unknown;
+    var with_unknown = msg[0..msg.len].*;
+    with_unknown[3] += unknown.len;
+    with_unknown[43] += unknown.len;
+    const sh = try parse(&with_unknown);
+    try testing.expectEqual(.aes_128_gcm_sha256, sh.cipher_suite);
+}
+
+// RFC 8446 §4.2 — recognized extensions in the wrong message are illegal.
+test "parse: rejects forbidden signature_algorithms extension" {
+    const sig_algs = [_]u8{ 0x00, 0x0d, 0x00, 0x02, 0x00, 0x00 };
+    const msg = server_hello_rfc8448 ++ sig_algs;
+    var forbidden = msg[0..msg.len].*;
+    forbidden[3] += sig_algs.len;
+    forbidden[43] += sig_algs.len;
+    try testing.expectError(error.UnexpectedExtension, parse(&forbidden));
+}
+
+// RFC 8446 §4.2.8 — ServerHello carries exactly the selected group. ztls's
+// current supported surface accepts only X25519.
+test "parse: rejects key_share for unsupported group" {
+    var msg = server_hello_rfc8448[0..server_hello_rfc8448.len].*;
+    msg[48] = 0x00;
+    msg[49] = 0x17;
+    try testing.expectError(error.UnsupportedKeyShareGroup, parse(&msg));
 }
 
 test "parse: unsupported TLS version" {
