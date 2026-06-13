@@ -760,6 +760,22 @@ fn policyLeaf(
     ext_key_usage: Certificate.Parsed.Slice,
     signature_algorithm: Certificate.Algorithm,
 ) Certificate.Parsed {
+    return policyLeafWithVersion(
+        buffer,
+        key_usage,
+        ext_key_usage,
+        signature_algorithm,
+        .v3,
+    );
+}
+
+fn policyLeafWithVersion(
+    buffer: []const u8,
+    key_usage: Certificate.Parsed.Slice,
+    ext_key_usage: Certificate.Parsed.Slice,
+    signature_algorithm: Certificate.Algorithm,
+    version: Certificate.Version,
+) Certificate.Parsed {
     return .{
         .certificate = .{ .buffer = buffer, .index = 0 },
         .issuer_slice = .empty,
@@ -776,7 +792,7 @@ fn policyLeaf(
         .name_constraints_slice = .empty,
         .name_constraints_critical = false,
         .validity = .{ .not_before = 0, .not_after = 0 },
-        .version = .v3,
+        .version = version,
     };
 }
 
@@ -790,6 +806,19 @@ fn policyChainCert(
     cert.issuer_slice = issuer;
     cert.subject_slice = subject;
     return cert;
+}
+
+// RFC 8446 §4.4.2.2 — unless another certificate type is negotiated, the
+// server certificate must be X.509v3.
+test "certificate_policy.verifyServerAuth: non-v3 certificates are rejected" {
+    const versions = [_]Certificate.Version{ .v1, .v2 };
+    for (versions) |version| {
+        const leaf = policyLeafWithVersion("", .empty, .empty, .ecdsa_with_SHA256, version);
+        try testing.expectError(
+            error.UnsupportedCertificateVersion,
+            certificate_policy.verifyServerAuth(leaf),
+        );
+    }
 }
 
 // RFC 8446 §4.4.2.2 — a server certificate whose KeyUsage extension is present

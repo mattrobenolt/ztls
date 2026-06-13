@@ -6,6 +6,7 @@ const Certificate = @import("cryptox/Certificate.zig");
 const SignatureScheme = @import("signature_scheme.zig").SignatureScheme;
 
 pub const PolicyError = error{
+    UnsupportedCertificateVersion,
     CertificateKeyUsageRejected,
     CertificateExtendedKeyUsageRejected,
     CertificateSignatureAlgorithmRejected,
@@ -62,6 +63,10 @@ pub fn verifyServerAuthWithSignatureSchemes(
     parsed: Certificate.Parsed,
     certificate_signature_schemes: []const SignatureScheme,
 ) VerifyServerAuthError!void {
+    // RFC 8446 §4.4.2.2 — unless another certificate type is negotiated, the
+    // server certificate must be X.509v3.
+    if (parsed.version != .v3) return error.UnsupportedCertificateVersion;
+
     // RFC 8446 §4.4.2.2 — server certificates must permit CertificateVerify
     // signing via KeyUsage.digitalSignature when KeyUsage is present.
     if (!try parsed.allowsKeyUsage(key_usage_digital_signature))
