@@ -27,13 +27,10 @@ const x25519 = @import("x25519.zig");
 const legacy_version: ProtocolVersion = .tls_1_2;
 
 const cipher_suite_count = std.meta.tags(CipherSuite).len;
-const supported_signature_schemes = [_]SignatureScheme{
-    .ecdsa_secp256r1_sha256,
-    .ecdsa_secp384r1_sha384,
-    .rsa_pss_rsae_sha256,
-    .rsa_pss_rsae_sha384,
-};
+const supported_signature_schemes = SignatureScheme.supported_handshake;
+const supported_certificate_signature_schemes = SignatureScheme.supported_certificate;
 const sig_scheme_count = supported_signature_schemes.len;
+const cert_sig_scheme_count = supported_certificate_signature_schemes.len;
 
 const handshake_header_len = 4;
 const ext_header_len = 2 + 2; // extension type + data length field
@@ -55,6 +52,7 @@ const body_fixed_len =
 const ext_supported_versions_len = ext_header_len + 1 + 2;
 const ext_supported_groups_len = ext_header_len + 2 + 2;
 const ext_sig_algs_len = ext_header_len + 2 + sig_scheme_count * 2;
+const ext_sig_algs_cert_len = ext_header_len + 2 + cert_sig_scheme_count * 2;
 const ext_key_share_len = ext_header_len + 2 + 2 + 2 + 32;
 
 fn alpnExtDataLen(protocols: AlpnProtocols) AlpnError!u16 {
@@ -85,6 +83,7 @@ fn extensionsLen(server_name: ?[]const u8, alpn_protocols: AlpnProtocols) AlpnEr
         ext_supported_versions_len +
         ext_supported_groups_len +
         ext_sig_algs_len +
+        ext_sig_algs_cert_len +
         ext_key_share_len;
     assert(total <= std.math.maxInt(u16));
     return @intCast(total);
@@ -119,6 +118,7 @@ pub const ParseError = error{
 pub const Parsed = struct {
     cipher_suites: []const u8,
     legacy_session_id: []const u8 = &.{},
+    signature_schemes: []const u8 = &.{},
     server_name: ?[]const u8 = null,
     alpn_protocols: []const u8 = &.{},
     public_key: x25519.PublicKey,
@@ -221,6 +221,12 @@ pub fn encode(
     w.append(u16, sig_scheme_count * 2);
     inline for (supported_signature_schemes) |s| w.append(SignatureScheme, s);
 
+    // signature_algorithms_cert (RFC 8446 §4.2.3)
+    w.append(ExtensionType, .signature_algorithms_cert);
+    w.append(u16, 2 + cert_sig_scheme_count * 2);
+    w.append(u16, cert_sig_scheme_count * 2);
+    inline for (supported_certificate_signature_schemes) |s| w.append(SignatureScheme, s);
+
     // key_share (RFC 8446 §4.2.8)
     w.append(ExtensionType, .key_share);
     w.append(u16, 2 + 2 + 2 + 32);
@@ -272,6 +278,7 @@ pub fn parse(msg: []const u8) ParseError!Parsed {
     var got_alpn = false;
     var got_supported_groups = false;
     var got_signature_algorithms = false;
+    var got_signature_algorithms_cert = false;
 
     while (r.pos < extensions_end) {
         if (extensions_end - r.pos < 4) return error.InvalidExtensionLength;
@@ -303,8 +310,13 @@ pub fn parse(msg: []const u8) ParseError!Parsed {
             },
             .signature_algorithms => {
                 if (got_signature_algorithms) return error.DuplicateExtension;
-                try parseSignatureAlgorithms(ext);
+                parsed.signature_schemes = try parseSignatureAlgorithms(ext);
                 got_signature_algorithms = true;
+            },
+            .signature_algorithms_cert => {
+                if (got_signature_algorithms_cert) return error.DuplicateExtension;
+                _ = try parseSignatureAlgorithms(ext);
+                got_signature_algorithms_cert = true;
             },
             .key_share => {
                 if (got_key_share) return error.DuplicateExtension;
@@ -367,12 +379,13 @@ fn parseSupportedGroups(ext: []const u8) ParseError!void {
     return error.UnsupportedKeyShare;
 }
 
-fn parseSignatureAlgorithms(ext: []const u8) ParseError!void {
+fn parseSignatureAlgorithms(ext: []const u8) ParseError![]const u8 {
     if (ext.len < 2) return error.InvalidVectorLength;
     var r: wire.Reader = .init(ext);
     const list_len = r.assumeRead(u16);
     if (list_len == 0 or list_len != ext.len - 2 or list_len % 2 != 0)
         return error.InvalidVectorLength;
+    return r.assumeReadSlice(list_len);
 }
 
 fn parseKeyShare(ext: []const u8) ParseError!x25519.PublicKey {
@@ -475,6 +488,27 @@ test "encode: supported_versions contains TLS 1.3" {
     const encoded = try encode(&buf, .zero, .zero, null, &.{});
     const ext = try findExtension(encoded, .supported_versions);
     try testing.expectEqualSlices(u8, &.{ 0x02, 0x03, 0x04 }, ext);
+}
+
+// RFC 8446 §4.2.3 — signature_algorithms_cert advertises certificate-specific
+// signature algorithms separately from CertificateVerify algorithms.
+test "encode: signature_algorithms_cert contains certificate schemes" {
+    var buf: [512]u8 = undefined;
+    const encoded = try encode(&buf, .zero, .zero, null, &.{});
+    const ext = try findExtension(encoded, .signature_algorithms_cert);
+    try testing.expectEqualSlices(
+        u8,
+        &.{
+            0x00, 0x0c,
+            0x04, 0x01,
+            0x05, 0x01,
+            0x06, 0x01,
+            0x04, 0x03,
+            0x05, 0x03,
+            0x08, 0x07,
+        },
+        ext,
+    );
 }
 
 test "encode: ALPN present when protocols set" {
@@ -727,6 +761,15 @@ test "parse: rejects duplicate signature_algorithms" {
     const encoded = try encode(&buf, .zero, .zero, null, &.{});
     const dup_sig_algs = [_]u8{ 0x00, 0x0d, 0x00, 0x02, 0x00, 0x02 };
     const new_len = appendExtension(&buf, encoded.len, &dup_sig_algs);
+    try testing.expectError(error.DuplicateExtension, parse(buf[0..new_len]));
+}
+
+// RFC 8446 §4.2 — duplicate recognized extensions are rejected.
+test "parse: rejects duplicate signature_algorithms_cert" {
+    var buf: [512]u8 = undefined;
+    const encoded = try encode(&buf, .zero, .zero, null, &.{});
+    const dup_sig_algs_cert = [_]u8{ 0x00, 0x32, 0x00, 0x04, 0x00, 0x02, 0x04, 0x01 };
+    const new_len = appendExtension(&buf, encoded.len, &dup_sig_algs_cert);
     try testing.expectError(error.DuplicateExtension, parse(buf[0..new_len]));
 }
 

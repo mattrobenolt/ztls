@@ -18,6 +18,7 @@ const aead = @import("aead.zig");
 const alert = @import("alert.zig");
 const array_buffer = @import("array_buffer.zig");
 const ArrayBuffer = array_buffer.ArrayBuffer;
+const SliceBuffer = array_buffer.SliceBuffer;
 const certificate = @import("certificate.zig");
 const CipherSuite = @import("root.zig").CipherSuite;
 const client_hello = @import("client_hello.zig");
@@ -36,10 +37,12 @@ pub const KeyUpdateRequest = handshake.KeyUpdateRequest;
 /// maxUselessRecords. Reset by application data.
 const max_post_handshake_messages = handshake.max_post_handshake_messages;
 const hkdf = @import("hkdf.zig");
+const memx = @import("memx.zig");
 const NewSessionTicket = @import("NewSessionTicket.zig");
 const PendingWrite = @import("pending_write.zig").PendingWrite;
 const RecordLayer = @import("RecordLayer.zig");
 const server_hello = @import("server_hello.zig");
+const SignatureScheme = @import("signature_scheme.zig").SignatureScheme;
 const suite_state = @import("suite_state.zig");
 const HashArm = suite_state.HashArm;
 const x25519 = @import("x25519.zig");
@@ -52,8 +55,9 @@ const max_leaf_pub_key = 1024;
 const LeafPublicKeyBuffer = ArrayBuffer(u8, max_leaf_pub_key);
 const LegacySessionIdBuffer = ArrayBuffer(u8, 32);
 const OfferedSuitesBuffer = ArrayBuffer(CipherSuite, 8);
+const OfferedSignatureSchemesBuffer = ArrayBuffer(SignatureScheme, 16);
 const SelectedAlpnBuffer = ArrayBuffer(u8, 255);
-const HandshakeBuffer = array_buffer.SliceBuffer(u8);
+const HandshakeBuffer = SliceBuffer(u8);
 
 const ServerFlightProgress = enum {
     none,
@@ -137,12 +141,18 @@ const Suite = union(enum) {
         self: *const Suite,
         cv_msg: []const u8,
         pub_key: []const u8,
+        offered_schemes: []const SignatureScheme,
     ) certificate.VerifyError!void {
         switch (self.*) {
             .buffering => unreachable,
             inline .sha256, .sha384 => |*s| {
                 const th = s.transcript.peek();
-                try certificate.verifyServerSignature(cv_msg, pub_key, &th);
+                try certificate.verifyServerSignatureWithSchemes(
+                    cv_msg,
+                    pub_key,
+                    &th,
+                    offered_schemes,
+                );
             },
         }
     }
@@ -294,6 +304,8 @@ server_flight_progress: ServerFlightProgress = .none,
 legacy_session_id: LegacySessionIdBuffer = .empty,
 /// Recognized cipher suites offered in ClientHello.
 offered_suites: OfferedSuitesBuffer = .empty,
+/// Recognized signature schemes offered in ClientHello.signature_algorithms.
+offered_signature_schemes: OfferedSignatureSchemesBuffer = .empty,
 /// ALPN protocols offered in ClientHello. Caller-owned, must live until start().
 alpn_protocols: client_hello.AlpnProtocols = &.{},
 selected_alpn: SelectedAlpnBuffer = .empty,
@@ -390,16 +402,33 @@ pub fn injectClientHello(self: *ClientHandshake, client_hello_msg: []const u8) v
     assert(self.state == .start);
     self.legacy_session_id.clear();
     self.offered_suites.clear();
+    self.offered_signature_schemes.clear();
     const parsed = client_hello.parse(client_hello_msg) catch null;
     if (parsed) |ch| {
         self.legacy_session_id.appendSlice(ch.legacy_session_id) catch
             self.legacy_session_id.clear();
         var i: usize = 0;
         while (i < ch.cipher_suites.len) : (i += 2) {
-            const wire_suite = std.mem.readInt(u16, ch.cipher_suites[i..][0..2], .big);
+            const wire_suite = memx.readInt(u16, ch.cipher_suites[i..][0..2]);
             const suite = CipherSuite.fromWire(wire_suite) orelse continue;
             self.offered_suites.append(suite) catch break;
         }
+        i = 0;
+        while (i < ch.signature_schemes.len) : (i += 2) {
+            const wire_scheme = memx.readInt(u16, ch.signature_schemes[i..][0..2]);
+            const scheme: SignatureScheme = @enumFromInt(wire_scheme);
+            if (!scheme.supportsHandshake()) continue;
+            if (mem.indexOfScalar(
+                SignatureScheme,
+                self.offered_signature_schemes.constSlice(),
+                scheme,
+            ) != null) continue;
+            self.offered_signature_schemes.append(scheme) catch unreachable;
+        }
+    } else {
+        self.offered_signature_schemes.appendSlice(
+            SignatureScheme.supported_handshake,
+        ) catch unreachable;
     }
     self.suite.update(client_hello_msg);
     self.state = .wait_sh;
@@ -493,6 +522,7 @@ pub fn alertForError(err: anyerror) alert.Description {
         error.UnexpectedExtension,
         error.IllegalParameter,
         error.UnsupportedCipherSuite,
+        error.UnsupportedSignatureScheme,
         => .illegal_parameter,
         error.UnexpectedRecord,
         error.UnexpectedMessage,
@@ -747,7 +777,11 @@ fn processFlightMessage(
             if (msg.type != .certificate_verify) return error.UnexpectedMessage;
             if (self.server_flight_progress != .certificate_verified)
                 return error.UnexpectedMessage;
-            try self.suite.verifyCertificate(msg.raw, self.leaf_pub_key.constSlice());
+            try self.suite.verifyCertificate(
+                msg.raw,
+                self.leaf_pub_key.constSlice(),
+                self.offered_signature_schemes.constSlice(),
+            );
             self.server_flight_progress = .certificate_verify_verified;
             self.suite.update(msg.raw);
             self.state = .wait_finished;
@@ -1233,6 +1267,7 @@ test "alertForError: certificate failures map to certificate alerts" {
         .{ .err = error.CertificateNameConstraintViolation, .description = .certificate_unknown },
         .{ .err = error.CertificateFieldHasInvalidLength, .description = .bad_certificate },
         .{ .err = error.InvalidSignature, .description = .bad_certificate },
+        .{ .err = error.UnsupportedSignatureScheme, .description = .illegal_parameter },
     };
     for (cases) |case| try testing.expectEqual(case.description, alertForError(case.err));
 }
@@ -1455,6 +1490,33 @@ test "processFlight: rejects Finished before CertificateVerify" {
     var out: [64]u8 = undefined;
     const rec = try hs.sendAlert(.unexpected_message, &out);
     try expectEncryptedAlert(&peer, rec, .unexpected_message);
+}
+
+// RFC 8446 §4.4.3 — CertificateVerify must use a SignatureScheme offered by
+// the client in signature_algorithms.
+test "processFlight: rejects unoffered CertificateVerify scheme" {
+    var hs = try flightReadyClient();
+    defer hs.deinit();
+    hs.offered_signature_schemes.clear();
+    try hs.offered_signature_schemes.append(.ecdsa_secp256r1_sha256);
+
+    var flight_buf: [1024]u8 = undefined;
+    var hr: HandshakeReader = .init(rfc8448Fixture("server_flight.b64", &flight_buf));
+    const ee = (try hr.next()).?;
+    try hs.processFlight(ee.raw, hs.policy);
+    const cert = (try hr.next()).?;
+    try hs.processFlight(cert.raw, hs.policy);
+    const cv = (try hr.next()).?;
+
+    try testing.expectError(error.UnsupportedSignatureScheme, hs.processFlight(cv.raw, hs.policy));
+    try testing.expectEqual(.wait_cv, hs.state);
+
+    var peer = try hs.tx.clone();
+    defer peer.deinit();
+    var out: [64]u8 = undefined;
+    const description = ClientHandshake.alertForError(error.UnsupportedSignatureScheme);
+    const rec = try hs.sendAlert(description, &out);
+    try expectEncryptedAlert(&peer, rec, .illegal_parameter);
 }
 
 // RFC 8446 §4.4.3 — a bad CertificateVerify signature is a decrypt_error alert.

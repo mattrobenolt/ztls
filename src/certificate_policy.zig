@@ -1,7 +1,9 @@
 //! X.509 policy checks used by TLS Certificate parsing.
 //!
 //! RFC 8446 §4.4.2.2
+const std = @import("std");
 const Certificate = @import("cryptox/Certificate.zig");
+const SignatureScheme = @import("signature_scheme.zig").SignatureScheme;
 
 pub const PolicyError = error{
     CertificateKeyUsageRejected,
@@ -35,6 +37,11 @@ pub const Policy = struct {
     /// EKU serverAuth when EKU is present, and a TLS 1.3-compatible certificate
     /// signature algorithm.
     leaf_usage: LeafUsage = .server_auth,
+    /// Algorithms accepted for signatures appearing in certificates. This is the
+    /// `signature_algorithms_cert` policy; when that extension is omitted, RFC
+    /// 8446 §4.2.3 says `signature_algorithms` applies to certificates too.
+    certificate_signature_schemes: []const SignatureScheme =
+        SignatureScheme.supported_certificate,
 };
 
 const eku_server_auth_oid = [_]u8{ 0x2b, 0x06, 0x01, 0x05, 0x05, 0x07, 0x03, 0x01 };
@@ -44,6 +51,17 @@ pub const VerifyServerAuthError = PolicyError || Certificate.ParseError;
 
 // ziglint-ignore: Z015 -- VerifyServerAuthError is a public error-set alias.
 pub fn verifyServerAuth(parsed: Certificate.Parsed) VerifyServerAuthError!void {
+    return verifyServerAuthWithSignatureSchemes(
+        parsed,
+        SignatureScheme.supported_certificate,
+    );
+}
+
+// ziglint-ignore: Z015 -- VerifyServerAuthError is a public error-set alias.
+pub fn verifyServerAuthWithSignatureSchemes(
+    parsed: Certificate.Parsed,
+    certificate_signature_schemes: []const SignatureScheme,
+) VerifyServerAuthError!void {
     // RFC 8446 §4.4.2.2 — server certificates must permit CertificateVerify
     // signing via KeyUsage.digitalSignature when KeyUsage is present.
     if (!try parsed.allowsKeyUsage(key_usage_digital_signature))
@@ -54,17 +72,28 @@ pub fn verifyServerAuth(parsed: Certificate.Parsed) VerifyServerAuthError!void {
     if (!try parsed.allowsExtKeyUsage(&eku_server_auth_oid))
         return error.CertificateExtendedKeyUsageRejected;
 
-    switch (parsed.signature_algorithm) {
-        .sha256WithRSAEncryption,
-        .sha384WithRSAEncryption,
-        .sha512WithRSAEncryption,
-        .ecdsa_with_SHA256,
-        .ecdsa_with_SHA384,
-        .ecdsa_with_SHA512,
-        .curveEd25519,
-        => {},
+    try verifyCertificateSignatureAlgorithm(
+        parsed.signature_algorithm,
+        certificate_signature_schemes,
+    );
+}
+
+pub fn verifyCertificateSignatureAlgorithm(
+    algorithm: Certificate.Algorithm,
+    certificate_signature_schemes: []const SignatureScheme,
+) PolicyError!void {
+    const scheme = switch (algorithm) {
+        .sha256WithRSAEncryption => SignatureScheme.rsa_pkcs1_sha256,
+        .sha384WithRSAEncryption => .rsa_pkcs1_sha384,
+        .sha512WithRSAEncryption => .rsa_pkcs1_sha512,
+        .ecdsa_with_SHA256 => .ecdsa_secp256r1_sha256,
+        .ecdsa_with_SHA384 => .ecdsa_secp384r1_sha384,
+        .ecdsa_with_SHA512 => .ecdsa_secp521r1_sha512,
+        .curveEd25519 => .ed25519,
         else => return error.CertificateSignatureAlgorithmRejected,
-    }
+    };
+    if (std.mem.indexOfScalar(SignatureScheme, certificate_signature_schemes, scheme) == null)
+        return error.CertificateSignatureAlgorithmRejected;
 }
 
 pub const VerifyAgainstBundleError = PolicyError ||

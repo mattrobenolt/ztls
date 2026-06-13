@@ -109,7 +109,10 @@ pub fn parse(msg: []const u8, policy: Policy) ParseError![]const u8 {
             leaf_pub_key = parsed.pubKey();
             switch (policy.leaf_usage) {
                 .none => {},
-                .server_auth => try certificate_policy.verifyServerAuth(parsed),
+                .server_auth => try certificate_policy.verifyServerAuthWithSignatureSchemes(
+                    parsed,
+                    policy.certificate_signature_schemes,
+                ),
             }
             if (policy.host_name) |host_name| try parsed.verifyHostName(host_name);
         }
@@ -119,6 +122,10 @@ pub fn parse(msg: []const u8, policy: Policy) ParseError![]const u8 {
     }
 
     const subject = subject_to_verify orelse return error.EmptyCertificateList;
+    try verifyChainCertificateSignatureAlgorithms(
+        chain.constSlice(),
+        policy.certificate_signature_schemes,
+    );
     if (policy.bundle) |bundle| {
         const trust_anchor = try certificate_policy.findVerifiedIssuerInBundle(
             bundle,
@@ -133,6 +140,19 @@ pub fn parse(msg: []const u8, policy: Policy) ParseError![]const u8 {
     }
 
     return leaf_pub_key orelse error.EmptyCertificateList;
+}
+
+fn verifyChainCertificateSignatureAlgorithms(
+    chain: []const Certificate.Parsed,
+    certificate_signature_schemes: []const SignatureScheme,
+) PolicyError!void {
+    for (chain) |cert| {
+        if (std.mem.eql(u8, cert.subject(), cert.issuer())) continue;
+        try certificate_policy.verifyCertificateSignatureAlgorithm(
+            cert.signature_algorithm,
+            certificate_signature_schemes,
+        );
+    }
 }
 
 fn parseCertificateEntryExtensions(exts: []const u8) ParseError!void {
@@ -280,6 +300,18 @@ pub fn verifyServerSignature(
     return verifySignature(server_certificate_verify_context, msg, pub_key, transcript_hash);
 }
 
+pub fn verifyServerSignatureWithSchemes(
+    msg: []const u8,
+    pub_key: []const u8,
+    transcript_hash: []const u8,
+    offered_schemes: []const SignatureScheme,
+) VerifyError!void {
+    const scheme = try certificateVerifyScheme(msg);
+    if (std.mem.indexOfScalar(SignatureScheme, offered_schemes, scheme) == null)
+        return error.UnsupportedSignatureScheme;
+    return verifyServerSignature(msg, pub_key, transcript_hash);
+}
+
 /// Verify a client CertificateVerify handshake message. RFC 8446 §4.4.3.
 pub fn verifyClientSignature(
     msg: []const u8,
@@ -287,6 +319,15 @@ pub fn verifyClientSignature(
     transcript_hash: []const u8,
 ) VerifyError!void {
     return verifySignature(client_certificate_verify_context, msg, pub_key, transcript_hash);
+}
+
+fn certificateVerifyScheme(msg: []const u8) VerifyError!SignatureScheme {
+    if (msg.len < 4 + 2) return error.UnexpectedEof;
+    var r: wire.Reader = .init(msg);
+    const handshake_type = r.assumeRead(handshake.Type);
+    if (handshake_type != .certificate_verify) return error.InvalidHandshakeType;
+    r.assumeSkip(3);
+    return r.read(SignatureScheme);
 }
 
 fn verifySignature(
@@ -298,11 +339,8 @@ fn verifySignature(
     if (msg.len < 4 + 2 + 2) return error.UnexpectedEof;
     var r: wire.Reader = .init(msg);
 
-    const handshake_type = r.assumeRead(handshake.Type);
-    if (handshake_type != .certificate_verify) return error.InvalidHandshakeType;
-    r.assumeSkip(3);
-
-    const scheme = try r.read(SignatureScheme);
+    const scheme = try certificateVerifyScheme(msg);
+    r.assumeSkip(4 + 2);
     const sig_len = r.assumeRead(u16);
     if (r.remaining().len < sig_len) return error.UnexpectedEof;
     const sig = r.assumeReadSlice(sig_len);
@@ -740,6 +778,18 @@ fn policyLeaf(
     };
 }
 
+fn policyChainCert(
+    buffer: []const u8,
+    issuer: Certificate.Parsed.Slice,
+    subject: Certificate.Parsed.Slice,
+    signature_algorithm: Certificate.Algorithm,
+) Certificate.Parsed {
+    var cert = policyLeaf(buffer, .empty, .empty, signature_algorithm);
+    cert.issuer_slice = issuer;
+    cert.subject_slice = subject;
+    return cert;
+}
+
 // RFC 8446 §4.4.2.2 — a server certificate whose KeyUsage extension is present
 // but omits digitalSignature cannot sign CertificateVerify and must be rejected.
 test "certificate_policy.verifyServerAuth: KeyUsage without digitalSignature is rejected" {
@@ -769,14 +819,85 @@ test "certificate_policy.verifyServerAuth: EKU without serverAuth is rejected" {
     );
 }
 
-// RFC 8446 §4.2.3 — only the TLS 1.3 signature algorithms are acceptable for a
-// server certificate; a legacy SHA-1/RSA cert must be rejected by policy.
-test "certificate_policy.verifyServerAuth: unsupported signature algorithm is rejected" {
-    const leaf = policyLeaf("", .empty, .empty, .sha1WithRSAEncryption);
+// RFC 8446 §4.2.3 — legacy certificate signature algorithms are rejected by
+// the TLS 1.3 server-auth policy.
+test "certificate_policy.verifyServerAuth: legacy certificate signatures are rejected" {
+    const legacy_algorithms = [_]Certificate.Algorithm{
+        .sha1WithRSAEncryption,
+        .sha224WithRSAEncryption,
+        .md2WithRSAEncryption,
+        .md5WithRSAEncryption,
+    };
+    for (legacy_algorithms) |algorithm| {
+        const leaf = policyLeaf("", .empty, .empty, algorithm);
+        try testing.expectError(
+            error.CertificateSignatureAlgorithmRejected,
+            certificate_policy.verifyServerAuth(leaf),
+        );
+    }
+}
+
+// RFC 8446 §4.2.3 — rsa_pkcs1_sha256 is a certificate-signature-only scheme;
+// accepting it for X.509 signatures does not make it a CertificateVerify scheme.
+test "certificate_policy.verifyServerAuth: RSA PKCS1 SHA-256 certificate signature is accepted" {
+    const leaf = policyLeaf("", .empty, .empty, .sha256WithRSAEncryption);
+    try certificate_policy.verifyServerAuth(leaf);
+}
+
+// RFC 8446 §4.2.3 — signature_algorithms_cert constrains certificate
+// signatures independently from CertificateVerify signatures.
+test "certificate_policy.verifyServerAuth: rejects certificate signature outside policy" {
+    const schemes = [_]SignatureScheme{.rsa_pkcs1_sha256};
+    const leaf = policyLeaf("", .empty, .empty, .ecdsa_with_SHA256);
     try testing.expectError(
         error.CertificateSignatureAlgorithmRejected,
-        certificate_policy.verifyServerAuth(leaf),
+        certificate_policy.verifyServerAuthWithSignatureSchemes(leaf, &schemes),
     );
+}
+
+// RFC 8446 §4.2.3, §4.4.2.2 — non-self-signed certificates sent by the
+// server are checked against the advertised certificate signature schemes.
+test "certificate signature policy checks non-self-signed chain certificates" {
+    const schemes = [_]SignatureScheme{.ecdsa_secp256r1_sha256};
+    const chain = [_]Certificate.Parsed{
+        policyChainCert(
+            "issuerleaf",
+            .{ .start = 0, .end = 6 },
+            .{ .start = 6, .end = 10 },
+            .ecdsa_with_SHA256,
+        ),
+        policyChainCert(
+            "issuerbad",
+            .{ .start = 0, .end = 6 },
+            .{ .start = 6, .end = 9 },
+            .ecdsa_with_SHA384,
+        ),
+    };
+    try testing.expectError(
+        error.CertificateSignatureAlgorithmRejected,
+        verifyChainCertificateSignatureAlgorithms(&chain, &schemes),
+    );
+}
+
+// RFC 8446 §4.4.2.2 — self-signed certificates in the chain are not validated
+// as part of the chain and may use algorithms outside the advertised list.
+test "certificate signature policy skips self-signed chain certificates" {
+    const schemes = [_]SignatureScheme{.ecdsa_secp256r1_sha256};
+    const chain = [_]Certificate.Parsed{
+        policyChainCert(
+            "issuerleaf",
+            .{ .start = 0, .end = 6 },
+            .{ .start = 6, .end = 10 },
+            .ecdsa_with_SHA256,
+        ),
+        policyChainCert(
+            "root",
+            .{ .start = 0, .end = 4 },
+            .{ .start = 0, .end = 4 },
+            .ecdsa_with_SHA384,
+        ),
+    };
+    try verifyChainCertificateSignatureAlgorithms(&chain, &schemes);
 }
 
 // RFC 8446 §4.4.2.2 — a leaf with no KeyUsage/EKU restrictions and a supported
@@ -813,6 +934,56 @@ test "verifySignature: wrong transcript hash" {
     try testing.expectError(
         error.SignatureVerificationFailed,
         verifyServerSignature(buildCvMsg(&cv_buf, fixture_cv_sig), pub_key, &bad_hash),
+    );
+}
+
+// RFC 8446 §4.4.3 — CertificateVerify must use a scheme from the client's
+// signature_algorithms extension, not just any scheme ztls globally supports.
+test "verifySignature: rejects scheme absent from offered list" {
+    var cert_buf: [1024]u8 = undefined;
+    const pub_key = try parse(buildCertMsg(&cert_buf, fixture_cert_der), .{
+        .insecure_no_chain_anchor = true,
+    });
+    var cv_buf: [512]u8 = undefined;
+    const offered = [_]SignatureScheme{.rsa_pss_rsae_sha256};
+    try testing.expectError(
+        error.UnsupportedSignatureScheme,
+        verifyServerSignatureWithSchemes(
+            buildCvMsg(&cv_buf, fixture_cv_sig),
+            pub_key,
+            &test_transcript_hash,
+            &offered,
+        ),
+    );
+}
+
+// RFC 8446 §4.4.3 — RSASSA-PKCS1-v1_5 schemes are certificate-signature-only
+// in TLS 1.3 and must not be accepted for CertificateVerify.
+test "verifySignature: rejects RSA PKCS1 CertificateVerify scheme" {
+    var cert_buf: [1024]u8 = undefined;
+    const pub_key = try parse(buildCertMsg(&cert_buf, fixture_cert_der), .{
+        .insecure_no_chain_anchor = true,
+    });
+    var cv_buf: [512]u8 = undefined;
+    const cv = try encodeCertificateVerify(&cv_buf, .rsa_pkcs1_sha256, fixture_cv_sig);
+    try testing.expectError(
+        error.UnsupportedSignatureScheme,
+        verifyServerSignature(cv, pub_key, &test_transcript_hash),
+    );
+}
+
+// RFC 8446 §4.2.3, §4.4.3 — the CertificateVerify scheme must be compatible
+// with the certificate public key parameters.
+test "verifySignature: rejects certificate key and scheme mismatch" {
+    var cert_buf: [1024]u8 = undefined;
+    const pub_key = try parse(buildCertMsg(&cert_buf, fixture_cert_der), .{
+        .insecure_no_chain_anchor = true,
+    });
+    var cv_buf: [512]u8 = undefined;
+    const cv = try encodeCertificateVerify(&cv_buf, .ecdsa_secp384r1_sha384, fixture_cv_sig);
+    try testing.expectError(
+        error.InvalidEncoding,
+        verifyServerSignature(cv, pub_key, &test_transcript_hash),
     );
 }
 
