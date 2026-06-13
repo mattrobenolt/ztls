@@ -59,10 +59,11 @@ pub const Alert = struct {
     }
 };
 
-pub const ParseError = error{UnexpectedEof};
+pub const ParseError = error{ UnexpectedEof, InvalidAlertLength };
 
 pub fn parse(msg: []const u8) ParseError!Alert {
     if (msg.len < 2) return error.UnexpectedEof;
+    if (msg.len != 2) return error.InvalidAlertLength;
     return .{
         .level = @enumFromInt(msg[0]),
         .description = @enumFromInt(msg[1]),
@@ -119,6 +120,11 @@ test "parse: user_canceled is not fatal" {
 
 test "parse: truncated" {
     try testing.expectError(error.UnexpectedEof, parse(&.{1}));
+}
+
+// RFC 8446 §5.1 — Alert messages must not be coalesced in one record.
+test "parse: rejects coalesced alert bytes" {
+    try testing.expectError(error.InvalidAlertLength, parse(&.{ 1, 0, 1, 0 }));
 }
 
 test "encode" {

@@ -350,6 +350,37 @@ test "encrypt/decrypt: zero-length application data" {
     try testing.expectEqual(@as(usize, 0), dec.content.len);
 }
 
+// RFC 8446 §5.4 — an all-zero TLSInnerPlaintext has no content type and must
+// be rejected after AEAD authentication succeeds.
+test "decrypt: rejects all-zero inner plaintext" {
+    const key: Aes128GcmKey = .init(@splat(0xab));
+    const iv: Iv = .init(@splat(0xcd));
+    var tx: RecordLayer = try .init(.{ .aes_128_gcm_sha256 = key }, iv);
+    defer tx.deinit();
+    var rx: RecordLayer = try .init(.{ .aes_128_gcm_sha256 = key }, iv);
+    defer rx.deinit();
+
+    const inner_len = 3;
+    var buf: [frame.header_len + inner_len + tag_len]u8 = undefined;
+    const header: Header = .init(.application_data, inner_len + tag_len);
+    buf[0..frame.header_len].* = mem.toBytes(header);
+    @memset(buf[frame.header_len..][0..inner_len], 0);
+
+    var tag: Tag = undefined;
+    const npub = construct(&tx.iv, tx.seq);
+    try tx.aead.encrypt(
+        &tx.ctx,
+        buf[frame.header_len..][0..inner_len],
+        &tag,
+        buf[frame.header_len..][0..inner_len],
+        buf[0..frame.header_len],
+        &npub,
+    );
+    buf[frame.header_len + inner_len ..][0..tag_len].* = tag.data;
+
+    try testing.expectError(error.InvalidInnerPlaintext, rx.decrypt(&buf));
+}
+
 // RFC 8446 §5.2 — TLSInnerPlaintext length is the application fragment plus
 // the inner content type, and the encrypted record carries the AEAD tag.
 test "encrypt/decrypt: maximum plaintext fragment length" {
