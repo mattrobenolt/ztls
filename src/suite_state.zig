@@ -1,6 +1,7 @@
 //! Hash-parameterized TLS 1.3 traffic-secret state shared by client and server.
 const std = @import("std");
 const mem = std.mem;
+const crypto = std.crypto;
 
 const aead = @import("aead.zig");
 const CipherSuite = @import("cipher_suite.zig").CipherSuite;
@@ -20,13 +21,32 @@ pub fn HashArm(comptime Hkdf_: type, comptime Hash: type) type {
         server_app_secret: Hkdf.TrafficSecret = undefined,
 
         pub inline fn secureZero(self: *Self) void {
-            std.crypto.secureZero(u8, mem.asBytes(self));
+            crypto.secureZero(u8, mem.asBytes(self));
         }
 
         pub fn forgetHandshakeSecrets(self: *Self) void {
-            self.handshake_secret.secureZero();
-            self.client_finished_key.secureZero();
-            self.server_finished_key.secureZero();
+            // These three values are only needed through Finished verification
+            // and application-secret derivation. Keep them adjacent so they can
+            // be wiped with one volatile zeroing operation instead of three
+            // separate calls.
+            //
+            // The offset checks make the layout dependency explicit: if someone
+            // inserts a field into this range later, the build fails rather than
+            // silently leaving part of the handshake secret state uncleared.
+            comptime {
+                const handshake_end = @offsetOf(Self, "handshake_secret") +
+                    @sizeOf(Hkdf.Prk);
+                const client_finished_end = @offsetOf(Self, "client_finished_key") +
+                    @sizeOf(Hkdf.FinishedKey);
+                if (@offsetOf(Self, "client_finished_key") != handshake_end)
+                    @compileError("handshake secrets must stay contiguous");
+                if (@offsetOf(Self, "server_finished_key") != client_finished_end)
+                    @compileError("handshake secrets must stay contiguous");
+            }
+
+            const start = @offsetOf(Self, "handshake_secret");
+            const end = @offsetOf(Self, "server_finished_key") + @sizeOf(Hkdf.FinishedKey);
+            crypto.secureZero(u8, mem.asBytes(self)[start..end]);
         }
 
         pub fn ratchetClientKey(self: *Self) aead.Error!RecordLayer {
