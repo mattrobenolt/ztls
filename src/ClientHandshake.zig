@@ -1021,6 +1021,16 @@ fn expectPlaintextAlert(record: []const u8, description: alert.Description) !voi
     try testing.expectEqual(description, a.description);
 }
 
+fn incrementU24(field: *[3]u8, n: u24) void {
+    const value: u24 = (@as(u24, field[0]) << 16) |
+        (@as(u24, field[1]) << 8) |
+        field[2];
+    const updated = value + n;
+    field[0] = @intCast(updated >> 16);
+    field[1] = @intCast((updated >> 8) & 0xff);
+    field[2] = @intCast(updated & 0xff);
+}
+
 // RFC 8446 §4.3-§4.4 — the full encrypted flight driven by the live transcript.
 // One call exercises EncryptedExtensions parsing, RSA-PSS CertificateVerify
 // over the through-Certificate transcript, and the server Finished MAC over the
@@ -1070,6 +1080,61 @@ test "processFlight: rejects unanchored Certificate by default" {
         hs.processFlight(rfc8448Fixture("server_flight.b64", &flight_buf), hs.policy),
     );
     try testing.expectEqual(.wait_cert, hs.state);
+}
+
+// RFC 8446 §4.4.2 — server Certificate request_context is always empty.
+test "processFlight: rejects non-empty server Certificate request context" {
+    var hs = try flightReadyClient();
+    defer hs.deinit();
+
+    var flight_buf: [1024]u8 = undefined;
+    var hr: HandshakeReader = .init(rfc8448Fixture("server_flight.b64", &flight_buf));
+    const ee = (try hr.next()).?;
+    try hs.processFlight(ee.raw, hs.policy);
+    const cert = (try hr.next()).?;
+
+    var bad_cert: [2048]u8 = undefined;
+    @memcpy(bad_cert[0..cert.raw.len], cert.raw);
+    @memmove(bad_cert[6 .. cert.raw.len + 1], bad_cert[5..cert.raw.len]);
+    bad_cert[4] = 1;
+    bad_cert[5] = 0xaa;
+    incrementU24(bad_cert[1..4], 1);
+
+    try testing.expectError(
+        error.UnexpectedCertificateRequestContext,
+        hs.processFlight(bad_cert[0 .. cert.raw.len + 1], hs.policy),
+    );
+    try testing.expectEqual(.wait_cert, hs.state);
+
+    var peer = try hs.tx.clone();
+    defer peer.deinit();
+    var out: [64]u8 = undefined;
+    const rec = try hs.sendAlert(.illegal_parameter, &out);
+    try expectEncryptedAlert(&peer, rec, .illegal_parameter);
+}
+
+// RFC 8446 §4.4.2.4 — an empty server Certificate maps to decode_error.
+test "processFlight: rejects empty server Certificate list" {
+    var hs = try flightReadyClient();
+    defer hs.deinit();
+
+    var flight_buf: [1024]u8 = undefined;
+    var hr: HandshakeReader = .init(rfc8448Fixture("server_flight.b64", &flight_buf));
+    const ee = (try hr.next()).?;
+    try hs.processFlight(ee.raw, hs.policy);
+
+    const empty_cert = [_]u8{
+        @intFromEnum(HandshakeType.certificate), 0x00, 0x00, 0x04,
+        0x00,                                    0x00, 0x00, 0x00,
+    };
+    try testing.expectError(error.EmptyCertificateList, hs.processFlight(&empty_cert, hs.policy));
+    try testing.expectEqual(.wait_cert, hs.state);
+
+    var peer = try hs.tx.clone();
+    defer peer.deinit();
+    var out: [64]u8 = undefined;
+    const rec = try hs.sendAlert(.decode_error, &out);
+    try expectEncryptedAlert(&peer, rec, .decode_error);
 }
 
 test "processFlight: RFC 8448 §3 full server flight to connected" {

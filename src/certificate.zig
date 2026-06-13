@@ -20,6 +20,7 @@ pub const PolicyError = certificate_policy.PolicyError;
 pub const ParseError = error{
     UnexpectedEof,
     InvalidHandshakeType,
+    UnexpectedCertificateRequestContext,
     EmptyCertificateList,
     CertificateIssuerNotFound,
     MissingTrustAnchor,
@@ -73,8 +74,8 @@ pub fn parse(msg: []const u8, policy: Policy) ParseError![]const u8 {
     r.assumeSkip(3); // body length
 
     const ctx_len = r.assumeRead(u8);
-    if (r.remaining().len < ctx_len + 3) return error.UnexpectedEof;
-    r.assumeSkip(ctx_len);
+    if (ctx_len != 0) return error.UnexpectedCertificateRequestContext;
+    if (r.remaining().len < 3) return error.UnexpectedEof;
 
     const list_len = r.assumeRead(u24);
     if (list_len == 0) return error.EmptyCertificateList;
@@ -332,6 +333,16 @@ fn buildCvMsg(buf: []u8, sig: []const u8) []const u8 {
     return encodeCertificateVerify(buf, .ecdsa_secp256r1_sha256, sig) catch unreachable;
 }
 
+fn incrementU24(field: *[3]u8, n: u24) void {
+    const value: u24 = (@as(u24, field[0]) << 16) |
+        (@as(u24, field[1]) << 8) |
+        field[2];
+    const updated = value + n;
+    field[0] = @intCast(updated >> 16);
+    field[1] = @intCast((updated >> 8) & 0xff);
+    field[2] = @intCast(updated & 0xff);
+}
+
 const test_transcript_hash = blk: {
     @setEvalBranchQuota(100_000);
     var out: [32]u8 = undefined;
@@ -352,6 +363,29 @@ test "parse: wrong handshake type" {
     _ = buildCertMsg(&buf, fixture_cert_der);
     buf[0] = 0x01;
     try testing.expectError(error.InvalidHandshakeType, parse(&buf, .{}));
+}
+
+// RFC 8446 §4.4.2 — server Certificate request_context is always empty.
+test "parse: rejects non-empty server certificate request context" {
+    var buf: [2048]u8 = undefined;
+    const encoded = buildCertMsg(&buf, fixture_cert_der);
+    @memmove(buf[6 .. encoded.len + 1], buf[5..encoded.len]);
+    buf[4] = 1;
+    buf[5] = 0xaa;
+    incrementU24(buf[1..4], 1);
+    try testing.expectError(
+        error.UnexpectedCertificateRequestContext,
+        parse(buf[0 .. encoded.len + 1], .{ .insecure_no_chain_anchor = true }),
+    );
+}
+
+// RFC 8446 §4.4.2.4 — server Certificate certificate_list must be non-empty.
+test "parse: rejects empty certificate list" {
+    const msg = [_]u8{
+        @intFromEnum(handshake.Type.certificate), 0x00, 0x00, 0x04,
+        0x00,                                     0x00, 0x00, 0x00,
+    };
+    try testing.expectError(error.EmptyCertificateList, parse(&msg, .{}));
 }
 
 test "encode: round trips certificate chain" {
