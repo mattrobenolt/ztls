@@ -48,9 +48,9 @@ tlsfuzzer *args: build
 ci:
     just tlsfuzzer -v
 
-[doc("Run TLS-Anvil server tests")]
-anvil-server: build
-    @echo "TODO: TLS-Anvil server runner not yet wired"
+[doc("Run TLS-Anvil server tests against the ztls server harness")]
+anvil-server *args: build
+    uv run python scripts/anvil_server.py {{ args }}
 
 [doc("Run TLS-Anvil client tests")]
 anvil-client: build
