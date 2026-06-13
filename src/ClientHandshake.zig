@@ -515,6 +515,7 @@ fn processHandshakeRecord(
         // ServerHello is the only handshake message that arrives unencrypted.
         .handshake => {
             if (self.state != .wait_sh) return error.UnexpectedRecord;
+            if (hdr.length() == 0) return error.UnexpectedRecord;
             try self.processServerHello(record[frame.header_len..][0..hdr.length()]);
             return null;
         },
@@ -525,6 +526,7 @@ fn processHandshakeRecord(
             const dec = try self.rx.decrypt(record);
             switch (dec.content_type) {
                 .handshake => {
+                    if (dec.content.len == 0) return error.UnexpectedMessage;
                     try self.processFlight(dec.content, self.policy);
                     return if (self.state == .send_finished) try self.clientFinished(out) else null;
                 },
@@ -626,6 +628,7 @@ fn processFlightBytes(
     payload: []const u8,
     policy: certificate.Policy,
 ) FlightError!void {
+    if (payload.len == 0) return error.UnexpectedMessage;
     var hr: HandshakeReader = .init(payload);
     while (true) {
         const msg = hr.next() catch |err| switch (err) {
@@ -779,6 +782,7 @@ fn receiveConnected(self: *ClientHandshake, record: []u8, out: []u8) ReceiveErro
             return .{ .application_data = dec.content };
         },
         .handshake => {
+            if (dec.content.len == 0) return error.UnexpectedMessage;
             var respond = false;
             var hr: HandshakeReader = .init(dec.content);
             while (try hr.next()) |msg| {
@@ -1901,6 +1905,33 @@ test "handleRecord: unacknowledged write blocks further calls" {
     try testing.expectError(error.PendingWrite, hs.sendApplicationData("two", &out));
     hs.completeWrite();
     _ = try hs.sendApplicationData("three", &out); // unblocked
+}
+
+// RFC 8446 §5.1 — handshake records cannot carry zero-length fragments.
+test "handleRecord: zero-length plaintext handshake is rejected" {
+    var hs: ClientHandshake = .init(rfc8448_client_keypair);
+    defer hs.deinit();
+    hs.injectClientHello(&rfc8448_client_hello);
+
+    var rec = [_]u8{ 0x16, 0x03, 0x03, 0x00, 0x00 };
+    var out: [64]u8 = undefined;
+    try testing.expectError(error.UnexpectedRecord, hs.handleRecord(&rec, &out));
+}
+
+// RFC 8446 §5.1 — an encrypted handshake record still must contain a handshake message.
+test "handleRecord: zero-length encrypted handshake is rejected" {
+    var hs = try flightReadyClient();
+    defer hs.deinit();
+
+    var server_tx = try hs.rx.clone();
+    defer server_tx.deinit();
+    var rec_buf: [64]u8 = undefined;
+    const rec = try server_tx.encrypt(.handshake, "", &rec_buf);
+
+    var wire: [64]u8 = undefined;
+    @memcpy(wire[0..rec.len], rec);
+    var out: [64]u8 = undefined;
+    try testing.expectError(error.UnexpectedMessage, hs.handleRecord(wire[0..rec.len], &out));
 }
 
 // rx isn't installed until ServerHello; an encrypted record arriving in wait_sh

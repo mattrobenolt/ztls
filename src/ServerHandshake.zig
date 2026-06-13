@@ -524,7 +524,10 @@ fn handleWaitClientHello(
             const a = try alert.parse(record[frame.header_len..][0..hdr.length()]);
             break :blk if (a.isCloseNotify()) .closed else error.PeerAlert;
         },
-        .handshake => .{ .write = try self.acceptClientHello(record, random, out) },
+        .handshake => blk: {
+            if (hdr.length() == 0) return error.UnexpectedRecord;
+            break :blk .{ .write = try self.acceptClientHello(record, random, out) };
+        },
         else => error.UnexpectedRecord,
     };
 }
@@ -571,6 +574,7 @@ fn handleConnected(self: *ServerHandshake, record: []u8, out: []u8) ReceiveError
             return .{ .application_data = dec.content };
         },
         .handshake => {
+            if (dec.content.len == 0) return error.UnexpectedMessage;
             var respond = false;
             var hr: HandshakeReader = .init(dec.content);
             while (try hr.next()) |msg| {
@@ -752,6 +756,14 @@ test "handleRecord: ClientHello returns ServerHello write and enforces pending w
         hs.handleRecord(record[0 .. frame.header_len + ch.len], .zero, &out),
     );
     hs.completeWrite();
+}
+
+// RFC 8446 §5.1 — handshake records cannot carry zero-length fragments.
+test "handleRecord: zero-length plaintext handshake is rejected" {
+    var hs: ServerHandshake = .init(.generate());
+    var rec = [_]u8{ 0x16, 0x03, 0x03, 0x00, 0x00 };
+    var out: [64]u8 = undefined;
+    try testing.expectError(error.UnexpectedRecord, hs.handleRecord(&rec, .zero, &out));
 }
 
 // RFC 8446 §5.1 — application_data is invalid before the handshake completes.
@@ -1293,6 +1305,23 @@ test "handleRecord: invalid client KeyUpdate request is rejected" {
     var out: [64]u8 = undefined;
     try testing.expectError(
         error.IllegalParameter,
+        server.handleRecord(rx_buf[0..wire_rec.len], .zero, &out),
+    );
+}
+
+// RFC 8446 §5.1 — an encrypted handshake record still must contain a handshake message.
+test "handleRecord: zero-length encrypted handshake is rejected" {
+    var server = try connectedTestServer();
+    var client_tx = try server.rx.clone();
+    defer client_tx.deinit();
+
+    var wire_buf: [64]u8 = undefined;
+    const wire_rec = try client_tx.encrypt(.handshake, "", &wire_buf);
+    var rx_buf: [64]u8 = undefined;
+    @memcpy(rx_buf[0..wire_rec.len], wire_rec);
+    var out: [64]u8 = undefined;
+    try testing.expectError(
+        error.UnexpectedMessage,
         server.handleRecord(rx_buf[0..wire_rec.len], .zero, &out),
     );
 }
