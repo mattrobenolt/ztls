@@ -14,11 +14,13 @@ tofu apply
 
 ## Deploy and run
 
-Rsync the repo up:
+Rsync the repo up. Keep `.git` so benchmark metadata can record the exact
+revision, and avoid preserving the local UID/GID into `/root/ztls`:
 
 ```bash
-rsync -avz --exclude .git --exclude zig-out --exclude .zig-cache \
-  --exclude .terraform \
+rsync -az --delete --no-owner --no-group \
+  --exclude zig-out --exclude .zig-cache --exclude .terraform \
+  --exclude conformance/.venv --exclude conformance/.zig-cache --exclude conformance/zig-out \
   -e "ssh -i infra/bench/bench.pem -o StrictHostKeyChecking=no" \
   . root@$(tofu output -raw instance_ip):/root/ztls/
 ```
@@ -30,7 +32,9 @@ ssh -i infra/bench/bench.pem -o StrictHostKeyChecking=no \
   root@$(tofu output -raw instance_ip)
 
 cd ztls
-just bench-capture-default
+chown -R root:root /root/ztls
+nix --extra-experimental-features "nix-command flakes" develop --command \
+  bash -lc 'git status --short && git rev-parse HEAD && just bench-capture-default'
 ```
 
 `just bench-capture` writes one timestamped run directory:
@@ -96,7 +100,8 @@ For lower-noise runs, switch to `c7i.2xlarge` or larger in `variables.tf` —
 - Filter syntax: `--filter 'BenchmarkHandshake/*,BenchmarkAppClientToServer/*'`
 - `metadata.txt` records timestamp, git revision/dirty state, Zig version,
   optimization mode, OpenSSL/rustls/benchstat provenance, kernel, and available
-  CPU information.
+  CPU information. If `.git` is not copied to the host, the capture is not
+  acceptable #10 evidence.
 - `configuration.nix` is applied on first boot only. If you change it, recreate
   the instance with `tofu destroy && tofu apply`.
 
