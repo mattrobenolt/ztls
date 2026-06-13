@@ -7,6 +7,8 @@
 const std = @import("std");
 const testing = std.testing;
 
+const build_options = @import("build_options");
+
 pub const Backend = enum {
     openssl,
     aws_lc,
@@ -27,7 +29,14 @@ pub const Backend = enum {
     }
 };
 
-pub const active: Backend = .openssl;
+pub const active: Backend = parse(build_options.crypto_backend);
+
+fn parse(comptime name_: []const u8) Backend {
+    return inline for (@typeInfo(Backend).@"enum".fields) |field| {
+        const backend: Backend = @enumFromInt(field.value);
+        if (std.mem.eql(u8, name_, backend.name())) break backend;
+    } else @compileError("unsupported crypto backend: " ++ name_);
+}
 
 // docs/research/PROVIDER_INTERFACE.md §1 — current production backend is
 // OpenSSL/libcrypto; AWS-LC and BoringSSL remain named libcrypto-family targets,

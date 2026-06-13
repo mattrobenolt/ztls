@@ -255,8 +255,9 @@ each passing the same correctness and interop gates.
 - `src/certificate.zig` performs CertificateVerify verification with OpenSSL EVP
   and deprecated EC/RSA construction helpers; certificate parsing/path policy is
   still ztls/std-derived code.
-- `src/crypto/backend.zig` names `openssl`, `aws_lc`, and `boringssl`, but
-  `active` is hard-coded to `.openssl` and no primitive dispatch imports it.
+- `-Dcrypto-backend=openssl` selects the current backend at build time, and
+  named-but-unimplemented backends fail clearly instead of silently falling back.
+  `src/crypto/backend.zig` still does not dispatch primitive implementations.
 - HKDF/HMAC/SHA transcript hashing remain on `std.crypto`, matching the roadmap
   policy unless a concrete provider/FIPS requirement appears.
 
@@ -264,14 +265,14 @@ each passing the same correctness and interop gates.
 
 **Gaps:**
 
-- **The provider abstraction is mostly aspirational scaffolding.** There is no
-  `-Dcrypto-backend` build option, no selected backend module, and no primitive
-  dispatch through `src/crypto/backend.zig`; OpenSSL calls are compiled directly
-  through `src/crypto/c_openssl.zig` from `src/aead.zig`, `src/x25519.zig`,
-  `src/signature.zig`, and
-  `src/certificate.zig`. This contradicts the first-class aws-lc design target
-  in practice: aws-lc is named, but not selectable or protected from OpenSSL-only
-  assumptions. *(#22)*
+- **The provider abstraction is still mostly aspirational scaffolding.** The
+  build has a `-Dcrypto-backend` selection point, but only `openssl` is
+  implemented and no selected backend module dispatches primitives through
+  `src/crypto/backend.zig`; OpenSSL calls are compiled directly through
+  `src/crypto/c_openssl.zig` from `src/aead.zig`, `src/x25519.zig`,
+  `src/signature.zig`, and `src/certificate.zig`. This contradicts the
+  first-class aws-lc design target in practice: aws-lc is named and rejected
+  clearly, but not implemented. *(#22)*
 - **aws-lc has no implementation or validation lane.** A second backend requires
   an aws-lc build input/CI lane, one implementation file behind the facade, and
   the same unit, Wycheproof, interop, conformance, and benchmark gates as

@@ -23,12 +23,26 @@ pub fn build(b: *Build) void {
         .default_target = nativeTarget(),
     });
     const optimize = b.standardOptimizeOption(.{});
+    const crypto_backend = b.option(
+        []const u8,
+        "crypto-backend",
+        "libcrypto-family backend to compile: openssl",
+    ) orelse "openssl";
+    if (!std.mem.eql(u8, crypto_backend, "openssl")) {
+        std.debug.panic(
+            "unsupported -Dcrypto-backend={s}; only openssl is implemented",
+            .{crypto_backend},
+        );
+    }
+    const build_options = b.addOptions();
+    build_options.addOption([]const u8, "crypto_backend", crypto_backend);
 
     const mod = b.addModule("ztls", .{
         .root_source_file = b.path("src/root.zig"),
         .target = target,
         .optimize = optimize,
     });
+    mod.addOptions("build_options", build_options);
     mod.link_libc = true;
     mod.linkSystemLibrary("crypto", .{});
 
@@ -37,6 +51,7 @@ pub fn build(b: *Build) void {
         .target = target,
         .optimize = optimize,
     });
+    test_mod.addOptions("build_options", build_options);
     test_mod.link_libc = true;
     test_mod.linkSystemLibrary("crypto", .{});
     const txtar_mod = if (b.lazyDependency("txtar", .{
