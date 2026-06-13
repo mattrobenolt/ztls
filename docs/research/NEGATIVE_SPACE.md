@@ -67,7 +67,7 @@ The authoritative readiness state remains `PRODUCTION_READINESS.md`.
 | Server Finished MAC is invalid | `error.InvalidVerifyData`; caller can emit `decrypt_error` | `ClientHandshake.zig`: `processFlight: rejects wrong server Finished verify_data`; `finished.zig`: `verify: wrong verify_data` | covered |
 | Handshake message spans encrypted records without caller buffer | `error.UnexpectedEof` | `ClientHandshake.zig`: `processFlight: handshake message spanning records needs buffer` | covered |
 | Handshake message spans encrypted records with caller buffer | Reassembled and processed | `ClientHandshake.zig`: `processFlight: reassembles handshake message split across records` | covered |
-| Certificate malformed DER, bad chain, hostname mismatch, key-usage/EKU rejection | Certificate parse/policy errors | `certificate.zig` parser/policy tests; Wycheproof boundary tests | partial — not every path is driven through `ClientHandshake` |
+| Certificate malformed DER, bad chain, hostname mismatch, key-usage/EKU/name-constraints rejection | Certificate parse/policy errors | `certificate.zig` parser/policy/name-constraints tests; Wycheproof boundary tests | partial — not every path is driven through `ClientHandshake` |
 | Certificate arrives with no trust bundle and no explicit insecure opt-in | `error.MissingTrustAnchor` | `certificate.zig`: `parse: rejects missing trust anchor by default`; `ClientHandshake.zig`: `processFlight: rejects unanchored Certificate by default` | covered |
 | Server Certificate request_context is non-empty | Not explicitly rejected in server-certificate parsing | none | gap |
 | Leaf public key exceeds retained buffer | `error.CertificateKeyTooLarge` | path exists | partial — no dedicated unit test |
@@ -143,7 +143,8 @@ client runner.
 These are deliberately not closed by writing the inventory:
 
 - RFC MUST matrix exists, but its `GAP`/`PARTIAL` rows remain #25 follow-up.
-- Name constraints are parsed but not enforced (#8).
+- Full bettertls harness execution remains outside the local name-constraints
+  fixture set (#9).
 - BoGo/TLS-Anvil execution remains #9.
 - HRR, PSK/resumption, 0-RTT, client certificates, and PQ/non-X25519 groups are
   out of the current supported surface and tracked by their feature issues.

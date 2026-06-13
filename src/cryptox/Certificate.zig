@@ -205,6 +205,7 @@ pub const Parsed = struct {
     key_usage_slice: Slice,
     ext_key_usage_slice: Slice,
     name_constraints_slice: Slice,
+    name_constraints_critical: bool,
     validity: Validity,
     version: Version,
 
@@ -264,6 +265,246 @@ pub const Parsed = struct {
 
     pub fn nameConstraints(p: Parsed) []const u8 {
         return p.slice(p.name_constraints_slice);
+    }
+
+    pub const NameConstraintError = der.Element.ParseError || error{
+        CertificateFieldHasWrongDataType,
+        CertificateNameConstraintViolation,
+        CertificateNameConstraintUnsupported,
+    };
+
+    const NameConstraintName = struct {
+        tag: GeneralNameTag,
+        value: []const u8,
+    };
+
+    /// RFC 5280 §4.2.1.10 — a CA's Name Constraints extension restricts all
+    /// supported GeneralName values in subordinate certificates.
+    pub fn verifyNameConstraints(ca: Parsed, subordinate: Parsed) NameConstraintError!void {
+        if (ca.nameConstraints().len == 0) return;
+        if (ca.name_constraints_critical) try ca.verifyNameConstraintSupport();
+
+        const subject_alt_name = subordinate.subjectAltName();
+        if (subject_alt_name.len == 0) {
+            const common_name = subordinate.commonName();
+            if (common_name.len != 0) {
+                try ca.verifyNameConstraintName(.{ .tag = .dNSName, .value = common_name });
+            }
+            return;
+        }
+
+        const general_names = try der.Element.parse(subject_alt_name, 0);
+        if (general_names.identifier.class != .universal or general_names.identifier.tag != .sequence)
+            return error.CertificateFieldHasWrongDataType;
+
+        var name_i = general_names.slice.start;
+        while (name_i < general_names.slice.end) {
+            const general_name = try der.Element.parse(subject_alt_name, name_i);
+            name_i = general_name.slice.end;
+            const name = try supportedGeneralName(subject_alt_name, general_name) orelse continue;
+            try ca.verifyNameConstraintName(name);
+        }
+    }
+
+    fn verifyNameConstraintSupport(ca: Parsed) NameConstraintError!void {
+        const extension = ca.nameConstraints();
+        const sequence = try der.Element.parse(extension, 0);
+        if (sequence.identifier.class != .universal or sequence.identifier.tag != .sequence)
+            return error.CertificateFieldHasWrongDataType;
+
+        var field_i = sequence.slice.start;
+        while (field_i < sequence.slice.end) {
+            const field = try der.Element.parse(extension, field_i);
+            field_i = field.slice.end;
+            if (field.identifier.class != .context_specific) return error.CertificateFieldHasWrongDataType;
+            switch (@intFromEnum(field.identifier.tag)) {
+                0, 1 => {},
+                else => return error.CertificateFieldHasWrongDataType,
+            }
+
+            const subtrees = try nameConstraintSubtrees(extension, field);
+            var subtree_i = subtrees.start;
+            while (subtree_i < subtrees.end) {
+                const subtree = try der.Element.parse(extension, subtree_i);
+                subtree_i = subtree.slice.end;
+                _ = try parseGeneralSubtree(extension, subtree);
+            }
+        }
+    }
+
+    const ConstraintState = struct {
+        permitted_seen: bool = false,
+        permitted_match: bool = false,
+    };
+
+    fn verifyNameConstraintName(ca: Parsed, name: NameConstraintName) NameConstraintError!void {
+        const extension = ca.nameConstraints();
+        const sequence = try der.Element.parse(extension, 0);
+        if (sequence.identifier.class != .universal or sequence.identifier.tag != .sequence)
+            return error.CertificateFieldHasWrongDataType;
+
+        var state: ConstraintState = .{};
+        var field_i = sequence.slice.start;
+        while (field_i < sequence.slice.end) {
+            const field = try der.Element.parse(extension, field_i);
+            field_i = field.slice.end;
+            if (field.identifier.class != .context_specific) return error.CertificateFieldHasWrongDataType;
+
+            switch (@intFromEnum(field.identifier.tag)) {
+                0 => try ca.checkNameConstraintSubtrees(extension, field, name, .permitted, &state),
+                1 => try ca.checkNameConstraintSubtrees(extension, field, name, .excluded, &state),
+                else => return error.CertificateFieldHasWrongDataType,
+            }
+        }
+
+        if (state.permitted_seen and !state.permitted_match)
+            return error.CertificateNameConstraintViolation;
+    }
+
+    const ConstraintKind = enum { permitted, excluded };
+
+    fn checkNameConstraintSubtrees(
+        ca: Parsed,
+        extension: []const u8,
+        field: der.Element,
+        name: NameConstraintName,
+        kind: ConstraintKind,
+        state: *ConstraintState,
+    ) NameConstraintError!void {
+        const subtrees = try nameConstraintSubtrees(extension, field);
+        var subtree_i = subtrees.start;
+        while (subtree_i < subtrees.end) {
+            const subtree = try der.Element.parse(extension, subtree_i);
+            subtree_i = subtree.slice.end;
+            const constraint = parseGeneralSubtree(extension, subtree) catch |err| switch (err) {
+                error.CertificateNameConstraintUnsupported => {
+                    if (ca.name_constraints_critical) return err;
+                    continue;
+                },
+                else => |e| return e,
+            };
+            if (constraint.tag != name.tag) continue;
+
+            const matches = try nameMatchesConstraint(name, constraint);
+            switch (kind) {
+                .permitted => {
+                    state.permitted_seen = true;
+                    state.permitted_match = state.permitted_match or matches;
+                },
+                .excluded => if (matches) return error.CertificateNameConstraintViolation,
+            }
+        }
+    }
+
+    fn nameConstraintSubtrees(_: []const u8, field: der.Element) NameConstraintError!der.Element.Slice {
+        if (field.slice.start == field.slice.end) return error.CertificateFieldHasInvalidLength;
+        return field.slice;
+    }
+
+    fn parseGeneralSubtree(extension: []const u8, subtree: der.Element) NameConstraintError!NameConstraintName {
+        if (subtree.identifier.class != .universal or subtree.identifier.tag != .sequence)
+            return error.CertificateFieldHasWrongDataType;
+        const base = try der.Element.parse(extension, subtree.slice.start);
+        var option_i = base.slice.end;
+        while (option_i < subtree.slice.end) {
+            const option = try der.Element.parse(extension, option_i);
+            option_i = option.slice.end;
+            if (option.identifier.class != .context_specific)
+                return error.CertificateFieldHasWrongDataType;
+            switch (@intFromEnum(option.identifier.tag)) {
+                0 => if (!baseDistanceIsZero(extension[option.slice.start..option.slice.end]))
+                    return error.CertificateNameConstraintUnsupported,
+                1 => return error.CertificateNameConstraintUnsupported,
+                else => return error.CertificateFieldHasWrongDataType,
+            }
+        }
+        return (try supportedGeneralName(extension, base)) orelse error.CertificateNameConstraintUnsupported;
+    }
+
+    fn supportedGeneralName(bytes: []const u8, elem: der.Element) NameConstraintError!?NameConstraintName {
+        if (elem.identifier.class != .context_specific) return error.CertificateFieldHasWrongDataType;
+        const tag: GeneralNameTag = @enumFromInt(@intFromEnum(elem.identifier.tag));
+        return switch (tag) {
+            .rfc822Name,
+            .dNSName,
+            .uniformResourceIdentifier,
+            .iPAddress,
+            => .{ .tag = tag, .value = bytes[elem.slice.start..elem.slice.end] },
+            else => null,
+        };
+    }
+
+    fn nameMatchesConstraint(name: NameConstraintName, constraint: NameConstraintName) NameConstraintError!bool {
+        return switch (name.tag) {
+            .dNSName => dnsNameInSubtree(name.value, constraint.value),
+            .rfc822Name => emailNameInSubtree(name.value, constraint.value),
+            .uniformResourceIdentifier => uriNameInSubtree(name.value, constraint.value),
+            .iPAddress => ipAddressInSubtree(name.value, constraint.value),
+            else => false,
+        };
+    }
+
+    fn dnsNameInSubtree(name_raw: []const u8, subtree_raw: []const u8) bool {
+        const name = trimTrailingDot(name_raw);
+        const subtree = trimTrailingDot(subtree_raw);
+        if (name.len == 0 or subtree.len == 0) return false;
+
+        if (subtree[0] == '.') return asciiEndsWithIgnoreCase(name, subtree);
+        if (std.ascii.eqlIgnoreCase(name, subtree)) return true;
+        return name.len > subtree.len and
+            name[name.len - subtree.len - 1] == '.' and
+            asciiEndsWithIgnoreCase(name, subtree);
+    }
+
+    fn emailNameInSubtree(name: []const u8, subtree: []const u8) bool {
+        if (mem.indexOfScalar(u8, subtree, '@')) |subtree_at| {
+            const name_at = mem.lastIndexOfScalar(u8, name, '@') orelse return false;
+            return mem.eql(u8, name[0..name_at], subtree[0..subtree_at]) and
+                std.ascii.eqlIgnoreCase(name[name_at + 1 ..], subtree[subtree_at + 1 ..]);
+        }
+        const at = mem.lastIndexOfScalar(u8, name, '@') orelse return false;
+        return dnsNameInSubtree(name[at + 1 ..], subtree);
+    }
+
+    fn uriNameInSubtree(uri: []const u8, subtree: []const u8) bool {
+        const scheme = mem.indexOf(u8, uri, "://") orelse return false;
+        var authority = uri[scheme + 3 ..];
+        if (mem.indexOfAny(u8, authority, "/?#")) |end| authority = authority[0..end];
+        if (mem.indexOfScalar(u8, authority, '@')) |at| authority = authority[at + 1 ..];
+        if (mem.indexOfScalar(u8, authority, ':')) |port| authority = authority[0..port];
+        return dnsNameInSubtree(authority, subtree);
+    }
+
+    fn baseDistanceIsZero(distance: []const u8) bool {
+        if (distance.len == 0) return false;
+        for (distance) |byte| {
+            if (byte != 0) return false;
+        }
+        return true;
+    }
+
+    fn ipAddressInSubtree(address: []const u8, subtree: []const u8) NameConstraintError!bool {
+        const mask_start: usize = switch (subtree.len) {
+            8 => 4,
+            32 => 16,
+            else => return error.CertificateFieldHasInvalidLength,
+        };
+        if (address.len != mask_start) return false;
+
+        for (address, subtree[0..mask_start], subtree[mask_start..]) |addr, base, mask| {
+            if ((addr & mask) != (base & mask)) return false;
+        }
+        return true;
+    }
+
+    fn trimTrailingDot(value: []const u8) []const u8 {
+        if (value.len > 1 and value[value.len - 1] == '.') return value[0 .. value.len - 1];
+        return value;
+    }
+
+    fn asciiEndsWithIgnoreCase(value: []const u8, suffix: []const u8) bool {
+        if (value.len < suffix.len) return false;
+        return std.ascii.eqlIgnoreCase(value[value.len - suffix.len ..], suffix);
     }
 
     /// RFC 5280 §4.2.1.3 — KeyUsage is a BIT STRING. Missing extension means
@@ -507,6 +748,7 @@ test "Parsed.allowsKeyUsage reads digitalSignature" {
         .key_usage_slice = .{ .start = 0, .end = 4 },
         .ext_key_usage_slice = .empty,
         .name_constraints_slice = .empty,
+        .name_constraints_critical = false,
         .validity = .{ .not_before = 0, .not_after = 0 },
         .version = .v3,
     };
@@ -532,6 +774,7 @@ test "Parsed.allowsKeyUsage rejects malformed empty bit payload" {
         .key_usage_slice = .{ .start = 0, .end = 3 },
         .ext_key_usage_slice = .empty,
         .name_constraints_slice = .empty,
+        .name_constraints_critical = false,
         .validity = .{ .not_before = 0, .not_after = 0 },
         .version = .v3,
     };
@@ -556,6 +799,7 @@ test "Parsed.allowsExtKeyUsage finds serverAuth" {
         .key_usage_slice = .empty,
         .ext_key_usage_slice = .{ .start = 0, .end = 12 },
         .name_constraints_slice = .empty,
+        .name_constraints_critical = false,
         .validity = .{ .not_before = 0, .not_after = 0 },
         .version = .v3,
     };
@@ -582,6 +826,7 @@ test "Parsed.nameConstraints extracts extension value" {
         .key_usage_slice = .empty,
         .ext_key_usage_slice = .empty,
         .name_constraints_slice = .{ .start = 0, .end = nc_value.len },
+        .name_constraints_critical = false,
         .validity = .{ .not_before = 0, .not_after = 0 },
         .version = .v3,
     };
@@ -591,25 +836,337 @@ test "Parsed.nameConstraints extracts extension value" {
 
 // RFC 5280 §4.2.1.10 — absent Name Constraints returns empty slice.
 test "Parsed.nameConstraints absent returns empty" {
-    const parsed: Parsed = .{
-        .certificate = .{ .buffer = "", .index = 0 },
+    const parsed = parsedForNameConstraintsTest("", .empty, .empty, .empty, false);
+    try std.testing.expectEqual(@as(usize, 0), parsed.nameConstraints().len);
+}
+
+fn parsedForNameConstraintsTest(
+    buffer: []const u8,
+    name_constraints: Parsed.Slice,
+    subject_alt_name: Parsed.Slice,
+    common_name: Parsed.Slice,
+    critical: bool,
+) Parsed {
+    return .{
+        .certificate = .{ .buffer = buffer, .index = 0 },
         .issuer_slice = .empty,
         .subject_slice = .empty,
-        .common_name_slice = .empty,
+        .common_name_slice = common_name,
         .signature_slice = .empty,
         .signature_algorithm = .ecdsa_with_SHA256,
         .pub_key_algo = .{ .curveEd25519 = {} },
         .pub_key_slice = .empty,
         .message_slice = .empty,
-        .subject_alt_name_slice = .empty,
+        .subject_alt_name_slice = subject_alt_name,
         .key_usage_slice = .empty,
         .ext_key_usage_slice = .empty,
-        .name_constraints_slice = .empty,
+        .name_constraints_slice = name_constraints,
+        .name_constraints_critical = critical,
         .validity = .{ .not_before = 0, .not_after = 0 },
         .version = .v3,
     };
+}
 
-    try std.testing.expectEqual(@as(usize, 0), parsed.nameConstraints().len);
+// RFC 5280 §4.2.1.10 — permitted dNSName subtrees constrain subordinate DNS SANs.
+test "Parsed.verifyNameConstraints: DNS permitted subtree" {
+    const constraints = "\x30\x11\xA0\x0F\x30\x0D\x82\x0Bexample.com";
+    const san = "\x30\x10\x82\x0Eok.example.com";
+    const ca = parsedForNameConstraintsTest(
+        constraints,
+        .{ .start = 0, .end = constraints.len },
+        .empty,
+        .empty,
+        true,
+    );
+    const leaf = parsedForNameConstraintsTest(
+        san,
+        .empty,
+        .{ .start = 0, .end = san.len },
+        .empty,
+        false,
+    );
+    try ca.verifyNameConstraints(leaf);
+}
+
+// RFC 5280 §4.2.1.10 — a subordinate outside a permitted dNSName subtree fails.
+test "Parsed.verifyNameConstraints: DNS permitted subtree mismatch" {
+    const constraints = "\x30\x11\xA0\x0F\x30\x0D\x82\x0Bexample.com";
+    const san = "\x30\x0E\x82\x0Coutside.test";
+    const ca = parsedForNameConstraintsTest(
+        constraints,
+        .{ .start = 0, .end = constraints.len },
+        .empty,
+        .empty,
+        true,
+    );
+    const leaf = parsedForNameConstraintsTest(
+        san,
+        .empty,
+        .{ .start = 0, .end = san.len },
+        .empty,
+        false,
+    );
+    try std.testing.expectError(error.CertificateNameConstraintViolation, ca.verifyNameConstraints(leaf));
+}
+
+// RFC 5280 §4.2.1.10 — excluded dNSName subtrees override otherwise valid names.
+test "Parsed.verifyNameConstraints: DNS excluded subtree" {
+    const constraints = "\x30\x15\xA1\x13\x30\x11\x82\x0Fbad.example.com";
+    const san = "\x30\x11\x82\x0Fbad.example.com";
+    const ca = parsedForNameConstraintsTest(
+        constraints,
+        .{ .start = 0, .end = constraints.len },
+        .empty,
+        .empty,
+        true,
+    );
+    const leaf = parsedForNameConstraintsTest(
+        san,
+        .empty,
+        .{ .start = 0, .end = san.len },
+        .empty,
+        false,
+    );
+    try std.testing.expectError(error.CertificateNameConstraintViolation, ca.verifyNameConstraints(leaf));
+}
+
+// RFC 5280 §6.1.4 — every supported SAN value is checked, not just the name
+// that matched the caller's hostname policy.
+test "Parsed.verifyNameConstraints: mixed DNS SAN violation is rejected" {
+    const constraints = "\x30\x15\xA1\x13\x30\x11\x82\x0Fbad.example.com";
+    const san = "\x30\x21\x82\x0Eok.example.com\x82\x0Fbad.example.com";
+    const ca = parsedForNameConstraintsTest(
+        constraints,
+        .{ .start = 0, .end = constraints.len },
+        .empty,
+        .empty,
+        true,
+    );
+    const leaf = parsedForNameConstraintsTest(
+        san,
+        .empty,
+        .{ .start = 0, .end = san.len },
+        .empty,
+        false,
+    );
+    try std.testing.expectError(error.CertificateNameConstraintViolation, ca.verifyNameConstraints(leaf));
+}
+
+// RFC 5280 §4.2.1.10 — when subjectAltName is absent, ztls applies DNS
+// constraints to the Common Name used by its TLS hostname fallback.
+test "Parsed.verifyNameConstraints: DNS common name fallback" {
+    const constraints = "\x30\x11\xA0\x0F\x30\x0D\x82\x0Bexample.com";
+    const common_name = "ok.example.com";
+    const ca = parsedForNameConstraintsTest(
+        constraints,
+        .{ .start = 0, .end = constraints.len },
+        .empty,
+        .empty,
+        true,
+    );
+    const leaf = parsedForNameConstraintsTest(
+        common_name,
+        .empty,
+        .empty,
+        .{ .start = 0, .end = common_name.len },
+        false,
+    );
+    try ca.verifyNameConstraints(leaf);
+}
+
+// RFC 5280 §4.2.1.10 — iPAddress constraints are address-and-mask subtrees.
+test "Parsed.verifyNameConstraints: IP permitted subnet" {
+    const constraints = "\x30\x0E\xA0\x0C\x30\x0A\x87\x08\x7F\x00\x00\x00\xFF\xFF\xFF\x00";
+    const san = "\x30\x06\x87\x04\x7F\x00\x00\x01";
+    const ca = parsedForNameConstraintsTest(
+        constraints,
+        .{ .start = 0, .end = constraints.len },
+        .empty,
+        .empty,
+        true,
+    );
+    const leaf = parsedForNameConstraintsTest(
+        san,
+        .empty,
+        .{ .start = 0, .end = san.len },
+        .empty,
+        false,
+    );
+    try ca.verifyNameConstraints(leaf);
+}
+
+// RFC 5280 §6.1.4 — permitted subtrees are maintained per name type; an IP
+// permitted subtree does not constrain a subordinate's DNS names.
+test "Parsed.verifyNameConstraints: permitted subtrees are type-specific" {
+    const constraints = "\x30\x0E\xA0\x0C\x30\x0A\x87\x08\x7F\x00\x00\x00\xFF\xFF\xFF\x00";
+    const san = "\x30\x0E\x82\x0Coutside.test";
+    const ca = parsedForNameConstraintsTest(
+        constraints,
+        .{ .start = 0, .end = constraints.len },
+        .empty,
+        .empty,
+        true,
+    );
+    const leaf = parsedForNameConstraintsTest(
+        san,
+        .empty,
+        .{ .start = 0, .end = san.len },
+        .empty,
+        false,
+    );
+    try ca.verifyNameConstraints(leaf);
+}
+
+// RFC 5280 §4.2.1.10 — rfc822Name constraints match the mailbox domain.
+test "Parsed.verifyNameConstraints: email permitted subtree" {
+    const constraints = "\x30\x11\xA0\x0F\x30\x0D\x81\x0Bexample.com";
+    const san = "\x30\x12\x81\x10user@example.com";
+    const ca = parsedForNameConstraintsTest(
+        constraints,
+        .{ .start = 0, .end = constraints.len },
+        .empty,
+        .empty,
+        true,
+    );
+    const leaf = parsedForNameConstraintsTest(
+        san,
+        .empty,
+        .{ .start = 0, .end = san.len },
+        .empty,
+        false,
+    );
+    try ca.verifyNameConstraints(leaf);
+}
+
+// RFC 5280 §4.2.1.10 — an rfc822Name constraint with a mailbox compares the
+// local part exactly and the domain case-insensitively.
+test "Parsed.verifyNameConstraints: email mailbox local part is case-sensitive" {
+    const constraints = "\x30\x12\xA0\x10\x30\x0E\x81\x0CUser@EXAMPLE";
+    const san = "\x30\x0E\x81\x0Cuser@example";
+    const ca = parsedForNameConstraintsTest(
+        constraints,
+        .{ .start = 0, .end = constraints.len },
+        .empty,
+        .empty,
+        true,
+    );
+    const leaf = parsedForNameConstraintsTest(
+        san,
+        .empty,
+        .{ .start = 0, .end = san.len },
+        .empty,
+        false,
+    );
+    try std.testing.expectError(error.CertificateNameConstraintViolation, ca.verifyNameConstraints(leaf));
+}
+
+// RFC 5280 §4.2.1.10 — URI constraints apply to the host portion.
+test "Parsed.verifyNameConstraints: URI excluded subtree" {
+    const constraints = "\x30\x15\xA1\x13\x30\x11\x86\x0Fbad.example.com";
+    const san = "\x30\x1B\x86\x19https://bad.example.com/a";
+    const ca = parsedForNameConstraintsTest(
+        constraints,
+        .{ .start = 0, .end = constraints.len },
+        .empty,
+        .empty,
+        true,
+    );
+    const leaf = parsedForNameConstraintsTest(
+        san,
+        .empty,
+        .{ .start = 0, .end = san.len },
+        .empty,
+        false,
+    );
+    try std.testing.expectError(error.CertificateNameConstraintViolation, ca.verifyNameConstraints(leaf));
+}
+
+// RFC 5280 §4.2.1.10 / RFC 3986 §3.2 — URI constraints use the authority host,
+// not userinfo, when matching the URI GeneralName form.
+test "Parsed.verifyNameConstraints: URI strips userinfo before host matching" {
+    const constraints = "\x30\x15\xA1\x13\x30\x11\x86\x0Fbad.example.com";
+    const san = "\x30\x25\x86\x23https://user:pass@bad.example.com/a";
+    const ca = parsedForNameConstraintsTest(
+        constraints,
+        .{ .start = 0, .end = constraints.len },
+        .empty,
+        .empty,
+        true,
+    );
+    const leaf = parsedForNameConstraintsTest(
+        san,
+        .empty,
+        .{ .start = 0, .end = san.len },
+        .empty,
+        false,
+    );
+    try std.testing.expectError(error.CertificateNameConstraintViolation, ca.verifyNameConstraints(leaf));
+}
+
+// RFC 5280 §4.2.1.10 — an explicitly encoded minimum of zero is equivalent to
+// the DEFAULT value and must not make a supported GeneralSubtree unsupported.
+test "Parsed.verifyNameConstraints: explicit minimum zero is accepted" {
+    const constraints = "\x30\x14\xA0\x12\x30\x10\x82\x0Bexample.com\x80\x01\x00";
+    const san = "\x30\x10\x82\x0Eok.example.com";
+    const ca = parsedForNameConstraintsTest(
+        constraints,
+        .{ .start = 0, .end = constraints.len },
+        .empty,
+        .empty,
+        true,
+    );
+    const leaf = parsedForNameConstraintsTest(
+        san,
+        .empty,
+        .{ .start = 0, .end = san.len },
+        .empty,
+        false,
+    );
+    try ca.verifyNameConstraints(leaf);
+}
+
+// RFC 5280 §4.2.1.10 — critical Name Constraints must be processed; unsupported
+// critical GeneralName forms are rejected instead of silently ignored.
+test "Parsed.verifyNameConstraints: critical unsupported subtree is rejected" {
+    const constraints = "\x30\x08\xA0\x06\x30\x04\xA4\x02\x30\x00";
+    const san = "\x30\x10\x82\x0Eok.example.com";
+    const ca = parsedForNameConstraintsTest(
+        constraints,
+        .{ .start = 0, .end = constraints.len },
+        .empty,
+        .empty,
+        true,
+    );
+    const leaf = parsedForNameConstraintsTest(
+        san,
+        .empty,
+        .{ .start = 0, .end = san.len },
+        .empty,
+        false,
+    );
+    try std.testing.expectError(error.CertificateNameConstraintUnsupported, ca.verifyNameConstraints(leaf));
+}
+
+// RFC 5280 §4.2 — non-critical unsupported extensions are outside the relying
+// party's required processing set; supported constraints are still enforced.
+test "Parsed.verifyNameConstraints: non-critical unsupported subtree is ignored" {
+    const constraints = "\x30\x08\xA0\x06\x30\x04\xA4\x02\x30\x00";
+    const san = "\x30\x10\x82\x0Eok.example.com";
+    const ca = parsedForNameConstraintsTest(
+        constraints,
+        .{ .start = 0, .end = constraints.len },
+        .empty,
+        .empty,
+        false,
+    );
+    const leaf = parsedForNameConstraintsTest(
+        san,
+        .empty,
+        .{ .start = 0, .end = san.len },
+        .empty,
+        false,
+    );
+    try ca.verifyNameConstraints(leaf);
 }
 
 pub const ParseError = der.Element.ParseError || ParseVersionError || ParseTimeError || ParseEnumError || ParseBitStringError;
@@ -693,6 +1250,7 @@ pub fn parse(cert: Certificate) ParseError!Parsed {
     var key_usage_slice = der.Element.Slice.empty;
     var ext_key_usage_slice = der.Element.Slice.empty;
     var name_constraints_slice = der.Element.Slice.empty;
+    var name_constraints_critical = false;
     ext: {
         if (version == .v1)
             break :ext;
@@ -716,7 +1274,10 @@ pub fn parse(cert: Certificate) ParseError!Parsed {
                 else => |e| return e,
             };
             const critical_elem = try der.Element.parse(cert_bytes, oid_elem.slice.end);
-            const ext_bytes_elem = if (critical_elem.identifier.tag != .boolean)
+            const extension_critical = critical_elem.identifier.tag == .boolean;
+            if (extension_critical and critical_elem.slice.end - critical_elem.slice.start != 1)
+                return error.CertificateFieldHasWrongDataType;
+            const ext_bytes_elem = if (!extension_critical)
                 critical_elem
             else
                 try der.Element.parse(cert_bytes, critical_elem.slice.end);
@@ -724,7 +1285,10 @@ pub fn parse(cert: Certificate) ParseError!Parsed {
                 .subject_alt_name => subject_alt_name_slice = ext_bytes_elem.slice,
                 .key_usage => key_usage_slice = ext_bytes_elem.slice,
                 .ext_key_usage => ext_key_usage_slice = ext_bytes_elem.slice,
-                .name_constraints => name_constraints_slice = ext_bytes_elem.slice,
+                .name_constraints => {
+                    name_constraints_slice = ext_bytes_elem.slice;
+                    name_constraints_critical = extension_critical and cert_bytes[critical_elem.slice.start] != 0;
+                },
                 else => continue,
             }
         }
@@ -748,6 +1312,7 @@ pub fn parse(cert: Certificate) ParseError!Parsed {
         .key_usage_slice = key_usage_slice,
         .ext_key_usage_slice = ext_key_usage_slice,
         .name_constraints_slice = name_constraints_slice,
+        .name_constraints_critical = name_constraints_critical,
         .version = version,
     };
 }

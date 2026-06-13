@@ -59,7 +59,7 @@ ztls is production-ready when all six pillars are `PROVEN`:
 
 | Pillar | Status | One-line |
 |---|---|---|
-| 1. Correctness | `PARTIAL` | Strong layered evidence; the MUST matrix now exists and exposes remaining gaps, with name-constraints enforcement still the largest supported-surface hole. |
+| 1. Correctness | `PARTIAL` | Strong layered evidence; the MUST matrix now exists and exposes remaining gaps, with name constraints enforced for supported GeneralName forms. |
 | 2. Ergonomics | `PARTIAL` | `std.net.Stream` examples cover both roles; io_uring has a client-only proof; epoll is absent and examples are not CI-gated. |
 | 3. Performance | `PARTIAL` | Rich bench harness exists; equivalence methodology and reproducible hardware-matrix results are missing. |
 | 4. Providers | `PARTIAL` | OpenSSL primitives are live, but the provider seam is mostly aspirational: no backend selection, no second backend, no capability table. |
@@ -105,6 +105,10 @@ consumption-for-rejection, not resumption.
   attack classes, non-goals, caller responsibilities, and threat-relevant gaps.
 - Explicit verification gates (client must verify Certificate / CertificateVerify
   / Finished before promoting to app keys; server must verify client Finished).
+- RFC 5280 name constraints are enforced in the certificate path for DNS, IP,
+  rfc822Name, and URI GeneralName forms, including permitted/excluded subtree
+  tests, critical unsupported-subtree rejection, and real chain fixtures for DNS
+  permitted/excluded behavior.
 
 **Status:** `PARTIAL`
 
@@ -117,11 +121,12 @@ consumption-for-rejection, not resumption.
 - **External runners not gated.** BoGo and TLS-Anvil shims exist but are not in
   `just ci`; their value scales with feature surface. *(todos #9,
   #9, #9)*
-- **Remaining specific unproven behavior in the supported surface:** name
-  constraints are parsed but not enforced *(#8)*. Replayed-record rejection,
-  KeyUpdate simultaneity, record-boundary edge cases, fuzz surfaces, trust-policy
-  opt-in behavior, and targeted client bad-server paths now have focused
-  regression tests.
+- **Remaining specific unproven behavior in the supported surface:** the
+  `GAP`/`PARTIAL` rows in `docs/research/RFC8446_MUST_MATRIX.md` remain the
+  active correctness punch-list. Replayed-record rejection, KeyUpdate
+  simultaneity, record-boundary edge cases, fuzz surfaces, trust-policy opt-in
+  behavior, name-constraints enforcement, and targeted client bad-server paths
+  now have focused regression tests.
 
 ---
 

@@ -2,49 +2,76 @@
 
 Source: <https://github.com/Netflix/bettertls>
 
-bettertls exercises X.509 path building and name constraints enforcement
-across TLS implementations. It is structured as a Go harness that loads
-test-case JSON, builds certificate chains, and asserts expected policy
-outcomes (accept/reject).
+bettertls exercises X.509 path building and name-constraints enforcement across
+TLS implementations. It is structured as a Go harness that loads test-case JSON,
+builds certificate chains, and asserts expected policy outcomes.
 
 ## What bettertls validates
 
 1. **Name constraints** — permitted/excluded subtrees for DNS, IP, directory,
-   and URI name forms.
-2. **Path building** — correct selection of intermediates and trust anchors
-   when multiple candidates exist.
+   rfc822Name/email, and URI name forms.
+2. **Path building** — correct selection of intermediates and trust anchors when
+   multiple candidates exist.
 3. **Critical extension handling** — rejection of unrecognized critical
    extensions is also tested indirectly.
 
+## Current ztls coverage
 
-## Why enforcement is deferred
+ztls now enforces RFC 5280 Name Constraints during certificate path validation
+for the GeneralName forms used by TLS server-auth certificates:
 
-- The `cryptox/Certificate.zig` parser is vendored from Zig stdlib with local
-  DER bounds fixes. Adding full GeneralName parsing and subtree matching is
-  invasive and needs careful RFC 5280 compliance before it can claim
-  correctness.
-- ztls chain validation is linear (`subject.verify(issuer, now_sec)`). Name
-  constraints require checking *every* CA in the chain against the leaf and
-  all subordinate names, which needs a small API redesign.
-- No existing caller requires name constraints yet; leaf hostname verification,
-  EKU, and KeyUsage policy are the active paths.
+- `dNSName`
+- `iPAddress`
+- `rfc822Name`
+- `uniformResourceIdentifier`
 
-## Pre-integration checklist (before adding a harness)
+The local coverage intentionally avoids vendoring the full Go bettertls harness
+for now. Instead it uses two layers of CI-friendly Zig evidence:
 
-- [ ] Parse GeneralName subtypes inside Name Constraints (`dNSName`, `iPAddress`).
-- [ ] Implement DNS name matching against permitted/excluded subtrees.
-- [ ] Implement IP address matching (address + netmask parsing).
-- [ ] Wire subtree checks into `certificate.zig` chain validation.
-- [ ] Generate synthetic test chains (or vendor bettertls test JSON) for Zig
-      unit tests.
-- [ ] Add `zig build test-bettertls` step that runs the Go harness against a
-      ztls shim.
+- synthetic DER unit tests for DNS, IP, email, URI, permitted/excluded subtree
+  matching, and critical unsupported-subtree rejection;
+- OpenSSL-generated chain fixtures under `tests/fixtures/nameconstraints/` for
+  real path-validation behavior through `certificate.parse()`.
 
-## Smallest next slice (when needed)
+The chain fixtures model the bettertls core shape without the combinatorial
+explosion:
 
-1. Parse the `NameConstraints` SEQUENCE into `permitted` / `excluded` slices.
-2. Add a `verifyNameConstraints(host_name)` helper that checks only DNS
-   permitted/excluded subtrees against the leaf SAN/CN.
-3. Unit-test with synthetic DER (no full bettertls harness yet).
-4. Only after unit tests pass, wire the check into `certificate.zig` chain
-   validation and add the Go harness.
+```text
+root.crt -> intermediate.crt -> leaf_*.crt
+```
+
+`intermediate.crt` carries a critical Name Constraints extension with:
+
+- permitted DNS subtree: `example.com`
+- excluded DNS subtree: `bad.example.com`
+
+Covered outcomes:
+
+| Fixture | Leaf SAN | Expected |
+|---|---|---|
+| `leaf_allowed.der` | `ok.example.com` | accepted |
+| `leaf_excluded.der` | `bad.example.com` | rejected by excluded subtree |
+| `leaf_outside.der` | `other.test` | rejected by permitted subtree |
+
+## Deliberate non-goals for the local slice
+
+- No full bettertls Go harness yet. That belongs with the broader external
+  conformance runner work (#9), not the core enforcement code.
+- No `directoryName` constraint enforcement yet. ztls rejects unsupported
+  GeneralName forms in critical Name Constraints instead of pretending to process
+  them.
+- No combinatorial clone of bettertls's thousands of cases. The local tests
+  exercise the matching and chain-validation logic directly; the full harness can
+  add breadth later.
+
+## Future harness path
+
+A real bettertls lane should come after the external conformance façade is in
+place:
+
+1. vendor or fetch bettertls test vectors reproducibly;
+2. add a ztls runner/shim that evaluates the generated chains against
+   `certificate.parse()` policy;
+3. normalize results with skip accounting, like the TLS-Anvil/BoGo work planned
+   in #9;
+4. gate the lane only once its dependency footprint and runtime are stable.

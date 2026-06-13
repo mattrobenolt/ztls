@@ -113,9 +113,9 @@ Evidence:
 ### Certificate policy failures
 
 ztls can verify server certificate chains against caller-provided trust anchors
-and enforce hostname, KeyUsage, EKU, and signature-algorithm policy before the
-client handshake completes. The caller must provide the trust bundle and policy;
-ztls does not load OS roots.
+and enforce hostname, KeyUsage, EKU, signature-algorithm policy, and RFC 5280
+name constraints before the client handshake completes. The caller must provide
+the trust bundle and policy; ztls does not load OS roots.
 
 Important current boundary: chain anchoring only happens when
 `certificate.Policy.bundle` is set. A client policy with neither a bundle nor
@@ -135,8 +135,11 @@ Evidence:
 - `ClientHandshake.zig` server-flight tests bind CertificateVerify to the leaf
   public key and transcript.
 
-Gap: RFC 5280 name constraints are parsed but not enforced (#8). The threat
-model does not claim defense against constrained-CA misissuance until #8 lands.
+Name-constraints enforcement covers DNS, IP, rfc822Name, and URI GeneralName
+forms in permitted/excluded subtrees. Chain-level fixture tests cover DNS;
+synthetic DER unit tests cover IP, rfc822Name, URI, critical unsupported-subtree
+rejection, and explicit `minimum = 0`. Unsupported GeneralName forms inside a
+critical Name Constraints extension are rejected rather than silently ignored.
 
 ### Key-exchange invalid-point handling
 
@@ -244,7 +247,7 @@ features until their tracking issues land.
 | Gap | Boundary | Tracking |
 |---|---|---|
 | RFC 8446 MUST matrix has `GAP`/`PARTIAL` rows | Completeness proof | #25 |
-| RFC 5280 name constraints are parsed but not enforced | Certificate policy | #8 |
+| RFC 5280 directoryName constraints are not enforced | Certificate policy | future X.509 expansion |
 | TLS-Anvil / BoGo external runners are not CI-gated | External conformance breadth | #9 |
 | ServerHello downgrade sentinel is not explicitly checked | Defense-in-depth / MUST matrix | #25 |
 | Legacy session ID parse caps need dedicated enforcement/tests | Parser hardening | `NEGATIVE_SPACE.md` gap |

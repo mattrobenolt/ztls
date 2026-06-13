@@ -67,16 +67,30 @@ pub fn verifyServerAuth(parsed: Certificate.Parsed) VerifyServerAuthError!void {
     }
 }
 
+pub const VerifyAgainstBundleError = PolicyError ||
+    Certificate.ParseError ||
+    Certificate.Parsed.VerifyError ||
+    error{CertificateIssuerNotFound};
+
+// ziglint-ignore: Z015 -- VerifyAgainstBundleError is a public error-set alias.
+pub fn findVerifiedIssuerInBundle(
+    bundle: *const Certificate.Bundle,
+    subject: Certificate.Parsed,
+    now_sec: i64,
+) VerifyAgainstBundleError!Certificate.Parsed {
+    const issuer_index = bundle.find(subject.issuer()) orelse
+        return error.CertificateIssuerNotFound;
+    const issuer_cert: Certificate = .{ .buffer = bundle.bytes.items, .index = issuer_index };
+    const issuer = try issuer_cert.parse();
+    try subject.verify(issuer, now_sec);
+    return issuer;
+}
+
+// ziglint-ignore: Z015 -- VerifyAgainstBundleError is a public error-set alias.
 pub fn verifyAgainstBundle(
     bundle: *const Certificate.Bundle,
     subject: Certificate.Parsed,
     now_sec: i64,
-) (PolicyError ||
-    Certificate.ParseError ||
-    Certificate.Parsed.VerifyError ||
-    error{CertificateIssuerNotFound})!void {
-    const issuer_index = bundle.find(subject.issuer()) orelse
-        return error.CertificateIssuerNotFound;
-    const issuer_cert: Certificate = .{ .buffer = bundle.bytes.items, .index = issuer_index };
-    try subject.verify(try issuer_cert.parse(), now_sec);
+) VerifyAgainstBundleError!void {
+    _ = try findVerifiedIssuerInBundle(bundle, subject, now_sec);
 }

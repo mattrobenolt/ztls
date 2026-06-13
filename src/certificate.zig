@@ -9,6 +9,7 @@ const Certificate = @import("cryptox/Certificate.zig");
 const wire = @import("wire.zig");
 
 const c = @import("c.zig").openssl;
+const ArrayBuffer = @import("array_buffer.zig").ArrayBuffer;
 const certificate_policy = @import("certificate_policy.zig");
 pub const SignatureScheme = @import("signature_scheme.zig").SignatureScheme;
 pub const LeafUsage = certificate_policy.LeafUsage;
@@ -21,10 +22,12 @@ pub const ParseError = error{
     EmptyCertificateList,
     CertificateIssuerNotFound,
     MissingTrustAnchor,
+    CertificateChainTooLong,
 } || PolicyError ||
     Certificate.ParseError ||
     Certificate.Parsed.VerifyError ||
-    Certificate.Parsed.VerifyHostNameError;
+    Certificate.Parsed.VerifyHostNameError ||
+    Certificate.Parsed.NameConstraintError;
 
 pub const EncodeError = error{BufferTooShort};
 
@@ -80,6 +83,7 @@ pub fn parse(msg: []const u8, policy: Policy) ParseError![]const u8 {
     var cert_index: usize = 0;
     var leaf_pub_key: ?[]const u8 = null;
     var subject_to_verify: ?Certificate.Parsed = null;
+    var chain: ArrayBuffer(Certificate.Parsed, 8) = .empty;
 
     while (r.pos < list_end) {
         if (list_end - r.pos < 3) return error.UnexpectedEof;
@@ -92,6 +96,7 @@ pub fn parse(msg: []const u8, policy: Policy) ParseError![]const u8 {
 
         const cert: Certificate = .{ .buffer = cert_der, .index = 0 };
         const parsed = try cert.parse();
+        chain.append(parsed) catch return error.CertificateChainTooLong;
 
         if (cert_index == 0) {
             leaf_pub_key = parsed.pubKey();
@@ -108,12 +113,45 @@ pub fn parse(msg: []const u8, policy: Policy) ParseError![]const u8 {
 
     const subject = subject_to_verify orelse return error.EmptyCertificateList;
     if (policy.bundle) |bundle| {
-        try certificate_policy.verifyAgainstBundle(bundle, subject, policy.now_sec);
+        const trust_anchor = try certificate_policy.findVerifiedIssuerInBundle(
+            bundle,
+            subject,
+            policy.now_sec,
+        );
+        try verifyChainNameConstraints(chain.constSlice(), trust_anchor);
     } else if (!policy.insecure_no_chain_anchor) {
         return error.MissingTrustAnchor;
+    } else {
+        try verifyChainNameConstraints(chain.constSlice(), null);
     }
 
     return leaf_pub_key orelse error.EmptyCertificateList;
+}
+
+fn verifyChainNameConstraints(
+    chain: []const Certificate.Parsed,
+    trust_anchor: ?Certificate.Parsed,
+) Certificate.Parsed.NameConstraintError!void {
+    var ca_index: usize = 1;
+    while (ca_index < chain.len) : (ca_index += 1) {
+        try verifyIssuerNameConstraints(chain[ca_index], chain[0..ca_index]);
+    }
+    if (trust_anchor) |issuer| try verifyIssuerNameConstraints(issuer, chain);
+}
+
+fn verifyIssuerNameConstraints(
+    issuer: Certificate.Parsed,
+    subjects: []const Certificate.Parsed,
+) Certificate.Parsed.NameConstraintError!void {
+    if (issuer.nameConstraints().len == 0) return;
+
+    // `subjects` is ordered leaf-first, so index zero is the final certificate
+    // where RFC 5280 does not allow the self-issued intermediate exemption.
+    for (subjects, 0..) |subject, subject_index| {
+        const leaf = subject_index == 0;
+        if (!leaf and std.mem.eql(u8, subject.subject(), subject.issuer())) continue;
+        try issuer.verifyNameConstraints(subject);
+    }
 }
 
 fn publicKeyFromCertificateBits(
@@ -275,6 +313,11 @@ const chain_intermediate_der = @embedFile("test_fixtures/chain/intermediate.der"
 const name_constraints_der = @embedFile("test_fixtures/name_constraints.der");
 const name_constraints_noncritical_der =
     @embedFile("test_fixtures/name_constraints_noncritical.der");
+const nc_root_pem = "tests/fixtures/nameconstraints/root.crt";
+const nc_intermediate_der = @embedFile("test_fixtures/nameconstraints/intermediate.der");
+const nc_leaf_allowed_der = @embedFile("test_fixtures/nameconstraints/leaf_allowed.der");
+const nc_leaf_excluded_der = @embedFile("test_fixtures/nameconstraints/leaf_excluded.der");
+const nc_leaf_outside_der = @embedFile("test_fixtures/nameconstraints/leaf_outside.der");
 
 fn buildCertMsg(buf: []u8, cert_der: []const u8) []const u8 {
     return buildCertChainMsg(buf, &.{cert_der});
@@ -416,6 +459,74 @@ test "parse: rejects untrusted leaf when bundle misses issuer" {
     );
 }
 
+fn nameConstraintsBundle() !Certificate.Bundle {
+    var bundle: Certificate.Bundle = .{};
+    try bundle.addCertsFromFilePath(testing.allocator, std.fs.cwd(), nc_root_pem);
+    return bundle;
+}
+
+// RFC 5280 §4.2.1.10 — an intermediate CA's permitted DNS subtree allows
+// subordinate certificates whose DNS SANs are inside that subtree.
+test "parse: accepts chain with matching DNS name constraints" {
+    var bundle = try nameConstraintsBundle();
+    defer bundle.deinit(testing.allocator);
+
+    var buf: [4096]u8 = undefined;
+    const pub_key = try parse(
+        buildCertChainMsg(&buf, &.{ nc_leaf_allowed_der, nc_intermediate_der }),
+        .{ .bundle = &bundle, .now_sec = 1_782_864_000, .host_name = "ok.example.com" },
+    );
+    try testing.expect(pub_key.len > 0);
+}
+
+// RFC 5280 §4.2.1.10 — excluded DNS subtrees override permitted DNS subtrees.
+test "parse: rejects chain with excluded DNS name constraints" {
+    var bundle = try nameConstraintsBundle();
+    defer bundle.deinit(testing.allocator);
+
+    var buf: [4096]u8 = undefined;
+    try testing.expectError(
+        error.CertificateNameConstraintViolation,
+        parse(
+            buildCertChainMsg(&buf, &.{ nc_leaf_excluded_der, nc_intermediate_der }),
+            .{ .bundle = &bundle, .now_sec = 1_782_864_000, .host_name = "bad.example.com" },
+        ),
+    );
+}
+
+// RFC 5280 §4.2.1.10 — permitted DNS subtrees reject subordinate names outside
+// the constrained CA's namespace even when the leaf hostname itself matches.
+test "parse: rejects chain outside permitted DNS name constraints" {
+    var bundle = try nameConstraintsBundle();
+    defer bundle.deinit(testing.allocator);
+
+    var buf: [4096]u8 = undefined;
+    try testing.expectError(
+        error.CertificateNameConstraintViolation,
+        parse(
+            buildCertChainMsg(&buf, &.{ nc_leaf_outside_der, nc_intermediate_der }),
+            .{ .bundle = &bundle, .now_sec = 1_782_864_000, .host_name = "other.test" },
+        ),
+    );
+}
+
+// RFC 5280 §4.2.1.10 — the explicit no-anchor test/demo path still enforces
+// name constraints from certificates carried in the handshake chain.
+test "parse: insecure no-anchor path still enforces name constraints" {
+    var buf: [4096]u8 = undefined;
+    try testing.expectError(
+        error.CertificateNameConstraintViolation,
+        parse(
+            buildCertChainMsg(&buf, &.{ nc_leaf_excluded_der, nc_intermediate_der }),
+            .{
+                .insecure_no_chain_anchor = true,
+                .now_sec = 1_782_864_000,
+                .host_name = "bad.example.com",
+            },
+        ),
+    );
+}
+
 test "parse: malformed DER length is rejected, not crashed" {
     const msg = [_]u8{
         0x0b, 0x00, 0x00, 0x0d, // Certificate, length 13
@@ -450,6 +561,7 @@ fn policyLeaf(
         .key_usage_slice = key_usage,
         .ext_key_usage_slice = ext_key_usage,
         .name_constraints_slice = .empty,
+        .name_constraints_critical = false,
         .validity = .{ .not_before = 0, .not_after = 0 },
         .version = .v3,
     };
