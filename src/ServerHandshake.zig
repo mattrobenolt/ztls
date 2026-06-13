@@ -518,7 +518,8 @@ fn handleWaitClientHello(
     const hdr = try frame.parseHeader(record);
     if (record.len < frame.header_len + hdr.length()) return error.IncompleteRecord;
     return switch (hdr.content_type) {
-        .change_cipher_spec => .none, // RFC 8446 §D.4 — middlebox compat, silently discarded.
+        // RFC 8446 §D.4 — CCS before ClientHello is outside the compatibility window.
+        .change_cipher_spec => error.UnexpectedRecord,
         .alert => blk: {
             const a = try alert.parse(record[frame.header_len..][0..hdr.length()]);
             break :blk if (a.isCloseNotify()) .closed else error.PeerAlert;
@@ -532,8 +533,12 @@ fn handleWaitClientFinished(self: *ServerHandshake, record: []u8) HandleError!Ev
     const hdr = try frame.parseHeader(record);
     if (record.len < frame.header_len + hdr.length()) return error.IncompleteRecord;
     switch (hdr.content_type) {
-        // RFC 8446 §D.4 — middlebox compat, silently discarded.
-        .change_cipher_spec => return .none,
+        // RFC 8446 §D.4 — middlebox-compat ChangeCipherSpec is silently dropped
+        // only after ClientHello and before the peer Finished.
+        .change_cipher_spec => {
+            try handshake.validateChangeCipherSpec(record[frame.header_len..][0..hdr.length()]);
+            return .none;
+        },
         .alert => {
             const a = try alert.parse(record[frame.header_len..][0..hdr.length()]);
             if (a.isCloseNotify()) return .closed;
@@ -677,12 +682,51 @@ test "sendAlert: encrypted close_notify after handshake" {
     try testing.expectEqualSlices(u8, &.{ 0x01, 0x00 }, dec.content);
 }
 
-// RFC 8446 §D.4 — middlebox-compat ChangeCipherSpec records are ignored.
-test "handleRecord: drops ChangeCipherSpec while waiting for ClientHello" {
+// RFC 8446 §D.4 — CCS before ClientHello is outside the compatibility window.
+test "handleRecord: rejects ChangeCipherSpec before ClientHello" {
     var hs: ServerHandshake = .init(.generate());
     var ccs = [_]u8{ 0x14, 0x03, 0x03, 0x00, 0x01, 0x01 };
     var out: [64]u8 = undefined;
+    try testing.expectError(error.UnexpectedRecord, hs.handleRecord(&ccs, .zero, &out));
+}
+
+// RFC 8446 §D.4 — a compatibility CCS with exactly payload 0x01 is ignored
+// after ClientHello and before the peer Finished.
+test "handleRecord: drops valid ChangeCipherSpec while waiting for client Finished" {
+    const client_keypair: x25519.KeyPair = .generate();
+    var ch_buf: [512]u8 = undefined;
+    const ch = try client_hello.encode(&ch_buf, .zero, client_keypair.public_key, null, &.{});
+    var record: [1024]u8 = undefined;
+    const header: frame.Header = .init(.handshake, @intCast(ch.len));
+    header.write(record[0..frame.header_len]);
+    @memcpy(record[frame.header_len..][0..ch.len], ch);
+
+    var hs: ServerHandshake = .init(.generate());
+    var out: [256]u8 = undefined;
+    _ = try hs.handleRecord(record[0 .. frame.header_len + ch.len], .zero, &out);
+    hs.completeWrite();
+
+    var ccs = [_]u8{ 0x14, 0x03, 0x03, 0x00, 0x01, 0x01 };
     try testing.expectEqual(Event.none, try hs.handleRecord(&ccs, .zero, &out));
+}
+
+// RFC 8446 §D.4 — any CCS payload other than exactly byte 0x01 is invalid.
+test "handleRecord: rejects malformed ChangeCipherSpec payload" {
+    const client_keypair: x25519.KeyPair = .generate();
+    var ch_buf: [512]u8 = undefined;
+    const ch = try client_hello.encode(&ch_buf, .zero, client_keypair.public_key, null, &.{});
+    var record: [1024]u8 = undefined;
+    const header: frame.Header = .init(.handshake, @intCast(ch.len));
+    header.write(record[0..frame.header_len]);
+    @memcpy(record[frame.header_len..][0..ch.len], ch);
+
+    var hs: ServerHandshake = .init(.generate());
+    var out: [256]u8 = undefined;
+    _ = try hs.handleRecord(record[0 .. frame.header_len + ch.len], .zero, &out);
+    hs.completeWrite();
+
+    var ccs = [_]u8{ 0x14, 0x03, 0x03, 0x00, 0x01, 0x02 };
+    try testing.expectError(error.UnexpectedRecord, hs.handleRecord(&ccs, .zero, &out));
 }
 
 // RFC 8446 §5 — server handleRecord emits ServerHello and blocks until written.

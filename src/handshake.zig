@@ -13,6 +13,10 @@ pub const max_post_handshake_messages = 16;
 pub const SendError = RecordLayer.EncryptError || error{PendingWrite};
 pub const KeyUpdateSender = enum { client, server };
 
+pub fn validateChangeCipherSpec(fragment: []const u8) error{UnexpectedRecord}!void {
+    if (fragment.len != 1 or fragment[0] != 0x01) return error.UnexpectedRecord;
+}
+
 // ziglint-ignore: Z015 -- SendError is public; ziglint does not follow imported error-set aliases.
 pub fn sendApplicationData(self: anytype, plaintext: []const u8, out: []u8) SendError![]u8 {
     assert(self.state == .connected);

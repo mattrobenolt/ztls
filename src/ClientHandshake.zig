@@ -494,8 +494,13 @@ fn processHandshakeRecord(
     if (record.len < frame.header_len + hdr.length()) return error.IncompleteRecord;
 
     switch (hdr.content_type) {
-        // RFC 8446 §D.4 — middlebox-compat ChangeCipherSpec, silently dropped.
-        .change_cipher_spec => return null,
+        // RFC 8446 §D.4 — middlebox-compat ChangeCipherSpec is silently
+        // dropped only after our first ClientHello and before the peer Finished.
+        .change_cipher_spec => {
+            if (self.state == .start or self.state == .send_finished) return error.UnexpectedRecord;
+            try handshake.validateChangeCipherSpec(record[frame.header_len..][0..hdr.length()]);
+            return null;
+        },
         // ServerHello is the only handshake message that arrives unencrypted.
         .handshake => {
             if (self.state != .wait_sh) return error.UnexpectedRecord;
@@ -1229,6 +1234,40 @@ test "handleRecord: plaintext fatal alert in wait_sh" {
     var out: [64]u8 = undefined;
     try testing.expectError(error.PeerAlert, hs.handleRecord(&alert_record, &out));
     try testing.expectEqual(.wait_sh, hs.state);
+}
+
+// RFC 8446 §D.4 — CCS before the first ClientHello is outside the compatibility window.
+test "handleRecord: rejects ChangeCipherSpec before ClientHello" {
+    var hs: ClientHandshake = .init(rfc8448_client_keypair);
+    defer hs.deinit();
+
+    var ccs = [_]u8{ 0x14, 0x03, 0x03, 0x00, 0x01, 0x01 };
+    var out: [64]u8 = undefined;
+    try testing.expectError(error.UnexpectedRecord, hs.handleRecord(&ccs, &out));
+}
+
+// RFC 8446 §D.4 — a valid compatibility CCS is ignored after ClientHello and
+// before the peer Finished.
+test "handleRecord: drops valid ChangeCipherSpec after ClientHello" {
+    var hs: ClientHandshake = .init(rfc8448_client_keypair);
+    defer hs.deinit();
+    hs.injectClientHello(&rfc8448_client_hello);
+
+    var ccs = [_]u8{ 0x14, 0x03, 0x03, 0x00, 0x01, 0x01 };
+    var out: [64]u8 = undefined;
+    try testing.expectEqual(Event.none, try hs.handleRecord(&ccs, &out));
+    try testing.expectEqual(.wait_sh, hs.state);
+}
+
+// RFC 8446 §D.4 — a compatibility CCS must carry exactly byte 0x01.
+test "handleRecord: rejects malformed ChangeCipherSpec payload" {
+    var hs: ClientHandshake = .init(rfc8448_client_keypair);
+    defer hs.deinit();
+    hs.injectClientHello(&rfc8448_client_hello);
+
+    var ccs = [_]u8{ 0x14, 0x03, 0x03, 0x00, 0x01, 0x02 };
+    var out: [64]u8 = undefined;
+    try testing.expectError(error.UnexpectedRecord, hs.handleRecord(&ccs, &out));
 }
 
 // RFC 8446 §6.2 — encrypted fatal alerts during the server flight abort.
