@@ -5,7 +5,7 @@ const std = @import("std");
 const assert = std.debug.assert;
 const testing = std.testing;
 
-const c = @import("c.zig").openssl;
+const c = @import("crypto/c_openssl.zig").openssl;
 const memx = @import("memx.zig");
 const hex = memx.hex;
 

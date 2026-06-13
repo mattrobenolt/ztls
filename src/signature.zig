@@ -2,7 +2,7 @@
 const std = @import("std");
 const testing = std.testing;
 
-const c = @import("c.zig").openssl;
+const c = @import("crypto/c_openssl.zig").openssl;
 const SignatureScheme = @import("signature_scheme.zig").SignatureScheme;
 
 pub const SignError = error{ BufferTooShort, IdentityElement, LibcryptoFailed, NonCanonical };

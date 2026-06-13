@@ -9,7 +9,7 @@ const Certificate = @import("cryptox/Certificate.zig");
 const handshake = @import("handshake.zig");
 const wire = @import("wire.zig");
 
-const c = @import("c.zig").openssl;
+const c = @import("crypto/c_openssl.zig").openssl;
 const ArrayBuffer = @import("array_buffer.zig").ArrayBuffer;
 const certificate_policy = @import("certificate_policy.zig");
 const extension_type = @import("extension_type.zig");

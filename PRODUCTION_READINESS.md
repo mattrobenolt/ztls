@@ -243,8 +243,8 @@ each passing the same correctness and interop gates.
 **Current evidence (real, but thin):**
 
 - OpenSSL/libcrypto is the only working backend. The concrete binding is
-  centralized in `src/c.zig`, but OpenSSL types and calls still leak directly
-  into primitive modules.
+  centralized in `src/crypto/c_openssl.zig`, but OpenSSL types and calls still
+  leak directly into primitive modules.
 - `src/aead.zig` is the strongest seam: `RecordLayer` owns TLS nonce/AAD/sequence
   work and calls `Aead.encrypt` / `Aead.decrypt`; the module reuses
   `EVP_CIPHER_CTX` values rather than allocating them per record.
@@ -267,35 +267,35 @@ each passing the same correctness and interop gates.
 - **The provider abstraction is mostly aspirational scaffolding.** There is no
   `-Dcrypto-backend` build option, no selected backend module, and no primitive
   dispatch through `src/crypto/backend.zig`; OpenSSL calls are compiled directly
-  from `src/aead.zig`, `src/x25519.zig`, `src/signature.zig`, and
+  through `src/crypto/c_openssl.zig` from `src/aead.zig`, `src/x25519.zig`,
+  `src/signature.zig`, and
   `src/certificate.zig`. This contradicts the first-class aws-lc design target
   in practice: aws-lc is named, but not selectable or protected from OpenSSL-only
-  assumptions. *(todo #22)*
+  assumptions. *(#22)*
 - **aws-lc has no implementation or validation lane.** A second backend requires
   an aws-lc build input/CI lane, one implementation file behind the facade, and
   the same unit, Wycheproof, interop, conformance, and benchmark gates as
-  OpenSSL. *(todo #22)*
+  OpenSSL. *(#22)*
 - **OpenSSL-only API choices block aws-lc compatibility.** `src/certificate.zig`
   uses `EC_KEY_new_by_curve_name`, `o2i_ECPublicKey`, `EVP_PKEY_assign_EC_KEY`,
   `d2i_RSAPublicKey`, and `EVP_PKEY_assign_RSA`; `src/signature.zig` uses
   `EC_GROUP` / `EC_POINT` / `EC_KEY` construction for P-256 test signing. These
   need backend-portable key construction (`EVP_PKEY_fromdata`, raw-key helpers,
-  or backend-specific implementations hidden behind the seam). *(todo #22)*
+  or backend-specific implementations hidden behind the seam). *(#22)*
 - **Capability gating does not exist.** Cipher suites are enumerated directly
   from `CipherSuite`; `client_hello.zig` always advertises only X25519 but not
   through a backend capability table; `kex.zig` names future P-256/P-384/PQ
   groups while `publicKeyLen()` returns a real length only for X25519. A backend
   cannot currently narrow suites/groups/signature schemes for missing algorithms,
-  FIPS posture, or provider-version differences. *(todo #22)*
+  FIPS posture, or provider-version differences. *(#22)*
 - **Named-group/key-exchange shape is still X25519-only.** Handshake code stores
   `x25519.KeyPair`, wire encoding writes `.x25519`, and shared secrets are fixed
   at 32 bytes; P-256/P-384 and PQ/hybrid groups require variable-length
   key-share/public-key/shared-secret plumbing before aws-lc capability differences
-  can be tested honestly. *(todo #22)*
+  can be tested honestly. *(#22)*
 - **The facade contract is not enforced by tests.** Existing tests prove OpenSSL
   behavior, but there is no backend matrix that runs the same primitive vectors,
-  interop harnesses, and conformance shims for every enabled provider. *(todo
-  #22)*
+  interop harnesses, and conformance shims for every enabled provider. *(#22)*
 
 ---
 
