@@ -29,6 +29,7 @@ lint-zig:
     zig fmt --check src/ examples/ bench/ build.zig
     ziglint build.zig examples bench $(fd --extension zig --exclude cryptox . src)
     ast-grep scan --rule rules/no-ztls-owned-allocations.yml src --globs '*.zig' --globs '!src/test/**' --globs '!src/bench/**' --globs '!src/interop.zig' --report-style short
+    ast-grep scan --rule rules/no-c-pointer-types.yml src --globs '*.zig' --globs '!src/crypto/**' --report-style short
 
 [doc("Format Justfiles")]
 [group("check")]
