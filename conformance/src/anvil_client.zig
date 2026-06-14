@@ -71,7 +71,13 @@ pub fn main() !void {
                 try stream.writeAll(w);
                 hs.completeWrite();
             },
-            .closed => return,
+            .closed => {
+                // RFC 8446 §6.1 — close_notify is bidirectional on orderly shutdown.
+                const rec = try hs.sendAlert(.close_notify, &out);
+                try stream.writeAll(rec);
+                hs.completeWrite();
+                return;
+            },
             .none => {},
         };
     }

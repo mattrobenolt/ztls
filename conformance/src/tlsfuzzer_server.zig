@@ -81,7 +81,10 @@ fn handleConnection(conn: std.net.Server.Connection) !void {
                 try conn.stream.writeAll(response);
                 hs.completeWrite();
             },
-            .closed => return,
+            .closed => {
+                harness.sendBestEffortCloseNotify(&hs, conn.stream, &out_buf);
+                return;
+            },
             .none => {},
         }
     }
