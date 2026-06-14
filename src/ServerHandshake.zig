@@ -85,6 +85,9 @@ const default_supported_suites = [_]CipherSuite{
     .chacha20_poly1305_sha256,
 };
 
+const compatibility_ccs_len = frame.header_len + 1;
+const handshake_header_len = 4;
+
 state: State = .wait_ch,
 keypair: x25519.KeyPair,
 suite: CipherSuite = .aes_128_gcm_sha256,
@@ -275,9 +278,22 @@ pub fn acceptClientHello(
     const header: frame.Header = .init(.handshake, @intCast(sh.len));
     header.write(out[0..frame.header_len]);
 
+    var out_len = frame.header_len + sh.len;
+    if (ch.legacy_session_id.len != 0) {
+        out_len += try appendCompatibilityChangeCipherSpec(out[out_len..]);
+    }
+
     try self.installHandshakeKeys(suite, ch_msg, sh, ch.public_key);
     self.state = .wait_client_finished;
-    return out[0 .. frame.header_len + sh.len];
+    return out[0..out_len];
+}
+
+fn appendCompatibilityChangeCipherSpec(out: []u8) server_hello.EncodeError!usize {
+    if (out.len < compatibility_ccs_len) return error.BufferTooShort;
+    const header: frame.Header = .init(.change_cipher_spec, 1);
+    header.write(out[0..frame.header_len]);
+    out[frame.header_len] = 0x01;
+    return compatibility_ccs_len;
 }
 
 fn installHandshakeKeys(
@@ -716,6 +732,29 @@ const test_cert_der = @embedFile("test_fixtures/server.crt.der");
 const server_ecdsa_cert_der = @embedFile("test_fixtures/server-ecdsa/server.der");
 const server_ecdsa_scalar = @embedFile("test_fixtures/server-ecdsa/scalar.bin");
 
+fn compatibilityClientHello(
+    out: []u8,
+    client_hello_msg: []const u8,
+    session_id: []const u8,
+) []const u8 {
+    assert(session_id.len <= 32);
+    const session_id_len_offset = 38; // header(4) + legacy_version(2) + random(32)
+    const session_id_offset = session_id_len_offset + 1;
+    const compat_len = client_hello_msg.len + session_id.len;
+    @memcpy(out[0..session_id_offset], client_hello_msg[0..session_id_offset]);
+    @memcpy(out[session_id_offset..][0..session_id.len], session_id);
+    @memcpy(
+        out[session_id_offset + session_id.len .. compat_len],
+        client_hello_msg[session_id_offset..],
+    );
+    out[session_id_len_offset] = @intCast(session_id.len);
+    const body_len: u24 = @intCast(compat_len - handshake_header_len);
+    out[1] = @truncate(body_len >> 16);
+    out[2] = @truncate(body_len >> 8);
+    out[3] = @truncate(body_len);
+    return out[0..compat_len];
+}
+
 // RFC 8446 §6.2 — server-side ClientHello parser and negotiation failures map
 // to the alert descriptions callers should send through the Sans-I/O API.
 test "alertForError: parser and negotiation failures map to protocol alerts" {
@@ -880,6 +919,7 @@ test "acceptClientHello: emits ServerHello and installs handshake keys" {
 
     const hdr = try frame.parseHeader(sh_record);
     try testing.expectEqual(.handshake, hdr.content_type);
+    try testing.expectEqual(frame.header_len + @as(usize, hdr.length()), sh_record.len);
     const sh = try server_hello.parse(sh_record[frame.header_len..][0..hdr.length()]);
     try testing.expectEqual(.aes_128_gcm_sha256, sh.cipher_suite);
     try testing.expectEqualSlices(u8, &server_keypair.public_key.data, &sh.server_public_key.data);
@@ -889,6 +929,46 @@ test "acceptClientHello: emits ServerHello and installs handshake keys" {
     try client_hs.processServerHello(sh_record[frame.header_len..][0..hdr.length()]);
     try testing.expectEqualSlices(u8, &client_hs.rx.iv.data, &hs.tx.iv.data);
     try testing.expectEqualSlices(u8, &client_hs.tx.iv.data, &hs.rx.iv.data);
+}
+
+// RFC 8446 Appendix D.4 — if the client sends a non-empty legacy_session_id,
+// the server sends a compatibility ChangeCipherSpec after ServerHello and
+// before the encrypted handshake flight.
+test "acceptClientHello: emits compatibility ChangeCipherSpec for non-empty legacy_session_id" {
+    const client_keypair: x25519.KeyPair = .generate();
+    const session_id: [4]u8 = .{ 0xa0, 0xa1, 0xa2, 0xa3 };
+    var ch_buf: [512]u8 = undefined;
+    const ch = try client_hello.encode(&ch_buf, .zero, client_keypair.public_key, null, &.{});
+    var compat_ch_buf: [544]u8 = undefined;
+    const compat_ch = compatibilityClientHello(&compat_ch_buf, ch, &session_id);
+
+    var record: [1024]u8 = undefined;
+    const record_header: frame.Header = .init(.handshake, @intCast(compat_ch.len));
+    record_header.write(record[0..frame.header_len]);
+    @memcpy(record[frame.header_len..][0..compat_ch.len], compat_ch);
+
+    var hs: ServerHandshake = .init(.generate());
+    var out: [256]u8 = undefined;
+    const written = try hs.acceptClientHello(
+        record[0 .. frame.header_len + compat_ch.len],
+        .zero,
+        &out,
+    );
+
+    const sh_hdr = try frame.parseHeader(written);
+    try testing.expectEqual(.handshake, sh_hdr.content_type);
+    const ccs_offset = frame.header_len + @as(usize, sh_hdr.length());
+    try testing.expectEqual(ccs_offset + compatibility_ccs_len, written.len);
+    _ = try server_hello.parseWithSessionIdEcho(
+        written[frame.header_len..][0..sh_hdr.length()],
+        &session_id,
+    );
+
+    const ccs = written[ccs_offset..];
+    const ccs_hdr = try frame.parseHeader(ccs);
+    try testing.expectEqual(.change_cipher_spec, ccs_hdr.content_type);
+    try testing.expectEqual(@as(u16, 1), ccs_hdr.length());
+    try testing.expectEqual(@as(u8, 0x01), ccs[frame.header_len]);
 }
 
 test "sendAnonymousFlightForTest: client decrypts EncryptedExtensions and Finished" {
