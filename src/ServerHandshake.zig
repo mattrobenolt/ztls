@@ -13,6 +13,8 @@ const testing = std.testing;
 
 const aead = @import("aead.zig");
 const alert = @import("alert.zig");
+const array_buffer = @import("array_buffer.zig");
+const SliceBuffer = array_buffer.SliceBuffer;
 const certificate = @import("certificate.zig");
 const CertificateChain = @import("certificate_chain.zig").CertificateChain;
 const CipherSuite = @import("root.zig").CipherSuite;
@@ -29,6 +31,7 @@ pub const OutBuffer = frame.OutBuffer;
 pub const FlightBuffer = OutBuffer;
 const handshake = @import("handshake.zig");
 const HandshakeReader = handshake.Reader;
+const HandshakeBuffer = SliceBuffer(u8);
 const HandshakeType = handshake.Type;
 const KeyUpdateRequest = handshake.KeyUpdateRequest;
 const max_post_handshake_messages = handshake.max_post_handshake_messages;
@@ -95,6 +98,13 @@ const default_supported_suites = [_]CipherSuite{
 const compatibility_ccs_len = frame.header_len + 1;
 const handshake_header_len = 4;
 
+/// Maximum handshake message body the server will reassemble from record
+/// fragments. Two full TLS record payloads covers any realistic ClientHello.
+/// RFC 8446 §5.1 permits fragmenting handshake messages across multiple records.
+const ch_reassembly_body_max = frame.max_plaintext_len * 2;
+/// Full handshake message (4-byte header + body).
+const ch_reassembly_buffer_size = handshake_header_len + ch_reassembly_body_max;
+
 state: State = .wait_ch,
 keypair: x25519.KeyPair,
 suite: CipherSuite = .aes_128_gcm_sha256,
@@ -104,7 +114,9 @@ alpn_protocols: client_hello.AlpnProtocols = &.{},
 selected_alpn: ?[]const u8 = null,
 /// SNI hostname sent by the client in the server_name extension (RFC 6066 §3).
 /// Populated after acceptClientHello / handleRecord returns the first write event.
-/// Points into the caller-owned record buffer; copy if needed beyond the next call.
+/// Points into the ClientHello message buffer (the caller-owned record
+/// buffer or the handshake reassembly buffer). Copy if needed beyond the
+/// next handleRecord call.
 client_server_name: ?[]const u8 = null,
 rx: RecordLayer = undefined,
 tx: RecordLayer = undefined,
@@ -114,6 +126,17 @@ tx: RecordLayer = undefined,
 pending_write: PendingWrite = .idle,
 post_handshake_count: u8 = 0,
 retry_transcript: ?RetryTranscript = null,
+
+/// Caller-owned storage for reassembling a fragmented plaintext
+/// ClientHello/ClientHello2 across records. Set via useHandshakeBuffer().
+/// Empty means fragmented messages are rejected with IncompleteRecord.
+/// Capacity is caller-determined; ch_reassembly_buffer_size is the
+/// recommended minimum (two record payloads + handshake header).
+/// RFC 8446 §5.1.
+ch_buf: HandshakeBuffer = .empty,
+/// Total handshake message length expected (4 + body_len from the handshake
+/// header in the first fragment). Valid only when ch_buf.len > 0.
+ch_expected: usize = 0,
 
 pub fn init(keypair: x25519.KeyPair) ServerHandshake {
     return .{ .keypair = keypair };
@@ -143,6 +166,17 @@ pub fn supportSuites(self: *ServerHandshake, suites: []const CipherSuite) void {
 pub fn supportAlpn(self: *ServerHandshake, protocols: client_hello.AlpnProtocols) void {
     assert(self.state == .wait_ch);
     self.alpn_protocols = protocols;
+}
+
+/// Provide caller-owned storage for reassembling a fragmented plaintext
+/// ClientHello/ClientHello2 across records. Without this, a fragmented
+/// ClientHello is rejected with IncompleteRecord (maps to decode_error alert).
+/// The storage must live at least until the handshake reaches
+/// wait_client_finished. ch_reassembly_buffer_size is the recommended minimum.
+pub fn useHandshakeBuffer(self: *ServerHandshake, storage: []u8) void {
+    assert(self.state == .wait_ch);
+    assert(self.ch_buf.len == 0);
+    self.ch_buf = .init(storage);
 }
 
 pub fn selectedAlpnProtocol(self: *const ServerHandshake) ?[]const u8 {
@@ -267,11 +301,23 @@ pub fn acceptClientHello(
     out: []u8,
 ) AcceptError![]const u8 {
     assert(self.state == .wait_ch);
+    assert(self.ch_buf.len == 0); // no reassembly in progress
     const hdr = try frame.parseHeader(record);
     if (hdr.content_type != .handshake) return error.UnexpectedRecord;
     if (record.len < frame.header_len + hdr.length()) return error.IncompleteRecord;
+    return self.processClientHelloMessage(record[frame.header_len..][0..hdr.length()], random, out);
+}
 
-    const ch_msg = record[frame.header_len..][0..hdr.length()];
+/// Parse and process a complete ClientHello handshake message (4-byte header +
+/// body). Called by acceptClientHello (fast path from a single record) and by
+/// handleClientHelloRecord (after fragment reassembly).
+fn processClientHelloMessage(
+    self: *ServerHandshake,
+    ch_msg: []const u8,
+    random: client_hello.Random,
+    out: []u8,
+) AcceptError![]const u8 {
+    assert(self.state == .wait_ch);
     const ch = try client_hello.parse(ch_msg);
     const suite = if (self.retry_transcript == null)
         self.chooseSuite(ch) orelse return error.UnsupportedCipherSuite
@@ -663,8 +709,30 @@ fn handleWaitClientHello(
     random: client_hello.Random,
     out: []u8,
 ) HandleError!Event {
+    // If a mid-fragment error escapes (e.g. malformed record header),
+    // reset reassembly state so the caller can retry with a fresh CH.
+    errdefer if (self.ch_buf.len > 0) {
+        self.ch_buf.clear();
+        self.ch_expected = 0;
+    };
+
     const hdr = try frame.parseHeader(record);
     if (record.len < frame.header_len + hdr.length()) return error.IncompleteRecord;
+
+    // RFC 8446 §5.1 — non-handshake records while a ClientHello fragment is
+    // pending: alerts abort the connection regardless, everything else
+    // (including CCS, which would otherwise pass the HRR compatibility check)
+    // is illegal mid-fragment. Reset reassembly state on every exit.
+    if (self.ch_buf.len > 0 and hdr.content_type != .handshake) {
+        self.ch_buf.clear();
+        self.ch_expected = 0;
+        if (hdr.content_type == .alert) {
+            const a = try alert.parse(record[frame.header_len..][0..hdr.length()]);
+            return if (a.isCloseNotify()) .closed else error.PeerAlert;
+        }
+        return error.UnexpectedRecord;
+    }
+
     return switch (hdr.content_type) {
         // RFC 8446 §5, Appendix D.4 — after HRR, clients may send a dummy CCS
         // immediately before ClientHello2; before any ClientHello it is invalid.
@@ -677,12 +745,116 @@ fn handleWaitClientHello(
             const a = try alert.parse(record[frame.header_len..][0..hdr.length()]);
             break :blk if (a.isCloseNotify()) .closed else error.PeerAlert;
         },
-        .handshake => blk: {
+        .handshake => {
             if (hdr.length() == 0) return error.UnexpectedRecord;
-            break :blk .{ .write = try self.acceptClientHello(record, random, out) };
+            return self.handleClientHelloRecord(record, random, out);
         },
         else => error.UnexpectedRecord,
     };
+}
+
+/// Handle a handshake record in wait_ch state. Three paths:
+/// - Fast path (common case): the record body contains the complete ClientHello
+///   handshake message. Delegates to processClientHelloMessage directly.
+/// - Buffering path: the record body starts a ClientHello that will span
+///   multiple records. Copies bytes into ch_buf and returns .none
+///   until the full message is assembled.
+/// - Rejection: no caller-owned buffer was provided and the ClientHello is
+///   fragmented. Returns IncompleteRecord (maps to decode_error).
+/// RFC 8446 §5.1.
+fn handleClientHelloRecord(
+    self: *ServerHandshake,
+    record: []u8,
+    random: client_hello.Random,
+    out: []u8,
+) HandleError!Event {
+    // If a mid-fragment error escapes (e.g. malformed record header),
+    // reset reassembly state so the caller can retry with a fresh CH.
+    errdefer if (self.ch_buf.len > 0) {
+        self.ch_buf.clear();
+        self.ch_expected = 0;
+    };
+
+    const hdr = try frame.parseHeader(record);
+    const body = record[frame.header_len..][0..hdr.length()];
+
+    if (self.ch_buf.len > 0) {
+        if (self.ch_expected == 0) {
+            // Still assembling the handshake header across records.
+            // RFC 8446 §5.1 — handshake messages may be fragmented; the
+            // 4-byte header itself can span records.
+            const needed_header = handshake_header_len - self.ch_buf.len;
+            const take_header = @min(body.len, needed_header);
+            self.ch_buf.appendSlice(body[0..take_header]) catch return error.IncompleteRecord;
+
+            if (self.ch_buf.len < handshake_header_len) return .none;
+
+            // Header is now complete: validate type and compute expected total.
+            if (self.ch_buf.constSlice()[0] != @intFromEnum(HandshakeType.client_hello))
+                return error.UnexpectedMessage;
+            const body_len_assembled = (@as(u24, self.ch_buf.constSlice()[1]) << 16) |
+                (@as(u24, self.ch_buf.constSlice()[2]) << 8) |
+                self.ch_buf.constSlice()[3];
+            self.ch_expected = handshake_header_len + body_len_assembled;
+            if (self.ch_expected > self.ch_buf.buffer.len) return error.IncompleteRecord;
+
+            // Buffer any remaining body bytes from this record.
+            const remaining = body.len - take_header;
+            const take_extra = @min(remaining, self.ch_expected - self.ch_buf.len);
+            if (take_extra > 0)
+                self.ch_buf.appendSliceAssumeCapacity(body[take_header..][0..take_extra]);
+            if (remaining > take_extra) return error.UnexpectedMessage;
+        } else {
+            // Fragment in progress with known header: append continuation body.
+            const needed = self.ch_expected - self.ch_buf.len;
+            const take = @min(body.len, needed);
+            self.ch_buf.appendSliceAssumeCapacity(body[0..take]);
+            if (body.len > take) return error.UnexpectedMessage;
+        }
+
+        if (self.ch_buf.len >= self.ch_expected) {
+            // Complete: process, then reset reassembly state regardless of
+            // success or failure so the caller can retry with a fresh CH.
+            const result = self.processClientHelloMessage(
+                self.ch_buf.constSlice()[0..self.ch_expected],
+                random,
+                out,
+            );
+            self.ch_buf.clear();
+            self.ch_expected = 0;
+            return .{ .write = try result };
+        }
+        // Still need more fragments.
+        return .none;
+    }
+
+    // No fragment in progress. Sniff the handshake header.
+    // RFC 8446 §4 — the handshake type must be client_hello (also covers
+    // ClientHello2 after HelloRetryRequest).
+    if (body.len < handshake_header_len) {
+        if (self.ch_buf.buffer.len == 0) return error.IncompleteRecord;
+        self.ch_buf.appendSlice(body) catch return error.IncompleteRecord;
+        self.ch_expected = 0; // sentinel: handshake header not yet complete
+        return .none;
+    }
+    if (body[0] != @intFromEnum(HandshakeType.client_hello)) return error.UnexpectedMessage;
+
+    const body_len = (@as(u24, body[1]) << 16) | (@as(u24, body[2]) << 8) | body[3];
+    const total = handshake_header_len + body_len;
+
+    if (total <= body.len) {
+        // Complete in one record: fast path (common case).
+        return .{ .write = try self.processClientHelloMessage(body, random, out) };
+    }
+
+    // Fragmented ClientHello: require caller-owned storage.
+    if (self.ch_buf.buffer.len == 0) return error.IncompleteRecord;
+    if (total > self.ch_buf.buffer.len) return error.IncompleteRecord;
+
+    // Start buffering for cross-record reassembly.
+    self.ch_buf.appendSliceAssumeCapacity(body);
+    self.ch_expected = total;
+    return .none;
 }
 
 fn handleWaitClientFinished(self: *ServerHandshake, record: []u8) HandleError!Event {
@@ -2151,4 +2323,328 @@ test "acceptClientHello: rejects ClientHello with no shared group" {
         error.UnsupportedKeyShare,
         hs.acceptClientHello(record[0 .. frame.header_len + ch.len], .zero, &out),
     );
+}
+
+// RFC 8446 §5.1 — server reassembles a ClientHello whose handshake body is
+// split across two TLS records and responds with a ServerHello.
+test "handleRecord: reassembles ClientHello split across records" {
+    const client_keypair: x25519.KeyPair = .generate();
+    var ch_buf: [512]u8 = undefined;
+    const ch_msg = try client_hello.encode(&ch_buf, .zero, client_keypair.public_key, null, &.{});
+
+    // Split the handshake message body after the 4-byte header.
+    const split_at = handshake_header_len + (ch_msg.len - handshake_header_len) / 2;
+
+    var rec1: [1024]u8 = undefined;
+    const hdr1: frame.Header = .init(.handshake, @intCast(split_at));
+    hdr1.write(rec1[0..frame.header_len]);
+    @memcpy(rec1[frame.header_len..][0..split_at], ch_msg[0..split_at]);
+
+    var hs: ServerHandshake = .init(.generate());
+    var reassembly: [1024]u8 = undefined;
+    hs.useHandshakeBuffer(&reassembly);
+    var out: [256]u8 = undefined;
+    const ev1 = try hs.handleRecord(rec1[0 .. frame.header_len + split_at], .zero, &out);
+    try testing.expectEqual(Event.none, ev1);
+    try testing.expectEqual(.wait_ch, hs.state);
+
+    const remaining = ch_msg.len - split_at;
+    var rec2: [1024]u8 = undefined;
+    const hdr2: frame.Header = .init(.handshake, @intCast(remaining));
+    hdr2.write(rec2[0..frame.header_len]);
+    @memcpy(rec2[frame.header_len..][0..remaining], ch_msg[split_at..]);
+
+    const ev2 = try hs.handleRecord(rec2[0 .. frame.header_len + remaining], .zero, &out);
+    try testing.expectEqual(.wait_client_finished, hs.state);
+    const sh_hdr = try frame.parseHeader(ev2.write);
+    try testing.expectEqual(frame.ContentType.handshake, sh_hdr.content_type);
+}
+
+// RFC 8446 §5.1 — server reassembles a ClientHello whose 4-byte handshake
+// header is in one record and the entire body is in a second record.
+test "handleRecord: reassembles ClientHello with header and body in separate records" {
+    const client_keypair: x25519.KeyPair = .generate();
+    var ch_buf: [512]u8 = undefined;
+    const ch_msg = try client_hello.encode(&ch_buf, .zero, client_keypair.public_key, null, &.{});
+
+    // Split immediately after the 4-byte handshake header.
+    const split_at: usize = handshake_header_len;
+
+    var rec1: [1024]u8 = undefined;
+    const hdr1: frame.Header = .init(.handshake, @intCast(split_at));
+    hdr1.write(rec1[0..frame.header_len]);
+    @memcpy(rec1[frame.header_len..][0..split_at], ch_msg[0..split_at]);
+
+    var hs: ServerHandshake = .init(.generate());
+    var reassembly: [1024]u8 = undefined;
+    hs.useHandshakeBuffer(&reassembly);
+    var out: [256]u8 = undefined;
+    const ev1 = try hs.handleRecord(rec1[0 .. frame.header_len + split_at], .zero, &out);
+    try testing.expectEqual(Event.none, ev1);
+
+    const remaining = ch_msg.len - split_at;
+    var rec2: [1024]u8 = undefined;
+    const hdr2: frame.Header = .init(.handshake, @intCast(remaining));
+    hdr2.write(rec2[0..frame.header_len]);
+    @memcpy(rec2[frame.header_len..][0..remaining], ch_msg[split_at..]);
+
+    const ev2 = try hs.handleRecord(rec2[0 .. frame.header_len + remaining], .zero, &out);
+    try testing.expectEqual(.wait_client_finished, hs.state);
+    _ = ev2.write;
+}
+
+// RFC 8446 §5.1 — a ChangeCipherSpec record arriving while a ClientHello
+// fragment is pending is illegal (short of any valid CCS compatibility window).
+test "handleRecord: rejects CCS while ClientHello fragment pending" {
+    const client_keypair: x25519.KeyPair = .generate();
+    var ch_buf: [512]u8 = undefined;
+    const ch_msg = try client_hello.encode(&ch_buf, .zero, client_keypair.public_key, null, &.{});
+    const split_at = handshake_header_len + (ch_msg.len - handshake_header_len) / 2;
+
+    var rec1: [1024]u8 = undefined;
+    const hdr1: frame.Header = .init(.handshake, @intCast(split_at));
+    hdr1.write(rec1[0..frame.header_len]);
+    @memcpy(rec1[frame.header_len..][0..split_at], ch_msg[0..split_at]);
+
+    var hs: ServerHandshake = .init(.generate());
+    var reassembly: [1024]u8 = undefined;
+    hs.useHandshakeBuffer(&reassembly);
+    var out: [256]u8 = undefined;
+    const ev1 = try hs.handleRecord(rec1[0 .. frame.header_len + split_at], .zero, &out);
+    try testing.expectEqual(Event.none, ev1);
+
+    // CCS is illegal mid-fragment regardless of HRR state.
+    var ccs = [_]u8{ 0x14, 0x03, 0x03, 0x00, 0x01, 0x01 };
+    try testing.expectError(error.UnexpectedRecord, hs.handleRecord(&ccs, .zero, &out));
+}
+
+// RFC 8446 §5.1 — an alert record while a ClientHello fragment is pending
+// terminates the connection; the partial ClientHello is discarded.
+test "handleRecord: processes alert while ClientHello fragment pending" {
+    const client_keypair: x25519.KeyPair = .generate();
+    var ch_buf: [512]u8 = undefined;
+    const ch_msg = try client_hello.encode(&ch_buf, .zero, client_keypair.public_key, null, &.{});
+    const split_at = handshake_header_len + (ch_msg.len - handshake_header_len) / 2;
+
+    var rec1: [1024]u8 = undefined;
+    const hdr1: frame.Header = .init(.handshake, @intCast(split_at));
+    hdr1.write(rec1[0..frame.header_len]);
+    @memcpy(rec1[frame.header_len..][0..split_at], ch_msg[0..split_at]);
+
+    var hs: ServerHandshake = .init(.generate());
+    var reassembly: [1024]u8 = undefined;
+    hs.useHandshakeBuffer(&reassembly);
+    var out: [256]u8 = undefined;
+    const ev1 = try hs.handleRecord(rec1[0 .. frame.header_len + split_at], .zero, &out);
+    try testing.expectEqual(Event.none, ev1);
+
+    // A fatal alert terminates the connection mid-fragment.
+    var alert_rec = [_]u8{ 0x15, 0x03, 0x03, 0x00, 0x02, 0x02, 0x28 };
+    try testing.expectError(error.PeerAlert, hs.handleRecord(&alert_rec, .zero, &out));
+}
+
+// RFC 8446 §5.1 — a fragmented ClientHello without a caller-provided
+// reassembly buffer is rejected with IncompleteRecord (maps to decode_error).
+test "handleRecord: rejects fragmented ClientHello without reassembly buffer" {
+    const client_keypair: x25519.KeyPair = .generate();
+    var ch_buf: [512]u8 = undefined;
+    const ch_msg = try client_hello.encode(&ch_buf, .zero, client_keypair.public_key, null, &.{});
+
+    // Split after the 4-byte handshake header so the record is shorter
+    // than the handshake message.
+    const split_at: usize = handshake_header_len;
+
+    var rec1: [1024]u8 = undefined;
+    const hdr1: frame.Header = .init(.handshake, @intCast(split_at));
+    hdr1.write(rec1[0..frame.header_len]);
+    @memcpy(rec1[frame.header_len..][0..split_at], ch_msg[0..split_at]);
+
+    var hs: ServerHandshake = .init(.generate());
+    var out: [256]u8 = undefined;
+    // No useHandshakeBuffer call — fragmentation must be rejected.
+    try testing.expectError(
+        error.IncompleteRecord,
+        hs.handleRecord(rec1[0 .. frame.header_len + split_at], .zero, &out),
+    );
+}
+
+// RFC 8446 §5.1 — a reassembled ClientHello whose content fails parsing resets
+// reassembly state so the caller can retry with a fresh ClientHello.
+test "handleRecord: state reset after invalid fragmented ClientHello" {
+    const client_keypair: x25519.KeyPair = .generate();
+    const server_keypair: x25519.KeyPair = .generate();
+    var ch_buf: [512]u8 = undefined;
+    const ch_msg = try client_hello.encode(&ch_buf, .zero, client_keypair.public_key, null, &.{});
+
+    // Split halfway through the body.
+    const split_at = handshake_header_len + (ch_msg.len - handshake_header_len) / 2;
+
+    var rec1: [1024]u8 = undefined;
+    const hdr1: frame.Header = .init(.handshake, @intCast(split_at));
+    hdr1.write(rec1[0..frame.header_len]);
+    @memcpy(rec1[frame.header_len..][0..split_at], ch_msg[0..split_at]);
+
+    var hs: ServerHandshake = .init(server_keypair);
+    var reassembly: [1024]u8 = undefined;
+    hs.useHandshakeBuffer(&reassembly);
+    var out: [256]u8 = undefined;
+    _ = try hs.handleRecord(rec1[0 .. frame.header_len + split_at], .zero, &out);
+
+    // Fill the rest with garbage — assembles into an invalid CH.
+    const remaining = ch_msg.len - split_at;
+    var rec2: [1024]u8 = undefined;
+    const hdr2: frame.Header = .init(.handshake, @intCast(remaining));
+    hdr2.write(rec2[0..frame.header_len]);
+    @memset(rec2[frame.header_len..][0..remaining], 0x00);
+
+    // Error is expected; state must be reset regardless.
+    try testing.expectError(
+        error.DuplicateExtension,
+        hs.handleRecord(rec2[0 .. frame.header_len + remaining], .zero, &out),
+    );
+
+    // State reset verified: a fresh complete ClientHello should succeed.
+    var record: [1024]u8 = undefined;
+    const record_hdr: frame.Header = .init(.handshake, @intCast(ch_msg.len));
+    record_hdr.write(record[0..frame.header_len]);
+    @memcpy(record[frame.header_len..][0..ch_msg.len], ch_msg);
+    _ = try hs.handleRecord(record[0 .. frame.header_len + ch_msg.len], .zero, &out);
+}
+
+// RFC 8446 §5.1 — extra handshake bytes after the completed fragmented
+// ClientHello are not part of the ClientHello and must not be silently dropped.
+test "handleRecord: rejects trailing bytes after fragmented ClientHello" {
+    const client_keypair: x25519.KeyPair = .generate();
+    const server_keypair: x25519.KeyPair = .generate();
+    var ch_buf: [512]u8 = undefined;
+    const ch_msg = try client_hello.encode(&ch_buf, .zero, client_keypair.public_key, null, &.{});
+    const split_at = handshake_header_len + (ch_msg.len - handshake_header_len) / 2;
+
+    var rec1: [1024]u8 = undefined;
+    const hdr1: frame.Header = .init(.handshake, @intCast(split_at));
+    hdr1.write(rec1[0..frame.header_len]);
+    @memcpy(rec1[frame.header_len..][0..split_at], ch_msg[0..split_at]);
+
+    var hs: ServerHandshake = .init(server_keypair);
+    var reassembly: [1024]u8 = undefined;
+    hs.useHandshakeBuffer(&reassembly);
+    var out: [256]u8 = undefined;
+    _ = try hs.handleRecord(rec1[0 .. frame.header_len + split_at], .zero, &out);
+
+    const remaining = ch_msg.len - split_at;
+    const trailing = [_]u8{ @intFromEnum(HandshakeType.finished), 0, 0, 0 };
+    var rec2: [1024]u8 = undefined;
+    const hdr2: frame.Header = .init(.handshake, @intCast(remaining + trailing.len));
+    hdr2.write(rec2[0..frame.header_len]);
+    @memcpy(rec2[frame.header_len..][0..remaining], ch_msg[split_at..]);
+    @memcpy(rec2[frame.header_len + remaining ..][0..trailing.len], &trailing);
+
+    try testing.expectError(
+        error.UnexpectedMessage,
+        hs.handleRecord(rec2[0 .. frame.header_len + remaining + trailing.len], .zero, &out),
+    );
+
+    var record: [1024]u8 = undefined;
+    const record_hdr: frame.Header = .init(.handshake, @intCast(ch_msg.len));
+    record_hdr.write(record[0..frame.header_len]);
+    @memcpy(record[frame.header_len..][0..ch_msg.len], ch_msg);
+    _ = try hs.handleRecord(record[0 .. frame.header_len + ch_msg.len], .zero, &out);
+}
+
+// RFC 8446 §5.1 — after HelloRetryRequest, a ClientHello2 split across
+// multiple records is reassembled and processed.
+test "handleRecord: reassembles ClientHello2 split across records after HRR" {
+    const client_keypair: x25519.KeyPair = .generate();
+    const server_keypair: x25519.KeyPair = .generate();
+
+    // CH1 with a non-X25519 key share triggers HRR.
+    var ch1_buf: [512]u8 = undefined;
+    const ch1 = try client_hello.encode(&ch1_buf, .zero, client_keypair.public_key, null, &.{});
+    var hrr_ch1_buf: [512]u8 = undefined;
+    const hrr_ch1 = clientHelloWithKeyShareGroup(
+        &hrr_ch1_buf,
+        ch1,
+        @intFromEnum(NamedGroup.secp384r1),
+    );
+    var ch1_record: [1024]u8 = undefined;
+    const ch1_header: frame.Header = .init(.handshake, @intCast(hrr_ch1.len));
+    ch1_header.write(ch1_record[0..frame.header_len]);
+    @memcpy(ch1_record[frame.header_len..][0..hrr_ch1.len], hrr_ch1);
+
+    var hs: ServerHandshake = .init(server_keypair);
+    var reassembly: [1024]u8 = undefined;
+    hs.useHandshakeBuffer(&reassembly);
+    var out: [256]u8 = undefined;
+    _ = try hs.acceptClientHello(
+        ch1_record[0 .. frame.header_len + hrr_ch1.len],
+        .zero,
+        &out,
+    );
+    try testing.expectEqual(.wait_ch, hs.state);
+
+    // Dummy CCS after HRR.
+    var ccs = [_]u8{ 0x14, 0x03, 0x03, 0x00, 0x01, 0x01 };
+    try testing.expectEqual(Event.none, try hs.handleRecord(&ccs, .zero, &out));
+
+    // CH2 with X25519 key share, split across records.
+    var ch2_buf: [512]u8 = undefined;
+    const ch2 = try client_hello.encode(&ch2_buf, .zero, client_keypair.public_key, null, &.{});
+    const split_at = handshake_header_len + (ch2.len - handshake_header_len) / 2;
+
+    var rec1: [1024]u8 = undefined;
+    const hdr1: frame.Header = .init(.handshake, @intCast(split_at));
+    hdr1.write(rec1[0..frame.header_len]);
+    @memcpy(rec1[frame.header_len..][0..split_at], ch2[0..split_at]);
+
+    const ev1 = try hs.handleRecord(rec1[0 .. frame.header_len + split_at], .zero, &out);
+    try testing.expectEqual(Event.none, ev1);
+
+    const remaining = ch2.len - split_at;
+    var rec2: [1024]u8 = undefined;
+    const hdr2: frame.Header = .init(.handshake, @intCast(remaining));
+    hdr2.write(rec2[0..frame.header_len]);
+    @memcpy(rec2[frame.header_len..][0..remaining], ch2[split_at..]);
+
+    const ev2 = try hs.handleRecord(rec2[0 .. frame.header_len + remaining], .zero, &out);
+    try testing.expectEqual(.wait_client_finished, hs.state);
+    _ = ev2.write;
+}
+
+// RFC 8446 §5.1 — handshake header (first 4 bytes of the handshake message)
+// may itself be split across TLS records. The server buffers partial header
+// bytes until enough have arrived to validate the handshake type and compute
+// the expected total message length.
+test "handleRecord: reassembles ClientHello when handshake header is split after 1 byte" {
+    const client_keypair: x25519.KeyPair = .generate();
+    var ch_buf: [512]u8 = undefined;
+    const ch_msg = try client_hello.encode(
+        &ch_buf,
+        .zero,
+        client_keypair.public_key,
+        "example.com",
+        &.{"h2"},
+    );
+
+    var hs: ServerHandshake = .init(.generate());
+    var reassembly: [1024]u8 = undefined;
+    hs.useHandshakeBuffer(&reassembly);
+    var out: [256]u8 = undefined;
+
+    // Record 1: just the first byte of the handshake header (handshake type = 0x01).
+    var rec1: [1024]u8 = undefined;
+    const hdr1: frame.Header = .init(.handshake, 1);
+    hdr1.write(rec1[0..frame.header_len]);
+    rec1[frame.header_len] = ch_msg[0]; // handshake type byte
+    const ev1 = try hs.handleRecord(rec1[0 .. frame.header_len + 1], .zero, &out);
+    try testing.expectEqual(Event.none, ev1);
+
+    // Record 2: remaining 3 bytes of handshake header plus the full body.
+    const remaining = ch_msg.len - 1;
+    var rec2: [1024]u8 = undefined;
+    const hdr2: frame.Header = .init(.handshake, @intCast(remaining));
+    hdr2.write(rec2[0..frame.header_len]);
+    @memcpy(rec2[frame.header_len..][0..remaining], ch_msg[1..]);
+    const ev2 = try hs.handleRecord(rec2[0 .. frame.header_len + remaining], .zero, &out);
+    try testing.expectEqual(.wait_client_finished, hs.state);
+    _ = ev2.write;
 }
