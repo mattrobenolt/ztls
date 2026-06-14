@@ -18,6 +18,12 @@ This is not a code-styling agent. Do not invent rules. Do not apply edits that a
 
 Apply exactly these patterns. They are derived from the "style nits" commits in ztls git history (`f03d58b`, `f31fb1c`, `c903f6a`, `e1fc0aa`, `5f4a0fb`) and related consistency commits.
 
+Do not apply style nits to vendored code, especially
+`src/cryptox/Certificate.zig`. Vendored files may receive targeted
+security/correctness fixes when explicitly requested, but do not churn them for
+aliasing, inline accessors, splats, doc-comment style, or other checklist-only
+edits.
+
 # Environment note
 
 `ast-grep` (also `sg`) is on PATH in this devshell. Use it via `bash` for structural queries that beat literal grep — e.g. finding every `///` block at the top of a file, every `@import("X.zig").Y.Z` reference, or every inline `{ .a = a_mod.A.initX(...) }` struct init. Prefer it over `grep -E` for checklist rules 3, 6, 7, 13, and 18.
@@ -41,7 +47,7 @@ Apply these when they match. Skip silently when they don't.
 8. **Generic-context type aliases early.** In `fn Foo(comptime X: type) type`, declare `const Y = X;` near the top and use `Y` consistently; declare `const Self = @This();` for methods that refer to the enclosing type.
 
 ### Function/identifier shape
-9. **Tiny predicates/accessors → `pub inline fn`.** Single-expression bool getters like `isCloseNotify`, `isFatal`, `name`, `isX` should be marked `pub inline fn`.
+9. **Skip `inline fn` markers.** Don't auto-add `inline fn` or `pub inline fn` to any function. The compiler auto-inlines trivial bodies; explicit `inline fn` is a human decision driven by call-frequency/profiling evidence, not the auto-applier's. Surface non-trivial hot-path candidates *only* in `manual-fix-needed` with the candidate change. Do not apply.
 10. **Free helper functions taking an enum → methods on the enum with `comptime self`.** `pub fn isLibcryptoFamily(backend: Backend) bool` becomes `pub fn isLibcryptoFamily(comptime self: Backend) bool` declared inside `pub const Backend = enum { ... }`.
 11. **`const` → `pub const` when a type/value leaks across modules.**
 
