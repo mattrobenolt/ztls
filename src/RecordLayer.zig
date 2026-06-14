@@ -353,7 +353,10 @@ test "decrypt: failed auth poisons caller buffer" {
     // check failed.
     const inner = tampered[frame.header_len..][0..inner_len];
     try testing.expectEqualSlices(u8, plaintext, inner[0..plaintext.len]);
-    try testing.expectEqual(@as(u8, @intFromEnum(ContentType.application_data)), inner[plaintext.len]);
+    try testing.expectEqual(
+        @as(u8, @intFromEnum(ContentType.application_data)),
+        inner[plaintext.len],
+    );
 
     // Prove only the tampered record's buffer is poisoned, not context state:
     // a subsequent valid record (same sequence, fresh buffer) still decrypts.
