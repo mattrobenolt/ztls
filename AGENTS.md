@@ -103,6 +103,69 @@ to subprojects, but don't smear subproject details back into the root.
 
 ---
 
+## Agent Operating Loop
+
+For non-trivial work, keep the loop tight:
+
+1. Pick one issue slice.
+2. Verify the current claim against code/docs before editing.
+3. Implement the smallest honest change.
+4. Run the relevant checks.
+5. Update `PRODUCTION_READINESS.md` if evidence/status changed.
+6. Commit and push the slice.
+7. Comment on the GitHub issue with evidence and residual scope.
+
+Do not broaden a slice because nearby work looks tempting. If a slice is partial,
+say partial in the issue and readiness docs. Close issues only when the committed
+evidence satisfies the issue, not when progress is merely directionally good.
+
+When using subagents, prefer the project-scoped role agents under `.pi/agents/`
+over ad hoc prompts:
+
+- `evidence-auditor` — status/readiness/issue closure honesty.
+- `security-reviewer` — adversarial TLS/crypto/security review.
+- `implementation-reviewer` — practical Zig/API/test review.
+- `footgun-reviewer` — process, generated-artifact, benchmark, and
+  maintainability traps.
+- `benchmark-methodologist` — benchmark equivalence, perf, and disassembly
+  evidence.
+- `conformance-planner` — TLS-Anvil/BoGo/tlsfuzzer evidence planning.
+- `slice-worker` — narrow code-writing worker for approved issue slices.
+- `whitehat-hacker` — Opus 4.8/high-thinking vulnerability hunter/tracer for
+  scoped hostile-input, parser-abuse, memory-corruption, and fuzz-target work.
+- `vuln-validator` — independent validation pass that tries to disprove one
+  `whitehat-hacker` finding without generating new findings.
+
+Keep them bounded: scouting, adversarial review, or implementation of a narrow
+approved plan. Treat reviewer output as advisory until the parent verifies it
+against code, tests, RFC text, and local commands. Give subagents explicit output
+paths and do not let a stalled child block the parent from inspecting status and
+recovering.
+
+For vulnerability research, follow the Cloudflare/Project Glasswing harness
+shape rather than a single broad scan: recon the trust boundary, run many narrow
+hunts by attack class and scope, require proof artifacts where practical, send
+candidate findings through an independent validator, then dedupe, trace
+reachability from public APIs, gapfill missed surfaces, and write structured
+reports. `whitehat-hacker` is for Hunt/Trace. `vuln-validator` is for Validate.
+Do not ask either agent to “find vulnerabilities in the repo” without a narrowed
+attack class and target surface.
+
+Treat `.pi/agents/` prompts as living project code. After each meaningful chunk
+of work, reflect on whether the role prompts should change based on observed
+agent behavior: add missing constraints, tighten vague responsibilities, split
+roles that are too broad, and delete instructions that are stale, redundant, or
+counterproductive. Prefer many narrow, specialized agents over a few generic
+ones when a repeated task has a clear checklist or attack surface.
+
+Long-running remote work needs process hygiene. Use one durable terminal/session,
+record the command, check for existing remote jobs before starting another, and
+clean up partial outputs before collecting evidence. Never publish benchmark or
+conformance results from a run that had duplicate workers, a dirty tree, missing
+provenance, or unclear ownership of generated files.
+
+---
+
 ## Code Style
 
 - Prefer `ast-grep` for structural searches and mechanical refactors. Use plain
@@ -143,6 +206,29 @@ ztls client to a ztls server in memory and exercise both directions against
 its own `build.zig`, `justfile`, Python environment, and harness code. The root
 workspace delegates to `just conformance/ci`; when working on conformance, `cd
 conformance` and use its local `just fmt`, `just lint`, and suite recipes.
+
+---
+
+## Performance Evidence
+
+Benchmark numbers are evidence only when the run is reproducible and the measured
+work is equivalent. Commit raw outputs, metadata, and analysis together under
+`docs/research/perf/<timestamp-host>/`; do not cite ignored `zig-out/` artifacts
+as durable evidence. EC2 benchmark captures use `infra/bench/` and
+`just bench-capture-default`; local captures are workflow smoke tests unless the
+issue explicitly asks for local data.
+
+Before claiming ztls is faster or slower, identify the comparable row in
+`docs/research/PERFORMANCE.md`, confirm what each implementation does inside the
+timed loop, and explain the delta with objective evidence. Wall-time alone is
+not enough for performance claims: collect `perf` data and disassembly for hot
+rows so the result can be tied to instruction counts, symbols, cache/branch
+behavior, copies avoided, or library overhead. If you cannot explain why a row is
+faster or slower, call it a measurement, not a conclusion.
+
+Ignore mixed geomeans when benchmark sets differ. Keep ztls-only rows,
+EVP/raw-crypto rows, libssl rows, and rustls rows labeled by their measurement
+boundary. A pretty `benchstat` table is not proof of apples-to-apples work.
 
 ---
 
@@ -226,7 +312,8 @@ resolved from the declared type on the left.
 - Don't reach for an allocator to "simplify" something. Simplify the design.
 - Don't write a test without citing a spec section.
 - Don't commit benchmarks that haven't been run. Benchmark results in comments
-  should include the machine, build flags, and date.
+  should include the machine, build flags, date, git revision, dirty state,
+  backend/library versions, and raw outputs.
 - Don't paper over a performance problem with a comment like "good enough for
   now." File it, measure it, and fix it or explicitly defer it with a note on
   what's blocking.
