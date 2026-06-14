@@ -89,6 +89,12 @@ pub const EncryptError = AeadError || error{
 ///
 /// Sequence number increments only on successful authentication.
 ///
+/// On `error.AuthenticationFailed`, the ciphertext region of `buf` has
+/// already been overwritten with unauthenticated plaintext by the AEAD
+/// backend (standard OpenSSL EVP decrypt-then-verify ordering).
+/// Callers must treat `buf` as poisoned after this error and must not
+/// inspect, log, or reuse its contents.
+///
 /// RFC 8446 §5.2
 // ziglint-ignore: Z015 -- DecryptError is a public error-set alias.
 pub fn decrypt(self: *RecordLayer, buf: []u8) DecryptError!DecryptedRecord {
@@ -309,6 +315,52 @@ test "encrypt/decrypt: sequence numbers advance" {
     }
     try testing.expectEqual(@as(u64, 3), tx.seq);
     try testing.expectEqual(@as(u64, 3), rx.seq);
+}
+
+// RFC 8446 §5.2 — on AEAD authentication failure the caller buffer is
+// overwritten with unauthenticated plaintext. This is a characterization
+// of standard OpenSSL EVP behavior (decrypt-before-verify), not a ztls
+// correctness assertion. The test exists so that any future backend or
+// EVP call-ordering change surfaces the buffer-poisoning behavior
+// explicitly.
+test "decrypt: failed auth poisons caller buffer" {
+    const key: Aes128GcmKey = .init(@splat(0xab));
+    const iv: Iv = .init(@splat(0xcd));
+    var tx: RecordLayer = try .init(.{ .aes_128_gcm_sha256 = key }, iv);
+    defer tx.deinit();
+    var rx: RecordLayer = try .init(.{ .aes_128_gcm_sha256 = key }, iv);
+    defer rx.deinit();
+
+    const plaintext = "CENSORED_AFTER_AUTH_FAIL";
+    const record_len = frame.header_len + plaintext.len + 1 + tag_len;
+    var wire: [record_len]u8 = undefined;
+    const record = try tx.encrypt(.application_data, plaintext, &wire);
+
+    const tag_offset = record.len - tag_len;
+    const inner_len = record.len - frame.header_len - tag_len;
+
+    // Tamper with one byte of the tag in a copy of the wire record.
+    var tampered: [record_len]u8 = undefined;
+    @memcpy(&tampered, record);
+    tampered[tag_offset] ^= 0xff;
+
+    // Auth failure: seq must not advance.
+    try testing.expectError(error.AuthenticationFailed, rx.decrypt(&tampered));
+    try testing.expectEqual(@as(u64, 0), rx.seq);
+
+    // Buffer contains unauthenticated plaintext — the EVP decrypt-before-verify
+    // ordering wrote real plaintext into the caller's buffer before the tag
+    // check failed.
+    const inner = tampered[frame.header_len..][0..inner_len];
+    try testing.expectEqualSlices(u8, plaintext, inner[0..plaintext.len]);
+    try testing.expectEqual(@as(u8, @intFromEnum(ContentType.application_data)), inner[plaintext.len]);
+
+    // Prove only the tampered record's buffer is poisoned, not context state:
+    // a subsequent valid record (same sequence, fresh buffer) still decrypts.
+    var fresh: [record_len]u8 = undefined;
+    @memcpy(&fresh, record);
+    const result = try rx.decrypt(&fresh);
+    try testing.expectEqualSlices(u8, plaintext, result.content);
 }
 
 // RFC 8446 §5.2, §5.3 — replaying ciphertext under a later sequence number
