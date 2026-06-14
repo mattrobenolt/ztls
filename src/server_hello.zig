@@ -233,6 +233,39 @@ pub const encoded_len = 4 + 2 + 32 + 1 + 2 + 1 + 2 + (4 + 2 + 2 + 32) + (4 + 2);
 
 pub const EncodeError = error{BufferTooShort};
 
+/// Encode a TLS 1.3 HelloRetryRequest handshake message. The caller supplies
+/// the legacy_session_id_echo from ClientHello1. RFC 8446 §4.1.4, Appendix D.4.
+pub fn encodeHelloRetryRequest(
+    out: []u8,
+    legacy_session_id_echo: []const u8,
+    cipher_suite: CipherSuite,
+    selected_group: NamedGroup,
+) EncodeError![]const u8 {
+    const extensions_len = 12; // key_share(selected_group) + supported_versions
+    const body_len: usize = 2 + 32 + 1 + legacy_session_id_echo.len + 2 + 1 + 2 + extensions_len;
+    const total = 4 + body_len;
+    if (out.len < total) return error.BufferTooShort;
+
+    var w: wire.Writer = .init(out);
+    w.append(handshake.Type, .server_hello);
+    w.append(u24, @intCast(body_len));
+    w.append(ProtocolVersion, .tls_1_2);
+    w.appendSlice(&hello_retry_request_random);
+    w.append(u8, @intCast(legacy_session_id_echo.len));
+    w.appendSlice(legacy_session_id_echo);
+    w.append(CipherSuite, cipher_suite);
+    w.append(CompressionMethod, .no_compression);
+
+    w.append(u16, extensions_len);
+    w.append(ExtensionType, .key_share);
+    w.append(u16, 2);
+    w.append(NamedGroup, selected_group);
+    w.append(ExtensionType, .supported_versions);
+    w.append(u16, 2);
+    w.append(ProtocolVersion, .tls_1_3);
+    return w.written();
+}
+
 /// Encode a TLS 1.3 ServerHello handshake message. The caller supplies the
 /// legacy_session_id_echo from ClientHello; ztls' client currently sends an
 /// empty one, but the server path needs to echo arbitrary caller-owned bytes.
@@ -638,6 +671,23 @@ const hrr_rfc8448: []const u8 = &.{
     0x67, 0xe8, 0xca, 0x0c, 0xaf, 0x57, 0x1f, 0xb2, 0xb7, 0xcf, 0xf0, 0xf9, 0x34,
     0xb0, 0x00, 0x2b, 0x00, 0x02, 0x03, 0x04,
 };
+
+// RFC 8446 §4.1.4 — encoded HRR is a ServerHello-shaped retry request with
+// key_share carrying the selected group.
+test "encodeHelloRetryRequest: parse round-trip" {
+    var out: [128]u8 = undefined;
+    const session_id: [3]u8 = .{ 0xaa, 0xbb, 0xcc };
+    const msg = try encodeHelloRetryRequest(
+        &out,
+        &session_id,
+        .aes_128_gcm_sha256,
+        .x25519,
+    );
+    const hrr = try parseHelloRetryRequest(msg);
+    try testing.expectEqual(.aes_128_gcm_sha256, hrr.cipher_suite);
+    try testing.expectEqual(NamedGroup.x25519, hrr.selected_group.?);
+    try testing.expectEqual(@as(?[]const u8, null), hrr.cookie);
+}
 
 // RFC 8446 §4.1.4, RFC 8448 §5 — basic HRR parse.
 test "parseHelloRetryRequest: RFC 8448 §5" {

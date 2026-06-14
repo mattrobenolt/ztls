@@ -123,7 +123,7 @@ pub const Parsed = struct {
     signature_schemes: []const u8 = &.{},
     server_name: ?[]const u8 = null,
     alpn_protocols: []const u8 = &.{},
-    public_key: x25519.PublicKey,
+    public_key: ?x25519.PublicKey = null,
 
     pub fn offersSuite(self: Parsed, suite: CipherSuite) bool {
         var i: usize = 0;
@@ -275,7 +275,7 @@ pub fn parse(msg: []const u8) ParseError!Parsed {
     var parsed: Parsed = .{
         .cipher_suites = cipher_suites,
         .legacy_session_id = legacy_session_id,
-        .public_key = undefined,
+        .public_key = null,
     };
     var got_supported_versions = false;
     var got_key_share = false;
@@ -405,7 +405,7 @@ fn hasSupportedHandshakeSignatureScheme(schemes: []const u8) bool {
     return false;
 }
 
-fn parseKeyShare(ext: []const u8) ParseError!x25519.PublicKey {
+fn parseKeyShare(ext: []const u8) ParseError!?x25519.PublicKey {
     if (ext.len < 2) return error.InvalidVectorLength;
     var r: wire.Reader = .init(ext);
     const client_shares_len = r.assumeRead(u16);
@@ -423,7 +423,7 @@ fn parseKeyShare(ext: []const u8) ParseError!x25519.PublicKey {
             public_key = .init(key[0..32].*);
         }
     }
-    return public_key orelse error.UnsupportedKeyShare;
+    return public_key;
 }
 
 test "encode: size matches encodedLen" {
@@ -577,7 +577,7 @@ test "parse: encoded ClientHello" {
     try testing.expect(parsed.offersSuite(.aes_256_gcm_sha384));
     try testing.expect(parsed.offersSuite(.chacha20_poly1305_sha256));
     try testing.expectEqualStrings("example.com", parsed.server_name.?);
-    try testing.expectEqualSlices(u8, &key.data, &parsed.public_key.data);
+    try testing.expectEqualSlices(u8, &key.data, &parsed.public_key.?.data);
     const alpn_wire = [_]u8{ 0x02, 'h', '2', 0x08, 'h', 't', 't', 'p', '/', '1', '.', '1' };
     try testing.expectEqualSlices(u8, &alpn_wire, parsed.alpn_protocols);
     try testing.expectEqualStrings("http/1.1", parsed.selectAlpn(&.{ "http/1.1", "h2" }).?);
@@ -733,12 +733,9 @@ test "parse: rejects malformed compression methods" {
     try testing.expectError(error.InvalidCompressionMethod, parse(non_zero_method[0..encoded.len]));
 }
 
-// RFC 8446 §4.1.4 — when the client offers no key_share for a group the server
-// supports, a conformant server sends HelloRetryRequest. ztls does not implement
-// the HRR path (see docs/research/CONFORMANCE_ROADMAP.md, #1); instead
-// it rejects the ClientHello with error.UnsupportedKeyShare. This test pins that
-// honest current behavior so it cannot silently change without a roadmap update.
-test "parse: no shared group is rejected (HRR not implemented)" {
+// RFC 8446 §4.2.7 — a server cannot negotiate a group absent from
+// supported_groups.
+test "parse: no shared supported group is rejected" {
     var buf: [512]u8 = undefined;
     const encoded = try encode(&buf, .zero, .zero, null, &.{});
     const msg = buf[0..encoded.len];
@@ -829,6 +826,21 @@ test "parse: rejects duplicate supported_groups" {
     const dup_supported_groups = [_]u8{ 0x00, 0x0a, 0x00, 0x04, 0x00, 0x02, 0x00, 0x1d };
     const new_len = appendExtension(&buf, encoded.len, &dup_supported_groups);
     try testing.expectError(error.DuplicateExtension, parse(buf[0..new_len]));
+}
+
+// RFC 8446 §4.1.4 — a ClientHello that supports X25519 but omits an X25519
+// key_share is structurally valid input for server HelloRetryRequest.
+test "parse: missing X25519 key share leaves public key null" {
+    var buf: [512]u8 = undefined;
+    const encoded = try encode(&buf, .zero, .zero, null, &.{});
+    const key_share = try findExtension(buf[0..encoded.len], .key_share);
+    // Rewrite key_share group x25519 (0x001d) to secp384r1 (0x0018), while
+    // leaving supported_groups unchanged.
+    key_share[2] = 0x00;
+    key_share[3] = 0x18;
+
+    const parsed = try parse(buf[0..encoded.len]);
+    try testing.expectEqual(@as(?x25519.PublicKey, null), parsed.public_key);
 }
 
 // RFC 8446 §4.2 — duplicate recognized extensions are rejected.

@@ -32,6 +32,7 @@ const HandshakeReader = handshake.Reader;
 const HandshakeType = handshake.Type;
 const KeyUpdateRequest = handshake.KeyUpdateRequest;
 const max_post_handshake_messages = handshake.max_post_handshake_messages;
+const NamedGroup = @import("kex.zig").NamedGroup;
 const HashArm = @import("suite_state.zig").HashArm;
 const hkdf = @import("hkdf.zig");
 const PendingWrite = @import("pending_write.zig").PendingWrite;
@@ -40,6 +41,7 @@ const server_hello = @import("server_hello.zig");
 const signature = @import("signature.zig");
 pub const SignError = signature.SignError;
 pub const Signer = signature.Signer;
+const transcript_util = @import("transcript.zig");
 const x25519 = @import("x25519.zig");
 
 const ServerHandshake = @This();
@@ -48,6 +50,11 @@ pub const State = enum {
     wait_ch,
     wait_client_finished,
     connected,
+};
+
+const RetryTranscript = union(enum) {
+    sha256: Sha256,
+    sha384: Sha384,
 };
 
 const Suite = union(enum) {
@@ -106,6 +113,7 @@ tx: RecordLayer = undefined,
 /// data from silently desynchronizing traffic keys.
 pending_write: PendingWrite = .idle,
 post_handshake_count: u8 = 0,
+retry_transcript: ?RetryTranscript = null,
 
 pub fn init(keypair: x25519.KeyPair) ServerHandshake {
     return .{ .keypair = keypair };
@@ -261,12 +269,22 @@ pub fn acceptClientHello(
 
     const ch_msg = record[frame.header_len..][0..hdr.length()];
     const ch = try client_hello.parse(ch_msg);
-    const suite = self.chooseSuite(ch) orelse return error.UnsupportedCipherSuite;
+    const suite = if (self.retry_transcript == null)
+        self.chooseSuite(ch) orelse return error.UnsupportedCipherSuite
+    else
+        self.suite;
     self.suite = suite;
     self.selected_alpn = ch.selectAlpn(self.alpn_protocols);
     if (ch.alpn_protocols.len != 0 and self.alpn_protocols.len != 0 and self.selected_alpn == null)
         return error.NoApplicationProtocol;
     self.client_server_name = ch.server_name;
+
+    const client_public_key = ch.public_key orelse {
+        if (self.retry_transcript != null) return error.UnsupportedKeyShare;
+        const hrr = try self.encodeHelloRetryRequest(ch_msg, ch.legacy_session_id, suite, out);
+        self.state = .wait_ch;
+        return hrr;
+    };
 
     const sh = try server_hello.encode(
         out[frame.header_len..],
@@ -283,7 +301,7 @@ pub fn acceptClientHello(
         out_len += try appendCompatibilityChangeCipherSpec(out[out_len..]);
     }
 
-    try self.installHandshakeKeys(suite, ch_msg, sh, ch.public_key);
+    try self.installHandshakeKeys(suite, ch_msg, sh, client_public_key);
     self.state = .wait_client_finished;
     return out[0..out_len];
 }
@@ -296,6 +314,56 @@ fn appendCompatibilityChangeCipherSpec(out: []u8) server_hello.EncodeError!usize
     return compatibility_ccs_len;
 }
 
+fn encodeHelloRetryRequest(
+    self: *ServerHandshake,
+    ch_msg: []const u8,
+    legacy_session_id: []const u8,
+    suite: CipherSuite,
+    out: []u8,
+) server_hello.EncodeError![]const u8 {
+    const hrr = try server_hello.encodeHelloRetryRequest(
+        out[frame.header_len..],
+        legacy_session_id,
+        suite,
+        .x25519,
+    );
+    const header: frame.Header = .init(.handshake, @intCast(hrr.len));
+    header.write(out[0..frame.header_len]);
+    self.retry_transcript = makeRetryTranscript(suite, ch_msg, hrr);
+    var out_len = frame.header_len + hrr.len;
+    if (legacy_session_id.len != 0) {
+        out_len += try appendCompatibilityChangeCipherSpec(out[out_len..]);
+    }
+    return out[0..out_len];
+}
+
+fn makeRetryTranscript(
+    suite: CipherSuite,
+    ch_msg: []const u8,
+    hrr_msg: []const u8,
+) RetryTranscript {
+    return switch (suite) {
+        .aes_128_gcm_sha256, .chacha20_poly1305_sha256 => blk: {
+            var ch1_hash: [Sha256.digest_length]u8 = undefined;
+            Sha256.hash(ch_msg, &ch1_hash, .{});
+            const synthetic = transcript_util.messageHashSynthetic(Sha256.digest_length, ch1_hash);
+            var transcript: Sha256 = .init(.{});
+            transcript.update(&synthetic);
+            transcript.update(hrr_msg);
+            break :blk .{ .sha256 = transcript };
+        },
+        .aes_256_gcm_sha384 => blk: {
+            var ch1_hash: [Sha384.digest_length]u8 = undefined;
+            Sha384.hash(ch_msg, &ch1_hash, .{});
+            const synthetic = transcript_util.messageHashSynthetic(Sha384.digest_length, ch1_hash);
+            var transcript: Sha384 = .init(.{});
+            transcript.update(&synthetic);
+            transcript.update(hrr_msg);
+            break :blk .{ .sha384 = transcript };
+        },
+    };
+}
+
 fn installHandshakeKeys(
     self: *ServerHandshake,
     suite: CipherSuite,
@@ -306,7 +374,10 @@ fn installHandshakeKeys(
     const dhe = try x25519.sharedSecret(self.keypair.secret_key, client_public_key);
     switch (suite) {
         .aes_128_gcm_sha256, .chacha20_poly1305_sha256 => {
-            var transcript: Sha256 = .init(.{});
+            var transcript: Sha256 = if (self.retry_transcript) |rt| switch (rt) {
+                .sha256 => |t| t,
+                .sha384 => unreachable,
+            } else .init(.{});
             transcript.update(ch_msg);
             transcript.update(sh_msg);
             self.suite_state = .{ .sha256 = makeHandshakeArm(
@@ -318,7 +389,10 @@ fn installHandshakeKeys(
             ) };
         },
         .aes_256_gcm_sha384 => {
-            var transcript: Sha384 = .init(.{});
+            var transcript: Sha384 = if (self.retry_transcript) |rt| switch (rt) {
+                .sha256 => unreachable,
+                .sha384 => |t| t,
+            } else .init(.{});
             transcript.update(ch_msg);
             transcript.update(sh_msg);
             self.suite_state = .{ .sha384 = makeHandshakeArm(
@@ -330,6 +404,7 @@ fn installHandshakeKeys(
             ) };
         },
     }
+    self.retry_transcript = null;
 
     switch (self.suite_state) {
         inline .sha256, .sha384 => |s| {
@@ -587,8 +662,13 @@ fn handleWaitClientHello(
     const hdr = try frame.parseHeader(record);
     if (record.len < frame.header_len + hdr.length()) return error.IncompleteRecord;
     return switch (hdr.content_type) {
-        // RFC 8446 §D.4 — CCS before ClientHello is outside the compatibility window.
-        .change_cipher_spec => error.UnexpectedRecord,
+        // RFC 8446 §5, Appendix D.4 — after HRR, clients may send a dummy CCS
+        // immediately before ClientHello2; before any ClientHello it is invalid.
+        .change_cipher_spec => {
+            if (self.retry_transcript == null) return error.UnexpectedRecord;
+            try handshake.validateChangeCipherSpec(record[frame.header_len..][0..hdr.length()]);
+            return .none;
+        },
         .alert => blk: {
             const a = try alert.parse(record[frame.header_len..][0..hdr.length()]);
             break :blk if (a.isCloseNotify()) .closed else error.PeerAlert;
@@ -731,6 +811,23 @@ fn chooseSuite(self: *const ServerHandshake, ch: client_hello.Parsed) ?CipherSui
 const test_cert_der = @embedFile("test_fixtures/server.crt.der");
 const server_ecdsa_cert_der = @embedFile("test_fixtures/server-ecdsa/server.der");
 const server_ecdsa_scalar = @embedFile("test_fixtures/server-ecdsa/scalar.bin");
+
+fn clientHelloWithKeyShareGroup(
+    out: []u8,
+    client_hello_msg: []const u8,
+    group: u16,
+) []const u8 {
+    @memcpy(out[0..client_hello_msg.len], client_hello_msg);
+    var i: usize = 0;
+    while (i + 9 < client_hello_msg.len) : (i += 1) {
+        if (out[i] == 0x00 and out[i + 1] == 0x33 and out[i + 2] == 0x00 and out[i + 3] == 0x26) {
+            out[i + 6] = @truncate(group >> 8);
+            out[i + 7] = @truncate(group);
+            return out[0..client_hello_msg.len];
+        }
+    }
+    unreachable;
+}
 
 fn compatibilityClientHello(
     out: []u8,
@@ -934,6 +1031,58 @@ test "acceptClientHello: emits ServerHello and installs handshake keys" {
 // RFC 8446 Appendix D.4 — if the client sends a non-empty legacy_session_id,
 // the server sends a compatibility ChangeCipherSpec after ServerHello and
 // before the encrypted handshake flight.
+// RFC 8446 §4.1.4 — when ClientHello offers X25519 in supported_groups but no
+// X25519 KeyShareEntry, the server sends HRR requesting X25519.
+test "acceptClientHello: emits HelloRetryRequest for missing X25519 key share" {
+    const client_keypair: x25519.KeyPair = .generate();
+    var ch1_buf: [512]u8 = undefined;
+    const ch1 = try client_hello.encode(&ch1_buf, .zero, client_keypair.public_key, null, &.{});
+    var hrr_ch1_buf: [512]u8 = undefined;
+    const hrr_ch1 = clientHelloWithKeyShareGroup(
+        &hrr_ch1_buf,
+        ch1,
+        @intFromEnum(NamedGroup.secp384r1),
+    );
+    var ch1_record: [1024]u8 = undefined;
+    const ch1_header: frame.Header = .init(.handshake, @intCast(hrr_ch1.len));
+    ch1_header.write(ch1_record[0..frame.header_len]);
+    @memcpy(ch1_record[frame.header_len..][0..hrr_ch1.len], hrr_ch1);
+
+    var server: ServerHandshake = .init(.generate());
+    var hrr_out: [256]u8 = undefined;
+    const hrr_record = try server.acceptClientHello(
+        ch1_record[0 .. frame.header_len + hrr_ch1.len],
+        .zero,
+        &hrr_out,
+    );
+    try testing.expectEqual(.wait_ch, server.state);
+
+    const hrr_hdr = try frame.parseHeader(hrr_record);
+    try testing.expectEqual(.handshake, hrr_hdr.content_type);
+    const hrr = try server_hello.parseHelloRetryRequest(
+        hrr_record[frame.header_len..][0..hrr_hdr.length()],
+    );
+    try testing.expectEqual(NamedGroup.x25519, hrr.selected_group.?);
+
+    var ccs = [_]u8{ 0x14, 0x03, 0x03, 0x00, 0x01, 0x01 };
+    try testing.expectEqual(Event.none, try server.handleRecord(&ccs, .zero, &hrr_out));
+
+    var ch2_record: [1024]u8 = undefined;
+    const ch2_header: frame.Header = .init(.handshake, @intCast(ch1.len));
+    ch2_header.write(ch2_record[0..frame.header_len]);
+    @memcpy(ch2_record[frame.header_len..][0..ch1.len], ch1);
+    var sh_out: [256]u8 = undefined;
+    const sh_record = try server.acceptClientHello(
+        ch2_record[0 .. frame.header_len + ch1.len],
+        .zero,
+        &sh_out,
+    );
+    try testing.expectEqual(.wait_client_finished, server.state);
+    const sh_hdr = try frame.parseHeader(sh_record);
+    try testing.expectEqual(.handshake, sh_hdr.content_type);
+    _ = try server_hello.parse(sh_record[frame.header_len..][0..sh_hdr.length()]);
+}
+
 test "acceptClientHello: emits compatibility ChangeCipherSpec for non-empty legacy_session_id" {
     const client_keypair: x25519.KeyPair = .generate();
     const session_id: [4]u8 = .{ 0xa0, 0xa1, 0xa2, 0xa3 };
