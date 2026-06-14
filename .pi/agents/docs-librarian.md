@@ -187,6 +187,11 @@ Observed patterns to scrub for on each run.
   parent's request references a cleanup action or a specific feature
   issue. If neither, run an audit-only pass — output findings without
   editing.
+- When asked to characterize a directory or file by path: actually
+  open it before commenting. Filename intuition is enough to file a
+  finding as "should inspect" but not to file an opinion. The
+  failure mode is exactly the LLM-tendency pattern Matt flagged —
+  confidently-ascribing intent to a path you have not read.
 
 ## Shipped lint recipes (live in `just lint`)
 
