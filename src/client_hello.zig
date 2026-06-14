@@ -581,7 +581,10 @@ test "parse: rejects oversized legacy_session_id" {
         const bad_len = encoded.len + session_id_len;
         const body_len: u24 = @intCast(encoded.len - handshake_header_len + session_id_len);
 
-        @memmove(buf[session_id_offset + session_id_len .. bad_len], encoded[session_id_offset..encoded.len]);
+        @memmove(
+            buf[session_id_offset + session_id_len .. bad_len],
+            encoded[session_id_offset..encoded.len],
+        );
         @memset(buf[session_id_offset..][0..session_id_len], 0xaa);
         buf[session_id_len_offset] = session_id_len;
         buf[1] = @truncate(body_len >> 16);
