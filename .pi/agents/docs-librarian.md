@@ -102,3 +102,83 @@ End with one line summarizing whether `PRODUCTION_READINESS.md` needs a paired e
 - Do not close issues, push branches, or post GitHub comments.
 - Mechanics over prose. Boring output is success.
 - If an audit reveals that two or three files all drift on the same wording, that is **one** rule gap, not three findings — propose one lint rule.
+
+# Working notes
+
+This section is the librarian's accumulated working memory. Update on each
+run when you discover a project-specific rule or recurring drift class
+that future runs should not have to rediscover. Keep entries short and
+concrete. Personal behavioral corrections belong in pi's own `SELF.md`,
+not here.
+
+## Project shape
+
+- `PRODUCTION_READINESS.md` is the spine. Its "Immediate cleanup actions
+  (entropy brakes)" section is the project's live drift worklist. When a
+  task matches a current cleanup action, the action is the spec.
+- `docs/research/README.md` is the only navigation aid under
+  `docs/research/`. Files added there without an index entry are bugs.
+- Layout: `src/` (TLS engine), `bench/` (raw OpenSSL/libssl harness),
+  `examples/` (proof-of-concept executables), `conformance/` (own
+  subproject with its own `build.zig` / `justfile` / pytest tree,
+  owning the tlsfuzzer / TLS-Anvil fixtures), `tests/fixtures/` (the
+  only real fixture source — referenced as a symlink from `src/` and
+  `examples/`).
+- AGENTS.md hard rules worth not forgetting: every test cites an RFC
+  section; committed artifacts cite `#NN` not `TODO-<hex>`; status
+  changes pair an edit with `PRODUCTION_READINESS.md` in the same
+  commit; vendored `src/cryptox/Certificate.zig` is off-limits for
+  style nits.
+
+## Recurring drift classes
+
+Observed patterns to scrub for on each run.
+
+- **Closed-issue heading decay.** `## Topic — #N` reads clean while
+  `#N` is open and silently lies after closure. Rewrite as
+  `## Topic (formerly #N)` or drop into a parenthetical
+  `## Topic (#N)` that's renameable to `(formerly #N)`. The em-dash
+  separator is brittle; the parenthetical isn't.
+- **Status-language drift.** "now uses", "is currently", "today", "the
+  most recent", "this commit has switched to". Strip the transition
+  word and describe mechanism in present tense. A markdown lint rule
+  on `docs/research/*.md` for these tokens outside PRODUCTION_READINESS
+  would catch every correction in a single rule.
+- **Second readiness dashboards.** Sections like `## Build Order`,
+  `## Current coverage`, `## Current status` that re-do what the spine
+  already does. Surface them when seen; they don't belong in any
+  other doc.
+- **README/index rot.** Index files drift from the filesystem they
+  describe. `docs/research/README.md` once had six missing entries and
+  pointed at an empty `references/` directory. A diff between the
+  index's bullet list and the actual `ls docs/research/` would have
+  caught it immediately.
+- **Stale cross-references in matrix/negative-space/threat-model.**
+  Cited `src/X.zig` paths, `just <recipe>` invocations, and RFC files
+  in `docs/research/rfcs/` accumulate rot. Periodic sweep:
+  `for cite in $(grep -hoE 'src/[A-Za-z_]+\.zig\|rfcs/rfc[0-9]+-[a-z0-9-]+\.txt\|just [a-z_/-]+' docs/**/*.md | sort -u); do test/check; done`.
+- **External-runner reconciliation lag.** TLS-Anvil / BoGo skip lists,
+  the `conformance/justfile` recipe shape, and `conformance/README.md`
+  prose drift independently from the issues that close them. When a
+  runner issue closes, the conformance triple needs a paired edit.
+- **Perf-capture provenance.** Each capture under `docs/research/perf/`
+  carries its own git revision, dirty-state flag, and library
+  versions. Cited revisions must still resolve via `git cat-file -t`;
+  re-check on every audit.
+
+## Recipes that have worked
+
+- For composite fixes that affect the spine, edit `docs/research/<file>`
+  AND `PRODUCTION_READINESS.md` in the same commit. The spine's
+  unlikely-to-need-edits-but-possibly: cleanup-actions sections
+  (re-marking DONE/ongoing), the dashboard table (when status actually
+  moves), and gaps bullets (when the underlying issue closes).
+- "This cite is now stale" sweep: `grep -rEn "#[0-9]+" docs/ | sort -u`
+  → `gh issue view` each unique `#NN` and check `state` against the
+  doc's framing (active / historical / suppress).
+- Path-level rot sweep: `find . -name "*.zig" -not -path "*/.zig-cache/*"`
+  cross-checked against the cite list in a single pass.
+- Decide "is this in scope for this run?" by checking whether the
+  parent's request references a cleanup action or a specific feature
+  issue. If neither, run an audit-only pass — output findings without
+  editing.
