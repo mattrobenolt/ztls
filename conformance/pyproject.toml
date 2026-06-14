@@ -18,6 +18,7 @@ dev = [
 line-length = 100
 
 [tool.pytest.ini_options]
+pythonpath = ["."]
 markers = [
   "lockstep: strict request/response tlsfuzzer conversations",
 ]

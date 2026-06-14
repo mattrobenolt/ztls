@@ -16,10 +16,27 @@ The current suite is intentionally small but real: it performs TLS 1.3 X25519 ha
 
 This is the CI-gated external protocol-conformance harness for the supported ztls server surface. New TLS features should add matching tlsfuzzer conversations in this directory before being treated as supported.
 
-TLS-Anvil is available as a manual runner while result normalization and skip-list enforcement are still being wired:
+### TLS-Anvil
+
+TLS-Anvil provides ~408 RFC-based server and client tests. The runner (`just anvil-server`) starts the ztls harness and executes the upstream suite. Results are captured under `zig-out/anvil/server/<timestamp>/`.
+
+Result normalization and skip-list enforcement are scaffolded via the `anvil-report` recipe. The current parser consumes a normalized JSON shape exercised by a synthetic fixture; the next slice adapts real TLS-Anvil output into that shape.
 
 ```sh
-just anvil-server --timeout 300
+# Normalize a results JSON against the skip list:
+just anvil-report test_fixtures/anvil_report_synthetic.json
+
+# Or use the script directly with custom options:
+uv run python scripts/anvil_report.py \
+    zig-out/anvil/server/<timestamp>/report.json \
+    --skip-list anvil-skip-list.json
 ```
 
-The recipe starts the ztls server harness on an ephemeral localhost port, runs TLS-Anvil in server-test mode, and writes results under `zig-out/anvil/server/`. It is not part of `just ci` yet; #9 tracks turning this into a normalized, CI-gated external runner.
+The report script:
+- classifies every test as expected_skipped, passed, failed, errored, or unexpected_skipped;
+- flags unexpected_pass (skip-list deferred feature that actually passed — license-to-claim);
+- flags unexpected_fail (unskipped test that failed — regression candidate);
+- reports unmatched_skip_patterns to catch stale skip rules;
+- writes `summary.json` (machine-readable) and `summary.txt` (human-readable).
+
+The parser exits 0 only when the report has no unexpected pass/fail/skipped classifications; it exits 1 when review is required. Synthetic parser tests run in `just ci`, but real TLS-Anvil execution is not yet CI-gated (#9).

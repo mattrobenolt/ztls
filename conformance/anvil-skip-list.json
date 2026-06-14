@@ -19,7 +19,7 @@
     },
     {
       "pattern": "*RecordSizeLimit*",
-      "reason": "record_size_limit is outside the current supported surface (#9)"
+      "reason": "record_size_limit is outside the current supported surface (#34)"
     },
     {
       "pattern": "*SessionTicket*",
@@ -31,7 +31,7 @@
     },
     {
       "pattern": "*MaxFragmentLength*",
-      "reason": "max_fragment_length is outside the current supported surface (#9)"
+      "reason": "max_fragment_length is outside the current supported surface (#34)"
     },
     {
       "pattern": "*DTLS*",

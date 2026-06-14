@@ -1,0 +1,131 @@
+{
+  "_comment": "Synthetic TLS-Anvil-like report fixture for parser/normalizer testing. Each test has id, name, result, and feature. The shape approximates a combined report.json that could be produced by post-processing TLS-Anvil's per-category ID lists (cf. config_examples/expected_results.json).",
+  "tests": [
+    {
+      "id": "8446-a1b2c3d4e5",
+      "name": "TLS 1.3 ServerHello - verify X25519 key share extension",
+      "result": "STRICTLY_SUCCEEDED",
+      "feature": "ServerHello"
+    },
+    {
+      "id": "8446-f6g7h8i9j0",
+      "name": "TLS 1.3 Certificate - validate RSA-PSS signature in CertificateVerify",
+      "result": "STRICTLY_SUCCEEDED",
+      "feature": "Certificate"
+    },
+    {
+      "id": "8446-k1l2m3n4o5",
+      "name": "TLS 1.3 Finished - verify client Finished MAC",
+      "result": "STRICTLY_SUCCEEDED",
+      "feature": "Finished"
+    },
+    {
+      "id": "8446-p6q7r8s9t0",
+      "name": "TLS 1.3 EncryptedExtensions - ALPN selection",
+      "result": "STRICTLY_SUCCEEDED",
+      "feature": "EncryptedExtensions"
+    },
+    {
+      "id": "8446-u1v2w3x4y5",
+      "name": "TLS 1.3 Alert - unexpected_message on garbage ClientHello",
+      "result": "STRICTLY_SUCCEEDED",
+      "feature": "Alert"
+    },
+    {
+      "id": "8446-z6a7b8c9d0",
+      "name": "TLS 1.3 KeyUpdate - server-initiated update_requested",
+      "result": "STRICTLY_SUCCEEDED",
+      "feature": "KeyUpdate"
+    },
+    {
+      "id": "8446-e1f2g3h4i5",
+      "name": "TLS 1.3 HelloRetryRequest - HRR cookie exchange and retry",
+      "result": "STRICTLY_SUCCEEDED",
+      "feature": "HelloRetryRequest"
+    },
+    {
+      "id": "8446-j6k7l8m9n0",
+      "name": "TLS 1.3 Psk - external Psk handshake",
+      "result": "CONCEPTUALLY_SUCCEEDED",
+      "feature": "Psk"
+    },
+    {
+      "id": "8446-o1p2q3r4s5",
+      "name": "TLS 1.3 ClientAuth - client certificate verify",
+      "result": "FULLY_FAILED",
+      "feature": "ClientAuth"
+    },
+    {
+      "id": "8446-t6u7v8w9x0",
+      "name": "TLS 1.3 RecordSizeLimit - enforce limit on oversized records",
+      "result": "FULLY_FAILED",
+      "feature": "RecordSizeLimit"
+    },
+    {
+      "id": "8446-y1z2a3b4c5",
+      "name": "TLS 1.3 SupportedCiphers - unknown cipher suite rejection",
+      "result": "FULLY_FAILED",
+      "feature": "SupportedCiphers"
+    },
+    {
+      "id": "8446-d6e7f8g9h0",
+      "name": "TLS 1.3 EarlyData - 0-RTT data acceptance",
+      "result": "TEST_SUITE_ERROR",
+      "feature": "EarlyData"
+    },
+    {
+      "id": "8446-i1j2k3l4m5",
+      "name": "TLS 1.3 DTLS - verify DTLS cookie exchange",
+      "result": "DISABLED",
+      "feature": "DTLS"
+    },
+    {
+      "id": "5246-n6o7p8q9r0",
+      "name": "TLS 1.2 Tls12 - verify TLS 1.2 downgrade protection",
+      "result": "DISABLED",
+      "feature": "Tls12"
+    },
+    {
+      "id": "8446-s1t2u3v4w5",
+      "name": "TLS 1.3 SessionTicket - NewSessionTicket resumption flow",
+      "result": "DISABLED",
+      "feature": "SessionTicket"
+    },
+    {
+      "id": "8446-x6y7z8a9b0",
+      "name": "TLS 1.3 MaxFragmentLength - negotiate max fragment",
+      "result": "DISABLED",
+      "feature": "MaxFragmentLength"
+    },
+    {
+      "id": "8446-c1d2e3f4g5",
+      "name": "TLS 1.3 PskDerivation - PSK binder computation",
+      "result": "DISABLED",
+      "feature": "PskDerivation"
+    },
+    {
+      "id": "8446-h6i7j8k9l0",
+      "name": "TLS 1.3 ServerHello - incomplete key_share group",
+      "result": "PARTIALLY_FAILED",
+      "feature": "ServerHello"
+    },
+    {
+      "id": "8446-m1n2o3p4q5",
+      "name": "TLS 1.3 CompressCertificate - zlib compression extension",
+      "result": "DISABLED",
+      "feature": "CompressCertificate"
+    },
+    {
+      "id": "8446-r6s7t8u9v0",
+      "name": "TLS 1.3 Alert - close_notify at unexpected point",
+      "result": "STRICTLY_SUCCEEDED",
+      "feature": "Alert"
+    },
+    {
+      "id": "8446-w1x2y3z4a5",
+      "name": "TLS 1.3 0Rtt - zero-round-trip early data handshake",
+      "result": "DISABLED",
+      "feature": "0Rtt"
+    }
+  ]
+}

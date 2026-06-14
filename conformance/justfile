@@ -47,10 +47,24 @@ tlsfuzzer *args: build
 [doc("Run all CI gates")]
 ci:
     just tlsfuzzer -v
+    just anvil-report-test
 
 [doc("Run TLS-Anvil server tests against the ztls server harness")]
 anvil-server *args: build
     uv run python scripts/anvil_server.py {{ args }}
+
+[doc("Normalize TLS-Anvil results: apply skip-list and emit summary.json / summary.txt")]
+anvil-report results_json *args:
+    uv run python scripts/anvil_report.py {{ results_json }} {{ args }}
+
+[doc("Run synthetic TLS-Anvil report parser tests")]
+anvil-report-test:
+    uv run pytest -q tests/test_anvil_report.py
+
+[doc("Lint the skip list against known TLS-Anvil feature names")]
+anvil-report-skip-list:
+    @echo "TODO: real-run skip-list audit not yet automated."
+    @echo "Run 'just anvil-report <real-results> --output-dir <run-dir>' and review unmatched_skip_patterns in the summary."
 
 [doc("Run TLS-Anvil client tests")]
 anvil-client: build
