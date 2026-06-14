@@ -75,7 +75,7 @@ The spiritual predecessor. Key ideas we're stealing:
   - `sendrec` — get TLS records to send over the wire
   - `recvrec` — feed raw bytes received from the wire into the engine
 - **State machine.** `br_ssl_engine_current_state()` returns a bitmask of
-  which channels are currently open. The caller drives the loop.
+  which channels are open. The caller drives the loop.
 
 Source: https://bearssl.org/api1.html  
 TLS 1.3 status (BearSSL doesn't support it, ironically): https://bearssl.org/tls13.html

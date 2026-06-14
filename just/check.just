@@ -3,6 +3,11 @@
 test:
     zig build test --summary all
 
+[doc("Build and test the AWS-LC backend dispatch shim; still links system libcrypto")]
+[group("check")]
+check-backend-shim:
+    zig build test --summary all -Dcrypto-backend=aws-lc
+
 [doc("Format all code")]
 [group("check")]
 fmt: fmt-zig fmt-actions fmt-just
@@ -16,8 +21,19 @@ examples-ci:
 
 [doc("Check formatting and lint (for CI)")]
 [group("check")]
-lint: lint-zig lint-actions lint-just
+lint: lint-zig lint-actions lint-just lint-markdown
     just conformance/lint
+
+[doc("Lint markdown research docs for status-language drift")]
+[group("check")]
+lint-markdown:
+    #!/usr/bin/env bash
+    matches=$(grep -rnE --include='*.md' --exclude-dir=rfcs -e '[Nn]ow (uses|enforces|defaults|requires|provides|supports|accepts|rejects|returns|fails|emits|includes|features|serves|offers|builds|depends|targets|relies|will|becomes)' -e '(is|are) (currently|presently|today)' -e 'this commit (has|now|will)' docs/research/) || true
+    if [[ -n "$matches" ]]; then
+        printf 'status-language drift found in research docs:\n%s\n' "$matches" >&2
+        exit 1
+    fi
+    echo "no status-language drift"
 
 [doc("Format Zig code")]
 [group("check")]

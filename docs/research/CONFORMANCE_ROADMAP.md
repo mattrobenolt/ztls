@@ -1,9 +1,9 @@
 # Conformance roadmap
 
 This document tracks protocol and conformance features that are **not** part of
-the currently advertised ztls surface. It exists so that "not implemented" is a
-documented, bounded decision with explicit prerequisites and acceptance
-criteria, not an unlabeled hole.
+the supported ztls surface. It exists so that "not implemented" is a documented,
+bounded decision with explicit prerequisites and acceptance criteria, not an
+unlabeled hole.
 
 Read alongside `CORRECTNESS.md` (what is supported and how it is proven),
 `DESIGN.md` (testing strategy), and `PROVIDER_INTERFACE.md` (backend seams for

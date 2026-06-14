@@ -72,7 +72,7 @@ paths instead of only AEAD authentication failures. `alert.parse` and
 
 ## Verification gates
 
-Certificate path validation now enforces RFC 5280 name constraints for DNS, IP,
+Certificate path validation enforces RFC 5280 name constraints for DNS, IP,
 rfc822Name, and URI GeneralName forms, with local chain fixtures covering
 permitted and excluded DNS subtrees. The full bettertls harness remains external
 suite work rather than local unit evidence.

@@ -146,9 +146,9 @@ client runner.
 
 These are deliberately not closed by writing the inventory:
 
-- RFC MUST matrix is currently `PROVEN` for every supported-surface row; #25
-  closed the matrix-build slice. Any future supported-surface expansion must
-  reopen the matrix in the same change.
+- RFC MUST matrix is `PROVEN` for every supported-surface row; #25 closed
+  the matrix-build slice. Any future supported-surface expansion must reopen
+  the matrix in the same change.
 - Full bettertls harness execution remains outside the local name-constraints
   fixture set (#9).
 - BoGo/TLS-Anvil execution remains #9.
