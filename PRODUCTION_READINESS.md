@@ -92,12 +92,12 @@ consumption-for-rejection, not resumption.
   per-run metadata/provenance capture, and per-run tool-log capture helpers.
   Manual TLS-Anvil runs capture the command and stdout/stderr under the run dir;
   unfinished raw TLS-Anvil reports are rejected by default and partial captures
-  are local audit/debug only. A completed server run on `9d5799c`
-  (`conformance/zig-out/anvil/server/20260614-203030`) strict-normalized from a
-  clean tree with `Running: false`, `FinishedTests: 437`, `TotalTests: 437`, and
-  normalized counts of `passed: 95`, `failed: 4`, `expected_skipped: 181`,
-  `unexpected_skipped: 0`, and `not_attempted: 157` after result-gated skip-list
-  retuning. Real TLS-Anvil execution remains manual.
+  are local audit/debug only. A completed server run on `28800e9`
+  (`conformance/zig-out/anvil/server/20260614-220924`) strict-normalized from a
+  clean tree with launch metadata, `Running: false`, `FinishedTests: 437`,
+  `TotalTests: 437`, and normalized counts of `passed: 103`, `failed: 1`,
+  `expected_skipped: 176`, `unexpected_skipped: 0`, and `not_attempted: 157`.
+  Real TLS-Anvil execution remains manual.
 - Wycheproof boundary vectors at the libcrypto seam.
 - Fuzzing on the major parsers plus record decrypt and server `handleRecord`
   pre-auth/post-auth dispatch.
@@ -129,14 +129,15 @@ consumption-for-rejection, not resumption.
   `just ci`. TLS-Anvil normalization and wrapper-helper tests are gated, and the
   report separates server/client endpoint-mode `not_attempted` tests from
   expected skips, but real-suite execution and CI/periodic runner wiring remain
-  open. Completed TLS-Anvil server evidence now leaves four attempted TLS 1.3
-  failures tracked as concrete gaps: HelloRetryRequest *(#1)*, secp256r1
-  named-group support *(#6)*, `close_notify` on orderly close *(#36)*, and
-  compatibility CCS emission *(#37)*. Disabled record-fragmentation capability
-  evidence is tracked separately *(#40)*. Two additional TLS-Anvil-derived
-  failures were fixed and closed by completed-run evidence: legacy-only
-  `signature_algorithms` rejection *(#35)* and SSLv3 `legacy_version` rejection
-  *(#38)*. *(#9)*
+  open. Completed TLS-Anvil server evidence now leaves one attempted TLS 1.3
+  failure tracked as a concrete gap: secp256r1 named-group support *(#6)*.
+  HelloRetryRequest server retry now passes TLS-Anvil, but full client/server HRR
+  state-machine support remains broader open work *(#1)*. Disabled
+  record-fragmentation capability evidence is tracked separately *(#40)*. The
+  TLS-Anvil-derived failures fixed and closed by completed-run evidence are
+  legacy-only `signature_algorithms` rejection *(#35)*, `close_notify` on
+  orderly close *(#36)*, compatibility CCS emission *(#37)*, and SSLv3
+  `legacy_version` rejection *(#38)*. *(#9)*
 - **Correctness remains `PARTIAL` until external conformance is CI-gated.** The
   RFC 8446 MUST matrix is closed for the current supported surface; future
   feature work that changes TLS scope must reopen the relevant rows in the same
