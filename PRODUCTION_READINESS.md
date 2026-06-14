@@ -122,9 +122,14 @@ consumption-for-rejection, not resumption.
 
 - **External runners not gated.** BoGo and full TLS-Anvil execution are not in
   `just ci`. TLS-Anvil normalization and wrapper-helper tests are gated, and the
-  report now separates server/client endpoint-mode `not_attempted` tests from
+  report separates server/client endpoint-mode `not_attempted` tests from
   expected skips, but real-suite execution, finished captured-output validation,
-  skip-list retuning, and CI/periodic runner wiring remain open. *(#9)*
+  skip-list retuning, and CI/periodic runner wiring remain open. A partial
+  TLS-Anvil server capture produced attempted TLS 1.3 failures tracked as
+  concrete gaps: secp256r1 named-group support *(#6)*, legacy-only
+  `signature_algorithms` rejection *(#35)*, `close_notify` on orderly close
+  *(#36)*, compatibility CCS emission *(#37)*, and SSLv3 `legacy_version`
+  rejection *(#38)*. *(#9)*
 - **Correctness remains `PARTIAL` until external conformance is CI-gated.** The
   RFC 8446 MUST matrix is closed for the current supported surface; future
   feature work that changes TLS scope must reopen the relevant rows in the same
