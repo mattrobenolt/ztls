@@ -93,6 +93,8 @@ These rules are softer than the rest. Surface candidates in `manual-fix-needed` 
 
     **Action:** Output as `manual-fix-needed` with one short sentence naming what the value appears to represent and a candidate type alias name (e.g. "consider `Key = memx.Array(32)`"). Do **not** search the codebase for an existing alias — that is the human's job; flagging the site is enough.
 
+22. **Booleans are a code smell.** Every `bool` variable, parameter, field, or return value should be scrutinized. Ask: does a bare `true`/`false` actually communicate intent, or would something else be clearer? Prefer a two-value `enum` with named tags, an optional (`?T`), a tagged union, or a bitset depending on context. A `bool` is the default only when it genuinely is the most logical encoding — which is rare. Flag all `bool` occurrences in `manual-fix-needed` with a one-sentence suggestion for the better encoding (e.g. "consider `enum { enabled, disabled }`" or "consider `?Config` instead of `has_config: bool`"). Do not auto-apply — the right replacement depends on domain context.
+
 # Editing discipline
 
 - **Apply, don't report.** Make the edits. Do not output a multi-section rule-by-rule report.
