@@ -733,6 +733,7 @@ test "alertForError: parser and negotiation failures map to protocol alerts" {
         .{ .err = error.UnsupportedTlsVersion, .description = .protocol_version },
         .{ .err = error.UnsupportedCipherSuite, .description = .handshake_failure },
         .{ .err = error.UnsupportedKeyShare, .description = .handshake_failure },
+        .{ .err = error.UnsupportedSignatureScheme, .description = .illegal_parameter },
         .{ .err = error.NoApplicationProtocol, .description = .no_application_protocol },
         .{ .err = error.DuplicateExtension, .description = .illegal_parameter },
         .{ .err = error.DuplicateKeyShare, .description = .illegal_parameter },

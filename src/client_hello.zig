@@ -114,6 +114,7 @@ pub const ParseError = error{
     MissingExtension,
     UnsupportedTlsVersion,
     UnsupportedKeyShare,
+    UnsupportedSignatureScheme,
 };
 
 pub const Parsed = struct {
@@ -334,6 +335,8 @@ pub fn parse(msg: []const u8) ParseError!Parsed {
     if (!got_supported_versions) return error.UnsupportedTlsVersion;
     if (!got_supported_groups or !got_signature_algorithms or !got_key_share)
         return error.MissingExtension;
+    if (!hasSupportedHandshakeSignatureScheme(parsed.signature_schemes))
+        return error.UnsupportedSignatureScheme;
     return parsed;
 }
 
@@ -390,6 +393,16 @@ fn parseSignatureAlgorithms(ext: []const u8) ParseError![]const u8 {
     if (list_len == 0 or list_len != ext.len - 2 or list_len % 2 != 0)
         return error.InvalidVectorLength;
     return r.assumeReadSlice(list_len);
+}
+
+fn hasSupportedHandshakeSignatureScheme(schemes: []const u8) bool {
+    var i: usize = 0;
+    while (i < schemes.len) : (i += 2) {
+        const wire_scheme = memx.readInt(u16, schemes[i..][0..2]);
+        const scheme: SignatureScheme = @enumFromInt(wire_scheme);
+        if (scheme.supportsHandshake()) return true;
+    }
+    return false;
 }
 
 fn parseKeyShare(ext: []const u8) ParseError!x25519.PublicKey {
@@ -656,6 +669,20 @@ test "parse: rejects malformed signature_algorithms" {
     const ext = try findExtension(buf[0..encoded.len], .signature_algorithms);
     ext[1] = 0;
     try testing.expectError(error.InvalidVectorLength, parse(buf[0..encoded.len]));
+}
+
+// RFC 8446 §4.2.3 — TLS 1.3 CertificateVerify signatures cannot use legacy
+// SHA-1 or obsolete TLS 1.2 hash/signature pairs.
+test "parse: rejects signature_algorithms without TLS 1.3 handshake scheme" {
+    var buf: [512]u8 = undefined;
+    const encoded = try encode(&buf, .zero, .zero, null, &.{});
+    const ext = try findExtension(buf[0..encoded.len], .signature_algorithms);
+    var i: usize = 2;
+    while (i < ext.len) : (i += 2) {
+        ext[i] = 0x02;
+        ext[i + 1] = 0x01;
+    }
+    try testing.expectError(error.UnsupportedSignatureScheme, parse(buf[0..encoded.len]));
 }
 
 test "parse: rejects malformed ClientHello" {
