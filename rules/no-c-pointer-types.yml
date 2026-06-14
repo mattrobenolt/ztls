@@ -1,0 +1,13 @@
+id: no-c-pointer-types
+language: zig
+severity: error
+message: |
+  [*c]T is exclusively for auto-generated C-to-Zig translation. Never write
+  it in human Zig code. Replace contextually with [*]T, []T, or [:0]T.
+
+  Zig docs on [*c]:
+    "This type is to be avoided whenever possible. The only valid reason
+     for using a C pointer is in auto-generated code from translating C code."
+rule:
+  kind: PrefixTypeOp
+  regex: '\[\*c\]'
