@@ -4,6 +4,8 @@ __pycache__/
 cache/
 *.pyc
 logs/
+keyfile.log
 report.normalized.json
+report.normalized.audit.json
 summary.json
 summary.txt

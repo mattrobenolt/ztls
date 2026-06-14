@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 import argparse
+import json
 import os
+import platform
 import shutil
 import socket
 import subprocess
@@ -16,6 +18,34 @@ ANVIL_JAR = CONF_DIR / "zig-out" / "tools" / "TLS-Anvil.jar"
 # `logs/default_<date>_*`. Copy any files changed during a run into that run's
 # output directory so timeout/failure evidence stays attached to the capture.
 ANVIL_TOOL_LOG_DIR = ANVIL_JAR.parent / "logs"
+REPO_ROOT = CONF_DIR.parent
+
+
+def command_output(args: list[str], cwd: Path) -> str | None:
+    try:
+        cp = subprocess.run(args, cwd=cwd, capture_output=True, text=True, check=True)
+    except OSError, subprocess.CalledProcessError:
+        return None
+    return cp.stdout.strip()
+
+
+def git_provenance() -> dict[str, object]:
+    revision = command_output(["git", "rev-parse", "--short", "HEAD"], REPO_ROOT)
+    status = command_output(["git", "status", "--porcelain"], REPO_ROOT)
+    return {"revision": revision or "unknown", "dirty": bool(status)}
+
+
+def write_run_metadata(output_folder: Path, command: str, port: int) -> None:
+    metadata = {
+        "generated_at": datetime.now(UTC).isoformat(),
+        "host": platform.node(),
+        "git": git_provenance(),
+        "port": port,
+        "server_bin": str(SERVER_BIN),
+        "tls_anvil_jar": str(ANVIL_JAR),
+        "command": command,
+    }
+    (output_folder / "run_metadata.json").write_text(json.dumps(metadata, indent=2) + "\n")
 
 
 def free_port() -> int:

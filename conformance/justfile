@@ -63,7 +63,7 @@ anvil-adapter run_dir *args:
 anvil-adapter-audit run_dir:
     #!/usr/bin/env bash
     set -euo pipefail
-    report="{{ run_dir }}/report.normalized.json"
+    report="{{ run_dir }}/report.normalized.audit.json"
     # --allow-partial is for local debug captures; do not use this recipe as acceptance evidence.
     uv run python scripts/anvil_adapter.py {{ run_dir }} --output "$report" --allow-partial
     uv run python - "$report" <<'PY'

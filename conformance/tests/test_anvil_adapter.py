@@ -73,23 +73,22 @@ def test_adapter_normalizes_per_test_json_directory(tmp_path: Path):
 
     assert cp.returncode == 0, cp.stderr
     normalized = load_normalized(out)
-    assert normalized == {
-        "tests": [
-            {
-                "id": "server.tls13.rfc8446.HelloRetryRequest.cookieExchange",
-                "name": "server.tls13.rfc8446.HelloRetryRequest.cookieExchange",
-                "result": "DISABLED",
-                "feature": "HelloRetryRequest",
-                "disabled_reason": "Target does not send a Hello Retry Request",
-            },
-            {
-                "id": "server.tls13.rfc8446.ServerHello.verifyX25519KeyShare",
-                "name": "server hello accepts X25519 key share",
-                "result": "STRICTLY_SUCCEEDED",
-                "feature": "ServerHello",
-            },
-        ]
-    }
+    assert normalized["provenance"]["adapter_allow_partial"] is False
+    assert normalized["tests"] == [
+        {
+            "id": "server.tls13.rfc8446.HelloRetryRequest.cookieExchange",
+            "name": "server.tls13.rfc8446.HelloRetryRequest.cookieExchange",
+            "result": "DISABLED",
+            "feature": "HelloRetryRequest",
+            "disabled_reason": "Target does not send a Hello Retry Request",
+        },
+        {
+            "id": "server.tls13.rfc8446.ServerHello.verifyX25519KeyShare",
+            "name": "server hello accepts X25519 key share",
+            "result": "STRICTLY_SUCCEEDED",
+            "feature": "ServerHello",
+        },
+    ]
 
 
 def test_adapter_prefers_class_method_over_opaque_test_id(tmp_path: Path):
@@ -296,6 +295,8 @@ def test_adapter_allow_partial_accepts_still_running_report(tmp_path: Path):
 
     assert cp.returncode == 0, cp.stderr
     normalized = load_normalized(run_dir / "report.normalized.json")
+    assert normalized["provenance"]["adapter_allow_partial"] is True
+    assert normalized["provenance"]["tls_anvil"]["report"]["running"] is True
     assert normalized["tests"][0]["id"] == "server.tls13.rfc8446.ServerHello.validKeyShare"
 
 
@@ -307,6 +308,8 @@ def test_adapter_allow_partial_accepts_still_running_report_zip(tmp_path: Path):
 
     assert cp.returncode == 0, cp.stderr
     normalized = load_normalized(run_dir / "report.normalized.json")
+    assert normalized["provenance"]["adapter_allow_partial"] is True
+    assert normalized["provenance"]["tls_anvil"]["report"]["running"] is True
     assert normalized["tests"][0]["id"] == "server.tls13.rfc8446.ServerHello.validKeyShare"
 
 

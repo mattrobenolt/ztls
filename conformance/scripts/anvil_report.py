@@ -53,9 +53,12 @@ def load_skip_list(path: Path) -> list[dict[str, str]]:
     return entries
 
 
-def load_results(path: Path) -> list[dict[str, str]]:
+def load_results(path: Path) -> tuple[list[dict[str, str]], dict[str, Any]]:
     raw = json.loads(path.read_text())
-    return list(raw["tests"])
+    provenance = raw.get("provenance", {})
+    if not isinstance(provenance, dict):
+        provenance = {}
+    return list(raw["tests"]), provenance
 
 
 def matches_any_pattern(
@@ -86,6 +89,7 @@ def matches_any_pattern(
 def classify_tests(
     tests: list[dict[str, str]],
     skip_entries: list[dict[str, str]],
+    provenance: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     counts: dict[str, int] = {
         "total": 0,
@@ -195,6 +199,7 @@ def classify_tests(
         "feature_breakdown": by_feature,
         "unmatched_skip_patterns": unmatched_patterns,
         "expected_skip_count_by_reason": expected_skip_count_by_reason,
+        "provenance": provenance or {},
     }
 
 
@@ -215,17 +220,40 @@ def write_summary_txt(summary: dict[str, Any], path: Path) -> None:
         "TLS-Anvil Conformance Summary",
         f"Generated: {datetime.now(UTC).isoformat()}",
         "",
-        "Counts:",
-        f"  total              : {c['total']:>6}",
-        f"  expected_skipped   : {c['expected_skipped']:>6}",
-        f"  unexpected_skipped : {c['unexpected_skipped']:>6}",
-        f"  passed             : {c['passed']:>6}",
-        f"  failed             : {c['failed']:>6}",
-        f"  errored            : {c['errored']:>6}",
-        f"  timeout            : {c['timeout']:>6}",
-        f"  not_attempted      : {c['not_attempted']:>6}",
-        "",
     ]
+
+    provenance = summary.get("provenance") or {}
+    if provenance:
+        git = provenance.get("git") or {}
+        tls_anvil = provenance.get("tls_anvil") or {}
+        report = tls_anvil.get("report") or {}
+        lines.extend(
+            [
+                "Provenance:",
+                f"  source_run_dir       : {provenance.get('source_run_dir', 'unknown')}",
+                f"  git_revision         : {git.get('revision', 'unknown')}",
+                f"  git_dirty            : {git.get('dirty', 'unknown')}",
+                f"  adapter_allow_partial: {provenance.get('adapter_allow_partial', 'unknown')}",
+                f"  report_complete      : {report.get('complete', 'unknown')}",
+                f"  report_finished      : {report.get('finished_tests', 'unknown')}/{report.get('total_tests', 'unknown')}",
+                "",
+            ]
+        )
+
+    lines.extend(
+        [
+            "Counts:",
+            f"  total              : {c['total']:>6}",
+            f"  expected_skipped   : {c['expected_skipped']:>6}",
+            f"  unexpected_skipped : {c['unexpected_skipped']:>6}",
+            f"  passed             : {c['passed']:>6}",
+            f"  failed             : {c['failed']:>6}",
+            f"  errored            : {c['errored']:>6}",
+            f"  timeout            : {c['timeout']:>6}",
+            f"  not_attempted      : {c['not_attempted']:>6}",
+            "",
+        ]
+    )
 
     if c["total"] > 0:
         pass_rate = (c["passed"] / c["total"]) * 100
@@ -316,8 +344,8 @@ def main() -> int:
         return 2
 
     skip_entries = load_skip_list(args.skip_list)
-    tests = load_results(args.results_json)
-    summary = classify_tests(tests, skip_entries)
+    tests, provenance = load_results(args.results_json)
+    summary = classify_tests(tests, skip_entries, provenance)
 
     output_dir = args.output_dir or args.results_json.parent
     output_dir.mkdir(parents=True, exist_ok=True)

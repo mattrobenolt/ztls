@@ -1,7 +1,18 @@
+import json
 import os
 from pathlib import Path
 
-from scripts.anvil_server import copy_new_logs, snapshot_logs
+from scripts.anvil_server import copy_new_logs, snapshot_logs, write_run_metadata
+
+
+def test_write_run_metadata_records_command_and_git(tmp_path: Path):
+    write_run_metadata(tmp_path, "java -jar TLS-Anvil.jar server", 4433)
+
+    metadata = json.loads((tmp_path / "run_metadata.json").read_text())
+    assert metadata["command"] == "java -jar TLS-Anvil.jar server"
+    assert metadata["port"] == 4433
+    assert "revision" in metadata["git"]
+    assert "dirty" in metadata["git"]
 
 
 def test_snapshot_logs_returns_empty_for_missing_or_empty_dir(tmp_path: Path):

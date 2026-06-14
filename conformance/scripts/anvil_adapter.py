@@ -20,12 +20,18 @@ Real captured-output validation remains #9 follow-up work.
 
 import argparse
 import json
+import platform
 import re
+import subprocess
 import sys
 import tempfile
 import zipfile
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+CONF_DIR = Path(__file__).resolve().parents[1]
+REPO_ROOT = CONF_DIR.parent
 
 CANONICAL_RESULTS = frozenset(
     {
@@ -39,11 +45,30 @@ CANONICAL_RESULTS = frozenset(
         "TIMEOUT",
     }
 )
-GENERATED_NAMES = frozenset({"summary.json", "report.normalized.json"})
+GENERATED_NAMES = frozenset(
+    {"summary.json", "report.normalized.json", "report.normalized.audit.json"}
+)
 
 
 def load_json(path: Path) -> Any:
     return json.loads(path.read_text())
+
+
+def command_output(args: list[str], cwd: Path) -> str | None:
+    try:
+        cp = subprocess.run(args, cwd=cwd, capture_output=True, text=True, check=True)
+    except OSError, subprocess.CalledProcessError:
+        return None
+    return cp.stdout.strip()
+
+
+def git_provenance() -> dict[str, Any]:
+    revision = command_output(["git", "rev-parse", "--short", "HEAD"], REPO_ROOT)
+    status = command_output(["git", "status", "--porcelain"], REPO_ROOT)
+    return {
+        "revision": revision or "unknown",
+        "dirty": bool(status),
+    }
 
 
 def optional_string(raw: dict[str, Any], *keys: str) -> str | None:
@@ -224,6 +249,76 @@ def status_count(raw: dict[str, Any]) -> int:
     return total
 
 
+def anvil_command(run_dir: Path) -> str | None:
+    path = run_dir / "logs" / "TLS-Anvil.command.txt"
+    if not path.is_file():
+        return None
+    return path.read_text().strip() or None
+
+
+def run_metadata(run_dir: Path) -> dict[str, Any]:
+    path = run_dir / "run_metadata.json"
+    if not path.is_file():
+        return {}
+    try:
+        raw = load_json(path)
+    except json.JSONDecodeError:
+        return {}
+    return raw if isinstance(raw, dict) else {}
+
+
+def raw_tls_anvil_report_from_zip(run_dir: Path) -> dict[str, Any] | None:
+    zipped = run_dir / "report.zip"
+    if not zipped.is_file():
+        return None
+    try:
+        with zipfile.ZipFile(zipped) as zf:
+            with zf.open("report.json") as report:
+                raw = json.loads(report.read().decode())
+    except KeyError, json.JSONDecodeError, zipfile.BadZipFile:
+        return None
+    if not isinstance(raw, dict) or normalized_from_tests(raw) is not None:
+        return None
+    if not any(key in raw for key in ("Running", "TotalTests", "FinishedTests", "TestCaseCount")):
+        return None
+    return raw
+
+
+def raw_report_provenance(run_dir: Path, allow_partial: bool) -> dict[str, Any]:
+    metadata = run_metadata(run_dir)
+    raw = raw_tls_anvil_report(run_dir) or raw_tls_anvil_report_from_zip(run_dir)
+    report: dict[str, Any] = {"present": raw is not None}
+    if raw is not None:
+        total = raw.get("TotalTests")
+        finished = raw.get("FinishedTests")
+        observed = status_count(raw)
+        report.update(
+            {
+                "running": raw.get("Running"),
+                "total_tests": total,
+                "finished_tests": finished,
+                "status_count": observed,
+                "complete": raw.get("Running") is False
+                and isinstance(total, int)
+                and observed == total,
+            }
+        )
+    return {
+        "generated_at": datetime.now(UTC).isoformat(),
+        "adapter_allow_partial": allow_partial,
+        "source_run_dir": str(run_dir),
+        "host": metadata.get("host") or platform.node(),
+        "git": metadata.get("git") or git_provenance(),
+        "run_metadata": metadata,
+        "tls_anvil": {
+            "jar": metadata.get("tls_anvil_jar")
+            or str(CONF_DIR / "zig-out" / "tools" / "TLS-Anvil.jar"),
+            "command": metadata.get("command") or anvil_command(run_dir),
+            "report": report,
+        },
+    }
+
+
 def validate_complete_run(run_dir: Path, allow_partial: bool) -> None:
     if allow_partial:
         return
@@ -259,9 +354,13 @@ def load_run(run_dir: Path, *, allow_partial: bool = False) -> list[dict[str, st
     return load_from_dir(run_dir)
 
 
-def write_normalized(tests: list[dict[str, str]], output: Path) -> None:
+def write_normalized(
+    tests: list[dict[str, str]],
+    output: Path,
+    provenance: dict[str, Any],
+) -> None:
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(json.dumps({"tests": tests}, indent=2) + "\n")
+    output.write_text(json.dumps({"provenance": provenance, "tests": tests}, indent=2) + "\n")
 
 
 def main() -> int:
@@ -294,7 +393,7 @@ def main() -> int:
         return 2
 
     output = args.output or (args.run_dir / "report.normalized.json")
-    write_normalized(tests, output)
+    write_normalized(tests, output, raw_report_provenance(args.run_dir, args.allow_partial))
     print(output)
     return 0
 

@@ -197,6 +197,7 @@ def test_summary_json_structure(tmp_path):
     assert "feature_breakdown" in s
     assert "unmatched_skip_patterns" in s
     assert "expected_skip_count_by_reason" in s
+    assert "provenance" in s
 
 
 def test_summary_json_counts_match_expected(tmp_path):
@@ -298,6 +299,51 @@ def test_summary_json_unexpected_fail_has_rationale(tmp_path):
     for uf in ufs:
         assert "rationale" in uf
         assert "regression" in uf["rationale"].lower()
+
+
+def test_summary_json_and_txt_carry_provenance(tmp_path):
+    fixture = tmp_path / "with-provenance.json"
+    fixture.write_text(
+        json.dumps(
+            {
+                "provenance": {
+                    "source_run_dir": "zig-out/anvil/server/example",
+                    "adapter_allow_partial": False,
+                    "git": {"revision": "abc1234", "dirty": False},
+                    "tls_anvil": {
+                        "report": {
+                            "complete": True,
+                            "finished_tests": 1,
+                            "total_tests": 1,
+                        }
+                    },
+                },
+                "tests": [
+                    {
+                        "id": "clean-1",
+                        "name": "clean pass",
+                        "result": "STRICTLY_SUCCEEDED",
+                        "feature": "Clean",
+                    }
+                ],
+            }
+        )
+    )
+    skip_list = tmp_path / "skip.json"
+    skip_list.write_text(json.dumps({"skip": []}))
+    out = tmp_path / "out"
+    out.mkdir()
+
+    cp = run_report(str(fixture), "--output-dir", str(out), "--skip-list", str(skip_list))
+
+    assert cp.returncode == 0, cp.stderr
+    s = load_summary_json(out)
+    assert s["provenance"]["git"]["revision"] == "abc1234"
+    txt = load_summary_txt(out)
+    assert "Provenance:" in txt
+    assert "git_revision         : abc1234" in txt
+    assert "adapter_allow_partial: False" in txt
+    assert "report_finished      : 1/1" in txt
 
 
 def test_summary_txt_contains_counts(tmp_path):
