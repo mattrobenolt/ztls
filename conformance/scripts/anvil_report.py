@@ -4,22 +4,23 @@ normalized summary.
 
 Input: a results JSON file (see test_fixtures/anvil_report_synthetic.json for
 the expected schema). This is the normalizer input schema, not a claim about
-TLS-Anvil's raw upstream schema. When real TLS-Anvil output arrives, add a
-format adapter that converts it into this shape.
+TLS-Anvil's raw upstream schema. Raw TLS-Anvil output must first pass through
+anvil_adapter.py.
 
 Output (written next to the input or to --output-dir):
   summary.json  – machine-readable summary
   summary.txt   – human-readable one-page report
 
 Classification rules (applied in order):
-  1. Test name matches a skip-list glob pattern → expected_skipped.
+  1. Test name/id/disabled_reason matches a skip-list glob pattern → expected_skipped.
      If the test also passed (STRICTLY_SUCCEEDED / CONCEPTUALLY_SUCCEEDED),
      it is additionally flagged as unexpected_pass.
-  2. Test name matches no skip pattern:
-     a. DISABLED → unexpected_skipped
-     b. STRICTLY_SUCCEEDED / CONCEPTUALLY_SUCCEEDED → passed
-     c. FULLY_FAILED / PARTIALLY_FAILED → failed (also unexpected_fail)
-     d. TEST_SUITE_ERROR / NOT_SPECIFIED → errored
+  2. Test name/id/disabled_reason matches no skip pattern:
+     a. DISABLED with TLS-Anvil's server/client endpoint-mode reason → not_attempted
+     b. DISABLED → unexpected_skipped
+     c. STRICTLY_SUCCEEDED / CONCEPTUALLY_SUCCEEDED → passed
+     d. FULLY_FAILED / PARTIALLY_FAILED → failed (also unexpected_fail)
+     e. TEST_SUITE_ERROR / NOT_SPECIFIED → errored
 
 Exit code 0 = clean evidence (no unexpected results).
 Exit code 1 = at least one unexpected_pass, unexpected_fail, or
@@ -41,6 +42,7 @@ PASS_RESULTS = frozenset({"STRICTLY_SUCCEEDED", "CONCEPTUALLY_SUCCEEDED"})
 FAIL_RESULTS = frozenset({"FULLY_FAILED", "PARTIALLY_FAILED"})
 ERROR_RESULTS = frozenset({"TEST_SUITE_ERROR", "NOT_SPECIFIED"})
 SKIP_RESULTS = frozenset({"DISABLED"})
+ENDPOINT_MODE_MISMATCH_REASON = "TestEndpointMode doesn't match"
 
 
 def load_skip_list(path: Path) -> list[dict[str, str]]:
@@ -60,16 +62,23 @@ def matches_any_pattern(
     name: str,
     patterns: list[dict[str, str]],
     test_id: str = "",
+    disabled_reason: str = "",
 ) -> str | None:
     """Return the first matching pattern string, or None.
 
-    Matching is case-sensitive fnmatch globbing (shell-style) against both the
-    display name and stable test id. Real TLS-Anvil output often carries the
-    useful feature name in the Java class id rather than the human description.
+    Matching is case-sensitive fnmatch globbing (shell-style) against the
+    display name, stable test id, and TLS-Anvil disabled reason. Real TLS-Anvil
+    output often carries the useful feature name in the Java class id rather
+    than the human description. Reason matching is for explicit tool-state
+    policies only; do not use it to hide feature-capability gaps.
     """
     for entry in patterns:
         pat = entry["pattern"]
-        if fnmatch.fnmatch(name, pat) or (test_id and fnmatch.fnmatch(test_id, pat)):
+        if (
+            fnmatch.fnmatch(name, pat)
+            or (test_id and fnmatch.fnmatch(test_id, pat))
+            or (disabled_reason and fnmatch.fnmatch(disabled_reason, pat))
+        ):
             return pat
     return None
 
@@ -86,17 +95,21 @@ def classify_tests(
         "failed": 0,
         "errored": 0,
         "timeout": 0,
+        "not_attempted": 0,
     }
     unexpected: list[dict[str, str]] = []
     by_feature: dict[str, dict[str, int]] = {}
     matched_patterns: set[str] = set()
     reason_by_pattern = {entry["pattern"]: entry["reason"] for entry in skip_entries}
+    expected_skip_count_by_reason: dict[str, int] = {}
 
     for test in tests:
         name = test["name"]
         test_id = test.get("id", "")
         result = test["result"]
         feature = test.get("feature", "unknown")
+        disabled_reason = test.get("disabled_reason", "")
+        failure_reason = test.get("failure_reason", "")
 
         counts["total"] += 1
 
@@ -107,16 +120,24 @@ def classify_tests(
             by_feature[feature]["timeout"] += 1
             continue
 
-        pattern = matches_any_pattern(name, skip_entries, test_id)
+        if result in SKIP_RESULTS and disabled_reason == ENDPOINT_MODE_MISMATCH_REASON:
+            counts["not_attempted"] += 1
+            by_feature.setdefault(feature, dict[str, int]()).setdefault("not_attempted", 0)
+            by_feature[feature]["not_attempted"] += 1
+            continue
+
+        match_reason = disabled_reason if result in SKIP_RESULTS else ""
+        pattern = matches_any_pattern(name, skip_entries, test_id, match_reason)
 
         if pattern is not None:
             matched_patterns.add(pattern)
             counts["expected_skipped"] += 1
+            reason = reason_by_pattern[pattern]
+            expected_skip_count_by_reason[reason] = expected_skip_count_by_reason.get(reason, 0) + 1
             by_feature.setdefault(feature, dict[str, int]()).setdefault("expected_skipped", 0)
             by_feature[feature]["expected_skipped"] += 1
 
             if result in PASS_RESULTS:
-                reason = reason_by_pattern[pattern]
                 unexpected.append(
                     {
                         "id": test_id,
@@ -156,9 +177,8 @@ def classify_tests(
                         "test": name,
                         "result": result,
                         "classification": "unexpected_fail",
-                        "rationale": (
-                            f"test {result} but no skip-list pattern matched — regression candidate"
-                        ),
+                        "failure_reason": failure_reason,
+                        "rationale": failure_rationale(result, failure_reason),
                     }
                 )
             else:
@@ -174,7 +194,15 @@ def classify_tests(
         "unexpected": unexpected,
         "feature_breakdown": by_feature,
         "unmatched_skip_patterns": unmatched_patterns,
+        "expected_skip_count_by_reason": expected_skip_count_by_reason,
     }
+
+
+def failure_rationale(result: str, failure_reason: str) -> str:
+    rationale = f"test {result} but no skip-list pattern matched — regression candidate"
+    if failure_reason:
+        return f"{rationale}: {failure_reason}"
+    return rationale
 
 
 def write_summary_json(summary: dict[str, Any], path: Path) -> None:
@@ -195,12 +223,27 @@ def write_summary_txt(summary: dict[str, Any], path: Path) -> None:
         f"  failed             : {c['failed']:>6}",
         f"  errored            : {c['errored']:>6}",
         f"  timeout            : {c['timeout']:>6}",
+        f"  not_attempted      : {c['not_attempted']:>6}",
         "",
     ]
 
     if c["total"] > 0:
         pass_rate = (c["passed"] / c["total"]) * 100
-        lines.append(f"Pass rate: {c['passed']}/{c['total']} = {pass_rate:.1f}%")
+        attempted = c["passed"] + c["failed"] + c["errored"] + c["timeout"]
+        lines.append(f"Pass rate (total): {c['passed']}/{c['total']} = {pass_rate:.1f}%")
+        if attempted > 0:
+            attempted_rate = (c["passed"] / attempted) * 100
+            lines.append(
+                f"Pass rate (attempted): {c['passed']}/{attempted} = {attempted_rate:.1f}%"
+            )
+        else:
+            lines.append("Pass rate (attempted): n/a")
+        lines.append("")
+
+    if summary.get("expected_skip_count_by_reason"):
+        lines.append("Expected skip count by reason:")
+        for reason, count in sorted(summary["expected_skip_count_by_reason"].items()):
+            lines.append(f"  - {count:>4} {reason}")
         lines.append("")
 
     if summary["unmatched_skip_patterns"]:
@@ -215,6 +258,8 @@ def write_summary_txt(summary: dict[str, Any], path: Path) -> None:
         for item in unexpected:
             lines.append(f"  [{item['classification']}] {item['test']}")
             lines.append(f"    {item['rationale']}")
+            if item.get("failure_reason"):
+                lines.append(f"    failure_reason: {item['failure_reason']}")
         lines.append("")
 
     feature = summary["feature_breakdown"]
@@ -230,7 +275,8 @@ def write_summary_txt(summary: dict[str, Any], path: Path) -> None:
         skipped_pct = (c["expected_skipped"] / c["total"]) * 100
         lines.append(
             f"Note: {c['expected_skipped']}/{c['total']} tests ({skipped_pct:.1f}%) "
-            "were expected-skipped by the configured skip list. Review "
+            "were expected-skipped by the configured skip list. not_attempted "
+            "tests are runner-direction gaps, not conformance passes. Review "
             "unexpected_pass entries as license-to-claim signals and "
             "unmatched_skip_patterns as stale-skip candidates."
         )

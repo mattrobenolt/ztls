@@ -25,6 +25,7 @@ EXPECTED_COUNTS = {
     "failed": 2,
     "errored": 0,
     "timeout": 0,
+    "not_attempted": 0,
 }
 
 EXPECTED_UNEXPECTED = {
@@ -122,6 +123,26 @@ def test_skip_pattern_falsification_caught():
     assert matches_any_pattern(name, original) == "*HelloRetryRequest*"
 
 
+def test_skip_pattern_matches_disabled_reason_when_name_and_id_are_generic():
+    from scripts.anvil_report import matches_any_pattern
+
+    patterns = [
+        {
+            "pattern": "*ProtocolVersion of the test is not supported*",
+            "reason": "protocol version out of scope",
+        }
+    ]
+    assert (
+        matches_any_pattern(
+            "generic disabled test",
+            patterns,
+            "opaque-8446-abcd",
+            "ProtocolVersion of the test is not supported by the target",
+        )
+        == "*ProtocolVersion of the test is not supported*"
+    )
+
+
 def test_skip_pattern_matches_stable_test_id_when_name_is_generic():
     from scripts.anvil_report import matches_any_pattern
 
@@ -175,6 +196,7 @@ def test_summary_json_structure(tmp_path):
     assert "unexpected" in s
     assert "feature_breakdown" in s
     assert "unmatched_skip_patterns" in s
+    assert "expected_skip_count_by_reason" in s
 
 
 def test_summary_json_counts_match_expected(tmp_path):
@@ -296,6 +318,8 @@ def test_summary_txt_contains_counts(tmp_path):
     assert "failed" in txt
     assert "errored" in txt
     assert "timeout" in txt
+    assert "not_attempted" in txt
+    assert "Pass rate (attempted)" in txt
 
 
 def test_summary_txt_contains_per_feature(tmp_path):
@@ -342,6 +366,137 @@ def test_unmatched_skip_patterns_reported(tmp_path):
     unmatched = s["unmatched_skip_patterns"]
     assert "*ThisPatternMatchesNothingXYZ*" in unmatched
     assert "*Alert*" not in unmatched  # matches Alert tests
+
+
+def test_failed_test_with_matching_disabled_reason_still_fails(tmp_path):
+    fixture = tmp_path / "failed-with-disabled-reason.json"
+    failure_reason = "server returned handshake_failure"
+    fixture.write_text(
+        json.dumps(
+            {
+                "tests": [
+                    {
+                        "id": "opaque-failed-test",
+                        "name": "generic failed test",
+                        "result": "FULLY_FAILED",
+                        "feature": "Generic",
+                        "disabled_reason": "ProtocolVersion of the test is not supported by the target",
+                        "failure_reason": failure_reason,
+                    }
+                ]
+            }
+        )
+    )
+    skip_list = tmp_path / "skip.json"
+    skip_list.write_text(
+        json.dumps(
+            {
+                "skip": [
+                    {
+                        "pattern": "*ProtocolVersion of the test is not supported*",
+                        "reason": "protocol version out of scope",
+                    }
+                ]
+            }
+        )
+    )
+    out = tmp_path / "out"
+    out.mkdir()
+
+    cp = run_report(str(fixture), "--output-dir", str(out), "--skip-list", str(skip_list))
+
+    assert cp.returncode == 1
+    s = load_summary_json(out)
+    assert s["counts"]["failed"] == 1
+    assert s["counts"]["expected_skipped"] == 0
+    unexpected = s["unexpected"]
+    assert unexpected[0]["classification"] == "unexpected_fail"
+    assert unexpected[0]["failure_reason"] == failure_reason
+    assert failure_reason in unexpected[0]["rationale"]
+    assert failure_reason in load_summary_txt(out)
+
+
+def test_endpoint_mode_disabled_is_not_attempted(tmp_path):
+    fixture = tmp_path / "endpoint-mode.json"
+    fixture.write_text(
+        json.dumps(
+            {
+                "tests": [
+                    {
+                        "id": "de.rub.nds.tlstest.suite.tests.client.tls13.rfc8446.ClientHello.checkLegacySessionId",
+                        "name": "client-direction test",
+                        "result": "DISABLED",
+                        "feature": "ClientHello",
+                        "disabled_reason": "TestEndpointMode doesn't match",
+                    }
+                ]
+            }
+        )
+    )
+    skip_list = tmp_path / "skip.json"
+    skip_list.write_text(
+        json.dumps(
+            {
+                "skip": [
+                    {"pattern": "*ClientHello*", "reason": "would be a feature skip if attempted"}
+                ]
+            }
+        )
+    )
+    out = tmp_path / "out"
+    out.mkdir()
+
+    cp = run_report(str(fixture), "--output-dir", str(out), "--skip-list", str(skip_list))
+
+    assert cp.returncode == 0, cp.stderr
+    s = load_summary_json(out)
+    assert s["counts"]["not_attempted"] == 1
+    assert s["counts"]["expected_skipped"] == 0
+    assert s["counts"]["unexpected_skipped"] == 0
+    assert s["feature_breakdown"] == {"ClientHello": {"not_attempted": 1}}
+    assert s["unexpected"] == []
+
+
+def test_disabled_reason_skip_pattern_counts_as_expected_skip(tmp_path):
+    fixture = tmp_path / "reason-skip.json"
+    fixture.write_text(
+        json.dumps(
+            {
+                "tests": [
+                    {
+                        "id": "opaque-disabled-test",
+                        "name": "generic disabled test",
+                        "result": "DISABLED",
+                        "feature": "Generic",
+                        "disabled_reason": "ProtocolVersion of the test is not supported by the target",
+                    }
+                ]
+            }
+        )
+    )
+    skip_list = tmp_path / "skip.json"
+    reason = "protocol version out of scope"
+    skip_list.write_text(
+        json.dumps(
+            {
+                "skip": [
+                    {
+                        "pattern": "*ProtocolVersion of the test is not supported*",
+                        "reason": reason,
+                    }
+                ]
+            }
+        )
+    )
+    out = tmp_path / "out"
+    out.mkdir()
+
+    cp = run_report(str(fixture), "--output-dir", str(out), "--skip-list", str(skip_list))
+
+    assert cp.returncode == 0, cp.stderr
+    s = load_summary_json(out)
+    assert s["counts"]["expected_skipped"] == 1
+    assert s["expected_skip_count_by_reason"] == {reason: 1}
 
 
 def test_unexpected_skipped_has_rationale(tmp_path):

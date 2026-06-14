@@ -1,5 +1,6 @@
 import json
 import subprocess
+import zipfile
 import sys
 from pathlib import Path
 
@@ -63,6 +64,7 @@ def test_adapter_normalizes_per_test_json_directory(tmp_path: Path):
             "Result": "DISABLED",
             "TestClass": "server.tls13.rfc8446.HelloRetryRequest",
             "TestMethod": "cookieExchange",
+            "DisabledReason": "Target does not send a Hello Retry Request",
         },
     )
 
@@ -78,6 +80,7 @@ def test_adapter_normalizes_per_test_json_directory(tmp_path: Path):
                 "name": "server.tls13.rfc8446.HelloRetryRequest.cookieExchange",
                 "result": "DISABLED",
                 "feature": "HelloRetryRequest",
+                "disabled_reason": "Target does not send a Hello Retry Request",
             },
             {
                 "id": "server.tls13.rfc8446.ServerHello.verifyX25519KeyShare",
@@ -98,6 +101,7 @@ def test_adapter_prefers_class_method_over_opaque_test_id(tmp_path: Path):
             "Result": "FULLY_FAILED",
             "TestClass": "de.rub.nds.tlstest.suite.tests.both.tls13.rfc8446.ComplianceRequirements",
             "TestMethod": "supportsSecp256r1",
+            "FailedReason": "server rejected the secp256r1-only handshake",
             "MetaData": {"description": "TLS-compliant application MUST support secp256r1"},
         },
     )
@@ -112,6 +116,7 @@ def test_adapter_prefers_class_method_over_opaque_test_id(tmp_path: Path):
             "name": "TLS-compliant application MUST support secp256r1",
             "result": "FULLY_FAILED",
             "feature": "ComplianceRequirements",
+            "failure_reason": "server rejected the secp256r1-only handshake",
         }
     ]
 
@@ -206,6 +211,103 @@ def test_adapter_to_report_matches_skip_patterns_by_stable_id(tmp_path: Path):
     summary = json.loads((out / "summary.json").read_text())
     assert summary["counts"]["expected_skipped"] == 1
     assert summary["unmatched_skip_patterns"] == []
+
+
+def write_partial_report_zip(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    report_info = zipfile.ZipInfo("report.json", (2026, 1, 1, 0, 0, 0))
+    test_info = zipfile.ZipInfo(
+        "results/opaque/_testRun.json",
+        (2026, 1, 1, 0, 0, 0),
+    )
+    with zipfile.ZipFile(path, "w") as zf:
+        zf.writestr(
+            report_info,
+            json.dumps({"Running": True, "TotalTests": 2, "FinishedTests": 0}) + "\n",
+        )
+        zf.writestr(
+            test_info,
+            json.dumps(
+                {
+                    "Result": "STRICTLY_SUCCEEDED",
+                    "TestClass": "server.tls13.rfc8446.ServerHello",
+                    "TestMethod": "validKeyShare",
+                }
+            )
+            + "\n",
+        )
+
+
+def test_adapter_rejects_raw_tls_anvil_report_that_is_still_running(tmp_path: Path):
+    run_dir = tmp_path / "run"
+    write_test(
+        run_dir / "report.json",
+        {
+            "Running": True,
+            "TotalTests": 2,
+            "FinishedTests": 0,
+        },
+    )
+    write_test(
+        run_dir / "results" / "opaque" / "_testRun.json",
+        {
+            "Result": "STRICTLY_SUCCEEDED",
+            "TestClass": "server.tls13.rfc8446.ServerHello",
+            "TestMethod": "validKeyShare",
+        },
+    )
+
+    cp = run_adapter(str(run_dir))
+
+    assert cp.returncode == 2
+    assert "still Running" in cp.stderr
+
+
+def test_adapter_rejects_still_running_report_zip(tmp_path: Path):
+    run_dir = tmp_path / "run"
+    write_partial_report_zip(run_dir / "report.zip")
+
+    cp = run_adapter(str(run_dir))
+
+    assert cp.returncode == 2
+    assert "still Running" in cp.stderr
+
+
+def test_adapter_allow_partial_accepts_still_running_report(tmp_path: Path):
+    run_dir = tmp_path / "run"
+    write_test(
+        run_dir / "report.json",
+        {
+            "Running": True,
+            "TotalTests": 2,
+            "FinishedTests": 0,
+        },
+    )
+    write_test(
+        run_dir / "results" / "opaque" / "_testRun.json",
+        {
+            "Result": "STRICTLY_SUCCEEDED",
+            "TestClass": "server.tls13.rfc8446.ServerHello",
+            "TestMethod": "validKeyShare",
+        },
+    )
+
+    cp = run_adapter(str(run_dir), "--allow-partial")
+
+    assert cp.returncode == 0, cp.stderr
+    normalized = load_normalized(run_dir / "report.normalized.json")
+    assert normalized["tests"][0]["id"] == "server.tls13.rfc8446.ServerHello.validKeyShare"
+
+
+def test_adapter_allow_partial_accepts_still_running_report_zip(tmp_path: Path):
+    run_dir = tmp_path / "run"
+    write_partial_report_zip(run_dir / "report.zip")
+
+    cp = run_adapter(str(run_dir), "--allow-partial")
+
+    assert cp.returncode == 0, cp.stderr
+    normalized = load_normalized(run_dir / "report.normalized.json")
+    assert normalized["tests"][0]["id"] == "server.tls13.rfc8446.ServerHello.validKeyShare"
 
 
 def test_adapter_rejects_directory_without_result_json(tmp_path: Path):

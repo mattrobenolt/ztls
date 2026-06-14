@@ -3,7 +3,8 @@
 
 The normalized schema is the input consumed by `anvil_report.py`:
 
-    {"tests": [{"id": str, "name": str, "result": str, "feature": str}]}
+    {"tests": [{"id": str, "name": str, "result": str, "feature": str,
+                "disabled_reason": str?, "failure_reason": str?}]}
 
 TLS-Anvil output is not perfectly stable across versions. The shapes below are
 exercised by synthetic tests and are predictions of the real TLS-Anvil layout,
@@ -45,6 +46,14 @@ def load_json(path: Path) -> Any:
     return json.loads(path.read_text())
 
 
+def optional_string(raw: dict[str, Any], *keys: str) -> str | None:
+    for key in keys:
+        value = raw.get(key)
+        if value is not None:
+            return str(value)
+    return None
+
+
 def normalized_from_tests(raw: Any) -> list[dict[str, str]] | None:
     if not isinstance(raw, dict) or not isinstance(raw.get("tests"), list):
         return None
@@ -56,7 +65,16 @@ def normalized_from_tests(raw: Any) -> list[dict[str, str]] | None:
         name = str(test.get("name") or test_id)
         result = canonical_result(test.get("result"))
         feature = str(test.get("feature") or extract_feature(test_id, name))
-        tests.append({"id": test_id, "name": name, "result": result, "feature": feature})
+        normalized = {"id": test_id, "name": name, "result": result, "feature": feature}
+        disabled_reason = optional_string(
+            test, "disabled_reason", "disabledReason", "DisabledReason"
+        )
+        if disabled_reason is not None:
+            normalized["disabled_reason"] = disabled_reason
+        failure_reason = optional_string(test, "FailedReason", "failureReason", "failure_reason")
+        if failure_reason is not None:
+            normalized["failure_reason"] = failure_reason
+        tests.append(normalized)
     return tests
 
 
@@ -127,7 +145,14 @@ def normalized_from_per_test(path: Path, raw: Any) -> dict[str, str] | None:
     name = metadata_description(raw) or str(raw.get("Name") or raw.get("name") or test_id)
     result = canonical_result(raw.get("Result", raw.get("result")))
     feature = str(raw.get("feature") or raw.get("Feature") or extract_feature(test_id, name))
-    return {"id": test_id, "name": name, "result": result, "feature": feature}
+    normalized = {"id": test_id, "name": name, "result": result, "feature": feature}
+    disabled_reason = optional_string(raw, "DisabledReason", "disabledReason", "disabled_reason")
+    if disabled_reason is not None:
+        normalized["disabled_reason"] = disabled_reason
+    failure_reason = optional_string(raw, "FailedReason", "failureReason", "failure_reason")
+    if failure_reason is not None:
+        normalized["failure_reason"] = failure_reason
+    return normalized
 
 
 def json_files(root: Path) -> list[Path]:
@@ -162,21 +187,72 @@ def load_from_dir(run_dir: Path) -> list[dict[str, str]]:
     return tests
 
 
-def load_from_zip(path: Path) -> list[dict[str, str]]:
+def load_from_zip(path: Path, *, allow_partial: bool) -> list[dict[str, str]]:
     with tempfile.TemporaryDirectory() as tmp:
         tmp_dir = Path(tmp)
         with zipfile.ZipFile(path) as zf:
             zf.extractall(tmp_dir)
+        validate_complete_run(tmp_dir, allow_partial)
         return load_from_dir(tmp_dir)
 
 
-def load_run(run_dir: Path) -> list[dict[str, str]]:
+def raw_tls_anvil_report(run_dir: Path) -> dict[str, Any] | None:
+    report = run_dir / "report.json"
+    if not report.is_file():
+        return None
+    raw = load_json(report)
+    if not isinstance(raw, dict) or normalized_from_tests(raw) is not None:
+        return None
+    if not any(key in raw for key in ("Running", "TotalTests", "FinishedTests", "TestCaseCount")):
+        return None
+    return raw
+
+
+def status_count(raw: dict[str, Any]) -> int:
+    total = 0
+    for key in (
+        "StrictlySucceededTests",
+        "ConceptuallySucceededTests",
+        "DisabledTests",
+        "PartiallyFailedTests",
+        "FullyFailedTests",
+        "TestSuiteErrorTests",
+    ):
+        value = raw.get(key)
+        if isinstance(value, int):
+            total += value
+    return total
+
+
+def validate_complete_run(run_dir: Path, allow_partial: bool) -> None:
+    if allow_partial:
+        return
+    raw = raw_tls_anvil_report(run_dir)
+    if raw is None:
+        return
+    if raw.get("Running") is True:
+        raise ValueError(
+            "TLS-Anvil report.json says the run is still Running; rerun the adapter "
+            "with --allow-partial only for local debugging, not acceptance evidence"
+        )
+    total = raw.get("TotalTests")
+    if isinstance(total, int) and total > 0:
+        observed = status_count(raw)
+        if observed and observed < total:
+            raise ValueError(
+                f"TLS-Anvil report.json is incomplete: classified {observed}/{total} tests; "
+                "use --allow-partial only for local debugging"
+            )
+
+
+def load_run(run_dir: Path, *, allow_partial: bool = False) -> list[dict[str, str]]:
     if not run_dir.is_dir():
         raise FileNotFoundError(run_dir)
+    validate_complete_run(run_dir, allow_partial)
 
     zipped = run_dir / "report.zip"
     if zipped.is_file():
-        tests = load_from_zip(zipped)
+        tests = load_from_zip(zipped, allow_partial=allow_partial)
         if tests:
             return tests
 
@@ -197,13 +273,22 @@ def main() -> int:
         default=None,
         help="normalized report path (default: <run_dir>/report.normalized.json)",
     )
+    parser.add_argument(
+        "--allow-partial",
+        action="store_true",
+        help="allow a raw TLS-Anvil report.json that still says Running/incomplete; for local audit only",
+    )
     args = parser.parse_args()
 
     if not args.run_dir.is_dir():
         print(f"error: run directory not found: {args.run_dir}", file=sys.stderr)
         return 2
 
-    tests = load_run(args.run_dir)
+    try:
+        tests = load_run(args.run_dir, allow_partial=args.allow_partial)
+    except ValueError as err:
+        print(f"error: {err}", file=sys.stderr)
+        return 2
     if not tests:
         print(f"error: no TLS-Anvil result JSON found under {args.run_dir}", file=sys.stderr)
         return 2
