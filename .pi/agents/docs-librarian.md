@@ -138,21 +138,26 @@ Observed patterns to scrub for on each run.
   `#N` is open and silently lies after closure. Rewrite as
   `## Topic (formerly #N)` or drop into a parenthetical
   `## Topic (#N)` that's renameable to `(formerly #N)`. The em-dash
-  separator is brittle; the parenthetical isn't.
+  separator is brittle; the parenthetical isn't. Caught by
+  `just lint-issues` for the em-dash variant; parenthetical
+  citations and table-row citations to closed issues are still
+  uncaught.
 - **Status-language drift.** "now uses", "is currently", "today", "the
   most recent", "this commit has switched to". Strip the transition
-  word and describe mechanism in present tense. A markdown lint rule
-  on `docs/research/*.md` for these tokens outside PRODUCTION_READINESS
-  would catch every correction in a single rule.
+  word and describe mechanism in present tense. Caught by
+  `just lint-markdown` — patterns live in `just/check.just` next to the
+  recipe; false positives on prior-art citations are editor-side fixes.
 - **Second readiness dashboards.** Sections like `## Build Order`,
   `## Current coverage`, `## Current status` that re-do what the spine
   already does. Surface them when seen; they don't belong in any
-  other doc.
+  other doc. No mechanical rule — text-shape matchers false-positive
+  too easily on the legitimate "-current-" suffixes in mechanism docs.
 - **README/index rot.** Index files drift from the filesystem they
   describe. `docs/research/README.md` once had six missing entries and
-  pointed at an empty `references/` directory. A diff between the
-  index's bullet list and the actual `ls docs/research/` would have
-  caught it immediately.
+  pointed at an empty `references/` directory. Caught by
+  `just lint-readme-index` — verifies that every `*.md` linked from
+  `docs/research/README.md` exists on disk and that every top-level
+  `*.md` under `docs/research/` is linked from the index.
 - **Stale cross-references in matrix/negative-space/threat-model.**
   Cited `src/X.zig` paths, `just <recipe>` invocations, and RFC files
   in `docs/research/rfcs/` accumulate rot. Periodic sweep:
@@ -172,7 +177,7 @@ Observed patterns to scrub for on each run.
   AND `PRODUCTION_READINESS.md` in the same commit. The spine's
   unlikely-to-need-edits-but-possibly: cleanup-actions sections
   (re-marking DONE/ongoing), the dashboard table (when status actually
-  moves), and gaps bullets (when the underlying issue closes).
+  moves), and gaps bullets (when the underlying evidence moves).
 - "This cite is now stale" sweep: `grep -rEn "#[0-9]+" docs/ | sort -u`
   → `gh issue view` each unique `#NN` and check `state` against the
   doc's framing (active / historical / suppress).
@@ -182,3 +187,21 @@ Observed patterns to scrub for on each run.
   parent's request references a cleanup action or a specific feature
   issue. If neither, run an audit-only pass — output findings without
   editing.
+
+## Shipped lint recipes (live in `just lint`)
+
+These ship from this prompt's working notes as the role discovers
+the drift class is mechanical enough to deserve a recipe. Add new
+recipes here when shipping; remove or refactor when the rules go stale.
+
+- **`just lint-markdown`** — pattern list in `just/check.just`. Catches
+  status-language drift in `docs/research/*.md` excluding the vendored
+  `rfcs/` subdirectory. False positive on prior-art citations is the
+  known failure mode; fix is editor-side.
+- **`just lint-issues`** — em-dash format only. Walks `^## .+ — #N`
+  headings under `docs/research/*.md`, looks up `#N` via
+  `gh issue view`, fails on `CLOSED`. Parenthetical
+  `(#N)` and table-row references to closed issues are deliberately
+  out of scope for day-two; tighten later if needed.
+- **`just lint-readme-index`** — confirms `docs/research/README.md`
+  links every top-level `*.md` under `docs/research/` and vice versa.
