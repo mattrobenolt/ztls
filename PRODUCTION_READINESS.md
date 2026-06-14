@@ -247,23 +247,30 @@ each passing the same correctness and interop gates.
 
 **Current evidence (real, but thin):**
 
-- OpenSSL/libcrypto is the only working backend. The concrete binding is
-  centralized in `src/crypto/c_openssl.zig`; OpenSSL key-construction fast paths
-  live in `src/crypto/openssl_key.zig`, but OpenSSL EVP calls still leak into
-  primitive modules.
+- OpenSSL/libcrypto is the only working backend. AWS-LC is now a recognized
+  build option (`-Dcrypto-backend=aws-lc`) that routes through a dispatch shim
+  in `src/crypto/backend_aws_lc.zig` and links system libcrypto with an explicit
+  build-time warning. OpenSSL/EVP calls still compile directly through
+  `src/crypto/c_openssl.zig` from `src/aead.zig`, `src/signature.zig`,
+  `src/certificate.zig`, and `src/crypto/openssl_key.zig`.
+- `src/crypto/backend.zig` exposes a `Backend` enum and an `active` selector
+  resolved from the build option. `src/x25519.zig` now dispatches X25519
+  primitives through `src/crypto/backend.zig` rather than calling EVP
+  directly; the AWS-LC backend module is a thin compat layer over backend_openssl
+  until real link/input selection lands.
 - `src/aead.zig` is the strongest seam: `RecordLayer` owns TLS nonce/AAD/sequence
   work and calls `Aead.encrypt` / `Aead.decrypt`; the module reuses
   `EVP_CIPHER_CTX` values rather than allocating them per record.
-- `src/x25519.zig` uses OpenSSL EVP raw-key APIs for X25519, but exposes only a
-  hard-coded X25519 keypair/secret shape to the handshake.
+- `src/x25519.zig` (via the dispatch facade) exposes only a hard-coded X25519
+  keypair/secret shape to the handshake.
 - `src/signature.zig` has a useful caller-facing `Signer` vtable for server
   signing, but the concrete `PrivateKey` helper is OpenSSL-specific.
 - `src/certificate.zig` performs CertificateVerify verification with OpenSSL EVP
   and delegates public-key construction to `src/crypto/openssl_key.zig`;
   certificate parsing/path policy is still ztls/std-derived code.
-- `-Dcrypto-backend=openssl` selects the current backend at build time, and
-  named-but-unimplemented backends fail clearly instead of silently falling back.
-  `src/crypto/backend.zig` still does not dispatch primitive implementations.
+- `just check-backend-shim` builds and tests the AWS-LC dispatch shim end to
+  end; the underlying provider remains an OpenSSL/libcrypto build, so this is a
+  shape test, not a behavioral test.
 - HKDF/HMAC/SHA transcript hashing remain on `std.crypto`, matching the roadmap
   policy unless a concrete provider/FIPS requirement appears.
 
@@ -271,15 +278,13 @@ each passing the same correctness and interop gates.
 
 **Gaps:**
 
-- **The provider abstraction is still mostly aspirational scaffolding.** The
-  build has a `-Dcrypto-backend` selection point, but only `openssl` is
-  implemented and no selected backend module dispatches primitives through
-  `src/crypto/backend.zig`; OpenSSL calls are compiled directly through
-  `src/crypto/c_openssl.zig` from `src/aead.zig`, `src/x25519.zig`,
-  `src/signature.zig`, `src/certificate.zig`, and backend-specific helpers such
-  as `src/crypto/openssl_key.zig`. This contradicts the first-class aws-lc
-  design target in practice: aws-lc is named and rejected clearly, but not
-  implemented. *(#22)*
+- **The provider abstraction is partly real but not exercised end-to-end.**
+  `src/crypto/backend.zig` exists, `-Dcrypto-backend=aws-lc` is a recognized
+  value, and `src/x25519.zig` dispatches through the facade. AEAD, signatures,
+  and certificate still compile OpenSSL calls directly through
+  `src/crypto/c_openssl.zig` and `src/crypto/openssl_key.zig`, so a real aws-lc
+  backend would not provide its own implementation for those primitives even
+  with link selection. *(#22)*
 - **aws-lc has no implementation or validation lane.** A second backend requires
   an aws-lc build input/CI lane, one implementation file behind the facade, and
   the same unit, Wycheproof, interop, conformance, and benchmark gates as

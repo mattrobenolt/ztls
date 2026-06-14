@@ -21,7 +21,7 @@ examples-ci:
 
 [doc("Check formatting and lint (for CI)")]
 [group("check")]
-lint: lint-zig lint-actions lint-just lint-markdown
+lint: lint-zig lint-actions lint-just lint-markdown lint-issues
     just conformance/lint
 
 [doc("Lint markdown research docs for status-language drift")]
@@ -34,6 +34,31 @@ lint-markdown:
         exit 1
     fi
     echo "no status-language drift"
+
+[doc("Lint research doc headings for closed-issue citations")]
+[group("check")]
+lint-issues:
+    #!/usr/bin/env bash
+    set -u
+    candidates=$(grep -rEn '^## .+ — #[0-9]+' docs/research/ --include='*.md' --exclude-dir=rfcs) || true
+    if [ -z "$candidates" ]; then
+        echo "no active-work headings referencing issues"
+        exit 0
+    fi
+    findings=""
+    while IFS= read -r line; do
+        [ -z "$line" ] && continue
+        issue=$(printf '%s' "$line" | grep -oE '#[0-9]+' | head -1 | tr -d '#')
+        state=$(gh issue view "$issue" --json state --jq '.state' 2>/dev/null) || state=UNKNOWN
+        if [ "$state" = "CLOSED" ]; then
+            findings="${findings}${line} (issue #${issue} is CLOSED)"$'\n'
+        fi
+    done <<< "$candidates"
+    if [ -n "$findings" ]; then
+        printf 'closed-issue citations in research doc headings:\n%s' "$findings" >&2
+        exit 1
+    fi
+    echo "no closed-issue citations in research doc headings"
 
 [doc("Format Zig code")]
 [group("check")]
