@@ -22,6 +22,7 @@ Implementation rules:
 - Preserve the no ztls-owned allocation invariant in core TLS engine code.
 - Prefer small, obvious Zig over abstraction. No dependencies unless explicitly approved.
 - Update tests with RFC/spec citations when protocol behavior changes.
+- If fixing a failure discovered by TLS-Anvil/BoGo, add local regression coverage but do not claim the external issue is closed until a completed external run proves that test no longer fails.
 - Update `PRODUCTION_READINESS.md` in the same change when evidence/status changes.
 - Do not create commits, push branches, close issues, or post GitHub comments unless explicitly instructed.
 - Do not cite pi todo IDs in committed artifacts.
