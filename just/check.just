@@ -21,7 +21,7 @@ examples-ci:
 
 [doc("Check formatting and lint (for CI)")]
 [group("check")]
-lint: lint-zig lint-actions lint-just lint-markdown lint-issues
+lint: lint-zig lint-actions lint-just lint-markdown lint-issues lint-readme-index
     just conformance/lint
 
 [doc("Lint markdown research docs for status-language drift")]
@@ -58,6 +58,37 @@ lint-issues:
         printf 'closed-issue citations in research doc headings:\n%s' "$findings" >&2
         exit 1
     fi
+    echo "no closed-issue citations in research doc headings"
+
+[doc("Verify docs/research/README.md links match filesystem")]
+[group("check")]
+lint-readme-index:
+    #!/usr/bin/env bash
+    set -u
+    readme=docs/research/README.md
+    if [ ! -f "$readme" ]; then
+        echo "missing $readme" >&2
+        exit 1
+    fi
+    linked=$(mktemp)
+    actual=$(mktemp)
+    trap 'rm -f "$linked" "$actual"' EXIT
+    grep -oE '\(([A-Za-z0-9./_-]+\.md)\)' "$readme" | sed 's|[()]||g' | sort -u > "$linked"
+    find docs/research -maxdepth 1 -type f -name '*.md' ! -name 'README.md' | sed 's|^docs/research/||' | sort -u > "$actual"
+    unlinked=$(comm -23 "$actual" "$linked" | sed '/^$/d')
+    broken=$(comm -13 "$actual" "$linked" | sed '/^$/d')
+    findings=""
+    if [ -n "$unlinked" ]; then
+        findings="${findings}unlinked research files (in docs/research/ but not referenced from README):"$'\n'"$unlinked"$'\n'
+    fi
+    if [ -n "$broken" ]; then
+        findings="${findings}linked from README but missing on disk:"$'\n'"$broken"$'\n'
+    fi
+    if [ -n "$findings" ]; then
+        printf '%s' "$findings" >&2
+        exit 1
+    fi
+    echo "README index matches research files"
     echo "no closed-issue citations in research doc headings"
 
 [doc("Format Zig code")]
