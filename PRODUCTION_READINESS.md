@@ -88,11 +88,16 @@ consumption-for-rejection, not resumption.
 - OpenSSL interop in both directions, covered by `zig build test`.
 - tlsfuzzer conformance, CI-gated (`just conformance/tlsfuzzer`).
 - TLS-Anvil wrapper/report helper tests are CI-gated under `just conformance/ci`:
-  synthetic skip-list normalization, synthetic real-output adapter coverage, and
-  per-run tool-log capture helpers. Manual TLS-Anvil runs capture the command and
-  stdout/stderr under the run dir; unfinished raw TLS-Anvil reports are rejected
-  by default and partial captures are local audit/debug only. Real TLS-Anvil
-  execution remains manual.
+  synthetic skip-list normalization, synthetic real-output adapter coverage,
+  per-run metadata/provenance capture, and per-run tool-log capture helpers.
+  Manual TLS-Anvil runs capture the command and stdout/stderr under the run dir;
+  unfinished raw TLS-Anvil reports are rejected by default and partial captures
+  are local audit/debug only. A completed server run on `9d5799c`
+  (`conformance/zig-out/anvil/server/20260614-203030`) strict-normalized from a
+  clean tree with `Running: false`, `FinishedTests: 437`, `TotalTests: 437`, and
+  normalized counts of `passed: 93`, `failed: 3`, `expected_skipped: 20`,
+  `unexpected_skipped: 164`, and `not_attempted: 157`. Real TLS-Anvil execution
+  remains manual.
 - Wycheproof boundary vectors at the libcrypto seam.
 - Fuzzing on the major parsers plus record decrypt and server `handleRecord`
   pre-auth/post-auth dispatch.
@@ -123,13 +128,13 @@ consumption-for-rejection, not resumption.
 - **External runners not gated.** BoGo and full TLS-Anvil execution are not in
   `just ci`. TLS-Anvil normalization and wrapper-helper tests are gated, and the
   report separates server/client endpoint-mode `not_attempted` tests from
-  expected skips, but real-suite execution, finished captured-output validation,
-  skip-list retuning, and CI/periodic runner wiring remain open. A partial
-  TLS-Anvil server capture produced attempted TLS 1.3 failures tracked as
-  concrete gaps: secp256r1 named-group support *(#6)*, legacy-only
-  `signature_algorithms` rejection *(#35)*, `close_notify` on orderly close
-  *(#36)*, compatibility CCS emission *(#37)*, and SSLv3 `legacy_version`
-  rejection *(#38)*. *(#9)*
+  expected skips, but real-suite execution, skip-list retuning, and CI/periodic
+  runner wiring remain open. Completed TLS-Anvil server evidence now leaves three
+  attempted TLS 1.3 failures tracked as concrete gaps: secp256r1 named-group
+  support *(#6)*, `close_notify` on orderly close *(#36)*, and compatibility CCS
+  emission *(#37)*. Two additional TLS-Anvil-derived failures were fixed and
+  closed by completed-run evidence: legacy-only `signature_algorithms` rejection
+  *(#35)* and SSLv3 `legacy_version` rejection *(#38)*. *(#9)*
 - **Correctness remains `PARTIAL` until external conformance is CI-gated.** The
   RFC 8446 MUST matrix is closed for the current supported surface; future
   feature work that changes TLS scope must reopen the relevant rows in the same
