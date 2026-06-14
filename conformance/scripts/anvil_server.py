@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import os
+import shutil
 import socket
 import subprocess
 import sys
@@ -11,6 +12,10 @@ from pathlib import Path
 CONF_DIR = Path(__file__).resolve().parents[1]
 SERVER_BIN = CONF_DIR / "zig-out" / "bin" / "tlsfuzzer_server"
 ANVIL_JAR = CONF_DIR / "zig-out" / "tools" / "TLS-Anvil.jar"
+# TLS-Anvil v1.5.0 writes testsuite/tlsattacker logs beside the jar under
+# `logs/default_<date>_*`. Copy any files changed during a run into that run's
+# output directory so timeout/failure evidence stays attached to the capture.
+ANVIL_TOOL_LOG_DIR = ANVIL_JAR.parent / "logs"
 
 
 def free_port() -> int:
@@ -51,6 +56,26 @@ def terminate(proc: subprocess.Popen[bytes]) -> None:
         proc.wait(timeout=2)
 
 
+def snapshot_logs(log_dir: Path) -> dict[str, int]:
+    if not log_dir.is_dir():
+        return {}
+    return {p.name: p.stat().st_mtime_ns for p in log_dir.iterdir() if p.is_file()}
+
+
+def copy_new_logs(log_dir: Path, dest_dir: Path, before: dict[str, int]) -> list[Path]:
+    if not log_dir.is_dir():
+        return []
+    copied: list[Path] = []
+    for src in sorted(p for p in log_dir.iterdir() if p.is_file()):
+        if before.get(src.name) == src.stat().st_mtime_ns:
+            continue
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        dest = dest_dir / src.name
+        shutil.copy2(src, dest)
+        copied.append(dest)
+    return copied
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Run TLS-Anvil server tests against the ztls server harness."
@@ -71,7 +96,9 @@ def main() -> int:
     output_folder = args.output_folder or (
         CONF_DIR / "zig-out" / "anvil" / "server" / datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
     )
-    output_folder.parent.mkdir(parents=True, exist_ok=True)
+    output_folder.mkdir(parents=True, exist_ok=True)
+    logs_dir = output_folder / "logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
 
     env = os.environ.copy()
     env["PORT"] = str(port)
@@ -102,16 +129,36 @@ def main() -> int:
             "-connect",
             f"127.0.0.1:{port}",
         ]
-        print(" ".join(cmd), flush=True)
+        command = " ".join(cmd)
+        print(command, flush=True)
+        (logs_dir / "TLS-Anvil.command.txt").write_text(command + "\n")
+        tool_logs_before = snapshot_logs(ANVIL_TOOL_LOG_DIR)
         timeout = args.timeout or None
+        stdout_path = logs_dir / "TLS-Anvil.stdout.log"
         try:
-            return subprocess.run(cmd, cwd=CONF_DIR, timeout=timeout, check=False).returncode
-        except subprocess.TimeoutExpired:
-            print(
-                f"TLS-Anvil timed out after {args.timeout}s; partial results: {output_folder}",
-                file=sys.stderr,
-            )
-            return 124
+            with stdout_path.open("wb") as stdout:
+                anvil = subprocess.Popen(
+                    cmd,
+                    cwd=CONF_DIR,
+                    stdout=stdout,
+                    stderr=subprocess.STDOUT,
+                )
+                try:
+                    return anvil.wait(timeout=timeout)
+                except subprocess.TimeoutExpired:
+                    terminate(anvil)
+                    print(
+                        f"TLS-Anvil timed out after {args.timeout}s; partial results: {output_folder}",
+                        file=sys.stderr,
+                    )
+                    return 124
+        finally:
+            copied = copy_new_logs(ANVIL_TOOL_LOG_DIR, logs_dir, tool_logs_before)
+            if copied:
+                print(
+                    "copied TLS-Anvil logs: " + ", ".join(str(p) for p in copied),
+                    file=sys.stderr,
+                )
     finally:
         terminate(server)
 

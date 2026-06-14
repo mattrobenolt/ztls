@@ -48,6 +48,7 @@ tlsfuzzer *args: build
 ci:
     just tlsfuzzer -v
     just anvil-report-test
+    just anvil-server-test
 
 [doc("Run TLS-Anvil server tests against the ztls server harness")]
 anvil-server *args: build
@@ -60,6 +61,10 @@ anvil-report results_json *args:
 [doc("Run synthetic TLS-Anvil report parser tests")]
 anvil-report-test:
     uv run pytest -q tests/test_anvil_report.py
+
+[doc("Run TLS-Anvil server wrapper helper tests")]
+anvil-server-test:
+    uv run pytest -q tests/test_anvil_server.py
 
 [doc("Lint the skip list against known TLS-Anvil feature names")]
 anvil-report-skip-list:

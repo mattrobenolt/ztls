@@ -87,6 +87,10 @@ consumption-for-rejection, not resumption.
 - RFC 8448 known-answer vectors for the key schedule and transcript.
 - OpenSSL interop in both directions, covered by `zig build test`.
 - tlsfuzzer conformance, CI-gated (`just conformance/tlsfuzzer`).
+- TLS-Anvil wrapper/report helper tests are CI-gated under `just conformance/ci`:
+  synthetic skip-list normalization plus per-run tool-log capture helpers. Manual
+  TLS-Anvil runs also capture the command and stdout/stderr under the run dir;
+  real TLS-Anvil execution remains manual.
 - Wycheproof boundary vectors at the libcrypto seam.
 - Fuzzing on the major parsers plus record decrypt and server `handleRecord`
   pre-auth/post-auth dispatch.
@@ -114,8 +118,10 @@ consumption-for-rejection, not resumption.
 
 **Gaps (this is the punch-list that converts dread into work):**
 
-- **External runners not gated.** BoGo and TLS-Anvil shims exist but are not in
-  `just ci`; their value scales with feature surface. *(#9)*
+- **External runners not gated.** BoGo and full TLS-Anvil execution are not in
+  `just ci`. TLS-Anvil normalization and wrapper-helper tests are gated, but
+  real-suite execution, real-output adaptation, skip-list retuning, and CI/periodic
+  runner wiring remain open. *(#9)*
 - **Correctness remains `PARTIAL` until external conformance is CI-gated.** The
   RFC 8446 MUST matrix is closed for the current supported surface; future
   feature work that changes TLS scope must reopen the relevant rows in the same
