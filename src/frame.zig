@@ -1,18 +1,18 @@
-/// TLS 1.3 record layer.
-///
-/// Implements wire format parsing and encoding for TLS records per RFC 8446 §5.
-/// No crypto here — just framing. AEAD encrypt/decrypt is a separate layer.
-///
-/// Record layout on the wire:
-///
-///   ContentType     (1 byte)
-///   ProtocolVersion (2 bytes, always 0x0303 in TLS 1.3)
-///   length          (2 bytes, big-endian)
-///   fragment        (length bytes)
-///
-/// After the handshake, all records are TLSCiphertext: the ContentType byte is
-/// always application_data (23), and the real type is smuggled inside the AEAD
-/// plaintext as TLSInnerPlaintext.
+//! TLS 1.3 record layer.
+//!
+//! Implements wire format parsing and encoding for TLS records per RFC 8446 §5.
+//! No crypto here — just framing. AEAD encrypt/decrypt is a separate layer.
+//!
+//! Record layout on the wire:
+//!
+//!   ContentType     (1 byte)
+//!   ProtocolVersion (2 bytes, always 0x0303 in TLS 1.3)
+//!   length          (2 bytes, big-endian)
+//!   fragment        (length bytes)
+//!
+//! After the handshake, all records are TLSCiphertext: the ContentType byte is
+//! always application_data (23), and the real type is smuggled inside the AEAD
+//! plaintext as TLSInnerPlaintext.
 const std = @import("std");
 const mem = std.mem;
 const testing = std.testing;
@@ -106,21 +106,24 @@ pub const ParseError = error{
 pub fn parseHeader(buf: []const u8) ParseError!Header {
     if (buf.len < header_len) return error.BufferTooShort;
     const length = (@as(u16, buf[3]) << 8) | buf[4];
-    if (length > max_ciphertext_len) return error.RecordTooLarge;
+    if (length > max_ciphertext_len) {
+        @branchHint(.cold);
+        return error.RecordTooLarge;
+    }
     return .init(@enumFromInt(buf[0]), length);
 }
 
 // RFC 8446 §5.1 — record header format
 test "parseHeader: valid plaintext record" {
     // handshake record, version 0x0303, 100 bytes of fragment
-    const buf = [_]u8{ 22, 0x03, 0x03, 0x00, 0x64 } ++ [_]u8{0} ** 100;
+    const buf = [_]u8{ 22, 0x03, 0x03, 0x00, 0x64 } ++ @as([100]u8, @splat(0));
     const h = try parseHeader(&buf);
     try testing.expectEqual(ContentType.handshake, h.content_type);
     try testing.expectEqual(@as(u16, 100), h.length());
 }
 
 test "parseHeader: application_data record (TLSCiphertext)" {
-    const buf = [_]u8{ 23, 0x03, 0x03, 0x00, 0x10 } ++ [_]u8{0} ** 16;
+    const buf = [_]u8{ 23, 0x03, 0x03, 0x00, 0x10 } ++ @as([16]u8, @splat(0));
     const h = try parseHeader(&buf);
     try testing.expectEqual(ContentType.application_data, h.content_type);
     try testing.expectEqual(@as(u16, 16), h.length());
@@ -128,7 +131,7 @@ test "parseHeader: application_data record (TLSCiphertext)" {
 
 // RFC 8446 §5.1 — recipients ignore legacy_record_version.
 test "parseHeader: ignores legacy_record_version" {
-    const buf = [_]u8{ 22, 0x03, 0x01, 0x00, 0x10 } ++ [_]u8{0} ** 16;
+    const buf = [_]u8{ 22, 0x03, 0x01, 0x00, 0x10 } ++ @as([16]u8, @splat(0));
     const h = try parseHeader(&buf);
     try testing.expectEqual(ContentType.handshake, h.content_type);
     try testing.expectEqual(@as(u16, 16), h.length());

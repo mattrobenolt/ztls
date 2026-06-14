@@ -64,7 +64,7 @@ const hello_retry_request_random = [_]u8{
 const downgrade_tls12 = "DOWNGRD\x01".*;
 const downgrade_tls11_or_below = "DOWNGRD\x00".*;
 
-fn hasDowngradeSentinel(random: []const u8) bool {
+inline fn hasDowngradeSentinel(random: []const u8) bool {
     if (random.len != 32) return false;
     const tail = random[24..32];
     return mem.eql(u8, tail, &downgrade_tls12) or
@@ -414,7 +414,7 @@ test "encode: round trips through parse" {
         0xdd, 0x69, 0xb1, 0xb0, 0x4e, 0x75, 0x1f, 0x0f,
     });
     var out: [128]u8 = undefined;
-    const msg = try encode(&out, [_]u8{0xab} ** 32, &.{}, .aes_128_gcm_sha256, key);
+    const msg = try encode(&out, @splat(0xab), &.{}, .aes_128_gcm_sha256, key);
     try testing.expectEqual(@as(usize, encoded_len), msg.len);
     const parsed = try parse(msg);
     try testing.expectEqual(.aes_128_gcm_sha256, parsed.cipher_suite);
@@ -424,7 +424,7 @@ test "encode: round trips through parse" {
 test "encode: echoes session id" {
     var out: [128]u8 = undefined;
     const sid = [_]u8{ 1, 2, 3, 4 };
-    const msg = try encode(&out, [_]u8{0xab} ** 32, &sid, .aes_256_gcm_sha384, .zero);
+    const msg = try encode(&out, @splat(0xab), &sid, .aes_256_gcm_sha384, .zero);
     try testing.expectEqual(@as(u8, sid.len), msg[38]);
     try testing.expectEqualSlices(u8, &sid, msg[39..][0..sid.len]);
     const parsed = try parse(msg);
@@ -463,7 +463,7 @@ test "parse: missing extensions" {
     const msg = [_]u8{
         0x02, 0x00, 0x00, 0x28, // type + body length = 40
         0x03, 0x03, // legacy_version
-    } ++ [_]u8{0} ** 32 ++ // random
+    } ++ @as([32]u8, @splat(0)) ++ // random
         [_]u8{
             0x00, // session_id: empty
             0x13, 0x01, // cipher_suite

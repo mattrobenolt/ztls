@@ -45,7 +45,7 @@ pub fn messageHashSynthetic(
 
 test "messageHashSynthetic: SHA-256 header" {
     // The first four bytes must always be 0xfe 0x00 0x00 <len>.
-    const hash = [_]u8{0xab} ** 32;
+    const hash: [32]u8 = @splat(0xab);
     const msg = messageHashSynthetic(32, hash);
     try testing.expectEqual(@as(usize, 36), msg.len);
     try testing.expectEqual(@intFromEnum(handshake.Type.message_hash), msg[0]);
@@ -56,7 +56,7 @@ test "messageHashSynthetic: SHA-256 header" {
 }
 
 test "messageHashSynthetic: SHA-384 header" {
-    const hash = [_]u8{0xcd} ** 48;
+    const hash: [48]u8 = @splat(0xcd);
     const msg = messageHashSynthetic(48, hash);
     try testing.expectEqual(@as(usize, 52), msg.len);
     try testing.expectEqual(@intFromEnum(handshake.Type.message_hash), msg[0]);
