@@ -162,6 +162,7 @@ def main() -> int:
         command = " ".join(cmd)
         print(command, flush=True)
         (logs_dir / "TLS-Anvil.command.txt").write_text(command + "\n")
+        write_run_metadata(output_folder, command, port)
         tool_logs_before = snapshot_logs(ANVIL_TOOL_LOG_DIR)
         timeout = args.timeout or None
         stdout_path = logs_dir / "TLS-Anvil.stdout.log"

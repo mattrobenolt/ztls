@@ -1,7 +1,9 @@
+import inspect
 import json
 import os
 from pathlib import Path
 
+from scripts import anvil_server
 from scripts.anvil_server import copy_new_logs, snapshot_logs, write_run_metadata
 
 
@@ -13,6 +15,13 @@ def test_write_run_metadata_records_command_and_git(tmp_path: Path):
     assert metadata["port"] == 4433
     assert "revision" in metadata["git"]
     assert "dirty" in metadata["git"]
+
+
+def test_main_writes_run_metadata_before_launching_tls_anvil():
+    source = inspect.getsource(anvil_server.main)
+    assert source.index("write_run_metadata") < source.index(
+        "subprocess.Popen(\n                    cmd"
+    )
 
 
 def test_snapshot_logs_returns_empty_for_missing_or_empty_dir(tmp_path: Path):
