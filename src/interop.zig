@@ -246,7 +246,7 @@ fn serve(stream: net.Stream, suite: ztls.CipherSuite) !void {
                 .write => |w| {
                     try stream.writeAll(w);
                     hs.completeWrite();
-                    if (!sent_flight and hs.state == .wait_client_finished) {
+                    if (!sent_flight and hs.needsServerFlight()) {
                         const flight = try hs.sendPreparedAuthenticatedFlight(
                             &.{server_cert_der},
                             signer_api,

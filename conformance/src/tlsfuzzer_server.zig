@@ -60,7 +60,7 @@ fn handleConnection(conn: std.net.Server.Connection) !void {
             .write => |bytes| {
                 try conn.stream.writeAll(bytes);
                 hs.completeWrite();
-                if (!hs.isConnected()) {
+                if (hs.needsServerFlight()) {
                     const flight = hs.sendPreparedAuthenticatedFlight(
                         &.{harness.testCertDer()},
                         signer.signer(),

@@ -80,7 +80,7 @@ pub fn main() !void {
                 .write => |w| {
                     try conn.stream.writeAll(w);
                     hs.completeWrite();
-                    if (!sent_flight and hs.state == .wait_client_finished) {
+                    if (!sent_flight and hs.needsServerFlight()) {
                         const flight_bytes = try hs.sendAuthenticatedFlightBuffered(
                             &.{cert_der},
                             signer_api,

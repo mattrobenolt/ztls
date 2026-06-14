@@ -167,6 +167,10 @@ pub fn isConnected(self: *const ServerHandshake) bool {
     return self.state == .connected;
 }
 
+pub fn needsServerFlight(self: *const ServerHandshake) bool {
+    return self.state == .wait_client_finished;
+}
+
 pub const Event = union(enum) {
     application_data: []const u8,
     write: []const u8,
@@ -1056,6 +1060,7 @@ test "acceptClientHello: emits HelloRetryRequest for missing X25519 key share" {
         &hrr_out,
     );
     try testing.expectEqual(.wait_ch, server.state);
+    try testing.expect(!server.needsServerFlight());
 
     const hrr_hdr = try frame.parseHeader(hrr_record);
     try testing.expectEqual(.handshake, hrr_hdr.content_type);
@@ -1078,6 +1083,7 @@ test "acceptClientHello: emits HelloRetryRequest for missing X25519 key share" {
         &sh_out,
     );
     try testing.expectEqual(.wait_client_finished, server.state);
+    try testing.expect(server.needsServerFlight());
     const sh_hdr = try frame.parseHeader(sh_record);
     try testing.expectEqual(.handshake, sh_hdr.content_type);
     _ = try server_hello.parse(sh_record[frame.header_len..][0..sh_hdr.length()]);
