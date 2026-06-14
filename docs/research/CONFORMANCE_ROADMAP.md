@@ -10,7 +10,7 @@ Read alongside `CORRECTNESS.md` (what is supported and how it is proven),
 groups/suites/PQ).
 
 
-## HelloRetryRequest — #1, #1
+## HelloRetryRequest — #1
 
 
 **Prerequisites:**
@@ -87,7 +87,11 @@ reviewed.
 
 ---
 
-## Extension negotiation hardening — #5
+## Extension negotiation hardening (formerly #5)
+
+#5 was closed; the acceptance criteria below describe how new extensions should be
+adopted. Until each candidate extension lands, "ignored" is the documented
+behavior.
 
 
 **Prerequisites:** decide which extensions are in scope. `record_size_limit`
@@ -99,7 +103,9 @@ suite exercises it. Until adopted, "ignored" is the documented behavior.
 
 ---
 
-## Post-handshake messages beyond KeyUpdate — #23
+## Post-handshake messages beyond KeyUpdate (formerly #23)
+
+#23 was closed once KeyUpdate (done) and post-handshake auth are accounted for.
 
 
 **Prerequisites:** client cert auth (#4) for post-handshake auth;
@@ -110,7 +116,7 @@ work item once KeyUpdate (done) and post-handshake auth are accounted for.
 
 ---
 
-## Client certificate authentication — #4, #4
+## Client certificate authentication — #4
 
 **Prerequisites:**
 - `CertificateRequest` parse (client) / emit (server), incl.
@@ -164,8 +170,7 @@ conformance busywork.
 
 ---
 
-## External runners — TLS-Anvil (#9), tlsfuzzer lockstep
-## (#9), BoGo shim (#9)
+## External runners — TLS-Anvil (#9), tlsfuzzer lockstep (#9), BoGo shim (#9)
 
 These broaden matrix coverage. Their value scales with the feature surface
 above; running them now mostly exercises features ztls intentionally does not

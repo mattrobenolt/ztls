@@ -160,13 +160,11 @@ are rejected.
 
 Evidence:
 
-- `server_hello.zig`: unsupported TLS version tests.
+- `server_hello.zig`: unsupported TLS version tests; `parse: rejects TLS 1.2
+  downgrade sentinel` and `parse: rejects TLS 1.1 downgrade sentinel` cover
+  RFC 8446 §4.1.3 downgraded-connection sentinel detection (R004-020
+  `PROVEN`).
 - Client/server handshake tests use TLS 1.3 key schedule and RFC 8448 vectors.
-
-Gap: the ServerHello downgrade sentinel in the last eight bytes of
-`server_random` is not explicitly checked. Since ztls cannot negotiate TLS 1.2,
-this is defense-in-depth rather than an exploitable downgrade path in the
-current surface, but the RFC MUST matrix accounts for it as a gap.
 
 ### KeyUpdate abuse and post-handshake control traffic
 
@@ -246,10 +244,8 @@ features until their tracking issues land.
 
 | Gap | Boundary | Tracking |
 |---|---|---|
-| RFC 8446 MUST matrix has `GAP`/`PARTIAL` rows | Completeness proof | #25 |
 | RFC 5280 directoryName constraints are not enforced | Certificate policy | future X.509 expansion |
 | TLS-Anvil / BoGo external runners are not CI-gated | External conformance breadth | #9 |
-| ServerHello downgrade sentinel is not explicitly checked | Defense-in-depth / MUST matrix | #25 |
 | Legacy session ID parse caps need dedicated enforcement/tests | Parser hardening | `NEGATIVE_SPACE.md` gap |
 | Server Certificate non-empty `request_context` needs rejection evidence | Parser/state-machine hardening | `NEGATIVE_SPACE.md` gap |
 | Server-side bad client-Finished negative unit tests are partial | Server state-machine evidence | `NEGATIVE_SPACE.md` gap |

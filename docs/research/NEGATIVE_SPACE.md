@@ -146,13 +146,14 @@ client runner.
 
 These are deliberately not closed by writing the inventory:
 
-- RFC MUST matrix exists, but its `GAP`/`PARTIAL` rows remain #25 follow-up.
+- RFC MUST matrix is currently `PROVEN` for every supported-surface row; #25
+  closed the matrix-build slice. Any future supported-surface expansion must
+  reopen the matrix in the same change.
 - Full bettertls harness execution remains outside the local name-constraints
   fixture set (#9).
 - BoGo/TLS-Anvil execution remains #9.
 - HRR, PSK/resumption, 0-RTT, client certificates, and PQ/non-X25519 groups are
   out of the current supported surface and tracked by their feature issues.
-- ServerHello downgrade-sentinel handling is not explicitly tested.
 - Legacy session id length caps on parse paths need dedicated enforcement/tests.
 - Server Certificate `request_context` non-empty rejection needs a targeted test.
 - Some server-side client-Finished negative paths exist structurally but lack

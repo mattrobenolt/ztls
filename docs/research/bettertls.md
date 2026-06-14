@@ -15,9 +15,9 @@ builds certificate chains, and asserts expected policy outcomes.
 3. **Critical extension handling** — rejection of unrecognized critical
    extensions is also tested indirectly.
 
-## Current ztls coverage
+## ztls coverage scope
 
-ztls now enforces RFC 5280 Name Constraints during certificate path validation
+ztls enforces RFC 5280 Name Constraints during certificate path validation
 for the GeneralName forms used by TLS server-auth certificates:
 
 - `dNSName`

@@ -345,8 +345,11 @@ These are not feature work; they stop the bleeding and make the rest legible.
    client cert auth, and extension negotiation are now tracked by #1–#5.
 2. **DONE — decide the canonical-ID policy and repoint citations.** Committed
    files now cite the canonical GitHub issues (#1–#5), not duplicate pi todos.
-3. **Consolidate `docs/research/`.** Apply the reconciliation kill-list tracked
-   in #20; status moves here, mechanism stays there.
+3. **DONE — Consolidate `docs/research/`.** The reconciliation kill-list that
+   lived in #20 (closed 2026-06-09) was applied: status assertions moved here,
+   and `docs/research/*` now keeps mechanism, rationale, acceptance criteria,
+   and runbook mechanics. Reopen only if this spine and the research files
+   visibly drift again.
 4. **DONE — Define workspace ownership for build.zig / just recipes.**
    `src/build/` modules and root `just/` sub-files exist, while domain
    subprojects such as `conformance/` own their local workflows and root

@@ -129,9 +129,8 @@ with labels that describe their narrower boundary.
 ## Methodology
 
 - Build benchmarks with `-Doptimize=ReleaseFast` and a native CPU target. The
-  build defaults benchmark/test artifacts to native CPU now; generic AArch64
-  silently selects std.crypto's software AES/GHASH paths and is not a useful
-  performance target.
+  build's default is native CPU; generic AArch64 silently selects std.crypto's
+  software AES/GHASH paths and is not a useful performance target.
 - Print machine/build metadata with each run: target, CPU model if available,
   Zig version, optimization mode, git revision. If a benchmark says
   `cpu generic`, do not use it for OpenSSL comparisons.

@@ -146,7 +146,7 @@ facade and run the existing RFC 8448 Finished/HKDF vectors against it.
 
 ### 5. Key exchange
 
-X25519 now uses OpenSSL EVP raw-key APIs for public-key derivation and shared
+X25519 uses OpenSSL EVP raw-key APIs for public-key derivation and shared
 secret calculation. The remaining work is turning the single hard-coded group
 into provider-backed named groups:
 
@@ -158,8 +158,8 @@ into provider-backed named groups:
 
 ### 6. Signatures and certificates
 
-TLS `CertificateVerify` signing and verification now use OpenSSL EVP, while
-trust policy and I/O stay outside ztls:
+TLS `CertificateVerify` signing and verification use OpenSSL EVP, while trust
+policy and I/O stay outside ztls:
 
 - expand EVP private-key loading beyond unencrypted DER/PEM when needed;
 - decide whether the vendored `std.crypto.Certificate`-derived chain validation
