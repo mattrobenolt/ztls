@@ -1,6 +1,7 @@
 .venv/
 .pytest_cache/
 __pycache__/
+cache/
 *.pyc
 logs/
 report.normalized.json

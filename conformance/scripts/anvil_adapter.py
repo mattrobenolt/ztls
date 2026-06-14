@@ -77,16 +77,16 @@ def metadata_description(raw: dict[str, Any]) -> str | None:
 
 
 def class_method_id(raw: dict[str, Any], fallback: str) -> str:
-    for key in ("id", "Id", "testId", "TestId", "name", "Name"):
-        if raw.get(key):
-            return str(raw[key])
-
     cls = raw.get("className") or raw.get("ClassName") or raw.get("TestClass")
     method = raw.get("methodName") or raw.get("MethodName") or raw.get("TestMethod")
     if cls and method:
         return f"{cls}.{method}"
     if cls:
         return str(cls)
+
+    for key in ("id", "Id", "testId", "TestId", "name", "Name"):
+        if raw.get(key):
+            return str(raw[key])
     return fallback
 
 

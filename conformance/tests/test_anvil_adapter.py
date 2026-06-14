@@ -89,6 +89,33 @@ def test_adapter_normalizes_per_test_json_directory(tmp_path: Path):
     }
 
 
+def test_adapter_prefers_class_method_over_opaque_test_id(tmp_path: Path):
+    run_dir = tmp_path / "run"
+    write_test(
+        run_dir / "results" / "8446-xhexdB876E" / "_testRun.json",
+        {
+            "TestId": "8446-xhexdB876E",
+            "Result": "FULLY_FAILED",
+            "TestClass": "de.rub.nds.tlstest.suite.tests.both.tls13.rfc8446.ComplianceRequirements",
+            "TestMethod": "supportsSecp256r1",
+            "MetaData": {"description": "TLS-compliant application MUST support secp256r1"},
+        },
+    )
+
+    cp = run_adapter(str(run_dir))
+
+    assert cp.returncode == 0, cp.stderr
+    normalized = load_normalized(run_dir / "report.normalized.json")
+    assert normalized["tests"] == [
+        {
+            "id": "de.rub.nds.tlstest.suite.tests.both.tls13.rfc8446.ComplianceRequirements.supportsSecp256r1",
+            "name": "TLS-compliant application MUST support secp256r1",
+            "result": "FULLY_FAILED",
+            "feature": "ComplianceRequirements",
+        }
+    ]
+
+
 def test_adapter_accepts_report_json_with_normalized_tests(tmp_path: Path):
     run_dir = tmp_path / "run"
     write_test(
