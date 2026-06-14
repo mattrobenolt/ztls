@@ -623,7 +623,7 @@ fn handleConnected(self: *ServerHandshake, record: []u8, out: []u8) ReceiveError
     const dec = try handshake.decryptProtected(&self.rx, record);
     switch (dec.content_type) {
         .application_data => {
-            self.post_handshake_count = 0;
+            if (dec.content.len > 0) self.post_handshake_count = 0;
             return .{ .application_data = dec.content };
         },
         .handshake => {
@@ -1476,6 +1476,91 @@ test "handleRecord: illegal post-handshake inner content type is rejected" {
         error.UnexpectedRecord,
         server.handleRecord(rx_buf[0..wire_rec.len], .zero, &out),
     );
+}
+
+// RFC 8446 §5.1 — empty application-data records must not reset the
+// KeyUpdate flood counter; otherwise an attacker can interleave empty
+// records to bypass the cap.
+test "handleRecord: empty application data does not reset post-handshake flood counter" {
+    var server = try connectedTestServer();
+    server.post_handshake_count = 7;
+
+    var client_tx = try server.rx.clone();
+    defer client_tx.deinit();
+    var rec_buf: [64]u8 = undefined;
+    const app_record = try client_tx.encrypt(.application_data, "", &rec_buf);
+
+    var rx_buf: [64]u8 = undefined;
+    @memcpy(rx_buf[0..app_record.len], app_record);
+    var out: [64]u8 = undefined;
+    const ev = try server.handleRecord(rx_buf[0..app_record.len], .zero, &out);
+    try testing.expectEqualSlices(u8, "", ev.application_data);
+    try testing.expectEqual(@as(u8, 7), server.post_handshake_count);
+}
+
+// RFC 8446 §4.6.3 — the KeyUpdate flood cap fires after more than
+// max_post_handshake_messages consecutive post-handshake messages.
+test "handleRecord: KeyUpdate flood is rejected" {
+    var server = try connectedTestServer();
+    var out: [64]u8 = undefined;
+
+    const H = hkdf.HkdfSha256;
+    var client_secret: H.TrafficSecret = switch (server.suite_state) {
+        .sha256 => |s| s.client_app_secret,
+        .sha384 => unreachable,
+    };
+
+    var i: usize = 0;
+    const result = while (i < max_post_handshake_messages + 1) : (i += 1) {
+        var client_tx = try H.makeRecordLayer(.aes_128_gcm_sha256, client_secret);
+        defer client_tx.deinit();
+        const ku = [_]u8{
+            @intFromEnum(HandshakeType.key_update),              0x00, 0x00, 0x01,
+            @intFromEnum(KeyUpdateRequest.update_not_requested),
+        };
+        var ku_buf: [64]u8 = undefined;
+        const ku_wire = try client_tx.encrypt(.handshake, &ku, &ku_buf);
+        var rx_buf: [64]u8 = undefined;
+        @memcpy(rx_buf[0..ku_wire.len], ku_wire);
+        client_secret = H.nextTrafficSecret(client_secret);
+        _ = server.handleRecord(rx_buf[0..ku_wire.len], .zero, &out) catch |e| break e;
+    } else error.NoError;
+    try testing.expectEqual(error.TooManyKeyUpdates, result);
+}
+
+// RFC 8446 §4.6.3, §5.1 — the KeyUpdate flood cap must fire even when
+// empty application-data records are interleaved between KeyUpdates.
+test "handleRecord: KeyUpdate flood cap fires despite empty app-data interleaving" {
+    var server = try connectedTestServer();
+    var out: [64]u8 = undefined;
+
+    var peer_tx = try server.rx.clone();
+
+    var i: usize = 0;
+    const result = while (i < max_post_handshake_messages + 1) : (i += 1) {
+        const ku = [_]u8{
+            @intFromEnum(HandshakeType.key_update),              0x00, 0x00, 0x01,
+            @intFromEnum(KeyUpdateRequest.update_not_requested),
+        };
+        var ku_buf: [64]u8 = undefined;
+        const ku_wire = try peer_tx.encrypt(.handshake, &ku, &ku_buf);
+        var rx_buf: [64]u8 = undefined;
+        @memcpy(rx_buf[0..ku_wire.len], ku_wire);
+
+        _ = server.handleRecord(rx_buf[0..ku_wire.len], .zero, &out) catch |e| break e;
+
+        peer_tx.deinit();
+        peer_tx = try server.rx.clone();
+        var app_buf: [32]u8 = undefined;
+        const app_wire = try peer_tx.encrypt(.application_data, "", &app_buf);
+        @memcpy(rx_buf[0..app_wire.len], app_wire);
+        _ = server.handleRecord(rx_buf[0..app_wire.len], .zero, &out) catch |e| break e;
+
+        const cloned = try peer_tx.clone();
+        peer_tx.deinit();
+        peer_tx = cloned;
+    } else error.NoError;
+    try testing.expectEqual(error.TooManyKeyUpdates, result);
 }
 
 // RFC 8446 §4.6.3 — simultaneous KeyUpdate messages are legal; each side

@@ -887,7 +887,7 @@ fn receiveConnected(self: *ClientHandshake, record: []u8, out: []u8) ReceiveErro
     const dec = try handshake.decryptProtected(&self.rx, record);
     switch (dec.content_type) {
         .application_data => {
-            self.post_handshake_count = 0;
+            if (dec.content.len > 0) self.post_handshake_count = 0;
             return .{ .application_data = dec.content };
         },
         .handshake => {
@@ -2125,6 +2125,65 @@ test "handleRecord: KeyUpdate flood is rejected" {
         @memcpy(rx_buf[0..ku_wire.len], ku_wire);
         server_secret = H.nextTrafficSecret(server_secret);
         _ = hs.handleRecord(rx_buf[0..ku_wire.len], &out) catch |e| break e;
+    } else error.NoError;
+    try testing.expectEqual(error.TooManyKeyUpdates, result);
+}
+
+// RFC 8446 §5.1 — empty application-data records are valid TLS 1.3 but
+// carry no user data. They must not reset the KeyUpdate flood counter;
+// otherwise an attacker can interleave empty records to bypass the cap.
+test "handleRecord: empty application data does not reset flood counter" {
+    var hs = try connectedTestClient();
+    hs.post_handshake_count = 7;
+
+    var server_tx = try hs.rx.clone();
+    defer server_tx.deinit();
+    var rec_buf: [64]u8 = undefined;
+    const app_record = try server_tx.encrypt(.application_data, "", &rec_buf);
+
+    var rx_buf: [64]u8 = undefined;
+    @memcpy(rx_buf[0..app_record.len], app_record);
+    var out: [64]u8 = undefined;
+    const ev = try hs.handleRecord(rx_buf[0..app_record.len], &out);
+    try testing.expectEqualSlices(u8, "", ev.application_data);
+    try testing.expectEqual(@as(u8, 7), hs.post_handshake_count);
+}
+
+// RFC 8446 §4.6.3, §5.1 — the KeyUpdate flood cap must fire even when
+// empty application-data records are interleaved between KeyUpdates.
+test "handleRecord: KeyUpdate flood cap fires despite empty app-data interleaving" {
+    var hs = try connectedTestClient();
+    var out: [64]u8 = undefined;
+
+    const H = hkdf.HkdfSha256;
+    var server_secret = hs.suite.sha256.server_app_secret;
+    var peer_tx = try H.makeRecordLayer(.aes_128_gcm_sha256, server_secret);
+
+    var i: usize = 0;
+    const result = while (i < max_post_handshake_messages + 1) : (i += 1) {
+        const ku = [_]u8{
+            @intFromEnum(HandshakeType.key_update),              0x00, 0x00, 0x01,
+            @intFromEnum(KeyUpdateRequest.update_not_requested),
+        };
+        var ku_buf: [64]u8 = undefined;
+        const ku_wire = try peer_tx.encrypt(.handshake, &ku, &ku_buf);
+        var rx_buf: [64]u8 = undefined;
+        @memcpy(rx_buf[0..ku_wire.len], ku_wire);
+
+        peer_tx.deinit();
+        server_secret = H.nextTrafficSecret(server_secret);
+
+        _ = hs.handleRecord(rx_buf[0..ku_wire.len], &out) catch |e| break e;
+
+        peer_tx = try H.makeRecordLayer(.aes_128_gcm_sha256, server_secret);
+        var app_buf: [32]u8 = undefined;
+        const app_wire = try peer_tx.encrypt(.application_data, "", &app_buf);
+        @memcpy(rx_buf[0..app_wire.len], app_wire);
+        _ = hs.handleRecord(rx_buf[0..app_wire.len], &out) catch |e| break e;
+
+        const cloned = try peer_tx.clone();
+        peer_tx.deinit();
+        peer_tx = cloned;
     } else error.NoError;
     try testing.expectEqual(error.TooManyKeyUpdates, result);
 }
