@@ -64,7 +64,7 @@ const hello_retry_request_random = [_]u8{
 const downgrade_tls12 = "DOWNGRD\x01".*;
 const downgrade_tls11_or_below = "DOWNGRD\x00".*;
 
-inline fn hasDowngradeSentinel(random: []const u8) bool {
+fn hasDowngradeSentinel(random: []const u8) bool {
     if (random.len != 32) return false;
     const tail = random[24..32];
     return mem.eql(u8, tail, &downgrade_tls12) or
