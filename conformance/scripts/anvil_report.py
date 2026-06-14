@@ -133,62 +133,63 @@ def classify_tests(
         match_reason = disabled_reason if result in SKIP_RESULTS else ""
         pattern = matches_any_pattern(name, skip_entries, test_id, match_reason)
 
-        if pattern is not None:
+        if result in SKIP_RESULTS and pattern is not None:
             matched_patterns.add(pattern)
             counts["expected_skipped"] += 1
             reason = reason_by_pattern[pattern]
             expected_skip_count_by_reason[reason] = expected_skip_count_by_reason.get(reason, 0) + 1
             by_feature.setdefault(feature, dict[str, int]()).setdefault("expected_skipped", 0)
             by_feature[feature]["expected_skipped"] += 1
+            continue
 
-            if result in PASS_RESULTS:
-                unexpected.append(
-                    {
-                        "id": test_id,
-                        "test": name,
-                        "result": result,
-                        "classification": "unexpected_pass",
-                        "rationale": (
-                            f"pattern '{pattern}' matched but test {result} — review ({reason})"
-                        ),
-                    }
-                )
+        if result in PASS_RESULTS and pattern is not None:
+            matched_patterns.add(pattern)
+            reason = reason_by_pattern[pattern]
+            unexpected.append(
+                {
+                    "id": test_id,
+                    "test": name,
+                    "result": result,
+                    "classification": "unexpected_pass",
+                    "rationale": f"pattern '{pattern}' matched but test {result} — review ({reason})",
+                }
+            )
+
+        if result in SKIP_RESULTS:
+            counts["unexpected_skipped"] += 1
+            by_feature.setdefault(feature, dict[str, int]()).setdefault("unexpected_skipped", 0)
+            by_feature[feature]["unexpected_skipped"] += 1
+            unexpected.append(
+                {
+                    "id": test_id,
+                    "test": name,
+                    "result": result,
+                    "classification": "unexpected_skipped",
+                    "rationale": f"test was {result} but no skip-list pattern matched",
+                }
+            )
+        elif result in PASS_RESULTS:
+            counts["passed"] += 1
+            by_feature.setdefault(feature, dict[str, int]()).setdefault("passed", 0)
+            by_feature[feature]["passed"] += 1
+        elif result in FAIL_RESULTS:
+            counts["failed"] += 1
+            by_feature.setdefault(feature, dict[str, int]()).setdefault("failed", 0)
+            by_feature[feature]["failed"] += 1
+            unexpected.append(
+                {
+                    "id": test_id,
+                    "test": name,
+                    "result": result,
+                    "classification": "unexpected_fail",
+                    "failure_reason": failure_reason,
+                    "rationale": failure_rationale(result, failure_reason),
+                }
+            )
         else:
-            if result in SKIP_RESULTS:
-                counts["unexpected_skipped"] += 1
-                by_feature.setdefault(feature, dict[str, int]()).setdefault("unexpected_skipped", 0)
-                by_feature[feature]["unexpected_skipped"] += 1
-                unexpected.append(
-                    {
-                        "id": test_id,
-                        "test": name,
-                        "result": result,
-                        "classification": "unexpected_skipped",
-                        "rationale": f"test was {result} but no skip-list pattern matched",
-                    }
-                )
-            elif result in PASS_RESULTS:
-                counts["passed"] += 1
-                by_feature.setdefault(feature, dict[str, int]()).setdefault("passed", 0)
-                by_feature[feature]["passed"] += 1
-            elif result in FAIL_RESULTS:
-                counts["failed"] += 1
-                by_feature.setdefault(feature, dict[str, int]()).setdefault("failed", 0)
-                by_feature[feature]["failed"] += 1
-                unexpected.append(
-                    {
-                        "id": test_id,
-                        "test": name,
-                        "result": result,
-                        "classification": "unexpected_fail",
-                        "failure_reason": failure_reason,
-                        "rationale": failure_rationale(result, failure_reason),
-                    }
-                )
-            else:
-                counts["errored"] += 1
-                by_feature.setdefault(feature, dict[str, int]()).setdefault("errored", 0)
-                by_feature[feature]["errored"] += 1
+            counts["errored"] += 1
+            by_feature.setdefault(feature, dict[str, int]()).setdefault("errored", 0)
+            by_feature[feature]["errored"] += 1
 
     all_patterns = {e["pattern"] for e in skip_entries}
     unmatched_patterns = sorted(all_patterns - matched_patterns)

@@ -95,9 +95,9 @@ consumption-for-rejection, not resumption.
   are local audit/debug only. A completed server run on `9d5799c`
   (`conformance/zig-out/anvil/server/20260614-203030`) strict-normalized from a
   clean tree with `Running: false`, `FinishedTests: 437`, `TotalTests: 437`, and
-  normalized counts of `passed: 93`, `failed: 3`, `expected_skipped: 20`,
-  `unexpected_skipped: 164`, and `not_attempted: 157`. Real TLS-Anvil execution
-  remains manual.
+  normalized counts of `passed: 95`, `failed: 4`, `expected_skipped: 181`,
+  `unexpected_skipped: 0`, and `not_attempted: 157` after result-gated skip-list
+  retuning. Real TLS-Anvil execution remains manual.
 - Wycheproof boundary vectors at the libcrypto seam.
 - Fuzzing on the major parsers plus record decrypt and server `handleRecord`
   pre-auth/post-auth dispatch.
@@ -128,13 +128,15 @@ consumption-for-rejection, not resumption.
 - **External runners not gated.** BoGo and full TLS-Anvil execution are not in
   `just ci`. TLS-Anvil normalization and wrapper-helper tests are gated, and the
   report separates server/client endpoint-mode `not_attempted` tests from
-  expected skips, but real-suite execution, skip-list retuning, and CI/periodic
-  runner wiring remain open. Completed TLS-Anvil server evidence now leaves three
-  attempted TLS 1.3 failures tracked as concrete gaps: secp256r1 named-group
-  support *(#6)*, `close_notify` on orderly close *(#36)*, and compatibility CCS
-  emission *(#37)*. Two additional TLS-Anvil-derived failures were fixed and
-  closed by completed-run evidence: legacy-only `signature_algorithms` rejection
-  *(#35)* and SSLv3 `legacy_version` rejection *(#38)*. *(#9)*
+  expected skips, but real-suite execution and CI/periodic runner wiring remain
+  open. Completed TLS-Anvil server evidence now leaves four attempted TLS 1.3
+  failures tracked as concrete gaps: HelloRetryRequest *(#1)*, secp256r1
+  named-group support *(#6)*, `close_notify` on orderly close *(#36)*, and
+  compatibility CCS emission *(#37)*. Disabled record-fragmentation capability
+  evidence is tracked separately *(#40)*. Two additional TLS-Anvil-derived
+  failures were fixed and closed by completed-run evidence: legacy-only
+  `signature_algorithms` rejection *(#35)* and SSLv3 `legacy_version` rejection
+  *(#38)*. *(#9)*
 - **Correctness remains `PARTIAL` until external conformance is CI-gated.** The
   RFC 8446 MUST matrix is closed for the current supported surface; future
   feature work that changes TLS scope must reopen the relevant rows in the same

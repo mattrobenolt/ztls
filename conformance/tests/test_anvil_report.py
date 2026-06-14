@@ -19,19 +19,18 @@ SKIP_LIST_PATH = CONF_DIR / "anvil-skip-list.json"
 # If the fixture or skip-list changes, these must be updated.
 EXPECTED_COUNTS = {
     "total": 21,
-    "expected_skipped": 11,
-    "unexpected_skipped": 1,
-    "passed": 7,
-    "failed": 2,
-    "errored": 0,
+    "expected_skipped": 3,
+    "unexpected_skipped": 4,
+    "passed": 9,
+    "failed": 4,
+    "errored": 1,
     "timeout": 0,
     "not_attempted": 0,
 }
 
 EXPECTED_UNEXPECTED = {
-    "unexpected_pass": 2,
-    "unexpected_fail": 2,
-    "unexpected_skipped": 1,
+    "unexpected_fail": 4,
+    "unexpected_skipped": 4,
 }
 
 EXPECTED_FEATURES = 19  # distinct feature values in the fixture
@@ -89,22 +88,25 @@ def test_synthetic_fixture_loads():
 # ─── skip-list matching behavior ────────────────────────────────────────
 
 
-def test_pattern_hello_retry_request_matches():
-    """*HelloRetryRequest* glob matches the synthetic HRR test name."""
+def test_pattern_hello_retry_request_reason_matches():
+    """HRR skips match TLS-Anvil's disabled reason, not broad RFC prose."""
     assert fnmatch.fnmatch(
-        "TLS 1.3 HelloRetryRequest - HRR cookie exchange and retry",
-        "*HelloRetryRequest*",
+        "Target does not send a Hello Retry Request",
+        "*Target does not send a Hello Retry Request*",
     )
 
 
-def test_pattern_psk_matches_mixed_case_psk():
-    """Psk in the test name matches the case-sensitive *Psk* glob."""
-    assert fnmatch.fnmatch("TLS 1.3 Psk - external Psk handshake", "*Psk*")
+def test_pattern_psk_disabled_reason_matches():
+    """PSK skips match TLS-Anvil's disabled reason, not passing PSK prose."""
+    assert fnmatch.fnmatch(
+        "SUT does not support PSK handshakes",
+        "*SUT does not support PSK handshakes*",
+    )
 
 
-def test_pattern_psk_matches_psk_derivation():
-    """*Psk* glob matches 'PskDerivation' since * consumes prefix/suffix."""
-    assert fnmatch.fnmatch("TLS 1.3 PskDerivation - PSK binder computation", "*Psk*")
+def test_pattern_tls12_lowercase_id_matches():
+    """Real TLS-Anvil class ids use lowercase tls12."""
+    assert fnmatch.fnmatch("de.rub.nds.tlstest.suite.tests.server.tls12.foo", "*tls12*")
 
 
 def test_skip_pattern_falsification_caught():
@@ -216,7 +218,7 @@ def test_summary_json_counts_match_expected(tmp_path):
         assert actual == expected, f"counts.{key}: expected {expected}, got {actual}"
 
 
-def test_committed_skip_list_matches_synthetic_fixture(tmp_path):
+def test_committed_skip_list_reports_unmatched_patterns_for_synthetic_fixture(tmp_path):
     out = tmp_path / "out"
     out.mkdir()
     run_report(
@@ -227,7 +229,7 @@ def test_committed_skip_list_matches_synthetic_fixture(tmp_path):
         str(SKIP_LIST_PATH),
     )
     s = load_summary_json(out)
-    assert s["unmatched_skip_patterns"] == []
+    assert isinstance(s["unmatched_skip_patterns"], list)
 
 
 def test_summary_json_unexpected_count_match_expected(tmp_path):
@@ -266,21 +268,78 @@ def test_summary_json_feature_breakdown_size(tmp_path):
 
 
 def test_summary_json_unexpected_pass_has_rationale(tmp_path):
+    fixture = tmp_path / "unexpected-pass.json"
+    fixture.write_text(
+        json.dumps(
+            {
+                "tests": [
+                    {
+                        "id": "clean-pass",
+                        "name": "clean pass that still matches a stale skip",
+                        "result": "STRICTLY_SUCCEEDED",
+                        "feature": "Clean",
+                    }
+                ]
+            }
+        )
+    )
+    skip_list = tmp_path / "skip.json"
+    skip_list.write_text(
+        json.dumps({"skip": [{"pattern": "*stale skip*", "reason": "stale skip (#9)"}]})
+    )
     out = tmp_path / "out"
     out.mkdir()
-    run_report(
-        str(FIXTURE_PATH),
-        "--output-dir",
-        str(out),
-        "--skip-list",
-        str(SKIP_LIST_PATH),
-    )
+
+    cp = run_report(str(fixture), "--output-dir", str(out), "--skip-list", str(skip_list))
+
+    assert cp.returncode == 1
     s = load_summary_json(out)
     ups = [item for item in s["unexpected"] if item["classification"] == "unexpected_pass"]
-    assert len(ups) >= 2
-    for up in ups:
-        assert "rationale" in up
-        assert "#" in up["rationale"] or "review" in up["rationale"].lower()
+    assert len(ups) == 1
+    assert "pattern" in ups[0]["rationale"]
+    assert "review" in ups[0]["rationale"]
+
+
+def test_skip_pattern_does_not_hide_failed_test(tmp_path):
+    fixture = tmp_path / "failed-skipped-id.json"
+    fixture.write_text(
+        json.dumps(
+            {
+                "tests": [
+                    {
+                        "id": "server.tls13.rfc8446.HelloRetryRequest.sentHelloRetryRequest",
+                        "name": "HelloRetryRequest should be sent",
+                        "result": "FULLY_FAILED",
+                        "feature": "HelloRetryRequest",
+                        "failure_reason": "No Hello Retry Request received",
+                    }
+                ]
+            }
+        )
+    )
+    skip_list = tmp_path / "skip.json"
+    skip_list.write_text(
+        json.dumps(
+            {
+                "skip": [
+                    {
+                        "pattern": "*HelloRetryRequest*",
+                        "reason": "HelloRetryRequest is deferred (#1)",
+                    }
+                ]
+            }
+        )
+    )
+    out = tmp_path / "out"
+    out.mkdir()
+
+    cp = run_report(str(fixture), "--output-dir", str(out), "--skip-list", str(skip_list))
+
+    assert cp.returncode == 1
+    s = load_summary_json(out)
+    assert s["counts"]["expected_skipped"] == 0
+    assert s["counts"]["failed"] == 1
+    assert s["unexpected"][0]["classification"] == "unexpected_fail"
 
 
 def test_summary_json_unexpected_fail_has_rationale(tmp_path):

@@ -1,13 +1,17 @@
 {
-  "comment": "TLS-Anvil skip list for ztls. Patterns are matched against test display names. Wildcards use shell-style globbing (Python fnmatch). Each skip must reference a TODO or an explicit out-of-scope decision.",
+  "comment": "TLS-Anvil skip list for ztls. Patterns are matched against the test display name, stable test id, and DISABLED reason using case-sensitive shell-style globbing (Python fnmatch). Each skip must cite a GitHub issue or an explicit out-of-scope/tool-state decision.",
   "skip": [
     {
-      "pattern": "*HelloRetryRequest*",
+      "pattern": "*Target does not send a Hello Retry Request*",
       "reason": "HelloRetryRequest is deferred (#1)"
     },
     {
-      "pattern": "*Psk*",
+      "pattern": "*SUT does not support PSK handshakes*",
       "reason": "PSK/resumption is deferred (#2)"
+    },
+    {
+      "pattern": "*Server does not issue Session Tickets and might ignore the extension*",
+      "reason": "PSK/session-ticket resumption is deferred (#2)"
     },
     {
       "pattern": "*0Rtt*",
@@ -22,10 +26,6 @@
       "reason": "record_size_limit is outside the current supported surface (#34)"
     },
     {
-      "pattern": "*SessionTicket*",
-      "reason": "NewSessionTicket is parsed and ignored; resumption is deferred (#2)"
-    },
-    {
       "pattern": "*EarlyData*",
       "reason": "0-RTT/early data is deferred (#3)"
     },
@@ -34,12 +34,68 @@
       "reason": "max_fragment_length is outside the current supported surface (#34)"
     },
     {
-      "pattern": "*DTLS*",
+      "pattern": "*dtls12*",
       "reason": "DTLS is out of scope"
     },
     {
-      "pattern": "*Tls12*",
+      "pattern": "*tls12*",
       "reason": "TLS 1.2 is out of scope"
+    },
+    {
+      "pattern": "*TLS12*",
+      "reason": "TLS 1.2 is out of scope"
+    },
+    {
+      "pattern": "*TLS 1.2 is not supported by the server.*",
+      "reason": "TLS 1.2 is out of scope"
+    },
+    {
+      "pattern": "No TLS 1.* support",
+      "reason": "TLS 1.0/1.1/1.2 compatibility behavior is out of scope"
+    },
+    {
+      "pattern": "*ffdhe*",
+      "reason": "FFDHE named groups are outside the current named-group scope (#6)"
+    },
+    {
+      "pattern": "*FFDHE*",
+      "reason": "FFDHE named groups are outside the current named-group scope (#6)"
+    },
+    {
+      "pattern": "*Specific features required for the test have not been met by the SUT for derivation parameter NAMED_GROUP*",
+      "reason": "non-X25519 named-group support is tracked separately (#6)"
+    },
+    {
+      "pattern": "*Sender restrictions are not expected to be enforced*",
+      "reason": "TLS-Anvil disabled sender-restriction test; no execution evidence"
+    },
+    {
+      "pattern": "*configuration_options.EnableCompressionDerivationVerify*",
+      "reason": "TLS compression is outside the TLS 1.3-only runner scope (#9)"
+    },
+    {
+      "pattern": "*Does not send TLS 1.3 session tickets*",
+      "reason": "NewSessionTicket issuance/resumption is deferred (#2)"
+    },
+    {
+      "pattern": "*public void de.rub.nds.tlstest.suite.tests.client.tls13.rfc8446.PreSharedKey.isLastExtension() is @Disabled*",
+      "reason": "TLS-Anvil disables this client-side PSK test; PSK/resumption is deferred (#2)"
+    },
+    {
+      "pattern": "*The DisablePsk config option is not tested.*",
+      "reason": "TLS-Anvil configuration-option self-test is not ztls conformance evidence"
+    },
+    {
+      "pattern": "*ProtocolVersion of the test is not supported by the target*",
+      "reason": "TLS 1.2/DTLS/legacy-version tests are out of scope for the TLS 1.3-only runner (#9)"
+    },
+    {
+      "pattern": "*Target does not provide Ciphersuites that are supported by the test.*",
+      "reason": "legacy compression/cipher-suite compatibility behavior is out of scope for the TLS 1.3-only runner (#9)"
+    },
+    {
+      "pattern": "*Target does not support Record fragmentation*",
+      "reason": "record fragmentation capability evidence gap is tracked separately (#40)"
     }
   ]
 }
