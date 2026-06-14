@@ -29,7 +29,7 @@ pub fn ecPublicKeyFromSec1(
         return error.InvalidEncoding;
     errdefer c.EC_KEY_free(ec);
 
-    var ptr: [*c]const u8 = pub_key.ptr;
+    var ptr: ?[*]const u8 = pub_key.ptr;
     if (c.o2i_ECPublicKey(&ec, &ptr, @intCast(pub_key.len)) == null)
         return error.InvalidEncoding;
 
@@ -41,7 +41,7 @@ pub fn ecPublicKeyFromSec1(
 }
 
 pub fn rsaPublicKeyFromDer(pub_key: []const u8) PublicKeyError!*c.EVP_PKEY {
-    var ptr: [*c]const u8 = pub_key.ptr;
+    var ptr: ?[*]const u8 = pub_key.ptr;
     const rsa = c.d2i_RSAPublicKey(null, &ptr, @intCast(pub_key.len)) orelse
         return error.InvalidEncoding;
     errdefer c.RSA_free(rsa);
