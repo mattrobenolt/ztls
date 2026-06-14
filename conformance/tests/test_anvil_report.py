@@ -122,6 +122,20 @@ def test_skip_pattern_falsification_caught():
     assert matches_any_pattern(name, original) == "*HelloRetryRequest*"
 
 
+def test_skip_pattern_matches_stable_test_id_when_name_is_generic():
+    from scripts.anvil_report import matches_any_pattern
+
+    patterns = [{"pattern": "*HelloRetryRequest*", "reason": "deferred (#1)"}]
+    assert (
+        matches_any_pattern(
+            "cookie exchange and retry",
+            patterns,
+            "server.tls13.rfc8446.HelloRetryRequest.cookieExchange",
+        )
+        == "*HelloRetryRequest*"
+    )
+
+
 # ─── parser invocation / CLI exit codes ─────────────────────────────────
 
 

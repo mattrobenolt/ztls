@@ -56,14 +56,20 @@ def load_results(path: Path) -> list[dict[str, str]]:
     return list(raw["tests"])
 
 
-def matches_any_pattern(name: str, patterns: list[dict[str, str]]) -> str | None:
+def matches_any_pattern(
+    name: str,
+    patterns: list[dict[str, str]],
+    test_id: str = "",
+) -> str | None:
     """Return the first matching pattern string, or None.
 
-    Matching is case-sensitive fnmatch globbing (shell-style).
+    Matching is case-sensitive fnmatch globbing (shell-style) against both the
+    display name and stable test id. Real TLS-Anvil output often carries the
+    useful feature name in the Java class id rather than the human description.
     """
     for entry in patterns:
         pat = entry["pattern"]
-        if fnmatch.fnmatch(name, pat):
+        if fnmatch.fnmatch(name, pat) or (test_id and fnmatch.fnmatch(test_id, pat)):
             return pat
     return None
 
@@ -88,6 +94,7 @@ def classify_tests(
 
     for test in tests:
         name = test["name"]
+        test_id = test.get("id", "")
         result = test["result"]
         feature = test.get("feature", "unknown")
 
@@ -100,7 +107,7 @@ def classify_tests(
             by_feature[feature]["timeout"] += 1
             continue
 
-        pattern = matches_any_pattern(name, skip_entries)
+        pattern = matches_any_pattern(name, skip_entries, test_id)
 
         if pattern is not None:
             matched_patterns.add(pattern)
@@ -112,6 +119,7 @@ def classify_tests(
                 reason = reason_by_pattern[pattern]
                 unexpected.append(
                     {
+                        "id": test_id,
                         "test": name,
                         "result": result,
                         "classification": "unexpected_pass",
@@ -127,6 +135,7 @@ def classify_tests(
                 by_feature[feature]["unexpected_skipped"] += 1
                 unexpected.append(
                     {
+                        "id": test_id,
                         "test": name,
                         "result": result,
                         "classification": "unexpected_skipped",
@@ -143,6 +152,7 @@ def classify_tests(
                 by_feature[feature]["failed"] += 1
                 unexpected.append(
                     {
+                        "id": test_id,
                         "test": name,
                         "result": result,
                         "classification": "unexpected_fail",

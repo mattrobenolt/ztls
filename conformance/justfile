@@ -48,19 +48,51 @@ tlsfuzzer *args: build
 ci:
     just tlsfuzzer -v
     just anvil-report-test
+    just anvil-adapter-test
     just anvil-server-test
 
 [doc("Run TLS-Anvil server tests against the ztls server harness")]
 anvil-server *args: build
     uv run python scripts/anvil_server.py {{ args }}
 
+[doc("Adapt a TLS-Anvil output directory to report.normalized.json")]
+anvil-adapter run_dir *args:
+    uv run python scripts/anvil_adapter.py {{ run_dir }} {{ args }}
+
+[doc("Audit a real TLS-Anvil output directory against the adapter heuristics")]
+anvil-adapter-audit run_dir:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    report="{{ run_dir }}/report.normalized.json"
+    uv run python scripts/anvil_adapter.py {{ run_dir }} --output "$report"
+    uv run python - "$report" <<'PY'
+    import json
+    import sys
+
+    with open(sys.argv[1]) as f:
+        data = json.load(f)
+    tests = data.get("tests", [])
+    known = [test for test in tests if test.get("feature") != "unknown"]
+    assert tests, "adapter produced no tests"
+    assert known, "adapter produced only unknown feature buckets"
+    PY
+
 [doc("Normalize TLS-Anvil results: apply skip-list and emit summary.json / summary.txt")]
 anvil-report results_json *args:
     uv run python scripts/anvil_report.py {{ results_json }} {{ args }}
 
+[doc("Adapt and normalize a TLS-Anvil output directory")]
+anvil-report-dir run_dir *args:
+    uv run python scripts/anvil_adapter.py {{ run_dir }}
+    uv run python scripts/anvil_report.py {{ run_dir }}/report.normalized.json --output-dir {{ run_dir }} {{ args }}
+
 [doc("Run synthetic TLS-Anvil report parser tests")]
 anvil-report-test:
     uv run pytest -q tests/test_anvil_report.py
+
+[doc("Run TLS-Anvil output adapter tests")]
+anvil-adapter-test:
+    uv run pytest -q tests/test_anvil_adapter.py
 
 [doc("Run TLS-Anvil server wrapper helper tests")]
 anvil-server-test:

@@ -20,16 +20,14 @@ This is the CI-gated external protocol-conformance harness for the supported ztl
 
 TLS-Anvil provides ~408 RFC-based server and client tests. The runner (`just anvil-server`) starts the ztls harness and executes the upstream suite. Results are captured under `zig-out/anvil/server/<timestamp>/`.
 
-Result normalization and skip-list enforcement are scaffolded via the `anvil-report` recipe. The current parser consumes a normalized JSON shape exercised by a synthetic fixture; the next slice adapts real TLS-Anvil output into that shape.
+Result normalization and skip-list enforcement are scaffolded by two steps: `anvil-adapter` converts TLS-Anvil output directories into `report.normalized.json`, then `anvil-report` applies the skip list and writes summaries. The adapter is covered by synthetic real-output-shape tests; real TLS-Anvil execution is still manual.
 
 ```sh
-# Normalize a results JSON against the skip list:
-just anvil-report test_fixtures/anvil_report_synthetic.json
+# Adapt and normalize a TLS-Anvil output directory:
+just anvil-report-dir zig-out/anvil/server/<timestamp>
 
-# Or use the script directly with custom options:
-uv run python scripts/anvil_report.py \
-    zig-out/anvil/server/<timestamp>/report.json \
-    --skip-list anvil-skip-list.json
+# Or normalize an already-adapted results JSON against the skip list:
+just anvil-report test_fixtures/anvil_report_synthetic.json
 ```
 
 The report script:
