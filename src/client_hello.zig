@@ -1,6 +1,6 @@
-/// TLS 1.3 ClientHello handshake message encoding.
-///
-/// RFC 8446 §4.1.2
+//! TLS 1.3 ClientHello handshake message encoding.
+//!
+//! RFC 8446 §4.1.2
 const std = @import("std");
 const assert = std.debug.assert;
 const testing = std.testing;
@@ -250,6 +250,7 @@ pub fn parse(msg: []const u8) ParseError!Parsed {
     r.assumeSkip(2); // legacy_version
     r.assumeSkip(32); // random
     const session_id_len = r.assumeRead(u8);
+    if (session_id_len > 32) return error.InvalidVectorLength;
     if (r.remaining().len < session_id_len + 2) return error.UnexpectedEof;
     const legacy_session_id = r.assumeReadSlice(session_id_len);
 
@@ -568,6 +569,27 @@ test "parse: encoded ClientHello" {
     try testing.expectEqualStrings("http/1.1", parsed.selectAlpn(&.{ "http/1.1", "h2" }).?);
     try testing.expectEqualStrings("h2", parsed.selectAlpn(&.{"h2"}).?);
     try testing.expectEqual(@as(?[]const u8, null), parsed.selectAlpn(&.{"bogus"}));
+}
+
+// RFC 8446 §4.1.2 — legacy_session_id is bounded to 0..32 bytes.
+test "parse: rejects oversized legacy_session_id" {
+    inline for (.{ 33, 255 }) |session_id_len| {
+        var buf: [512]u8 = undefined;
+        const encoded = try encode(&buf, .zero, .zero, null, &.{});
+        const session_id_len_offset = 38; // header(4) + legacy_version(2) + random(32)
+        const session_id_offset = session_id_len_offset + 1;
+        const bad_len = encoded.len + session_id_len;
+        const body_len: u24 = @intCast(encoded.len - handshake_header_len + session_id_len);
+
+        @memmove(buf[session_id_offset + session_id_len .. bad_len], encoded[session_id_offset..encoded.len]);
+        @memset(buf[session_id_offset..][0..session_id_len], 0xaa);
+        buf[session_id_len_offset] = session_id_len;
+        buf[1] = @truncate(body_len >> 16);
+        buf[2] = @truncate(body_len >> 8);
+        buf[3] = @truncate(body_len);
+
+        try testing.expectError(error.InvalidVectorLength, parse(buf[0..bad_len]));
+    }
 }
 
 test "parse: ignores legacy_version" {

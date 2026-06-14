@@ -1331,8 +1331,17 @@ pub const ParseBitStringError = error{ CertificateFieldHasWrongDataType, Certifi
 
 pub fn parseBitString(cert: Certificate, elem: der.Element) !der.Element.Slice {
     if (elem.identifier.tag != .bitstring) return error.CertificateFieldHasWrongDataType;
+    if (elem.slice.end - elem.slice.start < 1) return error.CertificateHasInvalidBitString;
     if (cert.buffer[elem.slice.start] != 0) return error.CertificateHasInvalidBitString;
     return .{ .start = elem.slice.start + 1, .end = elem.slice.end };
+}
+
+// ITU-T X.690 §8.6.2.2 — DER BIT STRING content starts with an unused-bits octet.
+test "parseBitString rejects empty bit string content" {
+    const cert: Certificate = .{ .buffer = "\x03\x00", .index = 0 };
+    const elem = try der.Element.parse(cert.buffer, 0);
+
+    try std.testing.expectError(error.CertificateHasInvalidBitString, parseBitString(cert, elem));
 }
 
 pub const ParseTimeError = error{ CertificateTimeInvalid, CertificateFieldHasWrongDataType };

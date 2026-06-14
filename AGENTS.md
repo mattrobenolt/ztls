@@ -122,6 +122,8 @@ evidence satisfies the issue, not when progress is merely directionally good.
 When using subagents, prefer the project-scoped role agents under `.pi/agents/`
 over ad hoc prompts:
 
+- `attack-surface-recon` — Glasswing-style trust-boundary mapping and narrow
+  vulnerability hunt queue generation.
 - `evidence-auditor` — status/readiness/issue closure honesty.
 - `security-reviewer` — adversarial TLS/crypto/security review.
 - `implementation-reviewer` — practical Zig/API/test review.

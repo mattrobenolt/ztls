@@ -30,6 +30,8 @@ Recon → Hunt → Validate → Gapfill → Dedupe → Trace → Feedback → Re
 
 ### 1. Recon
 
+Use the project `attack-surface-recon` agent when available. It owns trust-boundary mapping and narrow hunt queue generation; do not overload evidence/status auditors for this stage.
+
 Read the repository from the top down. Fan out to subagents, one per subsystem or module. Produce a single architecture document that covers:
 
 - Build commands and how to compile/run tests.
@@ -102,9 +104,11 @@ Write a structured report against a predefined schema. Validate the report again
 
 When this project already defines role agents, prefer them:
 
-- **Recon / Trace / Gapfill**: `evidence-auditor` for structured status and reachability review.
-- **Hunt**: `whitehat-hacker` for hostile-input, parser-abuse, and memory-corruption hunts.
-- **Validate**: `vuln-validator` for independent disproof of a candidate finding.
+- **Recon**: `attack-surface-recon` for trust-boundary mapping, coverage review, and narrow hunt queue generation.
+- **Hunt / Trace**: `whitehat-hacker` for scoped hostile-input, parser-abuse, memory-corruption, exploit-chain, and reachability work.
+- **Validate**: `vuln-validator` for independent disproof of one candidate finding.
+- **Gapfill**: `attack-surface-recon` to turn missed surfaces into narrower follow-up hunts.
+- **Dedupe / status honesty**: `evidence-auditor` for root-cause collapse, issue/readiness evidence, and closure boundaries.
 - **Implementation review**: `implementation-reviewer` for API and test review after fixes.
 - **Security review**: `security-reviewer` for adversarial TLS/crypto review on protocol code.
 
