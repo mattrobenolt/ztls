@@ -137,6 +137,7 @@ pub fn parseHelloRetryRequest(msg: []const u8) HrrParseError!HelloRetryRequest {
     if (body_len < 2 + 32 + 1 + 2 + 1 + 2) return error.UnexpectedEof;
 
     const legacy_version = r.assumeRead(ProtocolVersion);
+    if (@intFromEnum(legacy_version) <= 0x0300) return error.UnsupportedTlsVersion;
     if (legacy_version != .tls_1_2) return error.InvalidLegacyVersion;
     const random = r.assumeReadSlice(32);
     if (!mem.eql(u8, random, &hello_retry_request_random)) return error.NotHelloRetryRequest;
@@ -298,6 +299,7 @@ pub fn parseWithSessionIdEcho(
     // get a clean unsupported-feature error instead of a misleading key_share
     // parse failure. RFC 8446 §4.1.3.
     const legacy_version = r.assumeRead(ProtocolVersion);
+    if (@intFromEnum(legacy_version) <= 0x0300) return error.UnsupportedTlsVersion;
     if (legacy_version != .tls_1_2) return error.InvalidLegacyVersion;
     const random = r.assumeReadSlice(32);
     if (mem.eql(u8, random, &hello_retry_request_random)) return error.HelloRetryRequest;
@@ -577,6 +579,19 @@ test "parse: rejects invalid legacy version" {
     try testing.expectError(error.InvalidLegacyVersion, parse(&msg));
 }
 
+// RFC 8446 Appendix D.5 — Hello legacy_version values at or below SSLv3 abort
+// with protocol_version, represented here as UnsupportedTlsVersion.
+test "parse: rejects SSLv3-or-lower legacy version" {
+    var msg = server_hello_rfc8448[0..server_hello_rfc8448.len].*;
+    msg[4] = 0x03;
+    msg[5] = 0x00;
+    try testing.expectError(error.UnsupportedTlsVersion, parse(&msg));
+
+    msg[4] = 0x02;
+    msg[5] = 0x00;
+    try testing.expectError(error.UnsupportedTlsVersion, parse(&msg));
+}
+
 // RFC 8446 §4.1.3 — legacy_session_id_echo must match the ClientHello value.
 test "parse: rejects mismatched session id echo" {
     var out: [128]u8 = undefined;
@@ -686,6 +701,19 @@ test "parseHelloRetryRequest: rejects invalid legacy version" {
     msg[4] = 0x03;
     msg[5] = 0x01;
     try testing.expectError(error.InvalidLegacyVersion, parseHelloRetryRequest(&msg));
+}
+
+// RFC 8446 Appendix D.5 — HRR is encoded as ServerHello, so the same
+// legacy_version protocol_version abort applies.
+test "parseHelloRetryRequest: rejects SSLv3-or-lower legacy version" {
+    var msg = hrr_rfc8448[0..hrr_rfc8448.len].*;
+    msg[4] = 0x03;
+    msg[5] = 0x00;
+    try testing.expectError(error.UnsupportedTlsVersion, parseHelloRetryRequest(&msg));
+
+    msg[4] = 0x02;
+    msg[5] = 0x00;
+    try testing.expectError(error.UnsupportedTlsVersion, parseHelloRetryRequest(&msg));
 }
 
 // RFC 8446 §4.1.4 — HRR uses the ServerHello legacy_compression_method field.

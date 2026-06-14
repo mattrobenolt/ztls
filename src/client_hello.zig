@@ -247,7 +247,8 @@ pub fn parse(msg: []const u8) ParseError!Parsed {
     const body_len = r.assumeRead(u24);
     if (body_len != msg.len - handshake_header_len) return error.InvalidHandshakeLength;
 
-    r.assumeSkip(2); // legacy_version
+    const client_legacy_version = r.assumeRead(ProtocolVersion);
+    if (@intFromEnum(client_legacy_version) <= 0x0300) return error.UnsupportedTlsVersion;
     r.assumeSkip(32); // random
     const session_id_len = r.assumeRead(u8);
     if (session_id_len > 32) return error.InvalidVectorLength;
@@ -595,9 +596,20 @@ test "parse: rejects oversized legacy_session_id" {
     }
 }
 
-test "parse: ignores legacy_version" {
+// RFC 8446 Appendix D.5 — endpoints receiving Hello legacy_version values at
+// or below SSLv3 abort with protocol_version; 0x0301 remains version-negotiated
+// by the supported_versions extension.
+test "parse: rejects SSLv3-or-lower legacy_version" {
     var buf: [512]u8 = undefined;
     const encoded = try encode(&buf, .zero, .zero, null, &.{});
+    buf[4] = 0x03;
+    buf[5] = 0x00;
+    try testing.expectError(error.UnsupportedTlsVersion, parse(buf[0..encoded.len]));
+
+    buf[4] = 0x02;
+    buf[5] = 0x00;
+    try testing.expectError(error.UnsupportedTlsVersion, parse(buf[0..encoded.len]));
+
     buf[4] = 0x03;
     buf[5] = 0x01;
     _ = try parse(buf[0..encoded.len]);
