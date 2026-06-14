@@ -5,7 +5,7 @@ const std = @import("std");
 const assert = std.debug.assert;
 const testing = std.testing;
 
-const c = @import("crypto/c_openssl.zig").openssl;
+const backend = @import("crypto/backend.zig");
 const memx = @import("memx.zig");
 const hex = memx.hex;
 
@@ -15,10 +15,10 @@ pub const secret_length = 32;
 pub const PublicKey = memx.Array(public_length);
 pub const SecretKey = memx.Array(secret_length);
 
-pub const Error = error{ LibcryptoFailed, IdentityElement };
+pub const Error = backend.x25519.Error;
 
 /// Caller-owned X25519 keypair. The secret key is the raw 32-byte scalar input;
-/// OpenSSL performs the RFC 7748 clamping internally for X25519 operations.
+/// the libcrypto backend performs RFC 7748 clamping internally.
 pub const KeyPair = struct {
     secret_key: SecretKey,
     public_key: PublicKey,
@@ -34,33 +34,19 @@ pub const KeyPair = struct {
     }
 };
 
-fn privateKey(secret_key: SecretKey) Error!*c.EVP_PKEY {
-    return c.EVP_PKEY_new_raw_private_key(
-        c.EVP_PKEY_X25519,
-        null,
-        &secret_key.data,
-        secret_key.data.len,
-    ) orelse error.LibcryptoFailed;
+fn privateKey(secret_key: SecretKey) Error!*backend.x25519.pkey {
+    return backend.x25519.privateKeyFromSecret(&secret_key.data);
 }
 
-fn publicKey(public_key: PublicKey) Error!*c.EVP_PKEY {
-    return c.EVP_PKEY_new_raw_public_key(
-        c.EVP_PKEY_X25519,
-        null,
-        &public_key.data,
-        public_key.data.len,
-    ) orelse error.LibcryptoFailed;
+fn publicKey(public_key: PublicKey) Error!*backend.x25519.pkey {
+    return backend.x25519.publicKeyFromRaw(&public_key.data);
 }
 
 fn publicFromSecret(secret_key: SecretKey) Error!PublicKey {
     const key = try privateKey(secret_key);
-    defer c.EVP_PKEY_free(key);
+    defer backend.x25519.freeKey(key);
 
-    var public_key: [public_length]u8 = undefined;
-    var len: usize = public_key.len;
-    if (c.EVP_PKEY_get_raw_public_key(key, &public_key, &len) != 1) return error.LibcryptoFailed;
-    if (len != public_key.len) return error.LibcryptoFailed;
-    return .init(public_key);
+    return .init(try backend.x25519.rawPublicKeyFromPrivate(key));
 }
 
 /// Compute the X25519 shared secret from our secret key and the peer's public key.
@@ -69,22 +55,12 @@ fn publicFromSecret(secret_key: SecretKey) Error!PublicKey {
 /// RFC 8446 §7.4.2
 pub fn sharedSecret(secret_key: SecretKey, peer_public_key: PublicKey) Error![secret_length]u8 {
     const ours = try privateKey(secret_key);
-    defer c.EVP_PKEY_free(ours);
+    defer backend.x25519.freeKey(ours);
     const peer = try publicKey(peer_public_key);
-    defer c.EVP_PKEY_free(peer);
-
-    const ctx = c.EVP_PKEY_CTX_new(ours, null) orelse return error.LibcryptoFailed;
-    defer c.EVP_PKEY_CTX_free(ctx);
-    if (c.EVP_PKEY_derive_init(ctx) != 1) return error.LibcryptoFailed;
-    if (c.EVP_PKEY_derive_set_peer(ctx, peer) != 1) return error.LibcryptoFailed;
+    defer backend.x25519.freeKey(peer);
 
     var secret: [secret_length]u8 = undefined;
-    var len: usize = secret.len;
-    if (c.EVP_PKEY_derive(ctx, &secret, &len) != 1) return error.IdentityElement;
-    if (len != secret.len) return error.LibcryptoFailed;
-
-    if (std.crypto.timing_safe.eql([secret_length]u8, secret, @splat(0)))
-        return error.IdentityElement;
+    try backend.x25519.sharedSecretDerive(ours, peer, &secret);
     return secret;
 }
 
