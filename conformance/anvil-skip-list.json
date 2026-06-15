@@ -92,10 +92,6 @@
     {
       "pattern": "*Target does not provide Ciphersuites that are supported by the test.*",
       "reason": "legacy compression/cipher-suite compatibility behavior is out of scope for the TLS 1.3-only runner (#9)"
-    },
-    {
-      "pattern": "*Target does not support Record fragmentation*",
-      "reason": "record fragmentation capability evidence gap is tracked separately (#40)"
     }
   ]
 }
