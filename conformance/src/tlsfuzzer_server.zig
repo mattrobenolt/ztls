@@ -41,6 +41,10 @@ fn handleConnection(conn: std.net.Server.Connection) !void {
     defer hs.deinit();
     hs.supportAlpn(&.{ "http/1.1", "h2" });
 
+    // RFC 8446 §5.1 — provide storage for fragmented ClientHello reassembly.
+    var reassembly_buf: [ztls.ServerHandshake.ch_reassembly_buffer_size]u8 = undefined;
+    hs.useHandshakeBuffer(&reassembly_buf);
+
     var in_buf: [ztls.frame.header_len + ztls.frame.max_ciphertext_len]u8 = undefined;
     var out_buf: [harness.max_wire_record_len]u8 = undefined;
 

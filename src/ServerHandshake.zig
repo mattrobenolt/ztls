@@ -14,6 +14,7 @@ const testing = std.testing;
 const aead = @import("aead.zig");
 const alert = @import("alert.zig");
 const array_buffer = @import("array_buffer.zig");
+const ArrayBuffer = array_buffer.ArrayBuffer;
 const SliceBuffer = array_buffer.SliceBuffer;
 const certificate = @import("certificate.zig");
 const CertificateChain = @import("certificate_chain.zig").CertificateChain;
@@ -32,6 +33,7 @@ pub const FlightBuffer = OutBuffer;
 const handshake = @import("handshake.zig");
 const HandshakeReader = handshake.Reader;
 const HandshakeBuffer = SliceBuffer(u8);
+const FinishedFragmentBuffer = ArrayBuffer(u8, handshake_header_len + 48);
 const HandshakeType = handshake.Type;
 const KeyUpdateRequest = handshake.KeyUpdateRequest;
 const max_post_handshake_messages = handshake.max_post_handshake_messages;
@@ -102,8 +104,9 @@ const handshake_header_len = 4;
 /// fragments. Two full TLS record payloads covers any realistic ClientHello.
 /// RFC 8446 §5.1 permits fragmenting handshake messages across multiple records.
 const ch_reassembly_body_max = frame.max_plaintext_len * 2;
-/// Full handshake message (4-byte header + body).
-const ch_reassembly_buffer_size = handshake_header_len + ch_reassembly_body_max;
+/// Full handshake message (4-byte header + body). Callers provide storage
+/// of at least this size via useHandshakeBuffer() for ClientHello reassembly.
+pub const ch_reassembly_buffer_size = handshake_header_len + ch_reassembly_body_max;
 
 state: State = .wait_ch,
 keypair: x25519.KeyPair,
@@ -138,6 +141,12 @@ ch_buf: HandshakeBuffer = .empty,
 /// header in the first fragment). Valid only when ch_buf.len > 0.
 ch_expected: usize = 0,
 
+/// Fixed-size buffer for reassembling a fragmented client Finished message
+/// across encrypted records (application_data → inner handshake).
+/// Verify data is at most 48 bytes (SHA-384 output length) plus the 4-byte
+/// handshake header, so a small fixed buffer is sufficient. RFC 8446 §5.1.
+fin_frag: FinishedFragmentBuffer = .empty,
+
 pub fn init(keypair: x25519.KeyPair) ServerHandshake {
     return .{ .keypair = keypair };
 }
@@ -155,6 +164,7 @@ pub fn deinit(self: *ServerHandshake) void {
         .wait_ch => {},
     }
     self.keypair.secret_key.secureZero();
+    self.fin_frag.secureZero();
     self.* = undefined;
 }
 
@@ -662,12 +672,23 @@ fn processClientFinishedPlaintext(
     const msg = (try hr.next()) orelse return error.UnexpectedMessage;
     if (msg.type != .finished) return error.UnexpectedMessage;
     if (try hr.next() != null) return error.UnexpectedMessage;
+    try self.verifyClientFinished(msg.raw);
+}
 
+/// Verify a complete client Finished message, install application traffic
+/// keys, and transition to the connected state. Called by both the normal
+/// complete-Finished path and the fragmented-Finished reassembly path.
+/// RFC 8446 §4.4.4, §7.1.
+fn verifyClientFinished(
+    self: *ServerHandshake,
+    msg_raw: []const u8,
+) ClientFinishedError!void {
+    assert(self.state == .wait_client_finished);
     switch (self.suite_state) {
         inline .sha256, .sha384 => |*s| {
             const H = @TypeOf(s.*).Hkdf;
             const th = s.transcript.peek();
-            try finished.verify(@TypeOf(s.transcript), msg.raw, &s.client_finished_key.data, &th);
+            try finished.verify(@TypeOf(s.transcript), msg_raw, &s.client_finished_key.data, &th);
             var master = H.masterSecret(s.handshake_secret);
             defer master.secureZero();
             s.client_app_secret = H.clientApplicationTrafficSecret(master, &.init(th));
@@ -679,7 +700,7 @@ fn processClientFinishedPlaintext(
             self.tx.deinit();
             self.rx = next_rx;
             self.tx = next_tx;
-            s.transcript.update(msg.raw);
+            s.transcript.update(msg_raw);
             s.forgetHandshakeSecrets();
         },
     }
@@ -860,6 +881,10 @@ fn handleClientHelloRecord(
 fn handleWaitClientFinished(self: *ServerHandshake, record: []u8) HandleError!Event {
     const hdr = try frame.parseHeader(record);
     if (record.len < frame.header_len + hdr.length()) return error.IncompleteRecord;
+    if (self.fin_frag.len > 0 and hdr.content_type != .application_data) {
+        self.fin_frag.clear();
+        return error.UnexpectedMessage;
+    }
     switch (hdr.content_type) {
         // RFC 8446 §D.4 — middlebox-compat ChangeCipherSpec is silently dropped
         // only after ClientHello and before the peer Finished.
@@ -867,20 +892,76 @@ fn handleWaitClientFinished(self: *ServerHandshake, record: []u8) HandleError!Ev
             try handshake.validateChangeCipherSpec(record[frame.header_len..][0..hdr.length()]);
             return .none;
         },
-        .alert => {
-            const a = try alert.parse(record[frame.header_len..][0..hdr.length()]);
-            if (a.isCloseNotify()) return .closed;
-            return error.PeerAlert;
-        },
+        .alert => return error.UnexpectedMessage,
         .application_data => {},
         .handshake => return error.UnexpectedMessage,
         else => return error.UnexpectedRecord,
     }
 
-    const dec = try handshake.decryptProtected(&self.rx, record);
+    const dec = handshake.decryptProtected(&self.rx, record) catch |err| {
+        if (self.fin_frag.len > 0) self.fin_frag.clear();
+        return err;
+    };
+
+    // RFC 8446 §5.1 — if a Finished fragment is pending and the inner
+    // content type is not handshake, reject with UnexpectedMessage.
+    // This catches interleaved alerts and application data.
+    if (self.fin_frag.len > 0 and dec.content_type != .handshake) {
+        self.fin_frag.clear();
+        return error.UnexpectedMessage;
+    }
+
     return switch (dec.content_type) {
         .handshake => blk: {
-            try self.processClientFinishedPlaintext(dec.content);
+            if (dec.content.len == 0) {
+                self.fin_frag.clear();
+                return error.UnexpectedMessage;
+            }
+            // Buffer the plaintext and try to reassemble a complete Finished.
+            self.fin_frag.appendSlice(dec.content) catch {
+                self.fin_frag.clear();
+                return error.UnexpectedMessage;
+            };
+
+            const fragment = self.fin_frag.constSlice();
+            if (fragment.len >= handshake_header_len) {
+                if (fragment[0] != @intFromEnum(HandshakeType.finished)) {
+                    self.fin_frag.clear();
+                    return error.UnexpectedMessage;
+                }
+                const finished_len = (@as(u24, fragment[1]) << 16) |
+                    (@as(u24, fragment[2]) << 8) |
+                    fragment[3];
+                if (finished_len > 48) {
+                    self.fin_frag.clear();
+                    return error.UnexpectedMessage;
+                }
+            }
+
+            var hr: HandshakeReader = .init(fragment);
+            const maybe_msg = hr.next() catch {
+                // Still partial: wait for more fragments.
+                break :blk .none;
+            };
+            const msg = maybe_msg orelse break :blk .none;
+            if (msg.type != .finished) {
+                self.fin_frag.clear();
+                return error.UnexpectedMessage;
+            }
+            // Check no trailing data after the Finished message.
+            const maybe_extra = hr.next() catch {
+                self.fin_frag.clear();
+                return error.UnexpectedMessage;
+            };
+            if (maybe_extra != null) {
+                self.fin_frag.clear();
+                return error.UnexpectedMessage;
+            }
+
+            // Complete Finished: verify and install application traffic keys.
+            const finished_msg = msg.raw;
+            self.fin_frag.clear();
+            try self.verifyClientFinished(finished_msg);
             break :blk .none;
         },
         .alert => blk: {
@@ -2608,6 +2689,212 @@ test "handleRecord: reassembles ClientHello2 split across records after HRR" {
     const ev2 = try hs.handleRecord(rec2[0 .. frame.header_len + remaining], .zero, &out);
     try testing.expectEqual(.wait_client_finished, hs.state);
     _ = ev2.write;
+}
+
+// RFC 8446 §5.1 — a client Finished handshake message fragmented across two
+// encrypted records is reassembled and verified.
+test "handleRecord: reassembles fragmented client Finished across encrypted records" {
+    const client_keypair: x25519.KeyPair = try .generateDeterministic(.init(@splat(0x11)));
+    const server_keypair: x25519.KeyPair = try .generateDeterministic(.init(@splat(0x22)));
+    var ch_buf: [512]u8 = undefined;
+    const ch = try client_hello.encode(&ch_buf, .zero, client_keypair.public_key, null, &.{});
+    var ch_record: [1024]u8 = undefined;
+    const ch_header: frame.Header = .init(.handshake, @intCast(ch.len));
+    ch_header.write(ch_record[0..frame.header_len]);
+    @memcpy(ch_record[frame.header_len..][0..ch.len], ch);
+
+    var server: ServerHandshake = .init(server_keypair);
+    var sh_out: [256]u8 = undefined;
+    _ = try server.acceptClientHello(ch_record[0 .. frame.header_len + ch.len], .zero, &sh_out);
+    var flight_out: [512]u8 = undefined;
+    _ = try server.sendAnonymousFlightForTest(&flight_out);
+
+    // Encode the client Finished handshake message.
+    var fin_plain: [64]u8 = undefined;
+    const fin = switch (server.suite_state) {
+        inline .sha256, .sha384 => |*s| blk: {
+            const th = s.transcript.peek();
+            break :blk try finished.encode(
+                @TypeOf(s.transcript),
+                &fin_plain,
+                &s.client_finished_key.data,
+                &th,
+            );
+        },
+    };
+
+    // Split the Finished after the 4-byte handshake header.
+    // Record 1: handshake header (type + 3-byte length).
+    // Record 2: verify_data body.
+    const split_at: usize = handshake_header_len;
+
+    var client_tx = try server.rx.clone();
+    defer client_tx.deinit();
+    var wire1: [128]u8 = undefined;
+    const rec1 = try client_tx.encrypt(.handshake, fin[0..split_at], &wire1);
+    var wire2: [128]u8 = undefined;
+    const rec2 = try client_tx.encrypt(.handshake, fin[split_at..], &wire2);
+
+    var out: [64]u8 = undefined;
+    const ev1 = try server.handleRecord(wire1[0..rec1.len], .zero, &out);
+    try testing.expectEqual(Event.none, ev1);
+    try testing.expectEqual(.wait_client_finished, server.state);
+
+    const ev2 = try server.handleRecord(wire2[0..rec2.len], .zero, &out);
+    try testing.expectEqual(Event.none, ev2);
+    try testing.expectEqual(.connected, server.state);
+}
+
+// RFC 8446 §5.1 — an interleaved non-handshake encrypted record while a
+// Finished fragment is pending is rejected with UnexpectedMessage, which
+// maps to a fatal unexpected_message alert.
+test "handleRecord: rejects interleaved alert during Finished fragment reassembly" {
+    const client_keypair: x25519.KeyPair = try .generateDeterministic(.init(@splat(0x11)));
+    const server_keypair: x25519.KeyPair = try .generateDeterministic(.init(@splat(0x22)));
+    var ch_buf: [512]u8 = undefined;
+    const ch = try client_hello.encode(&ch_buf, .zero, client_keypair.public_key, null, &.{});
+    var ch_record: [1024]u8 = undefined;
+    const ch_header: frame.Header = .init(.handshake, @intCast(ch.len));
+    ch_header.write(ch_record[0..frame.header_len]);
+    @memcpy(ch_record[frame.header_len..][0..ch.len], ch);
+
+    var server: ServerHandshake = .init(server_keypair);
+    var sh_out: [256]u8 = undefined;
+    _ = try server.acceptClientHello(ch_record[0 .. frame.header_len + ch.len], .zero, &sh_out);
+    var flight_out: [512]u8 = undefined;
+    _ = try server.sendAnonymousFlightForTest(&flight_out);
+
+    // Encode the client Finished and take the first 4 bytes (header only).
+    var fin_plain: [64]u8 = undefined;
+    const fin = switch (server.suite_state) {
+        inline .sha256, .sha384 => |*s| blk: {
+            const th = s.transcript.peek();
+            break :blk try finished.encode(
+                @TypeOf(s.transcript),
+                &fin_plain,
+                &s.client_finished_key.data,
+                &th,
+            );
+        },
+    };
+
+    // First fragment: 4-byte handshake header only.
+    var client_tx = try server.rx.clone();
+    defer client_tx.deinit();
+    var wire1: [128]u8 = undefined;
+    const rec1 = try client_tx.encrypt(.handshake, fin[0..handshake_header_len], &wire1);
+
+    // Encrypt a fatal interleaved alert with seq=1.
+    var alert_msg: [2]u8 = undefined;
+    _ = alert.encode(&alert_msg, .fatal, .unexpected_message) catch unreachable;
+    var alert_wire: [64]u8 = undefined;
+    const alert_rec = try client_tx.encrypt(.alert, &alert_msg, &alert_wire);
+
+    var out: [64]u8 = undefined;
+    const ev1 = try server.handleRecord(wire1[0..rec1.len], .zero, &out);
+    try testing.expectEqual(Event.none, ev1);
+
+    // The interleaved alert must be rejected with UnexpectedMessage.
+    try testing.expectError(
+        error.UnexpectedMessage,
+        server.handleRecord(alert_wire[0..alert_rec.len], .zero, &out),
+    );
+    try testing.expectEqual(.wait_client_finished, server.state);
+}
+
+// RFC 8446 §5.1 — a plaintext outer record interleaved while a Finished
+// fragment is pending is also rejected before normal CCS/alert handling.
+test "handleRecord: rejects plaintext alert during Finished fragment reassembly" {
+    const client_keypair: x25519.KeyPair = try .generateDeterministic(.init(@splat(0x11)));
+    const server_keypair: x25519.KeyPair = try .generateDeterministic(.init(@splat(0x22)));
+    var ch_buf: [512]u8 = undefined;
+    const ch = try client_hello.encode(&ch_buf, .zero, client_keypair.public_key, null, &.{});
+    var ch_record: [1024]u8 = undefined;
+    const ch_header: frame.Header = .init(.handshake, @intCast(ch.len));
+    ch_header.write(ch_record[0..frame.header_len]);
+    @memcpy(ch_record[frame.header_len..][0..ch.len], ch);
+
+    var server: ServerHandshake = .init(server_keypair);
+    var sh_out: [256]u8 = undefined;
+    _ = try server.acceptClientHello(ch_record[0 .. frame.header_len + ch.len], .zero, &sh_out);
+    var flight_out: [512]u8 = undefined;
+    _ = try server.sendAnonymousFlightForTest(&flight_out);
+
+    var fin_plain: [64]u8 = undefined;
+    const fin = switch (server.suite_state) {
+        inline .sha256, .sha384 => |*s| blk: {
+            const th = s.transcript.peek();
+            break :blk try finished.encode(
+                @TypeOf(s.transcript),
+                &fin_plain,
+                &s.client_finished_key.data,
+                &th,
+            );
+        },
+    };
+
+    var client_tx = try server.rx.clone();
+    defer client_tx.deinit();
+    var wire1: [128]u8 = undefined;
+    const rec1 = try client_tx.encrypt(.handshake, fin[0..handshake_header_len], &wire1);
+    var out: [64]u8 = undefined;
+    try testing.expectEqual(Event.none, try server.handleRecord(wire1[0..rec1.len], .zero, &out));
+
+    var alert_rec = [_]u8{ 0x15, 0x03, 0x03, 0x00, 0x02, 0x01, 0x00 };
+    try testing.expectError(error.UnexpectedMessage, server.handleRecord(&alert_rec, .zero, &out));
+}
+
+// RFC 8446 §6 — once handshake traffic keys are installed, alerts are protected;
+// a plaintext outer alert while waiting for client Finished is unexpected.
+test "handleRecord: rejects plaintext alert while waiting for Finished" {
+    const client_keypair: x25519.KeyPair = try .generateDeterministic(.init(@splat(0x11)));
+    const server_keypair: x25519.KeyPair = try .generateDeterministic(.init(@splat(0x22)));
+    var ch_buf: [512]u8 = undefined;
+    const ch = try client_hello.encode(&ch_buf, .zero, client_keypair.public_key, null, &.{});
+    var ch_record: [1024]u8 = undefined;
+    const ch_header: frame.Header = .init(.handshake, @intCast(ch.len));
+    ch_header.write(ch_record[0..frame.header_len]);
+    @memcpy(ch_record[frame.header_len..][0..ch.len], ch);
+
+    var server: ServerHandshake = .init(server_keypair);
+    var sh_out: [256]u8 = undefined;
+    _ = try server.acceptClientHello(ch_record[0 .. frame.header_len + ch.len], .zero, &sh_out);
+    var flight_out: [512]u8 = undefined;
+    _ = try server.sendAnonymousFlightForTest(&flight_out);
+
+    var alert_rec = [_]u8{ 0x15, 0x03, 0x03, 0x00, 0x02, 0x01, 0x00 };
+    var out: [64]u8 = undefined;
+    try testing.expectError(error.UnexpectedMessage, server.handleRecord(&alert_rec, .zero, &out));
+}
+
+// RFC 8446 §5.1 — encrypted handshake records must carry a non-empty
+// handshake fragment while waiting for client Finished.
+test "handleRecord: rejects zero-length encrypted handshake while waiting for Finished" {
+    const client_keypair: x25519.KeyPair = try .generateDeterministic(.init(@splat(0x11)));
+    const server_keypair: x25519.KeyPair = try .generateDeterministic(.init(@splat(0x22)));
+    var ch_buf: [512]u8 = undefined;
+    const ch = try client_hello.encode(&ch_buf, .zero, client_keypair.public_key, null, &.{});
+    var ch_record: [1024]u8 = undefined;
+    const ch_header: frame.Header = .init(.handshake, @intCast(ch.len));
+    ch_header.write(ch_record[0..frame.header_len]);
+    @memcpy(ch_record[frame.header_len..][0..ch.len], ch);
+
+    var server: ServerHandshake = .init(server_keypair);
+    var sh_out: [256]u8 = undefined;
+    _ = try server.acceptClientHello(ch_record[0 .. frame.header_len + ch.len], .zero, &sh_out);
+    var flight_out: [512]u8 = undefined;
+    _ = try server.sendAnonymousFlightForTest(&flight_out);
+
+    var client_tx = try server.rx.clone();
+    defer client_tx.deinit();
+    var wire: [64]u8 = undefined;
+    const rec = try client_tx.encrypt(.handshake, "", &wire);
+
+    var out: [64]u8 = undefined;
+    try testing.expectError(
+        error.UnexpectedMessage,
+        server.handleRecord(wire[0..rec.len], .zero, &out),
+    );
 }
 
 // RFC 8446 §5.1 — handshake header (first 4 bytes of the handshake message)
