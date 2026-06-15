@@ -111,6 +111,11 @@ const ch_reassembly_body_max = frame.max_plaintext_len * 2;
 /// of at least this size via useHandshakeBuffer() for ClientHello reassembly.
 pub const ch_reassembly_buffer_size = handshake_header_len + ch_reassembly_body_max;
 
+/// Caller-owned backing for ClientHello reassembly, sized to the documented
+/// minimum. Declare one as `.empty` and hand `&storage.buffer` to
+/// useHandshakeBuffer().
+pub const Storage = ArrayBuffer(u8, ch_reassembly_buffer_size);
+
 state: State = .wait_ch,
 keypair: x25519.KeyPair,
 suite: CipherSuite = .aes_128_gcm_sha256,

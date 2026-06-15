@@ -59,6 +59,16 @@ const OfferedSignatureSchemesBuffer = ArrayBuffer(SignatureScheme, 16);
 const SelectedAlpnBuffer = ArrayBuffer(u8, 255);
 const HandshakeBuffer = SliceBuffer(u8);
 
+/// Comfortable default for handshake-message reassembly across records, sized
+/// to hold the server's Certificate chain plus margin. Unlike the server's
+/// ClientHello bound this is a caller policy budget, not a protocol limit:
+/// raise it for unusually large chains, lower it for memory-tight clients.
+pub const recommended_handshake_storage = 4 * frame.max_plaintext_len;
+
+/// Caller-owned backing for handshake-message reassembly. Declare one as
+/// `.empty` and hand `&storage.buffer` to useHandshakeBuffer().
+pub const Storage = ArrayBuffer(u8, recommended_handshake_storage);
+
 const ServerFlightProgress = enum {
     none,
     certificate_verified,

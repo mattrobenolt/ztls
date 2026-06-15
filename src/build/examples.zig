@@ -29,20 +29,31 @@ pub fn addSteps(b: *Build, opts: struct {
         if (opts.txtar_mod) |tm| exe_mod.addImport("txtar", tm);
         const exe = b.addExecutable(.{ .name = name, .root_module = exe_mod });
         const run = b.addRunArtifact(exe);
+        if (b.args) |args| run.addArgs(args);
         const step = b.step(b.fmt("example-{s}", .{name}), b.fmt("Run {s} example", .{name}));
         step.dependOn(&run.step);
     }
 
     if (opts.target.result.os.tag == .linux) {
-        const exe_mod = b.createModule(.{
-            .root_source_file = b.path("examples/iouring_client.zig"),
-            .target = opts.target,
-            .optimize = opts.optimize,
-            .imports = &.{.{ .name = "ztls", .module = mod }},
-        });
-        const exe = b.addExecutable(.{ .name = "iouring_client", .root_module = exe_mod });
-        const run = b.addRunArtifact(exe);
-        const step = b.step("example-iouring_client", "Run Linux io_uring client example");
-        step.dependOn(&run.step);
+        const linux_examples = [_][]const u8{
+            "iouring_client",
+            "epoll_pingpong",
+        };
+        for (linux_examples) |name| {
+            const exe_mod = b.createModule(.{
+                .root_source_file = b.path(b.fmt("examples/{s}.zig", .{name})),
+                .target = opts.target,
+                .optimize = opts.optimize,
+                .imports = &.{.{ .name = "ztls", .module = mod }},
+            });
+            const exe = b.addExecutable(.{ .name = name, .root_module = exe_mod });
+            const run = b.addRunArtifact(exe);
+            if (b.args) |args| run.addArgs(args);
+            const step = b.step(
+                b.fmt("example-{s}", .{name}),
+                b.fmt("Run Linux {s} example", .{name}),
+            );
+            step.dependOn(&run.step);
+        }
     }
 }
