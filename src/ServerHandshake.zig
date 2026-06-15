@@ -34,6 +34,9 @@ const handshake = @import("handshake.zig");
 const HandshakeReader = handshake.Reader;
 const HandshakeBuffer = SliceBuffer(u8);
 const FinishedFragmentBuffer = ArrayBuffer(u8, handshake_header_len + 48);
+const key_update_body_len = 1;
+const key_update_total_len = handshake_header_len + key_update_body_len;
+const KeyUpdateFragmentBuffer = ArrayBuffer(u8, key_update_total_len);
 const HandshakeType = handshake.Type;
 const KeyUpdateRequest = handshake.KeyUpdateRequest;
 const max_post_handshake_messages = handshake.max_post_handshake_messages;
@@ -147,6 +150,11 @@ ch_expected: usize = 0,
 /// handshake header, so a small fixed buffer is sufficient. RFC 8446 §5.1.
 fin_frag: FinishedFragmentBuffer = .empty,
 
+/// Fixed-size buffer for reassembling fragmented post-handshake KeyUpdate
+/// messages across encrypted records. KeyUpdate is always a 4-byte handshake
+/// header plus a 1-byte request body. RFC 8446 §5.1, §4.6.3.
+ku_frag: KeyUpdateFragmentBuffer = .empty,
+
 pub fn init(keypair: x25519.KeyPair) ServerHandshake {
     return .{ .keypair = keypair };
 }
@@ -165,6 +173,7 @@ pub fn deinit(self: *ServerHandshake) void {
     }
     self.keypair.secret_key.secureZero();
     self.fin_frag.secureZero();
+    self.ku_frag.secureZero();
     self.* = undefined;
 }
 
@@ -976,28 +985,79 @@ fn handleConnected(self: *ServerHandshake, record: []u8, out: []u8) ReceiveError
     const dec = try handshake.decryptProtected(&self.rx, record);
     switch (dec.content_type) {
         .application_data => {
+            if (self.ku_frag.len != 0) {
+                self.ku_frag.clear();
+                return error.UnexpectedMessage;
+            }
             if (dec.content.len > 0) self.post_handshake_count = 0;
             return .{ .application_data = dec.content };
         },
         .handshake => {
-            if (dec.content.len == 0) return error.UnexpectedMessage;
-            var respond = false;
-            var hr: HandshakeReader = .init(dec.content);
-            while (try hr.next()) |msg| {
+            if (dec.content.len == 0) {
+                self.ku_frag.clear();
+                return error.UnexpectedMessage;
+            }
+
+            for (dec.content, 0..) |byte, i| {
+                if (self.ku_frag.len == 0 and byte != @intFromEnum(HandshakeType.key_update)) {
+                    self.ku_frag.clear();
+                    return error.UnexpectedMessage;
+                }
+                if (self.ku_frag.remainingCapacity() == 0) {
+                    self.ku_frag.clear();
+                    return error.UnexpectedMessage;
+                }
+                self.ku_frag.appendAssumeCapacity(byte);
+
+                if (self.ku_frag.len < handshake_header_len) continue;
+
+                const frag = self.ku_frag.constSlice();
+                const body_len = (@as(usize, frag[1]) << 16) |
+                    (@as(usize, frag[2]) << 8) |
+                    @as(usize, frag[3]);
+                if (body_len != key_update_body_len) {
+                    self.ku_frag.clear();
+                    return error.UnexpectedEof;
+                }
+                if (self.ku_frag.len < key_update_total_len) continue;
+
+                // RFC 8446 §5.1: a message immediately preceding a key change
+                // must align with a record boundary. Reject before ratcheting
+                // if this record contains anything after the KeyUpdate.
+                if (self.ku_frag.len != key_update_total_len) unreachable;
+                if (i + 1 != dec.content.len) {
+                    self.ku_frag.clear();
+                    return error.UnexpectedMessage;
+                }
+
+                const request = handshake.parseKeyUpdate(frag) catch |err| {
+                    self.ku_frag.clear();
+                    return err;
+                };
                 self.post_handshake_count +|= 1;
-                if (self.post_handshake_count > max_post_handshake_messages)
+                if (self.post_handshake_count > max_post_handshake_messages) {
+                    self.ku_frag.clear();
                     return error.TooManyKeyUpdates;
-                if (msg.type != .key_update) return error.UnexpectedMessage;
-                if (hr.r.remaining().len != 0) return error.UnexpectedMessage;
-                if (try handshake.parseKeyUpdate(msg.raw) == .update_requested) respond = true;
-                const next_rx = try self.suite_state.ratchetClientKey();
+                }
+                const next_rx = self.suite_state.ratchetClientKey() catch |err| {
+                    self.ku_frag.clear();
+                    return err;
+                };
                 self.rx.deinit();
                 self.rx = next_rx;
+                self.ku_frag.clear();
+
+                if (request == .update_requested)
+                    return .{ .write = try self.sendKeyUpdate(out, .update_not_requested) };
+                return .none;
             }
-            if (respond) return .{ .write = try self.sendKeyUpdate(out, .update_not_requested) };
             return .none;
         },
         .alert => {
+            if (self.ku_frag.len != 0) {
+                self.ku_frag.clear();
+                return error.UnexpectedMessage;
+            }
             const a = try alert.parse(dec.content);
             return if (a.isCloseNotify()) .closed else error.PeerAlert;
         },
@@ -2934,4 +2994,227 @@ test "handleRecord: reassembles ClientHello when handshake header is split after
     const ev2 = try hs.handleRecord(rec2[0 .. frame.header_len + remaining], .zero, &out);
     try testing.expectEqual(.wait_client_finished, hs.state);
     _ = ev2.write;
+}
+
+// RFC 8446 §5.1 — a fragmented KeyUpdate (RECORD_LENGTH=1 style) is
+// reassembled across handshake records and processed correctly.
+test "handleRecord: server reassembles 1-byte fragmented KeyUpdate(update_requested)" {
+    var server = try connectedTestServer();
+    var client_tx = try server.rx.clone();
+    defer client_tx.deinit();
+    var server_tx_old = try server.tx.clone();
+    defer server_tx_old.deinit();
+
+    const ku_type = @intFromEnum(HandshakeType.key_update);
+    const ku_req = @intFromEnum(KeyUpdateRequest.update_requested);
+    const ku_parts = [_][]const u8{
+        &[_]u8{ku_type},
+        &[_]u8{0x00},
+        &[_]u8{0x00},
+        &[_]u8{0x01},
+        &[_]u8{ku_req},
+    };
+
+    var out: [256]u8 = undefined;
+    var rx_buf: [512]u8 = undefined;
+
+    // Feed first 4 bytes — server accumulates in ku_frag, returns .none.
+    for (ku_parts[0..4]) |part| {
+        var wire_buf: [64]u8 = undefined;
+        const wire = try client_tx.encrypt(.handshake, part, &wire_buf);
+        @memcpy(rx_buf[0..wire.len], wire);
+        const ev = try server.handleRecord(rx_buf[0..wire.len], .zero, &out);
+        try testing.expectEqual(Event.none, ev);
+    }
+
+    // Feed final byte — server completes reassembly and responds.
+    {
+        var wire_buf: [64]u8 = undefined;
+        const wire = try client_tx.encrypt(.handshake, ku_parts[4], &wire_buf);
+        @memcpy(rx_buf[0..wire.len], wire);
+        const ev = try server.handleRecord(rx_buf[0..wire.len], .zero, &out);
+        try testing.expect(ev == .write);
+        const resp = ev.write;
+        var resp_buf: [64]u8 = undefined;
+        @memcpy(resp_buf[0..resp.len], resp);
+
+        // Response: KeyUpdate(update_not_requested), encrypted under OLD tx key.
+        const dec = try server_tx_old.decrypt(resp_buf[0..resp.len]);
+        try testing.expectEqual(.handshake, dec.content_type);
+        try testing.expectEqualSlices(u8, &.{
+            @intFromEnum(HandshakeType.key_update),              0x00, 0x00, 0x01,
+            @intFromEnum(KeyUpdateRequest.update_not_requested),
+        }, dec.content);
+        server.completeWrite();
+    }
+
+    // Server rx keys ratcheted; app data under new client key must decrypt.
+    var client_tx_1 = try server.rx.clone();
+    defer client_tx_1.deinit();
+    var app_buf: [64]u8 = undefined;
+    const app_wire = try client_tx_1.encrypt(.application_data, "after", &app_buf);
+    var app_rx: [64]u8 = undefined;
+    @memcpy(app_rx[0..app_wire.len], app_wire);
+    const ev_after = try server.handleRecord(app_rx[0..app_wire.len], .zero, &out);
+    try testing.expectEqualSlices(u8, "after", ev_after.application_data);
+}
+
+// RFC 8446 §4.6.3 — fragmented KeyUpdate(update_not_requested) ratchets only
+// the receive key with no response.
+test "handleRecord: fragmented KeyUpdate(update_not_requested) works" {
+    var server = try connectedTestServer();
+    var client_tx = try server.rx.clone();
+    defer client_tx.deinit();
+
+    const ku_type = @intFromEnum(HandshakeType.key_update);
+    const ku_nr = @intFromEnum(KeyUpdateRequest.update_not_requested);
+    const ku_parts = [_][]const u8{
+        &[_]u8{ku_type},
+        &[_]u8{0x00},
+        &[_]u8{0x00},
+        &[_]u8{0x01},
+        &[_]u8{ku_nr},
+    };
+
+    var out: [256]u8 = undefined;
+    var rx_buf: [512]u8 = undefined;
+
+    for (ku_parts[0..]) |part| {
+        var wire_buf: [64]u8 = undefined;
+        const wire = try client_tx.encrypt(.handshake, part, &wire_buf);
+        @memcpy(rx_buf[0..wire.len], wire);
+        const ev = try server.handleRecord(rx_buf[0..wire.len], .zero, &out);
+        try testing.expectEqual(Event.none, ev);
+    }
+
+    // Server rx ratcheted; app data under new key works.
+    var client_tx_1 = try server.rx.clone();
+    defer client_tx_1.deinit();
+    var app_buf: [64]u8 = undefined;
+    const app_wire = try client_tx_1.encrypt(.application_data, "data", &app_buf);
+    var app_rx: [64]u8 = undefined;
+    @memcpy(app_rx[0..app_wire.len], app_wire);
+    const ev_after = try server.handleRecord(app_rx[0..app_wire.len], .zero, &out);
+    try testing.expectEqualSlices(u8, "data", ev_after.application_data);
+}
+
+// RFC 8446 §5.1 — a non-KeyUpdate handshake fragment must be rejected.
+test "handleRecord: non-KeyUpdate fragment starts are rejected" {
+    var server = try connectedTestServer();
+    var client_tx = try server.rx.clone();
+    defer client_tx.deinit();
+
+    const bad_type: u8 = @intFromEnum(HandshakeType.finished);
+    var wire_buf: [64]u8 = undefined;
+    const wire = try client_tx.encrypt(.handshake, &[_]u8{bad_type}, &wire_buf);
+
+    var out: [256]u8 = undefined;
+    const result = server.handleRecord(wire, .zero, &out);
+    try testing.expectError(error.UnexpectedMessage, result);
+}
+
+// RFC 8446 §5.1 — a KeyUpdate immediately preceding a key change must align
+// with a record boundary and is rejected before ratcheting if trailing bytes
+// share its record.
+test "handleRecord: KeyUpdate with trailing record bytes is rejected before ratchet" {
+    var server = try connectedTestServer();
+    var client_tx = try server.rx.clone();
+    defer client_tx.deinit();
+
+    const ku_type = @intFromEnum(HandshakeType.key_update);
+    const ku_nr = @intFromEnum(KeyUpdateRequest.update_not_requested);
+    const bad = [_]u8{ ku_type, 0x00, 0x00, 0x01, ku_nr, 0xff };
+
+    var wire_buf: [128]u8 = undefined;
+    const wire = try client_tx.encrypt(.handshake, &bad, &wire_buf);
+    var rx_buf: [128]u8 = undefined;
+    @memcpy(rx_buf[0..wire.len], wire);
+    var out: [256]u8 = undefined;
+    try testing.expectError(
+        error.UnexpectedMessage,
+        server.handleRecord(rx_buf[0..wire.len], .zero, &out),
+    );
+    try testing.expectEqual(@as(usize, 0), server.ku_frag.len);
+
+    const app_wire = try client_tx.encrypt(.application_data, "old epoch", &wire_buf);
+    @memcpy(rx_buf[0..app_wire.len], app_wire);
+    const ev = try server.handleRecord(rx_buf[0..app_wire.len], .zero, &out);
+    try testing.expectEqualSlices(u8, "old epoch", ev.application_data);
+}
+
+// RFC 8446 §5.1 — interleaving application data during fragment reassembly
+// is rejected and clears the fragment state.
+test "handleRecord: app-data interleaving during KeyUpdate reassembly is rejected" {
+    var server = try connectedTestServer();
+    var client_tx = try server.rx.clone();
+    defer client_tx.deinit();
+
+    const ku_type = @intFromEnum(HandshakeType.key_update);
+    var wire_buf: [64]u8 = undefined;
+    const wire = try client_tx.encrypt(.handshake, &[_]u8{ku_type}, &wire_buf);
+    var out: [256]u8 = undefined;
+    var rx_buf: [512]u8 = undefined;
+    @memcpy(rx_buf[0..wire.len], wire);
+    _ = try server.handleRecord(rx_buf[0..wire.len], .zero, &out);
+    try testing.expectEqual(@as(usize, 1), server.ku_frag.len);
+
+    const app_wire = try client_tx.encrypt(.application_data, "nope", &wire_buf);
+    @memcpy(rx_buf[0..app_wire.len], app_wire);
+    try testing.expectError(
+        error.UnexpectedMessage,
+        server.handleRecord(rx_buf[0..app_wire.len], .zero, &out),
+    );
+    try testing.expectEqual(@as(usize, 0), server.ku_frag.len);
+}
+
+// RFC 8446 §5.1 — interleaving an alert during fragment reassembly is rejected
+// before alert handling and clears the fragment state.
+test "handleRecord: alert interleaving during KeyUpdate reassembly is rejected" {
+    var server = try connectedTestServer();
+    var client_tx = try server.rx.clone();
+    defer client_tx.deinit();
+
+    const ku_type = @intFromEnum(HandshakeType.key_update);
+    var wire_buf: [64]u8 = undefined;
+    const wire = try client_tx.encrypt(.handshake, &[_]u8{ku_type}, &wire_buf);
+    var out: [256]u8 = undefined;
+    var rx_buf: [512]u8 = undefined;
+    @memcpy(rx_buf[0..wire.len], wire);
+    _ = try server.handleRecord(rx_buf[0..wire.len], .zero, &out);
+    try testing.expectEqual(@as(usize, 1), server.ku_frag.len);
+
+    var alert_msg: [2]u8 = undefined;
+    _ = alert.encode(&alert_msg, .fatal, .unexpected_message) catch unreachable;
+    const alert_wire = try client_tx.encrypt(.alert, &alert_msg, &wire_buf);
+    @memcpy(rx_buf[0..alert_wire.len], alert_wire);
+    try testing.expectError(
+        error.UnexpectedMessage,
+        server.handleRecord(rx_buf[0..alert_wire.len], .zero, &out),
+    );
+    try testing.expectEqual(@as(usize, 0), server.ku_frag.len);
+}
+
+// RFC 8446 §5.1 — a zero-length encrypted handshake record during fragment
+// reassembly is rejected and clears the fragment state.
+test "handleRecord: zero-length handshake during KeyUpdate reassembly is rejected" {
+    var server = try connectedTestServer();
+    var client_tx = try server.rx.clone();
+    defer client_tx.deinit();
+
+    const ku_type = @intFromEnum(HandshakeType.key_update);
+    var wire_buf: [64]u8 = undefined;
+    const wire = try client_tx.encrypt(.handshake, &[_]u8{ku_type}, &wire_buf);
+    var out: [256]u8 = undefined;
+    var rx_buf: [512]u8 = undefined;
+    @memcpy(rx_buf[0..wire.len], wire);
+    _ = try server.handleRecord(rx_buf[0..wire.len], .zero, &out);
+    try testing.expectEqual(@as(usize, 1), server.ku_frag.len);
+
+    const empty_wire = try client_tx.encrypt(.handshake, "", &wire_buf);
+    @memcpy(rx_buf[0..empty_wire.len], empty_wire);
+    try testing.expectError(
+        error.UnexpectedMessage,
+        server.handleRecord(rx_buf[0..empty_wire.len], .zero, &out),
+    );
+    try testing.expectEqual(@as(usize, 0), server.ku_frag.len);
 }
