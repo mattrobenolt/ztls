@@ -360,12 +360,13 @@ fn verifySignature(
 
 // Fixtures generated with: scripts/gen-fixtures.sh
 // Transcript hash: SHA-256("test transcript")
+const sig_fixtures = @import("test_fixtures/sig_fixtures.zig");
 
 const fixture_cert_der = @embedFile("test_fixtures/server.crt.der");
-const fixture_cv_sig = @embedFile("test_fixtures/cv.sig");
+const fixture_cv_sig: []const u8 = &sig_fixtures.cv_sig;
 const fixture_rsa_pss_cert_der = @embedFile("test_fixtures/rsa_pss/server.crt.der");
-const fixture_rsa_pss_cv_sig = @embedFile("test_fixtures/rsa_pss/cv.sig");
-const fixture_rsa_pss_cv_salt20_sig = @embedFile("test_fixtures/rsa_pss/cv-salt20.sig");
+const fixture_rsa_pss_cv_sig: []const u8 = &sig_fixtures.rsa_pss_cv_sig;
+const fixture_rsa_pss_cv_salt20_sig: []const u8 = &sig_fixtures.rsa_pss_cv_salt20_sig;
 const chain_root_pem = "tests/fixtures/chain/root.crt";
 const chain_leaf_der = @embedFile("test_fixtures/chain/leaf.der");
 const chain_intermediate_der = @embedFile("test_fixtures/chain/intermediate.der");
