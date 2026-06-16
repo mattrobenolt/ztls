@@ -55,6 +55,10 @@ ci:
 anvil-server *args: build
     uv run python scripts/anvil_server.py {{ args }}
 
+[doc("Run TLS-Anvil server with CI-safe sequential defaults")]
+anvil-ci-server run_dir timeout_secs="5400": build
+    uv run python scripts/anvil_server.py --output-folder {{ run_dir }} --timeout {{ timeout_secs }} --strength 1 --parallel-tests 1 --parallel-handshakes 1
+
 [doc("Adapt a TLS-Anvil output directory to report.normalized.json")]
 anvil-adapter run_dir *args:
     uv run python scripts/anvil_adapter.py {{ run_dir }} {{ args }}

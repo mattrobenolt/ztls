@@ -99,7 +99,8 @@ consumption-for-rejection, not resumption.
   `expected_skipped: 175`, `unexpected_skipped: 0`, and `not_attempted: 157`.
   The attempted server-side TLS-Anvil surface is clean (`105/105` attempted
   passed), including `KeyUpdate: passed=4` and `ComplianceRequirements: passed=2`.
-  Real TLS-Anvil execution remains manual.
+  The real server suite is wired in `.github/workflows/tls-anvil-server.yml` for
+  weekly and manually-triggered runs; client execution and BoGo remain open.
 - Wycheproof boundary vectors at the libcrypto seam.
 - Fuzzing on the major parsers plus record decrypt and server `handleRecord`
   pre-auth/post-auth dispatch.
@@ -127,11 +128,11 @@ consumption-for-rejection, not resumption.
 
 **Gaps (this is the punch-list that converts dread into work):**
 
-- **External runners not gated.** BoGo and full TLS-Anvil execution are not in
-  `just ci`. TLS-Anvil normalization and wrapper-helper tests are gated, and the
-  report separates server/client endpoint-mode `not_attempted` tests from
-  expected skips, but real-suite execution and CI/periodic runner wiring remain
-  open. Completed TLS-Anvil server evidence now has no unexpected attempted
+- **External runner coverage is still partial.** BoGo and full TLS-Anvil
+  execution are not in PR `just ci`. TLS-Anvil normalization and wrapper-helper
+  tests are gated, and the real TLS-Anvil server suite runs in a separate
+  scheduled/manual workflow, but TLS-Anvil client execution and BoGo runner
+  wiring remain open. Completed TLS-Anvil server evidence now has no unexpected attempted
   failures; remaining named-group scope beyond the proven server-side P-256 path
   stays tracked under broader provider-backed group work *(#6)*. HelloRetryRequest
   server retry now passes TLS-Anvil, but full client/server HRR

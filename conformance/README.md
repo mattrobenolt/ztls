@@ -20,9 +20,14 @@ This is the CI-gated external protocol-conformance harness for the supported ztl
 
 TLS-Anvil provides ~408 RFC-based server and client tests. The runner (`just anvil-server`) starts the ztls harness and executes the upstream suite. Results are captured under `zig-out/anvil/server/<timestamp>/`.
 
-Result normalization and skip-list enforcement are scaffolded by two steps: `anvil-adapter` converts TLS-Anvil output directories into `report.normalized.json`, then `anvil-report` applies the skip list and writes summaries. The adapter is covered by synthetic real-output-shape tests and rejects unfinished raw TLS-Anvil runs by default; `--allow-partial` is only for local audit/debug. Real TLS-Anvil execution is still manual.
+Result normalization and skip-list enforcement are scaffolded by two steps: `anvil-adapter` converts TLS-Anvil output directories into `report.normalized.json`, then `anvil-report` applies the skip list and writes summaries. The adapter is covered by synthetic real-output-shape tests and rejects unfinished raw TLS-Anvil runs by default; `--allow-partial` is only for local audit/debug.
+
+The real server suite is wired as a dedicated GitHub Actions workflow, `.github/workflows/tls-anvil-server.yml`, on `workflow_dispatch` and a weekly schedule. It runs the same sequential settings used for accepted local evidence, strict-normalizes with `just anvil-report-dir`, and uploads summary/provenance/log artifacts without `keyfile.log`. This workflow is intentionally separate from PR `just ci`; TLS-Anvil client execution and BoGo remain open under #9.
 
 ```sh
+# Run the CI-shaped TLS-Anvil server suite locally into a deterministic dir:
+just anvil-ci-server zig-out/anvil/server/manual 5400
+
 # Adapt and normalize a TLS-Anvil output directory:
 just anvil-report-dir zig-out/anvil/server/<timestamp>
 
@@ -38,4 +43,4 @@ The report script:
 - reports unmatched_skip_patterns and expected_skip_count_by_reason to catch stale or overbroad skip rules;
 - writes `summary.json` (machine-readable) and `summary.txt` (human-readable).
 
-The parser exits 0 only when the report has no unexpected pass/fail/skipped classifications; it exits 1 when review is required. Synthetic parser tests run in `just ci`, but real TLS-Anvil execution is not yet CI-gated (#9).
+The parser exits 0 only when the report has no unexpected pass/fail/skipped classifications; it exits 1 when review is required. Synthetic parser tests run in `just ci`; real TLS-Anvil server execution runs in the dedicated scheduled/manual workflow, while client execution and BoGo remain open (#9).
