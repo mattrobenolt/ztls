@@ -1195,9 +1195,10 @@ fn chooseSuite(self: *const ServerHandshake, ch: client_hello.Parsed) ?CipherSui
     return null;
 }
 
-const test_cert_der = @embedFile("test_fixtures/server.crt.der");
-const server_ecdsa_cert_der = @embedFile("test_fixtures/server-ecdsa/server.der");
-const server_ecdsa_scalar = @embedFile("test_fixtures/server-ecdsa/scalar.bin");
+const shared_fixtures = @import("test_fixtures/shared_fixtures.zig");
+const test_cert_der: []const u8 = &shared_fixtures.server_cert_der;
+const server_ecdsa_cert_der: []const u8 = &shared_fixtures.server_ecdsa_cert_der;
+const server_ecdsa_scalar: []const u8 = &shared_fixtures.server_ecdsa_scalar;
 const test_p256_seed_a = memx.hex(32, "000102030405060708090a0b0c0d0e0f" ++
     "101112131415161718191a1b1c1d1e1f");
 const test_p256_seed_b = memx.hex(32, "202122232425262728292a2b2c2d2e2f" ++

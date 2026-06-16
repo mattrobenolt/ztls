@@ -12,8 +12,9 @@ const assert = std.debug.assert;
 
 const ztls = @import("ztls");
 
-const cert_der = @embedFile("test_fixtures/server-ecdsa/server.der");
-const scalar = @embedFile("test_fixtures/server-ecdsa/scalar.bin");
+const shared_fixtures = @import("test_fixtures/shared_fixtures.zig");
+const cert_der: []const u8 = &shared_fixtures.server_ecdsa_cert_der;
+const scalar: []const u8 = &shared_fixtures.server_ecdsa_scalar;
 
 pub fn main() !void {
     // Load the server's signing key from a fixture P-256 scalar.

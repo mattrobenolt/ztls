@@ -5,8 +5,9 @@ const sleep = std.Thread.sleep;
 
 const ztls = @import("ztls");
 
-const cert_der = @embedFile("test_fixtures/server-ecdsa/server.der");
-const scalar = @embedFile("test_fixtures/server-ecdsa/scalar.bin");
+const shared_fixtures = @import("test_fixtures/shared_fixtures.zig");
+const cert_der: []const u8 = &shared_fixtures.server_ecdsa_cert_der;
+const scalar: []const u8 = &shared_fixtures.server_ecdsa_scalar;
 
 pub const max_wire_record_len = ztls.frame.header_len +
     ztls.frame.max_plaintext_len +

@@ -14,8 +14,9 @@ const host = "127.0.0.1";
 const alpn_protocol = "http/1.1";
 const response = "HTTP/1.0 200 OK\r\nContent-Length: 5\r\n\r\nhello";
 
-const server_cert_der = @embedFile("test_fixtures/server-ecdsa/server.der");
-const server_scalar = @embedFile("test_fixtures/server-ecdsa/scalar.bin");
+const shared_fixtures = @import("test_fixtures/shared_fixtures.zig");
+const server_cert_der: []const u8 = &shared_fixtures.server_ecdsa_cert_der;
+const server_scalar: []const u8 = &shared_fixtures.server_ecdsa_scalar;
 
 const client_suites = [_][]const u8{
     "TLS_AES_128_GCM_SHA256",

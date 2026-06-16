@@ -361,8 +361,9 @@ fn verifySignature(
 // Fixtures generated with: scripts/gen-fixtures.sh
 // Transcript hash: SHA-256("test transcript")
 const sig_fixtures = @import("test_fixtures/sig_fixtures.zig");
+const shared_fixtures = @import("test_fixtures/shared_fixtures.zig");
 
-const fixture_cert_der = @embedFile("test_fixtures/server.crt.der");
+const fixture_cert_der: []const u8 = &shared_fixtures.server_cert_der;
 const fixture_cv_sig: []const u8 = &sig_fixtures.cv_sig;
 const fixture_rsa_pss_cert_der = @embedFile("test_fixtures/rsa_pss/server.crt.der");
 const fixture_rsa_pss_cv_sig: []const u8 = &sig_fixtures.rsa_pss_cv_sig;

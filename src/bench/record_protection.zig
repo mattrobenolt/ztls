@@ -21,8 +21,9 @@ const all_suites = [_]Suite{
 };
 const sizes = [_]usize{ 16, 128, 1350, 8192, frame.max_plaintext_len };
 const openssl_replay_archive = @embedFile("../test_fixtures/openssl_replay.txtar");
-const server_cert_der = @embedFile("../test_fixtures/server-ecdsa/server.der");
-const server_scalar = @embedFile("../test_fixtures/server-ecdsa/scalar.bin");
+const shared_fixtures = @import("../test_fixtures/shared_fixtures.zig");
+const server_cert_der: []const u8 = &shared_fixtures.server_ecdsa_cert_der;
+const server_scalar: []const u8 = &shared_fixtures.server_ecdsa_scalar;
 
 const Suite = enum {
     aes_128_gcm_sha256,

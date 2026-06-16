@@ -21,8 +21,9 @@ const port: u16 = 8443;
 
 // Self-signed ECDSA P-256 test fixture. In a real deployment, load a
 // proper certificate chain and keep the signing key offline.
-const cert_der = @embedFile("test_fixtures/server-ecdsa/server.der");
-const scalar = @embedFile("test_fixtures/server-ecdsa/scalar.bin");
+const shared_fixtures = @import("test_fixtures/shared_fixtures.zig");
+const cert_der: []const u8 = &shared_fixtures.server_ecdsa_cert_der;
+const scalar: []const u8 = &shared_fixtures.server_ecdsa_scalar;
 
 const response = "HTTP/1.0 200 OK\r\nContent-Length: 18\r\n\r\nHello from ztls!";
 
