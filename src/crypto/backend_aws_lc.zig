@@ -1,9 +1,9 @@
-//! AWS-LC backend X25519 primitive wrappers.
+//! AWS-LC backend X25519 and P-256 primitive wrappers.
 //!
-//! AWS-LC exposes OpenSSL-compatible EVP raw-key APIs for X25519. This module
-//! intentionally delegates to the same wrapper implementation while the build
-//! still links whichever libcrypto the environment provides. Real AWS-LC
-//! link/input selection is a follow-up slice on #22.
+//! AWS-LC exposes OpenSSL-compatible EVP APIs for the primitives ztls uses.
+//! This module delegates to the OpenSSL-compatible implementation while the
+//! build recipe links AWS-LC's libcrypto. The modules should diverge when a
+//! backend-specific fast path or API difference warrants it.
 const compat = @import("backend_openssl.zig");
 
 pub const Error = compat.Error;

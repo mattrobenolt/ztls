@@ -8,6 +8,7 @@ pub const Options = struct {
     ztls_mod: *Build.Module,
     c_mod: *Build.Module,
     c_ssl_mod: *Build.Module,
+    build_options: *Build.Step.Options,
     benchmark_dep: *Build.Dependency,
     txtar_mod: ?*Build.Module,
 };
@@ -31,6 +32,7 @@ fn addZtlsBenchmarks(b: *Build, opts: Options) void {
             .{ .name = "txtar", .module = txtar_mod },
         },
     });
+    mod.addOptions("build_options", opts.build_options);
     mod.linkSystemLibrary("crypto", .{});
 
     const exe = benchmark.addTest(b, .{

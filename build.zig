@@ -26,7 +26,7 @@ pub fn build(b: *Build) void {
     const crypto_backend = b.option(
         []const u8,
         "crypto-backend",
-        "libcrypto-family backend to compile: openssl, aws-lc (dispatch shim)",
+        "libcrypto-family backend to compile: openssl, aws-lc",
     ) orelse "openssl";
     if (!std.mem.eql(u8, crypto_backend, "openssl") and
         !std.mem.eql(u8, crypto_backend, "aws-lc"))
@@ -34,14 +34,6 @@ pub fn build(b: *Build) void {
         std.debug.panic(
             "unsupported -Dcrypto-backend={s}; supported: openssl, aws-lc",
             .{crypto_backend},
-        );
-    }
-    if (std.mem.eql(u8, crypto_backend, "aws-lc")) {
-        std.debug.print(
-            "warning: -Dcrypto-backend=aws-lc currently selects the AWS-LC dispatch shim " ++
-                "but still links system libcrypto; real AWS-LC link selection is " ++
-                "#22 follow-up work.\n",
-            .{},
         );
     }
     const build_options = b.addOptions();
@@ -101,6 +93,7 @@ pub fn build(b: *Build) void {
         .ztls_mod = mod,
         .c_mod = c_mod,
         .c_ssl_mod = c_ssl_mod,
+        .build_options = build_options,
         .benchmark_dep = benchmark_dep,
         .txtar_mod = txtar_mod,
     });

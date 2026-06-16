@@ -84,6 +84,8 @@
             shellHook = ''
               unset NIX_CFLAGS_COMPILE
               unset ZIG_GLOBAL_CACHE_DIR
+              export ZTLS_AWS_LC_PKG_CONFIG_PATH=${pkgs.aws-lc.dev}/lib/pkgconfig
+              export ZTLS_AWS_LC_LIB_DIR=${pkgs.aws-lc}/lib
             '';
           };
         };

@@ -3,10 +3,30 @@
 test:
     zig build test --summary all
 
-[doc("Build and test the AWS-LC backend dispatch shim; still links system libcrypto")]
+[doc("Build and test with AWS-LC libcrypto")]
 [group("check")]
-check-backend-shim:
-    zig build test --summary all -Dcrypto-backend=aws-lc
+check-backend-aws-lc:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    aws_lc_pkg_config_path="${ZTLS_AWS_LC_PKG_CONFIG_PATH:-}"
+    if [ -z "$aws_lc_pkg_config_path" ]; then
+        aws_lc_dev=$(nix build --no-link --print-out-paths nixpkgs#aws-lc.dev)
+        aws_lc_pkg_config_path="$aws_lc_dev/lib/pkgconfig"
+    fi
+    aws_lc_include_dir=$(PKG_CONFIG_PATH="$aws_lc_pkg_config_path" pkg-config --variable=includedir libcrypto)
+    aws_lc_lib_dir=$(PKG_CONFIG_PATH="$aws_lc_pkg_config_path" pkg-config --variable=libdir libcrypto)
+    cache_dir=$(mktemp -d)
+    log=$(mktemp)
+    trap 'rm -rf "$cache_dir" "$log"' EXIT
+    PKG_CONFIG_PATH="$aws_lc_pkg_config_path" zig build test --summary all --verbose --cache-dir "$cache_dir" -Dcrypto-backend=aws-lc 2>&1 | tee "$log"
+    grep -F -- "-I$aws_lc_include_dir" "$log" >/dev/null || {
+        echo "AWS-LC include path was not used: $aws_lc_include_dir" >&2
+        exit 1
+    }
+    grep -F -- "-L$aws_lc_lib_dir" "$log" >/dev/null || {
+        echo "AWS-LC library path was not used: $aws_lc_lib_dir" >&2
+        exit 1
+    }
 
 [doc("Format all code")]
 [group("check")]
