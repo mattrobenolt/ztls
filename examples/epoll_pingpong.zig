@@ -350,7 +350,6 @@ fn serverRun(
     const scheme = try signatureSchemeForCert(certs[0]);
     var private_key: ztls.signature.PrivateKey = try .fromPem(scheme, key_pem);
     defer private_key.deinit();
-    const signer = private_key.signer();
 
     const epoll_fd = try posix.epoll_create1(0);
     defer posix.close(epoll_fd);
@@ -362,6 +361,7 @@ fn serverRun(
     var hs_storage: ztls.ServerHandshake.Storage = .empty;
     hs.useHandshakeBuffer(&hs_storage.buffer);
     hs.supportAlpn(&.{alpn});
+    hs.setCredentials(certs, private_key.signer());
 
     var random: ztls.Random = undefined;
     crypto.random.bytes(&random.data);
@@ -374,7 +374,6 @@ fn serverRun(
     var connected = false;
     defer if (connected) posix.close(conn.fd);
 
-    var flight_sent = false;
     var handshake_logged = false;
     var round: usize = 1;
     var msg_buf: [64]u8 = undefined;
@@ -429,10 +428,10 @@ fn serverRun(
         }
 
         // The authenticated flight becomes available once ServerHello is sent.
-        if (!conn.writeBlocked() and !flight_sent and hs.needsServerFlight()) {
-            flight_sent = true;
-            const bytes = try hs.sendAuthenticatedFlightBuffered(certs, signer, &flight);
-            if (try conn.send(bytes)) hs.completeWrite();
+        if (!conn.writeBlocked()) {
+            if (try hs.sendServerFlightBuffered(&flight)) |bytes| {
+                if (try conn.send(bytes)) hs.completeWrite();
+            }
         }
         if (hs.isConnected() and !handshake_logged) {
             handshake_logged = true;

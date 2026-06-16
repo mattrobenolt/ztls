@@ -69,7 +69,7 @@ fn serverRun(ctx: *ServerCtx) !void {
 
     var signer = try ztls.signature.PrivateKey.fromP256Scalar(scalar[0..32]);
     defer signer.deinit();
-    const signer_api = signer.signer();
+    hs.setCredentials(&.{cert_der}, signer.signer());
 
     var random: ztls.client_hello.Random = undefined;
     std.crypto.random.bytes(&random.data);
@@ -79,7 +79,6 @@ fn serverRun(ctx: *ServerCtx) !void {
     var out: ztls.ServerHandshake.OutBuffer = .empty;
     var flight: ztls.ServerHandshake.FlightBuffer = .empty;
 
-    var sent_flight = false;
     while (!hs.isConnected()) {
         const n = try recvIntoRecordBuffer(&ring, conn.stream.handle, &rb);
         if (n == 0) return error.ClientClosed;
@@ -89,15 +88,9 @@ fn serverRun(ctx: *ServerCtx) !void {
                 .write => |w| {
                     try sendAll(&ring, conn.stream.handle, w);
                     hs.completeWrite();
-                    if (!sent_flight and hs.needsServerFlight()) {
-                        const flight_bytes = try hs.sendAuthenticatedFlightBuffered(
-                            &.{cert_der},
-                            signer_api,
-                            &flight,
-                        );
+                    if (try hs.sendServerFlightBuffered(&flight)) |flight_bytes| {
                         try sendAll(&ring, conn.stream.handle, flight_bytes);
                         hs.completeWrite();
-                        sent_flight = true;
                     }
                 },
                 .none => {},

@@ -227,7 +227,7 @@ fn serve(stream: net.Stream, suite: ztls.CipherSuite) !void {
 
     var signer = try ztls.signature.PrivateKey.fromP256Scalar(server_scalar[0..32]);
     defer signer.deinit();
-    const signer_api = signer.signer();
+    hs.setCredentials(&.{server_cert_der}, signer.signer());
 
     var random: ztls.client_hello.Random = undefined;
     crypto.random.bytes(&random.data);
@@ -236,7 +236,6 @@ fn serve(stream: net.Stream, suite: ztls.CipherSuite) !void {
     var out: [4096]u8 = undefined;
     errdefer |err| sendBestEffortAlert(&hs, stream, err, &out);
 
-    var sent_flight = false;
     while (!hs.isConnected()) {
         const n = try stream.read(rb.writable());
         if (n == 0) return error.ClientClosed;
@@ -247,14 +246,9 @@ fn serve(stream: net.Stream, suite: ztls.CipherSuite) !void {
                 .write => |w| {
                     try stream.writeAll(w);
                     hs.completeWrite();
-                    if (!sent_flight and hs.needsServerFlight()) {
-                        const flight = try hs.sendPreparedAuthenticatedFlight(
-                            &.{server_cert_der},
-                            signer_api,
-                            &out,
-                        );
+                    if (try hs.sendPreparedServerFlight(&out)) |flight| {
                         try stream.writeAll(flight);
-                        sent_flight = true;
+                        hs.completeWrite();
                     }
                 },
                 .none => {},

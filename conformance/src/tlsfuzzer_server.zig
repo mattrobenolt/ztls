@@ -40,6 +40,7 @@ fn handleConnection(conn: std.net.Server.Connection) !void {
     var hs: ztls.ServerHandshake = .init(.generate());
     defer hs.deinit();
     hs.supportAlpn(&.{ "http/1.1", "h2" });
+    hs.setCredentials(&.{harness.testCertDer()}, signer.signer());
 
     // RFC 8446 §5.1 — provide storage for fragmented ClientHello reassembly.
     var reassembly_buf: [ztls.ServerHandshake.ch_reassembly_buffer_size]u8 = undefined;
@@ -64,15 +65,10 @@ fn handleConnection(conn: std.net.Server.Connection) !void {
             .write => |bytes| {
                 try conn.stream.writeAll(bytes);
                 hs.completeWrite();
-                if (hs.needsServerFlight()) {
-                    const flight = hs.sendPreparedAuthenticatedFlight(
-                        &.{harness.testCertDer()},
-                        signer.signer(),
-                        &out_buf,
-                    ) catch |err| {
-                        harness.sendBestEffortAlert(&hs, conn.stream, err, &out_buf);
-                        return;
-                    };
+                if (hs.sendPreparedServerFlight(&out_buf) catch |err| {
+                    harness.sendBestEffortAlert(&hs, conn.stream, err, &out_buf);
+                    return;
+                }) |flight| {
                     try conn.stream.writeAll(flight);
                     hs.completeWrite();
                 }

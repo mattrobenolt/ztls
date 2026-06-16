@@ -35,6 +35,7 @@ pub fn main() !void {
     // ── Server setup ────────────────────────
     var server: ztls.ServerHandshake = .init(server_keypair);
     server.supportAlpn(&.{"h2"});
+    server.setCredentials(&.{cert_der}, signer_api);
 
     // Caller-owned buffers. The engine never allocates; we provide all storage.
     var client_out: ztls.ClientHandshake.OutBuffer = .empty;
@@ -59,11 +60,7 @@ pub fn main() !void {
     print("[client] handshake keys installed → state={s}\n", .{@tagName(client.state)});
 
     // 4. Server sends authenticated flight: EE + Cert + CertificateVerify + Finished.
-    const flight_record = try server.sendAuthenticatedFlightBuffered(
-        &.{cert_der},
-        signer_api,
-        &flight,
-    );
+    const flight_record = (try server.sendServerFlightBuffered(&flight)).?;
     print("[server] authenticated flight sent → state={s}\n", .{@tagName(server.state)});
 
     // 5. Client processes the encrypted flight and auto-emits its Finished.
@@ -77,6 +74,7 @@ pub fn main() !void {
     print("[client] Finished sent → state={s}\n", .{@tagName(client.state)});
 
     // 6. Server verifies client Finished and reaches connected.
+    server.completeWrite();
     try server.processClientFinished(client_out.slice());
     print("[server] client Finished verified → state={s}\n", .{@tagName(server.state)});
 

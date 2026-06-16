@@ -204,9 +204,11 @@ Sans-I/O API is pleasant across every I/O model ztls claims to support.
 - **Ergonomics are possible, not yet pleasant.** Real users must hand-roll the
   drive loop around `RecordBuffer`, remember to call `completeWrite()` after
   every emitted record, juggle distinct `OutBuffer` / `FlightBuffer` types, and
-  interpret state transitions through event switches. `tcp_loopback.zig` is
-  idiomatic enough Zig, but it is still a recipe a user copies carefully rather
-  than a small obvious adapter they can trust. *(#19)*
+  interpret state transitions through event switches. Server credentials are now
+  configured up front and `sendServerFlight*` owns the authenticated-flight
+  one-shot/pending-write latch, so examples no longer carry a local
+  `flight_sent` flag, but a broader transport-agnostic driver remains open.
+  *(#19, #42)*
 
 ---
 

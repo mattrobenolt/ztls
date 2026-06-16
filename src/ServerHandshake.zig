@@ -123,6 +123,11 @@ pub const ch_reassembly_buffer_size = handshake_header_len + ch_reassembly_body_
 /// useHandshakeBuffer().
 pub const Storage = ArrayBuffer(u8, ch_reassembly_buffer_size);
 
+const ServerCredentials = struct {
+    chain: CertificateChain,
+    signer: Signer,
+};
+
 state: State = .wait_ch,
 keypair: x25519.KeyPair,
 p256_keypair: p256.KeyPair,
@@ -147,6 +152,12 @@ pending_write: PendingWrite = .idle,
 post_handshake_count: u8 = 0,
 retry_transcript: ?RetryTranscript = null,
 retry_selected_group: ?NamedGroup = null,
+/// Caller-owned certificate DER slices and signer used for the authenticated
+/// server flight. The DER bytes, slice-of-slices, and PrivateKey backing the
+/// Signer must outlive this handshake. ztls stores references and does not copy
+/// or own credential memory.
+server_credentials: ?ServerCredentials = null,
+server_flight_sent: bool = false,
 
 /// Caller-owned storage for reassembling a fragmented plaintext
 /// ClientHello/ClientHello2 across records. Set via useHandshakeBuffer().
@@ -205,6 +216,24 @@ pub fn supportSuites(self: *ServerHandshake, suites: []const CipherSuite) void {
 pub fn supportAlpn(self: *ServerHandshake, protocols: client_hello.AlpnProtocols) void {
     assert(self.state == .wait_ch);
     self.alpn_protocols = protocols;
+}
+
+/// Store caller-owned credentials for the authenticated server flight.
+/// The certificate DER slices and the PrivateKey backing `signer` must outlive
+/// this handshake. ztls keeps references; it does not copy or own credentials.
+pub fn setCredentials(
+    self: *ServerHandshake,
+    certs_der: []const []const u8,
+    signer: Signer,
+) void {
+    self.setCertificateChain(.init(certs_der), signer);
+}
+
+/// Store a caller-owned certificate chain and signer for the authenticated
+/// server flight. See setCredentials for lifetime requirements.
+pub fn setCertificateChain(self: *ServerHandshake, chain: CertificateChain, signer: Signer) void {
+    assert(self.state == .wait_ch);
+    self.server_credentials = .{ .chain = chain, .signer = signer };
 }
 
 /// Provide caller-owned storage for reassembling a fragmented plaintext
@@ -266,7 +295,8 @@ pub const FlightError =
     encrypted_extensions.EncodeError ||
     certificate.EncodeError ||
     RecordLayer.EncryptError ||
-    SignError;
+    SignError ||
+    error{ MissingServerCredentials, PendingWrite };
 
 pub const ClientFinishedError =
     RecordLayer.DecryptError || finished.VerifyError || frame.ParseError || error{
@@ -674,6 +704,35 @@ pub fn sendAuthenticatedFlightBuffered(
         signer,
         &out.buffer,
     );
+    out.resize(@intCast(record.len));
+    return out.slice();
+}
+
+/// Emit the configured authenticated server flight once it is ready.
+/// Returns null before ServerHello has installed handshake keys, or after the
+/// flight has already been emitted. A non-null result sets the pending-write
+/// latch; callers must write the returned bytes and then call completeWrite().
+// ziglint-ignore: Z015 -- FlightError is a public error-set alias.
+pub fn sendPreparedServerFlight(self: *ServerHandshake, out: []u8) FlightError!?[]const u8 {
+    if (self.pending_write.isPending()) return error.PendingWrite;
+    if (self.state != .wait_client_finished or self.server_flight_sent) return null;
+    const credentials = self.server_credentials orelse return error.MissingServerCredentials;
+    if (out.len < frame.header_len) return error.BufferTooShort;
+    const flight = try self.encodeAuthenticatedFlight(
+        credentials.chain,
+        credentials.signer,
+        out[frame.header_len..],
+    );
+    const record = try self.tx.encryptPrepared(.handshake, flight.len, out);
+    self.server_flight_sent = true;
+    self.pending_write.mark();
+    return record;
+}
+
+/// Buffered variant of sendPreparedServerFlight for callers using FlightBuffer.
+// ziglint-ignore: Z015 -- FlightError is a public error-set alias.
+pub fn sendServerFlightBuffered(self: *ServerHandshake, out: *FlightBuffer) FlightError!?[]u8 {
+    const record = (try self.sendPreparedServerFlight(&out.buffer)) orelse return null;
     out.resize(@intCast(record.len));
     return out.slice();
 }
@@ -1860,6 +1919,56 @@ test "sendAnonymousFlightForTest: client decrypts EncryptedExtensions and Finish
         .sha256 => |s| try finished.verify(Sha256, fin.raw, &s.server_finished_key.data, &th),
         .sha384 => unreachable,
     }
+}
+
+// RFC 8446 §4.3-§4.4 — configured server flight is emitted exactly once and
+// remains protected by the pending-write latch.
+test "sendPreparedServerFlight: credentials and pending write are enforced" {
+    const client_keypair: x25519.KeyPair = .generate();
+    var ch_buf: [512]u8 = undefined;
+    const ch = try client_hello.encode(
+        &ch_buf,
+        .zero,
+        client_keypair.public_key,
+        "example.com",
+        &.{},
+    );
+    var ch_record: [1024]u8 = undefined;
+    const header: frame.Header = .init(.handshake, @intCast(ch.len));
+    header.write(ch_record[0..frame.header_len]);
+    @memcpy(ch_record[frame.header_len..][0..ch.len], ch);
+
+    var server_without_credentials: ServerHandshake = .init(.generate());
+    var sh_out: [256]u8 = undefined;
+    _ = try server_without_credentials.acceptClientHello(
+        ch_record[0 .. frame.header_len + ch.len],
+        .zero,
+        &sh_out,
+    );
+
+    var flight_out: [4096]u8 = undefined;
+    try testing.expectError(
+        error.MissingServerCredentials,
+        server_without_credentials.sendPreparedServerFlight(&flight_out),
+    );
+
+    var signer: signature.PrivateKey = try .fromP256Scalar(server_ecdsa_scalar[0..32]);
+    defer signer.deinit();
+    var server: ServerHandshake = .init(.generate());
+    server.setCredentials(&.{server_ecdsa_cert_der}, signer.signer());
+    _ = try server.acceptClientHello(ch_record[0 .. frame.header_len + ch.len], .zero, &sh_out);
+    server.pending_write.mark();
+    try testing.expectError(error.PendingWrite, server.sendPreparedServerFlight(&flight_out));
+    server.completeWrite();
+
+    const flight_record = (try server.sendPreparedServerFlight(&flight_out)).?;
+    try testing.expect(flight_record.len > frame.header_len);
+    try testing.expectError(error.PendingWrite, server.sendPreparedServerFlight(&flight_out));
+    server.completeWrite();
+    try testing.expectEqual(
+        @as(?[]const u8, null),
+        try server.sendPreparedServerFlight(&flight_out),
+    );
 }
 
 test "sendAuthenticatedFlight: client decrypts authenticated server flight" {
