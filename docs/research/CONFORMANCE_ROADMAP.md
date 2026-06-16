@@ -94,10 +94,15 @@ adopted. Until each candidate extension lands, "ignored" is the documented
 behavior.
 
 
-**Prerequisites:** decide which extensions are in scope. `record_size_limit`
-(RFC 8449) is the highest-value candidate given the caller-owned-buffer design.
+**Scope decision:** `record_size_limit` (RFC 8449) and `max_fragment_length`
+(RFC 6066) are outside the supported TLS 1.3 surface. ztls already enforces the
+TLS 1.3 record-size ceiling, and callers own buffer sizing; negotiating smaller
+peer records is useful but not required for the present Sans-I/O API contract.
+The legacy `max_fragment_length` extension also carries TLS 1.2-era semantics
+that do not justify implementation before resumption, client auth, and provider
+work. TLS-Anvil skips for these extensions cite this decision (#34).
 
-**Acceptance criteria (per extension adopted):** parse + emit + negotiation
+**Acceptance criteria (per extension adopted later):** parse + emit + negotiation
 fallback tested; unknown/duplicate handling tested; tlsfuzzer coverage where the
 suite exercises it. Until adopted, "ignored" is the documented behavior.
 
