@@ -8,15 +8,19 @@
 //!     zig build example-https_server
 //!
 //! Or use `example-tcp_loopback` for a single-process client+server proof.
+//! If no peer is listening, this example exits non-zero instead of pretending
+//! it proved TLS.
 const std = @import("std");
 const print = std.debug.print;
 
 const ztls = @import("ztls");
 
+const shared_fixtures = @import("test_fixtures/shared_fixtures.zig");
+const trust_anchor_der: []const u8 = &shared_fixtures.server_ecdsa_cert_der;
+
 const connect_host = "127.0.0.1";
 const server_name = "ztls.server.test";
 const port: u16 = 8443;
-const trust_anchor_pem = "tests/fixtures/server-ecdsa/server.crt";
 
 var debug_allocator: std.heap.DebugAllocator(.{}) = .init;
 
@@ -28,7 +32,7 @@ pub fn main() !void {
         error.ConnectionRefused => {
             print("[https]  could not connect to {s}:{d}\n", .{ connect_host, port });
             print("         Start the server first: zig build example-https_server\n", .{});
-            return;
+            return error.NoPeerAvailable;
         },
         else => return err,
     };
@@ -45,7 +49,9 @@ pub fn main() !void {
     hs.policy.now_sec = std.time.timestamp();
     var bundle: std.crypto.Certificate.Bundle = .{};
     defer bundle.deinit(gpa);
-    try bundle.addCertsFromFilePath(gpa, std.fs.cwd(), trust_anchor_pem);
+    const cert_start: u32 = @intCast(bundle.bytes.items.len);
+    try bundle.bytes.appendSlice(gpa, trust_anchor_der);
+    try bundle.parseCert(gpa, cert_start, hs.policy.now_sec);
     hs.policy.bundle = &bundle;
 
     var random: ztls.client_hello.Random = undefined;
@@ -101,6 +107,7 @@ pub fn main() !void {
     }
 
     if (!response_seen) {
-        print("[https]  warning: no application data received before EOF\n", .{});
+        print("[https]  no application data received before EOF\n", .{});
+        return error.NoApplicationData;
     }
 }

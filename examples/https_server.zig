@@ -9,8 +9,8 @@
 //! Or from another terminal:
 //!     zig build example-https_client
 //!
-//! The server exits after handling one request or after a 5-second idle
-//! timeout on the listening socket.
+//! The server exits successfully only after handling one request. A 5-second
+//! idle timeout exits non-zero so CI cannot mistake "no client" for TLS proof.
 const std = @import("std");
 const print = std.debug.print;
 
@@ -42,12 +42,12 @@ pub fn main() !void {
     }};
     const ready = std.posix.poll(&pollfd, 5000) catch |err| {
         print("[https]  poll error: {}\n", .{err});
-        return;
+        return err;
     };
     if (ready == 0) {
         print("[https]  no client connected within 5s; exiting.\n", .{});
         print("         Run `zig build example-https_client` in another terminal.\n", .{});
-        return;
+        return error.NoClientConnected;
     }
 
     const conn = try server.accept();

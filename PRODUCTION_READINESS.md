@@ -186,7 +186,9 @@ Sans-I/O API is pleasant across every I/O model ztls claims to support.
   `example-tcp_loopback`, `example-in_memory_handshake`,
   `example-epoll_pingpong`, and `example-iouring_pingpong`. CI still does not
   execute manual peer-dependent demos such as `https_client`, `https_server`, or
-  `iouring_client`.
+  `iouring_client`; those demos now exit non-zero when the peer or io_uring
+  support is unavailable, so they cannot be mistaken for proof if wired into a
+  gate later.
 
 **Status:** `PARTIAL`
 
@@ -197,10 +199,10 @@ Sans-I/O API is pleasant across every I/O model ztls claims to support.
   `examples/iouring_pingpong.zig` prove both client and server roles over
   loopback and are CI-gated, but the manual examples remain separate and their
   skip semantics are still unresolved. *(#19)*
-- **The manual network examples can pass without proving TLS.** `https_client`,
-  `https_server`, and `iouring_client` intentionally exit successfully when the
-  peer is absent/unavailable, which is friendly for demos but weak evidence for
-  production readiness. *(#19)*
+- **Manual peer-dependent examples are intentionally not CI evidence.**
+  `https_client`, `https_server`, and `iouring_client` are two-terminal demos;
+  they fail non-zero when the peer or required kernel support is unavailable.
+  Deterministic loopback examples are the readiness evidence. *(#19)*
 - **Ergonomics are possible, not yet pleasant.** Real users must hand-roll the
   drive loop around `RecordBuffer`, remember to call `completeWrite()` after
   every emitted record, juggle distinct `OutBuffer` / `FlightBuffer` types, and
@@ -208,7 +210,7 @@ Sans-I/O API is pleasant across every I/O model ztls claims to support.
   configured up front and `sendServerFlight*` owns the authenticated-flight
   one-shot/pending-write latch, so examples no longer carry a local
   `flight_sent` flag, but a broader transport-agnostic driver remains open.
-  *(#19, #42)*
+  *(#42)*
 
 ---
 
