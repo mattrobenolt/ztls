@@ -39,6 +39,7 @@ examples-ci:
     zig build example-tcp_loopback --summary all
     zig build example-in_memory_handshake --summary all
     zig build example-epoll_pingpong --summary all
+    zig build example-iouring_pingpong --summary all
 
 [doc("Check formatting and lint (for CI)")]
 [group("check")]

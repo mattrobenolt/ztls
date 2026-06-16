@@ -37,6 +37,7 @@ pub fn addSteps(b: *Build, opts: struct {
     if (opts.target.result.os.tag == .linux) {
         const linux_examples = [_][]const u8{
             "iouring_client",
+            "iouring_pingpong",
             "epoll_pingpong",
         };
         for (linux_examples) |name| {

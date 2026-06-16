@@ -60,7 +60,7 @@ ztls is production-ready when all six pillars are `PROVEN`:
 | Pillar | Status | One-line |
 |---|---|---|
 | 1. Correctness | `PARTIAL` | Strong layered evidence; the RFC 8446 MUST matrix has no `GAP`/`PARTIAL` rows for the current supported surface, but external conformance runners are not fully CI-gated. |
-| 2. Ergonomics | `PARTIAL` | `std.net.Stream` examples cover both roles; io_uring has a client-only proof; epoll is absent and examples are not CI-gated. |
+| 2. Ergonomics | `PARTIAL` | CI-gated deterministic examples cover both client and server roles for `std.net.Stream`, epoll, and io_uring; manual peer-dependent demos and driver ergonomics remain rough. |
 | 3. Performance | `PARTIAL` | Rich bench harness exists; equivalence methodology and reproducible hardware-matrix results are missing. |
 | 4. Providers | `PARTIAL` | OpenSSL primitives are live, but the provider seam is mostly aspirational: no backend selection, no second backend, no capability table. |
 | 5. Marketing | `NONE` | Not started. |
@@ -161,15 +161,15 @@ Sans-I/O API is pleasant across every I/O model ztls claims to support.
 
 | | io_uring | epoll | `std.net.Stream` |
 |---|---|---|---|
-| Client | `PARTIAL` — `examples/iouring_client.zig` builds and exercises a real client handshake + app-data path when paired with `examples/https_server.zig`, but it exits successfully without proving TLS if no server is listening. | `PROVEN` — `examples/epoll_pingpong.zig` runs a non-blocking epoll client thread that completes a full TLS 1.3 handshake and exchanges ping/pong application data with a server thread over loopback; it is gated in `examples-ci`. | `PARTIAL` — `examples/https_client.zig` and the client side of `examples/tcp_loopback.zig` build; `tcp_loopback` proves real handshake + app data + `close_notify`, while `https_client` is a manual two-terminal demo and exits successfully without proving TLS if no server is listening. |
-| Server | `NONE` | `PROVEN` — `examples/epoll_pingpong.zig` runs a non-blocking epoll server thread that accepts a single loopback connection, completes a full TLS 1.3 handshake, and responds to ping messages with pong; it is gated in `examples-ci`. | `PARTIAL` — `examples/https_server.zig` and the server side of `examples/tcp_loopback.zig` build; `tcp_loopback` proves real handshake + app data + `close_notify`, while `https_server` is a manual one-shot demo and exits successfully without proving TLS if no client connects. |
+| Client | `PROVEN` — `examples/iouring_pingpong.zig` runs an io_uring client that completes a full TLS 1.3 handshake and exchanges ping/pong application data with a server thread over loopback; it is Linux-gated and runs in `examples-ci`. | `PROVEN` — `examples/epoll_pingpong.zig` runs a non-blocking epoll client thread that completes a full TLS 1.3 handshake and exchanges ping/pong application data with a server thread over loopback; it is gated in `examples-ci`. | `PROVEN` — the client side of `examples/tcp_loopback.zig` completes a full TLS 1.3 handshake, application-data exchange, and `close_notify` over `std.net.Stream`; it is gated in `examples-ci`. |
+| Server | `PROVEN` — `examples/iouring_pingpong.zig` runs an io_uring server thread that accepts a loopback connection, completes a full TLS 1.3 handshake, and responds to ping messages with pong; it is Linux-gated and runs in `examples-ci`. | `PROVEN` — `examples/epoll_pingpong.zig` runs a non-blocking epoll server thread that accepts a single loopback connection, completes a full TLS 1.3 handshake, and responds to ping messages with pong; it is gated in `examples-ci`. | `PROVEN` — the server side of `examples/tcp_loopback.zig` completes a full TLS 1.3 handshake, application-data exchange, and `close_notify` over `std.net.Stream`; it is gated in `examples-ci`. |
 
 **Current evidence (useful, but not enough):**
 
 - Complete example inventory: `full_handshake.zig`, `handshake_keys.zig`,
   `https_client.zig`, `https_server.zig`, `in_memory_handshake.zig`,
-  `iouring_client.zig`, `key_schedule.zig`, `record_protection.zig`,
-  `tcp_loopback.zig`, and `epoll_pingpong.zig`.
+  `iouring_client.zig`, `iouring_pingpong.zig`, `key_schedule.zig`,
+  `record_protection.zig`, `tcp_loopback.zig`, and `epoll_pingpong.zig`.
 - Every registered example runner built and exited successfully with
   `zig build example-{name} --summary all` on this host, including
   `example-iouring_client`.
@@ -183,20 +183,20 @@ Sans-I/O API is pleasant across every I/O model ztls claims to support.
   `record_protection.zig` are educational protocol/crypto demos, not I/O-model
   cells.
 - `just ci` runs deterministic TLS smoke examples through `examples-ci`:
-  `example-tcp_loopback`, `example-in_memory_handshake`, and
-  `example-epoll_pingpong`. CI still does not execute manual peer-dependent demos
-  such as `https_client`, `https_server`, or `iouring_client`.
+  `example-tcp_loopback`, `example-in_memory_handshake`,
+  `example-epoll_pingpong`, and `example-iouring_pingpong`. CI still does not
+  execute manual peer-dependent demos such as `https_client`, `https_server`, or
+  `iouring_client`.
 
 **Status:** `PARTIAL`
 
 **Gaps:**
 
-- **epoll is covered by a single deterministic example.**
-  `examples/epoll_pingpong.zig` proves both client and server roles over a
-  non-blocking epoll loop, but separate-process epoll demos and broader I/O-shape
-  coverage are still open. *(#19)*
-- **io_uring is client-only.** `examples/iouring_client.zig` exists, but there is
-  no matching io_uring server example. *(#19)*
+- **epoll and io_uring are covered by deterministic paired examples, not
+  separate-process demos.** `examples/epoll_pingpong.zig` and
+  `examples/iouring_pingpong.zig` prove both client and server roles over
+  loopback and are CI-gated, but the manual examples remain separate and their
+  skip semantics are still unresolved. *(#19)*
 - **The manual network examples can pass without proving TLS.** `https_client`,
   `https_server`, and `iouring_client` intentionally exit successfully when the
   peer is absent/unavailable, which is friendly for demos but weak evidence for
