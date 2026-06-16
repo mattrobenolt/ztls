@@ -92,13 +92,14 @@ consumption-for-rejection, not resumption.
   per-run metadata/provenance capture, and per-run tool-log capture helpers.
   Manual TLS-Anvil runs capture the command and stdout/stderr under the run dir;
   unfinished raw TLS-Anvil reports are rejected by default and partial captures
-  are local audit/debug only. A completed server run on `85e9746`
-  (`conformance/zig-out/anvil/server/20260615-010711`) strict-normalized from a
+  are local audit/debug only. A completed server run on `496750d`
+  (`conformance/zig-out/anvil/server/20260616-074609`) strict-normalized from a
   clean tree with launch metadata, `Running: false`, `FinishedTests: 437`,
-  `TotalTests: 437`, and normalized counts of `passed: 103`, `failed: 1`,
-  `expected_skipped: 176`, `unexpected_skipped: 0`, and `not_attempted: 157`.
-  KeyUpdate is `passed: 4`, and the only attempted failure is secp256r1. Real
-  TLS-Anvil execution remains manual.
+  `TotalTests: 437`, and normalized counts of `passed: 105`, `failed: 0`,
+  `expected_skipped: 175`, `unexpected_skipped: 0`, and `not_attempted: 157`.
+  The attempted server-side TLS-Anvil surface is clean (`105/105` attempted
+  passed), including `KeyUpdate: passed=4` and `ComplianceRequirements: passed=2`.
+  Real TLS-Anvil execution remains manual.
 - Wycheproof boundary vectors at the libcrypto seam.
 - Fuzzing on the major parsers plus record decrypt and server `handleRecord`
   pre-auth/post-auth dispatch.
@@ -130,9 +131,10 @@ consumption-for-rejection, not resumption.
   `just ci`. TLS-Anvil normalization and wrapper-helper tests are gated, and the
   report separates server/client endpoint-mode `not_attempted` tests from
   expected skips, but real-suite execution and CI/periodic runner wiring remain
-  open. Completed TLS-Anvil server evidence now leaves one attempted TLS 1.3
-  failure tracked as a concrete gap: secp256r1 named-group support *(#6)*.
-  HelloRetryRequest server retry now passes TLS-Anvil, but full client/server HRR
+  open. Completed TLS-Anvil server evidence now has no unexpected attempted
+  failures; remaining named-group scope beyond the proven server-side P-256 path
+  stays tracked under broader provider-backed group work *(#6)*. HelloRetryRequest
+  server retry now passes TLS-Anvil, but full client/server HRR
   state-machine support remains broader open work *(#1)*. Record-fragmentation
   capability is probe-positive and locally covered for fragmented ClientHello,
   Finished, and KeyUpdate; TLS-Anvil's `RecordLayer.interleaveRecords` remains a
@@ -326,16 +328,15 @@ each passing the same correctness and interop gates.
   come through backend-specific fast paths, not an unmeasured lowest-common API.
   *(#22)*
 - **Capability gating does not exist.** Cipher suites are enumerated directly
-  from `CipherSuite`; `client_hello.zig` always advertises only X25519 but not
-  through a backend capability table; `kex.zig` names future P-256/P-384/PQ
-  groups while `publicKeyLen()` returns a real length only for X25519. A backend
-  cannot currently narrow suites/groups/signature schemes for missing algorithms,
-  FIPS posture, or provider-version differences. *(#22)*
-- **Named-group/key-exchange shape is still X25519-only.** Handshake code stores
-  `x25519.KeyPair`, wire encoding writes `.x25519`, and shared secrets are fixed
-  at 32 bytes; P-256/P-384 and PQ/hybrid groups require variable-length
-  key-share/public-key/shared-secret plumbing before aws-lc capability differences
-  can be tested honestly. *(#22)*
+  from `CipherSuite`; `client_hello.zig` always advertises only X25519 and the
+  server accepts X25519/P-256 without going through a backend capability
+  table. A backend cannot currently narrow suites/groups/signature schemes for
+  missing algorithms, FIPS posture, or provider-version differences. *(#22)*
+- **Named-group/key-exchange shape is only partly generalized.** Server-side
+  X25519 and P-256 ECDHE are provider-backed and TLS-Anvil-clean, but the ztls
+  client remains X25519-only and P-384/PQ/hybrid groups still need real backend
+  math, variable-length key-share/shared-secret plumbing, and provider capability
+  tests before aws-lc differences can be claimed honestly. *(#22)*
 - **The facade contract is not enforced by tests.** Existing tests prove OpenSSL
   behavior, but there is no backend matrix that runs the same primitive vectors,
   interop harnesses, and conformance shims for every enabled provider. *(#22)*
