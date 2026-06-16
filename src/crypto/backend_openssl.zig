@@ -1,4 +1,4 @@
-//! OpenSSL backend X25519 primitive wrappers.
+//! OpenSSL backend primitive wrappers.
 const std = @import("std");
 
 const c = @import("c_openssl.zig").openssl;
@@ -113,7 +113,6 @@ pub fn p256SharedSecretDerive(ours: *pkey, peer: *pkey, out: *[32]u8) Error!void
     var len: usize = out.len;
     if (c.EVP_PKEY_derive(ctx, out, &len) != 1) return error.IdentityElement;
     if (len != out.len) return error.LibcryptoFailed;
-    if (std.crypto.timing_safe.eql([32]u8, out.*, @splat(0))) return error.IdentityElement;
 }
 
 pub fn freeKey(key: *pkey) void {

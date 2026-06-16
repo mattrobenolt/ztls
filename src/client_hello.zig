@@ -117,6 +117,7 @@ pub const ParseError = error{
     UnsupportedKeyShare,
     MalformedKeyShare,
     UnsupportedSignatureScheme,
+    IllegalParameter,
 };
 
 pub const Parsed = struct {
@@ -346,6 +347,8 @@ pub fn parse(msg: []const u8) ParseError!Parsed {
         return error.MissingExtension;
     if (!hasSupportedHandshakeSignatureScheme(parsed.signature_schemes))
         return error.UnsupportedSignatureScheme;
+    if (parsed.public_key != null and !parsed.supports_x25519) return error.IllegalParameter;
+    if (parsed.public_key_p256 != null and !parsed.supports_p256) return error.IllegalParameter;
     return parsed;
 }
 
@@ -445,7 +448,7 @@ fn parseKeyShare(ext: []const u8) ParseError!ParsedKeyShares {
         switch (group) {
             .x25519 => {
                 if (shares.x25519 != null) return error.DuplicateKeyShare;
-                if (key.len != x25519.public_length) return error.UnsupportedKeyShare;
+                if (key.len != x25519.public_length) return error.MalformedKeyShare;
                 shares.x25519 = .init(key[0..x25519.public_length].*);
             },
             .secp256r1 => {
@@ -630,6 +633,27 @@ fn rewriteClientHelloForP256(buf: []u8, encoded_len: usize, public_key: p256.Pub
     return new_len;
 }
 
+fn truncateX25519KeyShare(buf: []u8, encoded_len: usize) !usize {
+    const key_share_offset = try findExtensionOffset(buf[0..encoded_len], .key_share);
+    const ext_len = memx.readInt(u16, buf[key_share_offset + 2 ..][0..2]);
+    const shares_len = memx.readInt(u16, buf[key_share_offset + 4 ..][0..2]);
+    const key_len = memx.readInt(u16, buf[key_share_offset + 8 ..][0..2]);
+    assert(key_len == x25519.public_length);
+
+    memx.writeInt(u16, buf[key_share_offset + 2 ..][0..2], ext_len - 1);
+    memx.writeInt(u16, buf[key_share_offset + 4 ..][0..2], shares_len - 1);
+    memx.writeInt(u16, buf[key_share_offset + 8 ..][0..2], key_len - 1);
+
+    const remove_at = key_share_offset + 10 + key_len - 1;
+    @memmove(buf[remove_at .. encoded_len - 1], buf[remove_at + 1 .. encoded_len]);
+    const new_len = encoded_len - 1;
+    const body_len = memx.readInt(u24, buf[1..4]) - 1;
+    memx.writeInt(u24, buf[1..4], body_len);
+    const extensions_len = memx.readInt(u16, buf[extensions_len_offset..][0..2]) - 1;
+    memx.writeInt(u16, buf[extensions_len_offset..][0..2], extensions_len);
+    return new_len;
+}
+
 test "parse: encoded ClientHello" {
     const key: x25519.PublicKey = .init(.{
         0x99, 0x38, 0x1d, 0xe5, 0x60, 0xe4, 0xbd, 0x43,
@@ -671,6 +695,29 @@ test "parse: accepts secp256r1 supported group and key share" {
         &p256_keypair.public_key.data,
         &parsed.public_key_p256.?.data,
     );
+}
+
+// RFC 8446 §4.2.8 — invalid key_exchange length is illegal_parameter input.
+test "parse: rejects malformed X25519 key share" {
+    var buf: [512]u8 = undefined;
+    const encoded = try encode(&buf, .zero, .zero, null, &.{});
+    const bad_len = try truncateX25519KeyShare(&buf, encoded.len);
+    try testing.expectError(error.MalformedKeyShare, parse(buf[0..bad_len]));
+}
+
+// RFC 8446 §4.2.8 — key_share groups must be advertised in supported_groups.
+test "parse: rejects key share outside supported_groups" {
+    const seed = memx.hex(32, "000102030405060708090a0b0c0d0e0f" ++
+        "101112131415161718191a1b1c1d1e1f");
+    const p256_keypair = try p256.KeyPair.generateDeterministic(.init(seed));
+    var buf: [768]u8 = undefined;
+    const encoded = try encode(&buf, .zero, .zero, null, &.{});
+    const p256_len = try rewriteClientHelloForP256(&buf, encoded.len, p256_keypair.public_key);
+    const groups = try findExtension(buf[0..p256_len], .supported_groups);
+    groups[2] = 0x00;
+    groups[3] = @intFromEnum(NamedGroup.x25519);
+
+    try testing.expectError(error.IllegalParameter, parse(buf[0..p256_len]));
 }
 
 test "parse: rejects oversized legacy_session_id" {

@@ -373,15 +373,15 @@ fn processClientHelloMessage(
 
     const client_key_share: ClientKeyShare = if (self.retry_selected_group) |selected_group|
         switch (selected_group) {
-            .x25519 => if (ch.public_key) |public_key|
-                .{ .x25519 = public_key }
-            else
-                return error.IllegalParameter,
-            .secp256r1 => if (ch.public_key_p256) |public_key|
-                .{ .secp256r1 = public_key }
-            else
-                return error.IllegalParameter,
-            else => unreachable,
+            .x25519 => if (ch.public_key) |public_key| share: {
+                if (ch.public_key_p256 != null) return error.IllegalParameter;
+                break :share .{ .x25519 = public_key };
+            } else return error.IllegalParameter,
+            .secp256r1 => if (ch.public_key_p256) |public_key| share: {
+                if (ch.public_key != null) return error.IllegalParameter;
+                break :share .{ .secp256r1 = public_key };
+            } else return error.IllegalParameter,
+            else => return error.IllegalParameter,
         }
     else if (ch.public_key) |public_key|
         .{ .x25519 = public_key }
@@ -1270,6 +1270,75 @@ fn clientHelloWithP256KeyShare(
     return out[0..new_len];
 }
 
+fn clientHelloWithBothKeyShares(
+    out: []u8,
+    client_hello_msg: []const u8,
+    p256_public_key: p256.PublicKey,
+) []const u8 {
+    @memcpy(out[0..client_hello_msg.len], client_hello_msg);
+    var len = client_hello_msg.len;
+    const extensions_len_offset = 49;
+
+    var i: usize = 0;
+    while (i + 8 <= len) : (i += 1) {
+        if (out[i] == 0x00 and out[i + 1] == 0x0a and
+            out[i + 2] == 0x00 and out[i + 3] == 0x04) break;
+    } else unreachable;
+
+    const groups_delta = 2;
+    const groups_old_total = 4 + 4;
+    @memmove(
+        out[i + groups_old_total + groups_delta .. len + groups_delta],
+        out[i + groups_old_total .. len],
+    );
+    out[i..][0..10].* = .{
+        0x00, 0x0a,
+        0x00, 0x06,
+        0x00, 0x04,
+        0x00, @intFromEnum(NamedGroup.x25519),
+        0x00, @intFromEnum(NamedGroup.secp256r1),
+    };
+    len += groups_delta;
+
+    i = 0;
+    while (i + 10 <= len) : (i += 1) {
+        if (out[i] == 0x00 and out[i + 1] == 0x33 and
+            out[i + 2] == 0x00 and out[i + 3] == 0x26) break;
+    } else unreachable;
+
+    var x25519_public_key: [x25519.public_length]u8 = undefined;
+    @memcpy(&x25519_public_key, out[i + 10 ..][0..x25519.public_length]);
+
+    const old_total: usize = 4 + 0x26;
+    const new_ext_len: u16 = 2 + 2 + 2 + x25519.public_length + 2 + 2 + p256.public_length;
+    const new_total: usize = 4 + new_ext_len;
+    const key_share_delta = new_total - old_total;
+    const tail_src = i + old_total;
+    @memmove(out[tail_src + key_share_delta .. len + key_share_delta], out[tail_src..len]);
+    out[i..][0..10].* = .{
+        0x00, 0x33,
+        0x00, @intCast(new_ext_len),
+        0x00, @intCast(new_ext_len - 2),
+        0x00, @intFromEnum(NamedGroup.x25519),
+        0x00, @intCast(x25519.public_length),
+    };
+    @memcpy(out[i + 10 ..][0..x25519.public_length], &x25519_public_key);
+    const p256_offset = i + 10 + x25519.public_length;
+    out[p256_offset..][0..4].* = .{
+        0x00, @intFromEnum(NamedGroup.secp256r1),
+        0x00, @intCast(p256.public_length),
+    };
+    @memcpy(out[p256_offset + 4 ..][0..p256.public_length], &p256_public_key.data);
+    len += key_share_delta;
+
+    const delta: u16 = @intCast(groups_delta + key_share_delta);
+    const body_len: u24 = @intCast(len - handshake_header_len);
+    memx.writeInt(u24, out[1..4], body_len);
+    const ext_len = memx.readInt(u16, out[extensions_len_offset..][0..2]);
+    memx.writeInt(u16, out[extensions_len_offset..][0..2], ext_len + delta);
+    return out[0..len];
+}
+
 fn patchClientHelloKeyShareGroup(client_hello_msg: []u8, group: u16) void {
     var i: usize = 0;
     while (i + 9 < client_hello_msg.len) : (i += 1) {
@@ -1611,6 +1680,41 @@ test "acceptClientHello: rejects ClientHello2 that ignores HRR selected group" {
     try testing.expectError(
         error.IllegalParameter,
         server.acceptClientHello(ch2_record[0 .. frame.header_len + p256_ch2.len], .zero, &out),
+    );
+}
+
+// RFC 8446 §4.1.4 — ClientHello2 key_share must contain exactly one
+// KeyShareEntry matching the group selected by HelloRetryRequest.
+test "acceptClientHello: rejects ClientHello2 with extra key share" {
+    const client_keypair: x25519.KeyPair = .generate();
+    var ch1_buf: [512]u8 = undefined;
+    const ch1 = try client_hello.encode(&ch1_buf, .zero, client_keypair.public_key, null, &.{});
+    var hrr_ch1_buf: [512]u8 = undefined;
+    const hrr_ch1 = clientHelloWithKeyShareGroup(
+        &hrr_ch1_buf,
+        ch1,
+        @intFromEnum(NamedGroup.secp384r1),
+    );
+    var ch1_record: [1024]u8 = undefined;
+    const ch1_header: frame.Header = .init(.handshake, @intCast(hrr_ch1.len));
+    ch1_header.write(ch1_record[0..frame.header_len]);
+    @memcpy(ch1_record[frame.header_len..][0..hrr_ch1.len], hrr_ch1);
+
+    var server: ServerHandshake = .init(.generate());
+    var out: [512]u8 = undefined;
+    _ = try server.acceptClientHello(ch1_record[0 .. frame.header_len + hrr_ch1.len], .zero, &out);
+
+    const client_p256 = try p256.KeyPair.generateDeterministic(.init(test_p256_seed_a));
+    var ch2_buf: [1024]u8 = undefined;
+    const ch2 = clientHelloWithBothKeyShares(&ch2_buf, ch1, client_p256.public_key);
+    var ch2_record: [1536]u8 = undefined;
+    const ch2_header: frame.Header = .init(.handshake, @intCast(ch2.len));
+    ch2_header.write(ch2_record[0..frame.header_len]);
+    @memcpy(ch2_record[frame.header_len..][0..ch2.len], ch2);
+
+    try testing.expectError(
+        error.IllegalParameter,
+        server.acceptClientHello(ch2_record[0 .. frame.header_len + ch2.len], .zero, &out),
     );
 }
 
