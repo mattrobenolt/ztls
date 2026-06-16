@@ -158,15 +158,15 @@ Sans-I/O API is pleasant across every I/O model ztls claims to support.
 
 | | io_uring | epoll | `std.net.Stream` |
 |---|---|---|---|
-| Client | `PARTIAL` — `examples/iouring_client.zig` builds and exercises a real client handshake + app-data path when paired with `examples/https_server.zig`, but it exits successfully without proving TLS if no server is listening. | `NONE` | `PARTIAL` — `examples/https_client.zig` and the client side of `examples/tcp_loopback.zig` build; `tcp_loopback` proves real handshake + app data + `close_notify`, while `https_client` is a manual two-terminal demo and exits successfully without proving TLS if no server is listening. |
-| Server | `NONE` | `NONE` | `PARTIAL` — `examples/https_server.zig` and the server side of `examples/tcp_loopback.zig` build; `tcp_loopback` proves real handshake + app data + `close_notify`, while `https_server` is a manual one-shot demo and exits successfully without proving TLS if no client connects. |
+| Client | `PARTIAL` — `examples/iouring_client.zig` builds and exercises a real client handshake + app-data path when paired with `examples/https_server.zig`, but it exits successfully without proving TLS if no server is listening. | `PROVEN` — `examples/epoll_pingpong.zig` runs a non-blocking epoll client thread that completes a full TLS 1.3 handshake and exchanges ping/pong application data with a server thread over loopback; it is gated in `examples-ci`. | `PARTIAL` — `examples/https_client.zig` and the client side of `examples/tcp_loopback.zig` build; `tcp_loopback` proves real handshake + app data + `close_notify`, while `https_client` is a manual two-terminal demo and exits successfully without proving TLS if no server is listening. |
+| Server | `NONE` | `PROVEN` — `examples/epoll_pingpong.zig` runs a non-blocking epoll server thread that accepts a single loopback connection, completes a full TLS 1.3 handshake, and responds to ping messages with pong; it is gated in `examples-ci`. | `PARTIAL` — `examples/https_server.zig` and the server side of `examples/tcp_loopback.zig` build; `tcp_loopback` proves real handshake + app data + `close_notify`, while `https_server` is a manual one-shot demo and exits successfully without proving TLS if no client connects. |
 
 **Current evidence (useful, but not enough):**
 
 - Complete example inventory: `full_handshake.zig`, `handshake_keys.zig`,
   `https_client.zig`, `https_server.zig`, `in_memory_handshake.zig`,
-  `iouring_client.zig`, `key_schedule.zig`, `record_protection.zig`, and
-  `tcp_loopback.zig`.
+  `iouring_client.zig`, `key_schedule.zig`, `record_protection.zig`,
+  `tcp_loopback.zig`, and `epoll_pingpong.zig`.
 - Every registered example runner built and exited successfully with
   `zig build example-{name} --summary all` on this host, including
   `example-iouring_client`.
@@ -180,16 +180,18 @@ Sans-I/O API is pleasant across every I/O model ztls claims to support.
   `record_protection.zig` are educational protocol/crypto demos, not I/O-model
   cells.
 - `just ci` runs deterministic TLS smoke examples through `examples-ci`:
-  `example-tcp_loopback` and `example-in_memory_handshake`. CI still does not
-  execute manual peer-dependent demos such as `https_client`, `https_server`, or
-  `iouring_client`.
+  `example-tcp_loopback`, `example-in_memory_handshake`, and
+  `example-epoll_pingpong`. CI still does not execute manual peer-dependent demos
+  such as `https_client`, `https_server`, or `iouring_client`.
 
 **Status:** `PARTIAL`
 
 **Gaps:**
 
-- **epoll is entirely absent.** No client or server example covers the Linux
-  readiness cell for epoll. *(#19)*
+- **epoll is covered by a single deterministic example.**
+  `examples/epoll_pingpong.zig` proves both client and server roles over a
+  non-blocking epoll loop, but separate-process epoll demos and broader I/O-shape
+  coverage are still open. *(#19)*
 - **io_uring is client-only.** `examples/iouring_client.zig` exists, but there is
   no matching io_uring server example. *(#19)*
 - **The manual network examples can pass without proving TLS.** `https_client`,
