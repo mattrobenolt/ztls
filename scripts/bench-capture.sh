@@ -2,6 +2,49 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+crypto_backend="openssl"
+bench_args=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --crypto-backend)
+      crypto_backend="$2"
+      shift 2
+      ;;
+    --crypto-backend=*)
+      crypto_backend="${1#*=}"
+      shift
+      ;;
+    *)
+      bench_args+=("$1")
+      shift
+      ;;
+  esac
+done
+
+case "${crypto_backend}" in
+  openssl|aws-lc) ;;
+  *)
+    echo "unsupported --crypto-backend=${crypto_backend}; expected openssl or aws-lc" >&2
+    exit 2
+    ;;
+esac
+
+if [[ "${crypto_backend}" == "aws-lc" ]]; then
+  aws_lc_pkg_config_path="${ZTLS_AWS_LC_PKG_CONFIG_PATH:-}"
+  if [[ -z "${aws_lc_pkg_config_path}" ]]; then
+    aws_lc_dev=$(nix build --no-link --print-out-paths nixpkgs#aws-lc.dev)
+    aws_lc_pkg_config_path="${aws_lc_dev}/lib/pkgconfig"
+  fi
+fi
+
+zig_backend() {
+  if [[ "${crypto_backend}" == "aws-lc" ]]; then
+    PKG_CONFIG_PATH="${aws_lc_pkg_config_path}${PKG_CONFIG_PATH:+:${PKG_CONFIG_PATH}}" zig "$@"
+  else
+    zig "$@"
+  fi
+}
+
 stamp="$(date -u +%Y%m%d-%H%M%S)"
 run_dir="zig-out/perf/${stamp}"
 mkdir -p "${run_dir}"
@@ -23,6 +66,18 @@ cpu_governor() {
   if [[ -r "${governor}" ]]; then
     cat "${governor}"
   fi
+}
+
+linked_libcrypto() {
+  local binary=$1
+  case "$(uname -s)" in
+    Linux)
+      ldd "${binary}" 2>/dev/null | awk '/libcrypto/{print $3; exit}'
+      ;;
+    Darwin)
+      otool -L "${binary}" 2>/dev/null | awk '/libcrypto/{print $1; exit}'
+      ;;
+  esac
 }
 
 run_rustls() {
@@ -56,6 +111,9 @@ run_rustls() {
     > "${run_dir}/rustls.txt"
 }
 
+zig_backend build -Dcrypto-backend="${crypto_backend}" bench-bin >/dev/null
+linked_crypto="$(linked_libcrypto zig-out/bin/benchmark || true)"
+
 {
   echo "timestamp_utc=${stamp}"
   echo "git_revision=$(git rev-parse HEAD 2>/dev/null || true)"
@@ -66,8 +124,14 @@ run_rustls() {
   fi
   echo "zig_version=$(zig version)"
   echo "zig_optimization_mode=ReleaseFast"
-  echo "openssl_variant=openssl"
-  echo "openssl_version=$(openssl version)"
+  echo "crypto_backend=${crypto_backend}"
+  if [[ "${crypto_backend}" == "aws-lc" ]]; then
+    echo "aws_lc_pkg_config_path=${aws_lc_pkg_config_path}"
+  fi
+  if [[ -n "${linked_crypto}" ]]; then
+    echo "linked_libcrypto=${linked_crypto}"
+  fi
+  echo "openssl_cli_version=$(openssl version)"
   echo "rustls_profile=release"
   echo "rustls_version=$(rustls_version)"
   governor="$(cpu_governor)"
@@ -102,12 +166,14 @@ run_rustls() {
     sysctl -n hw.ncpu 2>/dev/null || true
   fi
   echo
-  echo "args=$*"
+  printf 'args='
+  printf '%q ' "${bench_args[@]}"
+  printf '\n'
 } > "${run_dir}/metadata.txt"
 
-zig build bench -- "$@" > "${run_dir}/ztls.txt"
-zig build bench-evp -- "$@" > "${run_dir}/evp.txt"
-zig build bench-openssl -- "$@" > "${run_dir}/libssl.txt"
-run_rustls "$@"
+zig_backend build -Dcrypto-backend="${crypto_backend}" bench -- "${bench_args[@]}" > "${run_dir}/ztls.txt"
+zig build bench-evp -- "${bench_args[@]}" > "${run_dir}/evp.txt"
+zig build bench-openssl -- "${bench_args[@]}" > "${run_dir}/libssl.txt"
+run_rustls "${bench_args[@]}"
 
 echo "${run_dir}"

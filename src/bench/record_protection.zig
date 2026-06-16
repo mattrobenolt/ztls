@@ -368,6 +368,7 @@ fn benchHandshakeServerFlight(comptime suite: Suite) bench.Function {
                 var s: ztls.ServerHandshake = deterministicServerHandshake();
                 s.supportSuites(&suites);
                 var so: [8192]u8 = undefined;
+                _ = s.acceptClientHello(ch_record, rfc8448.client_random, &so) catch unreachable;
                 _ = s.sendPreparedAuthenticatedFlight(
                     &.{server_cert_der},
                     signer.signer(),
