@@ -43,6 +43,7 @@ const max_post_handshake_messages = handshake.max_post_handshake_messages;
 const NamedGroup = @import("kex.zig").NamedGroup;
 const HashArm = @import("suite_state.zig").HashArm;
 const hkdf = @import("hkdf.zig");
+const memx = @import("memx.zig");
 const PendingWrite = @import("pending_write.zig").PendingWrite;
 const RecordLayer = @import("RecordLayer.zig");
 const server_hello = @import("server_hello.zig");
@@ -50,6 +51,7 @@ const signature = @import("signature.zig");
 pub const SignError = signature.SignError;
 pub const Signer = signature.Signer;
 const transcript_util = @import("transcript.zig");
+const p256 = @import("p256.zig");
 const x25519 = @import("x25519.zig");
 
 const ServerHandshake = @This();
@@ -100,6 +102,11 @@ const default_supported_suites = [_]CipherSuite{
     .chacha20_poly1305_sha256,
 };
 
+const ClientKeyShare = union(enum) {
+    x25519: x25519.PublicKey,
+    secp256r1: p256.PublicKey,
+};
+
 const compatibility_ccs_len = frame.header_len + 1;
 const handshake_header_len = 4;
 
@@ -118,6 +125,8 @@ pub const Storage = ArrayBuffer(u8, ch_reassembly_buffer_size);
 
 state: State = .wait_ch,
 keypair: x25519.KeyPair,
+p256_keypair: p256.KeyPair,
+negotiated_group: NamedGroup = .x25519,
 suite: CipherSuite = .aes_128_gcm_sha256,
 suite_state: Suite = undefined,
 supported_suites: []const CipherSuite = &default_supported_suites,
@@ -137,6 +146,7 @@ tx: RecordLayer = undefined,
 pending_write: PendingWrite = .idle,
 post_handshake_count: u8 = 0,
 retry_transcript: ?RetryTranscript = null,
+retry_selected_group: ?NamedGroup = null,
 
 /// Caller-owned storage for reassembling a fragmented plaintext
 /// ClientHello/ClientHello2 across records. Set via useHandshakeBuffer().
@@ -161,7 +171,11 @@ fin_frag: FinishedFragmentBuffer = .empty,
 ku_frag: KeyUpdateFragmentBuffer = .empty,
 
 pub fn init(keypair: x25519.KeyPair) ServerHandshake {
-    return .{ .keypair = keypair };
+    return initWithKeypairs(keypair, .generate());
+}
+
+pub fn initWithKeypairs(keypair: x25519.KeyPair, p256_keypair: p256.KeyPair) ServerHandshake {
+    return .{ .keypair = keypair, .p256_keypair = p256_keypair };
 }
 
 pub fn deinit(self: *ServerHandshake) void {
@@ -177,6 +191,7 @@ pub fn deinit(self: *ServerHandshake) void {
         .wait_ch => {},
     }
     self.keypair.secret_key.secureZero();
+    self.p256_keypair.secret_key.secureZero();
     self.fin_frag.secureZero();
     self.ku_frag.secureZero();
     self.* = undefined;
@@ -243,6 +258,7 @@ pub const AcceptError =
         UnsupportedCipherSuite,
         NoApplicationProtocol,
         IdentityElement,
+        IllegalParameter,
         LibcryptoFailed,
     };
 
@@ -302,6 +318,8 @@ pub fn alertForError(err: anyerror) alert.Description {
         error.UnexpectedCertificateRequestContext,
         error.UnexpectedExtension,
         error.IllegalParameter,
+        error.IdentityElement,
+        error.MalformedKeyShare,
         error.UnofferedAlpnProtocol,
         error.UnsupportedSignatureScheme,
         => .illegal_parameter,
@@ -353,19 +371,59 @@ fn processClientHelloMessage(
         return error.NoApplicationProtocol;
     self.client_server_name = ch.server_name;
 
-    const client_public_key = ch.public_key orelse {
-        if (self.retry_transcript != null) return error.UnsupportedKeyShare;
-        const hrr = try self.encodeHelloRetryRequest(ch_msg, ch.legacy_session_id, suite, out);
+    const client_key_share: ClientKeyShare = if (self.retry_selected_group) |selected_group|
+        switch (selected_group) {
+            .x25519 => if (ch.public_key) |public_key|
+                .{ .x25519 = public_key }
+            else
+                return error.IllegalParameter,
+            .secp256r1 => if (ch.public_key_p256) |public_key|
+                .{ .secp256r1 = public_key }
+            else
+                return error.IllegalParameter,
+            else => unreachable,
+        }
+    else if (ch.public_key) |public_key|
+        .{ .x25519 = public_key }
+    else if (ch.public_key_p256) |public_key|
+        .{ .secp256r1 = public_key }
+    else if (ch.supports_x25519) {
+        const hrr = try self.encodeHelloRetryRequest(
+            ch_msg,
+            ch.legacy_session_id,
+            suite,
+            .x25519,
+            out,
+        );
         self.state = .wait_ch;
         return hrr;
+    } else if (ch.supports_p256) {
+        const hrr = try self.encodeHelloRetryRequest(
+            ch_msg,
+            ch.legacy_session_id,
+            suite,
+            .secp256r1,
+            out,
+        );
+        self.state = .wait_ch;
+        return hrr;
+    } else return error.UnsupportedKeyShare;
+
+    self.negotiated_group = switch (client_key_share) {
+        .x25519 => .x25519,
+        .secp256r1 => .secp256r1,
+    };
+    const server_key_share: server_hello.KeyShare = switch (client_key_share) {
+        .x25519 => .{ .x25519 = self.keypair.public_key },
+        .secp256r1 => .{ .secp256r1 = self.p256_keypair.public_key },
     };
 
-    const sh = try server_hello.encode(
+    const sh = try server_hello.encodeWithKeyShare(
         out[frame.header_len..],
         random.data,
         ch.legacy_session_id,
         suite,
-        self.keypair.public_key,
+        server_key_share,
     );
     const header: frame.Header = .init(.handshake, @intCast(sh.len));
     header.write(out[0..frame.header_len]);
@@ -375,7 +433,7 @@ fn processClientHelloMessage(
         out_len += try appendCompatibilityChangeCipherSpec(out[out_len..]);
     }
 
-    try self.installHandshakeKeys(suite, ch_msg, sh, client_public_key);
+    try self.installHandshakeKeys(suite, ch_msg, sh, client_key_share);
     self.state = .wait_client_finished;
     return out[0..out_len];
 }
@@ -393,17 +451,19 @@ fn encodeHelloRetryRequest(
     ch_msg: []const u8,
     legacy_session_id: []const u8,
     suite: CipherSuite,
+    selected_group: NamedGroup,
     out: []u8,
 ) server_hello.EncodeError![]const u8 {
     const hrr = try server_hello.encodeHelloRetryRequest(
         out[frame.header_len..],
         legacy_session_id,
         suite,
-        .x25519,
+        selected_group,
     );
     const header: frame.Header = .init(.handshake, @intCast(hrr.len));
     header.write(out[0..frame.header_len]);
     self.retry_transcript = makeRetryTranscript(suite, ch_msg, hrr);
+    self.retry_selected_group = selected_group;
     var out_len = frame.header_len + hrr.len;
     if (legacy_session_id.len != 0) {
         out_len += try appendCompatibilityChangeCipherSpec(out[out_len..]);
@@ -443,9 +503,13 @@ fn installHandshakeKeys(
     suite: CipherSuite,
     ch_msg: []const u8,
     sh_msg: []const u8,
-    client_public_key: x25519.PublicKey,
+    client_key_share: ClientKeyShare,
 ) (error{ IdentityElement, LibcryptoFailed } || aead.Error)!void {
-    const dhe = try x25519.sharedSecret(self.keypair.secret_key, client_public_key);
+    var dhe = switch (client_key_share) {
+        .x25519 => |public_key| try x25519.sharedSecret(self.keypair.secret_key, public_key),
+        .secp256r1 => |public_key| try p256.sharedSecret(self.p256_keypair.secret_key, public_key),
+    };
+    defer std.crypto.secureZero(u8, &dhe);
     switch (suite) {
         .aes_128_gcm_sha256, .chacha20_poly1305_sha256 => {
             var transcript: Sha256 = if (self.retry_transcript) |rt| switch (rt) {
@@ -479,6 +543,7 @@ fn installHandshakeKeys(
         },
     }
     self.retry_transcript = null;
+    self.retry_selected_group = null;
 
     switch (self.suite_state) {
         inline .sha256, .sha384 => |s| {
@@ -1133,6 +1198,10 @@ fn chooseSuite(self: *const ServerHandshake, ch: client_hello.Parsed) ?CipherSui
 const test_cert_der = @embedFile("test_fixtures/server.crt.der");
 const server_ecdsa_cert_der = @embedFile("test_fixtures/server-ecdsa/server.der");
 const server_ecdsa_scalar = @embedFile("test_fixtures/server-ecdsa/scalar.bin");
+const test_p256_seed_a = memx.hex(32, "000102030405060708090a0b0c0d0e0f" ++
+    "101112131415161718191a1b1c1d1e1f");
+const test_p256_seed_b = memx.hex(32, "202122232425262728292a2b2c2d2e2f" ++
+    "303132333435363738393a3b3c3d3e3f");
 
 fn clientHelloWithKeyShareGroup(
     out: []u8,
@@ -1146,6 +1215,68 @@ fn clientHelloWithKeyShareGroup(
             out[i + 6] = @truncate(group >> 8);
             out[i + 7] = @truncate(group);
             return out[0..client_hello_msg.len];
+        }
+    }
+    unreachable;
+}
+
+fn clientHelloWithP256KeyShare(
+    out: []u8,
+    client_hello_msg: []const u8,
+    public_key: p256.PublicKey,
+) []const u8 {
+    @memcpy(out[0..client_hello_msg.len], client_hello_msg);
+    var i: usize = 0;
+    while (i + 4 < client_hello_msg.len) : (i += 1) {
+        if (out[i] == 0x00 and out[i + 1] == 0x0a and out[i + 2] == 0x00 and out[i + 3] == 0x04) {
+            out[i + 6] = 0x00;
+            out[i + 7] = @intFromEnum(NamedGroup.secp256r1);
+            break;
+        }
+    } else unreachable;
+
+    i = 0;
+    while (i + 4 < client_hello_msg.len) : (i += 1) {
+        if (out[i] == 0x00 and out[i + 1] == 0x33 and
+            out[i + 2] == 0x00 and out[i + 3] == 0x26) break;
+    } else unreachable;
+
+    const old_total: usize = 4 + 0x26;
+    const new_ext_len: u16 = 2 + 2 + 2 + p256.public_length;
+    const new_total: usize = 4 + new_ext_len;
+    const delta = new_total - old_total;
+    const tail_src = i + old_total;
+    @memmove(
+        out[tail_src + delta .. client_hello_msg.len + delta],
+        out[tail_src..client_hello_msg.len],
+    );
+    out[i..][0..10].* = .{
+        0x00, 0x33,
+        0x00, @intCast(new_ext_len),
+        0x00, @intCast(2 + 2 + p256.public_length),
+        0x00, @intFromEnum(NamedGroup.secp256r1),
+        0x00, @intCast(p256.public_length),
+    };
+    @memcpy(out[i + 10 ..][0..p256.public_length], &public_key.data);
+
+    const new_len = client_hello_msg.len + delta;
+    const body_len: u24 = @intCast(new_len - handshake_header_len);
+    out[1] = @truncate(body_len >> 16);
+    out[2] = @truncate(body_len >> 8);
+    out[3] = @truncate(body_len);
+    const extensions_len_offset = 49;
+    const ext_len = memx.readInt(u16, out[extensions_len_offset..][0..2]);
+    memx.writeInt(u16, out[extensions_len_offset..][0..2], ext_len + @as(u16, @intCast(delta)));
+    return out[0..new_len];
+}
+
+fn patchClientHelloKeyShareGroup(client_hello_msg: []u8, group: u16) void {
+    var i: usize = 0;
+    while (i + 9 < client_hello_msg.len) : (i += 1) {
+        if (client_hello_msg[i] == 0x00 and client_hello_msg[i + 1] == 0x33) {
+            client_hello_msg[i + 6] = @truncate(group >> 8);
+            client_hello_msg[i + 7] = @truncate(group);
+            return;
         }
     }
     unreachable;
@@ -1355,6 +1486,134 @@ test "acceptClientHello: emits ServerHello and installs handshake keys" {
 // before the encrypted handshake flight.
 // RFC 8446 §4.1.4 — when ClientHello offers X25519 in supported_groups but no
 // X25519 KeyShareEntry, the server sends HRR requesting X25519.
+// RFC 8446 §4.2.7, §4.2.8 — a server that supports secp256r1 may select a
+// P-256 key share when the client offers only that implemented group.
+test "acceptClientHello: negotiates secp256r1 key share" {
+    const client_x25519: x25519.KeyPair = .generate();
+    const server_x25519: x25519.KeyPair = .generate();
+    const client_p256 = try p256.KeyPair.generateDeterministic(.init(test_p256_seed_a));
+    const server_p256 = try p256.KeyPair.generateDeterministic(.init(test_p256_seed_b));
+
+    var ch_buf: [512]u8 = undefined;
+    const ch = try client_hello.encode(&ch_buf, .zero, client_x25519.public_key, null, &.{});
+    var p256_ch_buf: [768]u8 = undefined;
+    const p256_ch = clientHelloWithP256KeyShare(&p256_ch_buf, ch, client_p256.public_key);
+    var record: [1024]u8 = undefined;
+    const header: frame.Header = .init(.handshake, @intCast(p256_ch.len));
+    header.write(record[0..frame.header_len]);
+    @memcpy(record[frame.header_len..][0..p256_ch.len], p256_ch);
+
+    var hs: ServerHandshake = .initWithKeypairs(server_x25519, server_p256);
+    var out: [512]u8 = undefined;
+    const sh_record = try hs.acceptClientHello(
+        record[0 .. frame.header_len + p256_ch.len],
+        .zero,
+        &out,
+    );
+
+    const hdr = try frame.parseHeader(sh_record);
+    const sh = sh_record[frame.header_len..][0..hdr.length()];
+    var found_p256_key_share = false;
+    var i: usize = 0;
+    while (i + 4 < sh.len) : (i += 1) {
+        if (sh[i] == 0x00 and sh[i + 1] == 0x33) {
+            try testing.expectEqualSlices(
+                u8,
+                &.{ 0x00, 0x45, 0x00, 0x17, 0x00, 0x41 },
+                sh[i + 2 ..][0..6],
+            );
+            try testing.expectEqualSlices(
+                u8,
+                &server_p256.public_key.data,
+                sh[i + 8 ..][0..p256.public_length],
+            );
+            found_p256_key_share = true;
+            break;
+        }
+    }
+    try testing.expect(found_p256_key_share);
+    try testing.expectEqual(NamedGroup.secp256r1, hs.negotiated_group);
+    try testing.expectEqual(.wait_client_finished, hs.state);
+}
+
+// RFC 8446 §6, §7.4 — malformed peer key-share material is peer input, not an
+// internal server failure.
+test "alertForError: invalid key share maps to illegal_parameter" {
+    try testing.expectEqual(
+        alert.Description.illegal_parameter,
+        alertForError(error.IdentityElement),
+    );
+    try testing.expectEqual(
+        alert.Description.illegal_parameter,
+        alertForError(error.MalformedKeyShare),
+    );
+}
+
+// RFC 8446 §4.1.4 — if the server selects P-256 and the ClientHello omitted a
+// matching share, the retry request names secp256r1.
+test "acceptClientHello: emits HelloRetryRequest for missing secp256r1 key share" {
+    const client_x25519: x25519.KeyPair = .generate();
+    const client_p256 = try p256.KeyPair.generateDeterministic(.init(test_p256_seed_a));
+    var ch_buf: [512]u8 = undefined;
+    const ch = try client_hello.encode(&ch_buf, .zero, client_x25519.public_key, null, &.{});
+    var p256_ch_buf: [768]u8 = undefined;
+    const p256_ch = clientHelloWithP256KeyShare(&p256_ch_buf, ch, client_p256.public_key);
+    patchClientHelloKeyShareGroup(p256_ch_buf[0..p256_ch.len], @intFromEnum(NamedGroup.secp384r1));
+
+    var record: [1024]u8 = undefined;
+    const header: frame.Header = .init(.handshake, @intCast(p256_ch.len));
+    header.write(record[0..frame.header_len]);
+    @memcpy(record[frame.header_len..][0..p256_ch.len], p256_ch);
+
+    var server: ServerHandshake = .init(.generate());
+    var out: [256]u8 = undefined;
+    const hrr_record = try server.acceptClientHello(
+        record[0 .. frame.header_len + p256_ch.len],
+        .zero,
+        &out,
+    );
+    const hrr_hdr = try frame.parseHeader(hrr_record);
+    const hrr = try server_hello.parseHelloRetryRequest(
+        hrr_record[frame.header_len..][0..hrr_hdr.length()],
+    );
+    try testing.expectEqual(NamedGroup.secp256r1, hrr.selected_group.?);
+}
+
+// RFC 8446 §4.1.4 — ClientHello2 must contain a key share for the group named
+// by the HelloRetryRequest.
+test "acceptClientHello: rejects ClientHello2 that ignores HRR selected group" {
+    const client_keypair: x25519.KeyPair = .generate();
+    var ch1_buf: [512]u8 = undefined;
+    const ch1 = try client_hello.encode(&ch1_buf, .zero, client_keypair.public_key, null, &.{});
+    var hrr_ch1_buf: [512]u8 = undefined;
+    const hrr_ch1 = clientHelloWithKeyShareGroup(
+        &hrr_ch1_buf,
+        ch1,
+        @intFromEnum(NamedGroup.secp384r1),
+    );
+    var ch1_record: [1024]u8 = undefined;
+    const ch1_header: frame.Header = .init(.handshake, @intCast(hrr_ch1.len));
+    ch1_header.write(ch1_record[0..frame.header_len]);
+    @memcpy(ch1_record[frame.header_len..][0..hrr_ch1.len], hrr_ch1);
+
+    var server: ServerHandshake = .init(.generate());
+    var out: [512]u8 = undefined;
+    _ = try server.acceptClientHello(ch1_record[0 .. frame.header_len + hrr_ch1.len], .zero, &out);
+
+    const client_p256 = try p256.KeyPair.generateDeterministic(.init(test_p256_seed_a));
+    var p256_ch2_buf: [768]u8 = undefined;
+    const p256_ch2 = clientHelloWithP256KeyShare(&p256_ch2_buf, ch1, client_p256.public_key);
+    var ch2_record: [1024]u8 = undefined;
+    const ch2_header: frame.Header = .init(.handshake, @intCast(p256_ch2.len));
+    ch2_header.write(ch2_record[0..frame.header_len]);
+    @memcpy(ch2_record[frame.header_len..][0..p256_ch2.len], p256_ch2);
+
+    try testing.expectError(
+        error.IllegalParameter,
+        server.acceptClientHello(ch2_record[0 .. frame.header_len + p256_ch2.len], .zero, &out),
+    );
+}
+
 test "acceptClientHello: emits HelloRetryRequest for missing X25519 key share" {
     const client_keypair: x25519.KeyPair = .generate();
     var ch1_buf: [512]u8 = undefined;

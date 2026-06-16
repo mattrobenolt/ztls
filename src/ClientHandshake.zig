@@ -694,7 +694,8 @@ pub fn processServerHello(self: *ClientHandshake, msg: []const u8) ServerHelloEr
     };
 
     self.suite.update(msg); // transcript now covers ClientHello || ServerHello
-    const dhe = try x25519.sharedSecret(self.keypair.secret_key, sh.server_public_key);
+    var dhe = try x25519.sharedSecret(self.keypair.secret_key, sh.server_public_key);
+    defer std.crypto.secureZero(u8, &dhe);
     const keys = try self.suite.deriveHandshakeKeys(&dhe);
     self.rx = keys.rx;
     self.tx = keys.tx;

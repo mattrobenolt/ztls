@@ -13,7 +13,10 @@ const handshake = @import("handshake.zig");
 const NamedGroup = @import("kex.zig").NamedGroup;
 const ProtocolVersion = @import("protocol_version.zig").ProtocolVersion;
 const wire = @import("wire.zig");
+const p256 = @import("p256.zig");
 const x25519 = @import("x25519.zig");
+
+const ext_header_len = 2 + 2;
 
 pub const ServerHello = struct {
     /// The negotiated cipher suite. Determines which HKDF hash to use.
@@ -231,6 +234,25 @@ pub fn parseHelloRetryRequest(msg: []const u8) HrrParseError!HelloRetryRequest {
 
 pub const encoded_len = 4 + 2 + 32 + 1 + 2 + 1 + 2 + (4 + 2 + 2 + 32) + (4 + 2);
 
+pub const KeyShare = union(enum) {
+    x25519: x25519.PublicKey,
+    secp256r1: p256.PublicKey,
+
+    fn group(self: KeyShare) NamedGroup {
+        return switch (self) {
+            .x25519 => .x25519,
+            .secp256r1 => .secp256r1,
+        };
+    }
+
+    fn bytes(self: *const KeyShare) []const u8 {
+        return switch (self.*) {
+            .x25519 => |*key| &key.data,
+            .secp256r1 => |*key| &key.data,
+        };
+    }
+};
+
 pub const EncodeError = error{BufferTooShort};
 
 /// Encode a TLS 1.3 HelloRetryRequest handshake message. The caller supplies
@@ -277,8 +299,27 @@ pub fn encode(
     cipher_suite: CipherSuite,
     public_key: x25519.PublicKey,
 ) EncodeError![]const u8 {
+    return encodeWithKeyShare(
+        out,
+        random,
+        session_id_echo,
+        cipher_suite,
+        .{ .x25519 = public_key },
+    );
+}
+
+pub fn encodeWithKeyShare(
+    out: []u8,
+    random: [32]u8,
+    session_id_echo: []const u8,
+    cipher_suite: CipherSuite,
+    key_share: KeyShare,
+) EncodeError![]const u8 {
     if (session_id_echo.len > 32) return error.BufferTooShort;
-    const len = encoded_len + session_id_echo.len;
+    const key = key_share.bytes();
+    const key_share_ext_len: u16 = @intCast(2 + 2 + key.len);
+    const extensions_len: u16 = (ext_header_len + key_share_ext_len) + (ext_header_len + 2);
+    const len = 4 + 2 + 32 + 1 + session_id_echo.len + 2 + 1 + 2 + extensions_len;
     if (out.len < len) return error.BufferTooShort;
 
     var w: wire.Writer = .init(out);
@@ -291,12 +332,12 @@ pub fn encode(
     w.append(CipherSuite, cipher_suite);
     w.append(CompressionMethod, .no_compression);
 
-    w.append(u16, 0x002e); // extensions length
+    w.append(u16, extensions_len);
     w.append(ExtensionType, .key_share);
-    w.append(u16, 0x0024);
-    w.append(NamedGroup, .x25519);
-    w.append(u16, 0x0020);
-    w.appendSlice(&public_key.data);
+    w.append(u16, key_share_ext_len);
+    w.append(NamedGroup, key_share.group());
+    w.append(u16, @intCast(key.len));
+    w.appendSlice(key);
     w.append(ExtensionType, .supported_versions);
     w.append(u16, 0x0002);
     w.append(ProtocolVersion, .tls_1_3);

@@ -25,6 +25,22 @@ pub inline fn sharedSecretDerive(ours: *pkey, peer: *pkey, out: *[32]u8) Error!v
     return compat.sharedSecretDerive(ours, peer, out);
 }
 
+pub inline fn p256PrivateKeyFromSecret(secret: *const [32]u8) Error!*pkey {
+    return compat.p256PrivateKeyFromSecret(secret);
+}
+
+pub inline fn p256PublicKeyFromRaw(public_key: *const [65]u8) Error!*pkey {
+    return compat.p256PublicKeyFromRaw(public_key);
+}
+
+pub inline fn p256RawPublicKeyFromPrivate(key: *pkey) Error![65]u8 {
+    return compat.p256RawPublicKeyFromPrivate(key);
+}
+
+pub inline fn p256SharedSecretDerive(ours: *pkey, peer: *pkey, out: *[32]u8) Error!void {
+    return compat.p256SharedSecretDerive(ours, peer, out);
+}
+
 pub inline fn freeKey(key: *pkey) void {
     compat.freeKey(key);
 }

@@ -22,6 +22,7 @@ pub const Random = root.Random;
 const memx = @import("memx.zig");
 const SignatureScheme = @import("signature_scheme.zig").SignatureScheme;
 const wire = @import("wire.zig");
+const p256 = @import("p256.zig");
 const x25519 = @import("x25519.zig");
 
 /// RFC 8446 §4.1.2 — legacy_version is frozen at TLS 1.2.
@@ -114,6 +115,7 @@ pub const ParseError = error{
     MissingExtension,
     UnsupportedTlsVersion,
     UnsupportedKeyShare,
+    MalformedKeyShare,
     UnsupportedSignatureScheme,
 };
 
@@ -123,7 +125,10 @@ pub const Parsed = struct {
     signature_schemes: []const u8 = &.{},
     server_name: ?[]const u8 = null,
     alpn_protocols: []const u8 = &.{},
+    supports_x25519: bool = false,
+    supports_p256: bool = false,
     public_key: ?x25519.PublicKey = null,
+    public_key_p256: ?p256.PublicKey = null,
 
     pub fn offersSuite(self: Parsed, suite: CipherSuite) bool {
         var i: usize = 0;
@@ -300,7 +305,9 @@ pub fn parse(msg: []const u8) ParseError!Parsed {
             },
             .supported_groups => {
                 if (got_supported_groups) return error.DuplicateExtension;
-                try parseSupportedGroups(ext);
+                const groups = try parseSupportedGroups(ext);
+                parsed.supports_x25519 = groups.x25519;
+                parsed.supports_p256 = groups.p256;
                 got_supported_groups = true;
             },
             .alpn => {
@@ -325,7 +332,9 @@ pub fn parse(msg: []const u8) ParseError!Parsed {
             },
             .key_share => {
                 if (got_key_share) return error.DuplicateExtension;
-                parsed.public_key = try parseKeyShare(ext);
+                const shares = try parseKeyShare(ext);
+                parsed.public_key = shares.x25519;
+                parsed.public_key_p256 = shares.p256;
                 got_key_share = true;
             },
             else => {},
@@ -375,15 +384,26 @@ fn parseSupportedVersions(ext: []const u8) ParseError!void {
     return error.UnsupportedTlsVersion;
 }
 
-fn parseSupportedGroups(ext: []const u8) ParseError!void {
+const SupportedGroups = struct {
+    x25519: bool = false,
+    p256: bool = false,
+};
+
+fn parseSupportedGroups(ext: []const u8) ParseError!SupportedGroups {
     if (ext.len < 2) return error.InvalidVectorLength;
     var r: wire.Reader = .init(ext);
     const list_len = r.assumeRead(u16);
     if (list_len != ext.len - 2 or list_len % 2 != 0) return error.InvalidVectorLength;
+    var groups: SupportedGroups = .{};
     while (r.pos < ext.len) {
-        if (r.assumeRead(u16) == @intFromEnum(NamedGroup.x25519)) return;
+        switch (r.assumeRead(NamedGroup)) {
+            .x25519 => groups.x25519 = true,
+            .secp256r1 => groups.p256 = true,
+            else => {},
+        }
     }
-    return error.UnsupportedKeyShare;
+    if (!groups.x25519 and !groups.p256) return error.UnsupportedKeyShare;
+    return groups;
 }
 
 fn parseSignatureAlgorithms(ext: []const u8) ParseError![]const u8 {
@@ -405,25 +425,39 @@ fn hasSupportedHandshakeSignatureScheme(schemes: []const u8) bool {
     return false;
 }
 
-fn parseKeyShare(ext: []const u8) ParseError!?x25519.PublicKey {
+const ParsedKeyShares = struct {
+    x25519: ?x25519.PublicKey = null,
+    p256: ?p256.PublicKey = null,
+};
+
+fn parseKeyShare(ext: []const u8) ParseError!ParsedKeyShares {
     if (ext.len < 2) return error.InvalidVectorLength;
     var r: wire.Reader = .init(ext);
     const client_shares_len = r.assumeRead(u16);
     if (client_shares_len != ext.len - 2) return error.InvalidVectorLength;
-    var public_key: ?x25519.PublicKey = null;
+    var shares: ParsedKeyShares = .{};
     while (r.pos < ext.len) {
         if (r.remaining().len < 4) return error.InvalidVectorLength;
-        const group = r.assumeRead(u16);
+        const group = r.assumeRead(NamedGroup);
         const key_len = r.assumeRead(u16);
         if (r.remaining().len < key_len) return error.InvalidVectorLength;
         const key = r.assumeReadSlice(key_len);
-        if (group == @intFromEnum(NamedGroup.x25519)) {
-            if (public_key != null) return error.DuplicateKeyShare;
-            if (key.len != 32) return error.UnsupportedKeyShare;
-            public_key = .init(key[0..32].*);
+        switch (group) {
+            .x25519 => {
+                if (shares.x25519 != null) return error.DuplicateKeyShare;
+                if (key.len != x25519.public_length) return error.UnsupportedKeyShare;
+                shares.x25519 = .init(key[0..x25519.public_length].*);
+            },
+            .secp256r1 => {
+                if (shares.p256 != null) return error.DuplicateKeyShare;
+                if (key.len != p256.public_length) return error.MalformedKeyShare;
+                if (key[0] != 0x04) return error.MalformedKeyShare;
+                shares.p256 = .init(key[0..p256.public_length].*);
+            },
+            else => {},
         }
     }
-    return public_key;
+    return shares;
 }
 
 test "encode: size matches encodedLen" {
@@ -563,6 +597,39 @@ test "encode: rejects invalid ALPN protocols" {
     );
 }
 
+fn rewriteClientHelloForP256(buf: []u8, encoded_len: usize, public_key: p256.PublicKey) !usize {
+    const groups = try findExtension(buf[0..encoded_len], .supported_groups);
+    groups[2] = 0x00;
+    groups[3] = @intFromEnum(NamedGroup.secp256r1);
+
+    const key_share_offset = try findExtensionOffset(buf[0..encoded_len], .key_share);
+    const key_share_old_len = memx.readInt(u16, buf[key_share_offset + 2 ..][0..2]);
+    const key_share_old_total = ext_header_len + key_share_old_len;
+    const key_share_new_len = 2 + 2 + 2 + p256.public_length;
+    const key_share_new_total = ext_header_len + key_share_new_len;
+    const delta = key_share_new_total - key_share_old_total;
+    const tail_src = key_share_offset + key_share_old_total;
+    @memmove(buf[tail_src + delta .. encoded_len + delta], buf[tail_src..encoded_len]);
+
+    buf[key_share_offset..][0..10].* = .{
+        0x00, 0x33,
+        0x00, @intCast(key_share_new_len),
+        0x00, @intCast(2 + 2 + p256.public_length),
+        0x00, @intFromEnum(NamedGroup.secp256r1),
+        0x00, @intCast(p256.public_length),
+    };
+    @memcpy(buf[key_share_offset + 10 ..][0..p256.public_length], &public_key.data);
+
+    const new_len = encoded_len + delta;
+    const body_len: u24 = @intCast(new_len - handshake_header_len);
+    buf[1] = @intCast(body_len >> 16);
+    buf[2] = @intCast((body_len >> 8) & 0xff);
+    buf[3] = @intCast(body_len & 0xff);
+    const old_ext_len = memx.readInt(u16, buf[extensions_len_offset..][0..2]);
+    memx.writeInt(u16, buf[extensions_len_offset..][0..2], old_ext_len + @as(u16, @intCast(delta)));
+    return new_len;
+}
+
 test "parse: encoded ClientHello" {
     const key: x25519.PublicKey = .init(.{
         0x99, 0x38, 0x1d, 0xe5, 0x60, 0xe4, 0xbd, 0x43,
@@ -586,6 +653,26 @@ test "parse: encoded ClientHello" {
 }
 
 // RFC 8446 §4.1.2 — legacy_session_id is bounded to 0..32 bytes.
+// RFC 8446 §4.2.7, §4.2.8 — server-side parser accepts P-256-only peers.
+test "parse: accepts secp256r1 supported group and key share" {
+    const seed = memx.hex(32, "000102030405060708090a0b0c0d0e0f" ++
+        "101112131415161718191a1b1c1d1e1f");
+    const p256_keypair = try p256.KeyPair.generateDeterministic(.init(seed));
+    var buf: [768]u8 = undefined;
+    const encoded = try encode(&buf, .zero, .zero, null, &.{});
+    const p256_len = try rewriteClientHelloForP256(&buf, encoded.len, p256_keypair.public_key);
+
+    const parsed = try parse(buf[0..p256_len]);
+    try testing.expect(!parsed.supports_x25519);
+    try testing.expect(parsed.supports_p256);
+    try testing.expectEqual(@as(?x25519.PublicKey, null), parsed.public_key);
+    try testing.expectEqualSlices(
+        u8,
+        &p256_keypair.public_key.data,
+        &parsed.public_key_p256.?.data,
+    );
+}
+
 test "parse: rejects oversized legacy_session_id" {
     inline for (.{ 33, 255 }) |session_id_len| {
         var buf: [512]u8 = undefined;
@@ -878,7 +965,8 @@ test "parse: ignores unknown extension" {
 // recognized alternatives from the same vector.
 test "parse: ignores unknown supported_groups entries" {
     const groups = [_]u8{ 0x00, 0x04, 0x6a, 0x6a, 0x00, 0x1d };
-    try parseSupportedGroups(&groups);
+    const parsed = try parseSupportedGroups(&groups);
+    try testing.expect(parsed.x25519);
 }
 
 // RFC 8446 §4.1.2 — ClientHello parse must never crash or panic on arbitrary

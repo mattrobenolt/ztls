@@ -40,6 +40,12 @@ const x25519_impl = switch (active) {
     .boringssl => @compileError("BoringSSL backend not yet implemented"),
 };
 
+const p256_impl = switch (active) {
+    .openssl => backend_openssl,
+    .aws_lc => backend_aws_lc,
+    .boringssl => @compileError("BoringSSL backend not yet implemented"),
+};
+
 pub const x25519 = struct {
     pub const Error = x25519_impl.Error;
     pub const pkey = x25519_impl.pkey;
@@ -62,6 +68,31 @@ pub const x25519 = struct {
 
     pub inline fn freeKey(key: *pkey) void {
         x25519_impl.freeKey(key);
+    }
+};
+
+pub const p256 = struct {
+    pub const Error = p256_impl.Error;
+    pub const pkey = p256_impl.pkey;
+
+    pub inline fn privateKeyFromSecret(secret: *const [32]u8) Error!*pkey {
+        return p256_impl.p256PrivateKeyFromSecret(secret);
+    }
+
+    pub inline fn publicKeyFromRaw(public_key: *const [65]u8) Error!*pkey {
+        return p256_impl.p256PublicKeyFromRaw(public_key);
+    }
+
+    pub inline fn rawPublicKeyFromPrivate(key: *pkey) Error![65]u8 {
+        return p256_impl.p256RawPublicKeyFromPrivate(key);
+    }
+
+    pub inline fn sharedSecretDerive(ours: *pkey, peer: *pkey, out: *[32]u8) Error!void {
+        return p256_impl.p256SharedSecretDerive(ours, peer, out);
+    }
+
+    pub inline fn freeKey(key: *pkey) void {
+        p256_impl.freeKey(key);
     }
 };
 
