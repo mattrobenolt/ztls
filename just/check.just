@@ -22,7 +22,7 @@ examples-ci:
 
 [doc("Check formatting and lint (for CI)")]
 [group("check")]
-lint: lint-zig lint-actions lint-just lint-markdown lint-issues lint-readme-index
+lint: lint-zig lint-actions lint-just lint-markdown lint-issues lint-readme-index lint-fixtures
     just conformance/lint
 
 [doc("Lint markdown research docs for status-language drift")]
@@ -60,6 +60,18 @@ lint-issues:
         exit 1
     fi
     echo "no closed-issue citations in research doc headings"
+
+[doc("Reject tracked binary fixture files")]
+[group("check")]
+lint-fixtures:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    matches=$(git ls-files 'tests/fixtures/*' | grep -E '\.(der|bin|sig)$' || true)
+    if [ -n "$matches" ]; then
+        printf 'binary fixture files are not allowed:\n%s\n' "$matches" >&2
+        exit 1
+    fi
+    echo "no tracked binary fixture files"
 
 [doc("Verify docs/research/README.md links match filesystem")]
 [group("check")]

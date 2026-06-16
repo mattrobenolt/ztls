@@ -360,25 +360,26 @@ fn verifySignature(
 
 // Fixtures generated with: scripts/gen-fixtures.sh
 // Transcript hash: SHA-256("test transcript")
+const cert_fixtures = @import("test_fixtures/certificate_fixtures.zig");
 const sig_fixtures = @import("test_fixtures/sig_fixtures.zig");
 const shared_fixtures = @import("test_fixtures/shared_fixtures.zig");
 
 const fixture_cert_der: []const u8 = &shared_fixtures.server_cert_der;
 const fixture_cv_sig: []const u8 = &sig_fixtures.cv_sig;
-const fixture_rsa_pss_cert_der = @embedFile("test_fixtures/rsa_pss/server.crt.der");
+const fixture_rsa_pss_cert_der: []const u8 = &cert_fixtures.rsa_pss_cert_der;
 const fixture_rsa_pss_cv_sig: []const u8 = &sig_fixtures.rsa_pss_cv_sig;
 const fixture_rsa_pss_cv_salt20_sig: []const u8 = &sig_fixtures.rsa_pss_cv_salt20_sig;
 const chain_root_pem = "tests/fixtures/chain/root.crt";
-const chain_leaf_der = @embedFile("test_fixtures/chain/leaf.der");
-const chain_intermediate_der = @embedFile("test_fixtures/chain/intermediate.der");
-const name_constraints_der = @embedFile("test_fixtures/name_constraints.der");
-const name_constraints_noncritical_der =
-    @embedFile("test_fixtures/name_constraints_noncritical.der");
+const chain_leaf_der: []const u8 = &cert_fixtures.chain_leaf_der;
+const chain_intermediate_der: []const u8 = &cert_fixtures.chain_intermediate_der;
+const name_constraints_der: []const u8 = &cert_fixtures.name_constraints_der;
+const name_constraints_noncritical_der: []const u8 =
+    &cert_fixtures.name_constraints_noncritical_der;
 const nc_root_pem = "tests/fixtures/nameconstraints/root.crt";
-const nc_intermediate_der = @embedFile("test_fixtures/nameconstraints/intermediate.der");
-const nc_leaf_allowed_der = @embedFile("test_fixtures/nameconstraints/leaf_allowed.der");
-const nc_leaf_excluded_der = @embedFile("test_fixtures/nameconstraints/leaf_excluded.der");
-const nc_leaf_outside_der = @embedFile("test_fixtures/nameconstraints/leaf_outside.der");
+const nc_intermediate_der: []const u8 = &cert_fixtures.nc_intermediate_der;
+const nc_leaf_allowed_der: []const u8 = &cert_fixtures.nc_leaf_allowed_der;
+const nc_leaf_excluded_der: []const u8 = &cert_fixtures.nc_leaf_excluded_der;
+const nc_leaf_outside_der: []const u8 = &cert_fixtures.nc_leaf_outside_der;
 
 fn buildCertMsg(buf: []u8, cert_der: []const u8) []const u8 {
     return buildCertChainMsg(buf, &.{cert_der});
