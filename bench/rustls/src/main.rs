@@ -37,6 +37,7 @@ struct Args {
     bench: Option<String>,
     suite: Option<String>,
     size: Option<usize>,
+    samples: usize,
     list: bool,
 }
 
@@ -76,7 +77,10 @@ impl ServerCertVerifier for NoVerifier {
 }
 
 fn parse_args() -> Args {
-    let mut args = Args::default();
+    let mut args = Args {
+        samples: 1,
+        ..Args::default()
+    };
     let mut it = env::args().skip(1);
     while let Some(arg) = it.next() {
         let (key, inline) = arg
@@ -103,6 +107,12 @@ fn parse_args() -> Args {
                         .parse()
                         .expect("invalid --size"),
                 )
+            }
+            "--samples" => {
+                args.samples = inline
+                    .unwrap_or_else(|| it.next().expect("missing --samples value"))
+                    .parse()
+                    .expect("invalid --samples")
             }
             _ => panic!("unknown argument: {arg}"),
         }
@@ -399,15 +409,17 @@ fn main() {
 
         // Full handshake elapsed time (wall clock, both sides together).
         if matches(&args, "rustls_handshake", suite_name, 1) {
-            let start = Instant::now();
-            for _ in 0..HANDSHAKE_ITERATIONS {
-                black_box(connected(&client, &server));
+            for _ in 0..args.samples {
+                let start = Instant::now();
+                for _ in 0..HANDSHAKE_ITERATIONS {
+                    black_box(connected(&client, &server));
+                }
+                let ns = start.elapsed().as_nanos();
+                println!(
+                    "rustls_handshake,{suite_name},1,{HANDSHAKE_ITERATIONS},{HANDSHAKE_ITERATIONS},{ns},{:.2}",
+                    ops_per_sec(HANDSHAKE_ITERATIONS, ns)
+                );
             }
-            let ns = start.elapsed().as_nanos();
-            println!(
-                "rustls_handshake,{suite_name},1,{HANDSHAKE_ITERATIONS},{HANDSHAKE_ITERATIONS},{ns},{:.2}",
-                ops_per_sec(HANDSHAKE_ITERATIONS, ns)
-            );
         }
 
         let split_rows = [
@@ -421,27 +433,29 @@ fn main() {
             .iter()
             .any(|row| matches(&args, row, suite_name, 1))
         {
-            let mut total = HandshakeSplit::default();
-            for _ in 0..HANDSHAKE_ITERATIONS {
-                let split = handshake_split(&client, &server);
-                total.client_start_ns += split.client_start_ns;
-                total.server_accept_ns += split.server_accept_ns;
-                total.server_flight_ns += split.server_flight_ns;
-                total.client_flight_ns += split.client_flight_ns;
-                total.server_finished_ns += split.server_finished_ns;
-            }
-            for (row, ns) in [
-                ("rustls_handshake_client_start", total.client_start_ns),
-                ("rustls_handshake_server_accept", total.server_accept_ns),
-                ("rustls_handshake_server_flight", total.server_flight_ns),
-                ("rustls_handshake_client_flight", total.client_flight_ns),
-                ("rustls_handshake_server_finished", total.server_finished_ns),
-            ] {
-                if matches(&args, row, suite_name, 1) {
-                    println!(
-                        "{row},{suite_name},1,{HANDSHAKE_ITERATIONS},{HANDSHAKE_ITERATIONS},{ns},{:.2}",
-                        ops_per_sec(HANDSHAKE_ITERATIONS, ns)
-                    );
+            for _ in 0..args.samples {
+                let mut total = HandshakeSplit::default();
+                for _ in 0..HANDSHAKE_ITERATIONS {
+                    let split = handshake_split(&client, &server);
+                    total.client_start_ns += split.client_start_ns;
+                    total.server_accept_ns += split.server_accept_ns;
+                    total.server_flight_ns += split.server_flight_ns;
+                    total.client_flight_ns += split.client_flight_ns;
+                    total.server_finished_ns += split.server_finished_ns;
+                }
+                for (row, ns) in [
+                    ("rustls_handshake_client_start", total.client_start_ns),
+                    ("rustls_handshake_server_accept", total.server_accept_ns),
+                    ("rustls_handshake_server_flight", total.server_flight_ns),
+                    ("rustls_handshake_client_flight", total.client_flight_ns),
+                    ("rustls_handshake_server_finished", total.server_finished_ns),
+                ] {
+                    if matches(&args, row, suite_name, 1) {
+                        println!(
+                            "{row},{suite_name},1,{HANDSHAKE_ITERATIONS},{HANDSHAKE_ITERATIONS},{ns},{:.2}",
+                            ops_per_sec(HANDSHAKE_ITERATIONS, ns)
+                        );
+                    }
                 }
             }
         }
@@ -449,28 +463,34 @@ fn main() {
         for &size in SIZES {
             let iters = (TARGET_BYTES / size).max(256);
             if matches(&args, "rustls_app_client_to_server", suite_name, size) {
-                let ns = bench_app(&client, &server, size, iters, 0, &payload, &mut recv);
-                println!(
-                    "rustls_app_client_to_server,{suite_name},{size},{iters},{},{ns},{:.2}",
-                    iters * size,
-                    mib_per_sec(iters * size, ns)
-                );
+                for _ in 0..args.samples {
+                    let ns = bench_app(&client, &server, size, iters, 0, &payload, &mut recv);
+                    println!(
+                        "rustls_app_client_to_server,{suite_name},{size},{iters},{},{ns},{:.2}",
+                        iters * size,
+                        mib_per_sec(iters * size, ns)
+                    );
+                }
             }
             if matches(&args, "rustls_app_server_to_client", suite_name, size) {
-                let ns = bench_app(&client, &server, size, iters, 1, &payload, &mut recv);
-                println!(
-                    "rustls_app_server_to_client,{suite_name},{size},{iters},{},{ns},{:.2}",
-                    iters * size,
-                    mib_per_sec(iters * size, ns)
-                );
+                for _ in 0..args.samples {
+                    let ns = bench_app(&client, &server, size, iters, 1, &payload, &mut recv);
+                    println!(
+                        "rustls_app_server_to_client,{suite_name},{size},{iters},{},{ns},{:.2}",
+                        iters * size,
+                        mib_per_sec(iters * size, ns)
+                    );
+                }
             }
             if matches(&args, "rustls_app_ping_pong", suite_name, size) {
-                let ns = bench_app(&client, &server, size, iters, 2, &payload, &mut recv);
-                println!(
-                    "rustls_app_ping_pong,{suite_name},{size},{iters},{},{ns},{:.2}",
-                    iters * size * 2,
-                    mib_per_sec(iters * size * 2, ns)
-                );
+                for _ in 0..args.samples {
+                    let ns = bench_app(&client, &server, size, iters, 2, &payload, &mut recv);
+                    println!(
+                        "rustls_app_ping_pong,{suite_name},{size},{iters},{},{ns},{:.2}",
+                        iters * size * 2,
+                        mib_per_sec(iters * size * 2, ns)
+                    );
+                }
             }
         }
     }

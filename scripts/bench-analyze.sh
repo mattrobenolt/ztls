@@ -49,6 +49,10 @@ normalize_go() {
       print msg > "/dev/stderr";
     }
     /^Benchmark/ {
+      if (NF < 4) {
+        emit_warning("warning: skipping incomplete benchmark row in " FILENAME ": " $0);
+        next;
+      }
       name = $1;
       sub(/^Benchmark/, "", name);
       n = split(name, parts, "/");
@@ -101,14 +105,30 @@ normalize_rustls() {
         print "warning: skipping unknown rustls benchmark " $1 > "/dev/stderr";
         next;
       }
+      key = row "/" $2 "/" $3;
       ns_per_op = $6 / $4;
-      printf "Benchmark%s/impl=rustls/suite=%s/size=%s %d %.3f ns/op", row, $2, $3, $4, ns_per_op;
-      if ($3 != 1) printf " %.2f MB/s", ($5 * 1000.0) / $6;
-      printf "\n";
+      line = sprintf("Benchmark%s/impl=rustls/suite=%s/size=%s %d %.3f ns/op", row, $2, $3, $4, ns_per_op);
+      if ($3 != 1) line = line sprintf(" %.2f MB/s", ($5 * 1000.0) / $6);
+      lines[++line_count] = line;
+      line_keys[line_count] = key;
+      counts[key]++;
+    }
+    END {
+      for (i = 1; i <= line_count; i++) {
+        key = line_keys[i];
+        if (counts[key] < 2) {
+          if (!excluded[key]++) excluded_count++;
+          continue;
+        }
+        print lines[i];
+      }
+      if (excluded_count > 0) {
+        print "warning: excluding " excluded_count " rustls benchmark group(s) from benchstat: fewer than 2 samples" > "/dev/stderr";
+      }
     }
   ' "${input}" > "${output}"
   if [[ ! -s "${output}" ]]; then
-    echo "warning: no benchmark rows in ${input}" >&2
+    echo "warning: no comparable rustls benchmark rows in ${input}" >&2
   fi
 }
 
@@ -122,8 +142,38 @@ normalize_go evp "${run}/evp.txt" "${evp_norm}"
 normalize_go openssl "${run}/libssl.txt" "${libssl_norm}"
 normalize_rustls "${run}/rustls.txt" "${rustls_norm}"
 
-benchstat -row ".name /suite /size" -col /impl \
-  ztls="${ztls_norm}" \
-  evp="${evp_norm}" \
-  libssl="${libssl_norm}" \
-  rustls="${rustls_norm}"
+all_norm="${tmp_dir}/all.txt"
+tls_norm="${tmp_dir}/tls-comparable.txt"
+crypto_norm="${tmp_dir}/crypto-floor.txt"
+other_norm="${tmp_dir}/ztls-non-comparable.txt"
+cat "${ztls_norm}" "${evp_norm}" "${libssl_norm}" "${rustls_norm}" > "${all_norm}"
+
+awk '
+  /^Benchmark(Handshake|AppClientToServer|AppServerToClient|AppPingPong)\// { print }
+' "${all_norm}" > "${tls_norm}"
+
+awk '
+  /^Benchmark(RecordEncrypt|RecordDecrypt|Encrypt|Decrypt|BulkEncryptOnce|BulkDecryptOnce)\// { print }
+' "${all_norm}" > "${crypto_norm}"
+
+awk '
+  !/\/impl=ztls\// { next }
+  /^Benchmark(Handshake|AppClientToServer|AppServerToClient|AppPingPong)\// { next }
+  /^Benchmark(RecordEncrypt|RecordDecrypt|Encrypt|Decrypt|BulkEncryptOnce|BulkDecryptOnce)\// { next }
+  { print }
+' "${all_norm}" > "${other_norm}"
+
+run_benchstat() {
+  local title="$1"
+  local file="$2"
+  if [[ ! -s "${file}" ]]; then
+    return
+  fi
+  echo "## ${title}"
+  benchstat -row ".name /suite /size" -col /impl "${file}" | sed '/^geomean[[:space:]]/d'
+  echo
+}
+
+run_benchstat "Comparable TLS rows" "${tls_norm}"
+run_benchstat "Crypto floor rows (not TLS-to-TLS comparisons)" "${crypto_norm}"
+run_benchstat "ztls-only diagnostic rows" "${other_norm}"

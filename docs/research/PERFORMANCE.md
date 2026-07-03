@@ -74,9 +74,9 @@ Start with layers that exist today:
 
 Benchmark rows are only comparable when the row names describe the same TLS
 work, not just when `benchstat` can place them in adjacent columns. The analysis
-script normalizes ztls, libssl, rustls, and EVP output into one table; this
-section defines which normalized rows are legitimate apples-to-apples
-comparisons.
+script normalizes ztls, libssl, rustls, and EVP output into labeled tables:
+comparable TLS rows, crypto-floor rows, and ztls-only diagnostics. This section
+defines which normalized rows are legitimate apples-to-apples comparisons.
 
 A comparable row must have the same protocol phase, the same cipher suite, the
 same payload size when payload exists, and no kernel I/O in the timed path. The
@@ -88,12 +88,12 @@ not sockets.
 | Row group | ztls row | libssl memory-BIO row | rustls row | Comparison status |
 | --- | --- | --- | --- | --- |
 | Full handshake | `Handshake` | `Handshake` | `rustls_handshake` | Comparable across all three. Full TLS 1.3 handshake, no resumption, X25519, server-only EC P-256 certificate, in-memory transport, no certificate-chain policy in ztls/rustls and `SSL_VERIFY_NONE` for libssl. |
-| ClientHello construction | `HandshakeClientStart` | — | `rustls_handshake_client_start` | Comparable between ztls and rustls only. Both measure initial ClientHello construction and key-share generation. libssl does not expose this split below `SSL_do_handshake`. |
-| Server accepts ClientHello | `HandshakeServerAccept` | — | `rustls_handshake_server_accept` | Comparable between ztls and rustls only. Both consume the ClientHello and construct the ServerHello-side response point. libssl is opaque here. |
+| ClientHello construction | `HandshakeClientStart` | — | `rustls_handshake_client_start` | Diagnostic until audited. libssl does not expose this split below `SSL_do_handshake`, and ztls/rustls key-generation boundaries must be proven before comparison. |
+| Server accepts ClientHello | `HandshakeServerAccept` | — | `rustls_handshake_server_accept` | Diagnostic until audited. Both names refer to the ClientHello consumption point, but the exact timed construction/processing boundary still needs proof. |
 | Client processes ServerHello | `HandshakeClientServerHello` | — | — | ztls-only profiling row. rustls processes more of the encrypted server flight in the next client step, so there is no honest rustls peer. |
-| Server authenticated flight | `HandshakeServerFlight` | — | `rustls_handshake_server_flight` | Comparable between ztls and rustls only. Both construct the encrypted server handshake flight. libssl is opaque here. |
-| Client Finished flight | `HandshakeClientFlight` | — | `rustls_handshake_client_flight` | Comparable with a documented caveat: both consume the encrypted server flight and emit the client Finished flight, but rustls performs certificate verification policy in this phase while ztls deliberately keeps certificate-chain policy outside the core engine. |
-| Server verifies client Finished | `HandshakeServerFinished` | — | `rustls_handshake_server_finished` | Comparable between ztls and rustls only. Both consume the client's Finished flight and complete the server side of the handshake. libssl is opaque here. |
+| Server authenticated flight | `HandshakeServerFlight` | — | `rustls_handshake_server_flight` | Diagnostic until audited. ztls includes certificate/signature/encryption work; rustls boundary must be proven before comparison. |
+| Client Finished flight | `HandshakeClientFlight` | — | `rustls_handshake_client_flight` | Diagnostic until audited. Both consume the encrypted server flight and emit client Finished, but certificate policy and verification work differ. |
+| Server verifies client Finished | `HandshakeServerFinished` | — | `rustls_handshake_server_finished` | Diagnostic until audited. Both complete the server side of the handshake, but libssl is opaque and rustls boundary still needs proof. |
 | App data client→server | `AppClientToServer` | `AppClientToServer` | `rustls_app_client_to_server` | Comparable across all three. Each iteration writes one application payload from client to server and reads the same plaintext on the server side over memory transport. |
 | App data server→client | `AppServerToClient` | `AppServerToClient` | `rustls_app_server_to_client` | Comparable across all three. Same as client→server with direction reversed. |
 | App data ping-pong | `AppPingPong` | `AppPingPong` | `rustls_app_ping_pong` | Comparable across all three. One client→server payload and one server→client payload per iteration; bytes/op is doubled. |
@@ -124,7 +124,8 @@ comparisons.
 
 When publishing numbers, include only the comparable row groups in
 ztls-vs-libssl-vs-rustls tables. Put ztls-only and EVP rows in separate tables
-with labels that describe their narrower boundary.
+with labels that describe their narrower boundary. Do not quote mixed geomeans;
+`bench-analyze` strips benchstat geomean rows so result review stays row-level.
 
 ## Methodology
 
@@ -171,7 +172,9 @@ Each capture writes one run directory under `zig-out/perf/<timestamp>/` with
 `metadata.txt`, `ztls.txt`, `evp.txt`, `libssl.txt`, and `rustls.txt`. This shape
 is intended for remote benchmark hosts: rsync the run directory back, then run
 `just bench-analyze zig-out/perf/<timestamp>` to compare the captured files with
-`benchstat`.
+`benchstat`. `bench-capture` maps `--count=N` to rustls `--samples=N` so rustls
+emits independent outer samples; the analyzer excludes rustls groups with fewer
+than two samples instead of producing fake `n=1` comparisons.
 
 Committed capture evidence lives under `docs/research/perf/`. The first EC2
 result set is `docs/research/perf/20260613-182405-ec2-c7i-large/`, captured on a
@@ -213,23 +216,24 @@ For raw OpenSSL crypto comparison:
 ```sh
 zig build bench-evp
 zig build bench-evp-bin
-zig-out/bin/openssl_evp_bench --filter aes_128
+zig-out/bin/evp_bench --filter aes_128
 ```
 
 These EVP rows are not a TLS comparison. They isolate OpenSSL's AEAD
 implementation and EVP setup/update/final overhead so ztls record numbers can
-be interpreted against the crypto floor. The `openssl_evp_reuse_*` rows keep the
+be interpreted against the crypto floor. The `Encrypt` / `Decrypt` rows keep the
 EVP context and cipher/key setup alive across iterations, resetting only the IV
-per operation; use those rows to avoid over-crediting ztls on tiny records where
-full EVP setup dominates. This still does not make EVP a no-allocation ztls core
-backend — OpenSSL 3 provider contexts allocate behind the API.
+per operation; `BulkEncryptOnce` / `BulkDecryptOnce` create and initialize a new
+EVP context inside each timed operation. This still does not make EVP a
+no-allocation ztls core backend — OpenSSL 3 provider contexts allocate behind
+the API.
 
 For libssl machinery without kernel sockets:
 
 ```sh
 zig build bench-openssl
 zig build bench-openssl-bin
-zig-out/bin/openssl_bio_bench --filter handshake
+zig-out/bin/bio_bench --filter handshake
 zig-out/bin/openssl_bio_bench --filter ping_pong
 ```
 

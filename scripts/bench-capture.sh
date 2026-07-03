@@ -117,18 +117,26 @@ run_rustls() {
         rustls_args+=("$1")
         shift
         ;;
-      --filter|--bench|--suite|--size)
+      --filter|--bench|--suite|--size|--samples)
         rustls_args+=("$1" "$2")
         shift 2
         ;;
-      --filter=*|--bench=*|--suite=*|--size=*)
+      --filter=*|--bench=*|--suite=*|--size=*|--samples=*)
         rustls_args+=("$1")
         shift
         ;;
-      --count|--benchtime)
+      --count)
+        rustls_args+=("--samples" "$2")
         shift 2
         ;;
-      --count=*|--benchtime=*)
+      --count=*)
+        rustls_args+=("--samples" "${1#*=}")
+        shift
+        ;;
+      --benchtime)
+        shift 2
+        ;;
+      --benchtime=*)
         shift
         ;;
       *)

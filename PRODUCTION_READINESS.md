@@ -232,7 +232,10 @@ comparisons measure equivalent work*. This is the project's justification.
   captures; `just bench-analyze <capture>` compares those captures with
   `benchstat`. Capture metadata records the ztls-linked `libcrypto` and the
   OpenSSL EVP/libssl baseline library paths so backend-specific ztls captures
-  cannot silently poison the baseline rows.
+  cannot silently poison the baseline rows. The rustls harness emits outer
+  samples matching `--count`, and the analyzer splits comparable TLS,
+  crypto-floor, and ztls-only diagnostic rows while excluding rustls groups with
+  too few samples.
 - `infra/bench/` is an OpenTofu/NixOS EC2 host recipe with a pinned-ish shape:
   region `us-west-2`, default `c7i.large`, generated ED25519 SSH key,
   public VPC/subnet/security group, Nix flakes enabled, ASLR disabled, and some
