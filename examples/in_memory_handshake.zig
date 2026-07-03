@@ -26,24 +26,29 @@ pub fn main() !void {
     const client_keypair: ztls.x25519.KeyPair = .generate();
     const server_keypair: ztls.x25519.KeyPair = .generate();
 
-    var random: ztls.client_hello.Random = undefined;
-    std.crypto.random.bytes(&random.data);
+    var client_random: ztls.client_hello.Random = undefined;
+    std.crypto.random.bytes(&client_random.data);
+    var server_random: ztls.client_hello.Random = undefined;
+    std.crypto.random.bytes(&server_random.data);
 
     // ── Client setup ────────────────────────
     var client: ztls.ClientHandshake = .init(.{
         .keypair = client_keypair,
         .host_name = "ztls.server.test",
         .now_sec = 0,
-        .random = random,
+        .random = client_random,
         .insecure_no_chain_anchor = true,
         .alpn_protocols = &.{"h2"},
     });
     defer client.deinit();
 
     // ── Server setup ────────────────────────
-    var server: ztls.ServerHandshake = .init(server_keypair);
+    var server: ztls.ServerHandshake = .init(.{
+        .keypair = server_keypair,
+        .random = server_random,
+        .alpn_protocols = &.{"h2"},
+    });
     defer server.deinit();
-    server.supportAlpn(&.{"h2"});
     server.setCredentials(&.{cert_der}, signer_api);
 
     // Caller-owned buffers. The engine never allocates; we provide all storage.
@@ -57,7 +62,7 @@ pub fn main() !void {
     print("[client] ClientHello sent → state={s}\n", .{@tagName(client.state)});
 
     // 2. ServerHello — server consumes ClientHello and emits ServerHello.
-    const sh_record = try server.acceptClientHello(ch_record, random, &server_out.buffer);
+    const sh_record = try server.acceptClientHello(ch_record, &server_out.buffer);
     server.completeWrite();
     print("[server] ServerHello sent → state={s}\n", .{@tagName(server.state)});
 

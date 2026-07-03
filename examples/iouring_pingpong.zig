@@ -64,16 +64,19 @@ fn serverRun(ctx: *ServerCtx) !void {
     defer conn.stream.close();
     print("[server] accepted connection\n", .{});
 
-    var hs: ztls.ServerHandshake = .init(ctx.keypair);
+    var random: ztls.client_hello.Random = undefined;
+    std.crypto.random.bytes(&random.data);
+
+    var hs: ztls.ServerHandshake = .init(.{
+        .keypair = ctx.keypair,
+        .random = random,
+        .alpn_protocols = &.{alpn},
+    });
     defer hs.deinit();
-    hs.supportAlpn(&.{alpn});
 
     var signer: ztls.signature.PrivateKey = try .fromP256Scalar(scalar[0..32]);
     defer signer.deinit();
     hs.setCredentials(&.{cert_der}, signer.signer());
-
-    var random: ztls.client_hello.Random = undefined;
-    std.crypto.random.bytes(&random.data);
 
     var storage: ztls.RecordBuffer.Storage = .empty;
     var rb: ztls.RecordBuffer = .init(&storage.buffer);
@@ -84,7 +87,7 @@ fn serverRun(ctx: *ServerCtx) !void {
         const n = try recvIntoRecordBuffer(&ring, conn.stream.handle, &rb);
         if (n == 0) return error.ClientClosed;
         while (try rb.next()) |record| {
-            const ev = try hs.handleRecord(record, random, &out.buffer);
+            const ev = try hs.handleRecord(record, &out.buffer);
             switch (ev) {
                 .write => |w| {
                     try sendAll(&ring, conn.stream.handle, w);
@@ -107,7 +110,7 @@ fn serverRun(ctx: *ServerCtx) !void {
         const n = try recvIntoRecordBuffer(&ring, conn.stream.handle, &rb);
         if (n == 0) return error.ClientClosed;
         while (try rb.next()) |record| {
-            const ev = try hs.handleRecord(record, random, &out.buffer);
+            const ev = try hs.handleRecord(record, &out.buffer);
             switch (ev) {
                 .application_data => |data| {
                     if (!std.mem.eql(u8, data, ping(&msg_buf, round))) {

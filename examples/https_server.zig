@@ -55,16 +55,18 @@ pub fn main() !void {
     print("[https]  client connected\n", .{});
 
     const server_keypair: ztls.x25519.KeyPair = .generate();
-    var hs: ztls.ServerHandshake = .init(server_keypair);
+    var random: ztls.client_hello.Random = undefined;
+    std.crypto.random.bytes(&random.data);
+    var hs: ztls.ServerHandshake = .init(.{
+        .keypair = server_keypair,
+        .random = random,
+        .alpn_protocols = &.{"http/1.1"},
+    });
     defer hs.deinit();
-    hs.supportAlpn(&.{"http/1.1"});
 
     var signer = try ztls.signature.PrivateKey.fromP256Scalar(scalar[0..32]);
     defer signer.deinit();
     hs.setCredentials(&.{cert_der}, signer.signer());
-
-    var random: ztls.client_hello.Random = undefined;
-    std.crypto.random.bytes(&random.data);
 
     var storage: ztls.RecordBuffer.Storage = .empty;
     var rb: ztls.RecordBuffer = .init(&storage.buffer);
@@ -76,7 +78,7 @@ pub fn main() !void {
         if (n == 0) return error.ClientClosed;
         rb.advance(n);
         while (try rb.next()) |record| {
-            const ev = try hs.handleRecord(record, random, &out.buffer);
+            const ev = try hs.handleRecord(record, &out.buffer);
             switch (ev) {
                 .write => |w| {
                     try conn.stream.writeAll(w);
@@ -99,7 +101,7 @@ pub fn main() !void {
         if (n == 0) return error.ClientClosed;
         rb.advance(n);
         while (try rb.next()) |record| {
-            const ev = try hs.handleRecord(record, random, &out.buffer);
+            const ev = try hs.handleRecord(record, &out.buffer);
             switch (ev) {
                 .application_data => |data| {
                     if (std.mem.startsWith(u8, data, "GET ")) {

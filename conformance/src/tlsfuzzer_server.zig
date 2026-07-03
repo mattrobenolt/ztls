@@ -37,14 +37,17 @@ fn handleConnection(conn: std.net.Server.Connection) !void {
     var signer = try harness.testSigner();
     defer signer.deinit();
 
-    var hs: ztls.ServerHandshake = .init(.generate());
-    defer hs.deinit();
-    hs.supportAlpn(&.{ "http/1.1", "h2" });
-    hs.setCredentials(&.{harness.testCertDer()}, signer.signer());
-
+    const random = harness.randomBytes();
     // RFC 8446 §5.1 — provide storage for fragmented ClientHello reassembly.
     var reassembly_buf: [ztls.ServerHandshake.ch_reassembly_buffer_size]u8 = undefined;
-    hs.useHandshakeBuffer(&reassembly_buf);
+    var hs: ztls.ServerHandshake = .init(.{
+        .keypair = .generate(),
+        .random = random,
+        .alpn_protocols = &.{ "http/1.1", "h2" },
+        .reassembly = &reassembly_buf,
+    });
+    defer hs.deinit();
+    hs.setCredentials(&.{harness.testCertDer()}, signer.signer());
 
     var in_buf: [ztls.frame.header_len + ztls.frame.max_ciphertext_len]u8 = undefined;
     var out_buf: [harness.max_wire_record_len]u8 = undefined;
@@ -55,8 +58,7 @@ fn handleConnection(conn: std.net.Server.Connection) !void {
             else => return,
         };
 
-        const random = harness.randomBytes();
-        const ev = hs.handleRecord(record, random, &out_buf) catch |err| {
+        const ev = hs.handleRecord(record, &out_buf) catch |err| {
             harness.sendBestEffortAlert(&hs, conn.stream, err, &out_buf);
             return;
         };

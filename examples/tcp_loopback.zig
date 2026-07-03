@@ -49,16 +49,19 @@ fn serverRun(ctx: *ServerCtx) !void {
     defer conn.stream.close();
     print("[server] accepted connection\n", .{});
 
-    var hs: ztls.ServerHandshake = .init(ctx.keypair);
+    var random: ztls.client_hello.Random = undefined;
+    std.crypto.random.bytes(&random.data);
+
+    var hs: ztls.ServerHandshake = .init(.{
+        .keypair = ctx.keypair,
+        .random = random,
+        .alpn_protocols = &.{"h2"},
+    });
     defer hs.deinit();
-    hs.supportAlpn(&.{"h2"});
 
     var signer = try ztls.signature.PrivateKey.fromP256Scalar(scalar[0..32]);
     defer signer.deinit();
     hs.setCredentials(&.{cert_der}, signer.signer());
-
-    var random: ztls.client_hello.Random = undefined;
-    std.crypto.random.bytes(&random.data);
 
     var storage: ztls.RecordBuffer.Storage = .empty;
     var rb: ztls.RecordBuffer = .init(&storage.buffer);
@@ -70,7 +73,7 @@ fn serverRun(ctx: *ServerCtx) !void {
         if (n == 0) return error.ClientClosed;
         rb.advance(n);
         while (try rb.next()) |record| {
-            const ev = try hs.handleRecord(record, random, &out.buffer);
+            const ev = try hs.handleRecord(record, &out.buffer);
             switch (ev) {
                 .write => |w| {
                     try conn.stream.writeAll(w);
@@ -93,7 +96,7 @@ fn serverRun(ctx: *ServerCtx) !void {
         if (n == 0) return error.ClientClosed;
         rb.advance(n);
         while (try rb.next()) |record| {
-            const ev = try hs.handleRecord(record, random, &out.buffer);
+            const ev = try hs.handleRecord(record, &out.buffer);
             switch (ev) {
                 .application_data => |data| {
                     if (!std.mem.startsWith(u8, data, "GET ")) return error.UnexpectedRequest;

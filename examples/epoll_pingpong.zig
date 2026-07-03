@@ -356,15 +356,18 @@ fn serverRun(
     var listen_ev: linux.epoll_event = .{ .events = linux.EPOLL.IN, .data = .{ .fd = listen_fd } };
     try posix.epoll_ctl(epoll_fd, linux.EPOLL.CTL_ADD, listen_fd, &listen_ev);
 
-    var hs: ztls.ServerHandshake = .init(.generate());
-    defer hs.deinit();
-    var hs_storage: ztls.ServerHandshake.Storage = .empty;
-    hs.useHandshakeBuffer(&hs_storage.buffer);
-    hs.supportAlpn(&.{alpn});
-    hs.setCredentials(certs, private_key.signer());
-
     var random: ztls.Random = undefined;
     crypto.random.bytes(&random.data);
+    var hs_storage: ztls.ServerHandshake.Storage = .empty;
+    var hs: ztls.ServerHandshake = .init(.{
+        .keypair = .generate(),
+        .random = random,
+        .alpn_protocols = &.{alpn},
+        .reassembly = &hs_storage.buffer,
+    });
+    defer hs.deinit();
+    hs.setCredentials(certs, private_key.signer());
+
     var storage: ztls.RecordBuffer.Storage = .empty;
     var rb: ztls.RecordBuffer = .init(&storage.buffer);
     var out: ztls.ServerHandshake.OutBuffer = .empty;
@@ -410,7 +413,7 @@ fn serverRun(
         // Feed buffered records to the engine while no write is outstanding.
         while (!conn.writeBlocked()) {
             const record = (try rb.next()) orelse break;
-            switch (try hs.handleRecord(record, random, &out.buffer)) {
+            switch (try hs.handleRecord(record, &out.buffer)) {
                 .write => |w| if (try conn.send(w)) hs.completeWrite(),
                 .application_data => |data| {
                     if (!mem.eql(u8, data, ping(&msg_buf, round)))
@@ -463,7 +466,6 @@ fn clientRun(arena: Allocator, args: *const Args, port: u16) !void {
 
     var random: ztls.Random = undefined;
     crypto.random.bytes(&random.data);
-
     var hs_storage: ztls.ClientHandshake.Storage = .empty;
 
     var hs: ztls.ClientHandshake = .init(.{

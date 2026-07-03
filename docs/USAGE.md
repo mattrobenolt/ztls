@@ -174,17 +174,21 @@ while (!hs.isConnected()) {
 
 The server loop is identical in shape, with two differences:
 
-1. `ServerHandshake.handleRecord` takes an extra `random` argument for the ServerHello random.
+1. `ServerHandshake.Config` carries the ServerHello random up front.
 2. Server credentials are configured before the ClientHello arrives, and `sendServerFlightBuffered` sends the authenticated server flight after ServerHello is written.
 
 ```zig
-var hs: ztls.ServerHandshake = .init(server_keypair);
+var random: ztls.client_hello.Random = undefined;
+std.crypto.random.bytes(&random.data);
+var hs: ztls.ServerHandshake = .init(.{
+    .keypair = server_keypair,
+    .random = random,
+    .alpn_protocols = &.{"h2"},
+});
+
 var signer = try ztls.signature.PrivateKey.fromP256Scalar(scalar[0..32]);
 defer signer.deinit();
 hs.setCredentials(&.{cert_der}, signer.signer());
-
-var random: ztls.client_hello.Random = undefined;
-std.crypto.random.bytes(&random.data);
 
 var out: ztls.ServerHandshake.OutBuffer = .empty;
 var flight: ztls.ServerHandshake.FlightBuffer = .empty;
@@ -195,7 +199,7 @@ while (!hs.isConnected()) {
     const n = try stream.read(rb.writable());
     if (n == 0) return error.ClientClosed;
     rb.advance(n);
-    while (try rb.next()) |record| switch (try hs.handleRecord(record, random, &out.buffer)) {
+    while (try rb.next()) |record| switch (try hs.handleRecord(record, &out.buffer)) {
         .write => |w| {
             try stream.writeAll(w);
             hs.completeWrite();
@@ -397,12 +401,12 @@ Caller-owned types:
 
 Common drive methods:
 
-- `init(keypair)` / `initWithKeypairs(x25519_keypair, p256_keypair)` / `deinit()` — create and release a server handshake. `initWithKeypairs` is for server-side P-256 ECDHE coverage; the example path is X25519.
-- `supportSuites(suites)` — narrow the accepted cipher-suite list.
-- `supportAlpn(protocols)` — configure server ALPN choices.
+- `init(Config)` / `deinit()` — create and release a server handshake. Required Config fields are `keypair` and `random`; optional fields include `p256_keypair`, `supported_suites`, `alpn_protocols`, and ClientHello `reassembly` storage.
+- `supportSuites(suites)` — override the Config-provided cipher-suite list before processing ClientHello.
+- `supportAlpn(protocols)` — override the Config-provided ALPN choices before processing ClientHello.
 - `setCredentials(certs, signer)` / `setCertificateChain(chain, signer)` — attach a leaf-first certificate chain and signer before processing ClientHello.
-- `useHandshakeBuffer(storage)` — attach caller-owned ClientHello reassembly storage.
-- `handleRecord(record, random, out)` — consume one TLS record from `RecordBuffer.next()` and return `Event`.
+- `useHandshakeBuffer(storage)` — attach or override caller-owned ClientHello reassembly storage before processing ClientHello.
+- `handleRecord(record, out)` — consume one TLS record from `RecordBuffer.next()` and return `Event`.
 - `sendServerFlightBuffered(flight)` / `sendPreparedServerFlight(out)` — emit the authenticated server flight after ServerHello is written and acknowledged.
 - `needsServerFlight()` — true while the authenticated flight still needs to be sent.
 - `isConnected()` — true after the client Finished verifies and application keys are installed.

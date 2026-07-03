@@ -156,7 +156,7 @@ fn deterministicServerKeypair() !ztls.x25519.KeyPair {
 }
 
 fn deterministicClientHandshake() ztls.ClientHandshake {
-    var client: ztls.ClientHandshake = .init(.{
+    const client: ztls.ClientHandshake = .init(.{
         .keypair = deterministicClientKeypair() catch unreachable,
         .host_name = "ztls.server.test",
         .now_sec = 0,
@@ -167,7 +167,10 @@ fn deterministicClientHandshake() ztls.ClientHandshake {
 }
 
 fn deterministicServerHandshake() ztls.ServerHandshake {
-    return .init(deterministicServerKeypair() catch unreachable);
+    return .init(.{
+        .keypair = deterministicServerKeypair() catch unreachable,
+        .random = rfc8448.server_random,
+    });
 }
 
 fn connectPair(comptime suite: Suite) !struct {
@@ -185,11 +188,14 @@ fn connectPair(comptime suite: Suite) !struct {
     const ch_record = try client.start(&client_out);
     client.completeWrite();
 
-    var server: ztls.ServerHandshake = ztls.ServerHandshake.init(try deterministicServerKeypair());
+    var server: ztls.ServerHandshake = ztls.ServerHandshake.init(.{
+        .keypair = try deterministicServerKeypair(),
+        .random = rfc8448.server_random,
+    });
     const suites = [_]ztls.CipherSuite{suite.cipherSuite()};
     server.supportSuites(&suites);
     var server_out: [8192]u8 = undefined;
-    const sh_record = try server.acceptClientHello(ch_record, rfc8448.client_random, &server_out);
+    const sh_record = try server.acceptClientHello(ch_record, &server_out);
     try client.processServerHello(sh_record[ztls.frame.header_len..]);
 
     var signer: ztls.signature.PrivateKey = try .fromP256Scalar(server_scalar[0..32]);
@@ -275,7 +281,6 @@ fn benchHandshakeServerAccept(comptime suite: Suite) bench.Function {
                 var server_out: [8192]u8 = undefined;
                 _ = server.acceptClientHello(
                     ch_record,
-                    rfc8448.client_random,
                     &server_out,
                 ) catch unreachable;
                 b.keepAlive(&server);
@@ -306,7 +311,6 @@ fn benchHandshakeClientServerHello(comptime suite: Suite) bench.Function {
             var server_out: [8192]u8 = undefined;
             const sh_record = server.acceptClientHello(
                 ch_record,
-                rfc8448.client_random,
                 &server_out,
             ) catch unreachable;
 
@@ -342,7 +346,6 @@ fn benchHandshakeServerFlight(comptime suite: Suite) bench.Function {
             var server_out: [8192]u8 = undefined;
             const sh_record = server.acceptClientHello(
                 ch_record,
-                rfc8448.client_random,
                 &server_out,
             ) catch unreachable;
 
@@ -358,7 +361,7 @@ fn benchHandshakeServerFlight(comptime suite: Suite) bench.Function {
                 var s: ztls.ServerHandshake = deterministicServerHandshake();
                 s.supportSuites(&suites);
                 var so: [8192]u8 = undefined;
-                _ = s.acceptClientHello(ch_record, rfc8448.client_random, &so) catch unreachable;
+                _ = s.acceptClientHello(ch_record, &so) catch unreachable;
                 _ = s.sendPreparedAuthenticatedFlight(
                     &.{server_cert_der},
                     signer.signer(),
@@ -394,7 +397,6 @@ fn benchHandshakeClientFlight(comptime suite: Suite) bench.Function {
             var server_out: [8192]u8 = undefined;
             const sh_record = server.acceptClientHello(
                 ch_record,
-                rfc8448.client_random,
                 &server_out,
             ) catch unreachable;
 
@@ -457,7 +459,7 @@ fn serverFinishedInput(comptime suite: Suite) !ServerFinishedInput {
     const suites = [_]ztls.CipherSuite{suite.cipherSuite()};
     server.supportSuites(&suites);
     var server_out: [8192]u8 = undefined;
-    const sh_record = try server.acceptClientHello(ch_record, rfc8448.client_random, &server_out);
+    const sh_record = try server.acceptClientHello(ch_record, &server_out);
     try client.processServerHello(sh_record[ztls.frame.header_len..]);
 
     var signer: ztls.signature.PrivateKey = try .fromP256Scalar(server_scalar[0..32]);

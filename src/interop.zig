@@ -224,7 +224,13 @@ fn serverThread(args: *const ServerArgs) !void {
 
 fn serve(stream: net.Stream, suite: ztls.CipherSuite) !void {
     const server_keypair: ztls.x25519.KeyPair = .generate();
-    var hs: ztls.ServerHandshake = .init(server_keypair);
+    var server_random: ztls.client_hello.Random = undefined;
+    crypto.random.bytes(&server_random.data);
+
+    var hs: ztls.ServerHandshake = .init(.{
+        .keypair = server_keypair,
+        .random = server_random,
+    });
     defer hs.deinit();
     hs.supportAlpn(&.{alpn_protocol});
     const supported = [_]ztls.CipherSuite{suite};
@@ -234,8 +240,6 @@ fn serve(stream: net.Stream, suite: ztls.CipherSuite) !void {
     defer signer.deinit();
     hs.setCredentials(&.{server_cert_der}, signer.signer());
 
-    var random: ztls.client_hello.Random = undefined;
-    crypto.random.bytes(&random.data);
     var storage: ztls.RecordBuffer.Storage = .empty;
     var rb: ztls.RecordBuffer = .init(&storage.buffer);
     var out: [4096]u8 = undefined;
@@ -246,7 +250,7 @@ fn serve(stream: net.Stream, suite: ztls.CipherSuite) !void {
         if (n == 0) return error.ClientClosed;
         rb.advance(n);
         while (try rb.next()) |record| {
-            const ev = try hs.handleRecord(record, random, &out);
+            const ev = try hs.handleRecord(record, &out);
             switch (ev) {
                 .write => |w| {
                     try stream.writeAll(w);
@@ -270,7 +274,7 @@ fn serve(stream: net.Stream, suite: ztls.CipherSuite) !void {
         const n = try stream.read(rb.writable());
         if (n == 0) return error.ClientClosed;
         rb.advance(n);
-        while (try rb.next()) |record| switch (try hs.handleRecord(record, random, &out)) {
+        while (try rb.next()) |record| switch (try hs.handleRecord(record, &out)) {
             .application_data => |data| return sendResponse(stream, &hs, data, &out),
             .write => |w| {
                 try stream.writeAll(w);

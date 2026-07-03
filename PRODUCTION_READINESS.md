@@ -60,7 +60,7 @@ ztls is production-ready when all six pillars are `PROVEN`:
 | Pillar | Status | One-line |
 |---|---|---|
 | 1. Correctness | `PARTIAL` | Strong layered evidence; the RFC 8446 MUST matrix has no `GAP`/`PARTIAL` rows for the current supported surface, but external conformance runners are not fully CI-gated. |
-| 2. Ergonomics | `PARTIAL` | CI-gated deterministic examples cover both client and server roles for `std.net.Stream`, epoll, and io_uring; driver ergonomics remain rough. |
+| 2. Ergonomics | `PARTIAL` | CI-gated deterministic examples cover both client and server roles; client/server handshake setup now use Config structs, but the pending-write/outbox model remains rough. |
 | 3. Performance | `PARTIAL` | Rich bench harness exists; equivalence methodology and reproducible hardware-matrix results are missing. |
 | 4. Providers | `PARTIAL` | OpenSSL primitives are live and AWS-LC selection is explicit, but the primitive facade and capability table remain incomplete. |
 | 5. Marketing | `NONE` | Not started. |
