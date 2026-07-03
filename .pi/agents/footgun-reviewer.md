@@ -2,7 +2,7 @@
 name: footgun-reviewer
 description: Reviewer for hidden process, maintainability, benchmark, shell, generated-file, and performance footguns in ztls work.
 tools: bash, grep, find, ls, read
-model: fireworks/accounts/fireworks/models/glm-5p1
+model: fireworks/accounts/fireworks/models/glm-5p2
 thinking: low
 systemPromptMode: replace
 inheritProjectContext: true

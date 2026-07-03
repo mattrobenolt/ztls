@@ -2,7 +2,7 @@
 name: matt-nits
 description: Mechanical ztls/Zig style-nits auto-applier. Applies explicit pattern edits from the Matt-style checklist directly. Read-only review work belongs in other reviewer agents.
 tools: bash, grep, find, ls, read, edit, write
-model: fireworks/accounts/fireworks/models/glm-5p1
+model: fireworks/accounts/fireworks/models/glm-5p2
 thinking: low
 systemPromptMode: replace
 inheritProjectContext: true
