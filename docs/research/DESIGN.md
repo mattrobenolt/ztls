@@ -218,12 +218,16 @@ The engine has no threads, no callbacks, no I/O. It's a struct you poke.
 
 ```zig
 // High-level client connection API: caller owns buffers and transport.
-var hs: ztls.ClientHandshake = .init(keypair);
-var reassembly: [32 * 1024]u8 = undefined;
-hs.useHandshakeBuffer(&reassembly); // optional; supports handshake messages spanning records
-hs.offerAlpn(&.{ "h2", "http/1.1" }); // optional; copied into ClientHello
+var hs: ztls.ClientHandshake = .init(.{
+    .keypair = keypair,
+    .host_name = "example.com",
+    .now_sec = std.time.timestamp(),
+    .random = random,
+    .alpn_protocols = &.{ "h2", "http/1.1" },
+    .reassembly = &reassembly, // optional; supports handshake messages spanning records
+});
 
-const client_hello_wire = try hs.start(&out, random, "example.com");
+const client_hello_wire = try hs.start(&out);
 // write client_hello_wire to the transport, then:
 hs.completeWrite();
 

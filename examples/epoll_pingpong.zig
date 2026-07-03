@@ -461,17 +461,22 @@ fn clientRun(arena: Allocator, args: *const Args, port: u16) !void {
     var bundle: crypto.Certificate.Bundle = .{};
     try bundle.addCertsFromFilePath(arena, fs.cwd(), args.trust);
 
-    var hs: ztls.ClientHandshake = .init(.generate());
-    defer hs.deinit();
-    var hs_storage: ztls.ClientHandshake.Storage = .empty;
-    hs.useHandshakeBuffer(&hs_storage.buffer);
-    hs.offerAlpn(&.{alpn});
-    hs.policy.host_name = args.host;
-    hs.policy.now_sec = std.time.timestamp();
-    hs.policy.bundle = &bundle;
-
     var random: ztls.Random = undefined;
     crypto.random.bytes(&random.data);
+
+    var hs_storage: ztls.ClientHandshake.Storage = .empty;
+
+    var hs: ztls.ClientHandshake = .init(.{
+        .keypair = .generate(),
+        .host_name = args.host,
+        .now_sec = std.time.timestamp(),
+        .random = random,
+        .alpn_protocols = &.{alpn},
+        .bundle = &bundle,
+        .reassembly = &hs_storage.buffer,
+    });
+    defer hs.deinit();
+
     var out: ztls.ClientHandshake.OutBuffer = .empty;
     var storage: ztls.RecordBuffer.Storage = .empty;
     var rb: ztls.RecordBuffer = .init(&storage.buffer);
@@ -489,7 +494,7 @@ fn clientRun(arena: Allocator, args: *const Args, port: u16) !void {
                 try posix.getsockoptError(fd); // surfaces a failed async connect
                 connected = true;
                 stdout.print("[client] connected to {s}:{d}\n", .{ host, port });
-                if (try conn.send(try hs.start(&out.buffer, random, args.host)))
+                if (try conn.send(try hs.start(&out.buffer)))
                     hs.completeWrite();
                 stdout.print("[client] ClientHello sent → state={s}\n", .{@tagName(hs.state)});
                 continue;

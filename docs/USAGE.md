@@ -142,9 +142,17 @@ var out: ztls.ClientHandshake.OutBuffer = .empty;
 var storage: ztls.RecordBuffer.Storage = .empty;
 var rb: ztls.RecordBuffer = .init(&storage.buffer);
 
-var hs: ztls.ClientHandshake = .init(keypair);
+var random: ztls.client_hello.Random = undefined;
+std.crypto.random.bytes(&random.data);
 
-try stream.writeAll(try hs.start(&out.buffer, random, "example.com"));
+var hs: ztls.ClientHandshake = .init(.{
+    .keypair = keypair,
+    .host_name = "example.com",
+    .now_sec = std.time.timestamp(),
+    .random = random,
+});
+
+try stream.writeAll(try hs.start(&out.buffer));
 hs.completeWrite();
 
 while (!hs.isConnected()) {
@@ -267,8 +275,16 @@ if (server.clientServerName()) |name| {
 Both sides offer protocol lists before the handshake begins:
 
 ```zig
-// Client
-client.offerAlpn(&.{ "h2", "http/1.1" });
+// Client — via Config at init time
+var hs: ztls.ClientHandshake = .init(.{
+    .keypair = keypair,
+    .host_name = "example.com",
+    .now_sec = std.time.timestamp(),
+    .random = random,
+    .alpn_protocols = &.{ "h2", "http/1.1" },
+});
+// or after init:
+// client.offerAlpn(&.{ "h2", "http/1.1" });
 
 // Server
 server.supportAlpn(&.{"h2"});
@@ -278,20 +294,30 @@ After the handshake, `selectedAlpnProtocol()` returns the negotiated protocol (o
 
 ## Certificate policy
 
-The client validates the server certificate chain against a caller-owned policy:
+The client validates the server certificate chain against a caller-owned policy.
+The `Config` struct seeds `policy` at init time from `host_name`, `now_sec`,
+`bundle`, and `insecure_no_chain_anchor`; `policy` remains public for advanced
+overrides after init:
 
 ```zig
-client.policy.host_name = "example.com";     // SAN/CN check
-client.policy.bundle = &bundle;               // trust-anchor anchoring
-client.policy.now_sec = std.time.timestamp(); // validity-period check
+var hs: ztls.ClientHandshake = .init(.{
+    .keypair = keypair,
+    .host_name = "example.com",      // SAN/CN check + SNI
+    .now_sec = std.time.timestamp(),  // validity-period check
+    .bundle = &bundle,                // trust-anchor anchoring
+    .random = random,
+});
+// Advanced override (optional):
+// hs.policy.insecure_no_chain_anchor = true;  // test/demo only
 ```
 
-A client policy without `bundle` rejects the server Certificate unless the caller
-explicitly sets `insecure_no_chain_anchor = true` for a test/demo fixture. The
-bundle type is Zig's `std.crypto.Certificate.Bundle`; load it from the trust
-anchors appropriate for your application and keep it caller-owned for the
-connection lifetime. The insecure fixture mode still verifies CertificateVerify
-key possession, but it does not authenticate the chain to any trust root.
+A client policy without `bundle` rejects the server Certificate unless the
+caller explicitly sets `insecure_no_chain_anchor = true` for a test/demo
+fixture. The bundle type is Zig's `std.crypto.Certificate.Bundle`; load it from
+the trust anchors appropriate for your application and keep it caller-owned for
+the connection lifetime. The insecure fixture mode still verifies
+CertificateVerify key possession, but it does not authenticate the chain to any
+trust root.
 
 ## Close semantics
 
@@ -338,10 +364,10 @@ Caller-owned types:
 
 Common drive methods:
 
-- `init(keypair)` / `deinit()` — create and release a client handshake.
-- `offerAlpn(protocols)` — advertise application protocols before `start`.
-- `useHandshakeBuffer(storage)` — attach caller-owned handshake reassembly storage.
-- `start(out, random, server_name)` — emit ClientHello.
+- `init(config)` / `deinit()` — create and release a client handshake. `Config` requires `keypair`, `host_name`, `now_sec`, and `random`; optional fields default `bundle`, `insecure_no_chain_anchor`, `alpn_protocols`, and `reassembly`.
+- `offerAlpn(protocols)` — advertise application protocols before `start` (also settable via `Config.alpn_protocols`).
+- `useHandshakeBuffer(storage)` — attach caller-owned handshake reassembly storage (also settable via `Config.reassembly`).
+- `start(out)` — emit ClientHello using `Config.host_name` (SNI) and `Config.random`.
 - `handleRecord(record, out)` — consume one TLS record from `RecordBuffer.next()` and return `Event`.
 - `isConnected()` — true after the server Finished verifies and application keys are installed.
 - `sendApplicationData(plaintext, out)` / `sendPreparedApplicationData(len, out)` — emit one encrypted application-data record.
@@ -350,14 +376,14 @@ Common drive methods:
 - `completeWrite()` — acknowledge the previous emitted record.
 - `selectedAlpnProtocol()` — negotiated ALPN protocol, or `null`.
 
-Policy fields to set before `start`:
+Policy fields (seeded from `Config` at init, overridable after):
 
-| Field | Effect |
-|---|---|
-| `policy.host_name` | Expected DNS name for SAN/CN verification. |
-| `policy.bundle` | Caller-owned trust-anchor bundle. |
-| `policy.now_sec` | Validity-period timestamp. |
-| `policy.insecure_no_chain_anchor` | Test/demo opt-out from trust-anchor verification. |
+| Field | Config field | Effect |
+|---|---|---|
+| `policy.host_name` | `Config.host_name` | Expected DNS name for SAN/CN verification + SNI. |
+| `policy.bundle` | `Config.bundle` | Caller-owned trust-anchor bundle. |
+| `policy.now_sec` | `Config.now_sec` | Validity-period timestamp. |
+| `policy.insecure_no_chain_anchor` | `Config.insecure_no_chain_anchor` | Test/demo opt-out from trust-anchor verification. |
 
 Low-level in-memory hooks exist for fixture-style handshakes with no transport between engines: `processServerHello`, `processFlight`, and `clientFinished`. Prefer the normal `start` + `handleRecord` loop for transport integrations.
 

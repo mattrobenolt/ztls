@@ -66,8 +66,38 @@ const HandshakeBuffer = SliceBuffer(u8);
 pub const recommended_handshake_storage = 4 * frame.max_plaintext_len;
 
 /// Caller-owned backing for handshake-message reassembly. Declare one as
-/// `.empty` and hand `&storage.buffer` to useHandshakeBuffer().
+/// `.empty` and hand `&storage.buffer` to useHandshakeBuffer() (or pass it
+/// via `Config.reassembly`).
 pub const Storage = ArrayBuffer(u8, recommended_handshake_storage);
+
+/// Configuration for a client handshake. Required fields have no defaults;
+/// optional fields default to values that match the previous `init(keypair)` +
+/// post-init policy assignment shape. `host_name` is the single source for
+/// both SNI (the server_name extension) and certificate SAN/CN validation.
+pub const Config = struct {
+    /// Ephemeral X25519 keypair. The public goes into the ClientHello key_share.
+    keypair: x25519.KeyPair,
+    /// DNS name sent as SNI and checked against the leaf certificate SAN/CN.
+    /// null disables both SNI and hostname verification.
+    host_name: ?[]const u8,
+    /// Current time in seconds since the Unix epoch for certificate validity.
+    /// Required — callers that do not care must pass 0 explicitly.
+    now_sec: i64,
+    /// ClientHello random field (RFC 8446 §4.1.2). Stored and used by start().
+    random: client_hello.Random,
+    /// Trust anchors for chain validation. null rejects the server Certificate
+    /// unless `insecure_no_chain_anchor` is set.
+    bundle: ?*const crypto.Certificate.Bundle = null,
+    /// Test/demo opt-out from trust-anchor verification. Production clients
+    /// should leave this false and provide `bundle`.
+    insecure_no_chain_anchor: bool = false,
+    /// ALPN protocols offered in ClientHello. Caller-owned; must live until
+    /// start() encodes them.
+    alpn_protocols: client_hello.AlpnProtocols = &.{},
+    /// Optional caller-owned storage for handshake-message reassembly. When
+    /// non-null, the engine reassembles flight messages that span records.
+    reassembly: ?[]u8 = null,
+};
 
 const ServerFlightProgress = enum {
     none,
@@ -289,6 +319,8 @@ suite: Suite,
 /// Our ephemeral X25519 keypair. The secret computes the DHE shared secret
 /// once ServerHello arrives; the public goes into the ClientHello key_share.
 keypair: x25519.KeyPair,
+/// ClientHello random (RFC 8446 §4.1.2), stored from Config for start().
+random: client_hello.Random = .zero,
 /// Handshake-traffic RecordLayers, installed by processServerHello.
 rx: RecordLayer = undefined,
 tx: RecordLayer = undefined,
@@ -324,15 +356,24 @@ offered_signature_schemes: OfferedSignatureSchemesBuffer = .empty,
 alpn_protocols: client_hello.AlpnProtocols = &.{},
 selected_alpn: SelectedAlpnBuffer = .empty,
 
-/// Start a client handshake with our ephemeral X25519 keypair. The negotiated
-/// suite is hardcoded to SHA-256 for now; true suite selection (and re-hashing
-/// ClientHello under SHA-384) is deferred.
-pub fn init(keypair: x25519.KeyPair) ClientHandshake {
+/// Start a client handshake from a Config. The Config's `host_name` is the
+/// single source for SNI and certificate validation; `now_sec` is required.
+/// `policy` remains public for advanced overrides (e.g. leaf_usage) after init.
+pub fn init(config: Config) ClientHandshake {
     return .{
         .state = .start,
         // Hash unknown until ServerHello: run both candidate transcripts.
         .suite = .init,
-        .keypair = keypair,
+        .keypair = config.keypair,
+        .random = config.random,
+        .policy = .{
+            .bundle = config.bundle,
+            .insecure_no_chain_anchor = config.insecure_no_chain_anchor,
+            .now_sec = config.now_sec,
+            .host_name = config.host_name,
+        },
+        .alpn_protocols = config.alpn_protocols,
+        .handshake_buf = if (config.reassembly) |buf| .init(buf) else .empty,
     };
 }
 
@@ -381,25 +422,19 @@ pub fn selectedAlpnProtocol(self: *const ClientHandshake) ?[]const u8 {
     return self.selected_alpn.constSlice();
 }
 
-/// Begin the handshake: encode a ClientHello (from the init keypair's public
-/// key), frame it as a plaintext record into `out`, absorb it into the
-/// transcript, and advance start -> wait_sh. Returns the wire-ready record to
-/// send (then completeWrite() once sent). RFC 8446 §4.1.2, §5.1.
+/// Begin the handshake: encode a ClientHello using the Config's `host_name`
+/// (for SNI) and `random`, frame it as a plaintext record into `out`, absorb
+/// it into the transcript, and advance start -> wait_sh. Returns the wire-ready
+/// record to send (then completeWrite() once sent). RFC 8446 §4.1.2, §5.1.
 // ziglint-ignore: Z015 -- StartError is a public error-set alias.
-pub fn start(
-    self: *ClientHandshake,
-    out: []u8,
-    random: client_hello.Random,
-    server_name: ?[]const u8,
-) StartError![]const u8 {
+pub fn start(self: *ClientHandshake, out: []u8) StartError![]const u8 {
     assert(self.state == .start);
     if (out.len < frame.header_len) return error.BufferTooShort;
-    if (self.policy.host_name == null) self.policy.host_name = server_name;
     const ch = try client_hello.encode(
         out[frame.header_len..],
-        random,
+        self.random,
         self.keypair.public_key,
-        server_name,
+        self.policy.host_name,
         self.alpn_protocols,
     );
     const header: frame.Header = .init(.handshake, @intCast(ch.len));
@@ -695,7 +730,7 @@ pub fn processServerHello(self: *ClientHandshake, msg: []const u8) ServerHelloEr
 
     self.suite.update(msg); // transcript now covers ClientHello || ServerHello
     var dhe = try x25519.sharedSecret(self.keypair.secret_key, sh.server_public_key);
-    defer std.crypto.secureZero(u8, &dhe);
+    defer crypto.secureZero(u8, &dhe);
     const keys = try self.suite.deriveHandshakeKeys(&dhe);
     self.rx = keys.rx;
     self.tx = keys.tx;
@@ -1009,7 +1044,7 @@ const rfc8448_server_hello = [_]u8{
 // SHA-256(ClientHello || ServerHello) =
 //   860c06edc07858ee8e78f0e7428c58edd6b43f2ca3e6e95f02ed063cf0e1cad8
 test "transcript hash: RFC 8448 §3 ClientHello || ServerHello" {
-    var hs: ClientHandshake = .init(.{ .secret_key = .zero, .public_key = .zero });
+    var hs: ClientHandshake = .init(testConfig(.{ .secret_key = .zero, .public_key = .zero }));
     hs.suite.update(&rfc8448_client_hello);
     hs.suite.update(&rfc8448_server_hello);
 
@@ -1034,7 +1069,7 @@ test "deriveHandshakeKeys: RFC 8448 §3 server handshake key/iv/finished" {
         0xd4, 0x62, 0x72, 0x90, 0x0f, 0x89, 0x49, 0x2d,
     };
 
-    var hs: ClientHandshake = .init(.{ .secret_key = .zero, .public_key = .zero });
+    var hs: ClientHandshake = .init(testConfig(.{ .secret_key = .zero, .public_key = .zero }));
     hs.suite.update(&rfc8448_client_hello);
     hs.suite.update(&rfc8448_server_hello);
     // Collapse to the SHA-256 arm (as processServerHello would for this suite).
@@ -1064,6 +1099,15 @@ test "deriveHandshakeKeys: RFC 8448 §3 server handshake key/iv/finished" {
 
 // RFC 8448 §3 client ephemeral X25519 keypair (secret + the public from the
 // ClientHello key_share).
+fn testConfig(keypair: x25519.KeyPair) Config {
+    return .{
+        .keypair = keypair,
+        .host_name = null,
+        .now_sec = 0,
+        .random = .zero,
+    };
+}
+
 const rfc8448_client_keypair: x25519.KeyPair = .{
     .secret_key = .init(.{
         0x49, 0xaf, 0x42, 0xba, 0x7f, 0x79, 0x94, 0x85,
@@ -1084,7 +1128,7 @@ const rfc8448_client_keypair: x25519.KeyPair = .{
 // RFC 8448 §3 server handshake write key, proving the X25519 + key-schedule
 // integration (not just isolated derivation from a literal shared secret).
 test "processServerHello: RFC 8448 §3 installs server handshake keys" {
-    var hs: ClientHandshake = .init(rfc8448_client_keypair);
+    var hs: ClientHandshake = .init(testConfig(rfc8448_client_keypair));
     hs.injectClientHello(&rfc8448_client_hello);
 
     try hs.processServerHello(&rfc8448_server_hello);
@@ -1098,7 +1142,7 @@ test "processServerHello: RFC 8448 §3 installs server handshake keys" {
 
 // RFC 8446 §4.1.3 — ServerHello legacy_session_id_echo must match ClientHello.
 test "processServerHello: rejects mismatched session id echo" {
-    var hs: ClientHandshake = .init(rfc8448_client_keypair);
+    var hs: ClientHandshake = .init(testConfig(rfc8448_client_keypair));
     hs.injectClientHello(&rfc8448_client_hello);
 
     var sh_buf: [128]u8 = undefined;
@@ -1114,7 +1158,7 @@ test "processServerHello: rejects mismatched session id echo" {
 
 // RFC 8446 §4.1.3 — ServerHello must select a cipher suite offered by ClientHello.
 test "processServerHello: rejects unoffered cipher suite" {
-    var hs: ClientHandshake = .init(.generate());
+    var hs: ClientHandshake = .init(testConfig(.generate()));
     var ch_buf: [512]u8 = undefined;
     const ch = try client_hello.encode(&ch_buf, .zero, hs.keypair.public_key, null, &.{});
     // Keep TLS_AES_128_GCM_SHA256 and replace the other recognized suites with unknowns.
@@ -1152,7 +1196,7 @@ fn rfc8448Fixture(name: []const u8, out: []u8) []u8 {
 }
 
 fn flightReadyClient() !ClientHandshake {
-    var hs: ClientHandshake = .init(rfc8448_client_keypair);
+    var hs: ClientHandshake = .init(testConfig(rfc8448_client_keypair));
     hs.policy.insecure_no_chain_anchor = true;
     hs.injectClientHello(&rfc8448_client_hello);
     try hs.processServerHello(&rfc8448_server_hello);
@@ -1223,7 +1267,7 @@ fn encryptAllZeroInnerForTest(tx: *RecordLayer, inner_len: usize, out: []u8) ![]
 // RFC 8448 uses self-contained test certificates; tests that drive the full
 // Certificate message opt into signature-only chain handling explicitly.
 test "processFlight: stores selected ALPN" {
-    var hs: ClientHandshake = .init(rfc8448_client_keypair);
+    var hs: ClientHandshake = .init(testConfig(rfc8448_client_keypair));
     hs.offerAlpn(&.{ "h2", "http/1.1" });
     hs.injectClientHello(&rfc8448_client_hello);
     try hs.processServerHello(&rfc8448_server_hello);
@@ -1240,7 +1284,7 @@ test "processFlight: stores selected ALPN" {
 }
 
 test "processFlight: rejects unoffered ALPN" {
-    var hs: ClientHandshake = .init(rfc8448_client_keypair);
+    var hs: ClientHandshake = .init(testConfig(rfc8448_client_keypair));
     hs.offerAlpn(&.{"http/1.1"});
     hs.injectClientHello(&rfc8448_client_hello);
     try hs.processServerHello(&rfc8448_server_hello);
@@ -1255,7 +1299,7 @@ test "processFlight: rejects unoffered ALPN" {
 }
 
 test "processFlight: rejects unanchored Certificate by default" {
-    var hs: ClientHandshake = .init(rfc8448_client_keypair);
+    var hs: ClientHandshake = .init(testConfig(rfc8448_client_keypair));
     hs.injectClientHello(&rfc8448_client_hello);
     try hs.processServerHello(&rfc8448_server_hello);
 
@@ -1441,7 +1485,7 @@ test "processFlight: rejects unrequested server CertificateEntry status_request"
 }
 
 test "processFlight: RFC 8448 §3 full server flight to connected" {
-    var hs: ClientHandshake = .init(rfc8448_client_keypair);
+    var hs: ClientHandshake = .init(testConfig(rfc8448_client_keypair));
     hs.policy.insecure_no_chain_anchor = true;
     hs.injectClientHello(&rfc8448_client_hello);
     try hs.processServerHello(&rfc8448_server_hello);
@@ -1456,7 +1500,7 @@ test "processFlight: RFC 8448 §3 full server flight to connected" {
 // is called once per message with state persisting across calls. The leaf
 // public key extracted at Certificate must survive to CertificateVerify.
 test "processFlight: handshake message spanning records needs buffer" {
-    var hs: ClientHandshake = .init(rfc8448_client_keypair);
+    var hs: ClientHandshake = .init(testConfig(rfc8448_client_keypair));
     hs.injectClientHello(&rfc8448_client_hello);
     try hs.processServerHello(&rfc8448_server_hello);
 
@@ -1468,7 +1512,7 @@ test "processFlight: handshake message spanning records needs buffer" {
 // RFC 8446 §5.1 — handshake messages MAY be split across records. Caller-owned
 // reassembly storage keeps ztls allocation-free while supporting large flights.
 test "processFlight: reassembles handshake message split across records" {
-    var hs: ClientHandshake = .init(rfc8448_client_keypair);
+    var hs: ClientHandshake = .init(testConfig(rfc8448_client_keypair));
     hs.policy.insecure_no_chain_anchor = true;
     var reassembly: [1024]u8 = undefined;
     hs.useHandshakeBuffer(&reassembly);
@@ -1485,7 +1529,7 @@ test "processFlight: reassembles handshake message split across records" {
 }
 
 test "processFlight: RFC 8448 §3 flight split one message per record" {
-    var hs: ClientHandshake = .init(rfc8448_client_keypair);
+    var hs: ClientHandshake = .init(testConfig(rfc8448_client_keypair));
     hs.policy.insecure_no_chain_anchor = true;
     hs.injectClientHello(&rfc8448_client_hello);
     try hs.processServerHello(&rfc8448_server_hello);
@@ -1500,7 +1544,7 @@ test "processFlight: RFC 8448 §3 flight split one message per record" {
 
 // RFC 8446 §4.1.3 — a malformed ServerHello is a decode_error failure.
 test "handleRecord: malformed ServerHello is rejected" {
-    var hs: ClientHandshake = .init(rfc8448_client_keypair);
+    var hs: ClientHandshake = .init(testConfig(rfc8448_client_keypair));
     defer hs.deinit();
     hs.injectClientHello(&rfc8448_client_hello);
 
@@ -1667,7 +1711,7 @@ test "processFlight: rejects wrong server Finished verify_data" {
 
 // RFC 8446 §6 — a fatal plaintext alert during wait_sh aborts the handshake.
 test "handleRecord: plaintext fatal alert in wait_sh" {
-    var hs: ClientHandshake = .init(rfc8448_client_keypair);
+    var hs: ClientHandshake = .init(testConfig(rfc8448_client_keypair));
     defer hs.deinit();
     hs.injectClientHello(&rfc8448_client_hello);
 
@@ -1679,7 +1723,7 @@ test "handleRecord: plaintext fatal alert in wait_sh" {
 
 // RFC 8446 §D.4 — CCS before the first ClientHello is outside the compatibility window.
 test "handleRecord: rejects ChangeCipherSpec before ClientHello" {
-    var hs: ClientHandshake = .init(rfc8448_client_keypair);
+    var hs: ClientHandshake = .init(testConfig(rfc8448_client_keypair));
     defer hs.deinit();
 
     var ccs = [_]u8{ 0x14, 0x03, 0x03, 0x00, 0x01, 0x01 };
@@ -1690,7 +1734,7 @@ test "handleRecord: rejects ChangeCipherSpec before ClientHello" {
 // RFC 8446 §D.4 — a valid compatibility CCS is ignored after ClientHello and
 // before the peer Finished.
 test "handleRecord: drops valid ChangeCipherSpec after ClientHello" {
-    var hs: ClientHandshake = .init(rfc8448_client_keypair);
+    var hs: ClientHandshake = .init(testConfig(rfc8448_client_keypair));
     defer hs.deinit();
     hs.injectClientHello(&rfc8448_client_hello);
 
@@ -1702,7 +1746,7 @@ test "handleRecord: drops valid ChangeCipherSpec after ClientHello" {
 
 // RFC 8446 §D.4 — a compatibility CCS must carry exactly byte 0x01.
 test "handleRecord: rejects malformed ChangeCipherSpec payload" {
-    var hs: ClientHandshake = .init(rfc8448_client_keypair);
+    var hs: ClientHandshake = .init(testConfig(rfc8448_client_keypair));
     defer hs.deinit();
     hs.injectClientHello(&rfc8448_client_hello);
 
@@ -1844,7 +1888,7 @@ const rfc8448_client_finished = [_]u8{
 // RFC 8448 §3 client Finished. Also check rx is now the §3 server application
 // write key.
 test "clientFinished: RFC 8448 §3 emits Finished and upgrades to app keys" {
-    var hs: ClientHandshake = .init(rfc8448_client_keypair);
+    var hs: ClientHandshake = .init(testConfig(rfc8448_client_keypair));
     hs.policy.insecure_no_chain_anchor = true;
     hs.injectClientHello(&rfc8448_client_hello);
     try hs.processServerHello(&rfc8448_server_hello);
@@ -1877,7 +1921,7 @@ test "clientFinished: RFC 8448 §3 emits Finished and upgrades to app keys" {
 // write key against the independently-computed next key (see the
 // nextTrafficSecret vector in hkdf.zig).
 test "ratchetClientKey: RFC 8446 §7.2 next application write key" {
-    var hs: ClientHandshake = .init(rfc8448_client_keypair);
+    var hs: ClientHandshake = .init(testConfig(rfc8448_client_keypair));
     hs.policy.insecure_no_chain_anchor = true;
     hs.injectClientHello(&rfc8448_client_hello);
     try hs.processServerHello(&rfc8448_server_hello);
@@ -1907,7 +1951,7 @@ fn expectHandshakeSecretsZero(suite: *const Suite) !void {
 
 // Drive the RFC 8448 §3 handshake to connected; rx/tx carry application keys.
 fn connectedTestClient() !ClientHandshake {
-    var hs: ClientHandshake = .init(rfc8448_client_keypair);
+    var hs: ClientHandshake = .init(testConfig(rfc8448_client_keypair));
     hs.policy.insecure_no_chain_anchor = true;
     hs.injectClientHello(&rfc8448_client_hello);
     try hs.processServerHello(&rfc8448_server_hello);
@@ -2028,7 +2072,7 @@ test "handleRecord: invalid server KeyUpdate request is rejected" {
 // RFC 8446 §6.1 — close_notify is the only alert that cleanly closes.
 // RFC 8446 §6 — alerts before handshake protection are plaintext records.
 test "sendAlert: plaintext fatal alert before ServerHello" {
-    var hs: ClientHandshake = .init(rfc8448_client_keypair);
+    var hs: ClientHandshake = .init(testConfig(rfc8448_client_keypair));
     var out: [16]u8 = undefined;
     const rec = try hs.sendAlert(.decode_error, &out);
     try testing.expectEqualSlices(u8, &.{ 0x15, 0x03, 0x03, 0x00, 0x02, 0x02, 0x32 }, rec);
@@ -2199,21 +2243,18 @@ test "handleRecord: KeyUpdate flood cap fires despite empty app-data interleavin
     try testing.expectEqual(error.TooManyKeyUpdates, result);
 }
 
-test "start: defaults hostname policy from server_name" {
-    var hs: ClientHandshake = .init(rfc8448_client_keypair);
+// RFC 8446 §4.1.2, §4.4.2.2 — Config.host_name is the single source for SNI
+// (server_name extension) and certificate SAN/CN validation.
+test "start: uses Config host_name for SNI and policy" {
+    var hs: ClientHandshake = .init(.{
+        .keypair = rfc8448_client_keypair,
+        .host_name = "example.com",
+        .now_sec = 0,
+        .random = .{ .data = @splat(0xaa) },
+    });
     var out: [256]u8 = undefined;
-    const random: client_hello.Random = .{ .data = @splat(0xaa) };
-    _ = try hs.start(&out, random, "example.com");
+    _ = try hs.start(&out);
     try testing.expectEqualStrings("example.com", hs.policy.host_name.?);
-}
-
-test "start: explicit hostname policy overrides server_name" {
-    var hs: ClientHandshake = .init(rfc8448_client_keypair);
-    hs.policy.host_name = "expected.example";
-    var out: [256]u8 = undefined;
-    const random: client_hello.Random = .{ .data = @splat(0xaa) };
-    _ = try hs.start(&out, random, "sni.example");
-    try testing.expectEqualStrings("expected.example", hs.policy.host_name.?);
 }
 
 // RFC 8446 §5 — the full driver path: pump real wire records through
@@ -2222,7 +2263,7 @@ test "start: explicit hostname policy overrides server_name" {
 // reaches connected. The emitted record decrypts to the RFC 8448 §3 client
 // Finished.
 test "handleRecord: drives RFC 8448 §3 handshake to connected" {
-    var hs: ClientHandshake = .init(rfc8448_client_keypair);
+    var hs: ClientHandshake = .init(testConfig(rfc8448_client_keypair));
     hs.policy.insecure_no_chain_anchor = true;
     hs.injectClientHello(&rfc8448_client_hello);
 
@@ -2269,7 +2310,7 @@ test "handleRecord: unacknowledged write blocks further calls" {
 
 // RFC 8446 §5.1 — handshake records cannot carry zero-length fragments.
 test "handleRecord: zero-length plaintext handshake is rejected" {
-    var hs: ClientHandshake = .init(rfc8448_client_keypair);
+    var hs: ClientHandshake = .init(testConfig(rfc8448_client_keypair));
     defer hs.deinit();
     hs.injectClientHello(&rfc8448_client_hello);
 
@@ -2319,7 +2360,7 @@ test "handleRecord: all-zero inner plaintext maps to unexpected_message" {
 // rx isn't installed until ServerHello; an encrypted record arriving in wait_sh
 // must be rejected rather than decrypted with an undefined key.
 test "handleRecord: application_data before ServerHello is rejected" {
-    var hs: ClientHandshake = .init(rfc8448_client_keypair);
+    var hs: ClientHandshake = .init(testConfig(rfc8448_client_keypair));
     hs.injectClientHello(&rfc8448_client_hello); // state = wait_sh
     var rec = [_]u8{ 0x17, 0x03, 0x03, 0x00, 0x05 } ++ [_]u8{0} ** 5;
     var out: [64]u8 = undefined;
@@ -2367,7 +2408,7 @@ test "fuzz: HandshakeReader handles arbitrary input" {
 
 // Drive an arbitrary decrypted flight through the state machine from wait_ee.
 fn fuzzProcessFlight(_: void, input: []const u8) anyerror!void {
-    var hs: ClientHandshake = .init(rfc8448_client_keypair);
+    var hs: ClientHandshake = .init(testConfig(rfc8448_client_keypair));
     hs.injectClientHello(&rfc8448_client_hello);
     hs.processServerHello(&rfc8448_server_hello) catch return;
     _ = hs.processFlight(input, hs.policy) catch return;

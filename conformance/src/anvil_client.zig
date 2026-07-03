@@ -29,17 +29,21 @@ pub fn main() !void {
     var random: ztls.client_hello.Random = undefined;
     crypto.random.bytes(&random.data);
 
-    var hs: ztls.ClientHandshake = .init(kp);
+    var hs: ztls.ClientHandshake = .init(.{
+        .keypair = kp,
+        .host_name = host,
+        .now_sec = 0,
+        .random = random,
+        .alpn_protocols = &.{ "h2", "http/1.1" },
+    });
     defer hs.deinit();
-    // Accept any ALPN the server selects, or none.
-    hs.offerAlpn(&.{ "h2", "http/1.1" });
 
     var out: [1024]u8 = undefined;
     var storage: ztls.RecordBuffer.Storage = .empty;
     var rb: ztls.RecordBuffer = .init(&storage.buffer);
 
     // ClientHello.
-    try stream.writeAll(try hs.start(&out, random, host));
+    try stream.writeAll(try hs.start(&out));
     hs.completeWrite();
 
     // Drive handshake.

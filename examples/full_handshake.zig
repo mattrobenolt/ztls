@@ -108,7 +108,12 @@ pub fn main() !void {
     const server_flight_record =
         try fixture(fba.allocator(), "server_flight_record.b64", &flight_buf);
 
-    var hs: ztls.ClientHandshake = .init(client_keypair);
+    var hs: ztls.ClientHandshake = .init(.{
+        .keypair = client_keypair,
+        .host_name = null,
+        .now_sec = 0,
+        .random = .zero,
+    });
     defer hs.deinit();
     // We replay the fixed §3 ClientHello (so the transcript matches the trace),
     // so inject it rather than encoding a fresh one via start().

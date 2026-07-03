@@ -94,9 +94,14 @@ fn captureSuite(arena: Allocator, suite: []const u8, port: u16) ![]u8 {
     const stream = try connectWithRetry(port);
     defer stream.close();
 
-    var hs: ztls.ClientHandshake = .init(client_keypair);
+    var hs: ztls.ClientHandshake = .init(.{
+        .keypair = client_keypair,
+        .host_name = replay_host_name,
+        .now_sec = 0,
+        .random = client_random,
+    });
     var out: [1024]u8 = undefined;
-    try stream.writeAll(try hs.start(&out, client_random, replay_host_name));
+    try stream.writeAll(try hs.start(&out));
     hs.completeWrite();
 
     var storage: ztls.RecordBuffer.Storage = .empty;

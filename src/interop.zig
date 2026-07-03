@@ -121,15 +121,20 @@ fn clientInterop(stream: net.Stream) !void {
     var random: ztls.client_hello.Random = undefined;
     crypto.random.bytes(&random.data);
 
-    var hs: ztls.ClientHandshake = .init(kp);
-    hs.offerAlpn(&.{alpn_protocol});
-    hs.policy.insecure_no_chain_anchor = true;
+    var hs: ztls.ClientHandshake = .init(.{
+        .keypair = kp,
+        .host_name = "localhost",
+        .now_sec = 0,
+        .random = random,
+        .insecure_no_chain_anchor = true,
+        .alpn_protocols = &.{alpn_protocol},
+    });
 
     var out: [1024]u8 = undefined;
     var storage: ztls.RecordBuffer.Storage = .empty;
     var rb: ztls.RecordBuffer = .init(&storage.buffer);
 
-    try stream.writeAll(try hs.start(&out, random, "localhost"));
+    try stream.writeAll(try hs.start(&out));
     hs.completeWrite();
 
     while (!hs.isConnected()) {

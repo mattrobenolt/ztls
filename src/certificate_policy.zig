@@ -30,8 +30,8 @@ pub const Policy = struct {
     /// Current time in seconds since the Unix epoch, for validity checks.
     now_sec: i64 = 0,
     /// DNS name expected in the leaf certificate SAN/CN. null = no hostname
-    /// check. ClientHandshake.start() fills this from its `server_name` when
-    /// unset, so explicit policy values override SNI-derived defaults.
+    /// check. ClientHandshake.Config.host_name seeds this field at init time so
+    /// normal callers use one value for SNI and certificate validation.
     host_name: ?[]const u8 = null,
     /// Enforce TLS 1.3 certificate residual policy for the leaf's intended use.
     /// `.server_auth` requires KeyUsage.digitalSignature when KeyUsage is present,

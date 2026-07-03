@@ -123,24 +123,28 @@ fn clientRun(client_keypair: ztls.x25519.KeyPair, actual_port: u16) !void {
     defer stream.close();
     print("[client] connected to {s}:{d}\n", .{ host, actual_port });
 
-    var hs: ztls.ClientHandshake = .init(client_keypair);
+    var random: ztls.client_hello.Random = undefined;
+    std.crypto.random.bytes(&random.data);
+
+    var hs: ztls.ClientHandshake = .init(.{
+        .keypair = client_keypair,
+        .host_name = server_name,
+        .now_sec = std.time.timestamp(),
+        .random = random,
+        .insecure_no_chain_anchor = true,
+        .alpn_protocols = &.{"h2"},
+    });
     defer hs.deinit();
-    hs.offerAlpn(&.{"h2"});
-    hs.policy.host_name = server_name;
-    hs.policy.now_sec = std.time.timestamp();
 
     // For a real deployment, load the OS trust store or a known root.
     // Here the server uses a self-signed test fixture, so we skip chain
     // anchoring and rely on hostname + signature verification only.
-    hs.policy.insecure_no_chain_anchor = true;
 
-    var random: ztls.client_hello.Random = undefined;
-    std.crypto.random.bytes(&random.data);
     var out: ztls.ClientHandshake.OutBuffer = .empty;
     var storage: ztls.RecordBuffer.Storage = .empty;
     var rb: ztls.RecordBuffer = .init(&storage.buffer);
 
-    try stream.writeAll(try hs.start(&out.buffer, random, server_name));
+    try stream.writeAll(try hs.start(&out.buffer));
     hs.completeWrite();
     print("[client] ClientHello sent → state={s}\n", .{@tagName(hs.state)});
 

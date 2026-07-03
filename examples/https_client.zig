@@ -40,14 +40,20 @@ pub fn main() !void {
     print("[https]  connected to {s}:{d}\n", .{ connect_host, port });
 
     const client_keypair: ztls.x25519.KeyPair = .generate();
-    var hs: ztls.ClientHandshake = .init(client_keypair);
-    defer hs.deinit();
-    hs.offerAlpn(&.{"http/1.1"});
+    var random: ztls.client_hello.Random = undefined;
+    std.crypto.random.bytes(&random.data);
 
-    // Certificate verification policy: hostname, validity time, and a pinned
-    // trust anchor. This is example-wrapper allocation, not ztls core allocation.
-    hs.policy.host_name = server_name;
-    hs.policy.now_sec = std.time.timestamp();
+    var hs: ztls.ClientHandshake = .init(.{
+        .keypair = client_keypair,
+        .host_name = server_name,
+        .now_sec = std.time.timestamp(),
+        .random = random,
+        .alpn_protocols = &.{"http/1.1"},
+    });
+    defer hs.deinit();
+
+    // Certificate verification policy: pinned trust anchor.
+    // This is example-wrapper allocation, not ztls core allocation.
     var bundle: std.crypto.Certificate.Bundle = .{};
     defer bundle.deinit(gpa);
     const cert_start: u32 = @intCast(bundle.bytes.items.len);
@@ -55,13 +61,11 @@ pub fn main() !void {
     try bundle.parseCert(gpa, cert_start, hs.policy.now_sec);
     hs.policy.bundle = &bundle;
 
-    var random: ztls.client_hello.Random = undefined;
-    std.crypto.random.bytes(&random.data);
     var out: ztls.ClientHandshake.OutBuffer = .empty;
     var storage: ztls.RecordBuffer.Storage = .empty;
     var rb: ztls.RecordBuffer = .init(&storage.buffer);
 
-    try stream.writeAll(try hs.start(&out.buffer, random, server_name));
+    try stream.writeAll(try hs.start(&out.buffer));
     hs.completeWrite();
     print("[https]  ClientHello sent → state={s}\n", .{@tagName(hs.state)});
 

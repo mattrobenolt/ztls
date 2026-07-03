@@ -205,7 +205,11 @@ Sans-I/O API is pleasant across every I/O model ztls claims to support.
   interpret state transitions through event switches. Server credentials are now
   configured up front and `sendServerFlight*` owns the authenticated-flight
   one-shot/pending-write latch, so examples no longer carry a local
-  `flight_sent` flag, but a broader transport-agnostic driver remains open.
+  `flight_sent` flag. Client setup is now `Config`-based: `host_name`,
+  `now_sec`, `random`, `bundle`, `insecure_no_chain_anchor`, ALPN, and
+  reassembly storage are declared in one `Config` literal, and `start(out)` no
+  longer takes `random` or `server_name`. A broader transport-agnostic driver
+  remains open.
   *(#42)*
 
 ---

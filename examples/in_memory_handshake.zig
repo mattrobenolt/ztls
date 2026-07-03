@@ -26,12 +26,19 @@ pub fn main() !void {
     const client_keypair: ztls.x25519.KeyPair = .generate();
     const server_keypair: ztls.x25519.KeyPair = .generate();
 
+    var random: ztls.client_hello.Random = undefined;
+    std.crypto.random.bytes(&random.data);
+
     // ── Client setup ────────────────────────
-    var client: ztls.ClientHandshake = .init(client_keypair);
+    var client: ztls.ClientHandshake = .init(.{
+        .keypair = client_keypair,
+        .host_name = "ztls.server.test",
+        .now_sec = 0,
+        .random = random,
+        .insecure_no_chain_anchor = true,
+        .alpn_protocols = &.{"h2"},
+    });
     defer client.deinit();
-    client.offerAlpn(&.{"h2"});
-    client.policy.host_name = "ztls.server.test";
-    client.policy.insecure_no_chain_anchor = true;
 
     // ── Server setup ────────────────────────
     var server: ztls.ServerHandshake = .init(server_keypair);
@@ -44,11 +51,8 @@ pub fn main() !void {
     var server_out: ztls.ServerHandshake.OutBuffer = .empty;
     var flight: ztls.ServerHandshake.FlightBuffer = .empty;
 
-    var random: ztls.client_hello.Random = undefined;
-    std.crypto.random.bytes(&random.data);
-
     // 1. ClientHello — client emits its first flight.
-    const ch_record = try client.start(&client_out.buffer, random, "ztls.server.test");
+    const ch_record = try client.start(&client_out.buffer);
     client.completeWrite();
     print("[client] ClientHello sent → state={s}\n", .{@tagName(client.state)});
 
