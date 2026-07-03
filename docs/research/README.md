@@ -25,6 +25,9 @@ re-asserts it.
   evidence.
 - [`NEGATIVE_SPACE.md`](NEGATIVE_SPACE.md) — supported-surface catalogue of
   malformed and malicious peer inputs and the engine response with evidence.
+- [`TLS_ANVIL_NOT_ATTEMPTED.md`](TLS_ANVIL_NOT_ATTEMPTED.md) — classification
+  of endpoint-mode rows that a completed server-mode TLS-Anvil run did not
+  exercise, split into in-scope runner debt and explicit out-of-scope rows.
 - [`THREAT_MODEL.md`](THREAT_MODEL.md) — in-scope adversary capabilities,
   defended attack classes with evidence, non-goals, and caller boundaries.
 

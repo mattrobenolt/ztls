@@ -97,9 +97,10 @@ consumption-for-rejection, not resumption.
   clean tree with launch metadata, `Running: false`, `FinishedTests: 437`,
   `TotalTests: 437`, and normalized counts of `passed: 105`, `failed: 0`,
   `expected_skipped: 175`, `unexpected_skipped: 0`, and `not_attempted: 157`.
-  `not_attempted` is tracked as runner coverage debt, not conformance proof or
-  an expected feature skip *(#45)*. The attempted server-side TLS-Anvil surface
-  is clean (`105/105` attempted passed), including `KeyUpdate: passed=4` and
+  `docs/research/TLS_ANVIL_NOT_ATTEMPTED.md` classifies that bucket as `89`
+  in-scope client/both-endpoint runner debt and `68` explicit TLS 1.2/DTLS
+  out-of-scope rows. The attempted server-side TLS-Anvil surface is clean
+  (`105/105` attempted passed), including `KeyUpdate: passed=4` and
   `ComplianceRequirements: passed=2`.
   The real server suite is wired in `.github/workflows/tls-anvil-server.yml` for
   weekly and manually-triggered runs; client execution and BoGo remain open.
@@ -131,7 +132,9 @@ consumption-for-rejection, not resumption.
 **Gaps (this is the punch-list that converts dread into work):**
 
 - **External runner coverage is still partial.** BoGo and full TLS-Anvil
-  execution are not in PR `just ci`. TLS-Anvil normalization and wrapper-helper
+  execution are not in PR `just ci`. The completed server-mode TLS-Anvil run has
+  `89` classified in-scope client/both-endpoint rows that still require client
+  or both-endpoint runner execution. TLS-Anvil normalization and wrapper-helper
   tests are gated, and the real TLS-Anvil server suite runs in a separate
   scheduled/manual workflow, but TLS-Anvil client execution and BoGo runner
   wiring remain open. Completed TLS-Anvil server evidence now has no unexpected attempted
