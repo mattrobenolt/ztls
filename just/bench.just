@@ -13,6 +13,11 @@ bench-capture *args:
 bench-capture-default:
     @scripts/bench-capture.sh --count=5 --benchtime=500ms
 
+[doc("Provision EC2 benchmark host(s), run capture, pull and analyze results")]
+[group("bench")]
+bench-remote-capture *args:
+    @infra/bench/run-capture.sh {{ args }}
+
 [doc("Validate benchmark capture/analyze plumbing quickly; not benchmark evidence")]
 [group("bench")]
 bench-smoke:

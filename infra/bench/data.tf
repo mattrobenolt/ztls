@@ -4,7 +4,7 @@ data "aws_availability_zones" "available" {
 
 locals {
   aws_region    = "us-west-2"
-  instance_type = "c7i.large"
+  instance_type = var.instance_type
 
   # First AZ in the region — simple one-off.
   az_name = data.aws_availability_zones.available.names[0]

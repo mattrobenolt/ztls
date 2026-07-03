@@ -163,7 +163,7 @@ assert_linked_under "OpenSSL libssl benchmark ssl" "${linked_libssl_ssl}" "${ZTL
 {
   echo "timestamp_utc=${stamp}"
   echo "git_revision=$(git rev-parse HEAD 2>/dev/null || true)"
-  if git diff --quiet --ignore-submodules HEAD -- 2>/dev/null; then
+  if [[ -z "$(git status --porcelain --untracked-files=all 2>/dev/null)" ]]; then
     echo "git_dirty=false"
   else
     echo "git_dirty=true"

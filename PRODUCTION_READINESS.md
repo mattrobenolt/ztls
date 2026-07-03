@@ -223,10 +223,11 @@ comparisons measure equivalent work*. This is the project's justification.
   ztls/libssl/rustls and which are intentionally ztls-only or raw-crypto rows.
 - `justfile` has useful local recipes: `bench` for ztls rows,
   `bench-capture` / `bench-capture-default` for full-comparison captures,
-  `bench-analyze` for `benchstat` comparison of captures, and profiling helpers `bench-disasm`,
-  `bench-disasm-libcrypto`, and `bench-perf`. `just ci` no longer runs benchmark
-  measurements; benchmarks are not correctness evidence on uncontrolled CI
-  runners.
+  `bench-analyze` for `benchstat` comparison of captures,
+  `bench-remote-capture` for EC2 provision/deploy/run/pullback/analyze, and
+  profiling helpers `bench-disasm`, `bench-disasm-libcrypto`, and `bench-perf`.
+  `just ci` no longer runs benchmark measurements; benchmarks are not
+  correctness evidence on uncontrolled CI runners.
 - `just bench-capture-default` writes a timestamped run directory under
   `zig-out/perf/` with metadata plus ztls, EVP, libssl memory-BIO, and rustls
   captures; `just bench-analyze <capture>` compares those captures with
@@ -240,10 +241,13 @@ comparisons measure equivalent work*. This is the project's justification.
   region `us-west-2`, default `c7i.large`, generated ED25519 SSH key,
   public VPC/subnet/security group, Nix flakes enabled, ASLR disabled, and some
   noisy services masked.
-- The AWS README documents the actual remote ritual today: `cd infra/bench`,
-  `tofu init`, `tofu apply`, rsync the repo including `.git`, SSH to the
-  instance, run `just bench-capture-default` inside the flake devshell, rsync
-  `zig-out/perf/` back, then run `just bench-analyze <capture>` locally.
+- The AWS README documents the one-command remote path: `just
+  bench-remote-capture` initializes OpenTofu, provisions/replaces each requested
+  instance type, rsyncs the repo including `.git`, runs the capture inside the
+  OpenSSL devshell, pulls the timestamped run directory back, writes
+  `benchstat.txt`, and destroys EC2 resources by default unless `--keep-instance`
+  is passed. The committed default matrix is currently one `c7i.large`; wider
+  matrix runs are selected with `--instance-types`.
 - `docs/research/perf/20260613-182405-ec2-c7i-large/` is the first committed
   EC2 result set, with raw ztls/EVP/libssl/rustls outputs, `metadata.txt`, and
   `benchstat.txt`. It was captured on a clean `c7i.large` host at git revision
@@ -256,15 +260,15 @@ comparisons measure equivalent work*. This is the project's justification.
 
 **Gaps:**
 
-- **Full benchmark workflow is still manually orchestrated.** The remote path
-  now uses the same `just bench-capture` and `just bench-analyze` commands as
-  local runs, but provisioning, deploy, SSH execution, and pullback are still
-  manual steps. *(#11)*
-- **No defined hardware matrix.** `infra/bench/` provisions one instance type
-  (`c7i.large`) and notes that lower-noise runs should use `c7i.2xlarge` or
-  larger, but there is no committed matrix of instance families/sizes,
-  architectures, CPU pinning policy, repetitions, or acceptance thresholds.
+- **Full benchmark workflow has a one-command runner but lacks fresh remote
+  proof.** `just bench-remote-capture` owns provisioning, deploy, SSH execution,
+  pullback, analysis, dirty-tree rejection, and default cleanup. It still needs a
+  fresh committed remote capture proving the runner itself on the target host.
   *(#11)*
+- **Hardware matrix is selectable, not yet proven.** `infra/bench/` defaults to
+  `c7i.large` and the runner accepts `--instance-types` for broader matrices,
+  but there is no committed multi-instance result set, CPU pinning policy,
+  repetitions, or acceptance thresholds. *(#11)*
 - **Published results are only a first single-host data point.** The repo now
   has one committed EC2 `c7i.large` result set with full provenance, but Pillar 3
   still needs the #11 hardware matrix, one-command remote workflow, repetitions

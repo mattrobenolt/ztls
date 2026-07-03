@@ -1,5 +1,10 @@
 .direnv/
 .zig-cache/
 zig-out/
+infra/bench/.terraform/
+infra/bench/.terraform.lock.hcl
+infra/bench/bench.pem
+infra/bench/terraform.tfstate
+infra/bench/terraform.tfstate.backup
 *.o
 *.asm
