@@ -325,6 +325,108 @@ Before the handshake is encrypted (`.wait_ch` state), `sendAlert` emits a plaint
 
 The engine returns `error.BufferTooShort` if `out` is too small. Use `RecordBuffer.recommended_storage` for `storage`; anything smaller risks stalling on a large record.
 
+## API reference
+
+This is a consumer index for the public symbols used by the guide and examples. The walkthrough sections above are the canonical explanation of the drive loop.
+
+### `ClientHandshake`
+
+Caller-owned types:
+
+- `ClientHandshake.OutBuffer` — scratch for ClientHello, Finished, application data, alerts, and KeyUpdate records. Use `.empty` for the default stack-backed shape.
+- `ClientHandshake.Storage` — optional handshake-message reassembly storage. Use `.empty` and pass `&storage.buffer` to `useHandshakeBuffer` for unusual chain sizes or tighter memory control.
+
+Common drive methods:
+
+- `init(keypair)` / `deinit()` — create and release a client handshake.
+- `offerAlpn(protocols)` — advertise application protocols before `start`.
+- `useHandshakeBuffer(storage)` — attach caller-owned handshake reassembly storage.
+- `start(out, random, server_name)` — emit ClientHello.
+- `handleRecord(record, out)` — consume one TLS record from `RecordBuffer.next()` and return `Event`.
+- `isConnected()` — true after the server Finished verifies and application keys are installed.
+- `sendApplicationData(plaintext, out)` / `sendPreparedApplicationData(len, out)` — emit one encrypted application-data record.
+- `sendAlert(description, out)` — emit `close_notify` or a fatal alert.
+- `sendKeyUpdate(request, out)` — emit a post-handshake KeyUpdate.
+- `completeWrite()` — acknowledge the previous emitted record.
+- `selectedAlpnProtocol()` — negotiated ALPN protocol, or `null`.
+
+Policy fields to set before `start`:
+
+| Field | Effect |
+|---|---|
+| `policy.host_name` | Expected DNS name for SAN/CN verification. |
+| `policy.bundle` | Caller-owned trust-anchor bundle. |
+| `policy.now_sec` | Validity-period timestamp. |
+| `policy.insecure_no_chain_anchor` | Test/demo opt-out from trust-anchor verification. |
+
+Low-level in-memory hooks exist for fixture-style handshakes with no transport between engines: `processServerHello`, `processFlight`, and `clientFinished`. Prefer the normal `start` + `handleRecord` loop for transport integrations.
+
+### `ServerHandshake`
+
+Caller-owned types:
+
+- `ServerHandshake.OutBuffer` — scratch for ServerHello, application data, alerts, and KeyUpdate records.
+- `ServerHandshake.FlightBuffer` — scratch for the encrypted authenticated server flight. Reuse one buffer; `sendServerFlightBuffered` owns the one-shot latch.
+- `ServerHandshake.Storage` — optional ClientHello reassembly storage. Use `.empty` and pass `&storage.buffer` to `useHandshakeBuffer`.
+
+Common drive methods:
+
+- `init(keypair)` / `initWithKeypairs(x25519_keypair, p256_keypair)` / `deinit()` — create and release a server handshake. `initWithKeypairs` is for server-side P-256 ECDHE coverage; the example path is X25519.
+- `supportSuites(suites)` — narrow the accepted cipher-suite list.
+- `supportAlpn(protocols)` — configure server ALPN choices.
+- `setCredentials(certs, signer)` / `setCertificateChain(chain, signer)` — attach a leaf-first certificate chain and signer before processing ClientHello.
+- `useHandshakeBuffer(storage)` — attach caller-owned ClientHello reassembly storage.
+- `handleRecord(record, random, out)` — consume one TLS record from `RecordBuffer.next()` and return `Event`.
+- `sendServerFlightBuffered(flight)` / `sendPreparedServerFlight(out)` — emit the authenticated server flight after ServerHello is written and acknowledged.
+- `needsServerFlight()` — true while the authenticated flight still needs to be sent.
+- `isConnected()` — true after the client Finished verifies and application keys are installed.
+- `clientServerName()` — SNI hostname, or `null`.
+- `selectedAlpnProtocol()` — negotiated ALPN protocol, or `null`.
+- `sendApplicationData(plaintext, out)` / `sendPreparedApplicationData(len, out)` — emit one encrypted application-data record.
+- `sendAlert(description, out)` and `sendKeyUpdate(request, out)` — post-handshake emits.
+- `completeWrite()` — acknowledge the previous emitted record.
+
+Low-level in-memory hooks used by `examples/in_memory_handshake.zig`: `acceptClientHello`, `processClientFinished`, and `receiveApplicationData`.
+
+### `RecordBuffer`
+
+- `RecordBuffer.Storage` and `RecordBuffer.MinStorage` are stack-friendly storage wrappers.
+- `RecordBuffer.recommended_storage` is the normal stream buffer size; `min_storage` fits one maximum wire record.
+- `init(storage)` binds caller-owned storage.
+- `writable()` returns the slice to fill from the transport and may compact buffered bytes.
+- `advance(n)` reports how many bytes the transport wrote into `writable()`.
+- `next()` returns the next complete TLS record, or `null` if the buffer only holds a partial record.
+
+### Signing and key exchange
+
+- `signature.PrivateKey.fromPem(scheme, pem)` and `fromDer(scheme, der)` load private keys from caller-owned bytes.
+- `signature.PrivateKey.fromP256Scalar(scalar)` is useful for fixtures and examples that carry a raw P-256 scalar.
+- `signature.PrivateKey.signer()` borrows a `signature.Signer` vtable for `setCredentials`.
+- `signature.PrivateKey.deinit()` releases libcrypto key material.
+- `SignatureScheme` names the TLS signature scheme used with a loaded key, including `rsa_pss_rsae_sha256`, `ecdsa_secp256r1_sha256`, `ecdsa_secp384r1_sha384`, and `ed25519`.
+- `x25519.KeyPair.generate()` creates a fresh ephemeral X25519 keypair.
+- `x25519.KeyPair.generateDeterministic(seed)` and `x25519.sharedSecret(secret_key, peer_public_key)` are lower-level primitives for tests and fixed-vector paths.
+
+## Runtime-specific integration notes
+
+The generic drive loop above is the protocol boundary. These notes call out what changes by transport model; the named files are built by `just examples-ci`.
+
+### Blocking `std.net.Stream`
+
+`examples/tcp_loopback.zig` drives a ztls client and ztls server over loopback TCP. Blocking I/O keeps the ownership rules boring: read into `RecordBuffer.writable()`, feed each complete record to the engine, `writeAll` each emitted record, then call `completeWrite()`.
+
+### In-memory transport
+
+`examples/in_memory_handshake.zig` connects both engines by passing record slices directly. It uses low-level hooks such as `acceptClientHello`, `processServerHello`, `processClientFinished`, and `receiveApplicationData` because there is no byte-stream transport to frame with `RecordBuffer`.
+
+### epoll
+
+`examples/epoll_pingpong.zig` is Linux-only and non-blocking. Keep at most one engine-emitted record in the socket write path; if the socket blocks, wait for writability and do not call another engine method until `completeWrite()` is safe. Reads still fill `RecordBuffer.writable()` and records still flow through `handleRecord` one at a time.
+
+### io_uring
+
+`examples/iouring_pingpong.zig` is Linux-only. The setup path may use ordinary blocking `listen` / `accept` / `connect`; the TLS record data path submits sends and receives through io_uring. The same pending-write rule applies: every record emitted by the engine must complete through the ring before the next engine call that can advance protocol state.
+
 ## What is not shown here
 
 ztls focuses on TLS 1.3 server-auth 1-RTT. These features are intentionally out of scope for the examples above:

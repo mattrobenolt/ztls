@@ -64,7 +64,7 @@ ztls is production-ready when all six pillars are `PROVEN`:
 | 3. Performance | `PARTIAL` | Rich bench harness exists; equivalence methodology and reproducible hardware-matrix results are missing. |
 | 4. Providers | `PARTIAL` | OpenSSL primitives are live and AWS-LC selection is explicit, but the primitive facade and capability table remain incomplete. |
 | 5. Marketing | `NONE` | Not started. |
-| 6. User docs | `PARTIAL` | `docs/USAGE.md` exists; completeness audit and adoption guide work remain open. |
+| 6. User docs | `PROVEN` | Root on-ramp plus `docs/USAGE.md` cover fresh-project setup, supported surface, drive loops, API reference, and CI-gated integration examples. |
 
 ---
 
@@ -382,16 +382,17 @@ guides, without reading source.
 wiring pointer. `docs/USAGE.md` documents the caller-owned-buffer model,
 `RecordBuffer`, the `pending_write` / `completeWrite()` interlock, server
 credential flow (`setCredentials` plus `sendServerFlightBuffered`), ALPN error
-behavior, supported-surface boundaries, fresh-project dependency wiring, and the
-CI-gated adoption examples (`in_memory_handshake`, `tcp_loopback`,
+behavior, supported-surface boundaries, fresh-project dependency wiring, an API
+reference for the exported handshake/buffer/signing/key-exchange types, runtime
+integration notes for blocking streams, in-memory transport, epoll, and io_uring,
+and the CI-gated adoption examples (`in_memory_handshake`, `tcp_loopback`,
 `epoll_pingpong`, and `iouring_pingpong`).
 
-**Status:** `PARTIAL`
+**Status:** `PROVEN`
 
-**Gaps:** public API reference for `ClientHandshake`, `ServerHandshake`,
-`RecordBuffer`, `Signer`, `PrivateKey`, `OutBuffer`, `FlightBuffer`, and
-`Event`; fuller integration guides that expand the Pillar 2 examples into
-runtime-specific adoption notes *(#44)*.
+**Gaps:** none for the supported adoption path. Documentation for future
+features belongs with the owning feature issues before those features enter the
+supported surface.
 
 ---
 
