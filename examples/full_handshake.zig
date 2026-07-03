@@ -109,6 +109,7 @@ pub fn main() !void {
         try fixture(fba.allocator(), "server_flight_record.b64", &flight_buf);
 
     var hs: ztls.ClientHandshake = .init(client_keypair);
+    defer hs.deinit();
     // We replay the fixed §3 ClientHello (so the transcript matches the trace),
     // so inject it rather than encoding a fresh one via start().
     hs.injectClientHello(&client_hello);

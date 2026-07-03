@@ -41,6 +41,7 @@ pub fn main() !void {
 
     const client_keypair: ztls.x25519.KeyPair = .generate();
     var hs: ztls.ClientHandshake = .init(client_keypair);
+    defer hs.deinit();
     hs.offerAlpn(&.{"http/1.1"});
 
     // Certificate verification policy: hostname, validity time, and a pinned

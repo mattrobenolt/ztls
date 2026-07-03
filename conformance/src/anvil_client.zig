@@ -30,6 +30,7 @@ pub fn main() !void {
     crypto.random.bytes(&random.data);
 
     var hs: ztls.ClientHandshake = .init(kp);
+    defer hs.deinit();
     // Accept any ALPN the server selects, or none.
     hs.offerAlpn(&.{ "h2", "http/1.1" });
 

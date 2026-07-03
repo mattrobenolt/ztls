@@ -28,12 +28,14 @@ pub fn main() !void {
 
     // ── Client setup ────────────────────────
     var client: ztls.ClientHandshake = .init(client_keypair);
+    defer client.deinit();
     client.offerAlpn(&.{"h2"});
     client.policy.host_name = "ztls.server.test";
     client.policy.insecure_no_chain_anchor = true;
 
     // ── Server setup ────────────────────────
     var server: ztls.ServerHandshake = .init(server_keypair);
+    defer server.deinit();
     server.supportAlpn(&.{"h2"});
     server.setCredentials(&.{cert_der}, signer_api);
 

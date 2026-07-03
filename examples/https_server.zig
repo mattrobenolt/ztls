@@ -56,6 +56,7 @@ pub fn main() !void {
 
     const server_keypair: ztls.x25519.KeyPair = .generate();
     var hs: ztls.ServerHandshake = .init(server_keypair);
+    defer hs.deinit();
     hs.supportAlpn(&.{"http/1.1"});
 
     var signer = try ztls.signature.PrivateKey.fromP256Scalar(scalar[0..32]);

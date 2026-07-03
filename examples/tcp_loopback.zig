@@ -50,6 +50,7 @@ fn serverRun(ctx: *ServerCtx) !void {
     print("[server] accepted connection\n", .{});
 
     var hs: ztls.ServerHandshake = .init(ctx.keypair);
+    defer hs.deinit();
     hs.supportAlpn(&.{"h2"});
 
     var signer = try ztls.signature.PrivateKey.fromP256Scalar(scalar[0..32]);
@@ -123,6 +124,7 @@ fn clientRun(client_keypair: ztls.x25519.KeyPair, actual_port: u16) !void {
     print("[client] connected to {s}:{d}\n", .{ host, actual_port });
 
     var hs: ztls.ClientHandshake = .init(client_keypair);
+    defer hs.deinit();
     hs.offerAlpn(&.{"h2"});
     hs.policy.host_name = server_name;
     hs.policy.now_sec = std.time.timestamp();

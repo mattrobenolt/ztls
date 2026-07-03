@@ -53,6 +53,7 @@ pub fn main() !void {
 
     const client_keypair: ztls.x25519.KeyPair = .generate();
     var hs: ztls.ClientHandshake = .init(client_keypair);
+    defer hs.deinit();
     hs.offerAlpn(&.{"http/1.1"});
 
     hs.policy.host_name = server_name;
