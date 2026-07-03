@@ -378,20 +378,20 @@ benchmarks-as-marketing page. Blocked on Pillar 3 producing trustworthy numbers
 **Target:** external adoption from getting-started → API reference → integration
 guides, without reading source.
 
-**Current evidence:** `docs/USAGE.md` documents the caller-owned-buffer model,
-`RecordBuffer`, the `pending_write` / `completeWrite()` interlock, current
-server credential flow (`setCredentials` plus `sendServerFlightBuffered`), ALPN
-error behavior, supported-surface boundaries, and the CI-gated adoption examples
-(`in_memory_handshake`, `tcp_loopback`, `epoll_pingpong`, and
-`iouring_pingpong`).
+**Current evidence:** `README.md` gives a root on-ramp and fresh-project module
+wiring pointer. `docs/USAGE.md` documents the caller-owned-buffer model,
+`RecordBuffer`, the `pending_write` / `completeWrite()` interlock, server
+credential flow (`setCredentials` plus `sendServerFlightBuffered`), ALPN error
+behavior, supported-surface boundaries, fresh-project dependency wiring, and the
+CI-gated adoption examples (`in_memory_handshake`, `tcp_loopback`,
+`epoll_pingpong`, and `iouring_pingpong`).
 
 **Status:** `PARTIAL`
 
-**Gaps:** fresh-project getting-started guide; public API reference for
-`ClientHandshake`, `ServerHandshake`, `RecordBuffer`, `Signer`, `PrivateKey`,
-`OutBuffer`, `FlightBuffer`, and `Event`; fuller integration guides that expand
-the Pillar 2 examples into runtime-specific adoption notes; root README/on-ramp
-for external users *(#44)*.
+**Gaps:** public API reference for `ClientHandshake`, `ServerHandshake`,
+`RecordBuffer`, `Signer`, `PrivateKey`, `OutBuffer`, `FlightBuffer`, and
+`Event`; fuller integration guides that expand the Pillar 2 examples into
+runtime-specific adoption notes *(#44)*.
 
 ---
 
