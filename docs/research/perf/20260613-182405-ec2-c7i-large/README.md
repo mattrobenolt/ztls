@@ -1,6 +1,7 @@
 # EC2 benchmark capture — 2026-06-13 c7i.large
 
-Committed evidence for #10.
+Historical committed evidence that closed #10; #11 tracks the remaining
+hardware-matrix workflow.
 
 Capture command on the EC2 benchmark host:
 

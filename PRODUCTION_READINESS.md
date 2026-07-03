@@ -60,11 +60,11 @@ ztls is production-ready when all six pillars are `PROVEN`:
 | Pillar | Status | One-line |
 |---|---|---|
 | 1. Correctness | `PARTIAL` | Strong layered evidence; the RFC 8446 MUST matrix has no `GAP`/`PARTIAL` rows for the current supported surface, but external conformance runners are not fully CI-gated. |
-| 2. Ergonomics | `PARTIAL` | CI-gated deterministic examples cover both client and server roles for `std.net.Stream`, epoll, and io_uring; manual peer-dependent demos and driver ergonomics remain rough. |
+| 2. Ergonomics | `PARTIAL` | CI-gated deterministic examples cover both client and server roles for `std.net.Stream`, epoll, and io_uring; driver ergonomics remain rough. |
 | 3. Performance | `PARTIAL` | Rich bench harness exists; equivalence methodology and reproducible hardware-matrix results are missing. |
 | 4. Providers | `PARTIAL` | OpenSSL primitives are live, but the provider seam is mostly aspirational: no backend selection, no second backend, no capability table. |
 | 5. Marketing | `NONE` | Not started. |
-| 6. User docs | `PARTIAL` | `docs/USAGE.md` exists; completeness unaudited. |
+| 6. User docs | `PARTIAL` | `docs/USAGE.md` exists; completeness audit and adoption guide work remain open. |
 
 ---
 
@@ -97,8 +97,10 @@ consumption-for-rejection, not resumption.
   clean tree with launch metadata, `Running: false`, `FinishedTests: 437`,
   `TotalTests: 437`, and normalized counts of `passed: 105`, `failed: 0`,
   `expected_skipped: 175`, `unexpected_skipped: 0`, and `not_attempted: 157`.
-  The attempted server-side TLS-Anvil surface is clean (`105/105` attempted
-  passed), including `KeyUpdate: passed=4` and `ComplianceRequirements: passed=2`.
+  `not_attempted` is tracked as runner coverage debt, not conformance proof or
+  an expected feature skip *(#45)*. The attempted server-side TLS-Anvil surface
+  is clean (`105/105` attempted passed), including `KeyUpdate: passed=4` and
+  `ComplianceRequirements: passed=2`.
   The real server suite is wired in `.github/workflows/tls-anvil-server.yml` for
   weekly and manually-triggered runs; client execution and BoGo remain open.
 - Wycheproof boundary vectors at the libcrypto seam.
@@ -194,15 +196,6 @@ Sans-I/O API is pleasant across every I/O model ztls claims to support.
 
 **Gaps:**
 
-- **epoll and io_uring are covered by deterministic paired examples, not
-  separate-process demos.** `examples/epoll_pingpong.zig` and
-  `examples/iouring_pingpong.zig` prove both client and server roles over
-  loopback and are CI-gated, but the manual examples remain separate and their
-  skip semantics are still unresolved. *(#19)*
-- **Manual peer-dependent examples are intentionally not CI evidence.**
-  `https_client`, `https_server`, and `iouring_client` are two-terminal demos;
-  they fail non-zero when the peer or required kernel support is unavailable.
-  Deterministic loopback examples are the readiness evidence. *(#19)*
 - **Ergonomics are possible, not yet pleasant.** Real users must hand-roll the
   drive loop around `RecordBuffer`, remember to call `completeWrite()` after
   every emitted record, juggle distinct `OutBuffer` / `FlightBuffer` types, and
@@ -368,12 +361,13 @@ benchmarks-as-marketing page. Blocked on Pillar 3 producing trustworthy numbers
 **Target:** external adoption from getting-started → API reference → integration
 guides, without reading source.
 
-**Current evidence:** `docs/USAGE.md` exists; completeness unaudited.
+**Current evidence:** `docs/USAGE.md` exists; completeness is unaudited and
+tracked as open user-docs work *(#44)*.
 
 **Status:** `PARTIAL`
 
 **Gaps:** audit USAGE.md; getting-started guide; API reference; integration
-guides that reuse the Pillar 2 examples as their backbone.
+guides that reuse the Pillar 2 examples as their backbone *(#44)*.
 
 ---
 
