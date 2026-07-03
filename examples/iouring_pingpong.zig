@@ -9,6 +9,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const IoUring = std.os.linux.IoUring;
 const print = std.debug.print;
+const net = std.net;
 
 const ztls = @import("ztls");
 
@@ -30,7 +31,7 @@ const rounds = 4;
 const IoError = error{ IoUringFailed, PeerClosed };
 
 const ServerCtx = struct {
-    listener: *std.net.Server,
+    listener: *net.Server,
     keypair: ztls.x25519.KeyPair,
 };
 
@@ -38,7 +39,7 @@ pub fn main() !void {
     const client_keypair: ztls.x25519.KeyPair = .generate();
     const server_keypair: ztls.x25519.KeyPair = .generate();
 
-    const addr = try std.net.Address.parseIp(host, port);
+    const addr: net.Address = try .parseIp(host, port);
     // Loopback-only convenience so repeated CI/dev runs do not trip over
     // TIME_WAIT; don't cargo-cult this into public listener code.
     var server_listener = try addr.listen(.{ .reuse_address = true });
@@ -56,7 +57,7 @@ pub fn main() !void {
 }
 
 fn serverRun(ctx: *ServerCtx) !void {
-    var ring = try IoUring.init(8, 0);
+    var ring: IoUring = try .init(8, 0);
     defer ring.deinit();
 
     const conn = try ctx.listener.accept();
@@ -67,7 +68,7 @@ fn serverRun(ctx: *ServerCtx) !void {
     defer hs.deinit();
     hs.supportAlpn(&.{alpn});
 
-    var signer = try ztls.signature.PrivateKey.fromP256Scalar(scalar[0..32]);
+    var signer: ztls.signature.PrivateKey = try .fromP256Scalar(scalar[0..32]);
     defer signer.deinit();
     hs.setCredentials(&.{cert_der}, signer.signer());
 
@@ -134,11 +135,11 @@ fn serverRun(ctx: *ServerCtx) !void {
 }
 
 fn clientRun(client_keypair: ztls.x25519.KeyPair, actual_port: u16) !void {
-    var ring = try IoUring.init(8, 0);
+    var ring: IoUring = try .init(8, 0);
     defer ring.deinit();
 
-    const addr = try std.net.Address.parseIp(host, actual_port);
-    const stream = try std.net.tcpConnectToAddress(addr);
+    const addr = try net.Address.parseIp(host, actual_port);
+    const stream = try net.tcpConnectToAddress(addr);
     defer stream.close();
     print("[client] connected to {s}:{d}\n", .{ host, actual_port });
 
