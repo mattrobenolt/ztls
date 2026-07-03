@@ -23,6 +23,30 @@ ztls is a pure TLS 1.3 state machine: you feed it bytes, it gives you bytes back
 
 The engine owns the TLS protocol: framing, encryption, transcript hashing, alerts, and key ratcheting. The caller owns all buffers, all transport I/O, and the drive loop that moves bytes between the two.
 
+## Walkthrough: start with these examples
+
+`docs/USAGE.md` is the reference. If you want executable adoption paths first, read the CI-gated examples:
+
+- `examples/in_memory_handshake.zig` — both engines in one process, no sockets. Read this first: it shows the full 1-RTT handshake and application data in both directions.
+- `examples/tcp_loopback.zig` — ztls client plus ztls server over `std.net.Stream` on loopback.
+- `examples/epoll_pingpong.zig` — non-blocking Linux epoll client/server ping-pong.
+- `examples/iouring_pingpong.zig` — Linux io_uring client/server ping-pong.
+
+`just examples-ci` builds and runs those paths. If a drive-loop shape here diverges from those examples, this document is the stale side.
+
+## Supported surface for adopters
+
+ztls is TLS 1.3 only. The supported user-facing path is server-authenticated 1-RTT over caller-owned buffers.
+
+| Area | Supported today | Not covered here |
+|---|---|---|
+| TLS versions | TLS 1.3 | TLS 1.2 and DTLS are out of scope. |
+| Cipher suites | `TLS_AES_128_GCM_SHA256`, `TLS_AES_256_GCM_SHA384`, `TLS_CHACHA20_POLY1305_SHA256` | Suite expansion is provider work. |
+| Key exchange | X25519 in the examples; server-side P-256 ECDHE exists for conformance work | Client-side non-X25519, P-384, and PQ/hybrid groups are tracked by #6. |
+| Authentication | Server certificate authentication | Client certificate auth is tracked by #4. |
+| Resumption | None | PSK/session resumption is tracked by #2; 0-RTT is tracked by #3. |
+| HRR | Not in the adoption path | HelloRetryRequest retry support is tracked by #1. |
+
 ## Buffer ownership
 
 - **Caller owns every buffer.** The engine holds no heap state and never allocates.
@@ -69,21 +93,24 @@ Every connection follows the same pattern, whether client or server:
 ### Client drive loop
 
 ```zig
-var out: [1024]u8 = undefined;
-var storage: [ztls.RecordBuffer.recommended_storage]u8 = undefined;
-var rb: ztls.RecordBuffer = .init(&storage);
+var out: ztls.ClientHandshake.OutBuffer = .empty;
+var storage: ztls.RecordBuffer.Storage = .empty;
+var rb: ztls.RecordBuffer = .init(&storage.buffer);
 
 var hs: ztls.ClientHandshake = .init(keypair);
 
-try stream.writeAll(try hs.start(&out, random, "example.com"));
+try stream.writeAll(try hs.start(&out.buffer, random, "example.com"));
 hs.completeWrite();
 
 while (!hs.isConnected()) {
     const n = try stream.read(rb.writable());
     if (n == 0) return error.ServerClosed;
     rb.advance(n);
-    while (try rb.next()) |record| switch (try hs.handleRecord(record, &out)) {
-        .write => |w| { try stream.writeAll(w); hs.completeWrite(); },
+    while (try rb.next()) |record| switch (try hs.handleRecord(record, &out.buffer)) {
+        .write => |w| {
+            try stream.writeAll(w);
+            hs.completeWrite();
+        },
         .application_data, .closed => return error.UnexpectedDuringHandshake,
         .none => {},
     };
@@ -94,39 +121,39 @@ while (!hs.isConnected()) {
 
 The server loop is identical in shape, with two differences:
 
-1. `ServerHandshake.handleRecord` takes an extra `random` argument (the ServerHello random).
-2. After the ServerHello write event, the server must send its authenticated flight explicitly.
+1. `ServerHandshake.handleRecord` takes an extra `random` argument for the ServerHello random.
+2. Server credentials are configured before the ClientHello arrives, and `sendServerFlightBuffered` sends the authenticated server flight after ServerHello is written.
 
 ```zig
 var hs: ztls.ServerHandshake = .init(server_keypair);
-var signer = try ztls.signature.PrivateKey.fromP256Scalar(scalar);
-const signer_api = signer.signer();
+var signer = try ztls.signature.PrivateKey.fromP256Scalar(scalar[0..32]);
+defer signer.deinit();
+hs.setCredentials(&.{cert_der}, signer.signer());
 
 var random: ztls.client_hello.Random = undefined;
 std.crypto.random.bytes(&random.data);
 
-var sent_flight = false;
+var out: ztls.ServerHandshake.OutBuffer = .empty;
+var flight: ztls.ServerHandshake.FlightBuffer = .empty;
+var storage: ztls.RecordBuffer.Storage = .empty;
+var rb: ztls.RecordBuffer = .init(&storage.buffer);
+
 while (!hs.isConnected()) {
     const n = try stream.read(rb.writable());
     if (n == 0) return error.ClientClosed;
     rb.advance(n);
-    while (try rb.next()) |record| {
-        const ev = try hs.handleRecord(record, random, &out);
-        switch (ev) {
-            .write => |w| {
-                try stream.writeAll(w);
+    while (try rb.next()) |record| switch (try hs.handleRecord(record, random, &out.buffer)) {
+        .write => |w| {
+            try stream.writeAll(w);
+            hs.completeWrite();
+            if (try hs.sendServerFlightBuffered(&flight)) |flight_bytes| {
+                try stream.writeAll(flight_bytes);
                 hs.completeWrite();
-                if (!sent_flight and hs.state == .wait_client_finished) {
-                    const flight = try hs.sendAuthenticatedFlight(
-                        &.{cert_der}, signer_api, &plaintext, &out);
-                    try stream.writeAll(flight);
-                    sent_flight = true;
-                }
-            },
-            .none => {},
-            .application_data, .closed => return error.UnexpectedDuringHandshake,
-        }
-    }
+            }
+        },
+        .none => {},
+        .application_data, .closed => return error.UnexpectedDuringHandshake,
+    };
 }
 ```
 
@@ -154,32 +181,27 @@ Rules:
 
 `.application_data` during the handshake is an error (`UnexpectedDuringHandshake`) because application data must not arrive before the handshake completes.
 
-## Server signing
+## Server credentials
 
-Unlike the client, which only needs a certificate policy, the server must sign the `CertificateVerify` message. ztls exposes a callback-based `Signer`:
+Unlike the client, which only needs a certificate policy, the server must send a certificate chain and sign the `CertificateVerify` message. Configure that before processing the ClientHello:
 
 ```zig
 var signer = try ztls.signature.PrivateKey.fromP256Scalar(scalar[0..32]);
 defer signer.deinit();
-const signer_api = signer.signer();
+server.setCredentials(&.{leaf_cert_der}, signer.signer());
 ```
 
-`sendAuthenticatedFlight` takes the signer, the certificate chain as DER slices (in order from leaf to any intermediate), and a plaintext scratch buffer for assembling the unencrypted flight before AEAD. The scratch buffer must be large enough to hold all handshake messages before encryption — 4 KiB covers typical single-certificate chains.
+The certificate chain is a DER slice list in leaf-first order. `sendServerFlightBuffered` uses the configured credentials, owns the authenticated-flight one-shot latch, and returns `null` if there is no server flight to send.
 
 ```zig
-var plaintext: [4096]u8 = undefined;
-var out: [4096]u8 = undefined;
-const flight = try server.sendAuthenticatedFlight(
-    &.{leaf_cert_der},     // DER chain, leaf first
-    signer_api,
-    &plaintext,
-    &out,
-);
-try stream.writeAll(flight);
-server.completeWrite();
+var flight: ztls.ServerHandshake.FlightBuffer = .empty;
+if (try server.sendServerFlightBuffered(&flight)) |flight_bytes| {
+    try stream.writeAll(flight_bytes);
+    server.completeWrite();
+}
 ```
 
-`PrivateKey` supports P-256/P-384 ECDSA and RSA-PSS. Load from a DER/PEM file or from a raw scalar. `PrivateKey.deinit()` zeroes key material via libcrypto.
+`sendAuthenticatedFlight` remains available as a lower-level escape hatch, but new callers should prefer up-front `setCredentials` plus `sendServerFlightBuffered`. `PrivateKey.deinit()` zeroes key material via libcrypto.
 
 ## SNI (server name indication)
 
@@ -193,7 +215,7 @@ if (server.clientServerName()) |name| {
 
 `clientServerName()` returns `null` if the client sent no `server_name` extension. The slice points into the caller's record buffer; copy it if you need it past the next `handleRecord` call.
 
-> Virtual hosting pattern: call `handleRecord` for the ClientHello, inspect `clientServerName()`, select the appropriate keypair/cert, then call `sendAuthenticatedFlight` with that cert.
+> Virtual hosting pattern: call `handleRecord` for the ClientHello, inspect `clientServerName()`, select the appropriate keypair/cert, call `setCredentials`, then send the authenticated flight with `sendServerFlightBuffered`.
 
 ## ALPN
 
@@ -207,7 +229,7 @@ client.offerAlpn(&.{ "h2", "http/1.1" });
 server.supportAlpn(&.{"h2"});
 ```
 
-After the handshake, `selectedAlpnProtocol()` returns the negotiated protocol (or `null` if none was agreed). The server picks the first entry from its list that the client also offered; if both sides sent ALPN but no protocol matches, `acceptClientHello` returns `error.NoApplicationProtocol`. The client rejects a server-selected protocol that was not offered (`error.UnsolicitedExtension`).
+After the handshake, `selectedAlpnProtocol()` returns the negotiated protocol (or `null` if none was agreed). The server picks the first entry from its list that the client also offered; if both sides sent ALPN but no protocol matches, `acceptClientHello` returns `error.NoApplicationProtocol`. The client rejects a server-selected protocol that was not offered (`error.UnofferedAlpnProtocol`).
 
 ## Certificate policy
 
@@ -220,9 +242,11 @@ client.policy.now_sec = std.time.timestamp(); // validity-period check
 ```
 
 A client policy without `bundle` rejects the server Certificate unless the caller
-explicitly sets `insecure_no_chain_anchor = true` for a test/demo fixture. That
-mode still verifies CertificateVerify key possession, but it does not
-authenticate the chain to any trust root.
+explicitly sets `insecure_no_chain_anchor = true` for a test/demo fixture. The
+bundle type is Zig's `std.crypto.Certificate.Bundle`; load it from the trust
+anchors appropriate for your application and keep it caller-owned for the
+connection lifetime. The insecure fixture mode still verifies CertificateVerify
+key possession, but it does not authenticate the chain to any trust root.
 
 ## Close semantics
 
@@ -252,7 +276,7 @@ Before the handshake is encrypted (`.wait_ch` state), `sendAlert` emits a plaint
 |------------|---------------------|------------------------------------------|
 | `out`      | 4 KiB               | Fits a full record plus handshake overhead |
 | `storage`  | `RecordBuffer.recommended_storage` (~33 KiB) | Fits a partial + full record             |
-| `plaintext`| 4 KiB (server only) | Unencrypted flight before AEAD           |
+| `flight`   | `ServerHandshake.FlightBuffer` | Holds the encrypted server authenticated flight |
 
 The engine returns `error.BufferTooShort` if `out` is too small. Use `RecordBuffer.recommended_storage` for `storage`; anything smaller risks stalling on a large record.
 
@@ -260,9 +284,10 @@ The engine returns `error.BufferTooShort` if `out` is too small. Use `RecordBuff
 
 ztls focuses on TLS 1.3 server-auth 1-RTT. These features are intentionally out of scope for the examples above:
 
-- Client certificate authentication
-- 0-RTT / early data
-- PSK / session resumption
-- HelloRetryRequest retry support
+- Client certificate authentication (#4)
+- 0-RTT / early data (#3)
+- PSK / session resumption (#2)
+- HelloRetryRequest retry support (#1)
+- Client-side non-X25519, P-384, and PQ/hybrid key shares (#6)
 
 The `RecordBuffer` + `handleRecord` pattern is the same for every supported flow; higher-level wrappers (async runtimes, `std.net.Stream` adapters) belong in separate packages.

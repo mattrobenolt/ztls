@@ -378,13 +378,20 @@ benchmarks-as-marketing page. Blocked on Pillar 3 producing trustworthy numbers
 **Target:** external adoption from getting-started → API reference → integration
 guides, without reading source.
 
-**Current evidence:** `docs/USAGE.md` exists; completeness is unaudited and
-tracked as open user-docs work *(#44)*.
+**Current evidence:** `docs/USAGE.md` documents the caller-owned-buffer model,
+`RecordBuffer`, the `pending_write` / `completeWrite()` interlock, current
+server credential flow (`setCredentials` plus `sendServerFlightBuffered`), ALPN
+error behavior, supported-surface boundaries, and the CI-gated adoption examples
+(`in_memory_handshake`, `tcp_loopback`, `epoll_pingpong`, and
+`iouring_pingpong`).
 
 **Status:** `PARTIAL`
 
-**Gaps:** audit USAGE.md; getting-started guide; API reference; integration
-guides that reuse the Pillar 2 examples as their backbone *(#44)*.
+**Gaps:** fresh-project getting-started guide; public API reference for
+`ClientHandshake`, `ServerHandshake`, `RecordBuffer`, `Signer`, `PrivateKey`,
+`OutBuffer`, `FlightBuffer`, and `Event`; fuller integration guides that expand
+the Pillar 2 examples into runtime-specific adoption notes; root README/on-ramp
+for external users *(#44)*.
 
 ---
 
