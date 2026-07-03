@@ -46,47 +46,102 @@
             };
           };
           rustToolchain = pkgs.rust-bin.stable.latest.default;
+          commonPackages =
+            (with pkgs; [
+              ast-grep
+              benchstat
+              curl
+              fd
+              git
+              go
+              jdk
+              just
+              openssl.bin
+              pinact
+              pkg-config
+              rustToolchain
+              uv
+              opentofu
+              rsync
+              txtar
+              zig_0_15
+              zigdoc
+              zizmor
+              ziglint
+              zls_0_15
+            ])
+            ++ lib.optionals stdenv.isLinux (
+              with pkgs;
+              [
+                perf
+                valgrind
+              ]
+            );
+          commonHook = ''
+            unset NIX_CFLAGS_COMPILE
+            unset PKG_CONFIG_PATH
+            unset ZIG_GLOBAL_CACHE_DIR
+            unset ZTLS_CRYPTO_BACKEND
+            unset ZTLS_CRYPTO_PKG_CONFIG_PATH
+            unset ZTLS_CRYPTO_LIB_DIR
+            export ZTLS_OPENSSL_PKG_CONFIG_PATH=${pkgs.openssl.dev}/lib/pkgconfig
+            export ZTLS_OPENSSL_LIB_DIR=${pkgs.openssl.out}/lib
+            export ZTLS_AWS_LC_PKG_CONFIG_PATH=${pkgs.aws-lc.dev}/lib/pkgconfig
+            export ZTLS_AWS_LC_LIB_DIR=${pkgs.aws-lc}/lib
+          '';
+          backendShell =
+            {
+              name,
+              backend,
+              pkgConfigPath,
+              libDir,
+              packages,
+            }:
+            pkgs.mkShell {
+              inherit name;
+              packages = commonPackages ++ packages;
+              shellHook = ''
+                ${commonHook}
+                export ZTLS_CRYPTO_BACKEND=${backend}
+                export ZTLS_CRYPTO_PKG_CONFIG_PATH=${pkgConfigPath}
+                export ZTLS_CRYPTO_LIB_DIR=${libDir}
+                export PKG_CONFIG_PATH=${pkgConfigPath}''${PKG_CONFIG_PATH:+:''${PKG_CONFIG_PATH}}
+              '';
+            };
         in
-        {
-          devShells.default = pkgs.mkShell {
-            packages =
-              (with pkgs; [
-                ast-grep
-                benchstat
-                curl
-                fd
-                git
-                go
-                jdk
-                just
-                openssl
-                pinact
-                pkg-config
-                rustToolchain
-                uv
-                opentofu
-                rsync
-                txtar
-                zig_0_15
-                zigdoc
-                zizmor
-                ziglint
-                zls_0_15
-              ])
-              ++ lib.optionals stdenv.isLinux (
-                with pkgs;
-                [
-                  perf
-                  valgrind
-                ]
-              );
+        rec {
+          formatter = pkgs.nixfmt;
 
-            shellHook = ''
-              unset NIX_CFLAGS_COMPILE
-              unset ZIG_GLOBAL_CACHE_DIR
-              export ZTLS_AWS_LC_PKG_CONFIG_PATH=${pkgs.aws-lc.dev}/lib/pkgconfig
-              export ZTLS_AWS_LC_LIB_DIR=${pkgs.aws-lc}/lib
-            '';
+          devShells = rec {
+            base = pkgs.mkShell {
+              name = "ztls-base";
+              packages = commonPackages;
+              shellHook = commonHook;
+            };
+
+            openssl = backendShell {
+              name = "ztls-openssl";
+              backend = "openssl";
+              pkgConfigPath = "${pkgs.openssl.dev}/lib/pkgconfig";
+              libDir = "${pkgs.openssl.out}/lib";
+              packages = [
+                pkgs.openssl.dev
+                pkgs.openssl.out
+              ];
+            };
+
+            aws-lc = backendShell {
+              name = "ztls-aws-lc";
+              backend = "aws-lc";
+              pkgConfigPath = "${pkgs.aws-lc.dev}/lib/pkgconfig";
+              libDir = "${pkgs.aws-lc}/lib";
+              packages = [
+                pkgs.aws-lc.dev
+                pkgs.aws-lc
+              ];
+            };
+
+            default = openssl;
           };
         };
     };

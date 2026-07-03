@@ -23,11 +23,12 @@ pub fn build(b: *Build) void {
         .default_target = nativeTarget(),
     });
     const optimize = b.standardOptimizeOption(.{});
+    const env_crypto_backend = b.graph.env_map.get("ZTLS_CRYPTO_BACKEND") orelse "";
     const crypto_backend = b.option(
         []const u8,
         "crypto-backend",
         "libcrypto-family backend to compile: openssl, aws-lc",
-    ) orelse "openssl";
+    ) orelse if (env_crypto_backend.len > 0) env_crypto_backend else "openssl";
     if (!std.mem.eql(u8, crypto_backend, "openssl") and
         !std.mem.eql(u8, crypto_backend, "aws-lc"))
     {

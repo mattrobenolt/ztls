@@ -62,7 +62,7 @@ ztls is production-ready when all six pillars are `PROVEN`:
 | 1. Correctness | `PARTIAL` | Strong layered evidence; the RFC 8446 MUST matrix has no `GAP`/`PARTIAL` rows for the current supported surface, but external conformance runners are not fully CI-gated. |
 | 2. Ergonomics | `PARTIAL` | CI-gated deterministic examples cover both client and server roles for `std.net.Stream`, epoll, and io_uring; driver ergonomics remain rough. |
 | 3. Performance | `PARTIAL` | Rich bench harness exists; equivalence methodology and reproducible hardware-matrix results are missing. |
-| 4. Providers | `PARTIAL` | OpenSSL primitives are live, but the provider seam is mostly aspirational: no backend selection, no second backend, no capability table. |
+| 4. Providers | `PARTIAL` | OpenSSL primitives are live and AWS-LC selection is explicit, but the primitive facade and capability table remain incomplete. |
 | 5. Marketing | `NONE` | Not started. |
 | 6. User docs | `PARTIAL` | `docs/USAGE.md` exists; completeness audit and adoption guide work remain open. |
 
@@ -230,7 +230,9 @@ comparisons measure equivalent work*. This is the project's justification.
 - `just bench-capture-default` writes a timestamped run directory under
   `zig-out/perf/` with metadata plus ztls, EVP, libssl memory-BIO, and rustls
   captures; `just bench-analyze <capture>` compares those captures with
-  `benchstat`.
+  `benchstat`. Capture metadata records the ztls-linked `libcrypto` and the
+  OpenSSL EVP/libssl baseline library paths so backend-specific ztls captures
+  cannot silently poison the baseline rows.
 - `infra/bench/` is an OpenTofu/NixOS EC2 host recipe with a pinned-ish shape:
   region `us-west-2`, default `c7i.large`, generated ED25519 SSH key,
   public VPC/subnet/security group, Nix flakes enabled, ASLR disabled, and some
@@ -275,13 +277,16 @@ each passing the same correctness and interop gates.
 
 **Current evidence (real, but thin):**
 
-- OpenSSL/libcrypto is the primary backend. AWS-LC is a recognized build option
-  (`-Dcrypto-backend=aws-lc`) with a root CI recipe that resolves AWS-LC's
-  `libcrypto.pc`, rejects non-AWS-LC headers at compile time, and verifies the
-  AWS-LC include/library paths in Zig's verbose build output. OpenSSL-compatible
-  EVP calls still compile directly through `src/crypto/c_openssl.zig` from
-  `src/aead.zig`, `src/signature.zig`, `src/certificate.zig`, and
-  `src/crypto/openssl_key.zig`.
+- OpenSSL/libcrypto is the default backend and AWS-LC is selectable through
+  `nix develop .#aws-lc` / `ZTLS_CRYPTO_BACKEND=aws-lc` or the explicit
+  `-Dcrypto-backend=aws-lc` build option. The flake exposes `.#base`,
+  `.#openssl`, and `.#aws-lc` devshells; each backend shell makes its selected
+  `libcrypto.pc` ambient while preserving the OpenSSL CLI for interop tools.
+  The AWS-LC lane rejects non-AWS-LC headers at compile time and verifies the
+  AWS-LC include/library paths in Zig's verbose build output.
+  OpenSSL-compatible EVP calls still compile directly through
+  `src/crypto/c_openssl.zig` from `src/aead.zig`, `src/signature.zig`,
+  `src/certificate.zig`, and `src/crypto/openssl_key.zig`.
 - `src/crypto/backend.zig` exposes a `Backend` enum and an `active` selector
   resolved from the build option. `src/x25519.zig` now dispatches X25519
   primitives through `src/crypto/backend.zig` rather than calling EVP directly;
@@ -299,7 +304,9 @@ each passing the same correctness and interop gates.
   certificate parsing/path policy is still ztls/std-derived code.
 - `just check-backend-aws-lc` builds and tests with AWS-LC libcrypto linked;
   the recipe pins `PKG_CONFIG_PATH` to the AWS-LC derivation and checks the
-  resolved include and library paths in the build log.
+  resolved include and library paths in the build log. `zig build test` inside
+  `.#openssl` and `.#aws-lc` follows the shell-selected backend by default,
+  while explicit `-Dcrypto-backend=...` still wins.
 - HKDF/HMAC/SHA transcript hashing remain on `std.crypto`, matching the roadmap
   policy unless a concrete provider/FIPS requirement appears.
 
