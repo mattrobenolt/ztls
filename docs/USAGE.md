@@ -247,7 +247,7 @@ const Sender = struct {
     }
 };
 
-var outbox: ztls.Outbox = .{};
+var outbox: ztls.Outbox = .init;
 const sender: Sender = .{ .fd = fd };
 const result = try outbox.send(&hs, record, sender);
 

@@ -20,6 +20,8 @@ pub const Error = error{
 
 pending: []const u8 = "",
 
+pub const init: Outbox = .{};
+
 const Outbox = @This();
 
 /// True while a TLS record has not been fully accepted by the transport. While

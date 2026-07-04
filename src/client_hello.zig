@@ -5,39 +5,39 @@ const std = @import("std");
 const assert = std.debug.assert;
 const testing = std.testing;
 const mem = std.mem;
+const meta = std.meta;
 
 const alpn_mod = @import("alpn.zig");
 pub const AlpnProtocols = alpn_mod.Protocols;
 pub const AlpnError = alpn_mod.Error;
 const CompressionMethod = @import("compression_method.zig").CompressionMethod;
+const backend = @import("crypto/backend.zig");
+const supported_cipher_suites = backend.capabilities.cipher_suites;
+const cipher_suite_count = supported_cipher_suites.len;
+const supported_signature_schemes = backend.capabilities.certificate_verify_schemes;
+const supported_certificate_signature_schemes = backend.capabilities.certificate_signature_schemes;
+const sig_scheme_count = supported_signature_schemes.len;
+const cert_sig_scheme_count = supported_certificate_signature_schemes.len;
 const extension_type = @import("extension_type.zig");
 const ExtensionType = extension_type.ExtensionType;
-const backend = @import("crypto/backend.zig");
 const handshake = @import("handshake.zig");
 const kex = @import("kex.zig");
 const NamedGroup = kex.NamedGroup;
+const memx = @import("memx.zig");
+const p256 = @import("p256.zig");
 const ProtocolVersion = @import("protocol_version.zig").ProtocolVersion;
 const root = @import("root.zig");
 const CipherSuite = root.CipherSuite;
 pub const Random = root.Random;
-const memx = @import("memx.zig");
 const SignatureScheme = @import("signature_scheme.zig").SignatureScheme;
 const wire = @import("wire.zig");
-const p256 = @import("p256.zig");
 const x25519 = @import("x25519.zig");
 
 /// RFC 8446 §4.1.2 — legacy_version is frozen at TLS 1.2.
 const legacy_version: ProtocolVersion = .tls_1_2;
 
-const supported_cipher_suites = backend.capabilities.cipher_suites;
-const cipher_suite_count = supported_cipher_suites.len;
 const client_group_count = @as(usize, @intFromBool(backend.capabilities.client_x25519)) +
     @as(usize, @intFromBool(backend.capabilities.client_p256));
-const supported_signature_schemes = backend.capabilities.certificate_verify_schemes;
-const supported_certificate_signature_schemes = backend.capabilities.certificate_signature_schemes;
-const sig_scheme_count = supported_signature_schemes.len;
-const cert_sig_scheme_count = supported_certificate_signature_schemes.len;
-
 const handshake_header_len = 4;
 const ext_header_len = 2 + 2; // extension type + data length field
 const SniNameType = enum(u8) {
@@ -423,9 +423,9 @@ const KnownGroup = enum {
 };
 
 comptime {
-    for (std.meta.fields(NamedGroup)) |named_group| {
+    for (meta.fields(NamedGroup)) |named_group| {
         var found = false;
-        for (std.meta.fields(KnownGroup)) |known_group| {
+        for (meta.fields(KnownGroup)) |known_group| {
             if (mem.eql(u8, named_group.name, known_group.name)) found = true;
         }
         assert(found);

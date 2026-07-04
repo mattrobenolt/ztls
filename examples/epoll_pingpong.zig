@@ -32,6 +32,7 @@ const Allocator = mem.Allocator;
 const Thread = std.Thread;
 const Address = std.net.Address;
 const Base64Decoder = std.base64.standard.Decoder;
+const Io = std.Io;
 const builtin = @import("builtin");
 
 const ztls = @import("ztls");
@@ -65,9 +66,9 @@ const usage =
 /// the protocol depends on.
 const LockedWriter = struct {
     mutex: Thread.Mutex = .{},
-    writer: *std.Io.Writer,
+    writer: *Io.Writer,
 
-    fn init(writer: *std.Io.Writer) LockedWriter {
+    fn init(writer: *Io.Writer) LockedWriter {
         return .{ .writer = writer };
     }
 
@@ -111,7 +112,7 @@ pub const EpollSender = struct {
     pub fn write(self: EpollSender, bytes: []const u8) !usize {
         return posix.send(self.fd, bytes, 0) catch |err| switch (err) {
             error.WouldBlock => 0,
-            else => return err,
+            else => err,
         };
     }
 };
@@ -124,7 +125,7 @@ const Conn = struct {
     epoll_fd: posix.fd_t,
     fd: posix.fd_t,
     ev: linux.epoll_event,
-    outbox: ztls.Outbox = .{},
+    outbox: ztls.Outbox = .init,
 
     fn init(epoll_fd: posix.fd_t, fd: posix.fd_t, events: u32) !Conn {
         var conn: Conn = .{
