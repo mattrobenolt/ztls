@@ -105,10 +105,12 @@ consumption-for-rejection, not resumption.
   The real server suite is wired in `.github/workflows/tls-anvil-server.yml` for
   weekly and manually-triggered runs. A client-mode TLS-Anvil runner and
   `.github/workflows/tls-anvil-client.yml` are wired with the same provenance
-  shape. The latest strict-normalized client workflow on `f4fb1da`
-  (`ci-28721138540`) completed cleanly (`Running: false`, `FinishedTests: 437`,
+  shape. The latest strict-normalized client parent report on `f4fb1da`
+  (`ci-28721138540`) is strict-complete (`Running: false`, `FinishedTests: 437`,
   `TotalTests: 437`) with normalized counts of `passed: 88`, `failed: 8`,
-  `expected_skipped: 136`, `unexpected_skipped: 0`, and `not_attempted: 205`.
+  `expected_skipped: 136`, `unexpected_skipped: 0`, and `not_attempted: 205`;
+  the workflow conclusion is `failure` because the strict-normalize step
+  intentionally exits nonzero while unexpected failures remain.
   `Extensions.sendAdditionalExtension` now passes after the #48 unsolicited
   extension slice. A #4 precursor now accepts handshake-time `CertificateRequest`
   and emits an empty client `Certificate` before `Finished` when no client
@@ -125,7 +127,8 @@ consumption-for-rejection, not resumption.
   either ServerHello group; remote TLS-Anvil evidence for whether that clears
   `ComplianceRequirements.supportsSecp256r1` is still pending. Accepted client
   execution remains open while the remaining failures and the
-  not-attempted client/both-endpoint bucket remain. A skip-list narrowing tracked by #48 surfaces the strict-complete f50fcd8
+  not-attempted client/both-endpoint bucket remain. A skip-list narrowing tracked
+  by #48 surfaces the strict-complete f50fcd8
   client capture's `sendEndOfEarlyDataAsServer` STRICTLY_SUCCEEDED row rather
   than the broader `*EarlyData*` skip pattern masking it as `unexpected_pass`;
   server EarlyData disabled rows remain expected-skipped under #3, and this is

@@ -1,7 +1,9 @@
 # TLS-Anvil not-attempted coverage
 
 This note classifies the `not_attempted` rows from the completed TLS-Anvil
-server capture cited by `PRODUCTION_READINESS.md`:
+server capture cited by `PRODUCTION_READINESS.md`. It is intentionally
+server-capture-only; the completed client capture's `not_attempted: 205` bucket
+still needs its own #49 classification before any both-endpoint coverage claim:
 
 - capture: `conformance/zig-out/anvil/server/20260616-074609`
 - normalized report: `report.normalized.json`
@@ -43,10 +45,10 @@ Output:
 
 | Bucket | Count | Scope | Owner |
 |---|---:|---|---|
-| `tests.client.tls13.*` | 82 | In-scope TLS 1.3 client-role coverage debt | TLS-Anvil client runner and BoGo work tracked by #9 |
-| `tests.both.lengthfield.EncryptedExtensions.*` | 2 | In-scope TLS 1.3 both-endpoint coverage debt | TLS-Anvil client/both-role runner coverage tracked by #9 |
-| `tests.both.lengthfield.CertificateVerify.*` | 2 | In-scope TLS 1.3 both-endpoint coverage debt | TLS-Anvil client/both-role runner coverage tracked by #9 |
-| `tests.both.lengthfield.Certificate.*TLS13` plus `certificateRequestContextLength` | 3 | In-scope TLS 1.3 both-endpoint coverage debt | TLS-Anvil client/both-role runner coverage tracked by #9 |
+| `tests.client.tls13.*` | 82 | In-scope TLS 1.3 client-role coverage debt | TLS-Anvil client runner evidence tracked by #48 and broader runner work tracked by #9 |
+| `tests.both.lengthfield.EncryptedExtensions.*` | 2 | In-scope TLS 1.3 both-endpoint coverage debt | both-endpoint accounting tracked by #49 |
+| `tests.both.lengthfield.CertificateVerify.*` | 2 | In-scope TLS 1.3 both-endpoint coverage debt | both-endpoint accounting tracked by #49 |
+| `tests.both.lengthfield.Certificate.*TLS13` plus `certificateRequestContextLength` | 3 | In-scope TLS 1.3 both-endpoint coverage debt | both-endpoint accounting tracked by #49 |
 | `tests.client.tls12.*` | 60 | Out of scope | TLS 1.2 is outside ztls scope |
 | `tests.both.lengthfield.ServerKeyExchange.*` | 5 | Out of scope | TLS 1.2 ServerKeyExchange is outside ztls scope |
 | `tests.both.lengthfield.Certificate.*TLS12` | 2 | Out of scope | TLS 1.2 Certificate length fields are outside ztls scope |
@@ -66,16 +68,18 @@ counts in `PRODUCTION_READINESS.md`: `passed: 105`, `failed: 0`,
 This document only classifies the `not_attempted` bucket.
 
 Classification is not conformance execution. The `89` in-scope rows remain
-coverage debt until a completed strict TLS-Anvil client or both-endpoint run
-exercises them. Issue #9 owns that runner work. The `68` out-of-scope rows should
-not be moved into `expected_skipped`; keeping endpoint-mode mismatches separate
-preserves the distinction between a feature skip and an unexercised endpoint
-role.
+coverage debt until strict TLS-Anvil client evidence and #49 both-endpoint
+accounting show which rows are exercised, explicitly deferred, or still blocked
+on runner shape. Issue #9 owns the broader runner work. The `68` out-of-scope
+rows should not be moved into `expected_skipped`; keeping endpoint-mode
+mismatches separate preserves the distinction between a feature skip and an
+unexercised endpoint role.
 
 ## Guardrails
 
 - Do not use `--allow-partial` output as readiness evidence.
 - Do not add a skip-list pattern that absorbs `TestEndpointMode doesn't match`.
 - Do not close #9 from this classification alone.
+- Do not treat this server-only table as the client `not_attempted` classification.
 - Keep Pillar 1 at `PARTIAL` until external client/both-endpoint runner evidence
-  exists.
+  exists and #49 accounts for the both-endpoint rows.
