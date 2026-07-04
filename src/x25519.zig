@@ -34,19 +34,19 @@ pub const KeyPair = struct {
     }
 };
 
-fn privateKey(secret_key: SecretKey) Error!*backend.x25519.pkey {
+fn privateKey(secret_key: SecretKey) Error!backend.x25519.pkey {
     return backend.x25519.privateKeyFromSecret(&secret_key.data);
 }
 
-fn publicKey(public_key: PublicKey) Error!*backend.x25519.pkey {
+fn publicKey(public_key: PublicKey) Error!backend.x25519.pkey {
     return backend.x25519.publicKeyFromRaw(&public_key.data);
 }
 
 fn publicFromSecret(secret_key: SecretKey) Error!PublicKey {
-    const key = try privateKey(secret_key);
-    defer backend.x25519.freeKey(key);
+    var key = try privateKey(secret_key);
+    defer backend.x25519.freeKey(&key);
 
-    return .init(try backend.x25519.rawPublicKeyFromPrivate(key));
+    return .init(try backend.x25519.rawPublicKeyFromPrivate(&key));
 }
 
 /// Compute the X25519 shared secret from our secret key and the peer's public key.
@@ -54,13 +54,13 @@ fn publicFromSecret(secret_key: SecretKey) Error!PublicKey {
 ///
 /// RFC 8446 §7.4.2
 pub fn sharedSecret(secret_key: SecretKey, peer_public_key: PublicKey) Error![secret_length]u8 {
-    const ours = try privateKey(secret_key);
-    defer backend.x25519.freeKey(ours);
-    const peer = try publicKey(peer_public_key);
-    defer backend.x25519.freeKey(peer);
+    var ours = try privateKey(secret_key);
+    defer backend.x25519.freeKey(&ours);
+    var peer = try publicKey(peer_public_key);
+    defer backend.x25519.freeKey(&peer);
 
     var secret: [secret_length]u8 = undefined;
-    try backend.x25519.sharedSecretDerive(ours, peer, &secret);
+    try backend.x25519.sharedSecretDerive(&ours, &peer, &secret);
     return secret;
 }
 

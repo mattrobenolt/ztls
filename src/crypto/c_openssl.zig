@@ -5,6 +5,7 @@ const is_aws_lc_backend = std.mem.eql(u8, build_options.crypto_backend, "aws-lc"
 
 pub const openssl = @cImport({
     if (is_aws_lc_backend) @cInclude("openssl/base.h");
+    if (is_aws_lc_backend) @cInclude("openssl/curve25519.h");
     @cInclude("openssl/bio.h");
     @cInclude("openssl/bn.h");
     @cInclude("openssl/ec.h");

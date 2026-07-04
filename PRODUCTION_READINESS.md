@@ -62,7 +62,7 @@ ztls is production-ready when all six pillars are `PROVEN`:
 | 1. Correctness | `PARTIAL` | Strong layered evidence; the RFC 8446 MUST matrix has no `GAP`/`PARTIAL` rows for the current supported surface, but external conformance runners are not fully CI-gated. |
 | 2. Ergonomics | `PROVEN` | CI-gated deterministic examples cover client and server roles across io_uring, epoll, and `std.net.Stream`; Config setup, server credentials, and `Outbox` cover the supported core ergonomics boundary. |
 | 3. Performance | `PARTIAL` | Rich bench harness exists; equivalence methodology and reproducible hardware-matrix results are missing. |
-| 4. Providers | `PARTIAL` | OpenSSL primitives are live and AWS-LC selection is explicit, but the primitive facade and capability table remain incomplete. |
+| 4. Providers | `PARTIAL` | OpenSSL primitives are live and AWS-LC selection is explicit; X25519 has an AWS-LC-specific path, while broader provider matrix evidence remains incomplete. |
 | 5. Marketing | `NONE` | Not started. |
 | 6. User docs | `PROVEN` | Root on-ramp plus `docs/USAGE.md` cover fresh-project setup, supported surface, drive loops, API reference, and CI-gated integration examples. |
 
@@ -301,10 +301,10 @@ each passing the same correctness and interop gates.
 - `src/crypto/backend.zig` exposes a `Backend` enum, an `active` selector
   resolved from the build option, and compile-time capability declarations for
   cipher suites, client/server key-share groups, CertificateVerify schemes, and
-  certificate-signature advertisement. `src/x25519.zig` now dispatches X25519
-  primitives through `src/crypto/backend.zig` rather than calling EVP directly;
-  the AWS-LC backend module is a thin compatibility layer over
-  `backend_openssl.zig` while the build links AWS-LC libcrypto.
+  certificate-signature advertisement. `src/x25519.zig` dispatches X25519
+  primitives through `src/crypto/backend.zig`; OpenSSL uses EVP_PKEY, while the
+  AWS-LC backend uses the flat `openssl/curve25519.h` X25519 API with value
+  handles and no EVP_PKEY allocation for X25519.
 - `src/aead.zig` is the strongest seam: `RecordLayer` owns TLS nonce/AAD/sequence
   work and calls `Aead.encrypt` / `Aead.decrypt`; the module reuses
   `EVP_CIPHER_CTX` values rather than allocating them per record.
@@ -333,12 +333,11 @@ each passing the same correctness and interop gates.
   round-trip, tampered-signature rejection, `BufferTooShort`, and key/scheme
   mismatch). These tests run in the normal `zig build test` lane and under
   `just check-backend-aws-lc`, so the same primitive vectors pass through both
-  the OpenSSL- and AWS-LC-linked build lanes. The AWS-LC lane currently links
-  AWS-LC libcrypto while delegating through `backend_openssl.zig` compat
-  wrappers, so this proves the P-256 ECDH facade contract on both lanes via the
-  same EVP-compatible implementation, not divergent AWS-LC implementation
-  proof. This is a per-primitive smoke contract, not a Wycheproof matrix or
-  divergent capability proof.
+  the OpenSSL- and AWS-LC-linked build lanes. X25519 is backend-divergent in the
+  AWS-LC lane; P-256 ECDH, AEAD, and signature paths still delegate through
+  OpenSSL-compatible wrappers while linking AWS-LC libcrypto. This is a
+  per-primitive smoke contract, not a Wycheproof matrix or divergent capability
+  proof.
 
 **Status:** `PARTIAL`
 
@@ -351,19 +350,19 @@ each passing the same correctness and interop gates.
   validation are still ztls/std-derived rather than backend-backed, and the
   facade still lacks divergent-backend matrix evidence. *(#22)*
 - **aws-lc has a real test lane but not a full backend matrix.** The
-  `-Dcrypto-backend=aws-lc` build links AWS-LC libcrypto and runs the unit suite
-  through OpenSSL-compatible EVP wrappers. AEAD and signature paths now have a
-  backend facade, but AWS-LC intentionally remains the proven EVP-compatible
-  wrapper until measured backend-specific implementations exist. Wycheproof,
-  interop, conformance, benchmark measurements/evidence, and divergent capability
-  proof remain open. *(#22)*
+  `-Dcrypto-backend=aws-lc` build links AWS-LC libcrypto and runs the unit suite;
+  X25519 uses AWS-LC's flat `curve25519.h` API, while P-256 ECDH, AEAD, and
+  signature paths intentionally remain proven OpenSSL-compatible wrappers until
+  measured backend-specific implementations exist. Wycheproof, interop,
+  conformance, benchmark measurements/evidence, and divergent capability proof
+  remain open. *(#22)*
 - **OpenSSL-compatible API choices still need measured backend-specific paths.**
-  EC/RSA key-construction fast paths now live behind `src/crypto/backend.zig`,
-  but the AWS-LC backend delegates to the OpenSSL-compatible implementation. A
-  scratch measurement on OpenSSL 3.6.2 showed the current construction path is
-  faster than naive `EVP_PKEY_fromdata`/decoder replacements, so portability must
-  come through backend-specific fast paths, not an unmeasured lowest-common API.
-  *(#22)*
+  X25519 is the first AWS-LC-specific primitive path; EC/RSA key construction,
+  AEAD, and signatures still delegate to the OpenSSL-compatible implementation.
+  A scratch measurement on OpenSSL 3.6.2 showed the current EC/RSA construction
+  path is faster than naive `EVP_PKEY_fromdata`/decoder replacements, so
+  portability must come through backend-specific fast paths, not an unmeasured
+  lowest-common API. *(#22)*
 - **Capability gating exists but is shallow.** ClientHello cipher-suite,
   supported-group, `signature_algorithms`, and `signature_algorithms_cert`
   advertisement now comes from the active backend capability declaration; server

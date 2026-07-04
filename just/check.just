@@ -136,7 +136,7 @@ lint-zig:
     zig fmt --check src/ examples/ bench/ build.zig
     ziglint build.zig examples bench $(fd --extension zig --exclude cryptox . src)
     ast-grep scan --rule rules/no-ztls-owned-allocations.yml src --globs '*.zig' --globs '!src/test/**' --globs '!src/bench/**' --globs '!src/interop.zig' --report-style short
-    ast-grep scan --rule rules/no-c-pointer-types.yml src --globs '*.zig' --globs '!src/crypto/**' --report-style short
+    ast-grep scan --rule rules/no-c-pointer-types.yml src --globs '*.zig' --report-style short
     # std-alias rules: enforce the aliases we always want. cryptox is a vendored
     # std fork kept close to upstream, so it is excluded like ziglint does.
     rc=0; for rule in rules/std-alias-*.yml; do ast-grep scan --rule "$rule" src examples bench --globs '*.zig' --globs '!src/cryptox/**' --report-style short || rc=1; done; exit $rc

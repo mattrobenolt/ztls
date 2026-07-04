@@ -1,9 +1,12 @@
-//! AWS-LC backend X25519 and P-256 primitive wrappers.
+//! AWS-LC backend primitive wrappers.
 //!
-//! AWS-LC exposes OpenSSL-compatible EVP APIs for the primitives ztls uses.
-//! This module delegates to the OpenSSL-compatible implementation while the
-//! build recipe links AWS-LC's libcrypto. The modules should diverge when a
-//! backend-specific fast path or API difference warrants it.
+//! X25519 uses AWS-LC's BoringSSL-style flat API. The remaining primitives
+//! delegate to the OpenSSL-compatible implementation while the build recipe
+//! links AWS-LC's libcrypto; those modules should diverge when a backend-specific
+//! fast path or API difference warrants it.
+const std = @import("std");
+const assert = std.debug.assert;
+const c = @import("c_openssl.zig").openssl;
 const compat = @import("backend_openssl.zig");
 const CipherSuite = @import("../cipher_suite.zig").CipherSuite;
 const SignatureScheme = @import("../signature_scheme.zig").SignatureScheme;
@@ -12,21 +15,44 @@ pub const capabilities = compat.capabilities;
 
 pub const Error = compat.Error;
 pub const pkey = compat.pkey;
+pub const x25519_pkey = union(enum) {
+    private: [32]u8,
+    public: [32]u8,
+};
 
-pub inline fn privateKeyFromSecret(secret: *const [32]u8) Error!*pkey {
-    return compat.privateKeyFromSecret(secret);
+pub fn privateKeyFromSecret(secret: *const [32]u8) Error!x25519_pkey {
+    return .{ .private = secret.* };
 }
 
-pub inline fn publicKeyFromRaw(public_key: *const [32]u8) Error!*pkey {
-    return compat.publicKeyFromRaw(public_key);
+pub fn publicKeyFromRaw(public_key: *const [32]u8) Error!x25519_pkey {
+    return .{ .public = public_key.* };
 }
 
-pub inline fn rawPublicKeyFromPrivate(key: *pkey) Error![32]u8 {
-    return compat.rawPublicKeyFromPrivate(key);
+pub fn rawPublicKeyFromPrivate(key: *const x25519_pkey) Error![32]u8 {
+    assert(std.meta.activeTag(key.*) == .private);
+    var public_key: [32]u8 = undefined;
+    c.X25519_public_from_private(&public_key, &key.*.private);
+    return public_key;
 }
 
-pub inline fn sharedSecretDerive(ours: *pkey, peer: *pkey, out: *[32]u8) Error!void {
-    return compat.sharedSecretDerive(ours, peer, out);
+pub fn sharedSecretDerive(
+    ours: *const x25519_pkey,
+    peer: *const x25519_pkey,
+    out: *[32]u8,
+) Error!void {
+    assert(std.meta.activeTag(ours.*) == .private);
+    assert(std.meta.activeTag(peer.*) == .public);
+    if (c.X25519(out, &ours.*.private, &peer.*.public) != 1) return error.IdentityElement;
+    // RFC 7748 §6.1 — reject all-zero output from low-order peer public keys.
+    if (std.crypto.timing_safe.eql([32]u8, out.*, @splat(0))) return error.IdentityElement;
+}
+
+pub fn x25519FreeKey(key: *x25519_pkey) void {
+    switch (key.*) {
+        .private => |*private| std.crypto.secureZero(u8, private),
+        .public => {},
+    }
+    key.* = undefined;
 }
 
 pub inline fn p256PrivateKeyFromSecret(secret: *const [32]u8) Error!*pkey {

@@ -38,8 +38,9 @@ pub const capabilities = struct {
 
 pub const Error = error{ LibcryptoFailed, IdentityElement };
 pub const pkey = c.EVP_PKEY;
+pub const x25519_pkey = *pkey;
 
-pub fn privateKeyFromSecret(secret: *const [32]u8) Error!*pkey {
+pub fn privateKeyFromSecret(secret: *const [32]u8) Error!x25519_pkey {
     return c.EVP_PKEY_new_raw_private_key(
         c.EVP_PKEY_X25519,
         null,
@@ -48,7 +49,7 @@ pub fn privateKeyFromSecret(secret: *const [32]u8) Error!*pkey {
     ) orelse error.LibcryptoFailed;
 }
 
-pub fn publicKeyFromRaw(public_key: *const [32]u8) Error!*pkey {
+pub fn publicKeyFromRaw(public_key: *const [32]u8) Error!x25519_pkey {
     return c.EVP_PKEY_new_raw_public_key(
         c.EVP_PKEY_X25519,
         null,
@@ -57,19 +58,23 @@ pub fn publicKeyFromRaw(public_key: *const [32]u8) Error!*pkey {
     ) orelse error.LibcryptoFailed;
 }
 
-pub fn rawPublicKeyFromPrivate(key: *pkey) Error![32]u8 {
+pub fn rawPublicKeyFromPrivate(key: *const x25519_pkey) Error![32]u8 {
     var public_key: [32]u8 = undefined;
     var len: usize = public_key.len;
-    if (c.EVP_PKEY_get_raw_public_key(key, &public_key, &len) != 1) return error.LibcryptoFailed;
+    if (c.EVP_PKEY_get_raw_public_key(key.*, &public_key, &len) != 1) return error.LibcryptoFailed;
     if (len != public_key.len) return error.LibcryptoFailed;
     return public_key;
 }
 
-pub fn sharedSecretDerive(ours: *pkey, peer: *pkey, out: *[32]u8) Error!void {
-    const ctx = c.EVP_PKEY_CTX_new(ours, null) orelse return error.LibcryptoFailed;
+pub fn sharedSecretDerive(
+    ours: *const x25519_pkey,
+    peer: *const x25519_pkey,
+    out: *[32]u8,
+) Error!void {
+    const ctx = c.EVP_PKEY_CTX_new(ours.*, null) orelse return error.LibcryptoFailed;
     defer c.EVP_PKEY_CTX_free(ctx);
     if (c.EVP_PKEY_derive_init(ctx) != 1) return error.LibcryptoFailed;
-    if (c.EVP_PKEY_derive_set_peer(ctx, peer) != 1) return error.LibcryptoFailed;
+    if (c.EVP_PKEY_derive_set_peer(ctx, peer.*) != 1) return error.LibcryptoFailed;
 
     var len: usize = out.len;
     if (c.EVP_PKEY_derive(ctx, out, &len) != 1) return error.IdentityElement;
@@ -130,8 +135,8 @@ pub fn p256RawPublicKeyFromPrivate(key: *pkey) Error![65]u8 {
     var len = c.i2o_ECPublicKey(ec, null);
     if (len != 65) return error.LibcryptoFailed;
     var public_key: [65]u8 = undefined;
-    var ptr: [*c]u8 = &public_key;
-    len = c.i2o_ECPublicKey(ec, &ptr);
+    var ptr: [*]u8 = &public_key;
+    len = c.i2o_ECPublicKey(ec, @ptrCast(&ptr));
     if (len != 65) return error.LibcryptoFailed;
     if (public_key[0] != 0x04) return error.LibcryptoFailed;
     return public_key;
@@ -146,6 +151,11 @@ pub fn p256SharedSecretDerive(ours: *pkey, peer: *pkey, out: *[32]u8) Error!void
     var len: usize = out.len;
     if (c.EVP_PKEY_derive(ctx, out, &len) != 1) return error.IdentityElement;
     if (len != out.len) return error.LibcryptoFailed;
+}
+
+pub fn x25519FreeKey(key: *x25519_pkey) void {
+    c.EVP_PKEY_free(key.*);
+    key.* = undefined;
 }
 
 pub fn freeKey(key: *pkey) void {

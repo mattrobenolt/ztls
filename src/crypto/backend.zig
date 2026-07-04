@@ -99,26 +99,30 @@ pub fn supportsCertificateVerifyScheme(scheme: SignatureScheme) bool {
 
 pub const x25519 = struct {
     pub const Error = x25519_impl.Error;
-    pub const pkey = x25519_impl.pkey;
+    pub const pkey = x25519_impl.x25519_pkey;
 
-    pub inline fn privateKeyFromSecret(secret: *const [32]u8) Error!*pkey {
+    pub inline fn privateKeyFromSecret(secret: *const [32]u8) Error!pkey {
         return x25519_impl.privateKeyFromSecret(secret);
     }
 
-    pub inline fn publicKeyFromRaw(public_key: *const [32]u8) Error!*pkey {
+    pub inline fn publicKeyFromRaw(public_key: *const [32]u8) Error!pkey {
         return x25519_impl.publicKeyFromRaw(public_key);
     }
 
-    pub inline fn rawPublicKeyFromPrivate(key: *pkey) Error![32]u8 {
+    pub inline fn rawPublicKeyFromPrivate(key: *const pkey) Error![32]u8 {
         return x25519_impl.rawPublicKeyFromPrivate(key);
     }
 
-    pub inline fn sharedSecretDerive(ours: *pkey, peer: *pkey, out: *[32]u8) Error!void {
+    pub inline fn sharedSecretDerive(
+        ours: *const pkey,
+        peer: *const pkey,
+        out: *[32]u8,
+    ) Error!void {
         return x25519_impl.sharedSecretDerive(ours, peer, out);
     }
 
     pub inline fn freeKey(key: *pkey) void {
-        x25519_impl.freeKey(key);
+        x25519_impl.x25519FreeKey(key);
     }
 };
 
@@ -266,6 +270,17 @@ test "capabilities are non-empty for the active backend" {
     try testing.expect(capabilities.server_x25519 or capabilities.server_p256);
     try testing.expect(capabilities.certificate_verify_schemes.len > 0);
     try testing.expect(capabilities.certificate_signature_schemes.len > 0);
+}
+
+// The AWS-LC X25519 path uses its flat curve25519 API with a value handle; keep
+// it from silently regressing to the OpenSSL EVP_PKEY pointer shape.
+test "x25519 handle shape matches active backend" {
+    const evp_pointer_size = @sizeOf(*backend_openssl.pkey);
+    switch (active) {
+        .openssl => try testing.expectEqual(evp_pointer_size, @sizeOf(x25519.pkey)),
+        .aws_lc => try testing.expect(@sizeOf(x25519.pkey) > evp_pointer_size),
+        .boringssl => unreachable,
+    }
 }
 
 // Current client key-share plumbing is X25519-only; do not advertise P-256 until

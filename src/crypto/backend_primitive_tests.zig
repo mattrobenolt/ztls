@@ -40,13 +40,13 @@ test "backend.x25519: RFC 7748 §5.2 shared secret" {
         "c3da55379de9c6908e94ea4df28d084f32eccf03491c71f754b4075577a28552",
     );
 
-    const priv = try backend.x25519.privateKeyFromSecret(&scalar);
-    defer backend.x25519.freeKey(priv);
-    const peer = try backend.x25519.publicKeyFromRaw(&peer_pub);
-    defer backend.x25519.freeKey(peer);
+    var priv = try backend.x25519.privateKeyFromSecret(&scalar);
+    defer backend.x25519.freeKey(&priv);
+    var peer = try backend.x25519.publicKeyFromRaw(&peer_pub);
+    defer backend.x25519.freeKey(&peer);
 
     var shared: [32]u8 = undefined;
-    try backend.x25519.sharedSecretDerive(priv, peer, &shared);
+    try backend.x25519.sharedSecretDerive(&priv, &peer, &shared);
     try testing.expectEqualSlices(u8, &want, &shared);
 }
 
@@ -61,23 +61,23 @@ test "backend.x25519: RFC 7748 §6.1 mutual key agreement" {
         "5dab087e624a8a4b79e17f8b83800ee66f3bb1292618b6fd1c2f8b27ff88e0eb",
     );
 
-    const alice_priv = try backend.x25519.privateKeyFromSecret(&alice_secret);
-    defer backend.x25519.freeKey(alice_priv);
-    const alice_pub = try backend.x25519.rawPublicKeyFromPrivate(alice_priv);
+    var alice_priv = try backend.x25519.privateKeyFromSecret(&alice_secret);
+    defer backend.x25519.freeKey(&alice_priv);
+    const alice_pub = try backend.x25519.rawPublicKeyFromPrivate(&alice_priv);
 
-    const bob_priv = try backend.x25519.privateKeyFromSecret(&bob_secret);
-    defer backend.x25519.freeKey(bob_priv);
-    const bob_pub = try backend.x25519.rawPublicKeyFromPrivate(bob_priv);
+    var bob_priv = try backend.x25519.privateKeyFromSecret(&bob_secret);
+    defer backend.x25519.freeKey(&bob_priv);
+    const bob_pub = try backend.x25519.rawPublicKeyFromPrivate(&bob_priv);
 
-    const alice_peer = try backend.x25519.publicKeyFromRaw(&bob_pub);
-    defer backend.x25519.freeKey(alice_peer);
+    var alice_peer = try backend.x25519.publicKeyFromRaw(&bob_pub);
+    defer backend.x25519.freeKey(&alice_peer);
     var alice_shared: [32]u8 = undefined;
-    try backend.x25519.sharedSecretDerive(alice_priv, alice_peer, &alice_shared);
+    try backend.x25519.sharedSecretDerive(&alice_priv, &alice_peer, &alice_shared);
 
-    const bob_peer = try backend.x25519.publicKeyFromRaw(&alice_pub);
-    defer backend.x25519.freeKey(bob_peer);
+    var bob_peer = try backend.x25519.publicKeyFromRaw(&alice_pub);
+    defer backend.x25519.freeKey(&bob_peer);
     var bob_shared: [32]u8 = undefined;
-    try backend.x25519.sharedSecretDerive(bob_priv, bob_peer, &bob_shared);
+    try backend.x25519.sharedSecretDerive(&bob_priv, &bob_peer, &bob_shared);
 
     try testing.expectEqualSlices(u8, &alice_shared, &bob_shared);
 }
@@ -91,15 +91,15 @@ test "backend.x25519: all-zero public key is rejected (IdentityElement)" {
     );
     const zero_pub: [32]u8 = @splat(0);
 
-    const priv = try backend.x25519.privateKeyFromSecret(&scalar);
-    defer backend.x25519.freeKey(priv);
-    const peer = try backend.x25519.publicKeyFromRaw(&zero_pub);
-    defer backend.x25519.freeKey(peer);
+    var priv = try backend.x25519.privateKeyFromSecret(&scalar);
+    defer backend.x25519.freeKey(&priv);
+    var peer = try backend.x25519.publicKeyFromRaw(&zero_pub);
+    defer backend.x25519.freeKey(&peer);
 
     var shared: [32]u8 = undefined;
     try testing.expectError(
         error.IdentityElement,
-        backend.x25519.sharedSecretDerive(priv, peer, &shared),
+        backend.x25519.sharedSecretDerive(&priv, &peer, &shared),
     );
 }
 
@@ -114,15 +114,15 @@ test "backend.x25519: small-order public key is rejected (IdentityElement)" {
         "0100000000000000000000000000000000000000000000000000000000000000",
     );
 
-    const priv = try backend.x25519.privateKeyFromSecret(&scalar);
-    defer backend.x25519.freeKey(priv);
-    const peer = try backend.x25519.publicKeyFromRaw(&small_order_pub);
-    defer backend.x25519.freeKey(peer);
+    var priv = try backend.x25519.privateKeyFromSecret(&scalar);
+    defer backend.x25519.freeKey(&priv);
+    var peer = try backend.x25519.publicKeyFromRaw(&small_order_pub);
+    defer backend.x25519.freeKey(&peer);
 
     var shared: [32]u8 = undefined;
     try testing.expectError(
         error.IdentityElement,
-        backend.x25519.sharedSecretDerive(priv, peer, &shared),
+        backend.x25519.sharedSecretDerive(&priv, &peer, &shared),
     );
 }
 

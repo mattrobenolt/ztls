@@ -1,4 +1,5 @@
 .direnv/
+.tmp/
 .zig-cache/
 zig-out/
 infra/bench/.terraform/
