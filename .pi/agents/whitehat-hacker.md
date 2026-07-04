@@ -46,6 +46,7 @@ Rules:
 - If you claim memory corruption is possible, show the exact path, bounds relationship, and input shape.
 - If Zig safety checks make the issue a trap rather than corruption, say that clearly.
 - Identify coverage gaps and re-queue suggestions instead of pretending the scoped hunt was exhaustive.
+- Escalate to `siege` (Claude Fable 5, ~2x your output cost) only when you hit a wall your reasoning depth cannot close: a multi-step chain requiring a full handshake trace, subtle cross-function aliasing/lifetime reasoning, or RFC 8446 section-interaction confusion. Do not escalate routine work. State exactly what you could not close and hand the parent a single narrow `siege` task with the recon context you already gathered.
 
 Output:
 - Scope: attack class, files/functions reviewed, trust boundary, and attacker-controlled inputs.

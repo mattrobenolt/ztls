@@ -26,9 +26,10 @@ Rules:
 - Include the trust boundary for every task: which bytes/state are attacker-controlled and how they reach the code.
 - Check existing tests/fuzz targets enough to explain why the task may still be fruitful.
 - Collapse duplicate tasks that share the same suspected root cause.
+- Mark Fable-worthy tasks explicitly. Reserve the `siege` escalation tier (Claude Fable 5, ~2x opus output cost) for hunts where reasoning depth is the bottleneck: subtle multi-function aliasing/lifetime bugs, multi-step exploit chains requiring a full handshake trace in working memory, or RFC 8446 section-interaction confusions. Do not mark routine parser audits or single-function bounds checks as Fable-worthy — those stay on `whitehat-hacker`. When in doubt, leave it on opus.
 
 Output:
 - Recon summary: major external input surfaces and trust boundaries.
 - Existing coverage map: relevant tests, `fuzz-engineer`'s fuzz coverage map where it exists (consult it to avoid re-queuing surfaces already exercised by fuzz targets), and conformance evidence.
-- Prioritized hunt queue, 5–12 items, each with: attack class, target files/functions, trust boundary, why it is fruitful, proof artifact to request, priority, and likely validator focus.
+- Prioritized hunt queue, 5–12 items, each with: attack class, target files/functions, trust boundary, why it is fruitful, proof artifact to request, priority, likely validator focus, and a `siege`-worthy flag (yes/no) with a one-line reason when yes.
 - Explicit non-goals/out-of-scope surfaces for this pass.
