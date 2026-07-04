@@ -60,7 +60,7 @@ ztls is production-ready when all six pillars are `PROVEN`:
 | Pillar | Status | One-line |
 |---|---|---|
 | 1. Correctness | `PARTIAL` | Strong layered evidence; the RFC 8446 MUST matrix has no `GAP`/`PARTIAL` rows for the current supported surface, but external conformance runners are not fully CI-gated. |
-| 2. Ergonomics | `PARTIAL` | CI-gated deterministic examples cover both client and server roles; client/server handshake setup now use Config structs, but the pending-write/outbox model remains rough. |
+| 2. Ergonomics | `PARTIAL` | CI-gated deterministic examples cover both client and server roles; handshake setup uses Config structs and epoll uses `Outbox`, but full driver ergonomics remain rough. |
 | 3. Performance | `PARTIAL` | Rich bench harness exists; equivalence methodology and reproducible hardware-matrix results are missing. |
 | 4. Providers | `PARTIAL` | OpenSSL primitives are live and AWS-LC selection is explicit, but the primitive facade and capability table remain incomplete. |
 | 5. Marketing | `NONE` | Not started. |
@@ -199,17 +199,15 @@ Sans-I/O API is pleasant across every I/O model ztls claims to support.
 
 **Gaps:**
 
-- **Ergonomics are possible, not yet pleasant.** Real users must hand-roll the
-  drive loop around `RecordBuffer`, remember to call `completeWrite()` after
-  every emitted record, juggle distinct `OutBuffer` / `FlightBuffer` types, and
-  interpret state transitions through event switches. Server credentials are now
-  configured up front and `sendServerFlight*` owns the authenticated-flight
-  one-shot/pending-write latch, so examples no longer carry a local
-  `flight_sent` flag. Client setup is now `Config`-based: `host_name`,
-  `now_sec`, `random`, `bundle`, `insecure_no_chain_anchor`, ALPN, and
-  reassembly storage are declared in one `Config` literal, and `start(out)` no
-  longer takes `random` or `server_name`. A broader transport-agnostic driver
-  remains open.
+- **Ergonomics are possible, not yet fully pleasant.** Real users still hand-roll
+  the drive loop around `RecordBuffer`, juggle distinct `OutBuffer` /
+  `FlightBuffer` types, and interpret state transitions through event switches.
+  The worst setup/write footguns are narrower now: server credentials are
+  configured up front, `sendServerFlight*` owns the authenticated-flight
+  one-shot/pending-write latch, client and server setup are `Config`-based, and
+  `ztls.Outbox` owns partial-write draining plus `completeWrite()` coupling for
+  the non-blocking epoll example. A higher-level reusable connection driver is
+  still outside the core library.
   *(#42)*
 
 ---
@@ -384,10 +382,11 @@ guides, without reading source.
 
 **Current evidence:** `README.md` gives a root on-ramp and fresh-project module
 wiring pointer. `docs/USAGE.md` documents the caller-owned-buffer model,
-`RecordBuffer`, the `pending_write` / `completeWrite()` interlock, server
-credential flow (`setCredentials` plus `sendServerFlightBuffered`), ALPN error
-behavior, supported-surface boundaries, fresh-project dependency wiring, an API
-reference for the exported handshake/buffer/signing/key-exchange types, runtime
+`RecordBuffer`, `Outbox`, the `pending_write` / `completeWrite()` interlock,
+server credential flow (`setCredentials` plus `sendServerFlightBuffered`), ALPN
+error behavior, supported-surface boundaries, fresh-project dependency wiring,
+an API reference for the exported handshake/buffer/signing/key-exchange types,
+runtime
 integration notes for blocking streams, in-memory transport, epoll, and io_uring,
 and the CI-gated adoption examples (`in_memory_handshake`, `tcp_loopback`,
 `epoll_pingpong`, and `iouring_pingpong`).

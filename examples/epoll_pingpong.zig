@@ -6,11 +6,9 @@
 //!
 //! The interesting part is how ztls's Sans-I/O engine composes with edge-ish,
 //! non-blocking sockets. ztls hands back one wire-ready record at a time and
-//! requires it to reach the transport before the next engine call. `Conn`
-//! captures that contract: it owns the socket, the epoll registration, and the
-//! single unsent record, toggling EPOLLOUT interest so a partial write never
-//! corrupts the stream. While a write is outstanding the driver stops feeding
-//! records to the engine.
+//! requires it to reach the transport before the next engine call. `ztls.Outbox`
+//! captures the single unsent record and calls `completeWrite()` only after the
+//! kernel accepts every byte; `Conn` owns the socket and epoll interest bits.
 //!
 //! Run:
 //!     zig build example-epoll_pingpong
@@ -30,7 +28,6 @@ const heap = std.heap;
 const crypto = std.crypto;
 const process = std.process;
 const linux = std.os.linux;
-const assert = std.debug.assert;
 const Allocator = mem.Allocator;
 const Thread = std.Thread;
 const Address = std.net.Address;
@@ -102,17 +99,28 @@ var stdout: LockedWriter = .init(.stdout(), &stdout_buf);
 var stderr_buf: [512]u8 = undefined;
 var stderr: LockedWriter = .init(.stderr(), &stderr_buf);
 
-// -- Connection: socket + epoll + one pending record -------------------------
+// -- Connection: socket + epoll + ztls write outbox --------------------------
 
-/// A non-blocking socket registered with an epoll instance, tracking the single
-/// record the engine has produced but the transport has not yet fully accepted.
-/// `pending` is that record's unsent tail. While `writeBlocked()` is true the
-/// caller must not invoke another ztls method on this connection.
+pub const EpollSender = struct {
+    fd: posix.fd_t,
+
+    pub fn write(self: EpollSender, bytes: []const u8) !usize {
+        return posix.send(self.fd, bytes, 0) catch |err| switch (err) {
+            error.WouldBlock => 0,
+            else => return err,
+        };
+    }
+};
+
+/// A non-blocking socket registered with an epoll instance. `outbox` tracks the
+/// single record ztls produced but the transport has not yet fully accepted.
+/// While `writeBlocked()` is true the caller must not invoke another
+/// record-producing ztls method on this connection.
 const Conn = struct {
     epoll_fd: posix.fd_t,
     fd: posix.fd_t,
     ev: linux.epoll_event,
-    pending: []const u8 = "",
+    outbox: ztls.Outbox = .{},
 
     fn init(epoll_fd: posix.fd_t, fd: posix.fd_t, events: u32) !Conn {
         var conn: Conn = .{
@@ -125,7 +133,7 @@ const Conn = struct {
     }
 
     fn writeBlocked(self: *const Conn) bool {
-        return self.pending.len != 0;
+        return self.outbox.writeBlocked();
     }
 
     /// Update the epoll interest set, skipping the syscall when unchanged.
@@ -135,28 +143,21 @@ const Conn = struct {
         try posix.epoll_ctl(self.epoll_fd, linux.EPOLL.CTL_MOD, self.fd, &self.ev);
     }
 
-    /// Push as much of `pending` as the kernel accepts, then arm epoll: read
-    /// only once drained, read+write while bytes remain. Returns true when the
-    /// record has left entirely, at which point the caller calls completeWrite().
-    fn flush(self: *Conn) !bool {
-        while (self.pending.len > 0) {
-            const n = posix.send(self.fd, self.pending, 0) catch |err| switch (err) {
-                error.WouldBlock => break,
-                else => return err,
-            };
-            if (n == 0) break;
-            self.pending = self.pending[n..];
-        }
-        const drained = self.pending.len == 0;
+    /// Push as much of the outbox as the kernel accepts, then arm epoll: read
+    /// only once drained, read+write while bytes remain.
+    fn flush(self: *Conn, hs: anytype) !void {
+        const sender: EpollSender = .{ .fd = self.fd };
+        const result = try self.outbox.flush(hs, sender);
+        const drained = result == .drained;
         try self.interest(if (drained) linux.EPOLL.IN else linux.EPOLL.IN | linux.EPOLL.OUT);
-        return drained;
     }
 
     /// Queue a wire-ready record and try to flush it immediately.
-    fn send(self: *Conn, record: []const u8) !bool {
-        assert(!self.writeBlocked());
-        self.pending = record;
-        return self.flush();
+    fn send(self: *Conn, hs: anytype, record: []const u8) !void {
+        const sender: EpollSender = .{ .fd = self.fd };
+        const result = try self.outbox.send(hs, record, sender);
+        const drained = result == .drained;
+        try self.interest(if (drained) linux.EPOLL.IN else linux.EPOLL.IN | linux.EPOLL.OUT);
     }
 };
 
@@ -405,7 +406,7 @@ fn serverRun(
                 if (!try fillRecordBuffer(conn.fd, &rb)) break :outer;
             }
             if (event.events & linux.EPOLL.OUT != 0 and conn.writeBlocked()) {
-                if (try conn.flush()) hs.completeWrite();
+                try conn.flush(&hs);
             }
         }
         if (!connected) continue;
@@ -414,16 +415,16 @@ fn serverRun(
         while (!conn.writeBlocked()) {
             const record = (try rb.next()) orelse break;
             switch (try hs.handleRecord(record, &out.buffer)) {
-                .write => |w| if (try conn.send(w)) hs.completeWrite(),
+                .write => |w| try conn.send(&hs, w),
                 .application_data => |data| {
                     if (!mem.eql(u8, data, ping(&msg_buf, round)))
                         return error.UnexpectedPing;
                     const reply = try hs.sendApplicationData(pong(&msg_buf, round), &out.buffer);
-                    if (try conn.send(reply)) hs.completeWrite();
+                    try conn.send(&hs, reply);
                     round += 1;
                 },
                 .closed => {
-                    _ = try conn.send(try hs.sendAlert(.close_notify, &out.buffer));
+                    try conn.send(&hs, try hs.sendAlert(.close_notify, &out.buffer));
                     break :outer;
                 },
                 .none => {},
@@ -433,7 +434,7 @@ fn serverRun(
         // The authenticated flight becomes available once ServerHello is sent.
         if (!conn.writeBlocked()) {
             if (try hs.sendServerFlightBuffered(&flight)) |bytes| {
-                if (try conn.send(bytes)) hs.completeWrite();
+                try conn.send(&hs, bytes);
             }
         }
         if (hs.isConnected() and !handshake_logged) {
@@ -496,8 +497,7 @@ fn clientRun(arena: Allocator, args: *const Args, port: u16) !void {
                 try posix.getsockoptError(fd); // surfaces a failed async connect
                 connected = true;
                 stdout.print("[client] connected to {s}:{d}\n", .{ host, port });
-                if (try conn.send(try hs.start(&out.buffer)))
-                    hs.completeWrite();
+                try conn.send(&hs, try hs.start(&out.buffer));
                 stdout.print("[client] ClientHello sent → state={s}\n", .{@tagName(hs.state)});
                 continue;
             }
@@ -505,29 +505,29 @@ fn clientRun(arena: Allocator, args: *const Args, port: u16) !void {
                 if (!try fillRecordBuffer(fd, &rb)) break :outer;
             }
             if (event.events & linux.EPOLL.OUT != 0 and conn.writeBlocked()) {
-                if (try conn.flush()) hs.completeWrite();
+                try conn.flush(&hs);
             }
         }
 
         while (!conn.writeBlocked()) {
             const record = (try rb.next()) orelse break;
             switch (try hs.handleRecord(record, &out.buffer)) {
-                .write => |w| if (try conn.send(w)) hs.completeWrite(),
+                .write => |w| try conn.send(&hs, w),
                 .application_data => |data| {
                     if (!mem.eql(u8, data, pong(&msg_buf, round)))
                         return error.UnexpectedPong;
                     stdout.print("[client] received: {s}", .{data});
                     if (round == args.rounds) {
-                        _ = try conn.send(try hs.sendAlert(.close_notify, &out.buffer));
+                        try conn.send(&hs, try hs.sendAlert(.close_notify, &out.buffer));
                         break :outer;
                     }
                     round += 1;
                     const next = try hs.sendApplicationData(ping(&msg_buf, round), &out.buffer);
-                    if (try conn.send(next)) hs.completeWrite();
+                    try conn.send(&hs, next);
                 },
                 .closed => {
                     stdout.writeAll("[client] server sent close_notify\n");
-                    _ = try conn.send(try hs.sendAlert(.close_notify, &out.buffer));
+                    try conn.send(&hs, try hs.sendAlert(.close_notify, &out.buffer));
                     break :outer;
                 },
                 .none => {},
@@ -540,7 +540,7 @@ fn clientRun(arena: Allocator, args: *const Args, port: u16) !void {
             const proto = hs.selectedAlpnProtocol() orelse "none";
             stdout.print("[client] handshake complete (ALPN={s})\n", .{proto});
             const first = try hs.sendApplicationData(ping(&msg_buf, round), &out.buffer);
-            if (try conn.send(first)) hs.completeWrite();
+            try conn.send(&hs, first);
         }
     }
 }

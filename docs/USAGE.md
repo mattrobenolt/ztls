@@ -186,7 +186,7 @@ var hs: ztls.ServerHandshake = .init(.{
     .alpn_protocols = &.{"h2"},
 });
 
-var signer = try ztls.signature.PrivateKey.fromP256Scalar(scalar[0..32]);
+var signer: ztls.signature.PrivateKey = try .fromP256Scalar(scalar[0..32]);
 defer signer.deinit();
 hs.setCredentials(&.{cert_der}, signer.signer());
 
@@ -225,6 +225,52 @@ Rules:
 - Never call two engine send-methods in a row without `completeWrite()` between them.
 - In async code, `completeWrite()` belongs in the write-completion callback.
 
+For blocking transports, keep it simple:
+
+```zig
+try stream.writeAll(record);
+hs.completeWrite();
+```
+
+For non-blocking transports, use `ztls.Outbox` to own the unsent tail and call
+`completeWrite()` only after the full TLS record drains:
+
+```zig
+const Sender = struct {
+    fd: std.posix.fd_t,
+
+    pub fn write(self: Sender, bytes: []const u8) !usize {
+        return std.posix.send(self.fd, bytes, 0) catch |err| switch (err) {
+            error.WouldBlock => 0,
+            else => return err,
+        };
+    }
+};
+
+var outbox: ztls.Outbox = .{};
+const sender: Sender = .{ .fd = fd };
+const result = try outbox.send(&hs, record, sender);
+
+// Later, when the fd is writable again:
+const next_result = try outbox.flush(&hs, sender);
+```
+
+`FlushResult.drained` means the record fully drained and `completeWrite()` was
+called; `FlushResult.pending` means bytes remain queued and the caller should
+retry `flush` when the transport is writable again.
+
+```zig
+_ = result;
+_ = next_result;
+```
+
+`Outbox` borrows the queued record slice, so the output buffer that produced the
+record must stay alive and unchanged until `outbox.writeBlocked()` is false. The
+writer contract is intentionally tiny: `write(bytes)` returns the number of
+bytes accepted, and `0` means no progress / would-block. While an outbox owns a
+record, do not call `completeWrite()` manually; the outbox does that after a full
+record drain. The writer must not call back into ztls.
+
 ## Event union
 
 `handleRecord` returns an `Event`:
@@ -243,7 +289,7 @@ Rules:
 Unlike the client, which only needs a certificate policy, the server must send a certificate chain and sign the `CertificateVerify` message. Configure that before processing the ClientHello:
 
 ```zig
-var signer = try ztls.signature.PrivateKey.fromP256Scalar(scalar[0..32]);
+var signer: ztls.signature.PrivateKey = try .fromP256Scalar(scalar[0..32]);
 defer signer.deinit();
 server.setCredentials(&.{leaf_cert_der}, signer.signer());
 ```
@@ -418,6 +464,16 @@ Common drive methods:
 
 Low-level in-memory hooks used by `examples/in_memory_handshake.zig`: `acceptClientHello`, `processClientFinished`, and `receiveApplicationData`.
 
+### `Outbox`
+
+- `Outbox` is optional glue for non-blocking or partial-write transports.
+- `send(hs, record, writer)` queues one engine-produced record and flushes as much as the writer accepts.
+- `flush(hs, writer)` resumes a partial write.
+- `FlushResult.drained` means the full record drained and `completeWrite()` was called; `FlushResult.pending` means retry later.
+- `writeBlocked()` is true while one record is still pending; do not call another record-producing engine method while blocked.
+- The writer adapter must expose `write(bytes) !usize`; returning `0` means no progress, not success.
+- The queued record is borrowed. Keep the backing `OutBuffer` / `FlightBuffer` stable until drained.
+
 ### `RecordBuffer`
 
 - `RecordBuffer.Storage` and `RecordBuffer.MinStorage` are stack-friendly storage wrappers.
@@ -451,7 +507,7 @@ The generic drive loop above is the protocol boundary. These notes call out what
 
 ### epoll
 
-`examples/epoll_pingpong.zig` is Linux-only and non-blocking. Keep at most one engine-emitted record in the socket write path; if the socket blocks, wait for writability and do not call another engine method until `completeWrite()` is safe. Reads still fill `RecordBuffer.writable()` and records still flow through `handleRecord` one at a time.
+`examples/epoll_pingpong.zig` is Linux-only and non-blocking. It uses `ztls.Outbox` for the write side: keep at most one engine-emitted record queued, wait for writability if the socket blocks, and do not call another record-producing engine method until the outbox drains. Reads still fill `RecordBuffer.writable()` and records still flow through `handleRecord` one at a time.
 
 ### io_uring
 
