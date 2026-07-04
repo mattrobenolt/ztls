@@ -4,7 +4,8 @@
 The normalized schema is the input consumed by `anvil_report.py`:
 
     {"tests": [{"id": str, "name": str, "result": str, "feature": str,
-                "disabled_reason": str?, "failure_reason": str?}]}
+                "disabled_reason": str?, "failure_reason": str?,
+                "case_result_counts": {str: int}?}]}
 
 TLS-Anvil output is not perfectly stable across versions. The shapes below are
 exercised by synthetic tests and are predictions of the real TLS-Anvil layout,
@@ -79,10 +80,10 @@ def optional_string(raw: dict[str, Any], *keys: str) -> str | None:
     return None
 
 
-def normalized_from_tests(raw: Any) -> list[dict[str, str]] | None:
+def normalized_from_tests(raw: Any) -> list[dict[str, Any]] | None:
     if not isinstance(raw, dict) or not isinstance(raw.get("tests"), list):
         return None
-    tests: list[dict[str, str]] = []
+    tests: list[dict[str, Any]] = []
     for idx, test in enumerate(raw["tests"]):
         if not isinstance(test, dict):
             continue
@@ -90,7 +91,12 @@ def normalized_from_tests(raw: Any) -> list[dict[str, str]] | None:
         name = str(test.get("name") or test_id)
         result = canonical_result(test.get("result"))
         feature = str(test.get("feature") or extract_feature(test_id, name))
-        normalized = {"id": test_id, "name": name, "result": result, "feature": feature}
+        normalized: dict[str, Any] = {
+            "id": test_id,
+            "name": name,
+            "result": result,
+            "feature": feature,
+        }
         disabled_reason = optional_string(
             test, "disabled_reason", "disabledReason", "DisabledReason"
         )
@@ -99,6 +105,9 @@ def normalized_from_tests(raw: Any) -> list[dict[str, str]] | None:
         failure_reason = optional_string(test, "FailedReason", "failureReason", "failure_reason")
         if failure_reason is not None:
             normalized["failure_reason"] = failure_reason
+        case_counts = test_case_result_counts(test)
+        if case_counts:
+            normalized["case_result_counts"] = case_counts
         tests.append(normalized)
     return tests
 
@@ -160,7 +169,32 @@ def extract_feature(test_id: str, name: str = "") -> str:
     return "unknown"
 
 
-def normalized_from_per_test(path: Path, raw: Any) -> dict[str, str] | None:
+def normalize_case_counts(value: Any) -> dict[str, int]:
+    if not isinstance(value, dict):
+        return {}
+    counts: dict[str, int] = {}
+    for key, count in value.items():
+        if isinstance(key, str) and isinstance(count, int) and count > 0:
+            counts[key] = count
+    return counts
+
+
+def test_case_result_counts(raw: dict[str, Any]) -> dict[str, int]:
+    counts = normalize_case_counts(raw.get("case_result_counts"))
+    if counts:
+        return counts
+    cases = raw.get("TestCases") or raw.get("testCases") or raw.get("test_cases")
+    if not isinstance(cases, list):
+        return {}
+    for case in cases:
+        if not isinstance(case, dict):
+            continue
+        result = canonical_result(case.get("Result", case.get("result")))
+        counts[result] = counts.get(result, 0) + 1
+    return counts
+
+
+def normalized_from_per_test(path: Path, raw: Any) -> dict[str, Any] | None:
     if not isinstance(raw, dict):
         return None
     if "Result" not in raw and "result" not in raw:
@@ -170,13 +204,21 @@ def normalized_from_per_test(path: Path, raw: Any) -> dict[str, str] | None:
     name = metadata_description(raw) or str(raw.get("Name") or raw.get("name") or test_id)
     result = canonical_result(raw.get("Result", raw.get("result")))
     feature = str(raw.get("feature") or raw.get("Feature") or extract_feature(test_id, name))
-    normalized = {"id": test_id, "name": name, "result": result, "feature": feature}
+    normalized: dict[str, Any] = {
+        "id": test_id,
+        "name": name,
+        "result": result,
+        "feature": feature,
+    }
     disabled_reason = optional_string(raw, "DisabledReason", "disabledReason", "disabled_reason")
     if disabled_reason is not None:
         normalized["disabled_reason"] = disabled_reason
     failure_reason = optional_string(raw, "FailedReason", "failureReason", "failure_reason")
     if failure_reason is not None:
         normalized["failure_reason"] = failure_reason
+    case_counts = test_case_result_counts(raw)
+    if case_counts:
+        normalized["case_result_counts"] = case_counts
     return normalized
 
 
@@ -188,14 +230,14 @@ def json_files(root: Path) -> list[Path]:
     )
 
 
-def load_from_dir(run_dir: Path) -> list[dict[str, str]]:
+def load_from_dir(run_dir: Path) -> list[dict[str, Any]]:
     report = run_dir / "report.json"
     if report.is_file():
         tests = normalized_from_tests(load_json(report))
         if tests is not None:
             return tests
 
-    tests: list[dict[str, str]] = []
+    tests: list[dict[str, Any]] = []
     for path in json_files(run_dir):
         try:
             raw = load_json(path)
@@ -212,7 +254,7 @@ def load_from_dir(run_dir: Path) -> list[dict[str, str]]:
     return tests
 
 
-def load_from_zip(path: Path, *, allow_partial: bool) -> list[dict[str, str]]:
+def load_from_zip(path: Path, *, allow_partial: bool) -> list[dict[str, Any]]:
     with tempfile.TemporaryDirectory() as tmp:
         tmp_dir = Path(tmp)
         with zipfile.ZipFile(path) as zf:
@@ -340,7 +382,7 @@ def validate_complete_run(run_dir: Path, allow_partial: bool) -> None:
             )
 
 
-def load_run(run_dir: Path, *, allow_partial: bool = False) -> list[dict[str, str]]:
+def load_run(run_dir: Path, *, allow_partial: bool = False) -> list[dict[str, Any]]:
     if not run_dir.is_dir():
         raise FileNotFoundError(run_dir)
     validate_complete_run(run_dir, allow_partial)
@@ -355,7 +397,7 @@ def load_run(run_dir: Path, *, allow_partial: bool = False) -> list[dict[str, st
 
 
 def write_normalized(
-    tests: list[dict[str, str]],
+    tests: list[dict[str, Any]],
     output: Path,
     provenance: dict[str, Any],
 ) -> None:

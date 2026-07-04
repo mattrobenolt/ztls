@@ -101,7 +101,7 @@ def classify_tests(
         "timeout": 0,
         "not_attempted": 0,
     }
-    unexpected: list[dict[str, str]] = []
+    unexpected: list[dict[str, Any]] = []
     by_feature: dict[str, dict[str, int]] = {}
     matched_patterns: set[str] = set()
     reason_by_pattern = {entry["pattern"]: entry["reason"] for entry in skip_entries}
@@ -114,6 +114,7 @@ def classify_tests(
         feature = test.get("feature", "unknown")
         disabled_reason = test.get("disabled_reason", "")
         failure_reason = test.get("failure_reason", "")
+        case_result_counts = test.get("case_result_counts")
 
         counts["total"] += 1
 
@@ -176,16 +177,17 @@ def classify_tests(
             counts["failed"] += 1
             by_feature.setdefault(feature, dict[str, int]()).setdefault("failed", 0)
             by_feature[feature]["failed"] += 1
-            unexpected.append(
-                {
-                    "id": test_id,
-                    "test": name,
-                    "result": result,
-                    "classification": "unexpected_fail",
-                    "failure_reason": failure_reason,
-                    "rationale": failure_rationale(result, failure_reason),
-                }
-            )
+            item: dict[str, Any] = {
+                "id": test_id,
+                "test": name,
+                "result": result,
+                "classification": "unexpected_fail",
+                "failure_reason": failure_reason,
+                "rationale": failure_rationale(result, failure_reason),
+            }
+            if isinstance(case_result_counts, dict) and case_result_counts:
+                item["case_result_counts"] = case_result_counts
+            unexpected.append(item)
         else:
             counts["errored"] += 1
             by_feature.setdefault(feature, dict[str, int]()).setdefault("errored", 0)
@@ -313,6 +315,11 @@ def write_summary_txt(summary: dict[str, Any], path: Path) -> None:
             lines.append(f"    {item['rationale']}")
             if item.get("failure_reason"):
                 lines.append(f"    failure_reason: {item['failure_reason']}")
+            if item.get("case_result_counts"):
+                formatted = ", ".join(
+                    f"{key}={value}" for key, value in sorted(item["case_result_counts"].items())
+                )
+                lines.append(f"    case_result_counts: {formatted}")
         lines.append("")
 
     feature = summary["feature_breakdown"]

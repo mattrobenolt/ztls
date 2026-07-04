@@ -652,6 +652,10 @@ def test_failed_test_with_matching_disabled_reason_still_fails(tmp_path):
                         "feature": "Generic",
                         "disabled_reason": "ProtocolVersion of the test is not supported by the target",
                         "failure_reason": failure_reason,
+                        "case_result_counts": {
+                            "FULLY_FAILED": 2,
+                            "STRICTLY_SUCCEEDED": 1,
+                        },
                     }
                 ]
             }
@@ -682,8 +686,14 @@ def test_failed_test_with_matching_disabled_reason_still_fails(tmp_path):
     unexpected = s["unexpected"]
     assert unexpected[0]["classification"] == "unexpected_fail"
     assert unexpected[0]["failure_reason"] == failure_reason
+    assert unexpected[0]["case_result_counts"] == {
+        "FULLY_FAILED": 2,
+        "STRICTLY_SUCCEEDED": 1,
+    }
     assert failure_reason in unexpected[0]["rationale"]
-    assert failure_reason in load_summary_txt(out)
+    txt = load_summary_txt(out)
+    assert failure_reason in txt
+    assert "case_result_counts: FULLY_FAILED=2, STRICTLY_SUCCEEDED=1" in txt
 
 
 def test_endpoint_mode_disabled_is_not_attempted(tmp_path):

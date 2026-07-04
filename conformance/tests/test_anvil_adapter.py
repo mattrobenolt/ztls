@@ -101,6 +101,11 @@ def test_adapter_prefers_class_method_over_opaque_test_id(tmp_path: Path):
             "TestClass": "de.rub.nds.tlstest.suite.tests.both.tls13.rfc8446.ComplianceRequirements",
             "TestMethod": "supportsSecp256r1",
             "FailedReason": "server rejected the secp256r1-only handshake",
+            "TestCases": [
+                {"Result": "STRICTLY_SUCCEEDED"},
+                {"Result": "FULLY_FAILED"},
+                {"Result": "FULLY_FAILED"},
+            ],
             "MetaData": {"description": "TLS-compliant application MUST support secp256r1"},
         },
     )
@@ -116,6 +121,7 @@ def test_adapter_prefers_class_method_over_opaque_test_id(tmp_path: Path):
             "result": "FULLY_FAILED",
             "feature": "ComplianceRequirements",
             "failure_reason": "server rejected the secp256r1-only handshake",
+            "case_result_counts": {"FULLY_FAILED": 2, "STRICTLY_SUCCEEDED": 1},
         }
     ]
 
@@ -131,6 +137,7 @@ def test_adapter_accepts_report_json_with_normalized_tests(tmp_path: Path):
                     "name": "key update not requested",
                     "result": "CONCEPTUALLY_SUCCEEDED",
                     "feature": "KeyUpdate",
+                    "case_result_counts": {"CONCEPTUALLY_SUCCEEDED": 3},
                 }
             ]
         },
@@ -141,6 +148,7 @@ def test_adapter_accepts_report_json_with_normalized_tests(tmp_path: Path):
     assert cp.returncode == 0, cp.stderr
     normalized = load_normalized(run_dir / "report.normalized.json")
     assert normalized["tests"][0]["feature"] == "KeyUpdate"
+    assert normalized["tests"][0]["case_result_counts"] == {"CONCEPTUALLY_SUCCEEDED": 3}
 
 
 def test_adapter_falls_back_to_per_test_files_when_report_json_is_not_normalized(
