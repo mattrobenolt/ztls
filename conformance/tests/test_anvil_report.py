@@ -405,6 +405,79 @@ def test_summary_json_and_txt_carry_provenance(tmp_path):
     assert "report_finished      : 1/1" in txt
 
 
+def test_report_rejects_allow_partial_provenance(tmp_path):
+    fixture = tmp_path / "partial.json"
+    fixture.write_text(
+        json.dumps(
+            {
+                "provenance": {
+                    "adapter_allow_partial": True,
+                    "tls_anvil": {
+                        "report": {"complete": True, "finished_tests": 1, "total_tests": 1}
+                    },
+                },
+                "tests": [
+                    {
+                        "id": "clean-1",
+                        "name": "clean pass",
+                        "result": "STRICTLY_SUCCEEDED",
+                        "feature": "Clean",
+                    }
+                ],
+            }
+        )
+    )
+    skip_list = tmp_path / "skip.json"
+    skip_list.write_text(json.dumps({"skip": []}))
+    out = tmp_path / "out"
+    out.mkdir()
+
+    cp = run_report(str(fixture), "--output-dir", str(out), "--skip-list", str(skip_list))
+
+    assert cp.returncode == 1
+    s = load_summary_json(out)
+    assert s["unexpected"] == []
+    assert "partial TLS-Anvil captures" in s["evidence_blockers"][0]
+    assert "evidence blocker" in cp.stderr
+    assert "Evidence blockers:" in load_summary_txt(out)
+
+
+def test_report_rejects_incomplete_tls_anvil_provenance(tmp_path):
+    fixture = tmp_path / "incomplete.json"
+    fixture.write_text(
+        json.dumps(
+            {
+                "provenance": {
+                    "adapter_allow_partial": False,
+                    "tls_anvil": {
+                        "report": {"complete": False, "finished_tests": 7, "total_tests": 9}
+                    },
+                },
+                "tests": [
+                    {
+                        "id": "clean-1",
+                        "name": "clean pass",
+                        "result": "STRICTLY_SUCCEEDED",
+                        "feature": "Clean",
+                    }
+                ],
+            }
+        )
+    )
+    skip_list = tmp_path / "skip.json"
+    skip_list.write_text(json.dumps({"skip": []}))
+    out = tmp_path / "out"
+    out.mkdir()
+
+    cp = run_report(str(fixture), "--output-dir", str(out), "--skip-list", str(skip_list))
+
+    assert cp.returncode == 1
+    s = load_summary_json(out)
+    assert s["unexpected"] == []
+    assert "incomplete (7/9)" in s["evidence_blockers"][0]
+    assert "evidence blocker" in cp.stderr
+
+
 def test_summary_txt_contains_counts(tmp_path):
     out = tmp_path / "out"
     out.mkdir()

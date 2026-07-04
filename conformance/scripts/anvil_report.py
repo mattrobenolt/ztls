@@ -22,9 +22,9 @@ Classification rules (applied in order):
      d. FULLY_FAILED / PARTIALLY_FAILED → failed (also unexpected_fail)
      e. TEST_SUITE_ERROR / NOT_SPECIFIED → errored
 
-Exit code 0 = clean evidence (no unexpected results).
-Exit code 1 = at least one unexpected_pass, unexpected_fail, or
-             unexpected_skipped.
+Exit code 0 = clean evidence (no unexpected results and complete, non-partial provenance when present).
+Exit code 1 = at least one unexpected_pass, unexpected_fail, unexpected_skipped,
+             or provenance blocker.
 """
 
 import argparse
@@ -211,6 +211,24 @@ def failure_rationale(result: str, failure_reason: str) -> str:
     return rationale
 
 
+def evidence_blockers(provenance: dict[str, Any]) -> list[str]:
+    blockers: list[str] = []
+    if provenance.get("adapter_allow_partial") is True:
+        blockers.append(
+            "adapter_allow_partial is true; partial TLS-Anvil captures are not acceptance evidence"
+        )
+
+    tls_anvil = provenance.get("tls_anvil") or {}
+    report = tls_anvil.get("report") or {}
+    if "complete" in report and report.get("complete") is not True:
+        finished = report.get("finished_tests", "unknown")
+        total = report.get("total_tests", "unknown")
+        blockers.append(
+            f"TLS-Anvil report is incomplete ({finished}/{total}); rerun without --allow-partial"
+        )
+    return blockers
+
+
 def write_summary_json(summary: dict[str, Any], path: Path) -> None:
     path.write_text(json.dumps(summary, indent=2) + "\n")
 
@@ -281,6 +299,12 @@ def write_summary_txt(summary: dict[str, Any], path: Path) -> None:
             lines.append(f"  - {pat}")
         lines.append("")
 
+    if summary.get("evidence_blockers"):
+        lines.append("Evidence blockers:")
+        for blocker in summary["evidence_blockers"]:
+            lines.append(f"  - {blocker}")
+        lines.append("")
+
     unexpected = summary["unexpected"]
     if unexpected:
         lines.append(f"Unexpected results ({len(unexpected)}):")
@@ -347,6 +371,7 @@ def main() -> int:
     skip_entries = load_skip_list(args.skip_list)
     tests, provenance = load_results(args.results_json)
     summary = classify_tests(tests, skip_entries, provenance)
+    summary["evidence_blockers"] = evidence_blockers(provenance)
 
     output_dir = args.output_dir or args.results_json.parent
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -360,12 +385,22 @@ def main() -> int:
     print(txt_path.read_text())
 
     unexpected = summary["unexpected"]
-    if unexpected:
-        n = len(unexpected)
-        print(f"Anvil report: {n} unexpected result(s) — see summary for details.", file=sys.stderr)
+    blockers = summary["evidence_blockers"]
+    if unexpected or blockers:
+        if unexpected:
+            n = len(unexpected)
+            print(
+                f"Anvil report: {n} unexpected result(s) — see summary for details.",
+                file=sys.stderr,
+            )
+        if blockers:
+            print(
+                f"Anvil report: {len(blockers)} evidence blocker(s) — see summary for details.",
+                file=sys.stderr,
+            )
         return 1
 
-    print("Anvil report: clean — no unexpected results.", file=sys.stderr)
+    print("Anvil report: clean — no unexpected results and no evidence blockers.", file=sys.stderr)
     return 0
 
 
