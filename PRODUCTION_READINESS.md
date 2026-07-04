@@ -105,22 +105,22 @@ consumption-for-rejection, not resumption.
   The real server suite is wired in `.github/workflows/tls-anvil-server.yml` for
   weekly and manually-triggered runs. A client-mode TLS-Anvil runner and
   `.github/workflows/tls-anvil-client.yml` are wired with the same provenance
-  shape. The latest strict-normalized client workflow on `48017ff`
-  (`ci-28717491405`) completed cleanly (`Running: false`, `FinishedTests: 437`,
+  shape. The latest strict-normalized client workflow on `f4fb1da`
+  (`ci-28721138540`) completed cleanly (`Running: false`, `FinishedTests: 437`,
   `TotalTests: 437`) with normalized counts of `passed: 88`, `failed: 8`,
-  `expected_skipped: 136`, `unexpected_skipped: 0`, and `not_attempted: 205`;
+  `expected_skipped: 136`, `unexpected_skipped: 0`, and `not_attempted: 205`.
   `Extensions.sendAdditionalExtension` now passes after the #48 unsolicited
-  extension slice. Post-run triage attributes six of the eight remaining
-  unexpected failures to TLS-Anvil `DSA_WITH_SHA256` certificate parameter
-  combinations that ztls rejects during server Certificate processing; they
-  remain unexpected failures, not skip-list exclusions, until runner/upstream
-  handling changes. The other two rows mapped to deferred client authentication
-  (#4) and client P-256 key-share support (#6). A #4 precursor now accepts
-  handshake-time `CertificateRequest` and emits an empty client `Certificate`
-  before `Finished` when no client credentials are configured; the ea52ffd
-  TLS-Anvil client run observed `ClientAuthentication.clientSendsCertificateAndFinMessage`
-  as `STRICTLY_SUCCEEDED`, and the stale `*ClientAuth*` expected-skip entry has
-  been removed. Full client-certificate authentication remains deferred.
+  extension slice. A #4 precursor now accepts handshake-time `CertificateRequest`
+  and emits an empty client `Certificate` before `Finished` when no client
+  credentials are configured; `ClientAuthentication.clientSendsCertificateAndFinMessage`
+  is now `STRICTLY_SUCCEEDED`, and the stale `*ClientAuth*` expected-skip entry
+  has been removed. Full client-certificate authentication remains deferred.
+  Six of the eight remaining unexpected failures still align with TLS-Anvil
+  `DSA_WITH_SHA256` certificate parameter combinations that ztls rejects during
+  server Certificate processing; they remain unexpected failures, not skip-list
+  exclusions, until runner/upstream handling changes. The other two rows are
+  `RecordProtocol.checkMinimumRecordProtocolVersions` under the AES-256/TCP-
+  fragmentation parameter combination and client P-256 key-share support (#6).
   Accepted client execution remains open while the remaining failures and the
   not-attempted client/both-endpoint bucket remain. A skip-list narrowing tracked by #48 surfaces the strict-complete f50fcd8
   client capture's `sendEndOfEarlyDataAsServer` STRICTLY_SUCCEEDED row rather
