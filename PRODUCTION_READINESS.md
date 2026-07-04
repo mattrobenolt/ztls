@@ -105,14 +105,18 @@ consumption-for-rejection, not resumption.
   The real server suite is wired in `.github/workflows/tls-anvil-server.yml` for
   weekly and manually-triggered runs. A client-mode TLS-Anvil runner and
   `.github/workflows/tls-anvil-client.yml` are wired with the same provenance
-  shape, but accepted client execution remains open until a strict-normalized
-  run attempts client TLS 1.3 rows rather than collapsing them into disabled /
-  not-attempted buckets. A skip-list narrowing tracked by #48
-  surfaces the strict-complete f50fcd8 client capture's
-  `sendEndOfEarlyDataAsServer` STRICTLY_SUCCEEDED row rather than the broader
-  `*EarlyData*` skip pattern masking it as `unexpected_pass`; server EarlyData
-  disabled rows remain expected-skipped under #3, and this is evidence
-  visibility within #48 rather than accepted client execution. BoGo is
+  shape. The latest strict-normalized client workflow on `48017ff`
+  (`ci-28717491405`) completed cleanly (`Running: false`, `FinishedTests: 437`,
+  `TotalTests: 437`) with normalized counts of `passed: 88`, `failed: 8`,
+  `expected_skipped: 136`, `unexpected_skipped: 0`, and `not_attempted: 205`;
+  `Extensions.sendAdditionalExtension` now passes after the #48 unsolicited
+  extension slice, but accepted client execution remains open while those eight
+  unexpected failures and the not-attempted client/both-endpoint bucket remain.
+  A skip-list narrowing tracked by #48 surfaces the strict-complete f50fcd8
+  client capture's `sendEndOfEarlyDataAsServer` STRICTLY_SUCCEEDED row rather
+  than the broader `*EarlyData*` skip pattern masking it as `unexpected_pass`;
+  server EarlyData disabled rows remain expected-skipped under #3, and this is
+  evidence visibility within #48 rather than accepted client execution. BoGo is
   explicitly deferred in
   `docs/research/BOGO_DEFERRED.md` with re-entry criteria tracked by #50.
 - Wycheproof boundary vectors at the libcrypto seam.
