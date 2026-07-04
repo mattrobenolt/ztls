@@ -57,7 +57,7 @@ pub fn main() !void {
     print("[iouring] connected to {s}:{d}\n", .{ connect_host, port });
 
     const client_keypair: ztls.x25519.KeyPair = .generate();
-    var random: ztls.client_hello.Random = undefined;
+    var random: ztls.Random = undefined;
     crypto.random.bytes(&random.data);
 
     var hs: ztls.ClientHandshake = .init(.{

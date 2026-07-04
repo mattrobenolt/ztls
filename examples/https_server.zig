@@ -57,7 +57,7 @@ pub fn main() !void {
     print("[https]  client connected\n", .{});
 
     const server_keypair: ztls.x25519.KeyPair = .generate();
-    var random: ztls.client_hello.Random = undefined;
+    var random: ztls.Random = undefined;
     std.crypto.random.bytes(&random.data);
     var hs: ztls.ServerHandshake = .init(.{
         .keypair = server_keypair,

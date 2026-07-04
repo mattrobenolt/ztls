@@ -16,14 +16,15 @@ const txtar = @import("txtar");
 
 const aead = @import("aead.zig");
 const alert = @import("alert.zig");
-const backend = @import("crypto/backend.zig");
 const array_buffer = @import("array_buffer.zig");
 const ArrayBuffer = array_buffer.ArrayBuffer;
 const SliceBuffer = array_buffer.SliceBuffer;
 const certificate = @import("certificate.zig");
-const CipherSuite = @import("root.zig").CipherSuite;
 const client_hello = @import("client_hello.zig");
+const backend = @import("crypto/backend.zig");
 const encrypted_extensions = @import("encrypted_extensions.zig");
+const extension_type = @import("extension_type.zig");
+const OfferedExtensions = extension_type.OfferedExtensions;
 const finished = @import("finished.zig");
 const frame = @import("frame.zig");
 pub const max_out_len = frame.max_wire_record_len;
@@ -42,6 +43,11 @@ const memx = @import("memx.zig");
 const NewSessionTicket = @import("NewSessionTicket.zig");
 const PendingWrite = @import("pending_write.zig").PendingWrite;
 const RecordLayer = @import("RecordLayer.zig");
+const root = @import("root.zig");
+const CipherSuite = root.CipherSuite;
+const AlpnError = root.AlpnError;
+const AlpnProtocols = root.AlpnProtocols;
+const Random = root.Random;
 const server_hello = @import("server_hello.zig");
 const SignatureScheme = @import("signature_scheme.zig").SignatureScheme;
 const suite_state = @import("suite_state.zig");
@@ -85,7 +91,7 @@ pub const Config = struct {
     /// Required — callers that do not care must pass 0 explicitly.
     now_sec: i64,
     /// ClientHello random field (RFC 8446 §4.1.2). Stored and used by start().
-    random: client_hello.Random,
+    random: Random,
     /// Trust anchors for chain validation. null rejects the server Certificate
     /// unless `insecure_no_chain_anchor` is set.
     bundle: ?*const crypto.Certificate.Bundle = null,
@@ -94,7 +100,7 @@ pub const Config = struct {
     insecure_no_chain_anchor: bool = false,
     /// ALPN protocols offered in ClientHello. Caller-owned; must live until
     /// start() encodes them.
-    alpn_protocols: client_hello.AlpnProtocols = &.{},
+    alpn_protocols: AlpnProtocols = &.{},
     /// Optional caller-owned storage for handshake-message reassembly. When
     /// non-null, the engine reassembles flight messages that span records.
     reassembly: ?[]u8 = null,
@@ -321,7 +327,7 @@ suite: Suite,
 /// once ServerHello arrives; the public goes into the ClientHello key_share.
 keypair: x25519.KeyPair,
 /// ClientHello random (RFC 8446 §4.1.2), stored from Config for start().
-random: client_hello.Random = .zero,
+random: Random = .zero,
 /// Handshake-traffic RecordLayers, installed by processServerHello.
 rx: RecordLayer = undefined,
 tx: RecordLayer = undefined,
@@ -354,9 +360,9 @@ offered_suites: OfferedSuitesBuffer = .empty,
 /// Recognized signature schemes offered in ClientHello.signature_algorithms.
 offered_signature_schemes: OfferedSignatureSchemesBuffer = .empty,
 /// Offered ClientHello extensions tracked for validating server responses.
-offered_extensions: client_hello.OfferedExtensions = .initEmpty(),
+offered_extensions: OfferedExtensions = .initEmpty(),
 /// ALPN protocols offered in ClientHello. Caller-owned, must live until start().
-alpn_protocols: client_hello.AlpnProtocols = &.{},
+alpn_protocols: AlpnProtocols = &.{},
 selected_alpn: SelectedAlpnBuffer = .empty,
 
 /// Start a client handshake from a Config. The Config's `host_name` is the
@@ -400,7 +406,7 @@ pub fn completeWrite(self: *ClientHandshake) void {
     self.pending_write.clear();
 }
 
-pub const StartError = error{ BufferTooShort, ServerNameTooLong } || client_hello.AlpnError;
+pub const StartError = error{ BufferTooShort, ServerNameTooLong } || AlpnError;
 
 /// Provide caller-owned storage for reassembling handshake messages that span
 /// encrypted records (large certificate chains, fragmented flights). Without
@@ -413,7 +419,8 @@ pub fn useHandshakeBuffer(self: *ClientHandshake, storage: []u8) void {
 
 /// Offer ALPN protocols in ClientHello. Each protocol must be 1..255 bytes.
 /// The slice is caller-owned and only needs to live until start() encodes it.
-pub fn offerAlpn(self: *ClientHandshake, protocols: client_hello.AlpnProtocols) void {
+/// ziglint-ignore: Z012
+pub fn offerAlpn(self: *ClientHandshake, protocols: AlpnProtocols) void {
     assert(self.state == .start);
     self.alpn_protocols = protocols;
 }

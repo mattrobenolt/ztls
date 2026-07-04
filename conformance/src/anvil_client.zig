@@ -45,7 +45,7 @@ pub fn main() !void {
     defer stream.close();
 
     const kp: ztls.x25519.KeyPair = .generate();
-    var random: ztls.client_hello.Random = undefined;
+    var random: ztls.Random = undefined;
     crypto.random.bytes(&random.data);
 
     var hs: ztls.ClientHandshake = .init(.{

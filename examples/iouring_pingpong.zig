@@ -66,7 +66,7 @@ fn serverRun(ctx: *ServerCtx) !void {
     defer conn.stream.close();
     print("[server] accepted connection\n", .{});
 
-    var random: ztls.client_hello.Random = undefined;
+    var random: ztls.Random = undefined;
     std.crypto.random.bytes(&random.data);
 
     var hs: ztls.ServerHandshake = .init(.{
@@ -148,7 +148,7 @@ fn clientRun(client_keypair: ztls.x25519.KeyPair, actual_port: u16) !void {
     defer stream.close();
     print("[client] connected to {s}:{d}\n", .{ host, actual_port });
 
-    var random: ztls.client_hello.Random = undefined;
+    var random: ztls.Random = undefined;
     std.crypto.random.bytes(&random.data);
 
     var hs: ztls.ClientHandshake = .init(.{

@@ -19,7 +19,9 @@ const ArrayBuffer = array_buffer.ArrayBuffer;
 const SliceBuffer = array_buffer.SliceBuffer;
 const certificate = @import("certificate.zig");
 const CertificateChain = @import("certificate_chain.zig").CertificateChain;
-const CipherSuite = @import("root.zig").CipherSuite;
+const root = @import("root.zig");
+const CipherSuite = root.CipherSuite;
+const Random = root.Random;
 const client_hello = @import("client_hello.zig");
 const ClientHandshake = @import("ClientHandshake.zig");
 const encrypted_extensions = @import("encrypted_extensions.zig");
@@ -127,14 +129,14 @@ pub const Config = struct {
     /// Ephemeral X25519 keypair. The public key is used when X25519 is selected.
     keypair: x25519.KeyPair,
     /// ServerHello random field (RFC 8446 §4.1.3). Stored and used once.
-    random: client_hello.Random,
+    random: Random,
     /// Optional deterministic P-256 keypair for tests. If null, init preserves
     /// the old behavior and generates the P-256 keypair internally.
     p256_keypair: ?p256.KeyPair = null,
     /// Cipher suites offered by this server, in server preference order.
     supported_suites: []const CipherSuite = default_supported_suites,
     /// ALPN protocols supported by this server. Caller-owned.
-    alpn_protocols: client_hello.AlpnProtocols = &.{},
+    alpn_protocols: root.AlpnProtocols = &.{},
     /// Optional caller-owned ClientHello reassembly storage.
     reassembly: ?[]u8 = null,
 };
@@ -147,12 +149,12 @@ const ServerCredentials = struct {
 state: State = .wait_ch,
 keypair: x25519.KeyPair,
 p256_keypair: p256.KeyPair,
-random: client_hello.Random,
+random: Random,
 negotiated_group: NamedGroup = .x25519,
 suite: CipherSuite = .aes_128_gcm_sha256,
 suite_state: Suite = undefined,
 supported_suites: []const CipherSuite = default_supported_suites,
-alpn_protocols: client_hello.AlpnProtocols = &.{},
+alpn_protocols: root.AlpnProtocols = &.{},
 selected_alpn: ?[]const u8 = null,
 /// SNI hostname sent by the client in the server_name extension (RFC 6066 §3).
 /// Populated after acceptClientHello / handleRecord returns the first write event.
@@ -233,7 +235,7 @@ pub fn supportSuites(self: *ServerHandshake, suites: []const CipherSuite) void {
     self.supported_suites = suites;
 }
 
-pub fn supportAlpn(self: *ServerHandshake, protocols: client_hello.AlpnProtocols) void {
+pub fn supportAlpn(self: *ServerHandshake, protocols: root.AlpnProtocols) void {
     assert(self.state == .wait_ch);
     self.alpn_protocols = protocols;
 }

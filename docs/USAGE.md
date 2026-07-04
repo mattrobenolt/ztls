@@ -142,7 +142,7 @@ var out: ztls.ClientHandshake.OutBuffer = .empty;
 var storage: ztls.RecordBuffer.Storage = .empty;
 var rb: ztls.RecordBuffer = .init(&storage.buffer);
 
-var random: ztls.client_hello.Random = undefined;
+var random: ztls.Random = undefined;
 std.crypto.random.bytes(&random.data);
 
 var hs: ztls.ClientHandshake = .init(.{
@@ -178,7 +178,7 @@ The server loop is identical in shape, with two differences:
 2. Server credentials are configured before the ClientHello arrives, and `sendServerFlightBuffered` sends the authenticated server flight after ServerHello is written.
 
 ```zig
-var random: ztls.client_hello.Random = undefined;
+var random: ztls.Random = undefined;
 std.crypto.random.bytes(&random.data);
 var hs: ztls.ServerHandshake = .init(.{
     .keypair = server_keypair,

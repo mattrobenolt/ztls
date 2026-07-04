@@ -27,7 +27,7 @@ pub fn testSigner() !ztls.signature.PrivateKey {
     return .fromP256Scalar(scalar[0..32]);
 }
 
-pub fn randomBytes() ztls.client_hello.Random {
+pub fn randomBytes() ztls.Random {
     var bytes: [32]u8 = undefined;
     std.crypto.random.bytes(&bytes);
     return .init(bytes);

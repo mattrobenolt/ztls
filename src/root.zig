@@ -1,5 +1,7 @@
 pub const aead = @import("aead.zig");
 pub const alert = @import("alert.zig");
+pub const AlpnError = @import("alpn.zig").Error;
+pub const AlpnProtocols = @import("alpn.zig").Protocols;
 pub const certificate = @import("certificate.zig");
 pub const certificate_chain = @import("certificate_chain.zig");
 pub const CertificateChain = certificate_chain.CertificateChain;

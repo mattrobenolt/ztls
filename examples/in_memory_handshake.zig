@@ -26,9 +26,9 @@ pub fn main() !void {
     const client_keypair: ztls.x25519.KeyPair = .generate();
     const server_keypair: ztls.x25519.KeyPair = .generate();
 
-    var client_random: ztls.client_hello.Random = undefined;
+    var client_random: ztls.Random = undefined;
     std.crypto.random.bytes(&client_random.data);
-    var server_random: ztls.client_hello.Random = undefined;
+    var server_random: ztls.Random = undefined;
     std.crypto.random.bytes(&server_random.data);
 
     // ── Client setup ────────────────────────

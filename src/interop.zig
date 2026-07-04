@@ -118,7 +118,7 @@ fn startServer(
 
 fn clientInterop(stream: net.Stream) !void {
     const kp: ztls.x25519.KeyPair = .generate();
-    var random: ztls.client_hello.Random = undefined;
+    var random: ztls.Random = undefined;
     crypto.random.bytes(&random.data);
 
     var hs: ztls.ClientHandshake = .init(.{
@@ -224,7 +224,7 @@ fn serverThread(args: *const ServerArgs) !void {
 
 fn serve(stream: net.Stream, suite: ztls.CipherSuite) !void {
     const server_keypair: ztls.x25519.KeyPair = .generate();
-    var server_random: ztls.client_hello.Random = undefined;
+    var server_random: ztls.Random = undefined;
     crypto.random.bytes(&server_random.data);
 
     var hs: ztls.ServerHandshake = .init(.{
