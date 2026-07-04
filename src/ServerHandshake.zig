@@ -438,7 +438,7 @@ fn processClientHelloMessage(
         .{ .x25519 = public_key }
     else if (ch.public_key_p256) |public_key|
         .{ .secp256r1 = public_key }
-    else if (ch.supports_x25519) {
+    else if (ch.groups.contains(.x25519)) {
         const hrr = try self.encodeHelloRetryRequest(
             ch_msg,
             ch.legacy_session_id,
@@ -448,7 +448,7 @@ fn processClientHelloMessage(
         );
         self.state = .wait_ch;
         return hrr;
-    } else if (ch.supports_p256) {
+    } else if (ch.groups.contains(.secp256r1)) {
         const hrr = try self.encodeHelloRetryRequest(
             ch_msg,
             ch.legacy_session_id,

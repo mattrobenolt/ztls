@@ -126,8 +126,7 @@ pub const Parsed = struct {
     signature_schemes: []const u8 = &.{},
     server_name: ?[]const u8 = null,
     alpn_protocols: []const u8 = &.{},
-    supports_x25519: bool = false,
-    supports_p256: bool = false,
+    groups: SupportedGroups = .{},
     public_key: ?x25519.PublicKey = null,
     public_key_p256: ?p256.PublicKey = null,
 
@@ -306,9 +305,7 @@ pub fn parse(msg: []const u8) ParseError!Parsed {
             },
             .supported_groups => {
                 if (got_supported_groups) return error.DuplicateExtension;
-                const groups = try parseSupportedGroups(ext);
-                parsed.supports_x25519 = groups.x25519;
-                parsed.supports_p256 = groups.p256;
+                parsed.groups = try parseSupportedGroups(ext);
                 got_supported_groups = true;
             },
             .alpn => {
@@ -347,8 +344,10 @@ pub fn parse(msg: []const u8) ParseError!Parsed {
         return error.MissingExtension;
     if (!hasSupportedHandshakeSignatureScheme(parsed.signature_schemes))
         return error.UnsupportedSignatureScheme;
-    if (parsed.public_key != null and !parsed.supports_x25519) return error.IllegalParameter;
-    if (parsed.public_key_p256 != null and !parsed.supports_p256) return error.IllegalParameter;
+    if (parsed.public_key != null and !parsed.groups.contains(.x25519))
+        return error.IllegalParameter;
+    if (parsed.public_key_p256 != null and !parsed.groups.contains(.secp256r1))
+        return error.IllegalParameter;
     return parsed;
 }
 
@@ -387,10 +386,60 @@ fn parseSupportedVersions(ext: []const u8) ParseError!void {
     return error.UnsupportedTlsVersion;
 }
 
-const SupportedGroups = struct {
-    x25519: bool = false,
-    p256: bool = false,
+// Closed mirror of NamedGroup's named tags. EnumSet(NamedGroup) would be 8 KiB
+// because NamedGroup is non-exhaustive enum(u16); this keeps the set tiny.
+const KnownGroup = enum {
+    x25519,
+    secp256r1,
+    secp384r1,
+    secp256r1_mlkem768,
+    x25519_mlkem768,
+    secp384r1_mlkem1024,
+
+    fn fromNamed(group: NamedGroup) ?KnownGroup {
+        return switch (group) {
+            .x25519 => .x25519,
+            .secp256r1 => .secp256r1,
+            .secp384r1 => .secp384r1,
+            .secp256r1_mlkem768 => .secp256r1_mlkem768,
+            .x25519_mlkem768 => .x25519_mlkem768,
+            .secp384r1_mlkem1024 => .secp384r1_mlkem1024,
+            else => null,
+        };
+    }
 };
+
+comptime {
+    for (std.meta.fields(NamedGroup)) |named_group| {
+        var found = false;
+        for (std.meta.fields(KnownGroup)) |known_group| {
+            if (mem.eql(u8, named_group.name, known_group.name)) found = true;
+        }
+        assert(found);
+    }
+}
+
+pub const SupportedGroups = struct {
+    set: std.EnumSet(KnownGroup) = .initEmpty(),
+
+    pub fn contains(self: SupportedGroups, group: NamedGroup) bool {
+        const known = KnownGroup.fromNamed(group) orelse return false;
+        return self.set.contains(known);
+    }
+
+    fn insert(self: *SupportedGroups, group: NamedGroup) void {
+        const known = KnownGroup.fromNamed(group) orelse return;
+        self.set.insert(known);
+    }
+
+    fn hasImplemented(self: SupportedGroups) bool {
+        return self.contains(.x25519) or self.contains(.secp256r1);
+    }
+};
+
+comptime {
+    assert(@sizeOf(SupportedGroups) <= @sizeOf(usize));
+}
 
 fn parseSupportedGroups(ext: []const u8) ParseError!SupportedGroups {
     if (ext.len < 2) return error.InvalidVectorLength;
@@ -398,14 +447,8 @@ fn parseSupportedGroups(ext: []const u8) ParseError!SupportedGroups {
     const list_len = r.assumeRead(u16);
     if (list_len != ext.len - 2 or list_len % 2 != 0) return error.InvalidVectorLength;
     var groups: SupportedGroups = .{};
-    while (r.pos < ext.len) {
-        switch (r.assumeRead(NamedGroup)) {
-            .x25519 => groups.x25519 = true,
-            .secp256r1 => groups.p256 = true,
-            else => {},
-        }
-    }
-    if (!groups.x25519 and !groups.p256) return error.UnsupportedKeyShare;
+    while (r.pos < ext.len) groups.insert(r.assumeRead(NamedGroup));
+    if (!groups.hasImplemented()) return error.UnsupportedKeyShare;
     return groups;
 }
 
@@ -687,14 +730,32 @@ test "parse: accepts secp256r1 supported group and key share" {
     const p256_len = try rewriteClientHelloForP256(&buf, encoded.len, p256_keypair.public_key);
 
     const parsed = try parse(buf[0..p256_len]);
-    try testing.expect(!parsed.supports_x25519);
-    try testing.expect(parsed.supports_p256);
+    try testing.expect(!parsed.groups.contains(.x25519));
+    try testing.expect(parsed.groups.contains(.secp256r1));
     try testing.expectEqual(@as(?x25519.PublicKey, null), parsed.public_key);
     try testing.expectEqualSlices(
         u8,
         &p256_keypair.public_key.data,
         &parsed.public_key_p256.?.data,
     );
+}
+
+// RFC 8446 §4.2.7 — known future groups are recorded without making them
+// negotiable before key-share and provider support exist.
+test "parseSupportedGroups: records future groups but requires implemented overlap" {
+    try testing.expectError(
+        error.UnsupportedKeyShare,
+        parseSupportedGroups(&.{ 0x00, 0x02, 0x11, 0xec }),
+    );
+
+    const groups = try parseSupportedGroups(&.{
+        0x00, 0x04,
+        0x00, 0x1d, // x25519
+        0x11, 0xec, // x25519_mlkem768
+    });
+    try testing.expect(groups.contains(.x25519));
+    try testing.expect(groups.contains(.x25519_mlkem768));
+    try testing.expect(!groups.contains(.secp256r1));
 }
 
 // RFC 8446 §4.2.8 — invalid key_exchange length is illegal_parameter input.
@@ -1013,7 +1074,7 @@ test "parse: ignores unknown extension" {
 test "parse: ignores unknown supported_groups entries" {
     const groups = [_]u8{ 0x00, 0x04, 0x6a, 0x6a, 0x00, 0x1d };
     const parsed = try parseSupportedGroups(&groups);
-    try testing.expect(parsed.x25519);
+    try testing.expect(parsed.contains(.x25519));
 }
 
 // RFC 8446 §4.1.2 — ClientHello parse must never crash or panic on arbitrary
