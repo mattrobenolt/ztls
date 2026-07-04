@@ -22,14 +22,20 @@ TLS-Anvil provides ~408 RFC-based server and client tests. The runner (`just anv
 
 Result normalization and skip-list enforcement are scaffolded by two steps: `anvil-adapter` converts TLS-Anvil output directories into `report.normalized.json`, then `anvil-report` applies the skip list and writes summaries. The adapter is covered by synthetic real-output-shape tests and rejects unfinished raw TLS-Anvil runs by default; `--allow-partial` is only for local audit/debug.
 
-The real server suite is wired as a dedicated GitHub Actions workflow, `.github/workflows/tls-anvil-server.yml`, on `workflow_dispatch` and a weekly schedule. It runs the same sequential settings used for accepted local evidence, strict-normalizes with `just anvil-report-dir`, and uploads summary/provenance/log artifacts without `keyfile.log`. This workflow is intentionally separate from PR `just ci`; TLS-Anvil client execution and BoGo remain open under #9.
+The real server suite is wired as a dedicated GitHub Actions workflow, `.github/workflows/tls-anvil-server.yml`, on `workflow_dispatch` and a weekly schedule. It runs the same sequential settings used for accepted local evidence, strict-normalizes with `just anvil-report-dir`, and uploads summary/provenance/log artifacts without `keyfile.log`.
+
+The client suite has the same local runner shape and a manual workflow in `.github/workflows/tls-anvil-client.yml`. `just anvil-client` launches TLS-Anvil in client mode, writes a trigger script that starts `zig-out/bin/anvil_client` for each handshake, uses the same strict adapter/report path, and captures run metadata plus TLS-Anvil command/stdout/client-stderr/tool logs under `zig-out/anvil/client/<timestamp>/`. Scheduling stays disabled until client-mode TLS-Anvil derives an attempted TLS 1.3 surface instead of only disabled/not-attempted rows. The workflow is intentionally separate from PR `just ci`; BoGo, both-endpoint coverage, and accepted client execution remain open under #9.
 
 ```sh
 # Run the CI-shaped TLS-Anvil server suite locally into a deterministic dir:
 just anvil-ci-server zig-out/anvil/server/manual 5400
 
+# Run the CI-shaped TLS-Anvil client suite locally into a deterministic dir:
+just anvil-ci-client zig-out/anvil/client/manual 5400
+
 # Adapt and normalize a TLS-Anvil output directory:
 just anvil-report-dir zig-out/anvil/server/<timestamp>
+just anvil-report-dir zig-out/anvil/client/<timestamp>
 
 # Or normalize an already-adapted results JSON against the skip list:
 just anvil-report test_fixtures/anvil_report_synthetic.json
@@ -43,4 +49,4 @@ The report script:
 - reports unmatched_skip_patterns and expected_skip_count_by_reason to catch stale or overbroad skip rules;
 - writes `summary.json` (machine-readable) and `summary.txt` (human-readable).
 
-The parser exits 0 only when the report has no unexpected pass/fail/skipped classifications; it exits 1 when review is required. Synthetic parser tests run in `just ci`; real TLS-Anvil server execution runs in the dedicated scheduled/manual workflow, while client execution and BoGo remain open (#9). The completed server-run `not_attempted` bucket is classified in `docs/research/TLS_ANVIL_NOT_ATTEMPTED.md`.
+The parser exits 0 only when the report has no unexpected pass/fail/skipped classifications; it exits 1 when review is required. Synthetic parser tests and wrapper helper tests run in `just ci`; real TLS-Anvil server execution runs in the dedicated scheduled/manual workflow, while client execution has a manual workflow for debugging the remaining attempted-row blocker. BoGo and both-endpoint coverage remain open (#9). The completed server-run `not_attempted` bucket is classified in `docs/research/TLS_ANVIL_NOT_ATTEMPTED.md`.

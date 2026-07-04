@@ -22,6 +22,15 @@ pub fn main() !void {
         break :blk try std.fmt.parseInt(u16, port_str, 10);
     };
 
+    const cert_host_name: ?[]const u8 = if (std.posix.getenv("ZTLS_HOST_NAME")) |name|
+        if (name.len == 0) null else name
+    else
+        host;
+    const insecure_no_chain_anchor = if (std.posix.getenv("ZTLS_INSECURE_NO_CHAIN_ANCHOR")) |value|
+        std.mem.eql(u8, value, "1") or std.ascii.eqlIgnoreCase(value, "true")
+    else
+        false;
+
     const stream = try net.tcpConnectToHost(arena, host, port);
     defer stream.close();
 
@@ -31,11 +40,13 @@ pub fn main() !void {
 
     var hs: ztls.ClientHandshake = .init(.{
         .keypair = kp,
-        .host_name = host,
+        .host_name = cert_host_name,
         .now_sec = 0,
         .random = random,
+        .insecure_no_chain_anchor = insecure_no_chain_anchor,
         .alpn_protocols = &.{ "h2", "http/1.1" },
     });
+    if (insecure_no_chain_anchor) hs.policy.leaf_usage = .none;
     defer hs.deinit();
 
     var out: [1024]u8 = undefined;

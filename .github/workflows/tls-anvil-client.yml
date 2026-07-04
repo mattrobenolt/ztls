@@ -1,0 +1,92 @@
+name: tls-anvil-client
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: tls-anvil-client-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'workflow_dispatch' }}
+
+permissions:
+  contents: read
+
+jobs:
+  anvil-client:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      RUN_DIR: zig-out/anvil/client/ci-${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - uses: DeterminateSystems/determinate-nix-action@4eea0b33e3d1f02ecfe37cf16e7204c424009606 # v3.21.0
+
+      - name: Build harness and TLS-Anvil tools
+        run: |
+          nix develop --command bash -lc '
+            set -euo pipefail
+            cd conformance
+            zig build
+            test -x zig-out/bin/anvil_client
+            test -f zig-out/tools/TLS-Anvil.jar
+            test -d zig-out/tools/lib
+          '
+
+      - name: Run CI-gated conformance helper tests
+        run: |
+          nix develop --command bash -lc '
+            set -euo pipefail
+            just conformance/ci
+          '
+
+      - name: Run TLS-Anvil client suite
+        timeout-minutes: 100
+        run: |
+          nix develop --command bash -lc '
+            set -euo pipefail
+            cd conformance
+            just anvil-ci-client "$RUN_DIR" 5400
+          '
+
+      - name: Strict-normalize TLS-Anvil run
+        run: |
+          nix develop --command bash -lc '
+            set -euo pipefail
+            cd conformance
+            set +e
+            just anvil-report-dir "$RUN_DIR"
+            status=$?
+            set -e
+            if [ -f "$RUN_DIR/summary.txt" ]; then
+              echo "----- summary.txt -----"
+              cat "$RUN_DIR/summary.txt"
+            fi
+            exit "$status"
+          '
+
+      - name: Upload TLS-Anvil summary and provenance
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: tls-anvil-client-summary
+          path: |
+            conformance/zig-out/anvil/client/ci-${{ github.run_id }}/run_metadata.json
+            conformance/zig-out/anvil/client/ci-${{ github.run_id }}/report.json
+            conformance/zig-out/anvil/client/ci-${{ github.run_id }}/report.zip
+            conformance/zig-out/anvil/client/ci-${{ github.run_id }}/report.normalized.json
+            conformance/zig-out/anvil/client/ci-${{ github.run_id }}/summary.json
+            conformance/zig-out/anvil/client/ci-${{ github.run_id }}/summary.txt
+            conformance/zig-out/anvil/client/ci-${{ github.run_id }}/logs/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload TLS-Anvil per-test results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: tls-anvil-client-results
+          path: conformance/zig-out/anvil/client/ci-${{ github.run_id }}/results/
+          if-no-files-found: warn
+          retention-days: 14

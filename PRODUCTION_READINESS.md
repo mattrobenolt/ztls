@@ -103,7 +103,11 @@ consumption-for-rejection, not resumption.
   (`105/105` attempted passed), including `KeyUpdate: passed=4` and
   `ComplianceRequirements: passed=2`.
   The real server suite is wired in `.github/workflows/tls-anvil-server.yml` for
-  weekly and manually-triggered runs; client execution and BoGo remain open.
+  weekly and manually-triggered runs. A client-mode TLS-Anvil runner and
+  `.github/workflows/tls-anvil-client.yml` are wired with the same provenance
+  shape, but accepted client execution remains open until a strict-normalized
+  run attempts client TLS 1.3 rows rather than collapsing them into disabled /
+  not-attempted buckets. BoGo remains open.
 - Wycheproof boundary vectors at the libcrypto seam.
 - Fuzzing on the major parsers plus record decrypt and server `handleRecord`
   pre-auth/post-auth dispatch.
@@ -136,8 +140,9 @@ consumption-for-rejection, not resumption.
   `89` classified in-scope client/both-endpoint rows that still require client
   or both-endpoint runner execution. TLS-Anvil normalization and wrapper-helper
   tests are gated, and the real TLS-Anvil server suite runs in a separate
-  scheduled/manual workflow, but TLS-Anvil client execution and BoGo runner
-  wiring remain open. Completed TLS-Anvil server evidence now has no unexpected attempted
+  scheduled/manual workflow. TLS-Anvil client runner/workflow wiring exists, but
+  accepted client execution and BoGo runner wiring remain open. Completed
+  TLS-Anvil server evidence now has no unexpected attempted
   failures; remaining named-group scope beyond the proven server-side P-256 path
   stays tracked under broader provider-backed group work *(#6)*. HelloRetryRequest
   server retry now passes TLS-Anvil, but full client/server HRR

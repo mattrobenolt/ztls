@@ -50,6 +50,7 @@ ci:
     just anvil-report-test
     just anvil-adapter-test
     just anvil-server-test
+    just anvil-client-test
 
 [doc("Run TLS-Anvil server tests against the ztls server harness")]
 anvil-server *args: build
@@ -108,6 +109,14 @@ anvil-report-skip-list:
     @echo "TODO: real-run skip-list audit not yet automated."
     @echo "Run 'just anvil-report <real-results> --output-dir <run-dir>' and review unmatched_skip_patterns in the summary."
 
-[doc("Run TLS-Anvil client tests")]
-anvil-client: build
-    @echo "TODO: TLS-Anvil client runner not yet wired"
+[doc("Run TLS-Anvil client tests against the ztls client harness")]
+anvil-client *args: build
+    uv run python scripts/anvil_client.py {{ args }}
+
+[doc("Run TLS-Anvil client with CI-safe sequential defaults")]
+anvil-ci-client run_dir timeout_secs="5400": build
+    uv run python scripts/anvil_client.py --output-folder {{ run_dir }} --timeout {{ timeout_secs }} --strength 1 --parallel-tests 1 --parallel-handshakes 1
+
+[doc("Run TLS-Anvil client wrapper helper tests")]
+anvil-client-test:
+    uv run pytest -q tests/test_anvil_client.py
