@@ -44,7 +44,7 @@ def write_trigger_script(
 ) -> None:
     if log_path is None:
         log_path = path.parent / "anvil_client.stderr.log"
-    path.write_text(f'#!/usr/bin/env bash\n"{client_bin}" >>"{log_path}" 2>&1 &\n')
+    path.write_text(f'#!/usr/bin/env bash\nexec "{client_bin}" >>"{log_path}" 2>&1\n')
     mode = path.stat().st_mode
     path.chmod(mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
@@ -107,6 +107,7 @@ def main() -> int:
     env["PORT"] = str(port)
     env["ZTLS_HOST_NAME"] = "localhost"
     env["ZTLS_INSECURE_NO_CHAIN_ANCHOR"] = "1"
+    env["ZTLS_INSECURE_NO_HOST_NAME"] = "1"
     tool_logs_before = snapshot_logs(ANVIL_TOOL_LOG_DIR)
     timeout = args.timeout or None
     stdout_path = logs_dir / "TLS-Anvil.stdout.log"

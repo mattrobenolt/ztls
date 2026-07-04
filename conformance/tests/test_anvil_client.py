@@ -35,6 +35,7 @@ def test_main_uses_tls_anvil_client_mode_with_trigger_script():
     assert 'env["PORT"] = str(port)' in source
     assert 'env["ZTLS_HOST_NAME"] = "localhost"' in source
     assert 'env["ZTLS_INSECURE_NO_CHAIN_ANCHOR"] = "1"' in source
+    assert 'env["ZTLS_INSECURE_NO_HOST_NAME"] = "1"' in source
 
 
 def test_trigger_script_is_executable_and_execs_client_bin(tmp_path: Path):
@@ -45,5 +46,5 @@ def test_trigger_script_is_executable_and_execs_client_bin(tmp_path: Path):
 
     assert os.access(trigger, os.X_OK)
     assert trigger.read_text() == (
-        f'#!/usr/bin/env bash\n"{client_bin}" >>"{tmp_path / "anvil_client.stderr.log"}" 2>&1 &\n'
+        f'#!/usr/bin/env bash\nexec "{client_bin}" >>"{tmp_path / "anvil_client.stderr.log"}" 2>&1\n'
     )

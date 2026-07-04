@@ -7,27 +7,37 @@
 //! This is test harness code; allocators and I/O are acceptable here.
 const std = @import("std");
 const net = std.net;
+const mem = std.mem;
+const posix = std.posix;
 const crypto = std.crypto;
+const ascii = std.ascii;
+const heap = std.heap;
 
 const ztls = @import("ztls");
 
 pub fn main() !void {
-    var arena_allocator: std.heap.ArenaAllocator = .init(std.heap.smp_allocator);
+    var arena_allocator: heap.ArenaAllocator = .init(heap.smp_allocator);
     defer arena_allocator.deinit();
     const arena = arena_allocator.allocator();
 
-    const host = std.posix.getenv("HOST") orelse "127.0.0.1";
+    const host = posix.getenv("HOST") orelse "127.0.0.1";
     const port = blk: {
-        const port_str = std.posix.getenv("PORT") orelse "4433";
+        const port_str = posix.getenv("PORT") orelse "4433";
         break :blk try std.fmt.parseInt(u16, port_str, 10);
     };
 
-    const cert_host_name: ?[]const u8 = if (std.posix.getenv("ZTLS_HOST_NAME")) |name|
+    const insecure_no_host_name = if (posix.getenv("ZTLS_INSECURE_NO_HOST_NAME")) |value|
+        mem.eql(u8, value, "1") or ascii.eqlIgnoreCase(value, "true")
+    else
+        false;
+    const cert_host_name: ?[]const u8 = if (insecure_no_host_name)
+        null
+    else if (posix.getenv("ZTLS_HOST_NAME")) |name|
         if (name.len == 0) null else name
     else
         host;
-    const insecure_no_chain_anchor = if (std.posix.getenv("ZTLS_INSECURE_NO_CHAIN_ANCHOR")) |value|
-        std.mem.eql(u8, value, "1") or std.ascii.eqlIgnoreCase(value, "true")
+    const insecure_no_chain_anchor = if (posix.getenv("ZTLS_INSECURE_NO_CHAIN_ANCHOR")) |value|
+        mem.eql(u8, value, "1") or ascii.eqlIgnoreCase(value, "true")
     else
         false;
 
@@ -41,7 +51,7 @@ pub fn main() !void {
     var hs: ztls.ClientHandshake = .init(.{
         .keypair = kp,
         .host_name = cert_host_name,
-        .now_sec = 0,
+        .now_sec = std.time.timestamp(),
         .random = random,
         .insecure_no_chain_anchor = insecure_no_chain_anchor,
         .alpn_protocols = &.{ "h2", "http/1.1" },
