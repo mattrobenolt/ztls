@@ -114,14 +114,15 @@ consumption-for-rejection, not resumption.
   unexpected failures to TLS-Anvil `DSA_WITH_SHA256` certificate parameter
   combinations that ztls rejects during server Certificate processing; they
   remain unexpected failures, not skip-list exclusions, until runner/upstream
-  handling changes. The other two rows map to deferred client authentication
-  (#4) and client P-256 key-share support (#6). A local #4 precursor now accepts
+  handling changes. The other two rows mapped to deferred client authentication
+  (#4) and client P-256 key-share support (#6). A #4 precursor now accepts
   handshake-time `CertificateRequest` and emits an empty client `Certificate`
-  before `Finished` when no client credentials are configured; remote TLS-Anvil
-  evidence for whether that clears `ClientAuthentication.clientSendsCertificateAndFinMessage`
-  is still pending, and full client-certificate authentication remains deferred.
-  Accepted client execution remains open while those failures and the not-attempted
-  client/both-endpoint bucket remain. A skip-list narrowing tracked by #48 surfaces the strict-complete f50fcd8
+  before `Finished` when no client credentials are configured; the ea52ffd
+  TLS-Anvil client run observed `ClientAuthentication.clientSendsCertificateAndFinMessage`
+  as `STRICTLY_SUCCEEDED`, and the stale `*ClientAuth*` expected-skip entry has
+  been removed. Full client-certificate authentication remains deferred.
+  Accepted client execution remains open while the remaining failures and the
+  not-attempted client/both-endpoint bucket remain. A skip-list narrowing tracked by #48 surfaces the strict-complete f50fcd8
   client capture's `sendEndOfEarlyDataAsServer` STRICTLY_SUCCEEDED row rather
   than the broader `*EarlyData*` skip pattern masking it as `unexpected_pass`;
   server EarlyData disabled rows remain expected-skipped under #3, and this is

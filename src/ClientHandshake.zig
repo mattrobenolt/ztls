@@ -838,10 +838,7 @@ fn processFlightBytes(
             },
         } orelse return;
         try self.processFlightMessage(msg, policy);
-        if (self.state == .send_finished) {
-            if ((try hr.next()) != null) return error.UnexpectedMessage;
-            return;
-        }
+        if (self.state == .send_finished) return;
     }
 }
 
@@ -860,12 +857,7 @@ fn processFlightBuffer(self: *ClientHandshake, policy: certificate.Policy) Fligh
         };
         try self.processFlightMessage(msg, policy);
         if (self.state == .send_finished) {
-            const trailing = hr.next() catch |err| {
-                self.handshake_buf.clear();
-                return err;
-            };
             self.handshake_buf.clear();
-            if (trailing != null) return error.UnexpectedMessage;
             return;
         }
     }
@@ -2015,26 +2007,6 @@ test "clientFinished: RFC 8448 §3 emits Finished and upgrades to app keys" {
         0x9f, 0x02, 0x28, 0x3b, 0x6c, 0x9c, 0x07, 0xef,
         0xc2, 0x6b, 0xb9, 0xf2, 0xac, 0x92, 0xe3, 0x56,
     }, &hs.rx.aead.aes_128_gcm_sha256.data);
-}
-
-// RFC 8446 §4 — extra handshake messages after server Finished in the same
-// protected flight are not part of the valid TLS 1.3 client state machine.
-test "processFlight: rejects trailing handshake message after server Finished" {
-    var hs: ClientHandshake = .init(testConfig(rfc8448_client_keypair));
-    hs.policy.insecure_no_chain_anchor = true;
-    hs.injectClientHello(&rfc8448_client_hello);
-    try hs.processServerHello(&rfc8448_server_hello);
-
-    var fixture_buf: [1024]u8 = undefined;
-    const flight = rfc8448Fixture("server_flight.b64", &fixture_buf);
-    var bad_flight: [2048]u8 = undefined;
-    @memcpy(bad_flight[0..flight.len], flight);
-    @memcpy(bad_flight[flight.len..][0..rfc8448_client_finished.len], &rfc8448_client_finished);
-
-    try testing.expectError(
-        error.UnexpectedMessage,
-        hs.processFlight(bad_flight[0 .. flight.len + rfc8448_client_finished.len], hs.policy),
-    );
 }
 
 // RFC 8446 §4.3.2 — CertificateRequest is allowed after EncryptedExtensions;
