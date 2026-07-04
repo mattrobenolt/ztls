@@ -11,9 +11,9 @@ const extension_type = @import("extension_type.zig");
 const ExtensionType = extension_type.ExtensionType;
 const handshake = @import("handshake.zig");
 const NamedGroup = @import("kex.zig").NamedGroup;
+const p256 = @import("p256.zig");
 const ProtocolVersion = @import("protocol_version.zig").ProtocolVersion;
 const wire = @import("wire.zig");
-const p256 = @import("p256.zig");
 const x25519 = @import("x25519.zig");
 
 const ext_header_len = 2 + 2;
@@ -21,8 +21,8 @@ const ext_header_len = 2 + 2;
 pub const ServerHello = struct {
     /// The negotiated cipher suite. Determines which HKDF hash to use.
     cipher_suite: CipherSuite,
-    /// Server's ephemeral X25519 public key from the key_share extension.
-    server_public_key: x25519.PublicKey,
+    /// Server's ephemeral public key from the key_share extension.
+    key_share: KeyShare,
 };
 
 pub const ParseError = error{
@@ -47,7 +47,7 @@ pub const ParseError = error{
     InvalidSessionIdEcho,
     /// legacy_compression_method is not null compression.
     InvalidCompressionMethod,
-    /// key_share extension uses a group other than x25519, or wrong key length.
+    /// key_share extension uses an unsupported group or wrong key encoding.
     UnsupportedKeyShareGroup,
     /// A recognized extension appeared in a message where TLS 1.3 does not allow it.
     UnexpectedExtension,
@@ -248,7 +248,7 @@ pub const KeyShare = union(enum) {
     x25519: x25519.PublicKey,
     secp256r1: p256.PublicKey,
 
-    fn group(self: KeyShare) NamedGroup {
+    pub fn group(self: KeyShare) NamedGroup {
         return switch (self) {
             .x25519 => .x25519,
             .secp256r1 => .secp256r1,
@@ -257,8 +257,7 @@ pub const KeyShare = union(enum) {
 
     fn bytes(self: *const KeyShare) []const u8 {
         return switch (self.*) {
-            .x25519 => |*key| &key.data,
-            .secp256r1 => |*key| &key.data,
+            inline else => |*key| &key.data,
         };
     }
 };
@@ -405,7 +404,7 @@ pub fn parseWithSessionIdEcho(
     try extension_type.rejectDuplicateExtensions(msg[r.pos..extensions_end]);
 
     var got_supported_versions = false;
-    var server_public_key: x25519.PublicKey = undefined;
+    var key_share: KeyShare = undefined;
     var got_key_share = false;
 
     while (r.pos < extensions_end) {
@@ -430,14 +429,26 @@ pub fn parseWithSessionIdEcho(
                 if (got_key_share) return error.DuplicateExtension;
                 const ext_end = r.pos + ext_len;
                 if (ext_len < 4) return error.InvalidExtensionLength;
-                const group = r.assumeRead(u16);
-                // x25519 only
-                if (group != @intFromEnum(NamedGroup.x25519))
-                    return error.UnsupportedKeyShareGroup;
+                const group = r.assumeRead(NamedGroup);
                 const key_len = r.assumeRead(u16);
-                if (key_len != 32) return error.UnsupportedKeyShareGroup;
-                if (ext_end - r.pos < 32) return error.InvalidExtensionLength;
-                server_public_key = .init(r.assumeReadSlice(32)[0..32].*);
+                switch (group) {
+                    .x25519 => {
+                        if (key_len != x25519.public_length) return error.UnsupportedKeyShareGroup;
+                        if (ext_end - r.pos < x25519.public_length)
+                            return error.InvalidExtensionLength;
+                        const key = r.assumeReadSlice(x25519.public_length);
+                        key_share = .{ .x25519 = .init(key[0..x25519.public_length].*) };
+                    },
+                    .secp256r1 => {
+                        if (key_len != p256.public_length) return error.UnsupportedKeyShareGroup;
+                        if (ext_end - r.pos < p256.public_length)
+                            return error.InvalidExtensionLength;
+                        const key = r.assumeReadSlice(p256.public_length);
+                        if (key[0] != 0x04) return error.UnsupportedKeyShareGroup;
+                        key_share = .{ .secp256r1 = .init(key[0..p256.public_length].*) };
+                    },
+                    else => return error.UnsupportedKeyShareGroup,
+                }
                 if (r.pos != ext_end) return error.InvalidExtensionLength;
                 got_key_share = true;
             },
@@ -491,7 +502,7 @@ pub fn parseWithSessionIdEcho(
 
     return .{
         .cipher_suite = cipher_suite,
-        .server_public_key = server_public_key,
+        .key_share = key_share,
     };
 }
 
@@ -520,7 +531,39 @@ test "encode: round trips through parse" {
     try testing.expectEqual(@as(usize, encoded_len), msg.len);
     const parsed = try parse(msg);
     try testing.expectEqual(.aes_128_gcm_sha256, parsed.cipher_suite);
-    try testing.expectEqualSlices(u8, &key.data, &parsed.server_public_key.data);
+    try testing.expectEqualSlices(u8, &key.data, &parsed.key_share.x25519.data);
+}
+
+// RFC 8446 §4.2.8.2 — P-256 key shares use uncompressed SEC1 points.
+test "parse: accepts secp256r1 key_share" {
+    var key: p256.PublicKey = .init(@splat(0x11));
+    key.data[0] = 0x04;
+    var out: [192]u8 = undefined;
+    const msg = try encodeWithKeyShare(
+        &out,
+        @splat(0xab),
+        &.{},
+        .aes_128_gcm_sha256,
+        .{ .secp256r1 = key },
+    );
+    const parsed = try parse(msg);
+    try testing.expectEqual(.secp256r1, parsed.key_share.group());
+    try testing.expectEqualSlices(u8, &key.data, &parsed.key_share.secp256r1.data);
+}
+
+// RFC 8446 §4.2.8.2 — compressed P-256 points are not valid TLS key shares.
+test "parse: rejects compressed secp256r1 key_share" {
+    var key: p256.PublicKey = .init(@splat(0x11));
+    key.data[0] = 0x02;
+    var out: [192]u8 = undefined;
+    const msg = try encodeWithKeyShare(
+        &out,
+        @splat(0xab),
+        &.{},
+        .aes_128_gcm_sha256,
+        .{ .secp256r1 = key },
+    );
+    try testing.expectError(error.UnsupportedKeyShareGroup, parse(msg));
 }
 
 test "encode: echoes session id" {
@@ -541,7 +584,7 @@ test "parse: RFC 8448 §3 ServerHello" {
         0x66, 0x76, 0x2b, 0xdb, 0xf7, 0xc6, 0x72, 0xe1,
         0x56, 0xd6, 0xcc, 0x25, 0x3b, 0x83, 0x3d, 0xf1,
         0xdd, 0x69, 0xb1, 0xb0, 0x4e, 0x75, 0x1f, 0x0f,
-    }, &sh.server_public_key.data);
+    }, &sh.key_share.x25519.data);
 }
 
 test "parse: wrong handshake type" {

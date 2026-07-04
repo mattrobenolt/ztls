@@ -42,6 +42,7 @@ const max_post_handshake_messages = handshake.max_post_handshake_messages;
 const hkdf = @import("hkdf.zig");
 const memx = @import("memx.zig");
 const NewSessionTicket = @import("NewSessionTicket.zig");
+const p256 = @import("p256.zig");
 const PendingWrite = @import("pending_write.zig").PendingWrite;
 const RecordLayer = @import("RecordLayer.zig");
 const root = @import("root.zig");
@@ -87,6 +88,9 @@ pub const Storage = ArrayBuffer(u8, recommended_handshake_storage);
 pub const Config = struct {
     /// Ephemeral X25519 keypair. The public goes into the ClientHello key_share.
     keypair: x25519.KeyPair,
+    /// Optional deterministic P-256 keypair for tests. When null, init()
+    /// generates one so the client can send a first-flight P-256 key_share.
+    p256_keypair: ?p256.KeyPair = null,
     /// DNS name sent as SNI and checked against the leaf certificate SAN/CN.
     /// null disables both SNI and hostname verification.
     host_name: ?[]const u8,
@@ -346,6 +350,7 @@ suite: Suite,
 /// Our ephemeral X25519 keypair. The secret computes the DHE shared secret
 /// once ServerHello arrives; the public goes into the ClientHello key_share.
 keypair: x25519.KeyPair,
+p256_keypair: p256.KeyPair,
 /// ClientHello random (RFC 8446 §4.1.2), stored from Config for start().
 random: Random = .zero,
 /// Handshake-traffic RecordLayers, installed by processServerHello.
@@ -381,6 +386,7 @@ offered_suites: OfferedSuitesBuffer = .empty,
 offered_signature_schemes: OfferedSignatureSchemesBuffer = .empty,
 /// Offered ClientHello extensions tracked for validating server responses.
 offered_extensions: OfferedExtensions = .initEmpty(),
+offered_groups: client_hello.SupportedGroups = .{},
 /// ALPN protocols offered in ClientHello. Caller-owned, must live until start().
 alpn_protocols: AlpnProtocols = &.{},
 selected_alpn: SelectedAlpnBuffer = .empty,
@@ -403,6 +409,7 @@ pub fn init(config: Config) ClientHandshake {
         // Hash unknown until ServerHello: run both candidate transcripts.
         .suite = .init,
         .keypair = config.keypair,
+        .p256_keypair = config.p256_keypair orelse .generate(),
         .random = config.random,
         .policy = .{
             .bundle = config.bundle,
@@ -432,6 +439,7 @@ pub fn deinit(self: *ClientHandshake) void {
     }
     self.suite.secureZero();
     self.keypair.secret_key.secureZero();
+    self.p256_keypair.secret_key.secureZero();
     self.* = undefined;
 }
 
@@ -476,10 +484,11 @@ pub fn selectedAlpnProtocol(self: *const ClientHandshake) ?[]const u8 {
 pub fn start(self: *ClientHandshake, out: []u8) StartError![]const u8 {
     assert(self.state == .start);
     if (out.len < frame.header_len) return error.BufferTooShort;
-    const ch = try client_hello.encode(
+    const ch = try client_hello.encodeWithP256(
         out[frame.header_len..],
         self.random,
         self.keypair.public_key,
+        self.p256_keypair.public_key,
         self.policy.host_name,
         self.alpn_protocols,
     );
@@ -499,6 +508,7 @@ pub fn injectClientHello(self: *ClientHandshake, client_hello_msg: []const u8) v
     self.offered_suites.clear();
     self.offered_signature_schemes.clear();
     self.offered_extensions = .initEmpty();
+    self.offered_groups = .{};
     const parsed = client_hello.parse(client_hello_msg) catch null;
     if (parsed) |ch| {
         self.legacy_session_id.appendSlice(ch.legacy_session_id) catch
@@ -511,6 +521,7 @@ pub fn injectClientHello(self: *ClientHandshake, client_hello_msg: []const u8) v
         }
         i = 0;
         self.offered_extensions = ch.offered_extensions;
+        self.offered_groups = ch.groups;
         while (i < ch.signature_schemes.len) : (i += 2) {
             const wire_scheme = memx.readInt(u16, ch.signature_schemes[i..][0..2]);
             const scheme: SignatureScheme = @enumFromInt(wire_scheme);
@@ -634,6 +645,7 @@ pub fn alertForError(err: anyerror) alert.Description {
         error.UnexpectedCertificateRequestContext,
         error.UnexpectedExtension,
         error.IllegalParameter,
+        error.IdentityElement,
         error.UnofferedAlpnProtocol,
         error.UnsupportedKeyShareGroup,
         error.UnsupportedSignatureScheme,
@@ -764,6 +776,7 @@ pub fn processServerHello(self: *ClientHandshake, msg: []const u8) ServerHelloEr
     assert(self.state == .wait_sh);
     const sh = try server_hello.parseWithSessionIdEcho(msg, self.legacy_session_id.constSlice());
     if (!self.offeredSuite(sh.cipher_suite)) return error.UnsupportedCipherSuite;
+    if (!self.offered_groups.contains(sh.key_share.group())) return error.UnsupportedKeyShareGroup;
     // Collapse the dual transcript to the negotiated hash's arm, carrying over
     // the hasher that already absorbed ClientHello.
     const b = self.suite.buffering;
@@ -777,7 +790,10 @@ pub fn processServerHello(self: *ClientHandshake, msg: []const u8) ServerHelloEr
     };
 
     self.suite.update(msg); // transcript now covers ClientHello || ServerHello
-    var dhe = try x25519.sharedSecret(self.keypair.secret_key, sh.server_public_key);
+    var dhe = switch (sh.key_share) {
+        .x25519 => |key| try x25519.sharedSecret(self.keypair.secret_key, key),
+        .secp256r1 => |key| try p256.sharedSecret(self.p256_keypair.secret_key, key),
+    };
     defer crypto.secureZero(u8, &dhe);
     const keys = try self.suite.deriveHandshakeKeys(&dhe);
     self.rx = keys.rx;
@@ -1201,6 +1217,20 @@ fn testConfig(keypair: x25519.KeyPair) Config {
     };
 }
 
+const p256_client_seed: p256.SecretKey = .init(.{
+    0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+    0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
+    0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
+    0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f,
+});
+
+const p256_server_seed: p256.SecretKey = .init(.{
+    0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27,
+    0x28, 0x29, 0x2a, 0x2b, 0x2c, 0x2d, 0x2e, 0x2f,
+    0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37,
+    0x38, 0x39, 0x3a, 0x3b, 0x3c, 0x3d, 0x3e, 0x3f,
+});
+
 const rfc8448_client_keypair: x25519.KeyPair = .{
     .secret_key = .init(.{
         0x49, 0xaf, 0x42, 0xba, 0x7f, 0x79, 0x94, 0x85,
@@ -1231,6 +1261,95 @@ test "processServerHello: RFC 8448 §3 installs server handshake keys" {
         0x3f, 0xce, 0x51, 0x60, 0x09, 0xc2, 0x17, 0x27,
         0xd0, 0xf2, 0xe4, 0xe8, 0x6e, 0xe4, 0x03, 0xbc,
     }, &hs.rx.aead.aes_128_gcm_sha256.data);
+}
+
+// RFC 8446 §4.2.8.2, §7.4.2 — the client accepts a secp256r1 ServerHello
+// key_share it offered in ClientHello and derives handshake traffic keys.
+test "processServerHello: accepts secp256r1 key_share" {
+    const client_p256 = try p256.KeyPair.generateDeterministic(p256_client_seed);
+    const server_p256 = try p256.KeyPair.generateDeterministic(p256_server_seed);
+    var hs: ClientHandshake = .init(.{
+        .keypair = rfc8448_client_keypair,
+        .p256_keypair = client_p256,
+        .host_name = null,
+        .now_sec = 0,
+        .random = .zero,
+    });
+    var ch_buf: [512]u8 = undefined;
+    const ch = try client_hello.encodeWithP256(
+        &ch_buf,
+        .zero,
+        hs.keypair.public_key,
+        hs.p256_keypair.public_key,
+        null,
+        &.{},
+    );
+    hs.injectClientHello(ch);
+
+    var sh_buf: [192]u8 = undefined;
+    const sh = try server_hello.encodeWithKeyShare(
+        &sh_buf,
+        @splat(0xab),
+        &.{},
+        .aes_128_gcm_sha256,
+        .{ .secp256r1 = server_p256.public_key },
+    );
+    try hs.processServerHello(sh);
+    try testing.expectEqual(.wait_ee, hs.state);
+}
+
+// RFC 8446 §4.2.8.2, §6.2 — malformed P-256 key_exchange is illegal_parameter.
+test "processServerHello: rejects invalid secp256r1 point" {
+    const client_p256 = try p256.KeyPair.generateDeterministic(p256_client_seed);
+    var bad_p256: p256.PublicKey = .init(@splat(0));
+    bad_p256.data[0] = 0x04;
+    var hs: ClientHandshake = .init(.{
+        .keypair = rfc8448_client_keypair,
+        .p256_keypair = client_p256,
+        .host_name = null,
+        .now_sec = 0,
+        .random = .zero,
+    });
+    var ch_buf: [512]u8 = undefined;
+    const ch = try client_hello.encodeWithP256(
+        &ch_buf,
+        .zero,
+        hs.keypair.public_key,
+        hs.p256_keypair.public_key,
+        null,
+        &.{},
+    );
+    hs.injectClientHello(ch);
+
+    var sh_buf: [192]u8 = undefined;
+    const sh = try server_hello.encodeWithKeyShare(
+        &sh_buf,
+        @splat(0xab),
+        &.{},
+        .aes_128_gcm_sha256,
+        .{ .secp256r1 = bad_p256 },
+    );
+    try testing.expectError(error.IdentityElement, hs.processServerHello(sh));
+    try testing.expectEqual(.illegal_parameter, alertForError(error.IdentityElement));
+}
+
+// RFC 8446 §4.1.3 — ServerHello key_share must select an offered group.
+test "processServerHello: rejects unoffered secp256r1 key_share" {
+    const server_p256 = try p256.KeyPair.generateDeterministic(p256_server_seed);
+    var hs: ClientHandshake = .init(testConfig(rfc8448_client_keypair));
+    var ch_buf: [512]u8 = undefined;
+    const ch = try client_hello.encode(&ch_buf, .zero, hs.keypair.public_key, null, &.{});
+    hs.injectClientHello(ch);
+
+    var sh_buf: [192]u8 = undefined;
+    const sh = try server_hello.encodeWithKeyShare(
+        &sh_buf,
+        @splat(0xab),
+        &.{},
+        .aes_128_gcm_sha256,
+        .{ .secp256r1 = server_p256.public_key },
+    );
+    try testing.expectError(error.UnsupportedKeyShareGroup, hs.processServerHello(sh));
 }
 
 // RFC 8446 §4.1.3 — ServerHello legacy_session_id_echo must match ClientHello.
@@ -1467,6 +1586,7 @@ test "alertForError: parser and semantic failures map to protocol alerts" {
         .{ .err = error.DuplicateKeyShare, .description = .illegal_parameter },
         .{ .err = error.InvalidCompressionMethod, .description = .illegal_parameter },
         .{ .err = error.InvalidSessionIdEcho, .description = .illegal_parameter },
+        .{ .err = error.IdentityElement, .description = .illegal_parameter },
         .{ .err = error.UnexpectedExtension, .description = .illegal_parameter },
         .{ .err = error.UnofferedAlpnProtocol, .description = .illegal_parameter },
     };

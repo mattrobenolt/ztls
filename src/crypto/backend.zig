@@ -287,7 +287,7 @@ test "x25519 handle shape matches active backend" {
 // ServerHello parsing and shared-secret derivation support it on the client.
 test "client group capabilities match implemented client key-share plumbing" {
     try testing.expect(capabilities.client_x25519);
-    try testing.expect(!capabilities.client_p256);
+    try testing.expect(capabilities.client_p256);
 }
 
 test "capability helpers recognize advertised algorithms" {

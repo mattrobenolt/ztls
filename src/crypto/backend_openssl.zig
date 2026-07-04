@@ -13,7 +13,7 @@ pub const capabilities = struct {
     };
 
     pub const client_x25519 = true;
-    pub const client_p256 = false;
+    pub const client_p256 = true;
     pub const server_x25519 = true;
     pub const server_p256 = true;
 

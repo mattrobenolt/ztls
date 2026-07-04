@@ -37,10 +37,10 @@ const x25519 = @import("x25519.zig");
 /// RFC 8446 §4.1.2 — legacy_version is frozen at TLS 1.2.
 const legacy_version: ProtocolVersion = .tls_1_2;
 
-const client_group_count = @as(usize, @intFromBool(backend.capabilities.client_x25519)) +
-    @as(usize, @intFromBool(backend.capabilities.client_p256));
 const handshake_header_len = 4;
 const ext_header_len = 2 + 2; // extension type + data length field
+const x25519_key_share_len: usize = 2 + 2 + x25519.public_length;
+const p256_key_share_len: usize = 2 + 2 + p256.public_length;
 const SniNameType = enum(u8) {
     host_name = 0,
     _,
@@ -57,17 +57,10 @@ const body_fixed_len =
     2; // extensions length
 
 const ext_supported_versions_len = ext_header_len + 1 + 2;
-const ext_supported_groups_len = ext_header_len + 2 + client_group_count * 2;
 const ext_sig_algs_len = ext_header_len + 2 + sig_scheme_count * 2;
 const ext_sig_algs_cert_len = ext_header_len + 2 + cert_sig_scheme_count * 2;
-const ext_key_share_len = ext_header_len + 2 + 2 + 2 + 32;
-
 comptime {
-    // The current client has one X25519 keypair in Config and encodes exactly
-    // one X25519 KeyShareEntry. Do not let backend capabilities advertise a
-    // different client group shape until ClientHandshake grows matching state.
     assert(backend.capabilities.client_x25519);
-    assert(!backend.capabilities.client_p256);
 }
 
 fn alpnExtDataLen(protocols: AlpnProtocols) AlpnError!u16 {
@@ -90,22 +83,43 @@ fn sniExtLen(name: []const u8) u16 {
     return ext_header_len + sni_overhead + @as(u16, @intCast(name.len));
 }
 
-fn extensionsLen(server_name: ?[]const u8, alpn_protocols: AlpnProtocols) AlpnError!u16 {
+fn groupCount(include_p256: bool) usize {
+    return 1 + @as(usize, @intFromBool(include_p256));
+}
+
+fn keySharesLen(include_p256: bool) usize {
+    return x25519_key_share_len + if (include_p256) p256_key_share_len else 0;
+}
+
+fn extensionsLen(
+    server_name: ?[]const u8,
+    alpn_protocols: AlpnProtocols,
+    include_p256: bool,
+) AlpnError!u16 {
     const sni: u16 = if (server_name) |n| sniExtLen(n) else 0;
     const alpn: u16 = if (alpn_protocols.len == 0) 0 else try alpnExtLen(alpn_protocols);
     const total = sni +
         alpn +
         ext_supported_versions_len +
-        ext_supported_groups_len +
+        ext_header_len + 2 + groupCount(include_p256) * 2 +
         ext_sig_algs_len +
         ext_sig_algs_cert_len +
-        ext_key_share_len;
+        ext_header_len + 2 + keySharesLen(include_p256);
     assert(total <= std.math.maxInt(u16));
     return @intCast(total);
 }
 
 pub fn encodedLen(server_name: ?[]const u8, alpn_protocols: AlpnProtocols) AlpnError!usize {
-    return handshake_header_len + body_fixed_len + try extensionsLen(server_name, alpn_protocols);
+    return handshake_header_len + body_fixed_len +
+        try extensionsLen(server_name, alpn_protocols, false);
+}
+
+pub fn encodedLenWithP256(
+    server_name: ?[]const u8,
+    alpn_protocols: AlpnProtocols,
+) AlpnError!usize {
+    return handshake_header_len + body_fixed_len +
+        try extensionsLen(server_name, alpn_protocols, true);
 }
 
 /// Encode a ClientHello handshake message into `out`.
@@ -177,9 +191,33 @@ pub fn encode(
     server_name: ?[]const u8,
     alpn_protocols: AlpnProtocols,
 ) (error{ BufferTooShort, ServerNameTooLong } || AlpnError)![]u8 {
+    return encodeInternal(out, random, public_key, null, server_name, alpn_protocols);
+}
+
+pub fn encodeWithP256(
+    out: []u8,
+    random: Random,
+    public_key: x25519.PublicKey,
+    public_key_p256: p256.PublicKey,
+    server_name: ?[]const u8,
+    alpn_protocols: AlpnProtocols,
+) (error{ BufferTooShort, ServerNameTooLong } || AlpnError)![]u8 {
+    assert(backend.capabilities.client_p256);
+    return encodeInternal(out, random, public_key, public_key_p256, server_name, alpn_protocols);
+}
+
+fn encodeInternal(
+    out: []u8,
+    random: Random,
+    public_key: x25519.PublicKey,
+    public_key_p256: ?p256.PublicKey,
+    server_name: ?[]const u8,
+    alpn_protocols: AlpnProtocols,
+) (error{ BufferTooShort, ServerNameTooLong } || AlpnError)![]u8 {
     // RFC 6066 §3: HostName is a DNS name, max 253 octets.
     if (server_name) |name| if (name.len > 253) return error.ServerNameTooLong;
-    const ext_len = try extensionsLen(server_name, alpn_protocols);
+    const include_p256 = public_key_p256 != null;
+    const ext_len = try extensionsLen(server_name, alpn_protocols, include_p256);
     const encoded_len = handshake_header_len + body_fixed_len + ext_len;
     if (out.len < encoded_len) return error.BufferTooShort;
 
@@ -233,10 +271,10 @@ pub fn encode(
 
     // supported_groups (RFC 8446 §4.2.7)
     w.append(ExtensionType, .supported_groups);
-    w.append(u16, 2 + client_group_count * 2);
-    w.append(u16, client_group_count * 2); // named_group_list length
-    if (backend.capabilities.client_x25519) w.append(NamedGroup, .x25519);
-    if (backend.capabilities.client_p256) w.append(NamedGroup, .secp256r1);
+    w.append(u16, @intCast(2 + groupCount(include_p256) * 2));
+    w.append(u16, @intCast(groupCount(include_p256) * 2)); // named_group_list length
+    w.append(NamedGroup, .x25519);
+    if (include_p256) w.append(NamedGroup, .secp256r1);
 
     // signature_algorithms (RFC 8446 §4.2.3)
     w.append(ExtensionType, .signature_algorithms);
@@ -251,12 +289,18 @@ pub fn encode(
     inline for (supported_certificate_signature_schemes) |s| w.append(SignatureScheme, s);
 
     // key_share (RFC 8446 §4.2.8)
+    const shares_len = keySharesLen(include_p256);
     w.append(ExtensionType, .key_share);
-    w.append(u16, 2 + 2 + 2 + 32);
-    w.append(u16, 2 + 2 + 32);
+    w.append(u16, @intCast(2 + shares_len));
+    w.append(u16, @intCast(shares_len));
     w.append(NamedGroup, .x25519);
-    w.append(u16, 32); // key_exchange length
+    w.append(u16, x25519.public_length); // key_exchange length
     w.appendSlice(&public_key.data);
+    if (public_key_p256) |key| {
+        w.append(NamedGroup, .secp256r1);
+        w.append(u16, p256.public_length); // key_exchange length
+        w.appendSlice(&key.data);
+    }
 
     return w.written();
 }
@@ -537,6 +581,16 @@ test "encode: size matches encodedLen" {
     try testing.expectEqual(try encodedLen("server", &.{}), encoded.len);
 }
 
+// RFC 8446 §4.2.8 — encodedLenWithP256 accounts for the second key share.
+test "encodeWithP256: size matches encodedLenWithP256" {
+    const x_key: x25519.PublicKey = .init(@splat(0x11));
+    var p_key: p256.PublicKey = .init(@splat(0x22));
+    p_key.data[0] = 0x04;
+    var buf: [512]u8 = undefined;
+    const encoded = try encodeWithP256(&buf, .zero, x_key, p_key, "server", &.{});
+    try testing.expectEqual(try encodedLenWithP256("server", &.{}), encoded.len);
+}
+
 test "encode: handshake type and legacy version" {
     var buf: [512]u8 = undefined;
     const encoded = try encode(&buf, .zero, .zero, null, &.{});
@@ -569,32 +623,13 @@ test "encode: legacy_session_id is empty" {
     try testing.expectEqual(@as(u8, 0), encoded[session_id_len_offset]);
 }
 
-// RFC 8446 §4.2.7 — the ClientHello advertises only groups the active backend
-// and client key-share implementation support.
-test "encode: supported_groups match client capabilities" {
+// RFC 8446 §4.2.7 — the default test helper ClientHello advertises X25519 only.
+test "encode: supported_groups contains X25519" {
     var buf: [512]u8 = undefined;
     const encoded = try encode(&buf, .zero, .zero, null, &.{});
     const ext = try findExtension(encoded, .supported_groups);
-    try testing.expectEqual(
-        @as(u16, @intCast(client_group_count * 2)),
-        memx.readInt(u16, ext[0..2]),
-    );
-    var pos: usize = 2;
-    if (backend.capabilities.client_x25519) {
-        try testing.expectEqual(
-            @intFromEnum(NamedGroup.x25519),
-            memx.readInt(u16, ext[pos..][0..2]),
-        );
-        pos += 2;
-    }
-    if (backend.capabilities.client_p256) {
-        try testing.expectEqual(
-            @intFromEnum(NamedGroup.secp256r1),
-            memx.readInt(u16, ext[pos..][0..2]),
-        );
-        pos += 2;
-    }
-    try testing.expectEqual(ext.len, pos);
+    try testing.expectEqual(@as(u16, 2), memx.readInt(u16, ext[0..2]));
+    try testing.expectEqual(@intFromEnum(NamedGroup.x25519), memx.readInt(u16, ext[2..][0..2]));
 }
 
 // RFC 8446 §4.2.8 — the current client surface sends one X25519 KeyShareEntry.
@@ -617,6 +652,23 @@ test "encode: key_share contains public key" {
         }
     }
     try testing.expect(found);
+}
+
+// RFC 8446 §4.2.7, §4.2.8 — client P-256 support advertises secp256r1
+// and sends a matching uncompressed key share in the first ClientHello.
+test "encodeWithP256: includes X25519 and secp256r1 key shares" {
+    const x_key: x25519.PublicKey = .init(@splat(0x11));
+    var p_key: p256.PublicKey = .init(@splat(0x22));
+    p_key.data[0] = 0x04;
+
+    var buf: [512]u8 = undefined;
+    const encoded = try encodeWithP256(&buf, .zero, x_key, p_key, null, &.{});
+    const parsed = try parse(encoded);
+
+    try testing.expect(parsed.groups.contains(.x25519));
+    try testing.expect(parsed.groups.contains(.secp256r1));
+    try testing.expectEqualSlices(u8, &x_key.data, &parsed.public_key.?.data);
+    try testing.expectEqualSlices(u8, &p_key.data, &parsed.public_key_p256.?.data);
 }
 
 test "encode: SNI present when server_name set" {

@@ -1629,7 +1629,7 @@ test "acceptClientHello: emits ServerHello and installs handshake keys" {
     try testing.expectEqual(frame.header_len + @as(usize, hdr.length()), sh_record.len);
     const sh = try server_hello.parse(sh_record[frame.header_len..][0..hdr.length()]);
     try testing.expectEqual(.aes_128_gcm_sha256, sh.cipher_suite);
-    try testing.expectEqualSlices(u8, &server_keypair.public_key.data, &sh.server_public_key.data);
+    try testing.expectEqualSlices(u8, &server_keypair.public_key.data, &sh.key_share.x25519.data);
 
     var client_hs: ClientHandshake = .init(.{
         .keypair = client_keypair,

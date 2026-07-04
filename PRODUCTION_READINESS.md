@@ -121,7 +121,10 @@ consumption-for-rejection, not resumption.
   exclusions, until runner/upstream handling changes. The other two rows are
   `RecordProtocol.checkMinimumRecordProtocolVersions` under the AES-256/TCP-
   fragmentation parameter combination and client P-256 key-share support (#6).
-  Accepted client execution remains open while the remaining failures and the
+  A local #6 slice now advertises X25519 and P-256 client key shares and accepts
+  either ServerHello group; remote TLS-Anvil evidence for whether that clears
+  `ComplianceRequirements.supportsSecp256r1` is still pending. Accepted client
+  execution remains open while the remaining failures and the
   not-attempted client/both-endpoint bucket remain. A skip-list narrowing tracked by #48 surfaces the strict-complete f50fcd8
   client capture's `sendEndOfEarlyDataAsServer` STRICTLY_SUCCEEDED row rather
   than the broader `*EarlyData*` skip pattern masking it as `unexpected_pass`;
@@ -424,14 +427,15 @@ each passing the same correctness and interop gates.
   advertisement now comes from the active backend capability declaration; server
   default suite selection and X25519/P-256 HRR/key-share selection consult the
   same facade. The current OpenSSL and AWS-LC capability sets are intentionally
-  identical, the ztls client still advertises only X25519 because its ServerHello
-  path is X25519-only, and no FIPS/provider-version divergent capability matrix
-  exists yet. *(#22)*
-- **Named-group/key-exchange shape is only partly generalized.** Server-side
-  X25519 and P-256 ECDHE are provider-backed and TLS-Anvil-clean, but the ztls
-  client remains X25519-only and P-384/PQ/hybrid groups still need real backend
-  math, variable-length key-share/shared-secret plumbing, and provider capability
-  tests before aws-lc differences can be claimed honestly. *(#22)*
+  identical, the ztls client has local X25519/P-256 first-flight key-share
+  plumbing, and no FIPS/provider-version divergent capability matrix exists yet.
+  Remote client-side TLS-Anvil evidence for P-256 is still pending. *(#22)*
+- **Named-group/key-exchange shape is only partly generalized.** X25519 and
+  P-256 ECDHE are provider-backed on the server side, and the client can now
+  advertise both groups and process either ServerHello key_share locally; P-384,
+  PQ, and hybrid groups still need real backend math, variable-length key-share/
+  shared-secret plumbing, and provider capability tests before aws-lc differences
+  can be claimed honestly. *(#22)*
 - **The facade contract is partly enforced by primitive tests, not a full
   matrix.** `src/crypto/backend_primitive_tests.zig` runs the same X25519,
   P-256 ECDH, AEAD, and signature primitive vectors through the backend facade
