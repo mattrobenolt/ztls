@@ -29,6 +29,6 @@ Rules:
 
 Output:
 - Recon summary: major external input surfaces and trust boundaries.
-- Existing coverage map: relevant tests/fuzz/conformance evidence.
+- Existing coverage map: relevant tests, `fuzz-engineer`'s fuzz coverage map where it exists (consult it to avoid re-queuing surfaces already exercised by fuzz targets), and conformance evidence.
 - Prioritized hunt queue, 5–12 items, each with: attack class, target files/functions, trust boundary, why it is fruitful, proof artifact to request, priority, and likely validator focus.
 - Explicit non-goals/out-of-scope surfaces for this pass.

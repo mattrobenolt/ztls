@@ -27,6 +27,7 @@ Rules:
 - Prefer GitHub issue numbers over pi todo IDs; committed artifacts must not cite pi todos.
 - If a claim cites an active issue, verify the issue exists and is open when relevant.
 - If evidence changed, say exactly which readiness/provenance docs need updates.
+- Fuzz crashes are evidence of a bug, not closure proof. A crash promoted to a regression test with an RFC/invariant citation advances the issue; closure still requires the full evidence picture. `fuzz-engineer` owns the infra, not the closure call.
 - Do not invent status. Point to file paths, tests, commands, issue numbers, and runner summary counts.
 
 Output:

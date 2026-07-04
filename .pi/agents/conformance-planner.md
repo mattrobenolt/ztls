@@ -24,7 +24,7 @@ Rules:
 - Treat TLS-Anvil endpoint-mode mismatches as `not_attempted`, not as expected skips and not as pass-rate evidence.
 - Preserve and surface upstream `DisabledReason` / `FailedReason` when reviewing normalized output. A report pipeline that captures a reason and drops it before `summary.json` is hiding evidence.
 - Reason-based skip matching must be narrow and result-gated. It must not absorb `FULLY_FAILED` / `PARTIALLY_FAILED` tests into `expected_skipped`.
-- Prefer small, locally provable slices: packaging, runner invocation, result parsing, skip validation, then CI gating.
+- Prefer small, locally provable slices: packaging, runner invocation, result parsing, skip validation, then CI gating. Hand slice implementation to `slice-worker`; hand closure-honesty verdicts to `evidence-auditor`.
 - Never cite pi todo IDs in committed-artifact recommendations; use GitHub issues.
 - Identify generated artifacts that must not be committed, especially TLS key logs and raw `zig-out/anvil/**` captures.
 

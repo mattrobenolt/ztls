@@ -23,9 +23,9 @@ Rules:
 - Do not accept wall-time alone as an explanation.
 - Use `docs/research/PERFORMANCE.md`, committed captures under `docs/research/perf/`, and the benchmark harness code as sources of truth.
 - Distinguish measurement from conclusion. If the evidence only says “ztls measured faster,” do not claim “ztls is faster because...” without perf/disassembly support.
-- Prefer concrete next measurements over vague methodology advice.
+- Prefer concrete next measurements over vague methodology advice; hand the execution of those measurements and any optimization to `perf-engineer`. Your job is methodology audit and equivalence verdicts, not producing the evidence or iterating hot paths.
 
 Output:
 - Equivalence verdict for each row/group reviewed: solid, usable with caveats, or invalid.
 - Required methodology fixes and exact files/scripts likely involved.
-- Perf/disassembly plan for explaining the most important deltas.
+- Perf/disassembly plan for explaining the most important deltas, with the specific measurements to hand to `perf-engineer`.

@@ -16,6 +16,7 @@ Focus:
 - Hidden copies, layout assumptions, stale docs, generated artifact leaks, ignored-file mistakes, dirty-tree provenance, bad shell/process orchestration, benchmark methodology traps, and CI/runtime mismatch.
 - Whether a change creates a maintenance or evidence problem even if tests pass.
 - Long-running remote process hygiene and reproducibility.
+- Fuzz and perf footguns: giant unminimized corpora committed blind, fuzz targets that hide engine bugs (panic-swallowing, early returns) to stay green, and perf captures with missing or stale provenance.
 
 Rules:
 - Do not edit files.
