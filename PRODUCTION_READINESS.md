@@ -60,7 +60,7 @@ ztls is production-ready when all six pillars are `PROVEN`:
 | Pillar | Status | One-line |
 |---|---|---|
 | 1. Correctness | `PARTIAL` | Strong layered evidence; the RFC 8446 MUST matrix has no `GAP`/`PARTIAL` rows for the current supported surface, but external conformance runners are not fully CI-gated. |
-| 2. Ergonomics | `PARTIAL` | CI-gated deterministic examples cover both client and server roles; handshake setup uses Config structs and epoll uses `Outbox`, but full driver ergonomics remain rough. |
+| 2. Ergonomics | `PROVEN` | CI-gated deterministic examples cover client and server roles across io_uring, epoll, and `std.net.Stream`; Config setup, server credentials, and `Outbox` cover the supported core ergonomics boundary. |
 | 3. Performance | `PARTIAL` | Rich bench harness exists; equivalence methodology and reproducible hardware-matrix results are missing. |
 | 4. Providers | `PARTIAL` | OpenSSL primitives are live and AWS-LC selection is explicit, but the primitive facade and capability table remain incomplete. |
 | 5. Marketing | `NONE` | Not started. |
@@ -169,7 +169,7 @@ Sans-I/O API is pleasant across every I/O model ztls claims to support.
 | Client | `PROVEN` — `examples/iouring_pingpong.zig` runs an io_uring client that completes a full TLS 1.3 handshake and exchanges ping/pong application data with a server thread over loopback; it is Linux-gated and runs in `examples-ci`. | `PROVEN` — `examples/epoll_pingpong.zig` runs a non-blocking epoll client thread that completes a full TLS 1.3 handshake and exchanges ping/pong application data with a server thread over loopback; it is gated in `examples-ci`. | `PROVEN` — the client side of `examples/tcp_loopback.zig` completes a full TLS 1.3 handshake, application-data exchange, and `close_notify` over `std.net.Stream`; it is gated in `examples-ci`. |
 | Server | `PROVEN` — `examples/iouring_pingpong.zig` runs an io_uring server thread that accepts a loopback connection, completes a full TLS 1.3 handshake, and responds to ping messages with pong; it is Linux-gated and runs in `examples-ci`. | `PROVEN` — `examples/epoll_pingpong.zig` runs a non-blocking epoll server thread that accepts a single loopback connection, completes a full TLS 1.3 handshake, and responds to ping messages with pong; it is gated in `examples-ci`. | `PROVEN` — the server side of `examples/tcp_loopback.zig` completes a full TLS 1.3 handshake, application-data exchange, and `close_notify` over `std.net.Stream`; it is gated in `examples-ci`. |
 
-**Current evidence (useful, but not enough):**
+**Current evidence:**
 
 - Complete example inventory: `full_handshake.zig`, `handshake_keys.zig`,
   `https_client.zig`, `https_server.zig`, `in_memory_handshake.zig`,
@@ -195,19 +195,19 @@ Sans-I/O API is pleasant across every I/O model ztls claims to support.
   support is unavailable, so they cannot be mistaken for proof if wired into a
   gate later.
 
-**Status:** `PARTIAL`
+**Status:** `PROVEN`
 
-**Gaps:**
+**Gaps:** none for the supported adoption path.
 
-- **Ergonomics are possible, not yet fully pleasant.** Real users still hand-roll
-  the drive loop around `RecordBuffer`, juggle distinct `OutBuffer` /
-  `FlightBuffer` types, and interpret state transitions through event switches.
-  The worst setup/write footguns are narrower now: server credentials are
-  configured up front, `sendServerFlight*` owns the authenticated-flight
-  one-shot/pending-write latch, client and server setup are `Config`-based, and
-  `ztls.Outbox` owns partial-write draining plus `completeWrite()` coupling for
-  the non-blocking epoll example. A higher-level reusable connection driver is
-  still an open design boundary. *(#47)*
+The caller-owned drive loop around `RecordBuffer`, the explicit `OutBuffer` /
+`FlightBuffer` storage, and event-switch dispatch are accepted Sans-I/O trade-offs,
+not unfinished core work. `docs/research/DESIGN.md` keeps higher-level wrappers
+separate from the engine, and `docs/research/API_ROADMAP.md` puts wrapper proof in
+examples or wrapper packages. The #47 design decision rejects a reusable connection
+driver in `src/`: blocking, epoll, io_uring, and in-memory flows differ enough that
+a shared driver would either own transport I/O or add callback/framework glue. The
+reusable core boundary is the handshake types plus `RecordBuffer` and `ztls.Outbox`;
+CI-gated examples remain canonical for transport drive-loop glue.
 
 ---
 
