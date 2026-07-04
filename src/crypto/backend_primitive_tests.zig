@@ -1,7 +1,7 @@
 //! Backend primitive contract tests — run under every linked libcrypto lane.
 //!
 //! These tests exercise the backend facade (`src/crypto/backend.zig`) directly
-//! rather than the higher-level `aead`/`x25519`/`signature` wrapper modules.
+//! rather than the higher-level `aead`/`x25519`/`p256`/`signature` wrapper modules.
 //! They run under both the OpenSSL and AWS-LC build lanes because
 //! `backend.active` is resolved at compile time from the build option, and the
 //! test entry point in `src/test.zig` imports this file unconditionally.
@@ -17,7 +17,6 @@ const testing = std.testing;
 const backend = @import("backend.zig");
 const Certificate = @import("../cryptox/Certificate.zig");
 const CipherSuite = @import("../cipher_suite.zig").CipherSuite;
-const SignatureScheme = @import("../signature_scheme.zig").SignatureScheme;
 const cert_fixtures = @import("../test_fixtures/certificate_fixtures.zig");
 
 const hex = @import("../memx.zig").hex;
@@ -248,6 +247,92 @@ fn keyLenForSuite(suite: CipherSuite) usize {
         .aes_128_gcm_sha256 => 16,
         .aes_256_gcm_sha384, .chacha20_poly1305_sha256 => 32,
     };
+}
+
+// ---------------------------------------------------------------------------
+// P-256 ECDH — direct backend.p256 facade
+// ---------------------------------------------------------------------------
+
+// SEC 1 §2.3.4 (via RFC 8446 §4.2.8) — P-256 uncompressed SEC1 public key is
+// 65 bytes: 0x04 || X || Y. Two parties with fixed scalars must derive the
+// same 32-byte shared secret through the backend facade.
+test "backend.p256: mutual key agreement with fixed scalars" {
+    const alice_scalar: [32]u8 = hex(
+        32,
+        "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    );
+    const bob_scalar: [32]u8 = hex(
+        32,
+        "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f",
+    );
+
+    const alice_priv = try backend.p256.privateKeyFromSecret(&alice_scalar);
+    defer backend.p256.freeKey(alice_priv);
+    const alice_pub = try backend.p256.rawPublicKeyFromPrivate(alice_priv);
+
+    const bob_priv = try backend.p256.privateKeyFromSecret(&bob_scalar);
+    defer backend.p256.freeKey(bob_priv);
+    const bob_pub = try backend.p256.rawPublicKeyFromPrivate(bob_priv);
+
+    // Both public keys must be uncompressed SEC1 (0x04 prefix, 65 bytes).
+    try testing.expectEqual(@as(u8, 0x04), alice_pub[0]);
+    try testing.expectEqual(@as(u8, 0x04), bob_pub[0]);
+
+    const alice_peer = try backend.p256.publicKeyFromRaw(&bob_pub);
+    defer backend.p256.freeKey(alice_peer);
+    var alice_shared: [32]u8 = undefined;
+    try backend.p256.sharedSecretDerive(alice_priv, alice_peer, &alice_shared);
+
+    const bob_peer = try backend.p256.publicKeyFromRaw(&alice_pub);
+    defer backend.p256.freeKey(bob_peer);
+    var bob_shared: [32]u8 = undefined;
+    try backend.p256.sharedSecretDerive(bob_priv, bob_peer, &bob_shared);
+
+    try testing.expectEqualSlices(u8, &alice_shared, &bob_shared);
+}
+
+// SEC 1 §2.3.4 — an uncompressed P-256 public key must start with 0x04. A
+// malformed prefix is rejected by the backend facade before any point math.
+test "backend.p256: non-04 SEC1 prefix is rejected" {
+    const scalar: [32]u8 = @splat(0);
+    var fixed_scalar: [32]u8 = scalar;
+    fixed_scalar[31] = 1;
+
+    const priv = try backend.p256.privateKeyFromSecret(&fixed_scalar);
+    defer backend.p256.freeKey(priv);
+    const pub_bytes = try backend.p256.rawPublicKeyFromPrivate(priv);
+
+    // Tamper with the prefix: 0x03 (compressed) is not accepted by this facade.
+    var bad_pub = pub_bytes;
+    bad_pub[0] = 0x03;
+
+    try testing.expectError(
+        error.IdentityElement,
+        backend.p256.publicKeyFromRaw(&bad_pub),
+    );
+}
+
+// SEC 1 §2.3.3 — a point with valid 0x04 prefix but coordinates not on the
+// P-256 curve must be rejected. x=1, y=0 does not satisfy the curve equation.
+test "backend.p256: off-curve point is rejected" {
+    var off_curve: [65]u8 = @splat(0);
+    off_curve[0] = 0x04;
+    off_curve[32] = 0x01; // x = 1 (big-endian, last byte of X field)
+
+    try testing.expectError(
+        error.IdentityElement,
+        backend.p256.publicKeyFromRaw(&off_curve),
+    );
+}
+
+// SEC 1 §3.2.1 — a private key scalar must be in [1, n - 1]. Scalar zero is
+// invalid and must not construct a usable backend P-256 key.
+test "backend.p256: zero scalar private key is rejected" {
+    const scalar: [32]u8 = @splat(0);
+    try testing.expectError(
+        error.LibcryptoFailed,
+        backend.p256.privateKeyFromSecret(&scalar),
+    );
 }
 
 // ---------------------------------------------------------------------------

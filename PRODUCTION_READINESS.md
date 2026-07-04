@@ -325,15 +325,20 @@ each passing the same correctness and interop gates.
   policy unless a concrete provider/FIPS requirement appears.
 - `src/crypto/backend_primitive_tests.zig` exercises the backend facade
   directly for X25519 (RFC 7748 known vectors plus low-order/all-zero public-key
-  rejection), AEAD (round-trip, tag-corruption, and ciphertext-corruption
-  rejection for every `backend.capabilities.cipher_suites` entry, plus an RFC
-  8439 ChaCha20-Poly1305 known-answer vector), and signatures (RSA-PSS and
-  ECDSA P-256 sign/verify round-trip, tampered-signature rejection,
-  `BufferTooShort`, and key/scheme mismatch). These tests run in the normal
-  `zig build test` lane and under `just check-backend-aws-lc`, so the same
-  primitive vectors pass through both the OpenSSL and AWS-LC linked backends.
-  This is a per-primitive smoke contract, not a Wycheproof matrix or divergent
-  capability proof.
+  rejection), P-256 ECDH (mutual key agreement with fixed scalars, non-04 SEC1
+  prefix rejection, and off-curve point rejection), AEAD (round-trip,
+  tag-corruption, and ciphertext-corruption rejection for every
+  `backend.capabilities.cipher_suites` entry, plus an RFC 8439 ChaCha20-Poly1305
+  known-answer vector), and signatures (RSA-PSS and ECDSA P-256 sign/verify
+  round-trip, tampered-signature rejection, `BufferTooShort`, and key/scheme
+  mismatch). These tests run in the normal `zig build test` lane and under
+  `just check-backend-aws-lc`, so the same primitive vectors pass through both
+  the OpenSSL- and AWS-LC-linked build lanes. The AWS-LC lane currently links
+  AWS-LC libcrypto while delegating through `backend_openssl.zig` compat
+  wrappers, so this proves the P-256 ECDH facade contract on both lanes via the
+  same EVP-compatible implementation, not divergent AWS-LC implementation
+  proof. This is a per-primitive smoke contract, not a Wycheproof matrix or
+  divergent capability proof.
 
 **Status:** `PARTIAL`
 
@@ -374,12 +379,15 @@ each passing the same correctness and interop gates.
   tests before aws-lc differences can be claimed honestly. *(#22)*
 - **The facade contract is partly enforced by primitive tests, not a full
   matrix.** `src/crypto/backend_primitive_tests.zig` runs the same X25519,
-  AEAD, and signature primitive vectors through the backend facade under both
-  the OpenSSL and AWS-LC lanes in `zig build test` and `just check-backend-aws-lc`.
-  This is a narrow primitive smoke contract — it does not cover Wycheproof
-  boundary vectors per provider, divergent capability matrices, interop
-  harnesses per provider, or conformance shims per provider. The full backend
-  matrix remains open. *(#22)*
+  P-256 ECDH, AEAD, and signature primitive vectors through the backend facade
+  under both the OpenSSL and AWS-LC lanes in `zig build test` and
+  `just check-backend-aws-lc`. Wrapper-level Wycheproof boundary tests for
+  X25519 and AEAD already run in both lanes via `zig build test`, but
+  facade-direct Wycheproof coverage
+  and a full provider matrix remain open. This is a narrow primitive smoke
+  contract — it does not cover Wycheproof boundary vectors per provider through
+  the facade, divergent capability matrices, interop harnesses per provider, or
+  conformance shims per provider. The full backend matrix remains open. *(#22)*
 
 ---
 
