@@ -2,6 +2,7 @@ const std = @import("std");
 const assert = std.debug.assert;
 const mem = std.mem;
 const heap = std.heap;
+const fmt = std.fmt;
 
 const bench = @import("benchmark");
 const txtar = @import("txtar");
@@ -12,6 +13,7 @@ const Iv = ztls.aead.Iv;
 const RecordBuffer = ztls.RecordBuffer;
 const RecordLayer = ztls.RecordLayer;
 const frame = ztls.frame;
+const shared_fixtures = @import("../test_fixtures/shared_fixtures.zig");
 const rfc8448 = @import("rfc8448.zig");
 
 const all_suites = [_]Suite{
@@ -21,7 +23,6 @@ const all_suites = [_]Suite{
 };
 const sizes = [_]usize{ 16, 128, 1350, 8192, frame.max_plaintext_len };
 const openssl_replay_archive = @embedFile("../test_fixtures/openssl_replay.txtar");
-const shared_fixtures = @import("../test_fixtures/shared_fixtures.zig");
 const server_cert_der: []const u8 = &shared_fixtures.server_ecdsa_cert_der;
 const server_scalar: []const u8 = &shared_fixtures.server_ecdsa_scalar;
 
@@ -64,7 +65,7 @@ const Suite = enum {
 };
 
 fn nameBuf(buf: []u8, suite: Suite, size: usize) ![]const u8 {
-    return std.fmt.bufPrint(buf, "{s}/{d}", .{ suite.name(), size });
+    return fmt.bufPrint(buf, "{s}/{d}", .{ suite.name(), size });
 }
 
 pub fn benchmarkParseHeader(b: *bench.B) !void {
@@ -240,7 +241,7 @@ fn benchZtlsHandshake(comptime suite: Suite) bench.Function {
 pub fn benchmarkHandshake(b: *bench.B) !void {
     var name_buf: [80]u8 = undefined;
     inline for (all_suites) |suite| {
-        const name = try std.fmt.bufPrint(&name_buf, "impl=ztls/suite={s}", .{suite.name()});
+        const name = try fmt.bufPrint(&name_buf, "impl=ztls/suite={s}", .{suite.name()});
         _ = try b.run(name, benchZtlsHandshake(suite));
     }
 }
@@ -680,7 +681,7 @@ pub fn benchmarkAppClientToServer(b: *bench.B) !void {
     var name_buf: [80]u8 = undefined;
     inline for (all_suites) |suite| {
         inline for (sizes) |size| {
-            const name = try std.fmt.bufPrint(
+            const name = try fmt.bufPrint(
                 &name_buf,
                 "impl=ztls/suite={s}/size={d}",
                 .{ suite.name(), size },
@@ -694,7 +695,7 @@ pub fn benchmarkAppServerToClient(b: *bench.B) !void {
     var name_buf: [80]u8 = undefined;
     inline for (all_suites) |suite| {
         inline for (sizes) |size| {
-            const name = try std.fmt.bufPrint(
+            const name = try fmt.bufPrint(
                 &name_buf,
                 "impl=ztls/suite={s}/size={d}",
                 .{ suite.name(), size },
@@ -775,7 +776,7 @@ pub fn benchmarkAppPingPong(b: *bench.B) !void {
     var name_buf: [80]u8 = undefined;
     inline for (all_suites) |suite| {
         inline for (sizes) |size| {
-            const name = try std.fmt.bufPrint(
+            const name = try fmt.bufPrint(
                 &name_buf,
                 "impl=ztls/suite={s}/size={d}",
                 .{ suite.name(), size },

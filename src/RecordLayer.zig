@@ -5,6 +5,7 @@
 const std = @import("std");
 const mem = std.mem;
 const testing = std.testing;
+const math = std.math;
 
 const aead_mod = @import("aead.zig");
 const Aead = aead_mod.Aead;
@@ -205,7 +206,7 @@ pub fn encryptPrepared(
 fn checkSequenceLimit(
     self: *const RecordLayer,
 ) (error{ SequenceNumberOverflow, KeyUpdateRequired })!void {
-    if (self.seq == std.math.maxInt(u64)) {
+    if (self.seq == math.maxInt(u64)) {
         @branchHint(.cold);
         return error.SequenceNumberOverflow;
     }
@@ -227,8 +228,8 @@ test "encrypt: buffer too short" {
 test "encrypt: sequence number overflow" {
     var rl: RecordLayer = try .init(.{ .aes_128_gcm_sha256 = .zero }, .zero);
     defer rl.deinit();
-    rl.key_limit = std.math.maxInt(u64);
-    rl.seq = std.math.maxInt(u64);
+    rl.key_limit = math.maxInt(u64);
+    rl.seq = math.maxInt(u64);
     var buf: [64]u8 = undefined;
     try testing.expectError(
         error.SequenceNumberOverflow,
@@ -243,7 +244,7 @@ test "deinit: clears caller-visible traffic key material" {
     const iv: Iv = .init(@splat(0xcd));
     var rl: RecordLayer = try .init(.{ .aes_128_gcm_sha256 = key }, iv);
     rl.deinit();
-    try testing.expectEqualSlices(u8, &([_]u8{0} ** @sizeOf(Aead)), std.mem.asBytes(&rl.aead));
+    try testing.expectEqualSlices(u8, &([_]u8{0} ** @sizeOf(Aead)), mem.asBytes(&rl.aead));
     try testing.expectEqualSlices(u8, &Iv.zero.data, &rl.iv.data);
     try testing.expectEqual(@as(u64, 0), rl.seq);
     try testing.expectEqual(@as(u64, 0), rl.key_limit);
@@ -482,7 +483,7 @@ test "decrypt: truncated ciphertext record" {
 test "decrypt: sequence number overflow" {
     var rl: RecordLayer = try .init(.{ .aes_128_gcm_sha256 = .zero }, .zero);
     defer rl.deinit();
-    rl.seq = std.math.maxInt(u64);
+    rl.seq = math.maxInt(u64);
     var buf = [_]u8{ 23, 0x03, 0x03, 0x00, 0x14 } ++ [_]u8{0} ** 20;
     try testing.expectError(error.SequenceNumberOverflow, rl.decrypt(&buf));
 }

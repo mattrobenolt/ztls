@@ -4,20 +4,23 @@
 const std = @import("std");
 const Sha256 = std.crypto.hash.sha2.Sha256;
 const testing = std.testing;
+const fs = std.fs;
 
-const Certificate = @import("cryptox/Certificate.zig");
-const handshake = @import("handshake.zig");
-const wire = @import("wire.zig");
-
-const backend = @import("crypto/backend.zig");
 const ArrayBuffer = @import("array_buffer.zig").ArrayBuffer;
 const certificate_policy = @import("certificate_policy.zig");
-const extension_type = @import("extension_type.zig");
-const ExtensionType = extension_type.ExtensionType;
-pub const SignatureScheme = @import("signature_scheme.zig").SignatureScheme;
 pub const LeafUsage = certificate_policy.LeafUsage;
 pub const Policy = certificate_policy.Policy;
 pub const PolicyError = certificate_policy.PolicyError;
+const backend = @import("crypto/backend.zig");
+const Certificate = @import("cryptox/Certificate.zig");
+const extension_type = @import("extension_type.zig");
+const ExtensionType = extension_type.ExtensionType;
+const handshake = @import("handshake.zig");
+pub const SignatureScheme = @import("signature_scheme.zig").SignatureScheme;
+const cert_fixtures = @import("test_fixtures/certificate_fixtures.zig");
+const shared_fixtures = @import("test_fixtures/shared_fixtures.zig");
+const sig_fixtures = @import("test_fixtures/sig_fixtures.zig");
+const wire = @import("wire.zig");
 
 pub const ParseError = error{
     UnexpectedEof,
@@ -333,10 +336,6 @@ fn verifySignature(
 
 // Fixtures generated with: scripts/gen-fixtures.sh
 // Transcript hash: SHA-256("test transcript")
-const cert_fixtures = @import("test_fixtures/certificate_fixtures.zig");
-const sig_fixtures = @import("test_fixtures/sig_fixtures.zig");
-const shared_fixtures = @import("test_fixtures/shared_fixtures.zig");
-
 const fixture_cert_der: []const u8 = &shared_fixtures.server_cert_der;
 const fixture_cv_sig: []const u8 = &sig_fixtures.cv_sig;
 const fixture_rsa_pss_cert_der: []const u8 = &cert_fixtures.rsa_pss_cert_der;
@@ -548,7 +547,7 @@ test "parse: rejects missing trust anchor by default" {
 test "parse: validates leaf against trust bundle" {
     var bundle: Certificate.Bundle = .{};
     defer bundle.deinit(testing.allocator);
-    try bundle.addCertsFromFilePath(testing.allocator, std.fs.cwd(), "tests/fixtures/server.crt");
+    try bundle.addCertsFromFilePath(testing.allocator, fs.cwd(), "tests/fixtures/server.crt");
 
     var buf: [1024]u8 = undefined;
     const pub_key = try parse(buildCertMsg(&buf, fixture_cert_der), .{
@@ -562,7 +561,7 @@ test "parse: validates leaf against trust bundle" {
 test "parse: validates leaf-intermediate-root chain" {
     var bundle: Certificate.Bundle = .{};
     defer bundle.deinit(testing.allocator);
-    try bundle.addCertsFromFilePath(testing.allocator, std.fs.cwd(), chain_root_pem);
+    try bundle.addCertsFromFilePath(testing.allocator, fs.cwd(), chain_root_pem);
 
     var buf: [4096]u8 = undefined;
     const pub_key = try parse(
@@ -576,7 +575,7 @@ test "parse: validates leaf-intermediate-root chain" {
 test "parse: rejects chain with intermediate before leaf" {
     var bundle: Certificate.Bundle = .{};
     defer bundle.deinit(testing.allocator);
-    try bundle.addCertsFromFilePath(testing.allocator, std.fs.cwd(), chain_root_pem);
+    try bundle.addCertsFromFilePath(testing.allocator, fs.cwd(), chain_root_pem);
 
     var buf: [4096]u8 = undefined;
     try testing.expectError(
@@ -591,7 +590,7 @@ test "parse: rejects chain with intermediate before leaf" {
 test "parse: rejects chain with missing intermediate" {
     var bundle: Certificate.Bundle = .{};
     defer bundle.deinit(testing.allocator);
-    try bundle.addCertsFromFilePath(testing.allocator, std.fs.cwd(), chain_root_pem);
+    try bundle.addCertsFromFilePath(testing.allocator, fs.cwd(), chain_root_pem);
 
     var buf: [4096]u8 = undefined;
     try testing.expectError(
@@ -606,7 +605,7 @@ test "parse: rejects chain with missing intermediate" {
 test "parse: rejects chain hostname mismatch" {
     var bundle: Certificate.Bundle = .{};
     defer bundle.deinit(testing.allocator);
-    try bundle.addCertsFromFilePath(testing.allocator, std.fs.cwd(), chain_root_pem);
+    try bundle.addCertsFromFilePath(testing.allocator, fs.cwd(), chain_root_pem);
 
     var buf: [4096]u8 = undefined;
     try testing.expectError(
@@ -632,7 +631,7 @@ test "parse: rejects untrusted leaf when bundle misses issuer" {
 
 fn nameConstraintsBundle() !Certificate.Bundle {
     var bundle: Certificate.Bundle = .{};
-    try bundle.addCertsFromFilePath(testing.allocator, std.fs.cwd(), nc_root_pem);
+    try bundle.addCertsFromFilePath(testing.allocator, fs.cwd(), nc_root_pem);
     return bundle;
 }
 

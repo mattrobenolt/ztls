@@ -6,12 +6,13 @@
 //! through handshake code.
 const std = @import("std");
 const testing = std.testing;
-
+const assert = std.debug.assert;
 const build_options = @import("build_options");
-const backend_openssl = @import("backend_openssl.zig");
-const backend_aws_lc = @import("backend_aws_lc.zig");
+
 const CipherSuite = @import("../cipher_suite.zig").CipherSuite;
 const SignatureScheme = @import("../signature_scheme.zig").SignatureScheme;
+const backend_aws_lc = @import("backend_aws_lc.zig");
+const backend_openssl = @import("backend_openssl.zig");
 
 pub const Backend = enum {
     openssl,
@@ -67,11 +68,11 @@ pub const capabilities = switch (active) {
 };
 
 comptime {
-    std.debug.assert(capabilities.cipher_suites.len > 0);
-    std.debug.assert(capabilities.client_x25519 or capabilities.client_p256);
-    std.debug.assert(capabilities.server_x25519 or capabilities.server_p256);
-    std.debug.assert(capabilities.certificate_verify_schemes.len > 0);
-    std.debug.assert(capabilities.certificate_signature_schemes.len > 0);
+    assert(capabilities.cipher_suites.len > 0);
+    assert(capabilities.client_x25519 or capabilities.client_p256);
+    assert(capabilities.server_x25519 or capabilities.server_p256);
+    assert(capabilities.certificate_verify_schemes.len > 0);
+    assert(capabilities.certificate_signature_schemes.len > 0);
 }
 
 pub fn supportsCipherSuite(suite: CipherSuite) bool {
