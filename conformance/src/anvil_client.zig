@@ -93,13 +93,11 @@ pub fn main() !void {
     // Echo application data until close_notify.
     while (true) {
         const n = try stream.read(rb.writable());
-        if (n == 0) {
-            // RFC 8446 §6.1 — close_notify is bidirectional on orderly shutdown.
-            const rec = try hs.sendAlert(.close_notify, &out);
-            try stream.writeAll(rec);
-            hs.completeWrite();
-            break;
-        }
+        // Bare transport EOF is truncation or a transport close, not an
+        // orderly TLS close. Do not send close_notify here — only the
+        // `.closed` branch below (peer sent close_notify) sends a reciprocal
+        // close_notify. RFC 8446 §6.1.
+        if (n == 0) break;
         rb.advance(n);
         while (true) {
             const record = (rb.next() catch |err| {
@@ -137,6 +135,10 @@ fn sendAlertAndReturnError(
     err: anyerror,
     out: []u8,
 ) anyerror {
+    // The peer already sent us a fatal alert; replying with our own alert
+    // would be wrong (and would emit a spurious internal_error). Just
+    // propagate the original error. RFC 8446 §6.
+    if (err == error.PeerAlert) return err;
     const rec = hs.sendAlert(ztls.ClientHandshake.alertForError(err), out) catch return err;
     stream.writeAll(rec) catch return err;
     hs.completeWrite();
