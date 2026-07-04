@@ -11,6 +11,7 @@ const print = std.debug.print;
 const posix = std.posix;
 const net = std.net;
 const crypto = std.crypto;
+const Address = net.Address;
 const builtin = @import("builtin");
 
 const ztls = @import("ztls");
@@ -43,7 +44,7 @@ pub fn main() !void {
     };
     defer ring.deinit();
 
-    const addr: net.Address = try .parseIp(connect_host, port);
+    const addr: Address = try .parseIp(connect_host, port);
     const stream = net.tcpConnectToAddress(addr) catch |err| switch (err) {
         error.ConnectionRefused => {
             print("[iouring] could not connect to {s}:{d}\n", .{ connect_host, port });

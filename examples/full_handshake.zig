@@ -11,6 +11,7 @@
 //! finale round-trips a message through them to show they are live.
 const std = @import("std");
 const print = std.debug.print;
+const Allocator = std.mem.Allocator;
 
 const txtar = @import("txtar");
 const ztls = @import("ztls");
@@ -86,7 +87,7 @@ const ccs_record = [_]u8{ 0x14, 0x03, 0x03, 0x00, 0x01, 0x01 };
 const rfc8448_archive = @embedFile("test_fixtures/rfc8448.txtar");
 
 // Decode a base64 archive entry into `out`, returning the decoded slice.
-fn fixture(alloc: std.mem.Allocator, name: []const u8, out: []u8) ![]u8 {
+fn fixture(alloc: Allocator, name: []const u8, out: []u8) ![]u8 {
     var archive = try txtar.parse(alloc, rfc8448_archive);
     defer archive.deinit(alloc);
     for (archive.files) |f| {

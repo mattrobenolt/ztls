@@ -1,0 +1,13 @@
+id: std-alias-address
+language: zig
+severity: error
+message: |
+  Use bare `Address`, not `std.net.Address`. Add
+  `const Address = std.net.Address;` at the top of the file.
+rule:
+  pattern: std.net.Address
+  not:
+    inside:
+      kind: VarDecl
+      regex: '=\s*std\.net\.Address\s*;'
+      stopBy: end

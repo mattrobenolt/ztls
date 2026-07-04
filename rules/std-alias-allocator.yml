@@ -1,0 +1,13 @@
+id: std-alias-allocator
+language: zig
+severity: error
+message: |
+  Use bare `Allocator`, not `std.mem.Allocator`. Add
+  `const Allocator = std.mem.Allocator;` at the top of the file.
+rule:
+  pattern: std.mem.Allocator
+  not:
+    inside:
+      kind: VarDecl
+      regex: '=\s*std\.mem\.Allocator\s*;'
+      stopBy: end

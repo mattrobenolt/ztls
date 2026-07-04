@@ -6,19 +6,21 @@
 //! is intentionally boring; the point is proving ztls's Sans-I/O record driver
 //! composes with io_uring for the TLS data path.
 const std = @import("std");
-const builtin = @import("builtin");
 const IoUring = std.os.linux.IoUring;
 const print = std.debug.print;
 const net = std.net;
+const Address = net.Address;
+const builtin = @import("builtin");
 
 const ztls = @import("ztls");
+
+const shared_fixtures = @import("test_fixtures/shared_fixtures.zig");
 
 comptime {
     if (builtin.os.tag != .linux) @compileError("iouring_pingpong is Linux-only");
 }
 
 // Test fixtures: ECDSA P-256 server certificate and signing scalar.
-const shared_fixtures = @import("test_fixtures/shared_fixtures.zig");
 const cert_der: []const u8 = &shared_fixtures.server_ecdsa_cert_der;
 const scalar: []const u8 = &shared_fixtures.server_ecdsa_scalar;
 
@@ -39,7 +41,7 @@ pub fn main() !void {
     const client_keypair: ztls.x25519.KeyPair = .generate();
     const server_keypair: ztls.x25519.KeyPair = .generate();
 
-    const addr: net.Address = try .parseIp(host, port);
+    const addr: Address = try .parseIp(host, port);
     // Loopback-only convenience so repeated CI/dev runs do not trip over
     // TIME_WAIT; don't cargo-cult this into public listener code.
     var server_listener = try addr.listen(.{ .reuse_address = true });
@@ -141,7 +143,7 @@ fn clientRun(client_keypair: ztls.x25519.KeyPair, actual_port: u16) !void {
     var ring: IoUring = try .init(8, 0);
     defer ring.deinit();
 
-    const addr = try net.Address.parseIp(host, actual_port);
+    const addr: net.Address = try .parseIp(host, actual_port);
     const stream = try net.tcpConnectToAddress(addr);
     defer stream.close();
     print("[client] connected to {s}:{d}\n", .{ host, actual_port });

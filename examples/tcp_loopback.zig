@@ -1,15 +1,18 @@
 //! TLS 1.3 client/server handshake over real TCP loopback.
 //!
-//! Both engines run in the same process, connected by a real `std.net.Stream`
+//! Both engines run in the same process, connected by a real `net.Stream`
 //! over 127.0.0.1. This is the smallest end-to-end proof that ztls's Sans-I/O
 //! API composes with actual sockets: no OpenSSL, no external processes.
 const std = @import("std");
 const print = std.debug.print;
+const net = std.net;
+const Address = net.Address;
 
 const ztls = @import("ztls");
 
-// Test fixtures: ECDSA P-256 server certificate and signing scalar.
 const shared_fixtures = @import("test_fixtures/shared_fixtures.zig");
+
+// Test fixtures: ECDSA P-256 server certificate and signing scalar.
 const cert_der: []const u8 = &shared_fixtures.server_ecdsa_cert_der;
 const scalar: []const u8 = &shared_fixtures.server_ecdsa_scalar;
 
@@ -18,7 +21,7 @@ const server_name = "ztls.server.test";
 const port: u16 = 0; // OS-assigned ephemeral port
 
 const ServerCtx = struct {
-    listener: *std.net.Server,
+    listener: *net.Server,
     keypair: ztls.x25519.KeyPair,
 };
 
@@ -27,7 +30,7 @@ pub fn main() !void {
     const server_keypair: ztls.x25519.KeyPair = .generate();
 
     // ── Start TCP server on an ephemeral port ────────────────
-    const addr = try std.net.Address.parseIp(host, port);
+    const addr: Address = try .parseIp(host, port);
     var server_listener = try addr.listen(.{ .reuse_address = true });
     defer server_listener.deinit();
     const actual_port = server_listener.listen_address.in.getPort();
@@ -59,7 +62,7 @@ fn serverRun(ctx: *ServerCtx) !void {
     });
     defer hs.deinit();
 
-    var signer = try ztls.signature.PrivateKey.fromP256Scalar(scalar[0..32]);
+    var signer: ztls.signature.PrivateKey = try .fromP256Scalar(scalar[0..32]);
     defer signer.deinit();
     hs.setCredentials(&.{cert_der}, signer.signer());
 
@@ -121,8 +124,8 @@ fn serverRun(ctx: *ServerCtx) !void {
 }
 
 fn clientRun(client_keypair: ztls.x25519.KeyPair, actual_port: u16) !void {
-    const addr = try std.net.Address.parseIp(host, actual_port);
-    const stream = try std.net.tcpConnectToAddress(addr);
+    const addr: Address = try .parseIp(host, actual_port);
+    const stream = try net.tcpConnectToAddress(addr);
     defer stream.close();
     print("[client] connected to {s}:{d}\n", .{ host, actual_port });
 

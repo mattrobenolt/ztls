@@ -1,4 +1,5 @@
 const std = @import("std");
+const testing = std.testing;
 const ztls = @import("root.zig");
 
 pub fn hex(comptime len: usize, comptime encoded: []const u8) [len]u8 {
@@ -8,7 +9,7 @@ pub fn hex(comptime len: usize, comptime encoded: []const u8) [len]u8 {
 }
 
 test {
-    std.testing.refAllDeclsRecursive(ztls);
+    testing.refAllDeclsRecursive(ztls);
     _ = @import("wycheproof.zig");
     _ = @import("interop.zig");
     _ = @import("crypto/backend_primitive_tests.zig");

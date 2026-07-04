@@ -1,0 +1,8 @@
+id: std-alias-debug-print
+language: zig
+severity: error
+message: |
+  Use bare `print`, not `std.debug.print`. Add `const print = std.debug.print;`
+  at the top of the file and call `print(...)`.
+rule:
+  pattern: std.debug.print($$$ARGS)

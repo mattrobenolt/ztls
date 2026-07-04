@@ -13,22 +13,24 @@
 //! idle timeout exits non-zero so CI cannot mistake "no client" for TLS proof.
 const std = @import("std");
 const print = std.debug.print;
+const Address = std.net.Address;
 
 const ztls = @import("ztls");
+
+const shared_fixtures = @import("test_fixtures/shared_fixtures.zig");
 
 const host = "127.0.0.1";
 const port: u16 = 8443;
 
 // Self-signed ECDSA P-256 test fixture. In a real deployment, load a
 // proper certificate chain and keep the signing key offline.
-const shared_fixtures = @import("test_fixtures/shared_fixtures.zig");
 const cert_der: []const u8 = &shared_fixtures.server_ecdsa_cert_der;
 const scalar: []const u8 = &shared_fixtures.server_ecdsa_scalar;
 
 const response = "HTTP/1.0 200 OK\r\nContent-Length: 18\r\n\r\nHello from ztls!";
 
 pub fn main() !void {
-    const addr = try std.net.Address.parseIp(host, port);
+    const addr: Address = try .parseIp(host, port);
     var server = try addr.listen(.{ .reuse_address = true });
     defer server.deinit();
     print("[https]  server listening on https://{s}:{d}/\n", .{ host, port });

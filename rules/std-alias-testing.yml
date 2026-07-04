@@ -1,0 +1,9 @@
+id: std-alias-testing
+language: zig
+severity: error
+message: |
+  Alias the testing namespace: `const testing = std.testing;` and use
+  `testing.<fn>` instead of the full `std.testing.<fn>` path.
+rule:
+  kind: SuffixExpr
+  regex: '^std\.testing\.'

@@ -1,11 +1,13 @@
 const std = @import("std");
+const Address = std.net.Address;
 
 const ztls = @import("ztls");
+
 const harness = @import("harness.zig");
 
 pub fn main() !void {
     const port = try readPort();
-    const address = try std.net.Address.parseIp("127.0.0.1", port);
+    const address: Address = try .parseIp("127.0.0.1", port);
     var server = try address.listen(.{ .reuse_address = true });
     defer server.deinit();
 

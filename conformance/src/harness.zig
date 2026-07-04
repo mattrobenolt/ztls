@@ -2,6 +2,7 @@ const std = @import("std");
 const net = std.net;
 const time = std.time;
 const sleep = std.Thread.sleep;
+const Address = net.Address;
 
 const ztls = @import("ztls");
 
@@ -79,7 +80,7 @@ pub fn sendBestEffortAlert(
 }
 
 pub fn connectWithRetry(port: u16) !net.Stream {
-    const addr: net.Address = try .parseIp("127.0.0.1", port);
+    const addr: Address = try .parseIp("127.0.0.1", port);
     for (0..100) |_| {
         return net.tcpConnectToAddress(addr) catch {
             sleep(20 * time.ns_per_ms);

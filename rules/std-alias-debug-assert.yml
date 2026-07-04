@@ -1,0 +1,8 @@
+id: std-alias-debug-assert
+language: zig
+severity: error
+message: |
+  Use bare `assert`, not `std.debug.assert`. Add `const assert = std.debug.assert;`
+  at the top of the file and call `assert(...)`.
+rule:
+  pattern: std.debug.assert($$$ARGS)

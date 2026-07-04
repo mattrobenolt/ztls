@@ -12,10 +12,12 @@
 //! it proved TLS.
 const std = @import("std");
 const print = std.debug.print;
+const Address = std.net.Address;
 
 const ztls = @import("ztls");
 
 const shared_fixtures = @import("test_fixtures/shared_fixtures.zig");
+
 const trust_anchor_der: []const u8 = &shared_fixtures.server_ecdsa_cert_der;
 
 const connect_host = "127.0.0.1";
@@ -27,7 +29,7 @@ var debug_allocator: std.heap.DebugAllocator(.{}) = .init;
 pub fn main() !void {
     const gpa = debug_allocator.allocator();
     defer _ = debug_allocator.deinit();
-    const addr = try std.net.Address.parseIp(connect_host, port);
+    const addr: Address = try .parseIp(connect_host, port);
     const stream = std.net.tcpConnectToAddress(addr) catch |err| switch (err) {
         error.ConnectionRefused => {
             print("[https]  could not connect to {s}:{d}\n", .{ connect_host, port });
