@@ -59,7 +59,7 @@ pub fn main() !void {
     if (insecure_no_chain_anchor) hs.policy.leaf_usage = .none;
     defer hs.deinit();
 
-    var out: [1024]u8 = undefined;
+    var out: [ztls.ClientHandshake.max_out_len]u8 = undefined;
     var storage: ztls.RecordBuffer.Storage = .empty;
     var rb: ztls.RecordBuffer = .init(&storage.buffer);
 
@@ -72,39 +72,73 @@ pub fn main() !void {
         const n = try stream.read(rb.writable());
         if (n == 0) return error.ServerClosed;
         rb.advance(n);
-        while (try rb.next()) |record| switch (try hs.handleRecord(record, &out)) {
-            .write => |w| {
-                try stream.writeAll(w);
-                hs.completeWrite();
-            },
-            .application_data, .closed => return error.UnexpectedDuringHandshake,
-            .none => {},
-        };
+        while (true) {
+            const record = (rb.next() catch |err| {
+                return sendAlertAndReturnError(stream, &hs, err, &out);
+            }) orelse break;
+            const ev = hs.handleRecord(record, &out) catch |err| {
+                return sendAlertAndReturnError(stream, &hs, err, &out);
+            };
+            switch (ev) {
+                .write => |w| {
+                    try stream.writeAll(w);
+                    hs.completeWrite();
+                },
+                .application_data, .closed => return error.UnexpectedDuringHandshake,
+                .none => {},
+            }
+        }
     }
 
     // Echo application data until close_notify.
     while (true) {
         const n = try stream.read(rb.writable());
-        if (n == 0) break;
+        if (n == 0) {
+            // RFC 8446 §6.1 — close_notify is bidirectional on orderly shutdown.
+            const rec = try hs.sendAlert(.close_notify, &out);
+            try stream.writeAll(rec);
+            hs.completeWrite();
+            break;
+        }
         rb.advance(n);
-        while (try rb.next()) |record| switch (try hs.handleRecord(record, &out)) {
-            .application_data => |data| {
-                const rec = try hs.sendApplicationData(data, &out);
-                try stream.writeAll(rec);
-                hs.completeWrite();
-            },
-            .write => |w| {
-                try stream.writeAll(w);
-                hs.completeWrite();
-            },
-            .closed => {
-                // RFC 8446 §6.1 — close_notify is bidirectional on orderly shutdown.
-                const rec = try hs.sendAlert(.close_notify, &out);
-                try stream.writeAll(rec);
-                hs.completeWrite();
-                return;
-            },
-            .none => {},
-        };
+        while (true) {
+            const record = (rb.next() catch |err| {
+                return sendAlertAndReturnError(stream, &hs, err, &out);
+            }) orelse break;
+            const ev = hs.handleRecord(record, &out) catch |err| {
+                return sendAlertAndReturnError(stream, &hs, err, &out);
+            };
+            switch (ev) {
+                .application_data => |data| {
+                    const rec = try hs.sendApplicationData(data, &out);
+                    try stream.writeAll(rec);
+                    hs.completeWrite();
+                },
+                .write => |w| {
+                    try stream.writeAll(w);
+                    hs.completeWrite();
+                },
+                .closed => {
+                    // RFC 8446 §6.1 — close_notify is bidirectional on orderly shutdown.
+                    const rec = try hs.sendAlert(.close_notify, &out);
+                    try stream.writeAll(rec);
+                    hs.completeWrite();
+                    return;
+                },
+                .none => {},
+            }
+        }
     }
+}
+
+fn sendAlertAndReturnError(
+    stream: net.Stream,
+    hs: *ztls.ClientHandshake,
+    err: anyerror,
+    out: []u8,
+) anyerror {
+    const rec = hs.sendAlert(ztls.ClientHandshake.alertForError(err), out) catch return err;
+    stream.writeAll(rec) catch return err;
+    hs.completeWrite();
+    return err;
 }

@@ -99,10 +99,10 @@ pub fn parse(msg: []const u8, policy: Policy) ParseError![]const u8 {
     while (r.pos < list_end) {
         if (list_end - r.pos < 3) return error.UnexpectedEof;
         const cert_len = r.assumeRead(u24);
-        if (r.remaining().len < cert_len + 2) return error.UnexpectedEof;
+        if (list_end - r.pos < cert_len + 2) return error.UnexpectedEof;
         const cert_der = r.assumeReadSlice(cert_len);
         const ext_len = r.assumeRead(u16);
-        if (r.remaining().len < ext_len) return error.UnexpectedEof;
+        if (list_end - r.pos < ext_len) return error.UnexpectedEof;
         try parseCertificateEntryExtensions(r.assumeReadSlice(ext_len));
 
         const cert: Certificate = .{ .buffer = cert_der, .index = 0 };
@@ -124,6 +124,7 @@ pub fn parse(msg: []const u8, policy: Policy) ParseError![]const u8 {
         subject_to_verify = parsed;
         cert_index += 1;
     }
+    if (r.pos != list_end) return error.UnexpectedEof;
 
     const subject = subject_to_verify orelse return error.EmptyCertificateList;
     try verifyChainCertificateSignatureAlgorithms(
@@ -430,6 +431,23 @@ test "parse: rejects empty certificate list" {
     try testing.expectError(error.EmptyCertificateList, parse(&msg, .{}));
 }
 
+// RFC 8446 §4.4.2 — Certificate.certificate_list is a uint24-length vector;
+// its declared length must exactly bound the contained CertificateEntry values.
+test "parse: rejects certificate list length shorter than entries" {
+    var buf: [1024]u8 = undefined;
+    const msg = buildCertMsg(&buf, fixture_cert_der);
+    const shortened_list_len = msg.len - 4 - 1 - 3 - 1;
+    buf[5..8].* = .{
+        @intCast(shortened_list_len >> 16),
+        @intCast((shortened_list_len >> 8) & 0xff),
+        @intCast(shortened_list_len & 0xff),
+    };
+    try testing.expectError(
+        error.UnexpectedEof,
+        parse(msg, .{ .insecure_no_chain_anchor = true }),
+    );
+}
+
 test "encode: round trips certificate chain" {
     var buf: [4096]u8 = undefined;
     const msg = try encode(&buf, &.{ chain_leaf_der, chain_intermediate_der });
@@ -699,9 +717,9 @@ test "parse: insecure no-anchor path still enforces name constraints" {
 
 test "parse: malformed DER length is rejected, not crashed" {
     const msg = [_]u8{
-        0x0b, 0x00, 0x00, 0x0d, // Certificate, length 13
+        0x0b, 0x00, 0x00, 0x0e, // Certificate, length 14
         0x00, // context length
-        0x00, 0x00, 0x09, // certificate_list length
+        0x00, 0x00, 0x0a, // certificate_list length
         0x00, 0x00, 0x05, // cert length
         0x30, 0x82, 0x01, 0xd3, 0x00, // SEQUENCE claims 467 content bytes, has 1
         0x00, 0x00, // extensions length
