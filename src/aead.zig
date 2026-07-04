@@ -11,7 +11,7 @@ const std = @import("std");
 const assert = std.debug.assert;
 const testing = std.testing;
 
-const c = @import("crypto/c_openssl.zig").openssl;
+const backend = @import("crypto/backend.zig");
 const CipherSuite = @import("cipher_suite.zig").CipherSuite;
 const memx = @import("memx.zig");
 const hex = memx.hex;
@@ -50,11 +50,7 @@ pub const Aes128GcmKey = memx.Array(16);
 pub const Aes256GcmKey = memx.Array(32);
 pub const ChaCha20Poly1305Key = memx.Array(32);
 
-pub const Error = error{
-    AuthenticationFailed,
-    AeadSetupFailed,
-    AeadEncryptFailed,
-};
+pub const Error = backend.aead.Error;
 
 /// A cipher context holding the key for one direction of a TLS connection.
 pub const Aead = union(CipherSuite) {
@@ -100,7 +96,7 @@ pub const Aead = union(CipherSuite) {
         npub: *const Nonce,
     ) Error!void {
         assert(self.suite() == ctx.suite);
-        try opensslEncrypt(ctx, ciphertext, tag, plaintext, ad, npub);
+        try backend.aead.encrypt(&ctx.inner, ciphertext, &tag.data, plaintext, ad, &npub.data);
     }
 
     /// Decrypt `ciphertext` into `plaintext` and verify the authentication tag.
@@ -122,126 +118,26 @@ pub const Aead = union(CipherSuite) {
         npub: *const Nonce,
     ) Error!void {
         assert(self.suite() == ctx.suite);
-        try opensslDecrypt(ctx, plaintext, ciphertext, tag, ad, npub);
+        try backend.aead.decrypt(&ctx.inner, plaintext, ciphertext, &tag.data, ad, &npub.data);
     }
 };
 
 pub const Context = struct {
     suite: CipherSuite,
-    enc: *c.EVP_CIPHER_CTX,
-    dec: *c.EVP_CIPHER_CTX,
+    inner: backend.aead.Context,
 
     pub fn init(aead: Aead) Error!Context {
-        const enc = c.EVP_CIPHER_CTX_new() orelse return error.AeadSetupFailed;
-        errdefer c.EVP_CIPHER_CTX_free(enc);
-        const dec = c.EVP_CIPHER_CTX_new() orelse return error.AeadSetupFailed;
-        errdefer c.EVP_CIPHER_CTX_free(dec);
-
-        try opensslInit(enc, aead, .encrypt);
-        try opensslInit(dec, aead, .decrypt);
-        return .{ .suite = aead.suite(), .enc = enc, .dec = dec };
+        return .{
+            .suite = aead.suite(),
+            .inner = try backend.aead.init(aead.suite(), aead.keyBytes()),
+        };
     }
 
     pub fn deinit(self: *Context) void {
-        c.EVP_CIPHER_CTX_free(self.enc);
-        c.EVP_CIPHER_CTX_free(self.dec);
+        backend.aead.deinit(&self.inner);
         self.* = undefined;
     }
 };
-
-const OpensslDirection = enum { encrypt, decrypt };
-
-fn opensslCipher(suite: CipherSuite) *const c.EVP_CIPHER {
-    return switch (suite) {
-        .aes_128_gcm_sha256 => c.EVP_aes_128_gcm(),
-        .aes_256_gcm_sha384 => c.EVP_aes_256_gcm(),
-        .chacha20_poly1305_sha256 => c.EVP_chacha20_poly1305(),
-    } orelse unreachable;
-}
-
-fn opensslInit(ctx: *c.EVP_CIPHER_CTX, aead: Aead, direction: OpensslDirection) Error!void {
-    switch (direction) {
-        .encrypt => {
-            if (c.EVP_EncryptInit_ex(ctx, opensslCipher(aead.suite()), null, null, null) != 1)
-                return error.AeadSetupFailed;
-            if (c.EVP_CIPHER_CTX_ctrl(ctx, c.EVP_CTRL_AEAD_SET_IVLEN, @sizeOf(Nonce), null) != 1)
-                return error.AeadSetupFailed;
-            if (c.EVP_EncryptInit_ex(ctx, null, null, aead.keyBytes().ptr, null) != 1)
-                return error.AeadSetupFailed;
-        },
-        .decrypt => {
-            if (c.EVP_DecryptInit_ex(ctx, opensslCipher(aead.suite()), null, null, null) != 1)
-                return error.AeadSetupFailed;
-            if (c.EVP_CIPHER_CTX_ctrl(ctx, c.EVP_CTRL_AEAD_SET_IVLEN, @sizeOf(Nonce), null) != 1)
-                return error.AeadSetupFailed;
-            if (c.EVP_DecryptInit_ex(ctx, null, null, aead.keyBytes().ptr, null) != 1)
-                return error.AeadSetupFailed;
-        },
-    }
-}
-
-fn opensslEncrypt(
-    ctx: *Context,
-    ciphertext: []u8,
-    tag: *Tag,
-    plaintext: []const u8,
-    ad: []const u8,
-    npub: *const Nonce,
-) Error!void {
-    var len: c_int = 0;
-    var out_len: c_int = 0;
-    if (c.EVP_EncryptInit_ex(ctx.enc, null, null, null, &npub.data) != 1)
-        return error.AeadEncryptFailed;
-    if (c.EVP_EncryptUpdate(ctx.enc, null, &len, ad.ptr, @intCast(ad.len)) != 1)
-        return error.AeadEncryptFailed;
-    if (c.EVP_EncryptUpdate(
-        ctx.enc,
-        ciphertext.ptr,
-        &len,
-        plaintext.ptr,
-        @intCast(plaintext.len),
-    ) != 1) return error.AeadEncryptFailed;
-    out_len += len;
-    if (c.EVP_EncryptFinal_ex(ctx.enc, ciphertext.ptr + @as(usize, @intCast(out_len)), &len) != 1)
-        return error.AeadEncryptFailed;
-    if (c.EVP_CIPHER_CTX_ctrl(ctx.enc, c.EVP_CTRL_AEAD_GET_TAG, tag_len, &tag.data) != 1)
-        return error.AeadEncryptFailed;
-}
-
-fn opensslDecrypt(
-    ctx: *Context,
-    plaintext: []u8,
-    ciphertext: []const u8,
-    tag: *const Tag,
-    ad: []const u8,
-    npub: *const Nonce,
-) Error!void {
-    var len: c_int = 0;
-    var out_len: c_int = 0;
-    if (c.EVP_DecryptInit_ex(ctx.dec, null, null, null, &npub.data) != 1)
-        return error.AuthenticationFailed;
-    if (c.EVP_DecryptUpdate(ctx.dec, null, &len, ad.ptr, @intCast(ad.len)) != 1)
-        return error.AuthenticationFailed;
-    // EVP_DecryptUpdate writes plaintext to `plaintext` before
-    // EVP_DecryptFinal_ex verifies the tag — the output buffer
-    // holds unauthenticated data until the call succeeds.
-    if (c.EVP_DecryptUpdate(
-        ctx.dec,
-        plaintext.ptr,
-        &len,
-        ciphertext.ptr,
-        @intCast(ciphertext.len),
-    ) != 1) return error.AuthenticationFailed;
-    out_len += len;
-    if (c.EVP_CIPHER_CTX_ctrl(
-        ctx.dec,
-        c.EVP_CTRL_AEAD_SET_TAG,
-        tag_len,
-        @constCast(&tag.data),
-    ) != 1) return error.AuthenticationFailed;
-    if (c.EVP_DecryptFinal_ex(ctx.dec, plaintext.ptr + @as(usize, @intCast(out_len)), &len) != 1)
-        return error.AuthenticationFailed;
-}
 
 // RFC 8446 §9.1 — mandatory cipher suites
 

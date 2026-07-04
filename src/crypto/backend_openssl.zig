@@ -2,6 +2,7 @@
 const std = @import("std");
 
 const c = @import("c_openssl.zig").openssl;
+const CipherSuite = @import("../cipher_suite.zig").CipherSuite;
 
 pub const Error = error{ LibcryptoFailed, IdentityElement };
 pub const pkey = c.EVP_PKEY;
@@ -117,4 +118,119 @@ pub fn p256SharedSecretDerive(ours: *pkey, peer: *pkey, out: *[32]u8) Error!void
 
 pub fn freeKey(key: *pkey) void {
     c.EVP_PKEY_free(key);
+}
+
+pub const AeadError = error{
+    AuthenticationFailed,
+    AeadSetupFailed,
+    AeadEncryptFailed,
+};
+
+pub const AeadContext = struct {
+    enc: *c.EVP_CIPHER_CTX,
+    dec: *c.EVP_CIPHER_CTX,
+};
+
+pub const aead_tag_len = 16;
+pub const aead_nonce_len = 12;
+
+fn aeadCipher(suite: CipherSuite) *const c.EVP_CIPHER {
+    return switch (suite) {
+        .aes_128_gcm_sha256 => c.EVP_aes_128_gcm(),
+        .aes_256_gcm_sha384 => c.EVP_aes_256_gcm(),
+        .chacha20_poly1305_sha256 => c.EVP_chacha20_poly1305(),
+    } orelse unreachable;
+}
+
+pub fn aeadInit(suite: CipherSuite, key_bytes: []const u8) AeadError!AeadContext {
+    const enc = c.EVP_CIPHER_CTX_new() orelse return error.AeadSetupFailed;
+    errdefer c.EVP_CIPHER_CTX_free(enc);
+    const dec = c.EVP_CIPHER_CTX_new() orelse return error.AeadSetupFailed;
+    errdefer c.EVP_CIPHER_CTX_free(dec);
+
+    if (c.EVP_EncryptInit_ex(enc, aeadCipher(suite), null, null, null) != 1)
+        return error.AeadSetupFailed;
+    if (c.EVP_CIPHER_CTX_ctrl(enc, c.EVP_CTRL_AEAD_SET_IVLEN, aead_nonce_len, null) != 1)
+        return error.AeadSetupFailed;
+    if (c.EVP_EncryptInit_ex(enc, null, null, key_bytes.ptr, null) != 1)
+        return error.AeadSetupFailed;
+
+    if (c.EVP_DecryptInit_ex(dec, aeadCipher(suite), null, null, null) != 1)
+        return error.AeadSetupFailed;
+    if (c.EVP_CIPHER_CTX_ctrl(dec, c.EVP_CTRL_AEAD_SET_IVLEN, aead_nonce_len, null) != 1)
+        return error.AeadSetupFailed;
+    if (c.EVP_DecryptInit_ex(dec, null, null, key_bytes.ptr, null) != 1)
+        return error.AeadSetupFailed;
+
+    return .{ .enc = enc, .dec = dec };
+}
+
+pub fn aeadDeinit(ctx: *AeadContext) void {
+    c.EVP_CIPHER_CTX_free(ctx.enc);
+    c.EVP_CIPHER_CTX_free(ctx.dec);
+    ctx.* = undefined;
+}
+
+pub fn aeadEncrypt(
+    ctx: *AeadContext,
+    ciphertext: []u8,
+    tag: *[aead_tag_len]u8,
+    plaintext: []const u8,
+    ad: []const u8,
+    npub: *const [aead_nonce_len]u8,
+) AeadError!void {
+    var len: c_int = 0;
+    var out_len: c_int = 0;
+    if (c.EVP_EncryptInit_ex(ctx.enc, null, null, null, npub) != 1)
+        return error.AeadEncryptFailed;
+    if (c.EVP_EncryptUpdate(ctx.enc, null, &len, ad.ptr, @intCast(ad.len)) != 1)
+        return error.AeadEncryptFailed;
+    if (c.EVP_EncryptUpdate(
+        ctx.enc,
+        ciphertext.ptr,
+        &len,
+        plaintext.ptr,
+        @intCast(plaintext.len),
+    ) != 1) return error.AeadEncryptFailed;
+    out_len += len;
+    if (c.EVP_EncryptFinal_ex(ctx.enc, ciphertext.ptr + @as(usize, @intCast(out_len)), &len) != 1)
+        return error.AeadEncryptFailed;
+    if (c.EVP_CIPHER_CTX_ctrl(ctx.enc, c.EVP_CTRL_AEAD_GET_TAG, aead_tag_len, tag) != 1)
+        return error.AeadEncryptFailed;
+}
+
+pub fn aeadDecrypt(
+    ctx: *AeadContext,
+    plaintext: []u8,
+    ciphertext: []const u8,
+    tag: *const [aead_tag_len]u8,
+    ad: []const u8,
+    npub: *const [aead_nonce_len]u8,
+) AeadError!void {
+    var len: c_int = 0;
+    var out_len: c_int = 0;
+    if (c.EVP_DecryptInit_ex(ctx.dec, null, null, null, npub) != 1)
+        return error.AuthenticationFailed;
+    if (c.EVP_DecryptUpdate(ctx.dec, null, &len, ad.ptr, @intCast(ad.len)) != 1)
+        return error.AuthenticationFailed;
+    // EVP_DecryptUpdate writes plaintext to `plaintext` before
+    // EVP_DecryptFinal_ex verifies the tag — the output buffer
+    // holds unauthenticated data until the call succeeds.
+    if (c.EVP_DecryptUpdate(
+        ctx.dec,
+        plaintext.ptr,
+        &len,
+        ciphertext.ptr,
+        @intCast(ciphertext.len),
+    ) != 1) return error.AuthenticationFailed;
+    out_len += len;
+    if (c.EVP_CIPHER_CTX_ctrl(
+        ctx.dec,
+        c.EVP_CTRL_AEAD_SET_TAG,
+        aead_tag_len,
+        // OpenSSL's control API takes a mutable pointer, but SET_TAG reads it.
+        @constCast(tag),
+    ) != 1) return error.AuthenticationFailed;
+    if (c.EVP_DecryptFinal_ex(ctx.dec, plaintext.ptr + @as(usize, @intCast(out_len)), &len) != 1)
+        return error.AuthenticationFailed;
 }

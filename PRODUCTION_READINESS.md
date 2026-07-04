@@ -296,8 +296,9 @@ each passing the same correctness and interop gates.
   `libcrypto.pc` ambient while preserving the OpenSSL CLI for interop tools.
   The AWS-LC lane rejects non-AWS-LC headers at compile time and verifies the
   AWS-LC include/library paths in Zig's verbose build output.
-  OpenSSL-compatible EVP calls still compile directly through
-  `src/crypto/c_openssl.zig` from `src/aead.zig`, `src/signature.zig`,
+  AEAD and X25519/P-256 ECDHE dispatch through `src/crypto/backend.zig`.
+  OpenSSL-compatible signature and certificate-key construction calls still
+  compile directly through `src/crypto/c_openssl.zig` from `src/signature.zig`,
   `src/certificate.zig`, and `src/crypto/openssl_key.zig`.
 - `src/crypto/backend.zig` exposes a `Backend` enum and an `active` selector
   resolved from the build option. `src/x25519.zig` now dispatches X25519
@@ -328,16 +329,18 @@ each passing the same correctness and interop gates.
 
 - **The provider abstraction is partly real but not exercised end-to-end.**
   `src/crypto/backend.zig` exists, `-Dcrypto-backend=aws-lc` is a recognized
-  value, and `src/x25519.zig` dispatches through the facade. AEAD, signatures,
-  and certificate still compile OpenSSL calls directly through
+  value, and X25519, P-256, and AEAD dispatch through the facade. Signatures and
+  certificate verification still compile OpenSSL calls directly through
   `src/crypto/c_openssl.zig` and `src/crypto/openssl_key.zig`, so a real aws-lc
-  backend would not provide its own implementation for those primitives even
-  with link selection. *(#22)*
+  backend cannot yet provide its own measured implementation for those paths.
+  *(#22)*
 - **aws-lc has a real test lane but not a full backend matrix.** The
   `-Dcrypto-backend=aws-lc` build links AWS-LC libcrypto and runs the unit suite
-  through OpenSSL-compatible EVP wrappers. Dedicated AEAD/signature/key
-  dispatch, Wycheproof, interop, conformance, benchmark evidence, and capability
-  gating remain open. *(#22)*
+  through OpenSSL-compatible EVP wrappers. AEAD now has a backend facade, but the
+  AWS-LC AEAD path intentionally remains the proven EVP-compatible wrapper until
+  a measured one-shot `EVP_AEAD` implementation exists. Signature/key dispatch,
+  Wycheproof, interop, conformance, benchmark evidence, and capability gating
+  remain open. *(#22)*
 - **OpenSSL-only API choices still need backend dispatch.** The OpenSSL EC/RSA
   key-construction fast paths are isolated in `src/crypto/openssl_key.zig` rather
   than smeared through certificate/signature code, but there is still no selected

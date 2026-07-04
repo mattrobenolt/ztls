@@ -10,6 +10,7 @@ const testing = std.testing;
 const build_options = @import("build_options");
 const backend_openssl = @import("backend_openssl.zig");
 const backend_aws_lc = @import("backend_aws_lc.zig");
+const CipherSuite = @import("../cipher_suite.zig").CipherSuite;
 
 pub const Backend = enum {
     openssl,
@@ -41,6 +42,12 @@ const x25519_impl = switch (active) {
 };
 
 const p256_impl = switch (active) {
+    .openssl => backend_openssl,
+    .aws_lc => backend_aws_lc,
+    .boringssl => @compileError("BoringSSL backend not yet implemented"),
+};
+
+const aead_impl = switch (active) {
     .openssl => backend_openssl,
     .aws_lc => backend_aws_lc,
     .boringssl => @compileError("BoringSSL backend not yet implemented"),
@@ -93,6 +100,44 @@ pub const p256 = struct {
 
     pub inline fn freeKey(key: *pkey) void {
         p256_impl.freeKey(key);
+    }
+};
+
+pub const aead = struct {
+    pub const Error = aead_impl.AeadError;
+    pub const Context = aead_impl.AeadContext;
+    pub const tag_len = aead_impl.aead_tag_len;
+    pub const nonce_len = aead_impl.aead_nonce_len;
+
+    pub inline fn init(suite: CipherSuite, key_bytes: []const u8) Error!Context {
+        return aead_impl.aeadInit(suite, key_bytes);
+    }
+
+    pub inline fn deinit(ctx: *Context) void {
+        aead_impl.aeadDeinit(ctx);
+        ctx.* = undefined;
+    }
+
+    pub inline fn encrypt(
+        ctx: *Context,
+        ciphertext: []u8,
+        tag: *[tag_len]u8,
+        plaintext: []const u8,
+        ad: []const u8,
+        npub: *const [nonce_len]u8,
+    ) Error!void {
+        return aead_impl.aeadEncrypt(ctx, ciphertext, tag, plaintext, ad, npub);
+    }
+
+    pub inline fn decrypt(
+        ctx: *Context,
+        plaintext: []u8,
+        ciphertext: []const u8,
+        tag: *const [tag_len]u8,
+        ad: []const u8,
+        npub: *const [nonce_len]u8,
+    ) Error!void {
+        return aead_impl.aeadDecrypt(ctx, plaintext, ciphertext, tag, ad, npub);
     }
 };
 
