@@ -132,6 +132,22 @@ test "parse: skips unknown ticket extension" {
     try testing.expectEqual(@as(?u32, null), ticket.max_early_data_size);
 }
 
+// RFC 8701 §4 — GREASE server-initiated NewSessionTicket extensions are ignored
+// like any other unknown extension.
+test "parse: skips GREASE ticket extension" {
+    const msg = [_]u8{
+        0x04, 0x00, 0x00, 0x17,
+        0x00, 0x00, 0x0e, 0x10,
+        0x12, 0x34, 0x56, 0x78,
+        0x02, 0xaa, 0xbb, 0x00,
+        0x02, 0xcc, 0xdd, 0x00,
+        0x06, 0x0a, 0x0a, 0x00,
+        0x02, 0x01, 0x02,
+    };
+    const ticket = try parse(&msg);
+    try testing.expectEqual(@as(?u32, null), ticket.max_early_data_size);
+}
+
 // RFC 8446 §4.2 — endpoints MUST NOT send more than one extension of the same type.
 test "parse: rejects duplicate early_data extension" {
     const msg = [_]u8{

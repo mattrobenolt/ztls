@@ -538,6 +538,7 @@ pub fn alertForError(err: anyerror) alert.Description {
         error.InvalidVerifyData,
         => .decrypt_error,
         error.EmptyCertificateList,
+        error.EmptyTicket,
         error.InvalidAlertLength,
         error.InvalidEncoding,
         error.InvalidEnumTag,
@@ -1364,6 +1365,7 @@ test "alertForError: parser and semantic failures map to protocol alerts" {
         description: alert.Description,
     }{
         .{ .err = error.UnexpectedEof, .description = .decode_error },
+        .{ .err = error.EmptyTicket, .description = .decode_error },
         .{ .err = error.InvalidAlertLength, .description = .decode_error },
         .{ .err = error.InvalidHandshakeLength, .description = .decode_error },
         .{ .err = error.InvalidVectorLength, .description = .decode_error },
