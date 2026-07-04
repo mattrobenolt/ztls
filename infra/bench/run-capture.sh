@@ -186,6 +186,8 @@ for instance_type in "${matrix[@]}"; do
   echo "waiting for ${remote}" >&2
   wait_for_ssh "${remote}"
 
+  quoted_remote_root=$(printf '%q' "${remote_root}")
+
   echo "deploying repo to ${remote}:${remote_root}" >&2
   rsync -az --delete --no-owner --no-group \
     --exclude .envrc.local \
@@ -203,7 +205,7 @@ for instance_type in "${matrix[@]}"; do
     ./ "${remote}:${remote_root}/"
 
   ssh "${ssh_opts[@]}" "${remote}" \
-    "rm -f ${remote_root}/.envrc.local && chown -R root:root ${remote_root}"
+    "rm -f ${quoted_remote_root}/.envrc.local && chown -R root:root ${quoted_remote_root}"
 
   remote_args=(
     infra/bench/remote-capture.sh
@@ -226,7 +228,7 @@ for instance_type in "${matrix[@]}"; do
   quoted_remote_cmd=$(quote_command "${remote_cmd[@]}")
 
   echo "running benchmark capture on ${instance_type}" >&2
-  remote_capture=$(ssh "${ssh_opts[@]}" "${remote}" "cd ${remote_root} && ${quoted_remote_cmd}")
+  remote_capture=$(ssh "${ssh_opts[@]}" "${remote}" "cd ${quoted_remote_root} && ${quoted_remote_cmd}")
   remote_capture=$(printf '%s\n' "${remote_capture}" | tail -n 1)
   if [[ "${remote_capture}" != zig-out/perf/* ]]; then
     echo "remote capture returned unexpected path: ${remote_capture}" >&2

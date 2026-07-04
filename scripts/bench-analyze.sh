@@ -163,6 +163,92 @@ awk '
   { print }
 ' "${all_norm}" > "${other_norm}"
 
+warn_comparable_gaps() {
+  local file="$1"
+  if [[ ! -s "${file}" ]]; then
+    return
+  fi
+  # Warn when a comparable TLS row group has a missing implementation or
+  # mismatched sample counts. A "row group" is identified by bench/suite/size;
+  # the implementations present are extracted from the impl= tag.
+  awk '
+    /^Benchmark(Handshake|AppClientToServer|AppServerToClient|AppPingPong)\// {
+      line = $0
+      # Strip tab-separated metrics; only the benchmark name matters for the key.
+      name_part = line
+      sub(/\t.*/, "", name_part)
+      n = split(name_part, parts, "/")
+      bench = parts[1]
+      sub(/^Benchmark/, "", bench)
+      suite = ""; size = "1"; impl = ""
+      for (i = 2; i <= n; i++) {
+        if (parts[i] ~ /^impl=/) impl = substr(parts[i], 6)
+        else if (parts[i] ~ /^suite=/) suite = substr(parts[i], 7)
+        else if (parts[i] ~ /^size=/) size = substr(parts[i], 6)
+        else if (suite == "") suite = parts[i]
+        else if (parts[i] ~ /^[0-9]+$/) size = parts[i]
+      }
+      key = bench "/" suite "/" size
+      # Track unique implementations per key.
+      if (!impl_seen[key "/" impl]) {
+        impl_seen[key "/" impl] = 1
+        impls[key] = (key in impls ? impls[key] "," : "") impl
+      }
+      # Sample count = number of lines for this key/impl combination.
+      sample_counts[key "/" impl]++
+      seen_key[key] = 1
+    }
+    END {
+      for (key in seen_key) {
+        n_impls = split(impls[key], impl_list, ",")
+        if (n_impls < 3) {
+          missing_count++
+          if (missing_count <= 10) {
+            missing_examples[missing_count] = sprintf("%s has only %d implementation(s): %s", key, n_impls, impls[key])
+          }
+        }
+        # Check sample count mismatch across implementations for this row.
+        ref_count = ""
+        mismatch = 0
+        for (i = 1; i <= n_impls; i++) {
+          c = sample_counts[key "/" impl_list[i]]
+          if (ref_count == "") ref_count = c
+          else if (c != ref_count) mismatch = 1
+        }
+        if (mismatch) {
+          detail = ""
+          for (i = 1; i <= n_impls; i++) {
+            if (i > 1) detail = detail ", "
+            detail = detail impl_list[i] "=" sample_counts[key "/" impl_list[i]]
+          }
+          mismatch_count++
+          if (mismatch_count <= 10) {
+            mismatch_examples[mismatch_count] = sprintf("%s: %s", key, detail)
+          }
+        }
+      }
+      if (missing_count > 0) {
+        printf "warning: %d comparable TLS row group(s) have fewer than 3 implementations\n", missing_count > "/dev/stderr"
+        for (i = 1; i <= missing_count && i <= 10; i++) {
+          printf "warning:   %s\n", missing_examples[i] > "/dev/stderr"
+        }
+        if (missing_count > 10) {
+          printf "warning:   ... %d more omitted\n", missing_count - 10 > "/dev/stderr"
+        }
+      }
+      if (mismatch_count > 0) {
+        printf "warning: %d comparable TLS row group(s) have sample-count mismatches\n", mismatch_count > "/dev/stderr"
+        for (i = 1; i <= mismatch_count && i <= 10; i++) {
+          printf "warning:   %s\n", mismatch_examples[i] > "/dev/stderr"
+        }
+        if (mismatch_count > 10) {
+          printf "warning:   ... %d more omitted\n", mismatch_count - 10 > "/dev/stderr"
+        }
+      }
+    }
+  ' "${file}"
+}
+
 run_benchstat() {
   local title="$1"
   local file="$2"
@@ -174,6 +260,7 @@ run_benchstat() {
   echo
 }
 
+warn_comparable_gaps "${tls_norm}"
 run_benchstat "Comparable TLS rows" "${tls_norm}"
 run_benchstat "Crypto floor rows (not TLS-to-TLS comparisons)" "${crypto_norm}"
 run_benchstat "ztls-only diagnostic rows" "${other_norm}"

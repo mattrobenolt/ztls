@@ -51,3 +51,14 @@ bench-disasm-libcrypto: bench-bin
 bench-perf *args: bench-bin
     perf record --call-graph dwarf --output zig-out/benchmark.perf.data -- zig-out/bin/benchmark {{ args }}
     @echo zig-out/benchmark.perf.data
+
+[doc("Record a perf profile for one benchmark row and implementation")]
+[group("bench")]
+[linux]
+bench-perf-row *args:
+    @scripts/bench-perf-row.sh {{ args }}
+
+[doc("Disassemble a benchmark binary and linked libraries for one implementation")]
+[group("bench")]
+bench-disasm-row *args:
+    @scripts/bench-disasm-row.sh {{ args }}

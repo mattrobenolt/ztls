@@ -225,11 +225,26 @@ comparisons measure equivalent work*. This is the project's justification.
   OpenSSL EVP raw-AEAD rows, OpenSSL/libssl memory-BIO rows, and rustls
   in-memory client/server rows. It defines which rows are comparable across
   ztls/libssl/rustls and which are intentionally ztls-only or raw-crypto rows.
+  It now includes per-row timed-work inventories for the four comparable TLS
+  row groups (`Handshake`, `AppClientToServer`, `AppServerToClient`,
+  `AppPingPong`) documenting the exact work each harness performs inside the
+  timed loop, including the auth-policy asymmetry: ztls performs
+  CertificateVerify signature verification, hostname verification, and leaf
+  policy checks while rustls's `NoVerifier` does not, and libssl's
+  `SSL_VERIFY_NONE` internal CertificateVerify behavior is opaque. The
+  `Handshake` row is labeled "usable with caveats" rather than equivalent.
+- `docs/research/perf/EXPLANATION_TEMPLATE.md` provides a per-row writeup
+  template with timed-work inventory, raw timing table, normalized perf counter
+  summary, hot symbols/disassembly notes, copy/allocation behavior, conclusion, and
+  caveats. This is methodology tooling, not committed perf evidence.
 - `justfile` has useful local recipes: `bench` for ztls rows,
   `bench-capture` / `bench-capture-default` for full-comparison captures,
   `bench-analyze` for `benchstat` comparison of captures,
-  `bench-remote-capture` for EC2 provision/deploy/run/pullback/analyze, and
-  profiling helpers `bench-disasm`, `bench-disasm-libcrypto`, and `bench-perf`.
+  `bench-remote-capture` for EC2 provision/deploy/run/pullback/analyze,
+  profiling helpers `bench-disasm`, `bench-disasm-libcrypto`, and `bench-perf`,
+  and row-oriented perf/disassembly tooling `bench-perf-row` and
+  `bench-disasm-row` that capture per-implementation, per-row artifacts with
+  stable output paths and metadata under `zig-out/perf/<timestamp>/`.
   `just ci` no longer runs benchmark measurements; benchmarks are not
   correctness evidence on uncontrolled CI runners.
 - `just bench-capture-default` writes a timestamped run directory under
@@ -240,7 +255,8 @@ comparisons measure equivalent work*. This is the project's justification.
   cannot silently poison the baseline rows. The rustls harness emits outer
   samples matching `--count`, and the analyzer splits comparable TLS,
   crypto-floor, and ztls-only diagnostic rows while excluding rustls groups with
-  too few samples.
+  too few samples. The analyzer now warns when a comparable TLS row group has a
+  missing implementation or mismatched sample counts across implementations.
 - `infra/bench/` is an OpenTofu/NixOS EC2 host recipe with a pinned-ish shape:
   region `us-west-2`, default `c7i.large`, generated ED25519 SSH key,
   public VPC/subnet/security group, Nix flakes enabled, ASLR disabled, and some
@@ -278,6 +294,19 @@ comparisons measure equivalent work*. This is the project's justification.
   still needs the #11 hardware matrix, one-command remote workflow, repetitions
   policy, acceptance thresholds, and follow-up analysis before performance claims
   become marketing-grade.
+- **Benchmark equivalence methodology and row-oriented perf/disassembly
+  tooling are methodology progress, not committed perf evidence.** The per-row
+  timed-work inventories, the benchmark explanation template, and the
+  `bench-perf-row` / `bench-disasm-row` scripts define how wall-time deltas
+  will be explained with instruction/branch/cache evidence, but no committed
+  perf or disassembly artifacts exist yet. Producing durable Linux x86_64
+  perf/disassembly evidence requires the EC2 workflow (#11) or equivalent
+  bare-metal access. The `Handshake` row auth-policy asymmetry (ztls performs
+  CertificateVerify signature verification, hostname verification, and leaf
+  policy checks; rustls does not; libssl is partly opaque) remains an open
+  equivalence gap that harness alignment or explicit non-equivalence
+  documentation must resolve before the `Handshake` row can be claimed
+  equivalent. *(#31)*
 
 ---
 

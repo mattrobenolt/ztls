@@ -87,7 +87,7 @@ not sockets.
 
 | Row group | ztls row | libssl memory-BIO row | rustls row | Comparison status |
 | --- | --- | --- | --- | --- |
-| Full handshake | `Handshake` | `Handshake` | `rustls_handshake` | Comparable across all three. Full TLS 1.3 handshake, no resumption, X25519, server-only EC P-256 certificate, in-memory transport, no certificate-chain policy in ztls/rustls and `SSL_VERIFY_NONE` for libssl. |
+| Full handshake | `Handshake` | `Handshake` | `rustls_handshake` | Usable with caveats across all three. Full TLS 1.3 handshake, no resumption, X25519, server-only EC P-256 certificate, in-memory transport. **Auth-policy asymmetry:** ztls skips chain-anchor trust verification (`insecure_no_chain_anchor = true`) but still performs CertificateVerify signature verification (ECDSA P-256 verify against the certificate public key), hostname verification for `ztls.server.test`, and leaf policy checks. rustls `NoVerifier` skips chain policy and `verify_tls13_signature` (no signature math). libssl `SSL_VERIFY_NONE` skips trust-store validation and hostname checking; whether libssl still verifies the CertificateVerify signature internally is opaque. This is a real work asymmetry — see the `Handshake` timed-work inventory below. Do not treat this row as equivalent without perf evidence that these checks are or are not a hot fraction. |
 | ClientHello construction | `HandshakeClientStart` | — | `rustls_handshake_client_start` | Diagnostic until audited. libssl does not expose this split below `SSL_do_handshake`, and ztls/rustls key-generation boundaries must be proven before comparison. |
 | Server accepts ClientHello | `HandshakeServerAccept` | — | `rustls_handshake_server_accept` | Diagnostic until audited. Both names refer to the ClientHello consumption point, but the exact timed construction/processing boundary still needs proof. |
 | Client processes ServerHello | `HandshakeClientServerHello` | — | — | ztls-only profiling row. rustls processes more of the encrypted server flight in the next client step, so there is no honest rustls peer. |
@@ -107,6 +107,225 @@ normalized as TLS 1.3 suite names in every harness: `TLS_AES_128_GCM_SHA256`,
 and resumption are disabled for comparison rows: ztls does not implement
 resumption yet, libssl calls `SSL_CTX_set_num_tickets(server_ctx, 0)`, and
 rustls sets `server.send_tls13_tickets = 0`.
+
+## Per-row timed-work inventories
+
+These inventories document the exact work each harness performs inside the
+timed loop for the four comparable TLS row groups. They exist so that a
+wall-time delta can be tied to specific work, not just to adjacent `benchstat`
+columns. Where harnesses differ, the difference is called out explicitly rather
+than papered over.
+
+### `Handshake` — full TLS 1.3 handshake, no resumption
+
+**ztls** (`benchZtlsHandshake` in `src/bench/record_protection.zig`):
+
+- Setup outside loop: one warm-up `connectPair` call (full handshake, then
+  `deinit`). Deterministic X25519 client and server keypairs are generated
+  once via `deterministicClientKeypair` / `deterministicServerKeypair`. Server
+  certificate DER and P-256 scalar are `embed`-loaded at comptime.
+- Setup inside loop: `connectPair` constructs a fresh `ClientHandshake` and
+  `ServerHandshake`, then drives the full handshake: `client.start` (ClientHello
+  construction + X25519 keygen), `server.acceptClientHello` (ServerHello + key
+  share processing), `server.sendPreparedAuthenticatedFlight` (server cert
+  parse + ECDSA P-256 sign for CertificateVerify + record encryption of the
+  server flight), `client.handleRecord` (record decrypt + cert parse +
+  CertificateVerify **signature verification** against the cert public key +
+  transcript hash + key schedule + client Finished MAC), `server.processClientFinished`
+  (client Finished MAC verify + server key schedule promotion), then
+  `pair.client.deinit()` and `pair.server.deinit()` secure-zero TLS state and
+  key material before the iteration ends.
+- Cert/signature/policy work: chain-anchor trust check skipped
+  (`insecure_no_chain_anchor = true`); CertificateVerify ECDSA P-256 signature
+  **verification** is performed; hostname verification runs against
+  `ztls.server.test`; leaf policy checks still run for X.509v3 version,
+  KeyUsage.digitalSignature, EKU serverAuth, and certificate signature algorithm.
+- Transcript/key-schedule: full HKDF/HMAC/SHA transcript hash and key schedule,
+  both client and server sides.
+- Record framing: real record headers, AAD, nonce construction, AEAD
+  encrypt/decrypt for the encrypted handshake flights.
+- Memory transport: caller-owned stack buffers (`[4096]u8`, `[8192]u8`);
+  `completeWrite()` advances the write cursor. No heap allocation in the TLS
+  engine path.
+- Allocation: zero ztls-owned heap allocation. `deinit` performs secure-zeroing
+  of AEAD contexts, transcript state, and key material (no heap free) inside the
+  timed loop.
+- Ticket/resumption: disabled (ztls does not implement resumption; NewSessionTicket
+  is parsed and discarded).
+- ALPN/SNI: SNI hostname string is set (`ztls.server.test`) but no ALPN
+  negotiation in the benchmark harness.
+- Measurement shape: Go-bench-style per-iteration timing via `b.loop()`,
+  producing per-iteration variance.
+
+**libssl** (`benchHandshake` in `bench/bio.zig`):
+
+- Setup outside loop: `makeContexts` creates `SSL_CTX` pair, sets TLS 1.3 min/max,
+  cipher suite, X25519 group, `SSL_VERIFY_NONE` on both sides, `SSL_CTX_set_num_tickets(0)`,
+  loads server cert/key PEM files. One warm-up `connected` call (full handshake
+  + `freeConn`).
+- Setup inside loop: `connected` calls `makeConn` (`SSL_new` for client and
+  server, `BIO_new_bio_pair` for both directions, `SSL_set_bio`,
+  `SSL_set_connect_state` / `SSL_set_accept_state`) then `doHandshake` (a
+  poll loop calling `SSL_do_handshake` on each side until both report
+  `SSL_is_init_finished`). After the loop body: `freeConn` (`SSL_free` on
+  both).
+- Cert/signature/policy work: `SSL_VERIFY_NONE` skips trust-store validation
+  and hostname checking. libssl internally processes the CertificateVerify
+  message as protocol; whether it verifies the signature without a trust store
+  is opaque and version-dependent.
+- Transcript/key-schedule: internal to libssl; opaque but includes HKDF/HMAC/SHA.
+- Record framing: internal to libssl; includes record headers, AAD, nonce, AEAD.
+- Memory transport: BIO memory pairs (`BIO_new_bio_pair`); `SSL_write` / `SSL_read`
+  over the BIO pair. No kernel sockets.
+- Allocation: `SSL_new` and `BIO_new_bio_pair` allocate heap objects per
+  iteration. `SSL_free` deallocates. This is per-connection allocation overhead
+  that ztls does not have.
+- Ticket/resumption: disabled (`SSL_CTX_set_num_tickets(server_ctx, 0)`).
+- ALPN/SNI: no SNI or ALPN is configured in the libssl memory-BIO harness.
+- Measurement shape: Go-bench-style per-iteration timing via `b.loop()`.
+
+**rustls** (`rustls_handshake` in `bench/rustls/src/main.rs`):
+
+- Setup outside loop: `load_config` creates `ClientConfig` and `ServerConfig`
+  from PEM files, `NoVerifier` as the client cert verifier,
+  `server.send_tls13_tickets = 0`.
+- Setup inside loop: `connected` calls `make_conn` (`ClientConnection::new` +
+  `ServerConnection::new` + fresh `Vec` transfer buffers) then `transfer` (a
+  loop calling `transfer_step` which does `write_tls` / `read_tls` /
+  `process_new_packets` on both sides until neither is handshaking).
+- Cert/signature/policy work: `NoVerifier.verify_server_cert` returns `Ok(())`;
+  `NoVerifier.verify_tls13_signature` returns `Ok(())`. **No signature
+  verification is performed.** rustls internally parses the certificate and
+  CertificateVerify messages (parsing overhead present) but does no signature
+  math.
+- Transcript/key-schedule: internal to rustls; includes HKDF/HMAC/SHA via the
+  configured crypto provider (ring).
+- Record framing: internal to rustls; includes record headers, AAD, nonce, AEAD.
+- Memory transport: `Vec<u8>` transfer buffers with `Cursor`; `write_tls` /
+  `read_tls` / `process_new_packets`.
+- Allocation: `ClientConnection::new` and `ServerConnection::new` allocate
+  heap objects per iteration. `Vec` transfer buffers are dropped per iteration.
+- Ticket/resumption: disabled (`server.send_tls13_tickets = 0`).
+- ALPN/SNI: `ServerName::try_from("test.local")` is set; no ALPN in the
+  benchmark.
+- Measurement shape: **fundamentally different.** rustls times
+  `HANDSHAKE_ITERATIONS` (256) handshakes as one aggregate wall-clock sample
+  and emits the per-op average. This produces one sample with no
+  per-iteration variance. The Go-bench approach (ztls/libssl) produces
+  per-iteration variance. With `--samples N`, rustls emits N independent
+  aggregate samples, but each sample still covers 256 internal handshakes.
+
+**Key asymmetries for the `Handshake` row:**
+
+1. **Signature verification:** ztls does real ECDSA P-256 verify; rustls does
+   none; libssl is opaque. This is the most important work asymmetry.
+2. **Hostname and leaf policy checks:** ztls verifies `ztls.server.test` and
+   still runs leaf policy checks for X.509v3 version, KeyUsage.digitalSignature,
+   EKU serverAuth, and certificate signature algorithm. rustls `NoVerifier` and
+   libssl `SSL_VERIFY_NONE` skip this policy work.
+3. **Per-iteration allocation and cleanup:** libssl and rustls allocate and free
+   connection objects per iteration; ztls uses stack-resident state machines but
+   does secure-zero AEAD contexts, transcript state, and key material during
+   `deinit`. The row measures different amounts of allocator and cleanup work.
+4. **Measurement shape:** ztls/libssl use per-iteration Go-bench timing;
+   rustls uses aggregate 256-handshake batches. The statistics are not directly
+   comparable until rustls `--samples` is high enough for benchstat.
+5. **Cert loading:** ztls loads cert DER at comptime; libssl/rustls load PEM
+   files at runtime in setup (outside the loop). This does not affect the
+   timed region but affects startup cost.
+
+### `AppClientToServer` — one record encrypt (client) + one record decrypt (server)
+
+**ztls** (`benchZtlsAppData` with `.client_to_server`):
+
+- Setup outside loop: one `connectPair` (full handshake) to get a connected
+  client/server pair. Connection is reused across all iterations. `payload`
+  is a stack array filled with `0xa5`.
+- Work inside loop: `client.sendApplicationData(&payload, &wire)` (record
+  framing + nonce + AAD + AEAD encrypt), `client.completeWrite()`,
+  `server.receiveApplicationData(wire[0..record.len])` (record parse + AEAD
+  decrypt + inner content-type check). `b.setBytes(size)`.
+- Connection reuse: one pair for all iterations. No per-iteration connection
+  setup.
+- Allocation: zero. All buffers are stack arrays.
+- Warm-up: the `connectPair` call is setup, not a warm-up write. No explicit
+  warm-up write/read before the timed loop.
+
+**libssl** (`benchApp` with `.client_to_server`):
+
+- Setup outside loop: `makeContexts` + one `connected` pair. One warm-up
+  write/read (`sslWriteAll` client, `sslReadExact` server) before the timed
+  loop.
+- Work inside loop: `sslWriteAll(conn.client, payload[0..size])` (may loop
+  internally if `SSL_write` returns short), `sslReadExact(conn.server,
+  recvbuf[0..size])` (may loop internally on short reads).
+- Connection reuse: one connected `SSL` pair for all iterations.
+- Allocation: no per-iteration allocation; the `SSL` objects and BIOs are
+  reused.
+- Transport: `SSL_write` / `SSL_read` over the BIO pair. The BIO layer copies
+  bytes between the SSL internal buffers and the BIO memory buffers.
+
+**rustls** (`bench_app` with dir=0):
+
+- Setup outside loop: `load_config` + one `connected` pair. No explicit
+  warm-up write/read before the timed loop (the first iteration is in the
+  timed region).
+- Work inside loop: `conn.client.writer().write_all(&payload[..size])`,
+  `transfer(&mut conn)` (flushes `write_tls` and feeds `read_tls` +
+  `process_new_packets` on both sides), `read_exact_app(conn.server.reader(),
+  size, recv)`. `iters = max(TARGET_BYTES / size, 256)`.
+- Connection reuse: one connected pair for all iterations.
+- Allocation: no per-iteration allocation; `Conn` and its `Vec` buffers are
+  reused.
+- Measurement shape: aggregate — one wall-clock sample covering `iters`
+  iterations, emitted as per-op average. With `--samples N`, N independent
+  samples.
+
+**Key asymmetries for app-data rows:**
+
+1. **Warm-up:** libssl does one warm-up write/read; ztls and rustls do not.
+   This may cause the first timed iteration to include cold-cache effects for
+   ztls/rustls but not for libssl.
+2. **Transport overhead:** libssl's BIO layer and `SSL_write`/`SSL_read`
+  internal dispatch add wrapper overhead that ztls's direct `sendApplicationData`/
+  `receiveApplicationData` API avoids. rustls's `writer().write_all` + `transfer` +
+  `reader().read` + `process_new_packets` is a different wrapper shape. These
+  wrappers are part of what the row measures; the delta is explainable only
+  with perf/disassembly evidence.
+3. **Measurement shape:** ztls/libssl use per-iteration Go-bench timing;
+  rustls uses aggregate batches. The inner iteration count for rustls is
+  `max(TARGET_BYTES / size, 256)`, which is large for small sizes and 256 for
+  large sizes.
+
+### `AppServerToClient` — one record encrypt (server) + one record decrypt (client)
+
+Same structure as `AppClientToServer` with direction reversed. ztls uses
+`server.sendApplicationData` + `client.handleRecord` (the server-to-client path
+uses `handleRecord` rather than `receiveApplicationData` because the client
+dispatches through the event union). libssl uses `sslWriteAll(conn.server, ...)` +
+`sslReadExact(conn.client, ...)`. rustls uses `conn.server.writer().write_all` +
+`transfer` + `read_exact_app(conn.client.reader(), ...)`. The same warm-up,
+transport, and measurement-shape asymmetries apply.
+
+### `AppPingPong` — one client→server + one server→client per iteration
+
+**ztls** (`benchZtlsPingPong`): per iteration, `client.sendApplicationData` +
+`client.completeWrite` + `server.receiveApplicationData` +
+`server.sendApplicationData` + `server.completeWrite` + `client.handleRecord`.
+`b.setBytes(size * 2)`. One connected pair reused. No explicit warm-up.
+
+**libssl** (`benchApp` with `.ping_pong`): per iteration, `sslWriteAll(client)` +
+`sslReadExact(server)` + `sslWriteAll(server)` + `sslReadExact(client)`. One
+warm-up round before the timed loop. `b.setBytes(size * 2)`.
+
+**rustls** (`bench_app` with dir=2): per iteration, `client.writer().write_all` +
+`transfer` + `server.reader().read_exact` + `server.writer().write_all` +
+`transfer` + `client.reader().read_exact`. No explicit warm-up.
+`b.setBytes(size * 2)` equivalent (bytes column = `iters * size`).
+
+The same transport and measurement-shape asymmetries apply. The `bytes/op` is
+doubled for all three, so throughput columns are directly comparable if the
+measurement shape caveat is accepted.
 
 EVP rows are deliberately not TLS-to-TLS rows. `RecordEncrypt` /
 `RecordDecrypt` in ztls include TLS record framing, the inner content-type byte,
@@ -240,3 +459,60 @@ zig-out/bin/openssl_bio_bench --filter ping_pong
 The memory-BIO rows include libssl and BIO overhead but exclude TCP/syscall
 noise. That is the closest current comparison to ztls' no-I/O state-machine
 model.
+
+## Row-oriented perf and disassembly tooling
+
+For explaining a wall-time delta on a specific row, the blunt `bench-perf` /
+`bench-disasm` recipes above are not enough — they profile the entire binary.
+The row-oriented tooling captures perf and disassembly for one implementation
+and one row at a time, with stable output paths and metadata. `bench-perf-row`
+accepts only ztls, libssl, and rustls TLS rows; EVP rows are raw-crypto floor
+measurements and stay out of TLS row perf comparisons.
+
+```sh
+# Capture perf stat + perf record for one row (Linux only):
+just bench-perf-row impl=ztls bench=AppPingPong suite=TLS_AES_128_GCM_SHA256 size=1350
+just bench-perf-row impl=openssl bench=AppPingPong suite=TLS_AES_128_GCM_SHA256 size=1350
+just bench-perf-row impl=rustls bench=AppPingPong suite=TLS_AES_128_GCM_SHA256 size=1350
+
+# Disassemble a benchmark binary and its linked libraries (any host):
+just bench-disasm-row impl=ztls
+just bench-disasm-row impl=openssl
+just bench-disasm-row impl=rustls
+```
+
+Output goes under `zig-out/perf/<timestamp>/` with row-specific subdirectories:
+
+```text
+zig-out/perf/<timestamp>/
+  perf-row-<impl>-<bench>-<suite>-<size>/
+    metadata.txt          # git rev, CPU, kernel, command line, linked libs,
+                          # iteration counts for stat/record normalization
+    perf.data             # raw perf record output
+    perf-stat.txt         # perf stat counter summary
+    perf-report.txt       # top symbols from perf report
+    bench-output-stat.txt # benchmark stdout from the perf stat run
+    bench-output-record.txt # benchmark stdout from the perf record run
+  disasm-<impl>/
+    metadata.txt
+    binary.asm            # full disassembly of the benchmark binary
+    symbols.txt           # nm symbol table
+    libcrypto.asm         # if dynamically linked
+    libssl.asm            # if dynamically linked (libssl binary only)
+```
+
+`zig-out/perf/` is local staging. Durable evidence is committed under
+`docs/research/perf/<timestamp-host>/` alongside the wall-time capture and
+benchstat analysis. Perf data is binary and large; commit it only for selected
+durable rows. Disassembly text and annotated symbol output should be committed
+for durable rows.
+
+These scripts refuse to run `perf` on non-Linux hosts. Disassembly works on
+any host via `objdump` (Linux) or `otool` (macOS fallback), but disassembly
+produced on the wrong architecture (e.g. aarch64 when the committed capture is
+x86_64) is not useful for explaining that capture. Use the row tooling on the
+same host class as the wall-time capture you want to explain.
+
+No committed perf/disassembly artifacts exist yet. Producing durable Linux
+x86_64 perf evidence requires the EC2 workflow (#11) or equivalent bare-metal
+access. The tooling is methodology progress, not committed evidence.

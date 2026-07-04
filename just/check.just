@@ -44,7 +44,7 @@ examples-ci:
 
 [doc("Check formatting and lint (for CI)")]
 [group("check")]
-lint: lint-zig lint-actions lint-just lint-markdown lint-issues lint-readme-index lint-fixtures
+lint: lint-zig lint-shell lint-actions lint-just lint-markdown lint-issues lint-readme-index lint-fixtures
     just conformance/lint
 
 [doc("Lint markdown research docs for status-language drift")]
@@ -140,6 +140,11 @@ lint-zig:
     # std-alias rules: enforce the aliases we always want. cryptox is a vendored
     # std fork kept close to upstream, so it is excluded like ziglint does.
     rc=0; for rule in rules/std-alias-*.yml; do ast-grep scan --rule "$rule" src examples bench --globs '*.zig' --globs '!src/cryptox/**' --report-style short || rc=1; done; exit $rc
+
+[doc("Lint shell scripts")]
+[group("check")]
+lint-shell:
+    shellcheck --severity=warning scripts/*.sh infra/bench/*.sh
 
 [doc("Format Justfiles")]
 [group("check")]

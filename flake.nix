@@ -50,16 +50,19 @@
             (with pkgs; [
               ast-grep
               benchstat
+              binutils
               curl
               fd
               git
               go
               jdk
               just
+              llvm
               openssl.bin
               pinact
               pkg-config
               rustToolchain
+              shellcheck
               uv
               opentofu
               rsync

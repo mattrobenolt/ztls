@@ -55,9 +55,12 @@ status claim.
 ## performance
 
 - [`PERFORMANCE.md`](PERFORMANCE.md) — benchmark scenario plans, equivalence
-  methodology (where ztls / libssl / rustls / EVP rows are comparable), and
-  profiling-tool notes.
-- [`perf/`](perf/) — committed EC2 benchmark captures. The first entry is
+  methodology (where ztls / libssl / rustls / EVP rows are comparable),
+  per-row timed-work inventories, profiling-tool notes, and row-oriented
+  perf/disassembly tooling.
+- [`perf/`](perf/) — committed EC2 benchmark captures and the benchmark
+  explanation template (`perf/EXPLANATION_TEMPLATE.md`). The first capture
+  entry is
   [`perf/20260613-182405-ec2-c7i-large/`](perf/20260613-182405-ec2-c7i-large/).
 
 ## references
