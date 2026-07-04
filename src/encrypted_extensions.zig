@@ -61,9 +61,10 @@ pub fn encode(out: []u8, alpn_protocol: ?[]const u8) EncodeError![]const u8 {
 /// Parse an EncryptedExtensions handshake message.
 ///
 /// Recognizes ALPN when the caller offered protocols. Unknown extensions are
-/// skipped because they are informational for ztls' current core handshake, but
-/// ALPN is rejected if unsolicited or if it selects a protocol we did not offer.
-/// RFC 8446 §4.3.1, RFC 7301 §3.2.
+/// skipped because they are informational for ztls' current core handshake,
+/// except GREASE values negotiated by the server. ALPN is rejected if unsolicited
+/// or if it selects a protocol we did not offer. RFC 8446 §4.3.1, RFC 7301 §3.2,
+/// RFC 8701 §3.1.
 pub fn parse(msg: []const u8, offered_alpn: []const []const u8) ParseError!Parsed {
     if (msg.len < 6) return error.UnexpectedEof;
 
@@ -87,6 +88,7 @@ pub fn parse(msg: []const u8, offered_alpn: []const []const u8) ParseError!Parse
         if (r.pos + ext_len > extensions_end) return error.InvalidExtensionLength;
         const ext = r.assumeReadSlice(ext_len);
 
+        if (extension_type.isGrease(ext_type)) return error.UnexpectedExtension;
         switch (ext_type) {
             .alpn => {
                 if (result.alpn_protocol != null) return error.DuplicateExtension;
@@ -96,6 +98,7 @@ pub fn parse(msg: []const u8, offered_alpn: []const []const u8) ParseError!Parse
             // they are not specified are semantic errors, not ignorable grease.
             .status_request,
             .signature_algorithms,
+            .heartbeat,
             .padding,
             .pre_shared_key,
             .early_data,
@@ -227,6 +230,26 @@ test "parse: rejects forbidden key_share extension" {
         0x08, 0x00, 0x00, 0x08,
         0x00, 0x06, 0x00, 0x33,
         0x00, 0x02, 0x00, 0x1d,
+    };
+    try testing.expectError(error.UnexpectedExtension, parse(&msg, &.{}));
+}
+
+// RFC 8446 §4.2 — recognized extensions in the wrong message are illegal.
+test "parse: rejects forbidden heartbeat extension" {
+    const msg = [_]u8{
+        0x08, 0x00, 0x00, 0x06,
+        0x00, 0x04, 0x00, 0x0f,
+        0x00, 0x00,
+    };
+    try testing.expectError(error.UnexpectedExtension, parse(&msg, &.{}));
+}
+
+// RFC 8701 §3.1 — clients reject GREASE values negotiated by a server.
+test "parse: rejects GREASE EncryptedExtensions extension" {
+    const msg = [_]u8{
+        0x08, 0x00, 0x00, 0x06,
+        0x00, 0x04, 0x0a, 0x0a,
+        0x00, 0x00,
     };
     try testing.expectError(error.UnexpectedExtension, parse(&msg, &.{}));
 }

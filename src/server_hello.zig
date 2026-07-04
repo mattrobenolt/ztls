@@ -198,11 +198,14 @@ pub fn parseHelloRetryRequest(msg: []const u8) HrrParseError!HelloRetryRequest {
                 got_cookie = true;
             },
             else => {
+                if (extension_type.isGrease(ext_type))
+                    return error.UnexpectedExtension;
                 switch (ext_type) {
                     .server_name,
                     .status_request,
                     .supported_groups,
                     .signature_algorithms,
+                    .heartbeat,
                     .alpn,
                     .status_request_v2,
                     .signed_certificate_timestamp,
@@ -434,11 +437,14 @@ pub fn parseWithSessionIdEcho(
                 got_key_share = true;
             },
             else => {
+                if (extension_type.isGrease(ext_type))
+                    return error.UnexpectedExtension;
                 switch (ext_type) {
                     .server_name,
                     .status_request,
                     .supported_groups,
                     .signature_algorithms,
+                    .heartbeat,
                     .alpn,
                     .status_request_v2,
                     .signed_certificate_timestamp,
@@ -590,13 +596,23 @@ test "parse: rejects duplicate key_share" {
 
 // RFC 8446 §9.3 — unknown extension code points are ignored.
 test "parse: ignores unknown extension" {
-    const unknown = [_]u8{ 0x5a, 0x5a, 0x00, 0x01, 0x00 };
+    const unknown = [_]u8{ 0x5a, 0x5b, 0x00, 0x01, 0x00 };
     const msg = server_hello_rfc8448 ++ unknown;
     var with_unknown = msg[0..msg.len].*;
     with_unknown[3] += unknown.len;
     with_unknown[43] += unknown.len;
     const sh = try parse(&with_unknown);
     try testing.expectEqual(.aes_128_gcm_sha256, sh.cipher_suite);
+}
+
+// RFC 8701 §3.1 — clients reject GREASE values negotiated by a server.
+test "parse: rejects GREASE ServerHello extension" {
+    const grease = [_]u8{ 0x0a, 0x0a, 0x00, 0x00 };
+    const msg = server_hello_rfc8448 ++ grease;
+    var with_grease = msg[0..msg.len].*;
+    with_grease[3] += grease.len;
+    with_grease[43] += grease.len;
+    try testing.expectError(error.UnexpectedExtension, parse(&with_grease));
 }
 
 // RFC 8446 §4.2 — recognized extensions in the wrong message are illegal.
@@ -606,6 +622,16 @@ test "parse: rejects forbidden signature_algorithms extension" {
     var forbidden = msg[0..msg.len].*;
     forbidden[3] += sig_algs.len;
     forbidden[43] += sig_algs.len;
+    try testing.expectError(error.UnexpectedExtension, parse(&forbidden));
+}
+
+// RFC 8446 §4.2 — recognized extensions in the wrong message are illegal.
+test "parse: rejects forbidden heartbeat extension" {
+    const heartbeat = [_]u8{ 0x00, 0x0f, 0x00, 0x00 };
+    const msg = server_hello_rfc8448 ++ heartbeat;
+    var forbidden = msg[0..msg.len].*;
+    forbidden[3] += heartbeat.len;
+    forbidden[43] += heartbeat.len;
     try testing.expectError(error.UnexpectedExtension, parse(&forbidden));
 }
 
