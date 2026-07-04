@@ -316,11 +316,11 @@ each passing the same correctness and interop gates.
 - `src/certificate.zig` routes CertificateVerify public-key construction and
   signature verification through `src/crypto/backend.zig`; certificate parsing,
   chain signature verification, and path policy remain ztls/std-derived code.
-- `just check-backend-aws-lc` builds and tests with AWS-LC libcrypto linked;
-  the recipe pins `PKG_CONFIG_PATH` to the AWS-LC derivation and checks the
-  resolved include and library paths in the build log. `zig build test` inside
-  `.#openssl` and `.#aws-lc` follows the shell-selected backend by default,
-  while explicit `-Dcrypto-backend=...` still wins.
+- `just check-backend-aws-lc` builds, tests, and produces the benchmark binary
+  with AWS-LC libcrypto linked; the recipe pins `PKG_CONFIG_PATH` to the AWS-LC
+  derivation and checks the resolved include and library paths in the build log.
+  `zig build test` inside `.#openssl` and `.#aws-lc` follows the shell-selected
+  backend by default, while explicit `-Dcrypto-backend=...` still wins.
 - HKDF/HMAC/SHA transcript hashing remain on `std.crypto`, matching the roadmap
   policy unless a concrete provider/FIPS requirement appears.
 - `src/crypto/backend_primitive_tests.zig` exercises the backend facade
@@ -355,8 +355,8 @@ each passing the same correctness and interop gates.
   through OpenSSL-compatible EVP wrappers. AEAD and signature paths now have a
   backend facade, but AWS-LC intentionally remains the proven EVP-compatible
   wrapper until measured backend-specific implementations exist. Wycheproof,
-  interop, conformance, benchmark evidence, and divergent capability proof remain
-  open. *(#22)*
+  interop, conformance, benchmark measurements/evidence, and divergent capability
+  proof remain open. *(#22)*
 - **OpenSSL-compatible API choices still need measured backend-specific paths.**
   EC/RSA key-construction fast paths now live behind `src/crypto/backend.zig`,
   but the AWS-LC backend delegates to the OpenSSL-compatible implementation. A

@@ -3,7 +3,7 @@
 test:
     zig build test --summary all
 
-[doc("Build and test with AWS-LC libcrypto")]
+[doc("Build, test, and build benchmark binary with AWS-LC libcrypto")]
 [group("check")]
 check-backend-aws-lc:
     #!/usr/bin/env bash
@@ -19,6 +19,7 @@ check-backend-aws-lc:
     log=$(mktemp)
     trap 'rm -rf "$cache_dir" "$log"' EXIT
     PKG_CONFIG_PATH="$aws_lc_pkg_config_path" zig build test --summary all --verbose --cache-dir "$cache_dir" -Dcrypto-backend=aws-lc 2>&1 | tee "$log"
+    PKG_CONFIG_PATH="$aws_lc_pkg_config_path" zig build bench-bin --summary all --verbose --cache-dir "$cache_dir" -Dcrypto-backend=aws-lc 2>&1 | tee -a "$log"
     grep -F -- "-I$aws_lc_include_dir" "$log" >/dev/null || {
         echo "AWS-LC include path was not used: $aws_lc_include_dir" >&2
         exit 1
