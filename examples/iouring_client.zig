@@ -8,11 +8,15 @@
 const std = @import("std");
 const IoUring = std.os.linux.IoUring;
 const print = std.debug.print;
+const posix = std.posix;
+const net = std.net;
+const crypto = std.crypto;
 const builtin = @import("builtin");
 
 const ztls = @import("ztls");
 
 const shared_fixtures = @import("test_fixtures/shared_fixtures.zig");
+
 const trust_anchor_der: []const u8 = &shared_fixtures.server_ecdsa_cert_der;
 
 comptime {
@@ -39,8 +43,8 @@ pub fn main() !void {
     };
     defer ring.deinit();
 
-    const addr = try std.net.Address.parseIp(connect_host, port);
-    const stream = std.net.tcpConnectToAddress(addr) catch |err| switch (err) {
+    const addr: net.Address = try .parseIp(connect_host, port);
+    const stream = net.tcpConnectToAddress(addr) catch |err| switch (err) {
         error.ConnectionRefused => {
             print("[iouring] could not connect to {s}:{d}\n", .{ connect_host, port });
             print("           Start the server first: zig build example-https_server\n", .{});
@@ -53,7 +57,7 @@ pub fn main() !void {
 
     const client_keypair: ztls.x25519.KeyPair = .generate();
     var random: ztls.client_hello.Random = undefined;
-    std.crypto.random.bytes(&random.data);
+    crypto.random.bytes(&random.data);
 
     var hs: ztls.ClientHandshake = .init(.{
         .keypair = client_keypair,
@@ -66,7 +70,7 @@ pub fn main() !void {
 
     // Certificate verification: pinned trust anchor for the test server.
     // This is example-wrapper allocation, not ztls core allocation.
-    var bundle: std.crypto.Certificate.Bundle = .{};
+    var bundle: crypto.Certificate.Bundle = .{};
     defer bundle.deinit(gpa);
     const cert_start: u32 = @intCast(bundle.bytes.items.len);
     try bundle.bytes.appendSlice(gpa, trust_anchor_der);
@@ -127,7 +131,7 @@ pub fn main() !void {
     }
 }
 
-fn sendAll(ring: *IoUring, fd: std.posix.fd_t, bytes: []const u8) !void {
+fn sendAll(ring: *IoUring, fd: posix.fd_t, bytes: []const u8) !void {
     var sent: usize = 0;
     while (sent < bytes.len) {
         _ = try ring.send(1, fd, bytes[sent..], 0);
@@ -139,7 +143,7 @@ fn sendAll(ring: *IoUring, fd: std.posix.fd_t, bytes: []const u8) !void {
     }
 }
 
-fn recvIntoRecordBuffer(ring: *IoUring, fd: std.posix.fd_t, rb: *ztls.RecordBuffer) !usize {
+fn recvIntoRecordBuffer(ring: *IoUring, fd: posix.fd_t, rb: *ztls.RecordBuffer) !usize {
     const writable = rb.writable();
     _ = try ring.recv(2, fd, .{ .buffer = writable }, 0);
     _ = try ring.submit();
