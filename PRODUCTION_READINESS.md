@@ -107,7 +107,8 @@ consumption-for-rejection, not resumption.
   `.github/workflows/tls-anvil-client.yml` are wired with the same provenance
   shape, but accepted client execution remains open until a strict-normalized
   run attempts client TLS 1.3 rows rather than collapsing them into disabled /
-  not-attempted buckets. BoGo remains open.
+  not-attempted buckets. BoGo is explicitly deferred in
+  `docs/research/BOGO_DEFERRED.md` with re-entry criteria tracked by #50.
 - Wycheproof boundary vectors at the libcrypto seam.
 - Fuzzing on the major parsers plus record decrypt and server `handleRecord`
   pre-auth/post-auth dispatch.
@@ -135,13 +136,14 @@ consumption-for-rejection, not resumption.
 
 **Gaps (this is the punch-list that converts dread into work):**
 
-- **External runner coverage is still partial.** BoGo and full TLS-Anvil
-  execution are not in PR `just ci`. The completed server-mode TLS-Anvil run has
+- **External runner coverage is still partial.** Full TLS-Anvil execution is
+  not in PR `just ci`, and BoGo is explicitly deferred per
+  `docs/research/BOGO_DEFERRED.md`. The completed server-mode TLS-Anvil run has
   `89` classified in-scope client/both-endpoint rows that still require client
   or both-endpoint runner execution. TLS-Anvil normalization and wrapper-helper
   tests are gated, and the real TLS-Anvil server suite runs in a separate
   scheduled/manual workflow. TLS-Anvil client runner/workflow wiring exists, but
-  accepted client execution and BoGo runner wiring remain open. Completed
+  accepted client execution remains open. Completed
   TLS-Anvil server evidence now has no unexpected attempted
   failures; remaining named-group scope beyond the proven server-side P-256 path
   stays tracked under broader provider-backed group work *(#6)*. HelloRetryRequest

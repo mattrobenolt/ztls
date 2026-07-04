@@ -178,7 +178,7 @@ conformance busywork.
 ## External runners — TLS-Anvil (#9), tlsfuzzer lockstep (#9), BoGo shim (#9)
 
 These broaden matrix coverage. Their value scales with the feature surface
-above; running them now mostly exercises features ztls intentionally does not
+above; early runs mostly exercise features ztls intentionally does not
 implement.
 
 **TLS-Anvil (#9):** Java/JUnit runner. Prerequisite: a stable TCP
@@ -191,11 +191,13 @@ the current conversation harness. Prerequisite: none beyond the existing
 fixture. Acceptance: lockstep mode runs the current conversations deterministically
 and is gated in `just conformance/tlsfuzzer`.
 
-**BoGo shim (#9):** BoringSSL's `runner` drives a shim binary over a
-defined CLI/stdio protocol. Prerequisite: a ztls shim implementing the BoGo
-shim contract for both roles. Acceptance: BoGo runs against the shim with a
-documented skip/expected-failure list tied to unimplemented features, gated or
-at least scripted in `just`.
+**BoGo shim:** BoringSSL's `runner` driving a ztls shim over a CLI/stdio
+protocol is durably deferred in `BOGO_DEFERRED.md`. The 2026-06 scaffolding
+(`conformance/src/bogo.zig`, `bogo-fetch.sh`, `run_bogo.sh`, and
+`bogo-skip-list.json`) was removed in PR #21 because it was a non-functional
+stub. Re-entry requires the acceptance bar in `BOGO_DEFERRED.md`: pinned
+runner source, a real dual-role shim, GitHub-issue skip accounting, strict
+report gating, and a manual/scheduled workflow outside PR `just ci`.
 
 ---
 

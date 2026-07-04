@@ -40,6 +40,9 @@ status claim.
 - [`CONFORMANCE_ROADMAP.md`](CONFORMANCE_ROADMAP.md) — HelloRetryRequest,
   PSK/resumption, 0-RTT, client cert auth, PQ groups, and external runners
   (TLS-Anvil, BoGo, tlsfuzzer lockstep).
+- [`BOGO_DEFERRED.md`](BOGO_DEFERRED.md) — decision record and re-entry bar
+  for deferring BoringSSL BoGo runner integration instead of carrying a fake
+  shim or workflow.
 - [`API_ROADMAP.md`](API_ROADMAP.md) — HTTPS wrapper acceptance criteria,
   io_uring client proof shape, and the future client-auth policy shape.
 - [`CRYPTO_ROADMAP.md`](CRYPTO_ROADMAP.md) — backend allocation contract,
