@@ -40,24 +40,43 @@ pub const ParseError = error{
     Certificate.Parsed.VerifyHostNameError ||
     Certificate.Parsed.NameConstraintError;
 
-pub const EncodeError = error{BufferTooShort};
+pub const EncodeError = error{ BufferTooShort, RequestContextTooLong };
 
 pub fn encodedLen(certs_der: []const []const u8) usize {
+    return encodedLenWithRequestContext(0, certs_der);
+}
+
+pub fn encodedLenWithRequestContext(
+    request_context_len: usize,
+    certs_der: []const []const u8,
+) usize {
     var list_len: usize = 0;
     for (certs_der) |cert_der| list_len += 3 + cert_der.len + 2;
-    return 4 + 1 + 3 + list_len;
+    return 4 + 1 + request_context_len + 3 + list_len;
 }
 
 /// Encode a TLS 1.3 Certificate handshake message with empty request_context
 /// and empty per-certificate extensions. RFC 8446 §4.4.2.
 pub fn encode(out: []u8, certs_der: []const []const u8) EncodeError![]const u8 {
-    const len = encodedLen(certs_der);
+    return encodeWithRequestContext(out, &.{}, certs_der);
+}
+
+/// Encode a TLS 1.3 Certificate handshake message with the request_context
+/// echoed from CertificateRequest. RFC 8446 §4.4.2.
+pub fn encodeWithRequestContext(
+    out: []u8,
+    request_context: []const u8,
+    certs_der: []const []const u8,
+) EncodeError![]const u8 {
+    if (request_context.len > std.math.maxInt(u8)) return error.RequestContextTooLong;
+    const len = encodedLenWithRequestContext(request_context.len, certs_der);
     if (out.len < len) return error.BufferTooShort;
     var w: wire.Writer = .init(out);
-    const list_len = len - 4 - 1 - 3;
+    const list_len = len - 4 - 1 - request_context.len - 3;
     w.append(handshake.Type, .certificate);
     w.append(u24, @intCast(len - 4));
-    w.append(u8, 0x00);
+    w.append(u8, @intCast(request_context.len));
+    w.appendSlice(request_context);
     w.append(u24, @intCast(list_len));
     for (certs_der) |cert_der| {
         w.append(u24, @intCast(cert_der.len));
@@ -406,6 +425,28 @@ test "parse: wrong handshake type" {
     _ = buildCertMsg(&buf, fixture_cert_der);
     buf[0] = 0x01;
     try testing.expectError(error.InvalidHandshakeType, parse(&buf, .{}));
+}
+
+// RFC 8446 §4.4.2 — client Certificate echoes CertificateRequest context
+// and may carry an empty certificate_list when no suitable certificate exists.
+test "encodeWithRequestContext: encodes empty client certificate list" {
+    var buf: [32]u8 = undefined;
+    const encoded = try encodeWithRequestContext(&buf, &.{ 0xaa, 0xbb }, &.{});
+    try testing.expectEqualSlices(u8, &.{
+        0x0b, 0x00, 0x00, 0x06,
+        0x02, 0xaa, 0xbb, 0x00,
+        0x00, 0x00,
+    }, encoded);
+}
+
+// RFC 8446 §4.4.2 — Certificate request_context is uint8 length-prefixed.
+test "encodeWithRequestContext: rejects oversized request context" {
+    var buf: [512]u8 = undefined;
+    const context: [256]u8 = @splat(0xaa);
+    try testing.expectError(
+        error.RequestContextTooLong,
+        encodeWithRequestContext(&buf, &context, &.{}),
+    );
 }
 
 // RFC 8446 §4.4.2 — server Certificate request_context is always empty.

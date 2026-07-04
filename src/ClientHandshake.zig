@@ -20,6 +20,7 @@ const array_buffer = @import("array_buffer.zig");
 const ArrayBuffer = array_buffer.ArrayBuffer;
 const SliceBuffer = array_buffer.SliceBuffer;
 const certificate = @import("certificate.zig");
+const certificate_request = @import("certificate_request.zig");
 const client_hello = @import("client_hello.zig");
 const backend = @import("crypto/backend.zig");
 const encrypted_extensions = @import("encrypted_extensions.zig");
@@ -64,7 +65,9 @@ const LegacySessionIdBuffer = ArrayBuffer(u8, 32);
 const OfferedSuitesBuffer = ArrayBuffer(CipherSuite, 8);
 const OfferedSignatureSchemesBuffer = ArrayBuffer(SignatureScheme, 16);
 const SelectedAlpnBuffer = ArrayBuffer(u8, 255);
+const CertificateRequestContextBuffer = ArrayBuffer(u8, 255);
 const HandshakeBuffer = SliceBuffer(u8);
+const max_empty_client_certificate_len = certificate.encodedLenWithRequestContext(255, &.{});
 
 /// Comfortable default for handshake-message reassembly across records, sized
 /// to hold the server's Certificate chain plus margin. Unlike the server's
@@ -130,11 +133,12 @@ pub const HandshakeKeys = struct {
 };
 
 /// RFC 8446 Appendix A.1 — client state machine, trimmed to the flows we
-/// support (full 1-RTT handshake, no PSK, no client auth, no HelloRetryRequest).
+/// support (full 1-RTT handshake, no PSK, no client credentials, no HelloRetryRequest).
 pub const State = enum {
     start,
     wait_sh,
     wait_ee,
+    wait_cert_or_cr,
     wait_cert,
     wait_cv,
     wait_finished,
@@ -225,20 +229,32 @@ const Suite = union(enum) {
         }
     }
 
+    fn writeTranscriptHash(self: *const Suite, out: *[48]u8) u8 {
+        switch (self.*) {
+            .buffering => unreachable,
+            inline .sha256, .sha384 => |*s| {
+                const th = s.transcript.peek();
+                @memcpy(out[0..th.len], th[0..]);
+                return th.len;
+            },
+        }
+    }
+
     /// RFC 8446 §4.4.4, §7.1 — encode the client Finished and derive the
-    /// application-traffic RecordLayers. Both use one transcript snapshot taken
-    /// through the server Finished (the Master Secret point); the client
-    /// Finished is absorbed afterward. The plaintext Finished is written to
-    /// `out`; rx/tx are application-keyed.
+    /// application-traffic RecordLayers. Client authentication splits the two
+    /// transcript contexts: Finished covers any client Certificate/Verify,
+    /// while application secrets are still derived through the server Finished.
+    /// The plaintext Finished is written to `out`; rx/tx are application-keyed.
     fn finishHandshake(
         self: *Suite,
         out: []u8,
+        app_transcript_hash: []const u8,
     ) (error{BufferTooShort} || aead.Error)!HandshakeKeys.WithFinished {
         switch (self.*) {
             .buffering => unreachable,
             inline .sha256, .sha384 => |*s| {
                 const H = @TypeOf(s.*).Hkdf;
-                const th = s.transcript.peek(); // through server Finished
+                const th = s.transcript.peek();
                 const fin = try finished.encode(
                     @TypeOf(s.transcript),
                     out,
@@ -246,10 +262,14 @@ const Suite = union(enum) {
                     &th,
                 );
 
+                assert(app_transcript_hash.len == H.prk_len);
+                var app_th: H.TranscriptHash = undefined;
+                @memcpy(app_th.data[0..], app_transcript_hash);
+
                 var master = H.masterSecret(s.handshake_secret);
                 defer master.secureZero();
-                s.client_app_secret = H.clientApplicationTrafficSecret(master, &.init(th));
-                s.server_app_secret = H.serverApplicationTrafficSecret(master, &.init(th));
+                s.client_app_secret = H.clientApplicationTrafficSecret(master, &app_th);
+                s.server_app_secret = H.serverApplicationTrafficSecret(master, &app_th);
 
                 s.transcript.update(fin); // client Finished now part of the transcript
 
@@ -364,6 +384,15 @@ offered_extensions: OfferedExtensions = .initEmpty(),
 /// ALPN protocols offered in ClientHello. Caller-owned, must live until start().
 alpn_protocols: AlpnProtocols = &.{},
 selected_alpn: SelectedAlpnBuffer = .empty,
+/// CertificateRequest context echoed in the client Certificate when the server
+/// asks for client authentication. Empty context is valid, so the bool carries
+/// presence separately.
+certificate_request_context: CertificateRequestContextBuffer = .empty,
+received_certificate_request: bool = false,
+/// Transcript hash through the server Finished. Client-auth messages are sent
+/// after that point, but application traffic secrets are still derived here.
+server_finished_hash: [48]u8 = @splat(0),
+server_finished_hash_len: u8 = 0,
 
 /// Start a client handshake from a Config. The Config's `host_name` is the
 /// single source for SNI and certificate validation; `now_sec` is required.
@@ -388,7 +417,14 @@ pub fn init(config: Config) ClientHandshake {
 
 pub fn deinit(self: *ClientHandshake) void {
     switch (self.state) {
-        .wait_ee, .wait_cert, .wait_cv, .wait_finished, .send_finished, .connected => {
+        .wait_ee,
+        .wait_cert_or_cr,
+        .wait_cert,
+        .wait_cv,
+        .wait_finished,
+        .send_finished,
+        .connected,
+        => {
             self.rx.deinit();
             self.tx.deinit();
         },
@@ -756,6 +792,7 @@ pub const FlightError = error{
     HandshakeBufferTooShort,
 } ||
     encrypted_extensions.ParseError ||
+    certificate_request.ParseError ||
     certificate.ParseError ||
     certificate.VerifyError ||
     finished.VerifyError;
@@ -801,7 +838,10 @@ fn processFlightBytes(
             },
         } orelse return;
         try self.processFlightMessage(msg, policy);
-        if (self.state == .send_finished) return;
+        if (self.state == .send_finished) {
+            if ((try hr.next()) != null) return error.UnexpectedMessage;
+            return;
+        }
     }
 }
 
@@ -820,10 +860,35 @@ fn processFlightBuffer(self: *ClientHandshake, policy: certificate.Policy) Fligh
         };
         try self.processFlightMessage(msg, policy);
         if (self.state == .send_finished) {
+            const trailing = hr.next() catch |err| {
+                self.handshake_buf.clear();
+                return err;
+            };
             self.handshake_buf.clear();
+            if (trailing != null) return error.UnexpectedMessage;
             return;
         }
     }
+}
+
+fn processServerCertificate(
+    self: *ClientHandshake,
+    msg: HandshakeReader.Message,
+    policy: certificate.Policy,
+) FlightError!void {
+    if (msg.type != .certificate) return error.UnexpectedMessage;
+    // Extract and copy the leaf public key now; it must survive until
+    // CertificateVerify, which may arrive in a later record.
+    const pk = try certificate.parse(msg.raw, policy);
+    self.leaf_pub_key.clear();
+    self.leaf_pub_key.appendSlice(pk) catch return error.CertificateKeyTooLarge;
+    self.server_flight_progress = .certificate_verified;
+    self.suite.update(msg.raw);
+    self.state = .wait_cv;
+}
+
+fn saveServerFinishedHash(self: *ClientHandshake) void {
+    self.server_finished_hash_len = self.suite.writeTranscriptHash(&self.server_finished_hash);
 }
 
 fn processFlightMessage(
@@ -842,19 +907,22 @@ fn processFlightMessage(
                 self.selected_alpn.appendSliceAssumeCapacity(protocol);
             }
             self.suite.update(msg.raw);
-            self.state = .wait_cert;
+            self.state = .wait_cert_or_cr;
         },
-        .wait_cert => {
-            if (msg.type != .certificate) return error.UnexpectedMessage;
-            // Extract and copy the leaf public key now; it must survive until
-            // CertificateVerify, which may arrive in a later record.
-            const pk = try certificate.parse(msg.raw, policy);
-            self.leaf_pub_key.clear();
-            self.leaf_pub_key.appendSlice(pk) catch return error.CertificateKeyTooLarge;
-            self.server_flight_progress = .certificate_verified;
-            self.suite.update(msg.raw);
-            self.state = .wait_cv;
+        .wait_cert_or_cr => switch (msg.type) {
+            .certificate_request => {
+                const cr = try certificate_request.parse(msg.raw);
+                if (cr.request_context.len != 0) return error.UnexpectedCertificateRequestContext;
+                self.certificate_request_context.clear();
+                self.certificate_request_context.appendSlice(cr.request_context) catch unreachable;
+                self.received_certificate_request = true;
+                self.suite.update(msg.raw);
+                self.state = .wait_cert;
+            },
+            .certificate => try self.processServerCertificate(msg, policy),
+            else => return error.UnexpectedMessage,
         },
+        .wait_cert => try self.processServerCertificate(msg, policy),
         .wait_cv => {
             if (msg.type != .certificate_verify) return error.UnexpectedMessage;
             if (self.server_flight_progress != .certificate_verified)
@@ -875,6 +943,7 @@ fn processFlightMessage(
             try self.suite.verifyServerFinished(msg.raw);
             self.server_flight_progress = .finished_verified;
             self.suite.update(msg.raw);
+            self.saveServerFinishedHash();
             self.state = .send_finished;
         },
         else => return error.UnexpectedMessage,
@@ -907,14 +976,32 @@ pub fn clientFinished(self: *ClientHandshake, out: []u8) SendError![]const u8 {
     assert(self.state == .send_finished);
     if (self.server_flight_progress != .finished_verified) return error.UnexpectedMessage;
 
-    // Plaintext Finished: 4-byte handshake header + verify_data. verify_data
-    // is one hash digest: 32 bytes (SHA-256) or 48 (SHA-384).
-    var fin_buf: [4 + 48]u8 = undefined;
-    const keys = try self.suite.finishHandshake(&fin_buf);
+    if (self.server_finished_hash_len == 0) return error.UnexpectedMessage;
+
+    // Plaintext carries optional empty Certificate followed by Finished. Both
+    // are encrypted under the client handshake-traffic key.
+    var plain_buf: [max_empty_client_certificate_len + 4 + 48]u8 = undefined;
+    defer crypto.secureZero(u8, &plain_buf);
+    var plain_len: usize = 0;
+    if (self.received_certificate_request) {
+        const cert = certificate.encodeWithRequestContext(
+            plain_buf[0..],
+            self.certificate_request_context.constSlice(),
+            &.{},
+        ) catch unreachable;
+        self.suite.update(cert);
+        plain_len += cert.len;
+    }
+
+    const keys = try self.suite.finishHandshake(
+        plain_buf[plain_len..],
+        self.server_finished_hash[0..self.server_finished_hash_len],
+    );
+    plain_len += keys.finished.len;
 
     // Encrypt under the handshake-traffic key that is still installed, then
     // promote: the Finished is the last handshake-protected message.
-    const record = try self.tx.encrypt(.handshake, keys.finished, out);
+    const record = try self.tx.encrypt(.handshake, plain_buf[0..plain_len], out);
     self.tx.deinit();
     self.rx.deinit();
     self.tx = keys.tx;
@@ -1294,7 +1381,7 @@ test "processFlight: stores selected ALPN" {
     };
     try hs.processFlight(&ee, hs.policy);
     try testing.expectEqualStrings("h2", hs.selectedAlpnProtocol().?);
-    try testing.expectEqual(.wait_cert, hs.state);
+    try testing.expectEqual(.wait_cert_or_cr, hs.state);
 }
 
 test "processFlight: rejects unoffered ALPN" {
@@ -1322,7 +1409,7 @@ test "processFlight: rejects unanchored Certificate by default" {
         error.MissingTrustAnchor,
         hs.processFlight(rfc8448Fixture("server_flight.b64", &flight_buf), hs.policy),
     );
-    try testing.expectEqual(.wait_cert, hs.state);
+    try testing.expectEqual(.wait_cert_or_cr, hs.state);
 
     var peer = try hs.tx.clone();
     defer peer.deinit();
@@ -1416,7 +1503,7 @@ test "processFlight: rejects non-empty server Certificate request context" {
         error.UnexpectedCertificateRequestContext,
         hs.processFlight(bad_cert[0 .. cert.raw.len + 1], hs.policy),
     );
-    try testing.expectEqual(.wait_cert, hs.state);
+    try testing.expectEqual(.wait_cert_or_cr, hs.state);
 
     var peer = try hs.tx.clone();
     defer peer.deinit();
@@ -1440,7 +1527,7 @@ test "processFlight: rejects empty server Certificate list" {
         0x00,                                    0x00, 0x00, 0x00,
     };
     try testing.expectError(error.EmptyCertificateList, hs.processFlight(&empty_cert, hs.policy));
-    try testing.expectEqual(.wait_cert, hs.state);
+    try testing.expectEqual(.wait_cert_or_cr, hs.state);
 
     var peer = try hs.tx.clone();
     defer peer.deinit();
@@ -1489,7 +1576,7 @@ test "processFlight: rejects unrequested server CertificateEntry status_request"
     const with_ext = appendLeafCertificateExtensions(&bad_cert, cert.raw.len, &ext);
 
     try testing.expectError(error.UnsupportedExtension, hs.processFlight(with_ext, hs.policy));
-    try testing.expectEqual(.wait_cert, hs.state);
+    try testing.expectEqual(.wait_cert_or_cr, hs.state);
 
     var peer = try hs.tx.clone();
     defer peer.deinit();
@@ -1603,7 +1690,7 @@ test "processFlight: rejects CertificateVerify before Certificate" {
     const cv = (try hr.next()).?;
 
     try testing.expectError(error.UnexpectedMessage, hs.processFlight(cv.raw, hs.policy));
-    try testing.expectEqual(.wait_cert, hs.state);
+    try testing.expectEqual(.wait_cert_or_cr, hs.state);
 
     var peer = try hs.tx.clone();
     defer peer.deinit();
@@ -1924,6 +2011,113 @@ test "clientFinished: RFC 8448 §3 emits Finished and upgrades to app keys" {
     try testing.expectEqualSlices(u8, &rfc8448_client_finished, dec.content);
 
     // rx is now the server application write key (RFC 8448 §3).
+    try testing.expectEqualSlices(u8, &.{
+        0x9f, 0x02, 0x28, 0x3b, 0x6c, 0x9c, 0x07, 0xef,
+        0xc2, 0x6b, 0xb9, 0xf2, 0xac, 0x92, 0xe3, 0x56,
+    }, &hs.rx.aead.aes_128_gcm_sha256.data);
+}
+
+// RFC 8446 §4 — extra handshake messages after server Finished in the same
+// protected flight are not part of the valid TLS 1.3 client state machine.
+test "processFlight: rejects trailing handshake message after server Finished" {
+    var hs: ClientHandshake = .init(testConfig(rfc8448_client_keypair));
+    hs.policy.insecure_no_chain_anchor = true;
+    hs.injectClientHello(&rfc8448_client_hello);
+    try hs.processServerHello(&rfc8448_server_hello);
+
+    var fixture_buf: [1024]u8 = undefined;
+    const flight = rfc8448Fixture("server_flight.b64", &fixture_buf);
+    var bad_flight: [2048]u8 = undefined;
+    @memcpy(bad_flight[0..flight.len], flight);
+    @memcpy(bad_flight[flight.len..][0..rfc8448_client_finished.len], &rfc8448_client_finished);
+
+    try testing.expectError(
+        error.UnexpectedMessage,
+        hs.processFlight(bad_flight[0 .. flight.len + rfc8448_client_finished.len], hs.policy),
+    );
+}
+
+// RFC 8446 §4.3.2 — CertificateRequest is allowed after EncryptedExtensions;
+// with no client credentials configured, the client records the context so it
+// can echo it in an empty Certificate before Finished.
+test "processFlight: accepts CertificateRequest before server Certificate" {
+    var hs: ClientHandshake = .init(testConfig(rfc8448_client_keypair));
+    hs.injectClientHello(&rfc8448_client_hello);
+    try hs.processServerHello(&rfc8448_server_hello);
+
+    var flight_buf: [1024]u8 = undefined;
+    var hr: HandshakeReader = .init(rfc8448Fixture("server_flight.b64", &flight_buf));
+    const ee = (try hr.next()).?;
+    try hs.processFlight(ee.raw, hs.policy);
+    try testing.expectEqual(.wait_cert_or_cr, hs.state);
+
+    const schemes = [_]SignatureScheme{.ecdsa_secp256r1_sha256};
+    var cr_buf: [64]u8 = undefined;
+    const cr = try certificate_request.encode(&cr_buf, &schemes);
+    try hs.processFlight(cr, hs.policy);
+
+    try testing.expectEqual(.wait_cert, hs.state);
+    try testing.expect(hs.received_certificate_request);
+    try testing.expectEqualSlices(u8, &.{}, hs.certificate_request_context.constSlice());
+}
+
+// RFC 8446 §4.3.2 — handshake-time CertificateRequest request_context MUST be empty.
+test "processFlight: rejects non-empty handshake CertificateRequest context" {
+    var hs: ClientHandshake = .init(testConfig(rfc8448_client_keypair));
+    hs.injectClientHello(&rfc8448_client_hello);
+    try hs.processServerHello(&rfc8448_server_hello);
+
+    var flight_buf: [1024]u8 = undefined;
+    var hr: HandshakeReader = .init(rfc8448Fixture("server_flight.b64", &flight_buf));
+    const ee = (try hr.next()).?;
+    try hs.processFlight(ee.raw, hs.policy);
+
+    const cr = [_]u8{
+        0x0d, 0x00, 0x00, 0x0c,
+        0x01, 0xaa, 0x00, 0x08,
+        0x00, 0x0d, 0x00, 0x04,
+        0x00, 0x02, 0x04, 0x03,
+    };
+    try testing.expectError(
+        error.UnexpectedCertificateRequestContext,
+        hs.processFlight(&cr, hs.policy),
+    );
+    try testing.expectEqual(.wait_cert_or_cr, hs.state);
+}
+
+// RFC 8446 §4.4.2, §4.4.4, §7.1 — when the server requests client auth and
+// no credentials are configured, the client sends Certificate(empty) then
+// Finished while keeping app secrets derived through the server Finished.
+test "clientFinished: sends empty Certificate before Finished for CertificateRequest" {
+    var hs: ClientHandshake = .init(testConfig(rfc8448_client_keypair));
+    hs.policy.insecure_no_chain_anchor = true;
+    hs.injectClientHello(&rfc8448_client_hello);
+    try hs.processServerHello(&rfc8448_server_hello);
+    var flight_buf: [1024]u8 = undefined;
+    try hs.processFlight(rfc8448Fixture("server_flight.b64", &flight_buf), hs.policy);
+    hs.received_certificate_request = true;
+    hs.certificate_request_context.clear();
+
+    var peer = try hs.tx.clone();
+    defer peer.deinit();
+
+    var out: [256]u8 = undefined;
+    const record = try hs.clientFinished(&out);
+    try testing.expectEqual(.connected, hs.state);
+
+    var dec_buf: [256]u8 = undefined;
+    @memcpy(dec_buf[0..record.len], record);
+    const dec = try peer.decrypt(dec_buf[0..record.len]);
+    try testing.expectEqual(.handshake, dec.content_type);
+    try testing.expectEqualSlices(u8, &.{
+        0x0b, 0x00, 0x00, 0x04,
+        0x00, 0x00, 0x00, 0x00,
+    }, dec.content[0..8]);
+    try testing.expectEqual(
+        HandshakeType.finished,
+        @as(HandshakeType, @enumFromInt(dec.content[8])),
+    );
+
     try testing.expectEqualSlices(u8, &.{
         0x9f, 0x02, 0x28, 0x3b, 0x6c, 0x9c, 0x07, 0xef,
         0xc2, 0x6b, 0xb9, 0xf2, 0xac, 0x92, 0xe3, 0x56,
