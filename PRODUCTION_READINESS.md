@@ -110,9 +110,14 @@ consumption-for-rejection, not resumption.
   `TotalTests: 437`) with normalized counts of `passed: 88`, `failed: 8`,
   `expected_skipped: 136`, `unexpected_skipped: 0`, and `not_attempted: 205`;
   `Extensions.sendAdditionalExtension` now passes after the #48 unsolicited
-  extension slice, but accepted client execution remains open while those eight
-  unexpected failures and the not-attempted client/both-endpoint bucket remain.
-  A skip-list narrowing tracked by #48 surfaces the strict-complete f50fcd8
+  extension slice. Post-run triage attributes six of the eight remaining
+  unexpected failures to TLS-Anvil `DSA_WITH_SHA256` certificate parameter
+  combinations that ztls rejects during server Certificate processing; they
+  remain unexpected failures, not skip-list exclusions, until runner/upstream
+  handling changes. The other two rows map to deferred client authentication
+  (#4) and client P-256 key-share support (#6). Accepted client execution
+  remains open while those failures and the not-attempted client/both-endpoint
+  bucket remain. A skip-list narrowing tracked by #48 surfaces the strict-complete f50fcd8
   client capture's `sendEndOfEarlyDataAsServer` STRICTLY_SUCCEEDED row rather
   than the broader `*EarlyData*` skip pattern masking it as `unexpected_pass`;
   server EarlyData disabled rows remain expected-skipped under #3, and this is
