@@ -7,8 +7,15 @@ const testing = std.testing;
 
 const extension_type = @import("extension_type.zig");
 const ExtensionType = extension_type.ExtensionType;
+const OfferedExtensions = extension_type.OfferedExtensions;
 const handshake = @import("handshake.zig");
 const wire = @import("wire.zig");
+
+/// Caller-offered extensions used by `parse` to validate EncryptedExtensions
+/// responses. Defaults to empty (no tracked extensions offered).
+pub const Options = struct {
+    offered_extensions: OfferedExtensions = .initEmpty(),
+};
 
 pub const ParseError = error{
     UnexpectedEof,
@@ -60,12 +67,19 @@ pub fn encode(out: []u8, alpn_protocol: ?[]const u8) EncodeError![]const u8 {
 
 /// Parse an EncryptedExtensions handshake message.
 ///
-/// Recognizes ALPN when the caller offered protocols. Unknown extensions are
-/// skipped because they are informational for ztls' current core handshake,
-/// except GREASE values negotiated by the server. ALPN is rejected if unsolicited
-/// or if it selects a protocol we did not offer. RFC 8446 §4.3.1, RFC 7301 §3.2,
+/// `offered_alpn` is the slice of ALPN protocols the client advertised; pass
+/// `&.{}` if ALPN was not offered. `opts` carries the offered-extension set;
+/// see `Options`.
+///
+/// All recognised extensions that do not belong in EncryptedExtensions map to
+/// `UnexpectedExtension`.  Unknown extension types and recognised-but-unoffered
+/// extensions (ALPN without offered protocols, server_name without an offered
+/// SNI extension, record_size_limit without an offered record_size_limit) map to
+/// `UnsupportedExtension`.  GREASE values map to `UnexpectedExtension` per
 /// RFC 8701 §3.1.
-pub fn parse(msg: []const u8, offered_alpn: []const []const u8) ParseError!Parsed {
+///
+/// RFC 8446 §4.3.1, RFC 7301 §3.2, RFC 6066 §3, RFC 8449 §4, RFC 8701 §3.1.
+pub fn parse(msg: []const u8, offered_alpn: []const []const u8, opts: Options) ParseError!Parsed {
     if (msg.len < 6) return error.UnexpectedEof;
 
     var r: wire.Reader = .init(msg);
@@ -94,6 +108,27 @@ pub fn parse(msg: []const u8, offered_alpn: []const []const u8) ParseError!Parse
                 if (result.alpn_protocol != null) return error.DuplicateExtension;
                 result.alpn_protocol = try parseAlpn(ext, offered_alpn);
             },
+            // RFC 6066 §3 — server_name is permitted in EncryptedExtensions
+            // only when the client offered SNI; the acknowledgment MUST carry
+            // empty extension_data (zero-length server_name_list).
+            .server_name => {
+                if (!opts.offered_extensions.contains(.server_name))
+                    return error.UnsupportedExtension;
+                // RFC 6066 §3: "extension_data" of the server acknowledgment
+                // SHALL be empty (ext.len == 0 means zero-byte extension_data).
+                if (ext.len != 0) return error.InvalidExtensionLength;
+            },
+            // RFC 8446 §4.2.7 — supported_groups is explicitly permitted in
+            // EncryptedExtensions; the client MUST NOT act on it until after
+            // the handshake completes (it is advisory for future sessions).
+            .supported_groups => {},
+            // RFC 8449 §4 — record_size_limit is permitted in EncryptedExtensions
+            // only when the client offered it; reject otherwise per RFC 8446 §4.2.
+            .record_size_limit => {
+                if (!opts.offered_extensions.contains(.record_size_limit))
+                    return error.UnsupportedExtension;
+                if (ext.len != 2) return error.InvalidExtensionLength;
+            },
             // RFC 8446 §4.2 — recognized extensions sent in a message where
             // they are not specified are semantic errors, not ignorable grease.
             .status_request,
@@ -113,7 +148,9 @@ pub fn parse(msg: []const u8, offered_alpn: []const []const u8) ParseError!Parse
             .signature_algorithms_cert,
             .key_share,
             => return error.UnexpectedExtension,
-            else => {},
+            // RFC 8446 §4.2 — the server MUST NOT send extensions the client
+            // did not offer; abort with unsupported_extension.
+            else => return error.UnsupportedExtension,
         }
     }
     if (r.pos != extensions_end) return error.InvalidExtensionLength;
@@ -141,20 +178,20 @@ test "encode: empty EncryptedExtensions" {
     var out: [32]u8 = undefined;
     const msg = try encode(&out, null);
     try testing.expectEqualSlices(u8, &.{ 0x08, 0x00, 0x00, 0x02, 0x00, 0x00 }, msg);
-    _ = try parse(msg, &.{});
+    _ = try parse(msg, &.{}, .{});
 }
 
 test "encode: ALPN EncryptedExtensions" {
     var out: [32]u8 = undefined;
     const msg = try encode(&out, "h2");
-    const result = try parse(msg, &.{ "h2", "http/1.1" });
+    const result = try parse(msg, &.{ "h2", "http/1.1" }, .{});
     try testing.expectEqualStrings("h2", result.alpn_protocol.?);
 }
 
 test "parse: valid EncryptedExtensions" {
     // type(1) + length(3) + extensions_len(2) + no extensions
     const msg = [_]u8{ 0x08, 0x00, 0x00, 0x02, 0x00, 0x00 };
-    _ = try parse(&msg, &.{});
+    _ = try parse(&msg, &.{}, .{});
 }
 
 test "parse: ALPN selection" {
@@ -164,7 +201,7 @@ test "parse: ALPN selection" {
         0x00, 0x05, 0x00, 0x03,
         0x02, 'h',  '2',
     };
-    const result = try parse(&msg, &.{ "h2", "http/1.1" });
+    const result = try parse(&msg, &.{ "h2", "http/1.1" }, .{});
     try testing.expectEqualStrings("h2", result.alpn_protocol.?);
 }
 
@@ -175,7 +212,7 @@ test "parse: rejects unsolicited ALPN" {
         0x00, 0x05, 0x00, 0x03,
         0x02, 'h',  '2',
     };
-    try testing.expectError(error.UnsupportedExtension, parse(&msg, &.{}));
+    try testing.expectError(error.UnsupportedExtension, parse(&msg, &.{}, .{}));
 }
 
 test "parse: rejects unoffered ALPN" {
@@ -185,7 +222,7 @@ test "parse: rejects unoffered ALPN" {
         0x00, 0x05, 0x00, 0x03,
         0x02, 'h',  '2',
     };
-    try testing.expectError(error.UnofferedAlpnProtocol, parse(&msg, &.{"http/1.1"}));
+    try testing.expectError(error.UnofferedAlpnProtocol, parse(&msg, &.{"http/1.1"}, .{}));
 }
 
 test "parse: rejects duplicate ALPN extension" {
@@ -197,7 +234,7 @@ test "parse: rejects duplicate ALPN extension" {
         0x10, 0x00, 0x05, 0x00,
         0x03, 0x02, 'h',  '2',
     };
-    try testing.expectError(error.DuplicateExtension, parse(&msg, &.{"h2"}));
+    try testing.expectError(error.DuplicateExtension, parse(&msg, &.{"h2"}, .{}));
 }
 
 test "parse: rejects multiple ALPN protocols" {
@@ -209,7 +246,7 @@ test "parse: rejects multiple ALPN protocols" {
         's',  'p',  'd',  'y',
         '/',  '3',
     };
-    try testing.expectError(error.TooManyAlpnProtocols, parse(&msg, &.{ "h2", "spdy/3" }));
+    try testing.expectError(error.TooManyAlpnProtocols, parse(&msg, &.{ "h2", "spdy/3" }, .{}));
 }
 
 // RFC 8446 §4.2 — extensions recognized for other handshake messages are
@@ -220,7 +257,7 @@ test "parse: rejects forbidden supported_versions extension" {
         0x00, 0x06, 0x00, 0x2b,
         0x00, 0x02, 0x03, 0x04,
     };
-    try testing.expectError(error.UnexpectedExtension, parse(&msg, &.{}));
+    try testing.expectError(error.UnexpectedExtension, parse(&msg, &.{}, .{}));
 }
 
 // RFC 8446 §4.2 — key_share belongs in ClientHello, ServerHello, and HRR, not
@@ -231,7 +268,7 @@ test "parse: rejects forbidden key_share extension" {
         0x00, 0x06, 0x00, 0x33,
         0x00, 0x02, 0x00, 0x1d,
     };
-    try testing.expectError(error.UnexpectedExtension, parse(&msg, &.{}));
+    try testing.expectError(error.UnexpectedExtension, parse(&msg, &.{}, .{}));
 }
 
 // RFC 8446 §4.2 — recognized extensions in the wrong message are illegal.
@@ -241,7 +278,7 @@ test "parse: rejects forbidden heartbeat extension" {
         0x00, 0x04, 0x00, 0x0f,
         0x00, 0x00,
     };
-    try testing.expectError(error.UnexpectedExtension, parse(&msg, &.{}));
+    try testing.expectError(error.UnexpectedExtension, parse(&msg, &.{}, .{}));
 }
 
 // RFC 8701 §3.1 — clients reject GREASE values negotiated by a server.
@@ -251,7 +288,94 @@ test "parse: rejects GREASE EncryptedExtensions extension" {
         0x00, 0x04, 0x0a, 0x0a,
         0x00, 0x00,
     };
-    try testing.expectError(error.UnexpectedExtension, parse(&msg, &.{}));
+    try testing.expectError(error.UnexpectedExtension, parse(&msg, &.{}, .{}));
+}
+
+// RFC 8446 §4.2 — the server MUST NOT respond with an extension the client did
+// not offer; an unknown extension type in EncryptedExtensions must be rejected.
+test "parse: rejects unknown unsolicited extension" {
+    // Extension type 0x5a5b is not a GREASE value and is not a recognized
+    // EncryptedExtensions extension; it should be rejected with UnsupportedExtension.
+    const msg = [_]u8{
+        0x08, 0x00, 0x00, 0x08,
+        0x00, 0x06, 0x5a, 0x5b,
+        0x00, 0x02, 0x00, 0x00,
+    };
+    try testing.expectError(error.UnsupportedExtension, parse(&msg, &.{}, .{}));
+}
+
+// RFC 6066 §3 — server_name in EncryptedExtensions is a zero-length
+// acknowledgment of the client's SNI offer; accepted only when offered.
+test "parse: accepts server_name acknowledgment when SNI offered" {
+    // server_name extension (type 0x0000) with empty extension_data (ext_len=0).
+    const msg = [_]u8{
+        0x08, 0x00, 0x00, 0x06,
+        0x00, 0x04, 0x00, 0x00,
+        0x00, 0x00,
+    };
+    _ = try parse(&msg, &.{}, .{ .offered_extensions = .initOne(.server_name) });
+}
+
+// RFC 6066 §3 / RFC 8446 §4.2 — server_name in EncryptedExtensions without a
+// prior SNI offer is an unsolicited extension and must be rejected.
+test "parse: rejects server_name when SNI not offered" {
+    const msg = [_]u8{
+        0x08, 0x00, 0x00, 0x06,
+        0x00, 0x04, 0x00, 0x00,
+        0x00, 0x00,
+    };
+    try testing.expectError(error.UnsupportedExtension, parse(&msg, &.{}, .{}));
+}
+
+// RFC 6066 §3 — the extension_data of an EE server_name acknowledgment MUST be
+// empty; non-empty data is malformed.
+test "parse: rejects server_name acknowledgment with non-empty extension_data" {
+    // server_name (0x0000) with ext_len=2, which violates the "SHALL be empty" rule.
+    const msg = [_]u8{
+        0x08, 0x00, 0x00, 0x08,
+        0x00, 0x06, 0x00, 0x00,
+        0x00, 0x02, 0xde, 0xad,
+    };
+    try testing.expectError(
+        error.InvalidExtensionLength,
+        parse(&msg, &.{}, .{ .offered_extensions = .initOne(.server_name) }),
+    );
+}
+
+// RFC 8449 §4 / RFC 8446 §4.2 — record_size_limit is defined for
+// EncryptedExtensions; reject it unless the client offered it.
+test "parse: rejects unoffered record_size_limit in EncryptedExtensions" {
+    // record_size_limit (0x001c) with a 2-byte value (1024).
+    const msg = [_]u8{
+        0x08, 0x00, 0x00, 0x08,
+        0x00, 0x06, 0x00, 0x1c,
+        0x00, 0x02, 0x04, 0x00,
+    };
+    try testing.expectError(error.UnsupportedExtension, parse(&msg, &.{}, .{}));
+}
+
+// RFC 8449 §4 — record_size_limit in EncryptedExtensions acknowledges a
+// ClientHello offer and carries a two-byte RecordSizeLimit value.
+test "parse: accepts offered record_size_limit in EncryptedExtensions" {
+    const msg = [_]u8{
+        0x08, 0x00, 0x00, 0x08,
+        0x00, 0x06, 0x00, 0x1c,
+        0x00, 0x02, 0x04, 0x00,
+    };
+    _ = try parse(&msg, &.{}, .{ .offered_extensions = .initOne(.record_size_limit) });
+}
+
+// RFC 8449 §4 — record_size_limit extension_data is exactly two bytes.
+test "parse: rejects malformed record_size_limit in EncryptedExtensions" {
+    const msg = [_]u8{
+        0x08, 0x00, 0x00, 0x07,
+        0x00, 0x05, 0x00, 0x1c,
+        0x00, 0x01, 0x40,
+    };
+    try testing.expectError(
+        error.InvalidExtensionLength,
+        parse(&msg, &.{}, .{ .offered_extensions = .initOne(.record_size_limit) }),
+    );
 }
 
 // RFC 8446 §4.2.7 — supported_groups is allowed in EncryptedExtensions; the
@@ -263,15 +387,15 @@ test "parse: ignores supported_groups extension" {
         0x00, 0x04, 0x00, 0x02,
         0x00, 0x1d,
     };
-    _ = try parse(&msg, &.{});
+    _ = try parse(&msg, &.{}, .{});
 }
 
 test "parse: wrong handshake type" {
     const msg = [_]u8{ 0x01, 0x00, 0x00, 0x02, 0x00, 0x00 };
-    try testing.expectError(error.InvalidHandshakeType, parse(&msg, &.{}));
+    try testing.expectError(error.InvalidHandshakeType, parse(&msg, &.{}, .{}));
 }
 
 test "parse: truncated" {
     const msg = [_]u8{ 0x08, 0x00, 0x00 };
-    try testing.expectError(error.UnexpectedEof, parse(&msg, &.{}));
+    try testing.expectError(error.UnexpectedEof, parse(&msg, &.{}, .{}));
 }

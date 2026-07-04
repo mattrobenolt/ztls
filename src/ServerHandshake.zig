@@ -1939,7 +1939,7 @@ test "sendAnonymousFlightForTest: client decrypts EncryptedExtensions and Finish
     var hr: HandshakeReader = .init(dec.content);
     const ee = (try hr.next()).?;
     try testing.expectEqual(.encrypted_extensions, ee.type);
-    const parsed_ee = try encrypted_extensions.parse(ee.raw, &.{"h2"});
+    const parsed_ee = try encrypted_extensions.parse(ee.raw, &.{"h2"}, .{});
     try testing.expectEqualStrings("h2", parsed_ee.alpn_protocol.?);
     var transcript: Sha256 = .init(.{});
     transcript.update(ch);

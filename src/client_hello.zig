@@ -20,6 +20,8 @@ const sig_scheme_count = supported_signature_schemes.len;
 const cert_sig_scheme_count = supported_certificate_signature_schemes.len;
 const extension_type = @import("extension_type.zig");
 const ExtensionType = extension_type.ExtensionType;
+pub const OfferedExtension = extension_type.OfferedExtension;
+pub const OfferedExtensions = extension_type.OfferedExtensions;
 const handshake = @import("handshake.zig");
 const kex = @import("kex.zig");
 const NamedGroup = kex.NamedGroup;
@@ -141,6 +143,8 @@ pub const Parsed = struct {
     groups: SupportedGroups = .{},
     public_key: ?x25519.PublicKey = null,
     public_key_p256: ?p256.PublicKey = null,
+    /// Offered ClientHello extensions tracked for validating server responses.
+    offered_extensions: OfferedExtensions = .initEmpty(),
 
     pub fn offersSuite(self: Parsed, suite: CipherSuite) bool {
         var i: usize = 0;
@@ -314,6 +318,7 @@ pub fn parse(msg: []const u8) ParseError!Parsed {
             .server_name => {
                 if (got_server_name) return error.DuplicateExtension;
                 parsed.server_name = try parseSni(ext);
+                parsed.offered_extensions.insert(.server_name);
                 got_server_name = true;
             },
             .supported_groups => {
@@ -347,6 +352,13 @@ pub fn parse(msg: []const u8) ParseError!Parsed {
                 parsed.public_key = shares.x25519;
                 parsed.public_key_p256 = shares.p256;
                 got_key_share = true;
+            },
+            .record_size_limit => {
+                // RFC 8449 §4 — record_size_limit is a valid ClientHello
+                // extension. Track its presence so EE validation can accept
+                // an acknowledged record_size_limit in EncryptedExtensions.
+                if (ext.len != 2) return error.InvalidExtensionLength;
+                parsed.offered_extensions.insert(.record_size_limit);
             },
             else => {},
         }
@@ -753,6 +765,7 @@ test "parse: encoded ClientHello" {
     try testing.expect(parsed.offersSuite(.aes_128_gcm_sha256));
     try testing.expect(parsed.offersSuite(.aes_256_gcm_sha384));
     try testing.expect(parsed.offersSuite(.chacha20_poly1305_sha256));
+    try testing.expect(parsed.offered_extensions.contains(.server_name));
     try testing.expectEqualStrings("example.com", parsed.server_name.?);
     try testing.expectEqualSlices(u8, &key.data, &parsed.public_key.?.data);
     const alpn_wire = [_]u8{ 0x02, 'h', '2', 0x08, 'h', 't', 't', 'p', '/', '1', '.', '1' };
@@ -760,6 +773,31 @@ test "parse: encoded ClientHello" {
     try testing.expectEqualStrings("http/1.1", parsed.selectAlpn(&.{ "http/1.1", "h2" }).?);
     try testing.expectEqualStrings("h2", parsed.selectAlpn(&.{"h2"}).?);
     try testing.expectEqual(@as(?[]const u8, null), parsed.selectAlpn(&.{"bogus"}));
+}
+
+// RFC 8446 §4.2 / RFC 6066 §3 — extension presence is separate from whether
+// ztls extracted a hostname value from the ServerNameList.
+test "parse: tracks offered SNI extension presence" {
+    var buf: [512]u8 = undefined;
+    const encoded = try encode(&buf, .zero, .zero, "example.com", &.{});
+    const sni = try findExtension(encoded, .server_name);
+    sni[2] = 1; // unknown ServerName NameType, so Parsed.server_name remains null.
+
+    const parsed = try parse(encoded);
+    try testing.expectEqual(@as(?[]const u8, null), parsed.server_name);
+    try testing.expect(parsed.offered_extensions.contains(.server_name));
+}
+
+// RFC 8449 §4 — record_size_limit ClientHello presence is tracked for later
+// EncryptedExtensions validation.
+test "parse: tracks offered record_size_limit extension presence" {
+    var buf: [512]u8 = undefined;
+    const encoded = try encode(&buf, .zero, .zero, null, &.{});
+    const rsl = [_]u8{ 0x00, 0x1c, 0x00, 0x02, 0x04, 0x00 };
+    const with_rsl = appendExtension(&buf, encoded.len, &rsl);
+
+    const parsed = try parse(buf[0..with_rsl]);
+    try testing.expect(parsed.offered_extensions.contains(.record_size_limit));
 }
 
 // RFC 8446 §4.1.2 — legacy_session_id is bounded to 0..32 bytes.

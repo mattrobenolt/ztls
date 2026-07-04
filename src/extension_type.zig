@@ -7,6 +7,13 @@ const testing = std.testing;
 
 const memx = @import("memx.zig");
 
+pub const OfferedExtension = enum {
+    server_name,
+    record_size_limit,
+};
+
+pub const OfferedExtensions = std.EnumSet(OfferedExtension);
+
 pub const DuplicateExtensionError = error{ InvalidExtensionLength, DuplicateExtension };
 
 pub fn rejectDuplicateExtensions(extensions: []const u8) DuplicateExtensionError!void {
@@ -42,6 +49,7 @@ pub const ExtensionType = enum(u16) {
     status_request_v2 = 0x0011,
     signed_certificate_timestamp = 0x0012,
     padding = 0x0015,
+    record_size_limit = 0x001c,
     pre_shared_key = 0x0029,
     early_data = 0x002a,
     supported_versions = 0x002b,

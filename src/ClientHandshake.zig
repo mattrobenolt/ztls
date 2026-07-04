@@ -353,6 +353,8 @@ legacy_session_id: LegacySessionIdBuffer = .empty,
 offered_suites: OfferedSuitesBuffer = .empty,
 /// Recognized signature schemes offered in ClientHello.signature_algorithms.
 offered_signature_schemes: OfferedSignatureSchemesBuffer = .empty,
+/// Offered ClientHello extensions tracked for validating server responses.
+offered_extensions: client_hello.OfferedExtensions = .initEmpty(),
 /// ALPN protocols offered in ClientHello. Caller-owned, must live until start().
 alpn_protocols: client_hello.AlpnProtocols = &.{},
 selected_alpn: SelectedAlpnBuffer = .empty,
@@ -453,6 +455,7 @@ pub fn injectClientHello(self: *ClientHandshake, client_hello_msg: []const u8) v
     self.legacy_session_id.clear();
     self.offered_suites.clear();
     self.offered_signature_schemes.clear();
+    self.offered_extensions = .initEmpty();
     const parsed = client_hello.parse(client_hello_msg) catch null;
     if (parsed) |ch| {
         self.legacy_session_id.appendSlice(ch.legacy_session_id) catch
@@ -464,6 +467,7 @@ pub fn injectClientHello(self: *ClientHandshake, client_hello_msg: []const u8) v
             self.offered_suites.append(suite) catch break;
         }
         i = 0;
+        self.offered_extensions = ch.offered_extensions;
         while (i < ch.signature_schemes.len) : (i += 2) {
             const wire_scheme = memx.readInt(u16, ch.signature_schemes[i..][0..2]);
             const scheme: SignatureScheme = @enumFromInt(wire_scheme);
@@ -822,7 +826,9 @@ fn processFlightMessage(
     switch (self.state) {
         .wait_ee => {
             if (msg.type != .encrypted_extensions) return error.UnexpectedMessage;
-            const ee = try encrypted_extensions.parse(msg.raw, self.alpn_protocols);
+            const ee = try encrypted_extensions.parse(msg.raw, self.alpn_protocols, .{
+                .offered_extensions = self.offered_extensions,
+            });
             if (ee.alpn_protocol) |protocol| {
                 self.selected_alpn.clear();
                 self.selected_alpn.appendSliceAssumeCapacity(protocol);

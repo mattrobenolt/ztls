@@ -51,6 +51,8 @@ pub const ParseError = error{
     UnsupportedKeyShareGroup,
     /// A recognized extension appeared in a message where TLS 1.3 does not allow it.
     UnexpectedExtension,
+    /// Server sent an extension the client did not request (RFC 8446 §4.2).
+    UnsupportedExtension,
     /// A required TLS 1.3 ServerHello extension was absent.
     MissingExtension,
 };
@@ -113,6 +115,8 @@ pub const HrrParseError = error{
     InvalidCompressionMethod,
     /// A recognized extension appeared in a message where TLS 1.3 does not allow it.
     UnexpectedExtension,
+    /// Server sent an extension the client did not request (RFC 8446 §4.2).
+    UnsupportedExtension,
     /// A required extension was absent or malformed.
     MissingExtension,
 };
@@ -218,10 +222,12 @@ pub fn parseHelloRetryRequest(msg: []const u8) HrrParseError!HelloRetryRequest {
                     .oid_filters,
                     .post_handshake_auth,
                     .signature_algorithms_cert,
+                    .record_size_limit,
                     => return error.UnexpectedExtension,
-                    else => {},
+                    // RFC 8446 §4.2 — the server MUST NOT send extensions the
+                    // client did not offer; abort with unsupported_extension.
+                    else => return error.UnsupportedExtension,
                 }
-                r.assumeSkip(ext_len);
             },
         }
     }
@@ -455,10 +461,15 @@ pub fn parseWithSessionIdEcho(
                     .oid_filters,
                     .post_handshake_auth,
                     .signature_algorithms_cert,
+                    // RFC 8449 §4 — record_size_limit belongs in ClientHello
+                    // and EncryptedExtensions, not ServerHello; treat it as a
+                    // recognized wrong-message extension (illegal_parameter).
+                    .record_size_limit,
                     => return error.UnexpectedExtension,
-                    else => {},
+                    // RFC 8446 §4.2 — the server MUST NOT send extensions the
+                    // client did not offer; abort with unsupported_extension.
+                    else => return error.UnsupportedExtension,
                 }
-                r.assumeSkip(ext_len);
             },
         }
     }
@@ -605,15 +616,17 @@ test "parse: rejects duplicate key_share" {
     try testing.expectError(error.DuplicateExtension, parse(&dup));
 }
 
-// RFC 8446 §9.3 — unknown extension code points are ignored.
-test "parse: ignores unknown extension" {
+// RFC 8446 §4.2 — the server MUST NOT respond with an extension the client did
+// not offer; an unknown extension type in ServerHello must be rejected.
+test "parse: rejects unknown unsolicited extension" {
+    // Extension type 0x5a5b is not a GREASE value and not a recognized
+    // ServerHello extension; it should be rejected with UnsupportedExtension.
     const unknown = [_]u8{ 0x5a, 0x5b, 0x00, 0x01, 0x00 };
     const msg = server_hello_rfc8448 ++ unknown;
     var with_unknown = msg[0..msg.len].*;
     with_unknown[3] += unknown.len;
     with_unknown[43] += unknown.len;
-    const sh = try parse(&with_unknown);
-    try testing.expectEqual(.aes_128_gcm_sha256, sh.cipher_suite);
+    try testing.expectError(error.UnsupportedExtension, parse(&with_unknown));
 }
 
 // RFC 8701 §3.1 — clients reject GREASE values negotiated by a server.
@@ -644,6 +657,18 @@ test "parse: rejects forbidden heartbeat extension" {
     forbidden[3] += heartbeat.len;
     forbidden[43] += heartbeat.len;
     try testing.expectError(error.UnexpectedExtension, parse(&forbidden));
+}
+
+// RFC 8449 §4 — record_size_limit belongs in ClientHello and EncryptedExtensions,
+// not ServerHello; treat it as a recognized wrong-message extension requiring
+// illegal_parameter (UnexpectedExtension here).
+test "parse: rejects record_size_limit in ServerHello" {
+    const rsl = [_]u8{ 0x00, 0x1c, 0x00, 0x02, 0x04, 0x00 };
+    const msg = server_hello_rfc8448 ++ rsl;
+    var with_rsl = msg[0..msg.len].*;
+    with_rsl[3] += rsl.len;
+    with_rsl[43] += rsl.len;
+    try testing.expectError(error.UnexpectedExtension, parse(&with_rsl));
 }
 
 // RFC 8446 §4.2.8 — ServerHello carries exactly the selected group. ztls's
@@ -934,6 +959,31 @@ test "parseHelloRetryRequest: rejects missing supported_versions" {
         ++ [_]u8{ 0x00, 0x33, 0x00, 0x02, 0x00, 0x1d } // key_share only
     );
     try testing.expectError(error.MissingExtension, parseHelloRetryRequest(msg));
+}
+
+// RFC 8446 §4.2 — the server MUST NOT respond with an extension the client did
+// not offer; an unknown extension type in HRR must be rejected.
+test "parseHelloRetryRequest: rejects unknown unsolicited extension" {
+    // Extension type 0x5a5b is not a GREASE value and not a recognized
+    // HRR extension; it should be rejected with UnsupportedExtension.
+    const unknown = [_]u8{ 0x5a, 0x5b, 0x00, 0x01, 0x00 };
+    const msg = hrr_rfc8448 ++ unknown;
+    var with_unknown = msg[0..msg.len].*;
+    with_unknown[3] += unknown.len;
+    with_unknown[43] += unknown.len;
+    try testing.expectError(error.UnsupportedExtension, parseHelloRetryRequest(&with_unknown));
+}
+
+// RFC 8449 §4 — record_size_limit belongs in ClientHello and
+// EncryptedExtensions, not HRR; treat it as a recognized wrong-message
+// extension requiring illegal_parameter (UnexpectedExtension here).
+test "parseHelloRetryRequest: rejects record_size_limit" {
+    const rsl = [_]u8{ 0x00, 0x1c, 0x00, 0x02, 0x04, 0x00 };
+    const msg = hrr_rfc8448 ++ rsl;
+    var with_rsl = msg[0..msg.len].*;
+    with_rsl[3] += rsl.len;
+    with_rsl[43] += rsl.len;
+    try testing.expectError(error.UnexpectedExtension, parseHelloRetryRequest(&with_rsl));
 }
 
 fn fuzzParseHrr(_: void, input: []const u8) anyerror!void {
