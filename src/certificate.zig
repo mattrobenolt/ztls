@@ -9,11 +9,10 @@ const Certificate = @import("cryptox/Certificate.zig");
 const handshake = @import("handshake.zig");
 const wire = @import("wire.zig");
 
-const c = @import("crypto/c_openssl.zig").openssl;
+const backend = @import("crypto/backend.zig");
 const ArrayBuffer = @import("array_buffer.zig").ArrayBuffer;
 const certificate_policy = @import("certificate_policy.zig");
 const extension_type = @import("extension_type.zig");
-const openssl_key = @import("crypto/openssl_key.zig");
 const ExtensionType = extension_type.ExtensionType;
 pub const SignatureScheme = @import("signature_scheme.zig").SignatureScheme;
 pub const LeafUsage = certificate_policy.LeafUsage;
@@ -217,14 +216,14 @@ fn verifyIssuerNameConstraints(
 fn publicKeyFromCertificateBits(
     scheme: SignatureScheme,
     pub_key: []const u8,
-) VerifyError!*c.EVP_PKEY {
+) VerifyError!*backend.sign.pkey {
     return switch (scheme) {
-        .ecdsa_secp256r1_sha256 => openssl_key.ecPublicKeyFromSec1(.secp256r1, pub_key),
-        .ecdsa_secp384r1_sha384 => openssl_key.ecPublicKeyFromSec1(.secp384r1, pub_key),
+        .ecdsa_secp256r1_sha256 => backend.sign.ecPublicKeyFromSec1(.secp256r1, pub_key),
+        .ecdsa_secp384r1_sha384 => backend.sign.ecPublicKeyFromSec1(.secp384r1, pub_key),
         .rsa_pss_rsae_sha256,
         .rsa_pss_rsae_sha384,
         .rsa_pss_rsae_sha512,
-        => openssl_key.rsaPublicKeyFromDer(pub_key),
+        => backend.sign.rsaPublicKeyFromDer(pub_key),
         else => error.UnsupportedSignatureScheme,
     };
 }
@@ -257,12 +256,14 @@ pub fn encodeCertificateVerify(
 }
 
 pub const VerifyError = error{
-    InvalidEnumTag,
-    UnexpectedEof,
-    InvalidHandshakeType,
-    UnsupportedSignatureScheme,
+    BufferTooShort,
     InvalidEncoding,
+    InvalidEnumTag,
+    InvalidHandshakeType,
+    LibcryptoFailed,
     SignatureVerificationFailed,
+    UnexpectedEof,
+    UnsupportedSignatureScheme,
 };
 
 /// Verify a server CertificateVerify handshake message.
@@ -324,38 +325,10 @@ fn verifySignature(
     if (r.remaining().len < sig_len) return error.UnexpectedEof;
     const sig = r.assumeReadSlice(sig_len);
 
-    const md = switch (scheme) {
-        .ecdsa_secp256r1_sha256, .rsa_pss_rsae_sha256 => c.EVP_sha256(),
-        .ecdsa_secp384r1_sha384, .rsa_pss_rsae_sha384 => c.EVP_sha384(),
-        .rsa_pss_rsae_sha512 => c.EVP_sha512(),
-        else => return error.UnsupportedSignatureScheme,
-    } orelse return error.SignatureVerificationFailed;
-
     const key = try publicKeyFromCertificateBits(scheme, pub_key);
-    defer c.EVP_PKEY_free(key);
+    defer backend.sign.freeKey(key);
 
-    const ctx = c.EVP_MD_CTX_new() orelse return error.SignatureVerificationFailed;
-    defer c.EVP_MD_CTX_free(ctx);
-    var pctx: ?*c.EVP_PKEY_CTX = null;
-    if (c.EVP_DigestVerifyInit(ctx, &pctx, md, null, key) != 1)
-        return error.SignatureVerificationFailed;
-    switch (scheme) {
-        .rsa_pss_rsae_sha256, .rsa_pss_rsae_sha384, .rsa_pss_rsae_sha512 => {
-            if (c.EVP_PKEY_CTX_set_rsa_padding(pctx, c.RSA_PKCS1_PSS_PADDING) != 1)
-                return error.SignatureVerificationFailed;
-            if (c.EVP_PKEY_CTX_set_rsa_mgf1_md(pctx, md) != 1)
-                return error.SignatureVerificationFailed;
-            if (c.EVP_PKEY_CTX_set_rsa_pss_saltlen(pctx, c.RSA_PSS_SALTLEN_DIGEST) != 1)
-                return error.SignatureVerificationFailed;
-        },
-        else => {},
-    }
-    if (c.EVP_DigestVerifyUpdate(ctx, context.ptr, context.len) != 1)
-        return error.SignatureVerificationFailed;
-    if (c.EVP_DigestVerifyUpdate(ctx, transcript_hash.ptr, transcript_hash.len) != 1)
-        return error.SignatureVerificationFailed;
-    if (c.EVP_DigestVerifyFinal(ctx, sig.ptr, sig.len) != 1)
-        return error.SignatureVerificationFailed;
+    try backend.sign.verify(key, scheme, context, transcript_hash, sig);
 }
 
 // Fixtures generated with: scripts/gen-fixtures.sh

@@ -11,6 +11,7 @@ const build_options = @import("build_options");
 const backend_openssl = @import("backend_openssl.zig");
 const backend_aws_lc = @import("backend_aws_lc.zig");
 const CipherSuite = @import("../cipher_suite.zig").CipherSuite;
+const SignatureScheme = @import("../signature_scheme.zig").SignatureScheme;
 
 pub const Backend = enum {
     openssl,
@@ -48,6 +49,12 @@ const p256_impl = switch (active) {
 };
 
 const aead_impl = switch (active) {
+    .openssl => backend_openssl,
+    .aws_lc => backend_aws_lc,
+    .boringssl => @compileError("BoringSSL backend not yet implemented"),
+};
+
+const sign_impl = switch (active) {
     .openssl => backend_openssl,
     .aws_lc => backend_aws_lc,
     .boringssl => @compileError("BoringSSL backend not yet implemented"),
@@ -138,6 +145,55 @@ pub const aead = struct {
         npub: *const [nonce_len]u8,
     ) Error!void {
         return aead_impl.aeadDecrypt(ctx, plaintext, ciphertext, tag, ad, npub);
+    }
+};
+
+pub const sign = struct {
+    pub const Error = sign_impl.SignatureError;
+    pub const EcCurve = sign_impl.EcCurve;
+    pub const pkey = sign_impl.pkey;
+
+    pub inline fn privateKeyFromDer(der: []const u8) Error!*pkey {
+        return sign_impl.privateKeyFromDer(der);
+    }
+
+    pub inline fn privateKeyFromPem(pem: []const u8) Error!*pkey {
+        return sign_impl.privateKeyFromPem(pem);
+    }
+
+    pub inline fn privateKeyFromP256Scalar(scalar: *const [32]u8) Error!*pkey {
+        return sign_impl.privateKeyFromP256Scalar(scalar);
+    }
+
+    pub inline fn ecPublicKeyFromSec1(comptime curve: EcCurve, pub_key: []const u8) Error!*pkey {
+        return sign_impl.ecPublicKeyFromSec1(curve, pub_key);
+    }
+
+    pub inline fn rsaPublicKeyFromDer(pub_key: []const u8) Error!*pkey {
+        return sign_impl.rsaPublicKeyFromDer(pub_key);
+    }
+
+    pub inline fn freeKey(key: *pkey) void {
+        sign_impl.freeKey(key);
+    }
+
+    pub inline fn sign(
+        key: *pkey,
+        scheme: SignatureScheme,
+        msg: []const u8,
+        out: []u8,
+    ) Error![]const u8 {
+        return sign_impl.signatureSign(key, scheme, msg, out);
+    }
+
+    pub inline fn verify(
+        key: *pkey,
+        scheme: SignatureScheme,
+        context: []const u8,
+        transcript_hash: []const u8,
+        sig: []const u8,
+    ) Error!void {
+        return sign_impl.signatureVerify(key, scheme, context, transcript_hash, sig);
     }
 };
 

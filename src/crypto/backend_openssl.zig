@@ -3,6 +3,7 @@ const std = @import("std");
 
 const c = @import("c_openssl.zig").openssl;
 const CipherSuite = @import("../cipher_suite.zig").CipherSuite;
+const SignatureScheme = @import("../signature_scheme.zig").SignatureScheme;
 
 pub const Error = error{ LibcryptoFailed, IdentityElement };
 pub const pkey = c.EVP_PKEY;
@@ -233,4 +234,149 @@ pub fn aeadDecrypt(
     ) != 1) return error.AuthenticationFailed;
     if (c.EVP_DecryptFinal_ex(ctx.dec, plaintext.ptr + @as(usize, @intCast(out_len)), &len) != 1)
         return error.AuthenticationFailed;
+}
+
+pub const SignatureError = error{
+    BufferTooShort,
+    InvalidEncoding,
+    LibcryptoFailed,
+    SignatureVerificationFailed,
+    UnsupportedSignatureScheme,
+};
+
+pub const EcCurve = enum {
+    secp256r1,
+    secp384r1,
+
+    fn nid(comptime self: EcCurve) c_int {
+        return switch (self) {
+            .secp256r1 => c.NID_X9_62_prime256v1,
+            .secp384r1 => c.NID_secp384r1,
+        };
+    }
+};
+
+fn signatureDigest(scheme: SignatureScheme) SignatureError!*const c.EVP_MD {
+    return switch (scheme) {
+        .ecdsa_secp256r1_sha256, .rsa_pss_rsae_sha256 => c.EVP_sha256(),
+        .ecdsa_secp384r1_sha384, .rsa_pss_rsae_sha384 => c.EVP_sha384(),
+        .rsa_pss_rsae_sha512 => c.EVP_sha512(),
+        else => return error.UnsupportedSignatureScheme,
+    } orelse return error.LibcryptoFailed;
+}
+
+fn configureRsaPss(
+    ctx: ?*c.EVP_PKEY_CTX,
+    scheme: SignatureScheme,
+    md: *const c.EVP_MD,
+) SignatureError!void {
+    switch (scheme) {
+        .rsa_pss_rsae_sha256, .rsa_pss_rsae_sha384, .rsa_pss_rsae_sha512 => {
+            if (c.EVP_PKEY_CTX_set_rsa_padding(ctx, c.RSA_PKCS1_PSS_PADDING) != 1)
+                return error.LibcryptoFailed;
+            if (c.EVP_PKEY_CTX_set_rsa_mgf1_md(ctx, md) != 1)
+                return error.LibcryptoFailed;
+            if (c.EVP_PKEY_CTX_set_rsa_pss_saltlen(ctx, c.RSA_PSS_SALTLEN_DIGEST) != 1)
+                return error.LibcryptoFailed;
+        },
+        else => {},
+    }
+}
+
+pub fn privateKeyFromDer(der: []const u8) SignatureError!*pkey {
+    var ptr: ?[*]const u8 = der.ptr;
+    return c.d2i_AutoPrivateKey(null, &ptr, @intCast(der.len)) orelse error.LibcryptoFailed;
+}
+
+pub fn privateKeyFromPem(pem: []const u8) SignatureError!*pkey {
+    const bio = c.BIO_new_mem_buf(pem.ptr, @intCast(pem.len)) orelse
+        return error.LibcryptoFailed;
+    defer _ = c.BIO_free(bio);
+    return c.PEM_read_bio_PrivateKey(bio, null, null, null) orelse error.LibcryptoFailed;
+}
+
+pub fn privateKeyFromP256Scalar(scalar: *const [32]u8) SignatureError!*pkey {
+    return p256PrivateKeyFromSecret(scalar) catch |err| switch (err) {
+        error.LibcryptoFailed, error.IdentityElement => error.LibcryptoFailed,
+    };
+}
+
+pub fn ecPublicKeyFromSec1(
+    comptime curve: EcCurve,
+    pub_key: []const u8,
+) SignatureError!*pkey {
+    var ec: ?*c.EC_KEY = c.EC_KEY_new_by_curve_name(curve.nid()) orelse
+        return error.InvalidEncoding;
+    errdefer c.EC_KEY_free(ec);
+
+    var ptr: ?[*]const u8 = pub_key.ptr;
+    if (c.o2i_ECPublicKey(&ec, &ptr, @intCast(pub_key.len)) == null)
+        return error.InvalidEncoding;
+    if (c.EC_KEY_check_key(ec) != 1) return error.InvalidEncoding;
+
+    const key = c.EVP_PKEY_new() orelse return error.SignatureVerificationFailed;
+    errdefer c.EVP_PKEY_free(key);
+    if (c.EVP_PKEY_assign_EC_KEY(key, ec) != 1)
+        return error.SignatureVerificationFailed;
+    return key;
+}
+
+pub fn rsaPublicKeyFromDer(pub_key: []const u8) SignatureError!*pkey {
+    var ptr: ?[*]const u8 = pub_key.ptr;
+    const rsa = c.d2i_RSAPublicKey(null, &ptr, @intCast(pub_key.len)) orelse
+        return error.InvalidEncoding;
+    errdefer c.RSA_free(rsa);
+
+    const key = c.EVP_PKEY_new() orelse return error.SignatureVerificationFailed;
+    errdefer c.EVP_PKEY_free(key);
+    if (c.EVP_PKEY_assign_RSA(key, rsa) != 1)
+        return error.SignatureVerificationFailed;
+    return key;
+}
+
+pub fn signatureSign(
+    key: *pkey,
+    scheme: SignatureScheme,
+    msg: []const u8,
+    out: []u8,
+) SignatureError![]const u8 {
+    const md = try signatureDigest(scheme);
+    const ctx = c.EVP_MD_CTX_new() orelse return error.LibcryptoFailed;
+    defer c.EVP_MD_CTX_free(ctx);
+
+    var pctx: ?*c.EVP_PKEY_CTX = null;
+    if (c.EVP_DigestSignInit(ctx, &pctx, md, null, key) != 1) return error.LibcryptoFailed;
+    try configureRsaPss(pctx, scheme, md);
+    if (c.EVP_DigestSignUpdate(ctx, msg.ptr, msg.len) != 1) return error.LibcryptoFailed;
+
+    var required_len: usize = 0;
+    if (c.EVP_DigestSignFinal(ctx, null, &required_len) != 1) return error.LibcryptoFailed;
+    if (out.len < required_len) return error.BufferTooShort;
+
+    var len: usize = out.len;
+    if (c.EVP_DigestSignFinal(ctx, out.ptr, &len) != 1) return error.LibcryptoFailed;
+    return out[0..len];
+}
+
+pub fn signatureVerify(
+    key: *pkey,
+    scheme: SignatureScheme,
+    context: []const u8,
+    transcript_hash: []const u8,
+    sig: []const u8,
+) SignatureError!void {
+    const md = try signatureDigest(scheme);
+    const ctx = c.EVP_MD_CTX_new() orelse return error.SignatureVerificationFailed;
+    defer c.EVP_MD_CTX_free(ctx);
+
+    var pctx: ?*c.EVP_PKEY_CTX = null;
+    if (c.EVP_DigestVerifyInit(ctx, &pctx, md, null, key) != 1)
+        return error.SignatureVerificationFailed;
+    configureRsaPss(pctx, scheme, md) catch return error.SignatureVerificationFailed;
+    if (c.EVP_DigestVerifyUpdate(ctx, context.ptr, context.len) != 1)
+        return error.SignatureVerificationFailed;
+    if (c.EVP_DigestVerifyUpdate(ctx, transcript_hash.ptr, transcript_hash.len) != 1)
+        return error.SignatureVerificationFailed;
+    if (c.EVP_DigestVerifyFinal(ctx, sig.ptr, sig.len) != 1)
+        return error.SignatureVerificationFailed;
 }
