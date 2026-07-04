@@ -207,8 +207,7 @@ Sans-I/O API is pleasant across every I/O model ztls claims to support.
   one-shot/pending-write latch, client and server setup are `Config`-based, and
   `ztls.Outbox` owns partial-write draining plus `completeWrite()` coupling for
   the non-blocking epoll example. A higher-level reusable connection driver is
-  still outside the core library.
-  *(#42)*
+  still an open design boundary. *(#47)*
 
 ---
 
