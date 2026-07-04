@@ -107,7 +107,13 @@ consumption-for-rejection, not resumption.
   `.github/workflows/tls-anvil-client.yml` are wired with the same provenance
   shape, but accepted client execution remains open until a strict-normalized
   run attempts client TLS 1.3 rows rather than collapsing them into disabled /
-  not-attempted buckets. BoGo is explicitly deferred in
+  not-attempted buckets. A skip-list narrowing tracked by #48
+  surfaces the strict-complete f50fcd8 client capture's
+  `sendEndOfEarlyDataAsServer` STRICTLY_SUCCEEDED row rather than the broader
+  `*EarlyData*` skip pattern masking it as `unexpected_pass`; server EarlyData
+  disabled rows remain expected-skipped under #3, and this is evidence
+  visibility within #48 rather than accepted client execution. BoGo is
+  explicitly deferred in
   `docs/research/BOGO_DEFERRED.md` with re-entry criteria tracked by #50.
 - Wycheproof boundary vectors at the libcrypto seam.
 - Fuzzing on the major parsers plus record decrypt and server `handleRecord`

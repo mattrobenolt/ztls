@@ -109,6 +109,98 @@ def test_pattern_tls12_lowercase_id_matches():
     assert fnmatch.fnmatch("de.rub.nds.tlstest.suite.tests.server.tls12.foo", "*tls12*")
 
 
+def test_end_of_early_data_pass_not_hidden_by_skip_list():
+    """sendEndOfEarlyDataAsServer STRICTLY_SUCCEEDED must NOT match any committed
+    skip-list pattern.  The old broad *EarlyData* glob matched this test's Java
+    class id (StateMachine.sendEndOfEarlyDataAsServer) and caused a false
+    unexpected_pass.  The narrowed pattern is scoped to the
+    server.tls13.rfc8446.EarlyData class, which is in a different package."""
+    from scripts.anvil_report import matches_any_pattern
+
+    skip_entries = json.loads(SKIP_LIST_PATH.read_text())["skip"]
+
+    # Real id produced by the adapter (TestClass + "." + TestMethod).
+    test_id = (
+        "de.rub.nds.tlstest.suite.tests.client.tls13.statemachine"
+        ".StateMachine.sendEndOfEarlyDataAsServer"
+    )
+    test_name = (
+        "Servers MUST NOT send this message, and clients receiving it MUST "
+        'terminate the connection with an "unexpected_message" alert.'
+    )
+
+    assert matches_any_pattern(test_name, skip_entries, test_id) is None, (
+        "A skip-list pattern matched the EndOfEarlyData server-rejection test — "
+        "narrow or remove any *EarlyData* glob so a real passing test is not "
+        "classified as unexpected_pass"
+    )
+
+
+def test_server_early_data_disabled_still_caught_by_skip_list():
+    """After removing the broad *EarlyData* pattern, DISABLED tests from
+    de.rub.nds.tlstest.suite.tests.server.tls13.rfc8446.EarlyData must still
+    be caught as expected_skipped via the narrowed class-scoped pattern."""
+    from scripts.anvil_report import matches_any_pattern
+
+    skip_entries = json.loads(SKIP_LIST_PATH.read_text())["skip"]
+
+    # Representative test: selectedFirstIdentity from the server EarlyData class.
+    test_id = "de.rub.nds.tlstest.suite.tests.server.tls13.rfc8446.EarlyData.selectedFirstIdentity"
+    test_name = (
+        'If the server supplies an "early_data" extension, the client MUST '
+        "verify that the server's selected_identity is 0."
+    )
+    disabled_reason = (
+        "public void de.rub.nds.tlstest.suite.tests.server.tls13.rfc8446"
+        ".EarlyData.selectedFirstIdentity("
+        "de.rub.nds.anvilcore.teststate.AnvilTestCase,"
+        "de.rub.nds.tlstest.framework.execution.WorkflowRunner) is @Disabled"
+    )
+
+    assert matches_any_pattern(test_name, skip_entries, test_id, disabled_reason) is not None, (
+        "server.tls13.rfc8446.EarlyData DISABLED test was not caught — "
+        "the narrowed EarlyData skip pattern may be missing or incorrect"
+    )
+
+
+def test_end_of_early_data_pass_is_clean_pass_in_pipeline(tmp_path):
+    """End-to-end: sendEndOfEarlyDataAsServer STRICTLY_SUCCEEDED must yield
+    exit 0 and counts.passed == 1, not an unexpected_pass entry."""
+    fixture = tmp_path / "end-of-early-data.json"
+    fixture.write_text(
+        json.dumps(
+            {
+                "tests": [
+                    {
+                        "id": (
+                            "de.rub.nds.tlstest.suite.tests.client.tls13.statemachine"
+                            ".StateMachine.sendEndOfEarlyDataAsServer"
+                        ),
+                        "name": (
+                            "Servers MUST NOT send this message, and clients receiving it MUST "
+                            'terminate the connection with an "unexpected_message" alert.'
+                        ),
+                        "result": "STRICTLY_SUCCEEDED",
+                        "feature": "StateMachine",
+                    }
+                ]
+            }
+        )
+    )
+    out = tmp_path / "out"
+    out.mkdir()
+
+    cp = run_report(str(fixture), "--output-dir", str(out), "--skip-list", str(SKIP_LIST_PATH))
+
+    assert cp.returncode == 0, (
+        f"Expected exit 0 for EndOfEarlyData STRICTLY_SUCCEEDED, got {cp.returncode}.\n"
+        f"stderr={cp.stderr}"
+    )
+    s = load_summary_json(out)
+    assert s["counts"]["passed"] == 1
+    assert s["unexpected"] == []
+
+
 def test_skip_pattern_falsification_caught():
     """Renaming a skip pattern should change classification, not silently
     absorb the difference."""

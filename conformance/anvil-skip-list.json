@@ -26,8 +26,8 @@
       "reason": "record_size_limit is intentionally outside the supported surface (#34)"
     },
     {
-      "pattern": "*EarlyData*",
-      "reason": "0-RTT/early data is deferred (#3)"
+      "pattern": "*de.rub.nds.tlstest.suite.tests.server.tls13.rfc8446.EarlyData*",
+      "reason": "server-side EarlyData tests (RFC 8446 §4.2.10) are deferred (#3); TLS-Anvil @Disabled because ztls does not issue session tickets"
     },
     {
       "pattern": "*MaxFragmentLength*",
