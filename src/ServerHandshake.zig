@@ -13,6 +13,7 @@ const testing = std.testing;
 
 const aead = @import("aead.zig");
 const alert = @import("alert.zig");
+const backend = @import("crypto/backend.zig");
 const array_buffer = @import("array_buffer.zig");
 const ArrayBuffer = array_buffer.ArrayBuffer;
 const SliceBuffer = array_buffer.SliceBuffer;
@@ -96,11 +97,7 @@ const Suite = union(enum) {
     }
 };
 
-const default_supported_suites = [_]CipherSuite{
-    .aes_128_gcm_sha256,
-    .aes_256_gcm_sha384,
-    .chacha20_poly1305_sha256,
-};
+const default_supported_suites = backend.capabilities.cipher_suites;
 
 const ClientKeyShare = union(enum) {
     x25519: x25519.PublicKey,
@@ -135,7 +132,7 @@ pub const Config = struct {
     /// the old behavior and generates the P-256 keypair internally.
     p256_keypair: ?p256.KeyPair = null,
     /// Cipher suites offered by this server, in server preference order.
-    supported_suites: []const CipherSuite = &default_supported_suites,
+    supported_suites: []const CipherSuite = default_supported_suites,
     /// ALPN protocols supported by this server. Caller-owned.
     alpn_protocols: client_hello.AlpnProtocols = &.{},
     /// Optional caller-owned ClientHello reassembly storage.
@@ -154,7 +151,7 @@ random: client_hello.Random,
 negotiated_group: NamedGroup = .x25519,
 suite: CipherSuite = .aes_128_gcm_sha256,
 suite_state: Suite = undefined,
-supported_suites: []const CipherSuite = &default_supported_suites,
+supported_suites: []const CipherSuite = default_supported_suites,
 alpn_protocols: client_hello.AlpnProtocols = &.{},
 selected_alpn: ?[]const u8 = null,
 /// SNI hostname sent by the client in the server_name extension (RFC 6066 §3).
@@ -424,21 +421,27 @@ fn processClientHelloMessage(
 
     const client_key_share: ClientKeyShare = if (self.retry_selected_group) |selected_group|
         switch (selected_group) {
-            .x25519 => if (ch.public_key) |public_key| share: {
-                if (ch.public_key_p256 != null) return error.IllegalParameter;
-                break :share .{ .x25519 = public_key };
+            .x25519 => if (backend.supportsServerX25519()) blk: {
+                if (ch.public_key) |public_key| {
+                    if (ch.public_key_p256 != null) return error.IllegalParameter;
+                    break :blk .{ .x25519 = public_key };
+                }
+                return error.IllegalParameter;
             } else return error.IllegalParameter,
-            .secp256r1 => if (ch.public_key_p256) |public_key| share: {
-                if (ch.public_key != null) return error.IllegalParameter;
-                break :share .{ .secp256r1 = public_key };
+            .secp256r1 => if (backend.supportsServerP256()) blk: {
+                if (ch.public_key_p256) |public_key| {
+                    if (ch.public_key != null) return error.IllegalParameter;
+                    break :blk .{ .secp256r1 = public_key };
+                }
+                return error.IllegalParameter;
             } else return error.IllegalParameter,
             else => return error.IllegalParameter,
         }
-    else if (ch.public_key) |public_key|
-        .{ .x25519 = public_key }
-    else if (ch.public_key_p256) |public_key|
-        .{ .secp256r1 = public_key }
-    else if (ch.groups.contains(.x25519)) {
+    else if (ch.public_key != null and backend.supportsServerX25519())
+        .{ .x25519 = ch.public_key.? }
+    else if (ch.public_key_p256 != null and backend.supportsServerP256())
+        .{ .secp256r1 = ch.public_key_p256.? }
+    else if (ch.groups.contains(.x25519) and backend.supportsServerX25519()) {
         const hrr = try self.encodeHelloRetryRequest(
             ch_msg,
             ch.legacy_session_id,
@@ -448,7 +451,7 @@ fn processClientHelloMessage(
         );
         self.state = .wait_ch;
         return hrr;
-    } else if (ch.groups.contains(.secp256r1)) {
+    } else if (ch.groups.contains(.secp256r1) and backend.supportsServerP256()) {
         const hrr = try self.encodeHelloRetryRequest(
             ch_msg,
             ch.legacy_session_id,
@@ -1266,7 +1269,7 @@ pub fn receiveApplicationData(self: *ServerHandshake, record: []u8) ReceiveError
 
 fn chooseSuite(self: *const ServerHandshake, ch: client_hello.Parsed) ?CipherSuite {
     for (self.supported_suites) |suite| {
-        if (ch.offersSuite(suite)) return suite;
+        if (backend.supportsCipherSuite(suite) and ch.offersSuite(suite)) return suite;
     }
     return null;
 }
@@ -3159,11 +3162,14 @@ test "handleRecord: state reset after invalid fragmented ClientHello" {
     hdr2.write(rec2[0..frame.header_len]);
     @memset(rec2[frame.header_len..][0..remaining], 0x00);
 
-    // Error is expected; state must be reset regardless.
-    try testing.expectError(
-        error.DuplicateExtension,
-        hs.handleRecord(rec2[0 .. frame.header_len + remaining], &out),
-    );
+    // A parse error is expected; state must be reset regardless of which
+    // malformed-extension check catches the all-zero tail first.
+    if (hs.handleRecord(rec2[0 .. frame.header_len + remaining], &out)) |_| {
+        return error.TestExpectedError;
+    } else |err| switch (err) {
+        error.DuplicateExtension, error.InvalidExtensionLength => {},
+        else => return err,
+    }
 
     // State reset verified: a fresh complete ClientHello should succeed.
     var record: [1024]u8 = undefined;

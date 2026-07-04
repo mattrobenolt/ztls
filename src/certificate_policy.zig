@@ -2,6 +2,7 @@
 //!
 //! RFC 8446 §4.4.2.2
 const std = @import("std");
+const backend = @import("crypto/backend.zig");
 const Certificate = @import("cryptox/Certificate.zig");
 const SignatureScheme = @import("signature_scheme.zig").SignatureScheme;
 
@@ -42,7 +43,7 @@ pub const Policy = struct {
     /// `signature_algorithms_cert` policy; when that extension is omitted, RFC
     /// 8446 §4.2.3 says `signature_algorithms` applies to certificates too.
     certificate_signature_schemes: []const SignatureScheme =
-        SignatureScheme.supported_certificate,
+        backend.capabilities.certificate_signature_schemes,
 };
 
 const eku_server_auth_oid = [_]u8{ 0x2b, 0x06, 0x01, 0x05, 0x05, 0x07, 0x03, 0x01 };
@@ -54,7 +55,7 @@ pub const VerifyServerAuthError = PolicyError || Certificate.ParseError;
 pub fn verifyServerAuth(parsed: Certificate.Parsed) VerifyServerAuthError!void {
     return verifyServerAuthWithSignatureSchemes(
         parsed,
-        SignatureScheme.supported_certificate,
+        backend.capabilities.certificate_signature_schemes,
     );
 }
 

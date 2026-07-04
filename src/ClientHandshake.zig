@@ -16,6 +16,7 @@ const txtar = @import("txtar");
 
 const aead = @import("aead.zig");
 const alert = @import("alert.zig");
+const backend = @import("crypto/backend.zig");
 const array_buffer = @import("array_buffer.zig");
 const ArrayBuffer = array_buffer.ArrayBuffer;
 const SliceBuffer = array_buffer.SliceBuffer;
@@ -466,7 +467,7 @@ pub fn injectClientHello(self: *ClientHandshake, client_hello_msg: []const u8) v
         while (i < ch.signature_schemes.len) : (i += 2) {
             const wire_scheme = memx.readInt(u16, ch.signature_schemes[i..][0..2]);
             const scheme: SignatureScheme = @enumFromInt(wire_scheme);
-            if (!scheme.supportsHandshake()) continue;
+            if (!backend.supportsCertificateVerifyScheme(scheme)) continue;
             if (mem.indexOfScalar(
                 SignatureScheme,
                 self.offered_signature_schemes.constSlice(),
@@ -476,7 +477,7 @@ pub fn injectClientHello(self: *ClientHandshake, client_hello_msg: []const u8) v
         }
     } else {
         self.offered_signature_schemes.appendSlice(
-            SignatureScheme.supported_handshake,
+            backend.capabilities.certificate_verify_schemes,
         ) catch unreachable;
     }
     self.suite.update(client_hello_msg);

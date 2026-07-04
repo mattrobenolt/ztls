@@ -8,6 +8,8 @@ const compat = @import("backend_openssl.zig");
 const CipherSuite = @import("../cipher_suite.zig").CipherSuite;
 const SignatureScheme = @import("../signature_scheme.zig").SignatureScheme;
 
+pub const capabilities = compat.capabilities;
+
 pub const Error = compat.Error;
 pub const pkey = compat.pkey;
 

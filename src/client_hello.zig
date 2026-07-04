@@ -12,6 +12,7 @@ pub const AlpnError = alpn_mod.Error;
 const CompressionMethod = @import("compression_method.zig").CompressionMethod;
 const extension_type = @import("extension_type.zig");
 const ExtensionType = extension_type.ExtensionType;
+const backend = @import("crypto/backend.zig");
 const handshake = @import("handshake.zig");
 const kex = @import("kex.zig");
 const NamedGroup = kex.NamedGroup;
@@ -28,9 +29,12 @@ const x25519 = @import("x25519.zig");
 /// RFC 8446 §4.1.2 — legacy_version is frozen at TLS 1.2.
 const legacy_version: ProtocolVersion = .tls_1_2;
 
-const cipher_suite_count = std.meta.tags(CipherSuite).len;
-const supported_signature_schemes = SignatureScheme.supported_handshake;
-const supported_certificate_signature_schemes = SignatureScheme.supported_certificate;
+const supported_cipher_suites = backend.capabilities.cipher_suites;
+const cipher_suite_count = supported_cipher_suites.len;
+const client_group_count = @as(usize, @intFromBool(backend.capabilities.client_x25519)) +
+    @as(usize, @intFromBool(backend.capabilities.client_p256));
+const supported_signature_schemes = backend.capabilities.certificate_verify_schemes;
+const supported_certificate_signature_schemes = backend.capabilities.certificate_signature_schemes;
 const sig_scheme_count = supported_signature_schemes.len;
 const cert_sig_scheme_count = supported_certificate_signature_schemes.len;
 
@@ -52,10 +56,18 @@ const body_fixed_len =
     2; // extensions length
 
 const ext_supported_versions_len = ext_header_len + 1 + 2;
-const ext_supported_groups_len = ext_header_len + 2 + 2;
+const ext_supported_groups_len = ext_header_len + 2 + client_group_count * 2;
 const ext_sig_algs_len = ext_header_len + 2 + sig_scheme_count * 2;
 const ext_sig_algs_cert_len = ext_header_len + 2 + cert_sig_scheme_count * 2;
 const ext_key_share_len = ext_header_len + 2 + 2 + 2 + 32;
+
+comptime {
+    // The current client has one X25519 keypair in Config and encodes exactly
+    // one X25519 KeyShareEntry. Do not let backend capabilities advertise a
+    // different client group shape until ClientHandshake grows matching state.
+    assert(backend.capabilities.client_x25519);
+    assert(!backend.capabilities.client_p256);
+}
 
 fn alpnExtDataLen(protocols: AlpnProtocols) AlpnError!u16 {
     var list_len: usize = 0;
@@ -179,7 +191,7 @@ pub fn encode(
     w.appendSlice(&random.data);
     w.append(u8, 0x00); // legacy_session_id: empty
     w.append(u16, cipher_suite_count * 2);
-    inline for (std.meta.tags(CipherSuite)) |cs| w.append(CipherSuite, cs);
+    inline for (supported_cipher_suites) |cs| w.append(CipherSuite, cs);
     w.append(u8, 0x01); // legacy_compression_methods length
     w.append(CompressionMethod, .no_compression);
     w.append(u16, ext_len);
@@ -218,9 +230,10 @@ pub fn encode(
 
     // supported_groups (RFC 8446 §4.2.7)
     w.append(ExtensionType, .supported_groups);
-    w.append(u16, 4);
-    w.append(u16, 2); // named_group_list length
-    w.append(NamedGroup, .x25519);
+    w.append(u16, 2 + client_group_count * 2);
+    w.append(u16, client_group_count * 2); // named_group_list length
+    if (backend.capabilities.client_x25519) w.append(NamedGroup, .x25519);
+    if (backend.capabilities.client_p256) w.append(NamedGroup, .secp256r1);
 
     // signature_algorithms (RFC 8446 §4.2.3)
     w.append(ExtensionType, .signature_algorithms);
@@ -433,7 +446,8 @@ pub const SupportedGroups = struct {
     }
 
     fn hasImplemented(self: SupportedGroups) bool {
-        return self.contains(.x25519) or self.contains(.secp256r1);
+        return (backend.supportsServerX25519() and self.contains(.x25519)) or
+            (backend.supportsServerP256() and self.contains(.secp256r1));
     }
 };
 
@@ -466,7 +480,7 @@ fn hasSupportedHandshakeSignatureScheme(schemes: []const u8) bool {
     while (i < schemes.len) : (i += 2) {
         const wire_scheme = memx.readInt(u16, schemes[i..][0..2]);
         const scheme: SignatureScheme = @enumFromInt(wire_scheme);
-        if (scheme.supportsHandshake()) return true;
+        if (backend.supportsCertificateVerifyScheme(scheme)) return true;
     }
     return false;
 }
@@ -520,14 +534,20 @@ test "encode: handshake type and legacy version" {
     try testing.expectEqual(@as(u8, 0x03), encoded[5]);
 }
 
-test "encode: cipher suites" {
+test "encode: cipher suites match backend capabilities" {
     var buf: [512]u8 = undefined;
     const encoded = try encode(&buf, .zero, .zero, null, &.{});
     const cs_offset = 39; // header(4) + version(2) + random(32) + session_id(1)
-    try testing.expectEqualSlices(u8, &.{ 0x00, 0x06 }, encoded[cs_offset..][0..2]);
-    try testing.expectEqualSlices(u8, &.{ 0x13, 0x01 }, encoded[cs_offset + 2 ..][0..2]);
-    try testing.expectEqualSlices(u8, &.{ 0x13, 0x03 }, encoded[cs_offset + 4 ..][0..2]);
-    try testing.expectEqualSlices(u8, &.{ 0x13, 0x02 }, encoded[cs_offset + 6 ..][0..2]);
+    try testing.expectEqual(
+        @as(u16, @intCast(supported_cipher_suites.len * 2)),
+        memx.readInt(u16, encoded[cs_offset..][0..2]),
+    );
+    inline for (supported_cipher_suites, 0..) |suite, i| {
+        try testing.expectEqual(
+            @intFromEnum(suite),
+            memx.readInt(u16, encoded[cs_offset + 2 + i * 2 ..][0..2]),
+        );
+    }
 }
 
 // RFC 8446 §4.1.2 — without compatibility mode, legacy_session_id is empty.
@@ -538,13 +558,32 @@ test "encode: legacy_session_id is empty" {
     try testing.expectEqual(@as(u8, 0), encoded[session_id_len_offset]);
 }
 
-// RFC 8446 §4.2.7 — the current client surface advertises X25519 as its
-// supported ECDHE group.
-test "encode: supported_groups contains X25519" {
+// RFC 8446 §4.2.7 — the ClientHello advertises only groups the active backend
+// and client key-share implementation support.
+test "encode: supported_groups match client capabilities" {
     var buf: [512]u8 = undefined;
     const encoded = try encode(&buf, .zero, .zero, null, &.{});
     const ext = try findExtension(encoded, .supported_groups);
-    try testing.expectEqualSlices(u8, &.{ 0x00, 0x02, 0x00, 0x1d }, ext);
+    try testing.expectEqual(
+        @as(u16, @intCast(client_group_count * 2)),
+        memx.readInt(u16, ext[0..2]),
+    );
+    var pos: usize = 2;
+    if (backend.capabilities.client_x25519) {
+        try testing.expectEqual(
+            @intFromEnum(NamedGroup.x25519),
+            memx.readInt(u16, ext[pos..][0..2]),
+        );
+        pos += 2;
+    }
+    if (backend.capabilities.client_p256) {
+        try testing.expectEqual(
+            @intFromEnum(NamedGroup.secp256r1),
+            memx.readInt(u16, ext[pos..][0..2]),
+        );
+        pos += 2;
+    }
+    try testing.expectEqual(ext.len, pos);
 }
 
 // RFC 8446 §4.2.8 — the current client surface sends one X25519 KeyShareEntry.
@@ -597,25 +636,22 @@ test "encode: supported_versions contains TLS 1.3" {
     try testing.expectEqualSlices(u8, &.{ 0x02, 0x03, 0x04 }, ext);
 }
 
+// RFC 8446 §4.2.3 — signature_algorithms advertises CertificateVerify
+// schemes the active backend supports.
+test "encode: signature_algorithms match backend capabilities" {
+    var buf: [512]u8 = undefined;
+    const encoded = try encode(&buf, .zero, .zero, null, &.{});
+    const ext = try findExtension(encoded, .signature_algorithms);
+    try expectSignatureSchemeList(ext, supported_signature_schemes);
+}
+
 // RFC 8446 §4.2.3 — signature_algorithms_cert advertises certificate-specific
 // signature algorithms separately from CertificateVerify algorithms.
-test "encode: signature_algorithms_cert contains certificate schemes" {
+test "encode: signature_algorithms_cert match backend capabilities" {
     var buf: [512]u8 = undefined;
     const encoded = try encode(&buf, .zero, .zero, null, &.{});
     const ext = try findExtension(encoded, .signature_algorithms_cert);
-    try testing.expectEqualSlices(
-        u8,
-        &.{
-            0x00, 0x0c,
-            0x04, 0x01,
-            0x05, 0x01,
-            0x06, 0x01,
-            0x04, 0x03,
-            0x05, 0x03,
-            0x08, 0x07,
-        },
-        ext,
-    );
+    try expectSignatureSchemeList(ext, supported_certificate_signature_schemes);
 }
 
 test "encode: ALPN present when protocols set" {
@@ -641,6 +677,13 @@ test "encode: rejects invalid ALPN protocols" {
         error.AlpnProtocolTooLong,
         encode(&buf, .zero, .zero, null, &.{"a" ** 256}),
     );
+}
+
+fn expectSignatureSchemeList(ext: []const u8, schemes: []const SignatureScheme) !void {
+    try testing.expectEqual(@as(u16, @intCast(schemes.len * 2)), memx.readInt(u16, ext[0..2]));
+    for (schemes, 0..) |scheme, i| {
+        try testing.expectEqual(@intFromEnum(scheme), memx.readInt(u16, ext[2 + i * 2 ..][0..2]));
+    }
 }
 
 fn rewriteClientHelloForP256(buf: []u8, encoded_len: usize, public_key: p256.PublicKey) !usize {
@@ -775,8 +818,11 @@ test "parse: rejects key share outside supported_groups" {
     const encoded = try encode(&buf, .zero, .zero, null, &.{});
     const p256_len = try rewriteClientHelloForP256(&buf, encoded.len, p256_keypair.public_key);
     const groups = try findExtension(buf[0..p256_len], .supported_groups);
-    groups[2] = 0x00;
-    groups[3] = @intFromEnum(NamedGroup.x25519);
+    var i: usize = 2;
+    while (i < groups.len) : (i += 2) {
+        groups[i] = 0x00;
+        groups[i + 1] = @intFromEnum(NamedGroup.x25519);
+    }
 
     try testing.expectError(error.IllegalParameter, parse(buf[0..p256_len]));
 }
@@ -935,12 +981,12 @@ test "parse: no shared supported group is rejected" {
     const encoded = try encode(&buf, .zero, .zero, null, &.{});
     const msg = buf[0..encoded.len];
 
-    // Rewrite every x25519 group id (0x001d) to secp384r1 (0x0018). With .zero
-    // public key bytes the only 0x001d occurrences are the supported_groups and
-    // key_share group identifiers.
+    // Rewrite every implemented group id to secp384r1 (0x0018). With .zero
+    // public key bytes these occurrences are supported_groups/key_share ids.
     var i: usize = 0;
     while (i + 1 < msg.len) : (i += 1) {
-        if (msg[i] == 0x00 and msg[i + 1] == 0x1d) msg[i + 1] = 0x18;
+        if (msg[i] == 0x00 and (msg[i + 1] == 0x1d or msg[i + 1] == 0x17))
+            msg[i + 1] = 0x18;
     }
     try testing.expectError(error.UnsupportedKeyShare, parse(msg));
 }

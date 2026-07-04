@@ -5,6 +5,37 @@ const c = @import("c_openssl.zig").openssl;
 const CipherSuite = @import("../cipher_suite.zig").CipherSuite;
 const SignatureScheme = @import("../signature_scheme.zig").SignatureScheme;
 
+pub const capabilities = struct {
+    pub const cipher_suites: []const CipherSuite = &.{
+        .aes_128_gcm_sha256,
+        .aes_256_gcm_sha384,
+        .chacha20_poly1305_sha256,
+    };
+
+    pub const client_x25519 = true;
+    pub const client_p256 = false;
+    pub const server_x25519 = true;
+    pub const server_p256 = true;
+
+    pub const certificate_verify_schemes: []const SignatureScheme = &.{
+        .ecdsa_secp256r1_sha256,
+        .ecdsa_secp384r1_sha384,
+        .rsa_pss_rsae_sha256,
+        .rsa_pss_rsae_sha384,
+    };
+
+    // Keep signature_algorithms_cert aligned with the current CertificateVerify
+    // public-key path. Ed25519 chain signatures are not advertised until ztls can
+    // also complete an Ed25519 leaf CertificateVerify under the backend seam.
+    pub const certificate_signature_schemes: []const SignatureScheme = &.{
+        .rsa_pkcs1_sha256,
+        .rsa_pkcs1_sha384,
+        .rsa_pkcs1_sha512,
+        .ecdsa_secp256r1_sha256,
+        .ecdsa_secp384r1_sha384,
+    };
+};
+
 pub const Error = error{ LibcryptoFailed, IdentityElement };
 pub const pkey = c.EVP_PKEY;
 

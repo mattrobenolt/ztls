@@ -60,6 +60,42 @@ const sign_impl = switch (active) {
     .boringssl => @compileError("BoringSSL backend not yet implemented"),
 };
 
+pub const capabilities = switch (active) {
+    .openssl => backend_openssl.capabilities,
+    .aws_lc => backend_aws_lc.capabilities,
+    .boringssl => @compileError("BoringSSL backend not yet implemented"),
+};
+
+comptime {
+    std.debug.assert(capabilities.cipher_suites.len > 0);
+    std.debug.assert(capabilities.client_x25519 or capabilities.client_p256);
+    std.debug.assert(capabilities.server_x25519 or capabilities.server_p256);
+    std.debug.assert(capabilities.certificate_verify_schemes.len > 0);
+    std.debug.assert(capabilities.certificate_signature_schemes.len > 0);
+}
+
+pub fn supportsCipherSuite(suite: CipherSuite) bool {
+    for (capabilities.cipher_suites) |supported| {
+        if (supported == suite) return true;
+    }
+    return false;
+}
+
+pub fn supportsServerX25519() bool {
+    return capabilities.server_x25519;
+}
+
+pub fn supportsServerP256() bool {
+    return capabilities.server_p256;
+}
+
+pub fn supportsCertificateVerifyScheme(scheme: SignatureScheme) bool {
+    for (capabilities.certificate_verify_schemes) |supported| {
+        if (supported == scheme) return true;
+    }
+    return false;
+}
+
 pub const x25519 = struct {
     pub const Error = x25519_impl.Error;
     pub const pkey = x25519_impl.pkey;
@@ -219,4 +255,28 @@ test "backend family is explicit" {
     try testing.expect(Backend.boringssl.isLibcryptoFamily());
     try testing.expectEqualStrings("openssl", Backend.openssl.name());
     try testing.expectEqualStrings("aws-lc", Backend.aws_lc.name());
+}
+
+// RFC 8446 §9.1 — TLS 1.3 endpoints need at least one mutually supported
+// cipher suite, key-share group, and CertificateVerify scheme to handshake.
+test "capabilities are non-empty for the active backend" {
+    try testing.expect(capabilities.cipher_suites.len > 0);
+    try testing.expect(capabilities.client_x25519 or capabilities.client_p256);
+    try testing.expect(capabilities.server_x25519 or capabilities.server_p256);
+    try testing.expect(capabilities.certificate_verify_schemes.len > 0);
+    try testing.expect(capabilities.certificate_signature_schemes.len > 0);
+}
+
+// Current client key-share plumbing is X25519-only; do not advertise P-256 until
+// ServerHello parsing and shared-secret derivation support it on the client.
+test "client group capabilities match implemented client key-share plumbing" {
+    try testing.expect(capabilities.client_x25519);
+    try testing.expect(!capabilities.client_p256);
+}
+
+test "capability helpers recognize advertised algorithms" {
+    for (capabilities.cipher_suites) |suite| try testing.expect(supportsCipherSuite(suite));
+    for (capabilities.certificate_verify_schemes) |scheme| {
+        try testing.expect(supportsCertificateVerifyScheme(scheme));
+    }
 }
