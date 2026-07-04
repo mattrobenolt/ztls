@@ -198,8 +198,7 @@ pub fn parseHelloRetryRequest(msg: []const u8) HrrParseError!HelloRetryRequest {
                 got_cookie = true;
             },
             else => {
-                if (extension_type.isGrease(ext_type))
-                    return error.UnexpectedExtension;
+                if (ext_type.isGrease()) return error.UnexpectedExtension;
                 switch (ext_type) {
                     .server_name,
                     .status_request,
@@ -437,8 +436,7 @@ pub fn parseWithSessionIdEcho(
                 got_key_share = true;
             },
             else => {
-                if (extension_type.isGrease(ext_type))
-                    return error.UnexpectedExtension;
+                if (ext_type.isGrease()) return error.UnexpectedExtension;
                 switch (ext_type) {
                     .server_name,
                     .status_request,

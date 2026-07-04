@@ -88,7 +88,7 @@ pub fn parse(msg: []const u8, offered_alpn: []const []const u8) ParseError!Parse
         if (r.pos + ext_len > extensions_end) return error.InvalidExtensionLength;
         const ext = r.assumeReadSlice(ext_len);
 
-        if (extension_type.isGrease(ext_type)) return error.UnexpectedExtension;
+        if (ext_type.isGrease()) return error.UnexpectedExtension;
         switch (ext_type) {
             .alpn => {
                 if (result.alpn_protocol != null) return error.DuplicateExtension;

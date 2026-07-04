@@ -53,12 +53,12 @@ pub const ExtensionType = enum(u16) {
     signature_algorithms_cert = 0x0032,
     key_share = 0x0033,
     _,
-};
 
-pub fn isGrease(ext_type: ExtensionType) bool {
-    const value = @intFromEnum(ext_type);
-    return (value & 0x0f0f) == 0x0a0a and (value >> 8) == (value & 0xff);
-}
+    pub fn isGrease(self: ExtensionType) bool {
+        const value = @intFromEnum(self);
+        return (value & 0x0f0f) == 0x0a0a and (value >> 8) == (value & 0xff);
+    }
+};
 
 // RFC 8446 §4.2 — an extension block must not contain the same ExtensionType
 // more than once, including unknown extension types.
@@ -73,12 +73,16 @@ test "rejectDuplicateExtensions: rejects duplicate unknown type" {
 
 // RFC 8446 §4.2 — extension blocks are vectors of type/length/value entries.
 // RFC 8701 §2 — GREASE values reserve code points of the form 0x?a?a.
-test "isGrease: detects reserved GREASE extension code points" {
-    try testing.expect(isGrease(@enumFromInt(0x0a0a)));
-    try testing.expect(isGrease(@enumFromInt(0x1a1a)));
-    try testing.expect(isGrease(@enumFromInt(0xfafa)));
-    try testing.expect(!isGrease(@enumFromInt(0x5a5b)));
-    try testing.expect(!isGrease(.heartbeat));
+test "ExtensionType.isGrease: detects reserved GREASE extension code points" {
+    const grease_0a: ExtensionType = @enumFromInt(0x0a0a);
+    const grease_1a: ExtensionType = @enumFromInt(0x1a1a);
+    const grease_fa: ExtensionType = @enumFromInt(0xfafa);
+    const unknown: ExtensionType = @enumFromInt(0x5a5b);
+    try testing.expect(grease_0a.isGrease());
+    try testing.expect(grease_1a.isGrease());
+    try testing.expect(grease_fa.isGrease());
+    try testing.expect(!unknown.isGrease());
+    try testing.expect(!ExtensionType.heartbeat.isGrease());
 }
 
 test "rejectDuplicateExtensions: rejects malformed block" {
