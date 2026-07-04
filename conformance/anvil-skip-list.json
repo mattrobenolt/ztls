@@ -34,6 +34,10 @@
       "reason": "max_fragment_length is intentionally outside the supported surface (#34)"
     },
     {
+      "pattern": "*Client does not support maximum fragment length*",
+      "reason": "max_fragment_length is intentionally outside the supported surface (#34)"
+    },
+    {
       "pattern": "*dtls12*",
       "reason": "DTLS is out of scope"
     },
@@ -66,8 +70,16 @@
       "reason": "non-X25519 named-group support is tracked separately (#6)"
     },
     {
+      "pattern": "*Target does not support more than one NamedGroup in TLS 1.3*",
+      "reason": "non-X25519 named-group support is tracked separately (#6)"
+    },
+    {
       "pattern": "*Sender restrictions are not expected to be enforced*",
       "reason": "TLS-Anvil disabled sender-restriction test; no execution evidence"
+    },
+    {
+      "pattern": "*Target does not support Record fragmentation*",
+      "reason": "TLS-Anvil client runner cannot derive this record-fragmentation case; no execution evidence"
     },
     {
       "pattern": "*configuration_options.EnableCompressionDerivationVerify*",
@@ -82,12 +94,24 @@
       "reason": "TLS-Anvil disables this client-side PSK test; PSK/resumption is deferred (#2)"
     },
     {
+      "pattern": "*PSKModeExtension is not supported*",
+      "reason": "PSK/resumption is deferred (#2)"
+    },
+    {
       "pattern": "*The DisablePsk config option is not tested.*",
       "reason": "TLS-Anvil configuration-option self-test is not ztls conformance evidence"
     },
     {
       "pattern": "*ProtocolVersion of the test is not supported by the target*",
       "reason": "TLS 1.2/DTLS/legacy-version tests are out of scope for the TLS 1.3-only runner (#9)"
+    },
+    {
+      "pattern": "*Client does not support legacy rsa signature and hash algorithms*",
+      "reason": "TLS-Anvil cannot derive this legacy-signature negative case for the TLS 1.3-only client runner (#9)"
+    },
+    {
+      "pattern": "*Specific features required for the test have not been met by the SUT for derivation parameter CIPHER_SUITE*",
+      "reason": "ServerKeyExchange is not a TLS 1.3 message; out of scope for the TLS 1.3-only runner (#9)"
     },
     {
       "pattern": "*Target does not provide Ciphersuites that are supported by the test.*",
