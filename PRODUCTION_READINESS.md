@@ -323,6 +323,17 @@ each passing the same correctness and interop gates.
   while explicit `-Dcrypto-backend=...` still wins.
 - HKDF/HMAC/SHA transcript hashing remain on `std.crypto`, matching the roadmap
   policy unless a concrete provider/FIPS requirement appears.
+- `src/crypto/backend_primitive_tests.zig` exercises the backend facade
+  directly for X25519 (RFC 7748 known vectors plus low-order/all-zero public-key
+  rejection), AEAD (round-trip, tag-corruption, and ciphertext-corruption
+  rejection for every `backend.capabilities.cipher_suites` entry, plus an RFC
+  8439 ChaCha20-Poly1305 known-answer vector), and signatures (RSA-PSS and
+  ECDSA P-256 sign/verify round-trip, tampered-signature rejection,
+  `BufferTooShort`, and key/scheme mismatch). These tests run in the normal
+  `zig build test` lane and under `just check-backend-aws-lc`, so the same
+  primitive vectors pass through both the OpenSSL and AWS-LC linked backends.
+  This is a per-primitive smoke contract, not a Wycheproof matrix or divergent
+  capability proof.
 
 **Status:** `PARTIAL`
 
@@ -361,9 +372,14 @@ each passing the same correctness and interop gates.
   client remains X25519-only and P-384/PQ/hybrid groups still need real backend
   math, variable-length key-share/shared-secret plumbing, and provider capability
   tests before aws-lc differences can be claimed honestly. *(#22)*
-- **The facade contract is not enforced by tests.** Existing tests prove OpenSSL
-  behavior, but there is no backend matrix that runs the same primitive vectors,
-  interop harnesses, and conformance shims for every enabled provider. *(#22)*
+- **The facade contract is partly enforced by primitive tests, not a full
+  matrix.** `src/crypto/backend_primitive_tests.zig` runs the same X25519,
+  AEAD, and signature primitive vectors through the backend facade under both
+  the OpenSSL and AWS-LC lanes in `zig build test` and `just check-backend-aws-lc`.
+  This is a narrow primitive smoke contract — it does not cover Wycheproof
+  boundary vectors per provider, divergent capability matrices, interop
+  harnesses per provider, or conformance shims per provider. The full backend
+  matrix remains open. *(#22)*
 
 ---
 

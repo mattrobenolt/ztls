@@ -11,4 +11,5 @@ test {
     std.testing.refAllDeclsRecursive(ztls);
     _ = @import("wycheproof.zig");
     _ = @import("interop.zig");
+    _ = @import("crypto/backend_primitive_tests.zig");
 }
