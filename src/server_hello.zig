@@ -39,12 +39,10 @@ pub const ParseError = error{
     InvalidEnumTag,
     /// Server selected HelloRetryRequest; ztls does not implement the retry path yet.
     HelloRetryRequest,
-    /// supported_versions extension does not include TLS 1.3 (0x0304).
+    /// legacy_version is SSLv3-or-lower, or supported_versions is absent.
     UnsupportedTlsVersion,
     /// Semantic protocol violation requiring illegal_parameter.
     IllegalParameter,
-    /// legacy_version is not the TLS 1.3 compatibility value 0x0303.
-    InvalidLegacyVersion,
     /// legacy_session_id_echo does not match the ClientHello legacy_session_id.
     InvalidSessionIdEcho,
     /// legacy_compression_method is not null compression.
@@ -53,7 +51,7 @@ pub const ParseError = error{
     UnsupportedKeyShareGroup,
     /// A recognized extension appeared in a message where TLS 1.3 does not allow it.
     UnexpectedExtension,
-    /// A required extension (supported_versions or key_share) was absent.
+    /// A required TLS 1.3 ServerHello extension was absent.
     MissingExtension,
 };
 
@@ -107,10 +105,10 @@ pub const HrrParseError = error{
     DuplicateExtension,
     /// A field contained an unrecognised enum value.
     InvalidEnumTag,
-    /// supported_versions extension does not contain TLS 1.3 (0x0304).
+    /// legacy_version is SSLv3-or-lower.
     UnsupportedTlsVersion,
-    /// legacy_version is not the TLS 1.3 compatibility value 0x0303.
-    InvalidLegacyVersion,
+    /// Semantic protocol violation requiring illegal_parameter.
+    IllegalParameter,
     /// legacy_compression_method is not null compression.
     InvalidCompressionMethod,
     /// A recognized extension appeared in a message where TLS 1.3 does not allow it.
@@ -139,9 +137,11 @@ pub fn parseHelloRetryRequest(msg: []const u8) HrrParseError!HelloRetryRequest {
     if (body_len != msg.len - 4) return error.InvalidHandshakeLength;
     if (body_len < 2 + 32 + 1 + 2 + 1 + 2) return error.UnexpectedEof;
 
+    // RFC 8446 §4.2.1: clients MUST ignore legacy_version when supported_versions
+    // selects TLS 1.3. Reject SSLv3-or-lower unconditionally (Appendix D.5); any
+    // value above 0x0300 is otherwise accepted.
     const legacy_version = r.assumeRead(ProtocolVersion);
     if (@intFromEnum(legacy_version) <= 0x0300) return error.UnsupportedTlsVersion;
-    if (legacy_version != .tls_1_2) return error.InvalidLegacyVersion;
     const random = r.assumeReadSlice(32);
     if (!mem.eql(u8, random, &hello_retry_request_random)) return error.NotHelloRetryRequest;
 
@@ -176,7 +176,9 @@ pub fn parseHelloRetryRequest(msg: []const u8) HrrParseError!HelloRetryRequest {
                 if (got_supported_versions) return error.DuplicateExtension;
                 if (ext_len != 2) return error.InvalidExtensionLength;
                 const version = r.assumeRead(ProtocolVersion);
-                if (version != .tls_1_3) return error.UnsupportedTlsVersion;
+                // RFC 8446 §4.2.1: HRR supported_versions MUST select TLS 1.3;
+                // any other value is a protocol violation.
+                if (version != .tls_1_3) return error.IllegalParameter;
                 got_supported_versions = true;
             },
             // key_share: in HRR carries a single NamedGroup (selected_group).
@@ -370,13 +372,12 @@ pub fn parseWithSessionIdEcho(
     if (body_len != msg.len - 4) return error.InvalidHandshakeLength;
     if (body_len < 2 + 32 + 1 + 2 + 1 + 2) return error.UnexpectedEof;
 
-    // ServerHello body (RFC 8446 §4.1.3). HelloRetryRequest is encoded as a
-    // ServerHello with a fixed Random value; detect it explicitly so callers
-    // get a clean unsupported-feature error instead of a misleading key_share
-    // parse failure. RFC 8446 §4.1.3.
+    // ServerHello body (RFC 8446 §4.1.3). Reject SSLv3-or-lower unconditionally
+    // (Appendix D.5). RFC 8446 §4.2.1 requires clients to ignore legacy_version
+    // when supported_versions selects TLS 1.3; the version field is validated
+    // after extensions are parsed.
     const legacy_version = r.assumeRead(ProtocolVersion);
     if (@intFromEnum(legacy_version) <= 0x0300) return error.UnsupportedTlsVersion;
-    if (legacy_version != .tls_1_2) return error.InvalidLegacyVersion;
     const random = r.assumeReadSlice(32);
     if (mem.eql(u8, random, &hello_retry_request_random)) return error.HelloRetryRequest;
 
@@ -413,10 +414,9 @@ pub fn parseWithSessionIdEcho(
                 if (got_supported_versions) return error.DuplicateExtension;
                 if (ext_len != 2) return error.InvalidExtensionLength;
                 const version = r.assumeRead(ProtocolVersion);
-                if (version != .tls_1_3) {
-                    if (hasDowngradeSentinel(random)) return error.IllegalParameter;
-                    return error.UnsupportedTlsVersion;
-                }
+                // RFC 8446 §4.2.1: ServerHello supported_versions MUST select
+                // TLS 1.3; any other value is a protocol violation.
+                if (version != .tls_1_3) return error.IllegalParameter;
                 got_supported_versions = true;
             },
             // key_share (RFC 8446 §4.2.8)
@@ -464,8 +464,19 @@ pub fn parseWithSessionIdEcho(
     }
     if (r.pos != extensions_end) return error.InvalidExtensionLength;
 
-    if (!got_supported_versions and hasDowngradeSentinel(random)) return error.IllegalParameter;
-    if (!got_supported_versions or !got_key_share) return error.MissingExtension;
+    if (!got_supported_versions) {
+        // RFC 8446 §4.1.3: without supported_versions this is a legacy ServerHello
+        // (TLS 1.2 or below) — we refuse it. Check the downgrade sentinel first:
+        // a TLS 1.3-capable server downgrades by setting it, and RFC 8446 §4.1.3
+        // requires clients to abort with illegal_parameter in that case, not
+        // protocol_version.
+        if (hasDowngradeSentinel(random)) return error.IllegalParameter;
+        return error.UnsupportedTlsVersion;
+    }
+    // RFC 8446 §4.1.3: reject downgrade sentinel even when TLS 1.3 is
+    // negotiated via supported_versions.
+    if (hasDowngradeSentinel(random)) return error.IllegalParameter;
+    if (!got_key_share) return error.MissingExtension;
 
     return .{
         .cipher_suite = cipher_suite,
@@ -538,8 +549,10 @@ test "parse: rejects HelloRetryRequest" {
     try testing.expectError(error.HelloRetryRequest, parse(&msg));
 }
 
-test "parse: missing extensions" {
-    // Minimal valid ServerHello with empty extensions block.
+// RFC 8446 §4.2.1 — without supported_versions the ServerHello is a legacy
+// TLS 1.2 (or below) message; ztls only speaks TLS 1.3.
+test "parse: missing extensions / no supported_versions yields UnsupportedTlsVersion" {
+    // Minimal ServerHello with empty extensions block — no supported_versions.
     const msg = [_]u8{
         0x02, 0x00, 0x00, 0x28, // type + body length = 40
         0x03, 0x03, // legacy_version
@@ -550,7 +563,7 @@ test "parse: missing extensions" {
             0x00, // compression
             0x00, 0x00, // extensions: empty
         };
-    try testing.expectError(error.MissingExtension, parse(&msg));
+    try testing.expectError(error.UnsupportedTlsVersion, parse(&msg));
 }
 
 test "parse: rejects mismatched handshake length" {
@@ -642,12 +655,13 @@ test "parse: rejects key_share for unsupported group" {
     try testing.expectError(error.UnsupportedKeyShareGroup, parse(&msg));
 }
 
-test "parse: unsupported TLS version" {
-    // Patch supported_versions value from 0x0304 to 0x0303
+// RFC 8446 §4.2.1 — supported_versions must select TLS 1.3; any other value is
+// a protocol violation requiring illegal_parameter.
+test "parse: unsupported TLS version in supported_versions is illegal_parameter" {
     var msg = server_hello_rfc8448[0..server_hello_rfc8448.len].*;
     msg[msg.len - 2] = 0x03;
-    msg[msg.len - 1] = 0x03;
-    try testing.expectError(error.UnsupportedTlsVersion, parse(&msg));
+    msg[msg.len - 1] = 0x03; // supported_versions = TLS 1.2 (0x0303)
+    try testing.expectError(error.IllegalParameter, parse(&msg));
 }
 
 // RFC 8446 §4.1.3 — TLS 1.3 clients abort if a TLS 1.2-or-below ServerHello
@@ -669,12 +683,52 @@ test "parse: rejects TLS 1.1 downgrade sentinel" {
     try testing.expectError(error.IllegalParameter, parse(&msg));
 }
 
-// RFC 8446 §4.1.3 — TLS 1.3 ServerHello legacy_version is frozen at 0x0303.
-test "parse: rejects invalid legacy version" {
+// RFC 8446 §4.1.3 — TLS 1.3 clients must reject the downgrade sentinel even
+// when supported_versions selects TLS 1.3, guarding against a MITM stripping
+// the supported_versions extension on the wire.
+test "parse: rejects downgrade sentinel when supported_versions selects TLS 1.3" {
+    var msg = server_hello_rfc8448[0..server_hello_rfc8448.len].*;
+    // supported_versions remains TLS 1.3 (0x0304); inject tls12 downgrade sentinel.
+    msg[30..38].* = downgrade_tls12;
+    try testing.expectError(error.IllegalParameter, parse(&msg));
+}
+
+// RFC 8446 §4.2.1 — when supported_versions selects TLS 1.3, clients MUST
+// ignore legacy_version; any value above SSLv3 (0x0300) is acceptable.
+test "parse: accepts non-0x0303 legacy_version when supported_versions selects TLS 1.3" {
     var msg = server_hello_rfc8448[0..server_hello_rfc8448.len].*;
     msg[4] = 0x03;
-    msg[5] = 0x01;
-    try testing.expectError(error.InvalidLegacyVersion, parse(&msg));
+    msg[5] = 0x01; // legacy_version = TLS 1.0 (0x0301)
+    const sh = try parse(&msg);
+    try testing.expectEqual(.aes_128_gcm_sha256, sh.cipher_suite);
+}
+
+// RFC 8446 §4.1.3 — when supported_versions is absent and the Random carries
+// a downgrade sentinel, abort with illegal_parameter (not protocol_version),
+// because a TLS 1.3-capable server signalled the downgrade.
+test "parse: no supported_versions + downgrade sentinel yields IllegalParameter" {
+    var msg: [84]u8 = undefined;
+    @memcpy(&msg, server_hello_rfc8448[0..84]);
+    msg[3] = 0x50; // body_len: 86 → 80 (strip 6-byte supported_versions)
+    msg[42] = 0x00;
+    msg[43] = 0x28; // extensions_len: 46 → 40
+    msg[30..38].* = downgrade_tls12; // inject TLS 1.2 downgrade sentinel into Random tail
+    try testing.expectError(error.IllegalParameter, parse(&msg));
+}
+
+// RFC 8446 §4.2.1 — a ServerHello that omits supported_versions is a legacy
+// TLS 1.2 (or below) message; clients that speak only TLS 1.3 must abort with
+// protocol_version (UnsupportedTlsVersion here).
+test "parse: rejects ServerHello without supported_versions as legacy" {
+    // Strip the supported_versions extension from server_hello_rfc8448 by
+    // copying only the first 84 bytes (omits the last 6 = supported_versions)
+    // and adjusting body_len and extensions_len accordingly.
+    var msg: [84]u8 = undefined;
+    @memcpy(&msg, server_hello_rfc8448[0..84]);
+    msg[3] = 0x50; // body_len: 86 → 80 (6 bytes trimmed)
+    msg[42] = 0x00;
+    msg[43] = 0x28; // extensions_len: 46 → 40 (6 bytes trimmed)
+    try testing.expectError(error.UnsupportedTlsVersion, parse(&msg));
 }
 
 // RFC 8446 Appendix D.5 — Hello legacy_version values at or below SSLv3 abort
@@ -801,21 +855,24 @@ test "parseHelloRetryRequest: rejects wrong type" {
     try testing.expectError(error.InvalidHandshakeType, parseHelloRetryRequest(&msg));
 }
 
-// RFC 8446 §4.1.4 — rejects unsupported TLS version in HRR.
+// RFC 8446 §4.2.1 — supported_versions in HRR must select TLS 1.3; any other
+// value is a semantic protocol violation requiring illegal_parameter.
 test "parseHelloRetryRequest: rejects TLS 1.2 in supported_versions" {
     var msg = hrr_rfc8448[0..hrr_rfc8448.len].*;
     // Last 2 bytes are the version in supported_versions
     msg[msg.len - 2] = 0x03;
-    msg[msg.len - 1] = 0x03;
-    try testing.expectError(error.UnsupportedTlsVersion, parseHelloRetryRequest(&msg));
+    msg[msg.len - 1] = 0x03; // supported_versions = TLS 1.2 (0x0303)
+    try testing.expectError(error.IllegalParameter, parseHelloRetryRequest(&msg));
 }
 
-// RFC 8446 §4.1.4 — HRR uses the ServerHello legacy_version field.
-test "parseHelloRetryRequest: rejects invalid legacy version" {
+// RFC 8446 §4.2.1 — when supported_versions selects TLS 1.3, clients MUST
+// ignore legacy_version; any value above SSLv3 (0x0300) is acceptable in HRR.
+test "parseHelloRetryRequest: ignores non-0x0303 legacy_version" {
     var msg = hrr_rfc8448[0..hrr_rfc8448.len].*;
     msg[4] = 0x03;
-    msg[5] = 0x01;
-    try testing.expectError(error.InvalidLegacyVersion, parseHelloRetryRequest(&msg));
+    msg[5] = 0x01; // legacy_version = TLS 1.0 (0x0301)
+    const hrr = try parseHelloRetryRequest(&msg);
+    try testing.expectEqual(.aes_128_gcm_sha256, hrr.cipher_suite);
 }
 
 // RFC 8446 Appendix D.5 — HRR is encoded as ServerHello, so the same

@@ -53,15 +53,17 @@ The authoritative readiness state remains `PRODUCTION_READINESS.md`.
 | Malformed ServerHello length/body | Parser error; caller can emit `decode_error` | `ClientHandshake.zig`: `handleRecord: malformed ServerHello is rejected`; `server_hello.zig` parser tests | covered |
 | ServerHello unknown cipher-suite code point | `error.InvalidEnumTag`, not enum-unreachable panic | `server_hello.zig`: `parse: rejects unknown cipher suite`; `parseHelloRetryRequest: rejects unknown cipher suite` | covered |
 | ServerHello HelloRetryRequest sentinel | `error.HelloRetryRequest` because HRR is not implemented yet | `server_hello.zig`: `parse: rejects HelloRetryRequest`; HRR support tracked by #1 | covered/out-of-scope |
-| ServerHello missing required extensions | `error.MissingExtension` | `server_hello.zig`: `parse: missing extensions` | covered |
+| ServerHello `supported_versions` absent | `error.UnsupportedTlsVersion` (treated as legacy TLS 1.2-or-below) | `server_hello.zig`: `parse: missing extensions / no supported_versions yields UnsupportedTlsVersion`; `parse: rejects ServerHello without supported_versions as legacy` | covered |
+| ServerHello `supported_versions` selects non-TLS-1.3 | `error.IllegalParameter` | `server_hello.zig`: `parse: unsupported TLS version in supported_versions is illegal_parameter` | covered |
+| ServerHello `legacy_version` ≤ SSLv3 (0x0300) | `error.UnsupportedTlsVersion` | `server_hello.zig`: `parse: rejects SSLv3-or-lower legacy version` | covered |
+| ServerHello `legacy_version` > 0x0300 when `supported_versions` selects TLS 1.3 | Ignored per RFC 8446 §4.2.1 | `server_hello.zig`: `parse: accepts non-0x0303 legacy_version when supported_versions selects TLS 1.3` | covered |
+| ServerHello downgrade sentinel in random | `error.IllegalParameter` (checked both with and without `supported_versions`) | `server_hello.zig`: `parse: rejects TLS 1.2 downgrade sentinel`, `parse: rejects TLS 1.1 downgrade sentinel`, `parse: rejects downgrade sentinel when supported_versions selects TLS 1.3`, `parse: no supported_versions + downgrade sentinel yields IllegalParameter` | covered |
+| ServerHello missing required extensions (`key_share` absent, `supported_versions` present) | `error.MissingExtension` | Parser path exists in `server_hello.zig` after `supported_versions` has selected TLS 1.3 | partial — no dedicated key_share-absent unit test |
 | ServerHello duplicate singleton extensions | `error.DuplicateExtension` | `server_hello.zig`: duplicate supported_versions/key_share tests | covered |
-| ServerHello unsupported `supported_versions` value | `error.UnsupportedTlsVersion` | `server_hello.zig`: `parse: unsupported TLS version` | covered |
-| ServerHello invalid `legacy_version` | `error.InvalidLegacyVersion` | `server_hello.zig`: `parse: rejects invalid legacy version` | covered |
 | ServerHello mismatched `legacy_session_id_echo` | `error.InvalidSessionIdEcho` | `server_hello.zig`: `parse: rejects mismatched session id echo`; `ClientHandshake.zig`: `processServerHello: rejects mismatched session id echo` | covered |
 | ServerHello non-zero `legacy_compression_method` | `error.InvalidCompressionMethod` | `server_hello.zig`: `parse: rejects non-zero compression method` | covered |
 | ServerHello unsupported or malformed key_share group/length | `error.UnsupportedKeyShareGroup` | Parser path exists | partial — no dedicated unit test |
 | ServerHello legacy session id longer than 32 bytes | Not explicitly capped by parser | none | gap |
-| ServerHello downgrade sentinel in random | Not explicitly checked | none | gap |
 | Server selects a suite outside the client's offered list | Client currently offers the supported set and does not track a narrowed offer set | none | gap if client-side suite configurability is added |
 | Encrypted flight message arrives out of order | `error.UnexpectedMessage`; caller can emit `unexpected_message` | `ClientHandshake.zig`: `processFlight: rejects Finished before EncryptedExtensions` | covered |
 | Encrypted application data before handshake completion | `error.UnexpectedRecord`; caller can emit `unexpected_message` | `ClientHandshake.zig`: `handleRecord: encrypted application data during server flight is rejected` | covered |

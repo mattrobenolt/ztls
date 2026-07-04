@@ -364,7 +364,6 @@ pub fn alertForError(err: anyerror) alert.Description {
         error.DuplicateExtension,
         error.DuplicateKeyShare,
         error.InvalidCompressionMethod,
-        error.InvalidLegacyVersion,
         error.UnexpectedCertificateRequestContext,
         error.UnexpectedExtension,
         error.IllegalParameter,
