@@ -332,9 +332,10 @@ pub const Parsed = struct {
         }
     }
 
+    const PermittedConstraint = enum { none_seen, seen_unmatched, seen_matched };
+
     const ConstraintState = struct {
-        permitted_seen: bool = false,
-        permitted_match: bool = false,
+        permitted: PermittedConstraint = .none_seen,
     };
 
     fn verifyNameConstraintName(ca: Parsed, name: NameConstraintName) NameConstraintError!void {
@@ -357,8 +358,7 @@ pub const Parsed = struct {
             }
         }
 
-        if (state.permitted_seen and !state.permitted_match)
-            return error.CertificateNameConstraintViolation;
+        if (state.permitted == .seen_unmatched) return error.CertificateNameConstraintViolation;
     }
 
     const ConstraintKind = enum { permitted, excluded };
@@ -387,9 +387,10 @@ pub const Parsed = struct {
 
             const matches = try nameMatchesConstraint(name, constraint);
             switch (kind) {
-                .permitted => {
-                    state.permitted_seen = true;
-                    state.permitted_match = state.permitted_match or matches;
+                .permitted => if (matches) {
+                    state.permitted = .seen_matched;
+                } else if (state.permitted == .none_seen) {
+                    state.permitted = .seen_unmatched;
                 },
                 .excluded => if (matches) return error.CertificateNameConstraintViolation,
             }

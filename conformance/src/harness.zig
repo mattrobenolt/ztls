@@ -50,7 +50,7 @@ pub fn readRecord(stream: net.Stream, buf: []u8) ![]u8 {
     return buf[0 .. ztls.frame.header_len + len];
 }
 
-pub fn sendBestEffortCloseNotify(hs: anytype, stream: net.Stream, out: []u8) void {
+pub fn sendBestEffortCloseNotify(hs: *ztls.ServerHandshake, stream: net.Stream, out: []u8) void {
     const alert_record = hs.sendAlert(.close_notify, out) catch return;
     stream.writeAll(alert_record) catch return;
 }

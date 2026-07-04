@@ -13,6 +13,24 @@ pub const max_post_handshake_messages = 16;
 pub const SendError = RecordLayer.EncryptError || error{PendingWrite};
 pub const KeyUpdateSender = enum { client, server };
 
+fn requireHandshakeShape(comptime T: type) void {
+    const Ptr = switch (@typeInfo(T)) {
+        .pointer => |ptr| blk: {
+            if (ptr.size != .one or ptr.is_const)
+                @compileError("handshake helpers expect a mutable *Handshake pointer");
+            break :blk ptr;
+        },
+        else => @compileError("handshake helpers expect a mutable *Handshake pointer"),
+    };
+    inline for (&.{ "state", "pending_write", "tx" }) |field| {
+        if (!@hasField(Ptr.child, field))
+            @compileError("handshake helpers expect state, pending_write, and tx fields");
+    }
+    // ClientHandshake stores suite state in `suite`; ServerHandshake stores it
+    // in `suite_state`. sendKeyUpdate keeps that distinction local instead of
+    // making the shared shape check reject one side.
+}
+
 pub fn validateChangeCipherSpec(fragment: []const u8) error{UnexpectedRecord}!void {
     if (fragment.len != 1 or fragment[0] != 0x01) return error.UnexpectedRecord;
 }
@@ -29,6 +47,7 @@ pub fn decryptProtected(
 
 // ziglint-ignore: Z015 -- SendError is public; ziglint does not follow imported error-set aliases.
 pub fn sendApplicationData(self: anytype, plaintext: []const u8, out: []u8) SendError![]u8 {
+    comptime requireHandshakeShape(@TypeOf(self));
     assert(self.state == .connected);
     if (self.pending_write.isPending()) return error.PendingWrite;
     const record = try self.tx.encrypt(.application_data, plaintext, out);
@@ -42,6 +61,7 @@ pub fn sendPreparedApplicationData(
     plaintext_len: usize,
     out: []u8,
 ) SendError![]u8 {
+    comptime requireHandshakeShape(@TypeOf(self));
     assert(self.state == .connected);
     if (self.pending_write.isPending()) return error.PendingWrite;
     const record = try self.tx.encryptPrepared(.application_data, plaintext_len, out);
@@ -56,6 +76,7 @@ pub fn sendKeyUpdate(
     out: []u8,
     request: KeyUpdateRequest,
 ) SendError![]u8 {
+    comptime requireHandshakeShape(@TypeOf(self));
     assert(self.state == .connected);
     if (self.pending_write.isPending()) return error.PendingWrite;
     var msg: [5]u8 = undefined;

@@ -65,39 +65,43 @@ const usage =
 /// the protocol depends on.
 const LockedWriter = struct {
     mutex: Thread.Mutex = .{},
-    file: fs.File.Writer,
+    writer: *std.Io.Writer,
 
-    fn init(file: fs.File, buffer: []u8) LockedWriter {
-        return .{ .file = .init(file, buffer) };
+    fn init(writer: *std.Io.Writer) LockedWriter {
+        return .{ .writer = writer };
     }
 
     fn print(self: *LockedWriter, comptime fmt: []const u8, args: anytype) void {
         self.mutex.lock();
         defer self.mutex.unlock();
         // ziglint-ignore: Z026
-        self.file.interface.print(fmt, args) catch {};
+        self.writer.print(fmt, args) catch {};
     }
 
     fn writeAll(self: *LockedWriter, bytes: []const u8) void {
         self.mutex.lock();
         defer self.mutex.unlock();
         // ziglint-ignore: Z026
-        self.file.interface.writeAll(bytes) catch {};
+        self.writer.writeAll(bytes) catch {};
     }
 
     fn flush(self: *LockedWriter) void {
         self.mutex.lock();
         defer self.mutex.unlock();
         // ziglint-ignore: Z026
-        self.file.interface.flush() catch {};
+        self.writer.flush() catch {};
     }
 };
 
 var stdout_buf: [512]u8 = undefined;
-var stdout: LockedWriter = .init(.stdout(), &stdout_buf);
+// Declaration order matters: LockedWriter borrows the File.Writer interface.
+var stdout_writer: fs.File.Writer = .init(.stdout(), &stdout_buf);
+var stdout: LockedWriter = .init(&stdout_writer.interface);
 
 var stderr_buf: [512]u8 = undefined;
-var stderr: LockedWriter = .init(.stderr(), &stderr_buf);
+// Declaration order matters: LockedWriter borrows the File.Writer interface.
+var stderr_writer: fs.File.Writer = .init(.stderr(), &stderr_buf);
+var stderr: LockedWriter = .init(&stderr_writer.interface);
 
 // -- Connection: socket + epoll + ztls write outbox --------------------------
 
@@ -166,17 +170,18 @@ fn setNonBlocking(fd: posix.fd_t) !void {
     _ = try posix.fcntl(fd, linux.F.SETFL, flags | linux.SOCK.NONBLOCK);
 }
 
-/// Drain the socket into the record buffer until it would block. Returns false
-/// when the peer has closed (recv returned 0).
-fn fillRecordBuffer(fd: posix.fd_t, rb: *ztls.RecordBuffer) !bool {
+const FillResult = enum { more, closed };
+
+/// Drain the socket into the record buffer until it would block.
+fn fillRecordBuffer(fd: posix.fd_t, rb: *ztls.RecordBuffer) !FillResult {
     while (true) {
         const writable = rb.writable();
-        if (writable.len == 0) return true;
+        if (writable.len == 0) return .more;
         const n = posix.recv(fd, writable, 0) catch |err| switch (err) {
-            error.WouldBlock => return true,
+            error.WouldBlock => return .more,
             else => return err,
         };
-        if (n == 0) return false;
+        if (n == 0) return .closed;
         rb.advance(n);
     }
 }
@@ -403,7 +408,7 @@ fn serverRun(
             }
             if (!connected or event.data.fd != conn.fd) continue;
             if (event.events & linux.EPOLL.IN != 0) {
-                if (!try fillRecordBuffer(conn.fd, &rb)) break :outer;
+                if (try fillRecordBuffer(conn.fd, &rb) == .closed) break :outer;
             }
             if (event.events & linux.EPOLL.OUT != 0 and conn.writeBlocked()) {
                 try conn.flush(&hs);
@@ -502,7 +507,7 @@ fn clientRun(arena: Allocator, args: *const Args, port: u16) !void {
                 continue;
             }
             if (event.events & linux.EPOLL.IN != 0) {
-                if (!try fillRecordBuffer(fd, &rb)) break :outer;
+                if (try fillRecordBuffer(fd, &rb) == .closed) break :outer;
             }
             if (event.events & linux.EPOLL.OUT != 0 and conn.writeBlocked()) {
                 try conn.flush(&hs);

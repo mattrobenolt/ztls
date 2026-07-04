@@ -82,11 +82,31 @@ fn requireHandshakePointer(comptime T: type) void {
     }
 }
 
+fn requireWriter(comptime Writer: type) void {
+    if (!@hasDecl(Writer, "write"))
+        @compileError("Outbox writer must expose write([]const u8) !usize");
+    const write_info = @typeInfo(@TypeOf(Writer.write)).@"fn";
+    if (write_info.params.len != 2)
+        @compileError("Outbox writer write method must take self and []const u8");
+    const bytes_type = write_info.params[1].type orelse
+        @compileError("Outbox writer write method must take []const u8");
+    if (bytes_type != []const u8)
+        @compileError("Outbox writer write method must take []const u8");
+    const write_return = write_info.return_type orelse
+        @compileError("Outbox writer write method must return !usize");
+    switch (@typeInfo(write_return)) {
+        .error_union => |err| if (err.payload != usize)
+            @compileError("Outbox writer write method must return !usize"),
+        else => @compileError("Outbox writer write method must return !usize"),
+    }
+}
+
 fn WriteErrorSet(comptime WriterParam: type) type {
     const Writer = switch (@typeInfo(WriterParam)) {
         .pointer => |ptr| ptr.child,
         else => WriterParam,
     };
+    comptime requireWriter(Writer);
     const write_return = @typeInfo(@TypeOf(Writer.write)).@"fn".return_type.?;
     return @typeInfo(write_return).error_union.error_set;
 }
