@@ -2,7 +2,7 @@
 name: slice-worker
 description: Narrow implementation worker for approved ztls issue slices; writes code, tests, and docs only within an explicit acceptance contract.
 tools: bash, grep, find, ls, read, edit, write
-model: fireworks/accounts/fireworks/models/deepseek-v4-pro
+model: fireworks/accounts/fireworks/models/glm-5p2
 thinking: medium
 systemPromptMode: replace
 inheritProjectContext: true

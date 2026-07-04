@@ -2,7 +2,7 @@
 name: implementation-reviewer
 description: Practical implementation reviewer for ztls Zig code, APIs, tests, invariants, and integration risks.
 tools: bash, grep, find, ls, read
-model: fireworks/accounts/fireworks/models/deepseek-v4-pro
+model: fireworks/accounts/fireworks/models/glm-5p2
 thinking: medium
 systemPromptMode: replace
 inheritProjectContext: true
