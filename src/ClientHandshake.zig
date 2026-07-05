@@ -9,6 +9,7 @@ const crypto = std.crypto;
 const Sha256 = crypto.hash.sha2.Sha256;
 const Sha384 = crypto.hash.sha2.Sha384;
 const testing = std.testing;
+const fuzz_compat = @import("fuzz_compat.zig");
 const mem = std.mem;
 const base64 = std.base64.standard.Decoder;
 
@@ -2703,7 +2704,7 @@ fn fuzzHandshakeReader(_: void, input: []const u8) anyerror!void {
 }
 
 test "fuzz: HandshakeReader handles arbitrary input" {
-    try testing.fuzz({}, fuzzHandshakeReader, .{});
+    try fuzz_compat.fuzzBytes(fuzzHandshakeReader, {}, .{});
 }
 
 // Drive an arbitrary decrypted flight through the state machine from wait_ee.
@@ -2715,5 +2716,5 @@ fn fuzzProcessFlight(_: void, input: []const u8) anyerror!void {
 }
 
 test "fuzz: processFlight handles arbitrary decrypted bytes" {
-    try testing.fuzz({}, fuzzProcessFlight, .{});
+    try fuzz_compat.fuzzBytes(fuzzProcessFlight, {}, .{});
 }

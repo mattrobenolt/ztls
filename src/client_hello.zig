@@ -4,6 +4,7 @@
 const std = @import("std");
 const assert = std.debug.assert;
 const testing = std.testing;
+const fuzz_compat = @import("fuzz_compat.zig");
 const mem = std.mem;
 const meta = std.meta;
 
@@ -1223,5 +1224,5 @@ test "fuzz: parse handles arbitrary input" {
     // structurally plausible baseline and can explore truncation / mutation.
     var seed_buf: [512]u8 = undefined;
     const seed = encode(&seed_buf, .zero, .zero, null, &.{}) catch &seed_buf;
-    try testing.fuzz({}, fuzzParse, .{ .corpus = &.{seed} });
+    try fuzz_compat.fuzzBytes(fuzzParse, {}, .{ .corpus = &.{seed} });
 }

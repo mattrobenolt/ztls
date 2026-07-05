@@ -6,6 +6,7 @@
 /// RFC 8446 §4.6.1.
 const std = @import("std");
 const testing = std.testing;
+const fuzz_compat = @import("fuzz_compat.zig");
 
 const extension_type = @import("extension_type.zig");
 const ExtensionType = extension_type.ExtensionType;
@@ -216,5 +217,5 @@ fn fuzzParse(_: void, input: []const u8) anyerror!void {
 }
 
 test "fuzz: parse handles arbitrary input" {
-    try testing.fuzz({}, fuzzParse, .{});
+    try fuzz_compat.fuzzBytes(fuzzParse, {}, .{});
 }

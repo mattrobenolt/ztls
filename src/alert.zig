@@ -3,6 +3,7 @@
 //! RFC 8446 §6
 const std = @import("std");
 const testing = std.testing;
+const fuzz_compat = @import("fuzz_compat.zig");
 
 const frame = @import("frame.zig");
 
@@ -139,5 +140,5 @@ fn fuzzParse(_: void, input: []const u8) anyerror!void {
 }
 
 test "fuzz: parse handles arbitrary input" {
-    try testing.fuzz({}, fuzzParse, .{ .corpus = &.{ &.{ 1, 0 }, &.{ 2, 10 } } });
+    try fuzz_compat.fuzzBytes(fuzzParse, {}, .{ .corpus = &.{ &.{ 1, 0 }, &.{ 2, 10 } } });
 }

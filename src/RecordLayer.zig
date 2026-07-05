@@ -5,6 +5,7 @@
 const std = @import("std");
 const mem = std.mem;
 const testing = std.testing;
+const fuzz_compat = @import("fuzz_compat.zig");
 const math = std.math;
 
 const aead_mod = @import("aead.zig");
@@ -514,5 +515,5 @@ test "fuzz: decrypt handles arbitrary input" {
         &.{ 23, 0x03, 0x03, 0x00, 0x04 },
         &tag_only,
     };
-    try testing.fuzz({}, fuzzDecrypt, .{ .corpus = corpus });
+    try fuzz_compat.fuzzBytes(fuzzDecrypt, {}, .{ .corpus = corpus });
 }

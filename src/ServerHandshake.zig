@@ -10,6 +10,7 @@ const Sha256 = std.crypto.hash.sha2.Sha256;
 const Sha384 = std.crypto.hash.sha2.Sha384;
 const mem = std.mem;
 const testing = std.testing;
+const fuzz_compat = @import("fuzz_compat.zig");
 
 const aead = @import("aead.zig");
 const alert = @import("alert.zig");
@@ -2729,7 +2730,7 @@ fn fuzzHandleRecord(_: void, input: []const u8) anyerror!void {
 
 // RFC 8446 Appendix A — malformed server inputs are covered by fuzzing.
 test "fuzz: ServerHandshake.handleRecord rejects arbitrary input" {
-    try testing.fuzz({}, fuzzHandleRecord, .{});
+    try fuzz_compat.fuzzBytes(fuzzHandleRecord, {}, .{});
 }
 
 // RFC 8446 Appendix A — connected-state encrypted dispatch must reject
@@ -2769,7 +2770,7 @@ test "fuzz: connected ServerHandshake.handleRecord rejects arbitrary input" {
         &.{},
         &.{ 23, 0x03, 0x03, 0x00, 0x04 },
     };
-    try testing.fuzz({}, fuzzConnectedHandleRecord, .{ .corpus = corpus });
+    try fuzz_compat.fuzzBytes(fuzzConnectedHandleRecord, {}, .{ .corpus = corpus });
 }
 
 test "application data: server sends and receives" {

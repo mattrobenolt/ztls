@@ -3,6 +3,7 @@
 //! RFC 8446 §4.1.3
 const std = @import("std");
 const testing = std.testing;
+const fuzz_compat = @import("fuzz_compat.zig");
 const mem = std.mem;
 
 const CipherSuite = @import("root.zig").CipherSuite;
@@ -833,7 +834,7 @@ fn fuzzParse(_: void, input: []const u8) anyerror!void {
 }
 
 test "fuzz: parse handles arbitrary input" {
-    try testing.fuzz({}, fuzzParse, .{ .corpus = &.{server_hello_rfc8448} });
+    try fuzz_compat.fuzzBytes(fuzzParse, {}, .{ .corpus = &.{server_hello_rfc8448} });
 }
 
 // ----------------------------------------------------------------------------
@@ -1034,5 +1035,5 @@ fn fuzzParseHrr(_: void, input: []const u8) anyerror!void {
 }
 
 test "fuzz: parseHelloRetryRequest handles arbitrary input" {
-    try testing.fuzz({}, fuzzParseHrr, .{ .corpus = &.{hrr_rfc8448} });
+    try fuzz_compat.fuzzBytes(fuzzParseHrr, {}, .{ .corpus = &.{hrr_rfc8448} });
 }

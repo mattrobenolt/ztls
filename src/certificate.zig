@@ -4,6 +4,7 @@
 const std = @import("std");
 const Sha256 = std.crypto.hash.sha2.Sha256;
 const testing = std.testing;
+const fuzz_compat = @import("fuzz_compat.zig");
 const fs = std.fs;
 
 const ArrayBuffer = @import("array_buffer.zig").ArrayBuffer;
@@ -1141,5 +1142,7 @@ fn fuzzParse(_: void, input: []const u8) anyerror!void {
 
 test "fuzz: parse handles arbitrary input" {
     var buf: [1024]u8 = undefined;
-    try testing.fuzz({}, fuzzParse, .{ .corpus = &.{buildCertMsg(&buf, fixture_cert_der)} });
+    try fuzz_compat.fuzzBytes(fuzzParse, {}, .{
+        .corpus = &.{buildCertMsg(&buf, fixture_cert_der)},
+    });
 }

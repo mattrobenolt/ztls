@@ -16,6 +16,7 @@
 const std = @import("std");
 const mem = std.mem;
 const testing = std.testing;
+const fuzz_compat = @import("fuzz_compat.zig");
 const assert = std.debug.assert;
 
 const ArrayBuffer = @import("array_buffer.zig").ArrayBuffer;
@@ -196,5 +197,5 @@ test "fuzz: parseHeader handles arbitrary input" {
         // empty
         &.{},
     };
-    try testing.fuzz({}, fuzzParseHeader, .{ .corpus = corpus });
+    try fuzz_compat.fuzzBytes(fuzzParseHeader, {}, .{ .corpus = corpus });
 }
