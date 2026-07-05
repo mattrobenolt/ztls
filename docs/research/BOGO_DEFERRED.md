@@ -46,7 +46,7 @@ The honest path has fixed costs that are large relative to the signal it adds be
 - Strict provenance and report gating equivalent to the TLS-Anvil report path: no partial-output acceptance evidence.
 - A manual/scheduled workflow outside PR `just ci`.
 
-The prior blocker around PEM/PKCS#8 key loading has been reduced by the libcrypto signer path; the remaining runner, fork, shim, and workflow maintenance cost has not. TLS-Anvil and tlsfuzzer carry the higher-value conformance work first: accepted TLS-Anvil client execution (#48), both-endpoint TLS-Anvil accounting (#49), and the existing tlsfuzzer lockstep gate. BoGo's unique value becomes more compelling after those rows stop being the main external-runner debt, or if BoringSSL-specific compatibility becomes a product target.
+The prior blocker around PEM/PKCS#8 key loading has been reduced by the libcrypto signer path; the remaining runner, fork, shim, and workflow maintenance cost has not. TLS-Anvil and tlsfuzzer carry the higher-value conformance work first: the now-closed TLS-Anvil client execution (#48), now-closed both-endpoint TLS-Anvil accounting (#49), and the existing tlsfuzzer lockstep gate. BoGo's unique value becomes more compelling after BoringSSL-specific compatibility becomes a product target or TLS-Anvil/tlsfuzzer stop being the main external-runner signal.
 
 ## Re-open criteria
 

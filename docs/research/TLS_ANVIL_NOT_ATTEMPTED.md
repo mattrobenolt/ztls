@@ -52,7 +52,7 @@ client 205
 
 | Bucket | Count | Scope | Owner |
 |---|---:|---|---|
-| `tests.client.tls13.*` | 82 | In-scope TLS 1.3 client-role rows | Exercised by the strict client capture; current failures remain tracked by #48/#9 |
+| `tests.client.tls13.*` | 82 | In-scope TLS 1.3 client-role rows | Exercised by the strict client capture; broader external conformance remains #9 |
 | `tests.both.lengthfield.EncryptedExtensions.*` | 2 | In-scope TLS 1.3 client-role length-field rows in the `both` package | Exercised by the strict client capture; all `STRICTLY_SUCCEEDED` |
 | `tests.both.lengthfield.CertificateVerify.*` | 2 | In-scope TLS 1.3 client-role length-field rows in the `both` package | Exercised by the strict client capture; all `STRICTLY_SUCCEEDED` |
 | `tests.both.lengthfield.Certificate.*TLS13` plus `certificateRequestContextLength` | 3 | In-scope TLS 1.3 client-role length-field rows in the `both` package | Exercised by the strict client capture; all `STRICTLY_SUCCEEDED` |
@@ -135,7 +135,7 @@ The attempted server-side TLS-Anvil surface remains clean (`105/105` attempted
 passed). The attempted client-side surface improved after P-256 support but is
 not accepted: the strict client capture still has `6` unexpected failures, all
 currently attributed to TLS-Anvil `DSA_WITH_SHA256` certificate parameter
-combinations tracked by #52. The `anvil_report.py` normalizer now classifies
+combinations classified under #52. The `anvil_report.py` normalizer now classifies
 the six #52 rows as `expected_failed` (visible, distinct from
 `expected_skipped`) when per-case `failure_combinations` evidence proves every
 failed case is a DSA-root RSA-leaf combination. This is a visibility mechanism,

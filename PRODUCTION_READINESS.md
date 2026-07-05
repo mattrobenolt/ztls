@@ -128,7 +128,7 @@ consumption-for-rejection, not resumption.
   been removed. Full client-certificate authentication remains deferred. All six
   remaining unexpected failures align with TLS-Anvil `DSA_WITH_SHA256`
   certificate parameter combinations that ztls correctly rejects during server
-  Certificate processing; #52 tracks classifying those DSA-root TLS-Anvil
+  Certificate processing; closed #52 classifies those DSA-root TLS-Anvil
   parameter combinations without accepting DSA or hiding non-DSA coverage. The
   `anvil_report.py` normalizer now classifies the six #52 rows as
   `expected_failed` (a visible bucket distinct from `expected_skipped`) when
@@ -142,15 +142,15 @@ consumption-for-rejection, not resumption.
   artifact, and confirmed by strict client workflow `ci-28725543965` on
   `6ba72b3`: `passed: 91`, `failed: 6`, `expected_failed: 6`,
   `unexpected_skipped: 0`, `not_attempted: 205`, clean tree, and workflow
-  conclusion `success`. The `expected_failed` count is the visibility mechanism
-  for #52, not a conformance pass.
-  Accepted client execution for #48 is now strict-clean under that visible #52
-  classification; broader external conformance remains #9/#50 work. A skip-list
-  narrowing tracked by #48 surfaces the strict-complete f50fcd8
+  conclusion `success`. The `expected_failed` count is the #52 visibility
+  mechanism, not a conformance pass. The #48 client-runner scope is now
+  strict-clean under that visible #52 classification; broader external
+  conformance remains #9/#50 work. A skip-list narrowing landed during #48
+  surfaces the strict-complete f50fcd8
   client capture's `sendEndOfEarlyDataAsServer` STRICTLY_SUCCEEDED row rather
   than the broader `*EarlyData*` skip pattern masking it as `unexpected_pass`;
   server EarlyData disabled rows remain expected-skipped under #3, and this is
-  evidence visibility within #48 rather than accepted client execution. BoGo is
+  evidence visibility from #48 rather than accepted client execution. BoGo is
   explicitly deferred in
   `docs/research/BOGO_DEFERRED.md` with re-entry criteria tracked by #50.
 - Wycheproof boundary vectors at the libcrypto seam.
