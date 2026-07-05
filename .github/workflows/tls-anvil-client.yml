@@ -10,6 +10,9 @@ on:
           - openssl
           - aws-lc
         default: openssl
+  schedule:
+    # Weekly Thursday 06:43 UTC. This is real suite evidence, not PR smoke.
+    - cron: "43 6 * * 4"
 
 concurrency:
   group: tls-anvil-client-${{ github.ref }}-${{ github.event.inputs.crypto_backend || 'openssl' }}
@@ -20,10 +23,15 @@ permissions:
 
 jobs:
   anvil-client:
+    name: anvil-client (${{ matrix.crypto_backend }})
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        crypto_backend: ${{ fromJSON(github.event_name == 'workflow_dispatch' && format('["{0}"]', github.event.inputs.crypto_backend) || '["openssl","aws-lc"]') }}
     env:
-      CRYPTO_BACKEND: ${{ github.event.inputs.crypto_backend || 'openssl' }}
+      CRYPTO_BACKEND: ${{ matrix.crypto_backend }}
       RUN_DIR: zig-out/anvil/client/ci-${{ github.run_id }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3

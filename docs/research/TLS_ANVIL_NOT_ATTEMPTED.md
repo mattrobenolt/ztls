@@ -16,6 +16,11 @@ single-endpoint captures cited by `PRODUCTION_READINESS.md`:
   - normalized counts: `passed: 91`, `failed: 6`, `expected_skipped: 135`,
     `unexpected_skipped: 0`, `not_attempted: 205`
 
+AWS-LC provider captures use the same classification method because TLS-Anvil's
+catalog and endpoint annotations are independent of the linked libcrypto backend;
+AWS-LC strict server workflow `28746130104` and strict client workflow
+`28746130840` preserve the same `157`/`205` endpoint-mode `not_attempted` split.
+
 The adapter maps TLS-Anvil rows with `result == "DISABLED"` and
 `disabled_reason == "TestEndpointMode doesn't match"` to `not_attempted`. These
 rows are not failures, not passes, and not expected feature skips. They mean the
