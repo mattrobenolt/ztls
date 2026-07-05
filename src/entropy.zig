@@ -2,9 +2,9 @@
 //!
 //! This stays intentionally narrower than `std.Io`: ztls core remains Sans-I/O,
 //! while key generation needs only the local OS CSPRNG syscall.
-const builtin = @import("builtin");
 const std = @import("std");
 const testing = std.testing;
+const builtin = @import("builtin");
 
 pub fn fill(buf: []u8) void {
     switch (builtin.os.tag) {
@@ -14,13 +14,13 @@ pub fn fill(buf: []u8) void {
     }
 }
 
-fn fillLinux(buffer: []u8) void {
-    var buf = buffer;
-    while (buf.len != 0) {
-        const rc = std.os.linux.getrandom(buf.ptr, buf.len, 0);
+fn fillLinux(buf: []u8) void {
+    var remaining = buf;
+    while (remaining.len != 0) {
+        const rc = std.os.linux.getrandom(remaining.ptr, remaining.len, 0);
         const signed_rc: isize = @bitCast(rc);
         if (signed_rc >= 0) {
-            buf = buf[@intCast(signed_rc)..];
+            remaining = remaining[@intCast(signed_rc)..];
             continue;
         }
 
