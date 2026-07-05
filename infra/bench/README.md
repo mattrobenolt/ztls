@@ -55,7 +55,7 @@ Then deploy and run the same remote runner:
 ```bash
 rsync -az --delete --no-owner --no-group \
   --exclude .envrc.local --exclude zig-out --exclude .zig-cache --exclude .terraform \
-  --exclude .terraform.lock.hcl --exclude bench.pem --exclude terraform.tfstate \
+  --exclude bench.pem --exclude terraform.tfstate \
   --exclude terraform.tfstate.backup \
   --exclude conformance/.venv --exclude conformance/.zig-cache --exclude conformance/zig-out \
   -e "ssh -i infra/bench/bench.pem -o StrictHostKeyChecking=no" \

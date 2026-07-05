@@ -194,7 +194,6 @@ for instance_type in "${matrix[@]}"; do
     --exclude zig-out \
     --exclude .zig-cache \
     --exclude .terraform \
-    --exclude .terraform.lock.hcl \
     --exclude bench.pem \
     --exclude terraform.tfstate \
     --exclude terraform.tfstate.backup \
