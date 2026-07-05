@@ -29,6 +29,8 @@ fn refAllDeclsRecursive(comptime T: type) void {
 test {
     refAllDeclsRecursive(ztls);
     _ = @import("wycheproof.zig");
-    _ = @import("interop.zig");
+    if (comptime builtin.zig_version.major == 0 and builtin.zig_version.minor < 16) {
+        _ = @import("interop.zig");
+    }
     _ = @import("crypto/backend_primitive_tests.zig");
 }
