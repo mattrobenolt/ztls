@@ -20,7 +20,6 @@ bench-remote-capture *args:
 
 [doc("Provision EC2 benchmark host, run row perf/disassembly evidence, and pull results")]
 [group("bench")]
-[linux]
 bench-remote-perf-rows *args:
     @infra/bench/run-perf-rows.sh {{ args }}
 
