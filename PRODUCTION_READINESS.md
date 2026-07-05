@@ -127,9 +127,21 @@ consumption-for-rejection, not resumption.
   remaining unexpected failures align with TLS-Anvil `DSA_WITH_SHA256`
   certificate parameter combinations that ztls correctly rejects during server
   Certificate processing; #52 tracks classifying those DSA-root TLS-Anvil
-  parameter combinations without accepting DSA or hiding non-DSA coverage. They
-  remain unexpected failures, not skip-list exclusions, until runner/upstream
-  handling changes. Accepted client execution remains open while
+  parameter combinations without accepting DSA or hiding non-DSA coverage. The
+  `anvil_report.py` normalizer now classifies the six #52 rows as
+  `expected_failed` (a visible bucket distinct from `expected_skipped`) when
+  per-case `failure_combinations` evidence proves every failed case is a
+  DSA-root RSA-leaf (`ROOT=DSA`, `LEAF keyType=RSA`, `keySize` in
+  `{1024, 2048, 4096}`) combination; non-DSA cases in the same rows stay
+  visible and unrelated failures stay unexpected. The gate is narrow to the
+  six exact test ids and requires structured per-case evidence, not broad
+  skip-listing. The classifier is covered by synthetic tests and locally replayed
+  by re-adapting the raw per-test `_testRun.json` files from the `ci-28722850517`
+  artifact, with unchanged totals except `expected_failed: 6`; remote workflow
+  evidence with the committed classifier is
+  still pending. The `expected_failed` count is the visibility mechanism, not a
+  closure of #52.
+  Accepted client execution remains open while
   the remaining failures and the `7` #49 both-endpoint rows remain. A skip-list
   narrowing tracked by #48 surfaces the strict-complete f50fcd8
   client capture's `sendEndOfEarlyDataAsServer` STRICTLY_SUCCEEDED row rather

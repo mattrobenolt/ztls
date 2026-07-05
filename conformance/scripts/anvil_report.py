@@ -44,6 +44,28 @@ ERROR_RESULTS = frozenset({"TEST_SUITE_ERROR", "NOT_SPECIFIED"})
 SKIP_RESULTS = frozenset({"DISABLED"})
 ENDPOINT_MODE_MISMATCH_REASON = "TestEndpointMode doesn't match"
 
+# #52: six TLS-Anvil client/both TLS 1.3 rows whose only failed cases are
+# DSA-root certificate parameter combinations. ztls correctly rejects DSA
+# under RFC 8446 §4.2.3 / Appendix D, so these failures are expected and must
+# not be hidden as expected_skipped or accepted by making ztls accept DSA.
+# Gate by exact test-id suffix so non-DSA coverage in the same rows stays
+# visible and unrelated failures are not absorbed.
+DSA_ROOT_EXPECTED_FAIL_IDS = frozenset(
+    {
+        "client.tls13.rfc8446.SupportedVersions.invalidLegacyVersion",
+        "both.tls13.rfc8446.HappyFlow.happyFlow",
+        "both.tls13.rfc8446.RecordProtocol.acceptsOptionalPadding",
+        "both.tls13.rfc8446.RecordProtocol.sendZeroLengthApplicationRecord",
+        "client.tls13.rfc8446.NewSessionTicket.ignoresUnknownNewSessionTicketExtension",
+        "client.tls13.rfc8701.ServerInitiatedExtensionPoints.advertiseGreaseExtensionsInSessionTicket",
+    }
+)
+DSA_ROOT_EXPECTED_FAIL_REASON = (
+    "DSA-root certificate parameter combination (#52); ztls correctly rejects "
+    "DSA under RFC 8446 §4.2.3 / Appendix D"
+)
+DSA_ROOT_RSA_LEAF_SIZES = frozenset({1024, 2048, 4096})
+
 
 def load_skip_list(path: Path) -> list[dict[str, str]]:
     raw = json.loads(path.read_text())
@@ -86,6 +108,70 @@ def matches_any_pattern(
     return None
 
 
+def _cert_root(combo: dict[str, Any]) -> str | None:
+    cert = combo.get("CERTIFICATE")
+    if isinstance(cert, dict):
+        root = cert.get("ROOT")
+        if isinstance(root, str):
+            return root
+    return None
+
+
+def _cert_leaf(combo: dict[str, Any]) -> dict[str, Any] | None:
+    cert = combo.get("CERTIFICATE")
+    if isinstance(cert, dict):
+        leaf = cert.get("LEAF")
+        if isinstance(leaf, dict):
+            return leaf
+    return None
+
+
+def is_dsa_root_combination(combo: dict[str, Any]) -> bool:
+    """True when a TLS-Anvil failure-inducing combination is a DSA-root
+    RSA-leaf certificate parameter combination (ROOT=DSA, LEAF keyType=RSA,
+    keySize in {1024, 2048, 4096}).
+
+    TLS-Anvil encodes these as
+    `{"CERTIFICATE": {"ROOT": "DSA",
+                      "LEAF": {"keyType": "RSA", "keySize": 2048}}}`.
+    The classifier only matches the documented #52 shape; any other root
+    type, leaf key type, or key size returns False so unrelated failures
+    stay unexpected.
+    """
+    if _cert_root(combo) != "DSA":
+        return False
+    leaf = _cert_leaf(combo)
+    if not isinstance(leaf, dict):
+        return False
+    if leaf.get("keyType") != "RSA":
+        return False
+    key_size = leaf.get("keySize")
+    if not isinstance(key_size, int):
+        return False
+    return key_size in DSA_ROOT_RSA_LEAF_SIZES
+
+
+def qualifies_dsa_root_expected_fail(
+    test_id: str,
+    failure_combinations: list[dict[str, Any]] | None,
+) -> bool:
+    """Gate for the #52 expected-failure classifier.
+
+    Requires the test id suffix to be one of the six #52 rows, the test to
+    carry at least one failure-inducing combination, and *every* carried
+    combination to be a DSA-root RSA-leaf triple. Non-failed cases are not
+    represented in failure_combinations by TLS-Anvil, so the absence of a
+    non-DSA combination is the evidence that non-DSA cases did not fail.
+    """
+    if not test_id:
+        return False
+    if not any(test_id.endswith(suffix) for suffix in DSA_ROOT_EXPECTED_FAIL_IDS):
+        return False
+    if not failure_combinations:
+        return False
+    return all(is_dsa_root_combination(c) for c in failure_combinations)
+
+
 def classify_tests(
     tests: list[dict[str, str]],
     skip_entries: list[dict[str, str]],
@@ -97,11 +183,13 @@ def classify_tests(
         "unexpected_skipped": 0,
         "passed": 0,
         "failed": 0,
+        "expected_failed": 0,
         "errored": 0,
         "timeout": 0,
         "not_attempted": 0,
     }
     unexpected: list[dict[str, Any]] = []
+    expected_failures: list[dict[str, Any]] = []
     by_feature: dict[str, dict[str, int]] = {}
     matched_patterns: set[str] = set()
     reason_by_pattern = {entry["pattern"]: entry["reason"] for entry in skip_entries}
@@ -174,10 +262,34 @@ def classify_tests(
             by_feature.setdefault(feature, dict[str, int]()).setdefault("passed", 0)
             by_feature[feature]["passed"] += 1
         elif result in FAIL_RESULTS:
+            failure_combinations = test.get("failure_combinations")
+            if isinstance(failure_combinations, list):
+                combos = [c for c in failure_combinations if isinstance(c, dict)]
+            else:
+                combos = None
+            if qualifies_dsa_root_expected_fail(test_id, combos):
+                counts["failed"] += 1
+                counts["expected_failed"] += 1
+                by_feature.setdefault(feature, dict[str, int]()).setdefault("expected_failed", 0)
+                by_feature[feature]["expected_failed"] += 1
+                item: dict[str, Any] = {
+                    "id": test_id,
+                    "test": name,
+                    "result": result,
+                    "classification": "expected_failed",
+                    "failure_reason": failure_reason,
+                    "rationale": DSA_ROOT_EXPECTED_FAIL_REASON,
+                }
+                if isinstance(case_result_counts, dict) and case_result_counts:
+                    item["case_result_counts"] = case_result_counts
+                if combos:
+                    item["failure_combinations"] = combos
+                expected_failures.append(item)
+                continue
             counts["failed"] += 1
             by_feature.setdefault(feature, dict[str, int]()).setdefault("failed", 0)
             by_feature[feature]["failed"] += 1
-            item: dict[str, Any] = {
+            fail_item: dict[str, Any] = {
                 "id": test_id,
                 "test": name,
                 "result": result,
@@ -186,8 +298,8 @@ def classify_tests(
                 "rationale": failure_rationale(result, failure_reason),
             }
             if isinstance(case_result_counts, dict) and case_result_counts:
-                item["case_result_counts"] = case_result_counts
-            unexpected.append(item)
+                fail_item["case_result_counts"] = case_result_counts
+            unexpected.append(fail_item)
         else:
             counts["errored"] += 1
             by_feature.setdefault(feature, dict[str, int]()).setdefault("errored", 0)
@@ -199,6 +311,7 @@ def classify_tests(
     return {
         "counts": counts,
         "unexpected": unexpected,
+        "expected_failures": expected_failures,
         "feature_breakdown": by_feature,
         "unmatched_skip_patterns": unmatched_patterns,
         "expected_skip_count_by_reason": expected_skip_count_by_reason,
@@ -269,6 +382,7 @@ def write_summary_txt(summary: dict[str, Any], path: Path) -> None:
             f"  unexpected_skipped : {c['unexpected_skipped']:>6}",
             f"  passed             : {c['passed']:>6}",
             f"  failed             : {c['failed']:>6}",
+            f"  expected_failed    : {c['expected_failed']:>6}",
             f"  errored            : {c['errored']:>6}",
             f"  timeout            : {c['timeout']:>6}",
             f"  not_attempted      : {c['not_attempted']:>6}",
@@ -308,6 +422,21 @@ def write_summary_txt(summary: dict[str, Any], path: Path) -> None:
         lines.append("")
 
     unexpected = summary["unexpected"]
+    expected_failures = summary.get("expected_failures") or []
+    if expected_failures:
+        lines.append(f"Expected failures ({len(expected_failures)}):")
+        for item in expected_failures:
+            lines.append(f"  [{item['classification']}] {item['test']}")
+            lines.append(f"    {item['rationale']}")
+            if item.get("failure_reason"):
+                lines.append(f"    failure_reason: {item['failure_reason']}")
+            if item.get("case_result_counts"):
+                formatted = ", ".join(
+                    f"{key}={value}" for key, value in sorted(item["case_result_counts"].items())
+                )
+                lines.append(f"    case_result_counts: {formatted}")
+        lines.append("")
+
     if unexpected:
         lines.append(f"Unexpected results ({len(unexpected)}):")
         for item in unexpected:
@@ -335,7 +464,12 @@ def write_summary_txt(summary: dict[str, Any], path: Path) -> None:
         skipped_pct = (c["expected_skipped"] / c["total"]) * 100
         lines.append(
             f"Note: {c['expected_skipped']}/{c['total']} tests ({skipped_pct:.1f}%) "
-            "were expected-skipped by the configured skip list. not_attempted "
+            "were expected-skipped by the configured skip list. "
+            f"{c['expected_failed']} failed test(s) were classified as "
+            "expected_failed (DSA-root certificate parameter combinations, #52; "
+            "ztls correctly rejects DSA under RFC 8446 §4.2.3 / Appendix D) and "
+            "remain visible, not hidden as expected_skipped. "
+            "not_attempted "
             "tests are runner-direction gaps, not conformance passes. Review "
             "unexpected_pass entries as license-to-claim signals and "
             "unmatched_skip_patterns as stale-skip candidates."

@@ -5,7 +5,14 @@ The normalized schema is the input consumed by `anvil_report.py`:
 
     {"tests": [{"id": str, "name": str, "result": str, "feature": str,
                 "disabled_reason": str?, "failure_reason": str?,
-                "case_result_counts": {str: int}?}]}
+                "case_result_counts": {str: int}?,
+                "failure_combinations": [{str: Any}]?}]}
+
+`failure_combinations` carries the minimum per-failed-case derivation
+parameter data needed by `anvil_report.py` to attribute a failure to a
+specific TLS-Anvil certificate parameter combination (e.g. DSA-root chains
+tracked by #52). Only structured fields required by the report classifier
+are carried; the adapter does not interpret combination semantics.
 
 TLS-Anvil output is not perfectly stable across versions. The shapes below are
 exercised by synthetic tests and are predictions of the real TLS-Anvil layout,
@@ -108,6 +115,9 @@ def normalized_from_tests(raw: Any) -> list[dict[str, Any]] | None:
         case_counts = test_case_result_counts(test)
         if case_counts:
             normalized["case_result_counts"] = case_counts
+        combos = failure_combinations(test)
+        if combos:
+            normalized["failure_combinations"] = combos
         tests.append(normalized)
     return tests
 
@@ -194,6 +204,27 @@ def test_case_result_counts(raw: dict[str, Any]) -> dict[str, int]:
     return counts
 
 
+def failure_combinations(raw: dict[str, Any]) -> list[dict[str, Any]]:
+    """Carry TLS-Anvil per-failed-case failure-inducing combinations.
+
+    TLS-Anvil attaches `FailureInducingCombinations` (a list of dicts) to
+    partially/fully failed tests. Each dict names the derivation parameters
+    that caused at least one case to fail. The adapter carries the raw
+    structured combination objects through unchanged so `anvil_report.py`
+    can attribute failures to specific parameter classes (e.g. DSA-root
+    certificate chains, #52) without broad skip-listing whole tests.
+    """
+    for key in ("failure_combinations", "failureCombinations", "FailureInducingCombinations"):
+        value = raw.get(key)
+        if isinstance(value, list):
+            combos: list[dict[str, Any]] = []
+            for item in value:
+                if isinstance(item, dict):
+                    combos.append(item)
+            return combos
+    return []
+
+
 def normalized_from_per_test(path: Path, raw: Any) -> dict[str, Any] | None:
     if not isinstance(raw, dict):
         return None
@@ -219,6 +250,9 @@ def normalized_from_per_test(path: Path, raw: Any) -> dict[str, Any] | None:
     case_counts = test_case_result_counts(raw)
     if case_counts:
         normalized["case_result_counts"] = case_counts
+    combos = failure_combinations(raw)
+    if combos:
+        normalized["failure_combinations"] = combos
     return normalized
 
 

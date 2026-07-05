@@ -347,3 +347,86 @@ def test_adapter_marks_unknown_results_as_not_specified(tmp_path: Path):
     assert cp.returncode == 0, cp.stderr
     normalized = load_normalized(run_dir / "report.normalized.json")
     assert normalized["tests"][0]["result"] == "NOT_SPECIFIED"
+
+
+def test_adapter_carries_failure_inducing_combinations(tmp_path: Path):
+    """The adapter must carry TLS-Anvil FailureInducingCombinations through
+    unchanged so anvil_report.py can attribute #52 DSA-root failures to
+    specific certificate parameter combinations without broad skip-listing."""
+    run_dir = tmp_path / "run"
+    write_test(
+        run_dir / "HappyFlow" / "happy.json",
+        {
+            "Result": "PARTIALLY_FAILED",
+            "TestClass": "de.rub.nds.tlstest.suite.tests.both.tls13.rfc8446.HappyFlow",
+            "TestMethod": "happyFlow",
+            "FailedReason": "Alert(FATAL,BAD_CERTIFICATE)",
+            "FailureInducingCombinations": [
+                {
+                    "CERTIFICATE": {
+                        "ROOT": "DSA",
+                        "LEAF": {"keyType": "RSA", "keySize": 2048},
+                    }
+                },
+                {
+                    "CERTIFICATE": {
+                        "ROOT": "DSA",
+                        "LEAF": {"keyType": "RSA", "keySize": 1024},
+                    }
+                },
+            ],
+        },
+    )
+
+    cp = run_adapter(str(run_dir))
+    assert cp.returncode == 0, cp.stderr
+    normalized = load_normalized(run_dir / "report.normalized.json")
+    test = normalized["tests"][0]
+    assert test["result"] == "PARTIALLY_FAILED"
+    assert test["failure_combinations"] == [
+        {
+            "CERTIFICATE": {
+                "ROOT": "DSA",
+                "LEAF": {"keyType": "RSA", "keySize": 2048},
+            }
+        },
+        {
+            "CERTIFICATE": {
+                "ROOT": "DSA",
+                "LEAF": {"keyType": "RSA", "keySize": 1024},
+            }
+        },
+    ]
+
+
+def test_adapter_carries_failure_combinations_from_normalized_report_json(tmp_path: Path):
+    """A pre-normalized report.json with failure_combinations passes through."""
+    run_dir = tmp_path / "run"
+    write_test(
+        run_dir / "report.json",
+        {
+            "tests": [
+                {
+                    "id": "de.rub.nds.tlstest.suite.tests.client.tls13.rfc8446.SupportedVersions.invalidLegacyVersion",
+                    "name": "client invalid legacy version",
+                    "result": "FULLY_FAILED",
+                    "feature": "SupportedVersions",
+                    "failure_combinations": [
+                        {
+                            "CERTIFICATE": {
+                                "ROOT": "DSA",
+                                "LEAF": {"keyType": "RSA", "keySize": 4096},
+                            }
+                        }
+                    ],
+                }
+            ]
+        },
+    )
+
+    cp = run_adapter(str(run_dir))
+    assert cp.returncode == 0, cp.stderr
+    normalized = load_normalized(run_dir / "report.normalized.json")
+    assert normalized["tests"][0]["failure_combinations"] == [
+        {"CERTIFICATE": {"ROOT": "DSA", "LEAF": {"keyType": "RSA", "keySize": 4096}}}
+    ]

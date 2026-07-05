@@ -130,7 +130,15 @@ The attempted server-side TLS-Anvil surface remains clean (`105/105` attempted
 passed). The attempted client-side surface improved after P-256 support but is
 not accepted: the strict client capture still has `6` unexpected failures, all
 currently attributed to TLS-Anvil `DSA_WITH_SHA256` certificate parameter
-combinations tracked by #52. The `not_attempted` buckets are now accounted for
+combinations tracked by #52. The `anvil_report.py` normalizer now classifies
+the six #52 rows as `expected_failed` (visible, distinct from
+`expected_skipped`) when per-case `failure_combinations` evidence proves every
+failed case is a DSA-root RSA-leaf combination. This is a visibility mechanism,
+not a closure of #52; it has been locally replayed by re-adapting the raw
+per-test `_testRun.json` files from the `ci-28722850517` artifact, with unchanged
+totals except `expected_failed: 6`, but remote workflow evidence with the
+committed classifier is still pending. The
+`not_attempted` buckets are now accounted for
 at the role and both-endpoint level, but #49 remains open on the `7`
 both-endpoint debt rows above.
 

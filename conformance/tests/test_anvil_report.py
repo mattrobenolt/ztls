@@ -858,3 +858,330 @@ def test_parser_rejects_missing_skip_list(tmp_path):
         str(tmp_path / "nonexistent.json"),
     )
     assert cp.returncode == 2
+
+
+# ─── #52 expected-failure classification ─────────────────────────────────
+# RFC 8446 §4.2.3 / Appendix D: DSA MUST NOT be used in TLS 1.3. ztls
+# correctly rejects DSA-root certificate chains, so the six TLS-Anvil rows
+# in #52 fail only on DSA-root RSA-leaf parameter combinations. These are
+# classified as expected_failed (visible, not expected_skipped, not hidden)
+# so non-DSA coverage in the same rows stays visible and unrelated failures
+# stay unexpected.
+
+
+DSA_ROOT_COMBO_2048 = {"CERTIFICATE": {"ROOT": "DSA", "LEAF": {"keyType": "RSA", "keySize": 2048}}}
+DSA_ROOT_COMBO_1024 = {"CERTIFICATE": {"ROOT": "DSA", "LEAF": {"keyType": "RSA", "keySize": 1024}}}
+DSA_ROOT_COMBO_4096 = {"CERTIFICATE": {"ROOT": "DSA", "LEAF": {"keyType": "RSA", "keySize": 4096}}}
+
+
+def _dsa_root_fixture(test_id: str, combos: list) -> dict:
+    return {
+        "tests": [
+            {
+                "id": test_id,
+                "name": test_id,
+                "result": "PARTIALLY_FAILED",
+                "feature": "HappyFlow",
+                "failure_reason": "Alert(FATAL,BAD_CERTIFICATE)",
+                "failure_combinations": combos,
+                "case_result_counts": {"STRICTLY_SUCCEEDED": 5, "FULLY_FAILED": 1},
+            }
+        ]
+    }
+
+
+def test_dsa_root_failure_classified_as_expected_failed(tmp_path):
+    """#52: a DSA-root RSA-leaf failure in one of the six gated rows is
+    classified as expected_failed, visible in summary, and does not cause
+    exit 1."""
+    fixture = tmp_path / "dsa-root.json"
+    fixture.write_text(
+        json.dumps(
+            _dsa_root_fixture(
+                "de.rub.nds.tlstest.suite.tests.both.tls13.rfc8446.HappyFlow.happyFlow",
+                [DSA_ROOT_COMBO_2048],
+            )
+        )
+    )
+    skip_list = tmp_path / "skip.json"
+    skip_list.write_text(json.dumps({"skip": []}))
+    out = tmp_path / "out"
+    out.mkdir()
+
+    cp = run_report(str(fixture), "--output-dir", str(out), "--skip-list", str(skip_list))
+
+    assert cp.returncode == 0, cp.stderr
+    s = load_summary_json(out)
+    assert s["counts"]["failed"] == 1
+    assert s["counts"]["expected_failed"] == 1
+    assert s["counts"]["expected_skipped"] == 0
+    assert s["unexpected"] == []
+    expected_failures = s["expected_failures"]
+    assert len(expected_failures) == 1
+    ef = expected_failures[0]
+    assert ef["classification"] == "expected_failed"
+    assert "#52" in ef["rationale"]
+    assert "RFC 8446" in ef["rationale"]
+    assert ef["case_result_counts"] == {"STRICTLY_SUCCEEDED": 5, "FULLY_FAILED": 1}
+    txt = load_summary_txt(out)
+    assert "expected_failed" in txt
+    assert "Expected failures (1)" in txt
+
+
+def test_dsa_root_failure_all_six_gated_ids(tmp_path):
+    """Every one of the six #52 test id suffixes is accepted when the
+    failure combinations are all DSA-root RSA-leaf triples."""
+    ids = [
+        "de.rub.nds.tlstest.suite.tests.client.tls13.rfc8446.SupportedVersions.invalidLegacyVersion",
+        "de.rub.nds.tlstest.suite.tests.both.tls13.rfc8446.HappyFlow.happyFlow",
+        "de.rub.nds.tlstest.suite.tests.both.tls13.rfc8446.RecordProtocol.acceptsOptionalPadding",
+        "de.rub.nds.tlstest.suite.tests.both.tls13.rfc8446.RecordProtocol.sendZeroLengthApplicationRecord",
+        "de.rub.nds.tlstest.suite.tests.client.tls13.rfc8446.NewSessionTicket.ignoresUnknownNewSessionTicketExtension",
+        "de.rub.nds.tlstest.suite.tests.client.tls13.rfc8701.ServerInitiatedExtensionPoints.advertiseGreaseExtensionsInSessionTicket",
+    ]
+    skip_list = tmp_path / "skip.json"
+    skip_list.write_text(json.dumps({"skip": []}))
+    for tid in ids:
+        fixture = tmp_path / f"{tid.split('.')[-1]}.json"
+        fixture.write_text(json.dumps(_dsa_root_fixture(tid, [DSA_ROOT_COMBO_2048])))
+        out = tmp_path / f"out-{tid.split('.')[-1]}"
+        out.mkdir()
+        cp = run_report(str(fixture), "--output-dir", str(out), "--skip-list", str(skip_list))
+        assert cp.returncode == 0, f"{tid}: {cp.stderr}"
+        s = load_summary_json(out)
+        assert s["counts"]["expected_failed"] == 1, tid
+        assert s["unexpected"] == [], tid
+
+
+def test_non_dsa_root_failure_stays_unexpected(tmp_path):
+    """A failure with a non-DSA root (RSA root) must not be classified as
+    expected_failed even on a gated #52 test id."""
+    fixture = tmp_path / "rsa-root.json"
+    fixture.write_text(
+        json.dumps(
+            _dsa_root_fixture(
+                "de.rub.nds.tlstest.suite.tests.both.tls13.rfc8446.HappyFlow.happyFlow",
+                [{"CERTIFICATE": {"ROOT": "RSA", "LEAF": {"keyType": "RSA", "keySize": 2048}}}],
+            )
+        )
+    )
+    skip_list = tmp_path / "skip.json"
+    skip_list.write_text(json.dumps({"skip": []}))
+    out = tmp_path / "out"
+    out.mkdir()
+
+    cp = run_report(str(fixture), "--output-dir", str(out), "--skip-list", str(skip_list))
+
+    assert cp.returncode == 1
+    s = load_summary_json(out)
+    assert s["counts"]["expected_failed"] == 0
+    assert s["counts"]["failed"] == 1
+    assert len(s["unexpected"]) == 1
+    assert s["unexpected"][0]["classification"] == "unexpected_fail"
+
+
+def test_dsa_root_failure_with_wrong_test_id_stays_unexpected(tmp_path):
+    """A DSA-root failure on a test id not in the #52 gate must stay
+    unexpected — the gate is narrow and does not absorb unrelated DSA rows."""
+    fixture = tmp_path / "wrong-id.json"
+    fixture.write_text(
+        json.dumps(
+            _dsa_root_fixture(
+                "de.rub.nds.tlstest.suite.tests.client.tls13.rfc8446.Certificate.verifySignature",
+                [DSA_ROOT_COMBO_2048],
+            )
+        )
+    )
+    skip_list = tmp_path / "skip.json"
+    skip_list.write_text(json.dumps({"skip": []}))
+    out = tmp_path / "out"
+    out.mkdir()
+
+    cp = run_report(str(fixture), "--output-dir", str(out), "--skip-list", str(skip_list))
+
+    assert cp.returncode == 1
+    s = load_summary_json(out)
+    assert s["counts"]["expected_failed"] == 0
+    assert s["unexpected"][0]["classification"] == "unexpected_fail"
+
+
+def test_dsa_root_failure_without_combinations_stays_unexpected(tmp_path):
+    """A failure with no failure_combinations evidence must stay unexpected —
+    the classifier requires per-case DSA-root proof, not just a gated id."""
+    fixture = tmp_path / "no-combos.json"
+    fixture.write_text(
+        json.dumps(
+            {
+                "tests": [
+                    {
+                        "id": "de.rub.nds.tlstest.suite.tests.both.tls13.rfc8446.HappyFlow.happyFlow",
+                        "name": "happy flow",
+                        "result": "FULLY_FAILED",
+                        "feature": "HappyFlow",
+                        "failure_reason": "Alert(FATAL,BAD_CERTIFICATE)",
+                    }
+                ]
+            }
+        )
+    )
+    skip_list = tmp_path / "skip.json"
+    skip_list.write_text(json.dumps({"skip": []}))
+    out = tmp_path / "out"
+    out.mkdir()
+
+    cp = run_report(str(fixture), "--output-dir", str(out), "--skip-list", str(skip_list))
+
+    assert cp.returncode == 1
+    s = load_summary_json(out)
+    assert s["counts"]["expected_failed"] == 0
+    assert s["unexpected"][0]["classification"] == "unexpected_fail"
+
+
+def test_mixed_combinations_with_non_dsa_stays_unexpected(tmp_path):
+    """If failure_combinations contains a non-DSA-root combination alongside
+    DSA-root ones, the failure is not classified as expected — the classifier
+    requires every combination to be DSA-root RSA-leaf."""
+    fixture = tmp_path / "mixed.json"
+    fixture.write_text(
+        json.dumps(
+            _dsa_root_fixture(
+                "de.rub.nds.tlstest.suite.tests.both.tls13.rfc8446.HappyFlow.happyFlow",
+                [
+                    DSA_ROOT_COMBO_2048,
+                    {"CERTIFICATE": {"ROOT": "ECDSA", "LEAF": {"keyType": "RSA", "keySize": 2048}}},
+                ],
+            )
+        )
+    )
+    skip_list = tmp_path / "skip.json"
+    skip_list.write_text(json.dumps({"skip": []}))
+    out = tmp_path / "out"
+    out.mkdir()
+
+    cp = run_report(str(fixture), "--output-dir", str(out), "--skip-list", str(skip_list))
+
+    assert cp.returncode == 1
+    s = load_summary_json(out)
+    assert s["counts"]["expected_failed"] == 0
+    assert s["unexpected"][0]["classification"] == "unexpected_fail"
+
+
+def test_dsa_root_all_three_rsa_leaf_sizes(tmp_path):
+    """DSA-root RSA-leaf combinations with keySize 1024, 2048, and 4096 are
+    all accepted (#52 specifies these three sizes)."""
+    skip_list = tmp_path / "skip.json"
+    skip_list.write_text(json.dumps({"skip": []}))
+    for size, combo in [
+        (1024, DSA_ROOT_COMBO_1024),
+        (2048, DSA_ROOT_COMBO_2048),
+        (4096, DSA_ROOT_COMBO_4096),
+    ]:
+        fixture = tmp_path / f"size-{size}.json"
+        fixture.write_text(
+            json.dumps(
+                _dsa_root_fixture(
+                    "de.rub.nds.tlstest.suite.tests.both.tls13.rfc8446.RecordProtocol.acceptsOptionalPadding",
+                    [combo],
+                )
+            )
+        )
+        out = tmp_path / f"out-{size}"
+        out.mkdir()
+        cp = run_report(str(fixture), "--output-dir", str(out), "--skip-list", str(skip_list))
+        assert cp.returncode == 0, f"size {size}: {cp.stderr}"
+        s = load_summary_json(out)
+        assert s["counts"]["expected_failed"] == 1, size
+
+
+def test_dsa_root_non_rsa_leaf_stays_unexpected(tmp_path):
+    """A DSA-root combination with a non-RSA leaf (ECDSA) is not in the #52
+    shape and must stay unexpected."""
+    fixture = tmp_path / "ecdsa-leaf.json"
+    fixture.write_text(
+        json.dumps(
+            _dsa_root_fixture(
+                "de.rub.nds.tlstest.suite.tests.both.tls13.rfc8446.HappyFlow.happyFlow",
+                [{"CERTIFICATE": {"ROOT": "DSA", "LEAF": {"keyType": "ECDSA", "keySize": 256}}}],
+            )
+        )
+    )
+    skip_list = tmp_path / "skip.json"
+    skip_list.write_text(json.dumps({"skip": []}))
+    out = tmp_path / "out"
+    out.mkdir()
+
+    cp = run_report(str(fixture), "--output-dir", str(out), "--skip-list", str(skip_list))
+
+    assert cp.returncode == 1
+    s = load_summary_json(out)
+    assert s["counts"]["expected_failed"] == 0
+
+
+def test_expected_failed_not_counted_as_unexpected_for_exit_code(tmp_path):
+    """A clean run where the only failure is a DSA-root #52 expected failure
+    must exit 0 — expected_failed is expected, not a regression signal."""
+    fixture = tmp_path / "clean-dsa.json"
+    fixture.write_text(
+        json.dumps(
+            _dsa_root_fixture(
+                "de.rub.nds.tlstest.suite.tests.client.tls13.rfc8701.ServerInitiatedExtensionPoints.advertiseGreaseExtensionsInSessionTicket",
+                [DSA_ROOT_COMBO_2048, DSA_ROOT_COMBO_4096],
+            )
+        )
+    )
+    skip_list = tmp_path / "skip.json"
+    skip_list.write_text(json.dumps({"skip": []}))
+    out = tmp_path / "out"
+    out.mkdir()
+
+    cp = run_report(str(fixture), "--output-dir", str(out), "--skip-list", str(skip_list))
+
+    assert cp.returncode == 0, cp.stderr
+    s = load_summary_json(out)
+    assert s["counts"]["expected_failed"] == 1
+    assert s["unexpected"] == []
+    assert s["counts"]["failed"] == 1
+
+
+def test_expected_failed_feature_breakdown(tmp_path):
+    """expected_failed appears as its own category in the per-feature breakdown."""
+    fixture = tmp_path / "feat.json"
+    fixture.write_text(
+        json.dumps(
+            _dsa_root_fixture(
+                "de.rub.nds.tlstest.suite.tests.both.tls13.rfc8446.HappyFlow.happyFlow",
+                [DSA_ROOT_COMBO_2048],
+            )
+        )
+    )
+    skip_list = tmp_path / "skip.json"
+    skip_list.write_text(json.dumps({"skip": []}))
+    out = tmp_path / "out"
+    out.mkdir()
+
+    run_report(str(fixture), "--output-dir", str(out), "--skip-list", str(skip_list))
+    s = load_summary_json(out)
+    assert s["feature_breakdown"]["HappyFlow"]["expected_failed"] == 1
+
+
+def test_expected_failed_not_in_expected_skipped(tmp_path):
+    """#52: DSA-root failures must not be moved into expected_skipped. They
+    are visible as expected_failed, a distinct bucket."""
+    fixture = tmp_path / "not-skipped.json"
+    fixture.write_text(
+        json.dumps(
+            _dsa_root_fixture(
+                "de.rub.nds.tlstest.suite.tests.both.tls13.rfc8446.HappyFlow.happyFlow",
+                [DSA_ROOT_COMBO_2048],
+            )
+        )
+    )
+    skip_list = tmp_path / "skip.json"
+    skip_list.write_text(json.dumps({"skip": []}))
+    out = tmp_path / "out"
+    out.mkdir()
+
+    run_report(str(fixture), "--output-dir", str(out), "--skip-list", str(skip_list))
+    s = load_summary_json(out)
+    assert s["counts"]["expected_skipped"] == 0
+    assert s["counts"]["expected_failed"] == 1
