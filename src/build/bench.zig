@@ -106,15 +106,15 @@ fn addLibsslBenchmarks(b: *Build, opts: Options) void {
             .{ .name = "c_ssl", .module = opts.c_ssl_mod },
         },
     });
+    bio_bench_root.link_libc = true;
+    bio_bench_root.linkSystemLibrary("ssl", .{});
+    bio_bench_root.linkSystemLibrary("crypto", .{});
+
     const bio_bench_exe = benchmark.addTest(b, .{
         .name = "bio_bench",
         .dependency = opts.benchmark_dep,
         .root_module = bio_bench_root,
     });
-    bio_bench_exe.linkLibC();
-    bio_bench_exe.linkSystemLibrary("ssl");
-    bio_bench_exe.linkSystemLibrary("crypto");
-
     const run_bio_bench = b.addRunArtifact(bio_bench_exe);
     if (b.args) |args| run_bio_bench.addArgs(args);
 

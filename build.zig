@@ -23,7 +23,11 @@ pub fn build(b: *Build) void {
         .default_target = nativeTarget(),
     });
     const optimize = b.standardOptimizeOption(.{});
-    const env_crypto_backend = b.graph.env_map.get("ZTLS_CRYPTO_BACKEND") orelse "";
+    const env_map = if (@hasField(@TypeOf(b.graph.*), "environ_map"))
+        b.graph.environ_map
+    else
+        b.graph.env_map;
+    const env_crypto_backend = env_map.get("ZTLS_CRYPTO_BACKEND") orelse "";
     const crypto_backend = b.option(
         []const u8,
         "crypto-backend",
