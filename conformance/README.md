@@ -24,7 +24,7 @@ Result normalization and skip-list enforcement are scaffolded by two steps: `anv
 
 The real server suite is wired as a dedicated GitHub Actions workflow, `.github/workflows/tls-anvil-server.yml`, on `workflow_dispatch` and a weekly schedule. It runs the same sequential settings used for accepted local evidence, strict-normalizes with `just anvil-report-dir`, and uploads summary/provenance/log artifacts without `keyfile.log`.
 
-The client suite has the same local runner shape and a manual workflow in `.github/workflows/tls-anvil-client.yml`. `just anvil-client` launches TLS-Anvil in client mode, writes a trigger script that starts `zig-out/bin/anvil_client` for each handshake, uses the same strict adapter/report path, and captures run metadata plus TLS-Anvil command/stdout/client-stderr/tool logs under `zig-out/anvil/client/<timestamp>/`. Scheduling stays disabled until client-mode TLS-Anvil derives an attempted TLS 1.3 surface instead of only disabled/not-attempted rows. The workflow is intentionally separate from PR `just ci`; BoGo, both-endpoint coverage, and accepted client execution remain open under #9.
+The client suite has the same local runner shape and a manual workflow in `.github/workflows/tls-anvil-client.yml`. `just anvil-client` launches TLS-Anvil in client mode, writes a trigger script that starts `zig-out/bin/anvil_client` for each handshake, uses the same strict adapter/report path, and captures run metadata plus TLS-Anvil command/stdout/client-stderr/tool logs under `zig-out/anvil/client/<timestamp>/`. The latest strict client workflow derives an attempted TLS 1.3 surface and exits cleanly with the visible #52 `expected_failed` bucket. The workflow is intentionally separate from PR `just ci`; BoGo is durably deferred in `docs/research/BOGO_DEFERRED.md`.
 
 ```sh
 # Run the CI-shaped TLS-Anvil server suite locally into a deterministic dir:
@@ -42,11 +42,12 @@ just anvil-report test_fixtures/anvil_report_synthetic.json
 ```
 
 The report script:
-- classifies every test as expected_skipped, not_attempted, passed, failed, errored, or unexpected_skipped;
+- classifies every test as expected_skipped, expected_failed, not_attempted, passed, failed, errored, or unexpected_skipped;
 - treats TLS-Anvil server/client endpoint-mode mismatches as not_attempted, not evidence of feature conformance;
 - flags unexpected_pass (skip-list deferred feature that actually passed — license-to-claim);
 - flags unexpected_fail (unskipped test that failed — regression candidate);
+- flags expected_failed (failed test whose structured failure combinations match a documented non-actionable class, currently DSA-root TLS 1.3 certificate combinations under #52);
 - reports unmatched_skip_patterns and expected_skip_count_by_reason to catch stale or overbroad skip rules;
 - writes `summary.json` (machine-readable) and `summary.txt` (human-readable).
 
-The parser exits 0 only when the report has no unexpected pass/fail/skipped classifications; it exits 1 when review is required. Synthetic parser tests and wrapper helper tests run in `just ci`; real TLS-Anvil server execution runs in the dedicated scheduled/manual workflow, while client execution has a manual workflow for debugging the remaining attempted-row blocker. BoGo and both-endpoint coverage remain open (#9). The completed server-run `not_attempted` bucket is classified in `docs/research/TLS_ANVIL_NOT_ATTEMPTED.md`.
+The parser exits 0 only when the report has no unexpected pass/fail/skipped classifications; it exits 1 when review is required. Synthetic parser tests and wrapper helper tests run in `just ci`; real TLS-Anvil server execution runs in the dedicated scheduled/manual workflow, while client execution has a manual workflow with strict normalized evidence. The completed server/client `not_attempted` buckets are classified in `docs/research/TLS_ANVIL_NOT_ATTEMPTED.md`.

@@ -175,21 +175,21 @@ conformance busywork.
 
 ---
 
-## External runners — TLS-Anvil (#9), tlsfuzzer lockstep (#9), BoGo shim (#9)
+## External runners — TLS-Anvil, tlsfuzzer lockstep, BoGo shim
 
 These broaden matrix coverage. Their value scales with the feature surface
 above; early runs mostly exercise features ztls intentionally does not
 implement.
 
-**TLS-Anvil (#9):** Java/JUnit runner. Prerequisite: a stable TCP
-wrapper for both roles (the `tlsfuzzer_server` pattern, plus a client
-wrapper). Acceptance: Anvil's TLS 1.3 server-and-client suites run in CI with a
-documented, justified skip list mapping each skip to an unimplemented feature.
+**TLS-Anvil:** Java/JUnit runner. Server and client workflows are wired outside
+PR `just ci`; #48 closed the client runner, #49 closed both-endpoint accounting,
+and #52 classifies DSA-root TLS 1.3 certificate parameter failures as visible
+`expected_failed` rows rather than skips or passes. Remaining disabled rows map
+to feature issues or explicit TLS 1.2/DTLS/out-of-scope decisions.
 
-**tlsfuzzer lockstep (#9):** tighter request/response stepping than
-the current conversation harness. Prerequisite: none beyond the existing
-fixture. Acceptance: lockstep mode runs the current conversations deterministically
-and is gated in `just conformance/tlsfuzzer`.
+**tlsfuzzer lockstep:** tighter request/response stepping than the current
+conversation harness. The current conversations run deterministically under
+`just conformance/tlsfuzzer` and are gated by `just conformance/ci`.
 
 **BoGo shim:** BoringSSL's `runner` driving a ztls shim over a CLI/stdio
 protocol is durably deferred in `BOGO_DEFERRED.md`. The 2026-06 scaffolding

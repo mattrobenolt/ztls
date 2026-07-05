@@ -141,10 +141,10 @@ KeyUpdate, invalid KeyUpdate request, oversized records, close_notify before
 handshake, garbage pre-handshake, Finished before handshake, truncated/empty
 ClientHello, malformed key_share, unshared ALPN, and unsupported cipher suite.
 
-Client-side external negative runners are not gated yet. TLS-Anvil and BoGo are
-tracked by #9. The local `ClientHandshake` bad-server tests cover the highest
-risk supported-surface paths, but they are not a replacement for a broad external
-client runner.
+TLS-Anvil client/server workflows now provide broad external coverage outside PR
+`just ci`, and BoGo is durably deferred in `BOGO_DEFERRED.md`. The local
+`ClientHandshake` bad-server tests still carry the highest-risk supported-surface
+paths directly and remain the fastest regression signal.
 
 ## Open gaps surfaced by the inventory
 
@@ -154,8 +154,9 @@ These are deliberately not closed by writing the inventory:
   the matrix-build slice. Any future supported-surface expansion must reopen
   the matrix in the same change.
 - Full bettertls harness execution remains outside the local name-constraints
-  fixture set (#9).
-- BoGo/TLS-Anvil execution remains #9.
+  fixture set; if it becomes a supported lane, give it its own issue.
+- BoGo remains deferred per `BOGO_DEFERRED.md`; TLS-Anvil server/client evidence
+  lives in the dedicated workflows.
 - HRR, PSK/resumption, 0-RTT, client certificates, and PQ / P-384+ groups are
   out of the current supported surface and tracked by their feature issues.
 - Legacy session id length caps on parse paths need dedicated enforcement/tests.

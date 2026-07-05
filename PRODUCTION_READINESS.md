@@ -144,8 +144,9 @@ consumption-for-rejection, not resumption.
   `unexpected_skipped: 0`, `not_attempted: 205`, clean tree, and workflow
   conclusion `success`. The `expected_failed` count is the #52 visibility
   mechanism, not a conformance pass. The #48 client-runner scope is now
-  strict-clean under that visible #52 classification; broader external
-  conformance remains #9/#50 work. A skip-list narrowing landed during #48
+  strict-clean under that visible #52 classification; remaining external
+  conformance breadth is feature-specific (#1/#2/#3/#4/#6) plus the BoGo
+  re-entry path in #50. A skip-list narrowing landed during #48
   surfaces the strict-complete f50fcd8
   client capture's `sendEndOfEarlyDataAsServer` STRICTLY_SUCCEEDED row rather
   than the broader `*EarlyData*` skip pattern masking it as `unexpected_pass`;
@@ -185,12 +186,12 @@ consumption-for-rejection, not resumption.
   `docs/research/BOGO_DEFERRED.md`. The completed strict server/client captures
   account for endpoint-mode `not_attempted` rows, including the `tests.both.*`
   length-field rows that are role-specific despite their package name. TLS-Anvil
-  normalization and wrapper-helper tests are gated, and the real TLS-Anvil server
-  suite runs in a separate scheduled/manual workflow. TLS-Anvil client
-  runner/workflow wiring exists, but
-  accepted client execution remains open. Completed
-  TLS-Anvil server evidence now has no unexpected attempted
-  failures; remaining named-group scope beyond the proven server-side P-256 path
+  normalization and wrapper-helper tests are gated, the real TLS-Anvil server
+  suite runs in a separate scheduled/manual workflow, and the TLS-Anvil client
+  runner/workflow has strict-clean evidence under the visible #52 `expected_failed`
+  classification. Completed TLS-Anvil server and client evidence now have no
+  unexpected attempted failures; remaining named-group scope beyond the proven
+  server-side P-256 path
   stays tracked under broader provider-backed group work *(#6)*. HelloRetryRequest
   server retry now passes TLS-Anvil, but full client/server HRR
   state-machine support remains broader open work *(#1)*. Record-fragmentation
@@ -201,7 +202,7 @@ consumption-for-rejection, not resumption.
   legacy-only `signature_algorithms` rejection *(#35)*, `close_notify` on
   orderly close *(#36)*, compatibility CCS emission *(#37)*, SSLv3
   `legacy_version` rejection *(#38)*, record-fragmentation capability *(#40)*,
-  and fragmented KeyUpdate handling *(#41)*. *(#9)*
+  and fragmented KeyUpdate handling *(#41)*.
 - **Correctness remains `PARTIAL` until external conformance is CI-gated.** The
   RFC 8446 MUST matrix is closed for the current supported surface; future
   feature work that changes TLS scope must reopen the relevant rows in the same
@@ -532,5 +533,6 @@ These are not feature work; they stop the bleeding and make the rest legible.
    comparison captures, OpenSSL interop runs as normal Zig tests instead of
    standalone build-step binaries, and `tests/fixtures/` is the only real
    fixture source tree.
-5. **Unify the conformance façade.** Track the `just conformance/<recipe>` shape
-   and normalized result format in #9.
+5. **DONE — Unify the conformance façade.** `just conformance/<recipe>` delegates
+   to the conformance subproject, and TLS-Anvil/tlsfuzzer normalized result
+   formats are CI-tested under `just conformance/ci`.

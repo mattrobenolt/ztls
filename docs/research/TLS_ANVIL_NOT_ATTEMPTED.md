@@ -52,7 +52,7 @@ client 205
 
 | Bucket | Count | Scope | Owner |
 |---|---:|---|---|
-| `tests.client.tls13.*` | 82 | In-scope TLS 1.3 client-role rows | Exercised by the strict client capture; broader external conformance remains #9 |
+| `tests.client.tls13.*` | 82 | In-scope TLS 1.3 client-role rows | Exercised by the strict client capture; remaining disabled rows map to feature issues or out-of-scope protocol versions |
 | `tests.both.lengthfield.EncryptedExtensions.*` | 2 | In-scope TLS 1.3 client-role length-field rows in the `both` package | Exercised by the strict client capture; all `STRICTLY_SUCCEEDED` |
 | `tests.both.lengthfield.CertificateVerify.*` | 2 | In-scope TLS 1.3 client-role length-field rows in the `both` package | Exercised by the strict client capture; all `STRICTLY_SUCCEEDED` |
 | `tests.both.lengthfield.Certificate.*TLS13` plus `certificateRequestContextLength` | 3 | In-scope TLS 1.3 client-role length-field rows in the `both` package | Exercised by the strict client capture; all `STRICTLY_SUCCEEDED` |
@@ -155,7 +155,8 @@ endpoint role.
 
 - Do not use `--allow-partial` output as readiness evidence.
 - Do not add a skip-list pattern that absorbs `TestEndpointMode doesn't match`.
-- Do not close #9 from this classification alone.
+- Do not treat classification alone as conformance execution; issue #9 closed
+  only after strict server/client workflow evidence and BoGo deferral evidence landed.
 - Do not reopen #49 on the package prefix alone; verify the row's TLS-Anvil
   endpoint annotation and opposite-capture result.
 - Keep Pillar 1 at `PARTIAL` while external conformance remains outside required

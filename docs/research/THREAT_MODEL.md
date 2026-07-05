@@ -245,7 +245,7 @@ features until their tracking issues land.
 | Gap | Boundary | Tracking |
 |---|---|---|
 | RFC 5280 directoryName constraints are not enforced | Certificate policy | future X.509 expansion |
-| TLS-Anvil / BoGo external runners are not CI-gated | External conformance breadth | #9 |
+| BoGo is deferred; TLS-Anvil remains outside PR `just ci` but has dedicated server/client workflows | External conformance breadth | `BOGO_DEFERRED.md`, #50 |
 | Legacy session ID parse caps need dedicated enforcement/tests | Parser hardening | `NEGATIVE_SPACE.md` gap |
 | Server Certificate non-empty `request_context` needs rejection evidence | Parser/state-machine hardening | `NEGATIVE_SPACE.md` gap |
 | Server-side bad client-Finished negative unit tests are partial | Server state-machine evidence | `NEGATIVE_SPACE.md` gap |

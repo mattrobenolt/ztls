@@ -55,8 +55,8 @@ Covered outcomes:
 
 ## Deliberate non-goals for the local slice
 
-- No full bettertls Go harness yet. That belongs with the broader external
-  conformance runner work (#9), not the core enforcement code.
+- No full bettertls Go harness yet. If that breadth becomes worth carrying, give
+  it a dedicated issue instead of folding it into the core enforcement code.
 - No `directoryName` constraint enforcement yet. ztls rejects unsupported
   GeneralName forms in critical Name Constraints instead of pretending to process
   them.
@@ -72,6 +72,5 @@ place:
 1. vendor or fetch bettertls test vectors reproducibly;
 2. add a ztls runner/shim that evaluates the generated chains against
    `certificate.parse()` policy;
-3. normalize results with skip accounting, like the TLS-Anvil/BoGo work planned
-   in #9;
+3. normalize results with skip accounting, following the TLS-Anvil report shape;
 4. gate the lane only once its dependency footprint and runtime are stable.
