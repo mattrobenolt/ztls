@@ -1,54 +1,61 @@
 # TLS-Anvil not-attempted coverage
 
 This note classifies the `not_attempted` rows from the completed TLS-Anvil
-server capture cited by `PRODUCTION_READINESS.md`. It is intentionally
-server-capture-only; the completed client capture's `not_attempted: 205` bucket
-still needs its own #49 classification before any both-endpoint coverage claim:
+single-endpoint captures cited by `PRODUCTION_READINESS.md`:
 
-- capture: `conformance/zig-out/anvil/server/20260616-074609`
-- normalized report: `report.normalized.json`
-- ztls revision: `496750d`
-- run dirty state: `false`
-- TLS-Anvil jar: `anvil-core-2.3.4`
-- endpoint mode: `SERVER`
-- completion gate: `Running: false`, `FinishedTests: 437`, `TotalTests: 437`
+- server capture: `conformance/zig-out/anvil/server/20260616-074609`
+  - ztls revision: `496750d`
+  - endpoint mode: `SERVER`
+  - completion gate: `Running: false`, `FinishedTests: 437`, `TotalTests: 437`
+  - normalized counts: `passed: 105`, `failed: 0`, `expected_skipped: 175`,
+    `unexpected_skipped: 0`, `not_attempted: 157`
+- client capture: workflow `ci-28722850517`
+  - ztls revision: `b6aee2c`
+  - endpoint mode: `CLIENT`
+  - completion gate: `Running: false`, `FinishedTests: 437`, `TotalTests: 437`
+  - normalized counts: `passed: 91`, `failed: 6`, `expected_skipped: 135`,
+    `unexpected_skipped: 0`, `not_attempted: 205`
 
 The adapter maps TLS-Anvil rows with `result == "DISABLED"` and
 `disabled_reason == "TestEndpointMode doesn't match"` to `not_attempted`. These
 rows are not failures, not passes, and not expected feature skips. They mean the
-server-mode run did not exercise a test whose endpoint mode did not match the
-run.
+single-endpoint run did not exercise a test whose endpoint mode did not match
+that run.
 
-The count is reproducible from the normalized report:
+The counts are reproducible from the normalized reports:
 
 ```sh
 python3 - <<'PY'
 import json
-p = 'conformance/zig-out/anvil/server/20260616-074609/report.normalized.json'
-data = json.load(open(p))
-rows = [
-    t for t in data['tests']
-    if t.get('result') == 'DISABLED'
-    and t.get('disabled_reason') == "TestEndpointMode doesn't match"
-]
-print(len(rows))
+for name, p in {
+    'server': 'conformance/zig-out/anvil/server/20260616-074609/report.normalized.json',
+    'client': '/tmp/ztls-anvil-client-b6/tls-anvil-client-summary/report.normalized.json',
+}.items():
+    data = json.load(open(p))
+    rows = [
+        t for t in data['tests']
+        if t.get('result') == 'DISABLED'
+        and t.get('disabled_reason') == "TestEndpointMode doesn't match"
+    ]
+    print(name, len(rows))
 PY
 ```
 
 Output:
 
 ```text
-157
+server 157
+client 205
 ```
 
-## Classification
+## Server capture classification
 
 | Bucket | Count | Scope | Owner |
 |---|---:|---|---|
-| `tests.client.tls13.*` | 82 | In-scope TLS 1.3 client-role coverage debt | TLS-Anvil client runner evidence tracked by #48 and broader runner work tracked by #9 |
-| `tests.both.lengthfield.EncryptedExtensions.*` | 2 | In-scope TLS 1.3 both-endpoint coverage debt | both-endpoint accounting tracked by #49 |
-| `tests.both.lengthfield.CertificateVerify.*` | 2 | In-scope TLS 1.3 both-endpoint coverage debt | both-endpoint accounting tracked by #49 |
-| `tests.both.lengthfield.Certificate.*TLS13` plus `certificateRequestContextLength` | 3 | In-scope TLS 1.3 both-endpoint coverage debt | both-endpoint accounting tracked by #49 |
+| `tests.client.tls13.*` | 82 | In-scope TLS 1.3 client-role rows | Exercised by the strict client capture; current failures remain tracked by #48/#9 |
+| `tests.both.lengthfield.EncryptedExtensions.*` | 2 | In-scope TLS 1.3 both-endpoint length-field rows | still #49 both-endpoint runner debt |
+| `tests.both.lengthfield.CertificateVerify.*` | 2 | In-scope TLS 1.3 both-endpoint length-field rows | still #49 both-endpoint runner debt |
+| `tests.both.lengthfield.Certificate.*TLS13` plus `certificateRequestContextLength` | 3 | In-scope TLS 1.3 both-endpoint length-field rows | still #49 both-endpoint runner debt |
 | `tests.client.tls12.*` | 60 | Out of scope | TLS 1.2 is outside ztls scope |
 | `tests.both.lengthfield.ServerKeyExchange.*` | 5 | Out of scope | TLS 1.2 ServerKeyExchange is outside ztls scope |
 | `tests.both.lengthfield.Certificate.*TLS12` | 2 | Out of scope | TLS 1.2 Certificate length fields are outside ztls scope |
@@ -56,30 +63,88 @@ Output:
 
 Total: `82 + 2 + 2 + 3 + 60 + 5 + 2 + 1 = 157`.
 
-The actionable in-scope debt is `89` rows: `82` client TLS 1.3 rows and `7`
-TLS 1.3 both-endpoint length-field rows. The explicit out-of-scope set is `68`
-rows: `67` TLS 1.2-era rows and `1` DTLS row.
+## Client capture classification
+
+| Bucket | Count | Scope | Owner |
+|---|---:|---|---|
+| `tests.server.tls13.*` | 82 | In-scope TLS 1.3 server-role rows | Exercised by the strict server capture; server attempted surface is clean |
+| `tests.both.lengthfield.extensions.*TLS13` plus TLS 1.3 `Hello.*` | 14 | In-scope TLS 1.3 both-endpoint rows | Covered by the strict server capture |
+| `tests.both.lengthfield.extensions.PreSharedKeyExtension.*` and `PSKKeyExchangeModesExtension.*ListLength` | 4 | Deferred TLS 1.3 PSK/resumption rows | PSK/session resumption tracked by #2 |
+| `tests.server.tls12.*` | 89 | Out of scope | TLS 1.2 is outside ztls scope |
+| `tests.server.dtls12.*` | 5 | Out of scope | DTLS is outside ztls scope |
+| `tests.both.*TLS12` plus `ClientKeyExchange.*` | 11 | Out of scope | TLS 1.2 length fields and ClientKeyExchange are outside ztls scope |
+
+Total: `82 + 14 + 4 + 89 + 5 + 11 = 205`.
+
+The `14` client-capture both rows covered by the strict server capture are:
+
+- `extensions.EncryptThenMacExtension.encryptThenMacExtensionLengthTLS13`
+- `extensions.ALPNExtension.alpnProposedAlpnProtocolsLengthTLS13`
+- `extensions.SupportedVersionsExtension.supportedVersionsListLength`
+- `extensions.PSKKeyExchangeModesExtension.pskKeyExchangeModesExtensionLength`
+- `extensions.SignatureAndHashAlgorithmsExtension.signatureAndHashAlgorithmsListLengthTLS13`
+- `extensions.ExtendedMasterSecretExtension.extendedMasterSecretExtensionLengthTLS13`
+- `extensions.PaddingExtension.paddingExtensionLengthTLS13`
+- `extensions.HeartbeatExtension.heartbeatExtensionLengthTLS13`
+- `extensions.RenegotiationExtension.renegotiationExtensionLengthTLS13`
+- `extensions.KeyShareExtension.keyShareEntryListLength`
+- `Hello.clientHelloCompressionLengthTLS13`
+- `Hello.clientHelloCipherSuitesLengthTLS13`
+- `extensions.SignatureAndHashAlgorithmsExtension.signatureAndHashAlgorithmsExtensionLengthTLS13`
+- `extensions.ALPNExtension.alpnExtensionLengthTLS13`
+
+`EncryptThenMacExtension.encryptThenMacExtensionLengthTLS13` is counted as
+server-covered TLS 1.3 framing evidence, not as TLS 1.2 Encrypt-then-MAC feature
+support: the server capture proves ztls parses the framing and ignores the
+extension semantics in TLS 1.3.
+
+## Both-endpoint accounting
+
+Across the current strict server/client captures, the `tests.both.*` endpoint
+mismatches classify as:
+
+| Bucket | Count | Rows |
+|---|---:|---|
+| Covered by opposite endpoint capture | 14 | client-capture TLS 1.3 extension/Hello length-field rows listed above |
+| Still #49 both-runner debt | 7 | server-capture TLS 1.3 `EncryptedExtensions`, `CertificateVerify`, and `Certificate` length-field rows |
+| Feature-deferred | 4 | client-capture PSK extension rows tracked by #2 |
+| Out of scope | 18 | TLS 1.2/DTLS `ServerKeyExchange`, `Certificate.*TLS12`, `ClientKeyExchange`, and TLS 1.2 extension/Hello rows |
+
+The remaining `7` #49 rows are:
+
+- `EncryptedExtensions.encryptedExtensionsExtensionsLength`
+- `EncryptedExtensions.encryptedExtensionsLength`
+- `CertificateVerify.certificateVerifySignatureLength`
+- `CertificateVerify.certificateVerifyLength`
+- `Certificate.certificateListLengthTLS13`
+- `Certificate.certificateMessageLengthTLS13`
+- `Certificate.certificateRequestContextLength`
+
+These rows need either a real both-mode TLS-Anvil runner or fresh strict client
+per-row evidence that exercises the same wire direction. They should not be
+moved into the skip list and should not be treated as conformance passes.
 
 ## Meaning for readiness
 
-The attempted server-side TLS-Anvil surface remains represented by the normalized
-counts in `PRODUCTION_READINESS.md`: `passed: 105`, `failed: 0`,
-`expected_skipped: 175`, `unexpected_skipped: 0`, and `not_attempted: 157`.
-This document only classifies the `not_attempted` bucket.
+The attempted server-side TLS-Anvil surface remains clean (`105/105` attempted
+passed). The attempted client-side surface improved after P-256 support but is
+not accepted: the strict client capture still has `6` unexpected failures, all
+currently attributed to TLS-Anvil `DSA_WITH_SHA256` certificate parameter
+combinations. The `not_attempted` buckets are now accounted for at the role and
+both-endpoint level, but #49 remains open on the `7` both-endpoint debt rows
+above.
 
-Classification is not conformance execution. The `89` in-scope rows remain
-coverage debt until strict TLS-Anvil client evidence and #49 both-endpoint
-accounting show which rows are exercised, explicitly deferred, or still blocked
-on runner shape. Issue #9 owns the broader runner work. The `68` out-of-scope
-rows should not be moved into `expected_skipped`; keeping endpoint-mode
-mismatches separate preserves the distinction between a feature skip and an
-unexercised endpoint role.
+Classification is not conformance execution. The explicit out-of-scope rows
+should not be moved into `expected_skipped`; keeping endpoint-mode mismatches
+separate preserves the distinction between a feature skip and an unexercised
+endpoint role.
 
 ## Guardrails
 
 - Do not use `--allow-partial` output as readiness evidence.
 - Do not add a skip-list pattern that absorbs `TestEndpointMode doesn't match`.
 - Do not close #9 from this classification alone.
-- Do not treat this server-only table as the client `not_attempted` classification.
-- Keep Pillar 1 at `PARTIAL` until external client/both-endpoint runner evidence
-  exists and #49 accounts for the both-endpoint rows.
+- Do not close #49 until the remaining `7` both-endpoint rows have execution
+  evidence or a documented runner limitation with an owner.
+- Keep Pillar 1 at `PARTIAL` while external conformance remains outside required
+  PR CI and the strict client run still has unexpected failures.

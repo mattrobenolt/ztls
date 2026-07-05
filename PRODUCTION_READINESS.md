@@ -98,9 +98,11 @@ consumption-for-rejection, not resumption.
   clean tree with launch metadata, `Running: false`, `FinishedTests: 437`,
   `TotalTests: 437`, and normalized counts of `passed: 105`, `failed: 0`,
   `expected_skipped: 175`, `unexpected_skipped: 0`, and `not_attempted: 157`.
-  `docs/research/TLS_ANVIL_NOT_ATTEMPTED.md` classifies that bucket as `89`
-  in-scope client/both-endpoint runner debt and `68` explicit TLS 1.2/DTLS
-  out-of-scope rows. The attempted server-side TLS-Anvil surface is clean
+  `docs/research/TLS_ANVIL_NOT_ATTEMPTED.md` now accounts for the server and
+  client `not_attempted` buckets together: role-mismatched TLS 1.3 rows are
+  exercised by the opposite strict capture, `7` TLS 1.3 both-endpoint rows remain
+  #49 debt, and TLS 1.2/DTLS rows remain explicit out-of-scope rows. The attempted
+  server-side TLS-Anvil surface is clean
   (`105/105` attempted passed), including `KeyUpdate: passed=4` and
   `ComplianceRequirements: passed=2`.
   The real server suite is wired in `.github/workflows/tls-anvil-server.yml` for
@@ -126,9 +128,8 @@ consumption-for-rejection, not resumption.
   certificate parameter combinations that ztls rejects during server Certificate
   processing; they remain unexpected failures, not skip-list exclusions, until
   runner/upstream handling changes. Accepted client execution remains open while
-  the remaining failures and the
-  not-attempted client/both-endpoint bucket remain. A skip-list narrowing tracked
-  by #48 surfaces the strict-complete f50fcd8
+  the remaining failures and the `7` #49 both-endpoint rows remain. A skip-list
+  narrowing tracked by #48 surfaces the strict-complete f50fcd8
   client capture's `sendEndOfEarlyDataAsServer` STRICTLY_SUCCEEDED row rather
   than the broader `*EarlyData*` skip pattern masking it as `unexpected_pass`;
   server EarlyData disabled rows remain expected-skipped under #3, and this is
@@ -164,10 +165,10 @@ consumption-for-rejection, not resumption.
 
 - **External runner coverage is still partial.** Full TLS-Anvil execution is
   not in PR `just ci`, and BoGo is explicitly deferred per
-  `docs/research/BOGO_DEFERRED.md`. The completed server-mode TLS-Anvil run has
-  `89` classified in-scope client/both-endpoint rows that still require client
-  or both-endpoint runner execution. TLS-Anvil normalization and wrapper-helper
-  tests are gated, and the real TLS-Anvil server suite runs in a separate
+  `docs/research/BOGO_DEFERRED.md`. The completed strict server/client captures
+  account for endpoint-mode `not_attempted` rows, but `7` TLS 1.3 both-endpoint
+  length-field rows remain #49 runner debt. TLS-Anvil normalization and
+  wrapper-helper tests are gated, and the real TLS-Anvil server suite runs in a separate
   scheduled/manual workflow. TLS-Anvil client runner/workflow wiring exists, but
   accepted client execution remains open. Completed
   TLS-Anvil server evidence now has no unexpected attempted
