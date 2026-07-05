@@ -130,9 +130,9 @@ The attempted server-side TLS-Anvil surface remains clean (`105/105` attempted
 passed). The attempted client-side surface improved after P-256 support but is
 not accepted: the strict client capture still has `6` unexpected failures, all
 currently attributed to TLS-Anvil `DSA_WITH_SHA256` certificate parameter
-combinations. The `not_attempted` buckets are now accounted for at the role and
-both-endpoint level, but #49 remains open on the `7` both-endpoint debt rows
-above.
+combinations tracked by #52. The `not_attempted` buckets are now accounted for
+at the role and both-endpoint level, but #49 remains open on the `7`
+both-endpoint debt rows above.
 
 Classification is not conformance execution. The explicit out-of-scope rows
 should not be moved into `expected_skipped`; keeping endpoint-mode mismatches

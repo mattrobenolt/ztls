@@ -125,9 +125,11 @@ consumption-for-rejection, not resumption.
   `STRICTLY_SUCCEEDED`, and the stale `*ClientAuth*` expected-skip entry has
   been removed. Full client-certificate authentication remains deferred. All six
   remaining unexpected failures align with TLS-Anvil `DSA_WITH_SHA256`
-  certificate parameter combinations that ztls rejects during server Certificate
-  processing; they remain unexpected failures, not skip-list exclusions, until
-  runner/upstream handling changes. Accepted client execution remains open while
+  certificate parameter combinations that ztls correctly rejects during server
+  Certificate processing; #52 tracks classifying those DSA-root TLS-Anvil
+  parameter combinations without accepting DSA or hiding non-DSA coverage. They
+  remain unexpected failures, not skip-list exclusions, until runner/upstream
+  handling changes. Accepted client execution remains open while
   the remaining failures and the `7` #49 both-endpoint rows remain. A skip-list
   narrowing tracked by #48 surfaces the strict-complete f50fcd8
   client capture's `sendEndOfEarlyDataAsServer` STRICTLY_SUCCEEDED row rather
