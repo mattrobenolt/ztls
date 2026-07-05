@@ -603,8 +603,13 @@ test "parse: rejects missing trust anchor by default" {
     );
 }
 
+fn emptyBundle() Certificate.Bundle {
+    if (@hasDecl(Certificate.Bundle, "empty")) return Certificate.Bundle.empty;
+    return .{};
+}
+
 test "parse: validates leaf against trust bundle" {
-    var bundle: Certificate.Bundle = .{};
+    var bundle: Certificate.Bundle = emptyBundle();
     defer bundle.deinit(testing.allocator);
     try bundle.addCertsFromFilePath(testing.allocator, fs.cwd(), "tests/fixtures/server.crt");
 
@@ -618,7 +623,7 @@ test "parse: validates leaf against trust bundle" {
 }
 
 test "parse: validates leaf-intermediate-root chain" {
-    var bundle: Certificate.Bundle = .{};
+    var bundle: Certificate.Bundle = emptyBundle();
     defer bundle.deinit(testing.allocator);
     try bundle.addCertsFromFilePath(testing.allocator, fs.cwd(), chain_root_pem);
 
@@ -632,7 +637,7 @@ test "parse: validates leaf-intermediate-root chain" {
 
 // RFC 8446 §4.4.2 — the sender certificate is the first CertificateEntry.
 test "parse: rejects chain with intermediate before leaf" {
-    var bundle: Certificate.Bundle = .{};
+    var bundle: Certificate.Bundle = emptyBundle();
     defer bundle.deinit(testing.allocator);
     try bundle.addCertsFromFilePath(testing.allocator, fs.cwd(), chain_root_pem);
 
@@ -647,7 +652,7 @@ test "parse: rejects chain with intermediate before leaf" {
 }
 
 test "parse: rejects chain with missing intermediate" {
-    var bundle: Certificate.Bundle = .{};
+    var bundle: Certificate.Bundle = emptyBundle();
     defer bundle.deinit(testing.allocator);
     try bundle.addCertsFromFilePath(testing.allocator, fs.cwd(), chain_root_pem);
 
@@ -662,7 +667,7 @@ test "parse: rejects chain with missing intermediate" {
 }
 
 test "parse: rejects chain hostname mismatch" {
-    var bundle: Certificate.Bundle = .{};
+    var bundle: Certificate.Bundle = emptyBundle();
     defer bundle.deinit(testing.allocator);
     try bundle.addCertsFromFilePath(testing.allocator, fs.cwd(), chain_root_pem);
 
@@ -677,7 +682,7 @@ test "parse: rejects chain hostname mismatch" {
 }
 
 test "parse: rejects untrusted leaf when bundle misses issuer" {
-    const bundle: Certificate.Bundle = .{};
+    const bundle: Certificate.Bundle = emptyBundle();
     var buf: [1024]u8 = undefined;
     try testing.expectError(
         error.CertificateIssuerNotFound,
@@ -689,7 +694,7 @@ test "parse: rejects untrusted leaf when bundle misses issuer" {
 }
 
 fn nameConstraintsBundle() !Certificate.Bundle {
-    var bundle: Certificate.Bundle = .{};
+    var bundle: Certificate.Bundle = emptyBundle();
     try bundle.addCertsFromFilePath(testing.allocator, fs.cwd(), nc_root_pem);
     return bundle;
 }
