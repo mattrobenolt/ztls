@@ -448,10 +448,11 @@ each passing the same correctness and interop gates.
   BoringSSL-style `EVP_AEAD` one-shot API. P-256 ECDH and signature paths
   intentionally remain proven OpenSSL-compatible wrappers until measured
   backend-specific implementations exist. Wycheproof, interop,
-  conformance run captures, benchmark measurements/evidence, and divergent
-  capability proof remain open. The conformance shims now build under the
-  AWS-LC backend, but no strict TLS-Anvil/tlsfuzzer AWS-LC report has been
-  captured yet. *(#22)*
+  conformance run captures, benchmark measurements/evidence, and provider/FIPS/
+  version capability proof remain open. The conformance shims now build under the
+  AWS-LC backend, and the TLS 1.3 tlsfuzzer smoke tests pass when those shims are
+  built with `ZTLS_CRYPTO_BACKEND=aws-lc`, but no strict TLS-Anvil/tlsfuzzer
+  AWS-LC report has been captured yet. *(#22)*
 - **OpenSSL-compatible API choices still need measured backend-specific paths.**
   X25519 and AEAD now have AWS-LC-specific primitive paths; EC/RSA key
   construction and signatures still delegate to the OpenSSL-compatible
@@ -464,8 +465,9 @@ each passing the same correctness and interop gates.
   advertisement now comes from the active backend capability declaration; server
   default suite selection and X25519/P-256 HRR/key-share selection consult the
   same facade. The current OpenSSL and AWS-LC capability sets are intentionally
-  identical, the ztls client has local X25519/P-256 first-flight key-share
-  plumbing, and no FIPS/provider-version divergent capability matrix exists yet.
+  identical but backend-owned rather than aliases, the ztls client has local
+  X25519/P-256 first-flight key-share plumbing, and no FIPS/provider-version
+  divergent capability matrix exists yet.
   The strict-complete `b6aee2c` client TLS-Anvil capture (`ci-28722850517`)
   closes the remote P-256 evidence gap with `ComplianceRequirements: passed=2`
   and `KeyShare: passed=5`. *(#22)*
@@ -481,11 +483,11 @@ each passing the same correctness and interop gates.
   under both the OpenSSL and AWS-LC lanes in `zig build test` and
   `just check-backend-aws-lc`. Wrapper-level Wycheproof boundary tests for
   X25519 and AEAD already run in both lanes via `zig build test`, but
-  facade-direct Wycheproof coverage
-  and a full provider matrix remain open. This is a narrow primitive smoke
-  contract — it does not cover Wycheproof boundary vectors per provider through
-  the facade, divergent capability matrices, interop harnesses per provider, or
-  conformance shims per provider. The full backend matrix remains open. *(#22)*
+  facade-direct Wycheproof coverage and a full provider matrix remain open. This
+  is a narrow primitive smoke contract — it does not cover Wycheproof boundary
+  vectors per provider through the facade, divergent capability matrices, or
+  strict TLS-Anvil/tlsfuzzer captures per provider. The full backend matrix
+  remains open. *(#22)*
 
 ---
 

@@ -12,7 +12,36 @@ const compat = @import("backend_openssl.zig");
 const CipherSuite = @import("../cipher_suite.zig").CipherSuite;
 const SignatureScheme = @import("../signature_scheme.zig").SignatureScheme;
 
-pub const capabilities = compat.capabilities;
+pub const capabilities = struct {
+    pub const cipher_suites: []const CipherSuite = &.{
+        .aes_128_gcm_sha256,
+        .aes_256_gcm_sha384,
+        .chacha20_poly1305_sha256,
+    };
+
+    pub const client_x25519 = true;
+    pub const client_p256 = true;
+    pub const server_x25519 = true;
+    pub const server_p256 = true;
+
+    pub const certificate_verify_schemes: []const SignatureScheme = &.{
+        .ecdsa_secp256r1_sha256,
+        .ecdsa_secp384r1_sha384,
+        .rsa_pss_rsae_sha256,
+        .rsa_pss_rsae_sha384,
+    };
+
+    // Match the current AWS-LC-linked signature facade. These are declared here,
+    // not reexported from OpenSSL, so AWS-LC can diverge when provider/FIPS
+    // version probing says it must.
+    pub const certificate_signature_schemes: []const SignatureScheme = &.{
+        .rsa_pkcs1_sha256,
+        .rsa_pkcs1_sha384,
+        .rsa_pkcs1_sha512,
+        .ecdsa_secp256r1_sha256,
+        .ecdsa_secp384r1_sha384,
+    };
+};
 
 pub const Error = compat.Error;
 pub const pkey = compat.pkey;

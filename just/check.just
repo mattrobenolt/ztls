@@ -3,7 +3,7 @@
 test:
     zig build test --summary all
 
-[doc("Build, test, and build benchmark binary with AWS-LC libcrypto")]
+[doc("Build, test, benchmark-smoke, and tlsfuzzer-smoke with AWS-LC libcrypto")]
 [group("check")]
 check-backend-aws-lc:
     #!/usr/bin/env bash
@@ -20,7 +20,10 @@ check-backend-aws-lc:
     trap 'rm -rf "$cache_dir" "$log"' EXIT
     PKG_CONFIG_PATH="$aws_lc_pkg_config_path" zig build test --summary all --verbose --cache-dir "$cache_dir" -Dcrypto-backend=aws-lc 2>&1 | tee "$log"
     PKG_CONFIG_PATH="$aws_lc_pkg_config_path" zig build bench-bin --summary all --verbose --cache-dir "$cache_dir" -Dcrypto-backend=aws-lc 2>&1 | tee -a "$log"
-    (cd conformance && PKG_CONFIG_PATH="$aws_lc_pkg_config_path" zig build --summary all --verbose --cache-dir "$cache_dir/conformance" -Dcrypto-backend=aws-lc) 2>&1 | tee -a "$log"
+    PKG_CONFIG_PATH="$aws_lc_pkg_config_path" zig build bench --cache-dir "$cache_dir" -Dcrypto-backend=aws-lc -- --filter 'BenchmarkRecordEncryptPrepared/TLS_AES_128_GCM_SHA256/1350' --count=1 --benchtime=1x --no-env
+    PKG_CONFIG_PATH="$aws_lc_pkg_config_path" zig build example-in_memory_handshake --summary all --cache-dir "$cache_dir" -Dcrypto-backend=aws-lc
+    (cd conformance && PKG_CONFIG_PATH="$aws_lc_pkg_config_path" ZTLS_CRYPTO_BACKEND=aws-lc zig build --summary all --verbose --cache-dir "$cache_dir/conformance" -Dcrypto-backend=aws-lc) 2>&1 | tee -a "$log"
+    (cd conformance && PKG_CONFIG_PATH="$aws_lc_pkg_config_path" ZTLS_CRYPTO_BACKEND=aws-lc uv run pytest -q test_tls13.py)
     grep -F -- "-I$aws_lc_include_dir" "$log" >/dev/null || {
         echo "AWS-LC include path was not used: $aws_lc_include_dir" >&2
         exit 1
