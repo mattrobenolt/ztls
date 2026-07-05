@@ -58,16 +58,8 @@
       "reason": "FFDHE named groups are outside the current named-group scope (#6)"
     },
     {
-      "pattern": "*FFDHE*",
-      "reason": "FFDHE named groups are outside the current named-group scope (#6)"
-    },
-    {
       "pattern": "*Specific features required for the test have not been met by the SUT for derivation parameter NAMED_GROUP*",
-      "reason": "non-X25519 named-group support is tracked separately (#6)"
-    },
-    {
-      "pattern": "*Target does not support more than one NamedGroup in TLS 1.3*",
-      "reason": "non-X25519 named-group support is tracked separately (#6)"
+      "reason": "P-384, FFDHE, and other unsupported named-group derivations are tracked separately (#6)"
     },
     {
       "pattern": "*Sender restrictions are not expected to be enforced*",

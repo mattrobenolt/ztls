@@ -75,8 +75,9 @@ out-of-scope decision; the things that must *fail* are enumerated and tested as
 rigorously as the things that must succeed.
 
 **Supported surface today** (per `CORRECTNESS.md`): TLS 1.3 full handshake over
-X25519, three mandatory cipher suites, certificate-authenticated server flight
-with client verification gates, application data, alerts, `close_notify`,
+X25519 and P-256 ECDHE, three mandatory cipher suites, certificate-authenticated
+server flight with client verification gates, application data, alerts,
+`close_notify`,
 post-handshake KeyUpdate (both directions, flood-bounded, record-boundary
 enforced). NewSessionTicket is parsed for structural validity and discarded —
 consumption-for-rejection, not resumption.
@@ -105,28 +106,27 @@ consumption-for-rejection, not resumption.
   The real server suite is wired in `.github/workflows/tls-anvil-server.yml` for
   weekly and manually-triggered runs. A client-mode TLS-Anvil runner and
   `.github/workflows/tls-anvil-client.yml` are wired with the same provenance
-  shape. The latest strict-normalized client parent report on `f4fb1da`
-  (`ci-28721138540`) is strict-complete (`Running: false`, `FinishedTests: 437`,
-  `TotalTests: 437`) with normalized counts of `passed: 88`, `failed: 8`,
-  `expected_skipped: 136`, `unexpected_skipped: 0`, and `not_attempted: 205`;
+  shape. The latest strict-normalized client parent report on `b6aee2c`
+  (`ci-28722850517`) is strict-complete (`Running: false`, `FinishedTests: 437`,
+  `TotalTests: 437`) with normalized counts of `passed: 91`, `failed: 6`,
+  `expected_skipped: 135`, `unexpected_skipped: 0`, and `not_attempted: 205`;
   the workflow conclusion is `failure` because the strict-normalize step
-  intentionally exits nonzero while unexpected failures remain.
-  `Extensions.sendAdditionalExtension` now passes after the #48 unsolicited
-  extension slice. A #4 precursor now accepts handshake-time `CertificateRequest`
-  and emits an empty client `Certificate` before `Finished` when no client
-  credentials are configured; `ClientAuthentication.clientSendsCertificateAndFinMessage`
-  is now `STRICTLY_SUCCEEDED`, and the stale `*ClientAuth*` expected-skip entry
-  has been removed. Full client-certificate authentication remains deferred.
-  Six of the eight remaining unexpected failures still align with TLS-Anvil
-  `DSA_WITH_SHA256` certificate parameter combinations that ztls rejects during
-  server Certificate processing; they remain unexpected failures, not skip-list
-  exclusions, until runner/upstream handling changes. The other two rows are
-  `RecordProtocol.checkMinimumRecordProtocolVersions` under the AES-256/TCP-
-  fragmentation parameter combination and client P-256 key-share support (#6).
-  A local #6 slice now advertises X25519 and P-256 client key shares and accepts
-  either ServerHello group; remote TLS-Anvil evidence for whether that clears
-  `ComplianceRequirements.supportsSecp256r1` is still pending. Accepted client
-  execution remains open while the remaining failures and the
+  intentionally exits nonzero while unexpected failures remain. `ComplianceRequirements`
+  reports `passed=2`, clearing the #6 `supportsSecp256r1` client row;
+  `KeyShare` reports `passed=5` with zero failures; and the previous
+  `RecordProtocol.checkMinimumRecordProtocolVersions` AES-256/TCP-fragmentation
+  failure no longer appears. `Extensions.sendAdditionalExtension`
+  now passes after the #48 unsolicited extension slice. A #4 precursor now
+  accepts handshake-time `CertificateRequest` and emits an empty client
+  `Certificate` before `Finished` when no client credentials are configured;
+  `ClientAuthentication.clientSendsCertificateAndFinMessage` is now
+  `STRICTLY_SUCCEEDED`, and the stale `*ClientAuth*` expected-skip entry has
+  been removed. Full client-certificate authentication remains deferred. All six
+  remaining unexpected failures align with TLS-Anvil `DSA_WITH_SHA256`
+  certificate parameter combinations that ztls rejects during server Certificate
+  processing; they remain unexpected failures, not skip-list exclusions, until
+  runner/upstream handling changes. Accepted client execution remains open while
+  the remaining failures and the
   not-attempted client/both-endpoint bucket remain. A skip-list narrowing tracked
   by #48 surfaces the strict-complete f50fcd8
   client capture's `sendEndOfEarlyDataAsServer` STRICTLY_SUCCEEDED row rather
@@ -432,7 +432,9 @@ each passing the same correctness and interop gates.
   same facade. The current OpenSSL and AWS-LC capability sets are intentionally
   identical, the ztls client has local X25519/P-256 first-flight key-share
   plumbing, and no FIPS/provider-version divergent capability matrix exists yet.
-  Remote client-side TLS-Anvil evidence for P-256 is still pending. *(#22)*
+  The strict-complete `b6aee2c` client TLS-Anvil capture (`ci-28722850517`)
+  closes the remote P-256 evidence gap with `ComplianceRequirements: passed=2`
+  and `KeyShare: passed=5`. *(#22)*
 - **Named-group/key-exchange shape is only partly generalized.** X25519 and
   P-256 ECDHE are provider-backed on the server side, and the client can now
   advertise both groups and process either ServerHello key_share locally; P-384,

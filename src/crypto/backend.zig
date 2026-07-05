@@ -283,8 +283,7 @@ test "x25519 handle shape matches active backend" {
     }
 }
 
-// Current client key-share plumbing is X25519-only; do not advertise P-256 until
-// ServerHello parsing and shared-secret derivation support it on the client.
+// Client first-flight key-share plumbing currently supports X25519 and P-256.
 test "client group capabilities match implemented client key-share plumbing" {
     try testing.expect(capabilities.client_x25519);
     try testing.expect(capabilities.client_p256);

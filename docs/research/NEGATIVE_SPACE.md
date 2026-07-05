@@ -156,7 +156,7 @@ These are deliberately not closed by writing the inventory:
 - Full bettertls harness execution remains outside the local name-constraints
   fixture set (#9).
 - BoGo/TLS-Anvil execution remains #9.
-- HRR, PSK/resumption, 0-RTT, client certificates, and PQ/non-X25519 groups are
+- HRR, PSK/resumption, 0-RTT, client certificates, and PQ / P-384+ groups are
   out of the current supported surface and tracked by their feature issues.
 - Legacy session id length caps on parse paths need dedicated enforcement/tests.
 - Server Certificate `request_context` non-empty rejection needs a targeted test.

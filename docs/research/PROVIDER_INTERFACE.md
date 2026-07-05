@@ -216,7 +216,7 @@ pub const capabilities = struct {
 
 FIPS posture is build-time selection (OpenSSL fips provider vs `aws-lc-fips`),
 surfaced as a comptime flag that *narrows* the capability table (e.g. drops
-non-approved sigs / X25519-only groups). Getting this wrong means negotiating
+non-approved signatures or groups). Getting this wrong means negotiating
 algorithms the backend cannot run. BoringSSL/AWS-LC have no runtime provider
 model; OpenSSL fetches by name — prefetch and cache all handles at backend init.
 

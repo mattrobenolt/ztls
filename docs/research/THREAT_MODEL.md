@@ -17,7 +17,7 @@ lives in `RFC8446_MUST_MATRIX.md`.
 The current threat model covers the implemented TLS 1.3 surface:
 
 - TLS 1.3 only. No TLS 1.2 fallback, no DTLS.
-- X25519 key exchange only.
+- X25519 and P-256 key exchange.
 - The three mandatory TLS 1.3 AEAD suites:
   `TLS_AES_128_GCM_SHA256`, `TLS_AES_256_GCM_SHA384`, and
   `TLS_CHACHA20_POLY1305_SHA256`.
@@ -27,8 +27,8 @@ The current threat model covers the implemented TLS 1.3 surface:
 - NewSessionTicket is parsed for structural validity and discarded until PSK /
   resumption exists (#2).
 - HelloRetryRequest (#1), PSK/resumption (#2), 0-RTT (#3), client auth (#4),
-  and non-X25519 / PQ groups (#6) are explicitly outside the current
-  implemented surface. Extension behavior beyond the current surface is tracked
+  and P-384 / PQ groups (#6) are explicitly outside the current implemented
+  surface. Extension behavior beyond the current surface is tracked
   by the feature issue that introduces that extension.
 
 ## In-scope adversary capabilities
@@ -236,8 +236,8 @@ global replay cache.
 
 ### Unsupported TLS features
 
-HelloRetryRequest, PSK/resumption, client certificates, 0-RTT, non-X25519/PQ
-key exchange, and broader extension negotiation are not defended as implemented
+HelloRetryRequest, PSK/resumption, client certificates, 0-RTT, P-384/PQ key
+exchange, and broader extension negotiation are not defended as implemented
 features until their tracking issues land.
 
 ## Open threat-relevant gaps
