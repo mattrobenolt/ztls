@@ -319,19 +319,26 @@ comparisons measure equivalent work*. This is the project's justification.
   missing implementation or mismatched sample counts across implementations.
 - `infra/bench/` is an OpenTofu/NixOS EC2 host recipe with a pinned-ish shape:
   region `us-west-2`, default `c7i.large`, generated ED25519 SSH key,
-  public VPC/subnet/security group, Nix flakes enabled, ASLR disabled, and some
-  noisy services masked.
+  public VPC/subnet/security group, Nix flakes enabled, ASLR disabled, a larger
+  Nix download buffer for remote cache fetches, and some noisy services masked.
 - The AWS README documents the one-command remote path: `just
   bench-remote-capture` initializes OpenTofu, provisions/replaces each requested
   instance type, rsyncs the repo including `.git`, runs the capture inside the
   OpenSSL devshell, pulls the timestamped run directory back, writes
   `benchstat.txt`, and destroys EC2 resources by default unless `--keep-instance`
-  is passed. The committed default matrix is currently one `c7i.large`; wider
-  matrix runs are selected with `--instance-types`.
-- `docs/research/perf/20260613-182405-ec2-c7i-large/` is the first committed
-  EC2 result set, with raw ztls/EVP/libssl/rustls outputs, `metadata.txt`, and
-  `benchstat.txt`. It was captured on a clean `c7i.large` host at git revision
-  `c7097426cfad938c609b626c56790ec9e1115952` with `--count=5 --benchtime=500ms`.
+  is passed. The runner now emits timestamped phase logs and 30-second
+  heartbeats during long provisioning/build/benchmark steps. The committed
+  default matrix is currently one `c7i.large`; wider matrix runs are selected
+  with `--instance-types`.
+- `docs/research/perf/20260613-182405-ec2-c7i-large/` is the historical first
+  committed EC2 result set. Fresh #11 remote-runner captures now live under
+  `docs/research/perf/20260705-183821-ec2-c7i-large/` and
+  `docs/research/perf/20260705-194022-ec2-c7i-2xlarge/`, with raw
+  ztls/EVP/libssl/rustls outputs, `metadata.txt`, and `benchstat.txt`. They were
+  captured on clean `c7i.large` and `c7i.2xlarge` hosts in `us-west-2` with
+  `--count 5 --benchtime 500ms`; the `c7i.large` capture records git revision
+  `5ec2eaae729d7e9aa8746650bf8288327f81fdf1`, and the `c7i.2xlarge` capture
+  records git revision `89c869eb2a22c6c0f2ffe077c8f13204a92f4074`.
 - The local benchmark docs require metadata: target, CPU model, Zig version,
   optimization mode, and git revision. AGENTS.md separately requires committed
   benchmark numbers to include machine + flags + date.
@@ -340,20 +347,18 @@ comparisons measure equivalent work*. This is the project's justification.
 
 **Gaps:**
 
-- **Full benchmark workflow has a one-command runner but lacks fresh remote
-  proof.** `just bench-remote-capture` owns provisioning, deploy, SSH execution,
-  pullback, analysis, dirty-tree rejection, and default cleanup. It still needs a
-  fresh committed remote capture proving the runner itself on the target host.
-  *(#11)*
-- **Hardware matrix is selectable, not yet proven.** `infra/bench/` defaults to
-  `c7i.large` and the runner accepts `--instance-types` for broader matrices,
-  but there is no committed multi-instance result set, CPU pinning policy,
-  repetitions, or acceptance thresholds. *(#11)*
-- **Published results are only a first single-host data point.** The repo now
-  has one committed EC2 `c7i.large` result set with full provenance, but Pillar 3
-  still needs the #11 hardware matrix, one-command remote workflow, repetitions
-  policy, acceptance thresholds, and follow-up analysis before performance claims
-  become marketing-grade.
+- **Remote benchmark workflow is proven but still early evidence.** `just
+  bench-remote-capture` now owns provisioning, deploy, SSH execution, pullback,
+  analysis, dirty-tree rejection, verbose progress reporting, and default
+  cleanup, with committed clean EC2 captures on `c7i.large` and `c7i.2xlarge`.
+  Pillar 3 still needs a documented repetition policy, acceptance thresholds,
+  and follow-up analysis before performance claims become marketing-grade.
+- **Hardware matrix has two committed x86_64 points, not a final matrix policy.**
+  `infra/bench/` defaults to `c7i.large` and accepts `--instance-types` for
+  broader serial matrix captures. The committed same-day `c7i.large` and
+  `c7i.2xlarge` captures prove the path across two EC2 shapes, but CPU pinning,
+  repetitions, instance-family breadth, and threshold policy remain open for
+  marketing-grade performance evidence.
 - **Benchmark equivalence methodology and row-oriented perf/disassembly
   tooling are methodology progress, not committed perf evidence.** The per-row
   timed-work inventories, the benchmark explanation template, and the

@@ -1,0 +1,725 @@
+zig_os: linux
+zig_arch: x86_64
+zig_abi: gnu
+zig_cpu: sapphirerapids
+zig_mode: ReleaseFast
+BenchmarkLastIndexNonZeroNoPadding16	267700756	         2.236 ns/op
+BenchmarkLastIndexNonZeroNoPadding16	268222212	         2.236 ns/op
+BenchmarkLastIndexNonZeroNoPadding16	267326492	         2.241 ns/op
+BenchmarkLastIndexNonZeroNoPadding16	268052284	         2.237 ns/op
+BenchmarkLastIndexNonZeroNoPadding16	268797460	         2.240 ns/op
+BenchmarkLastIndexNonZeroPadding1To16	268783131	         2.237 ns/op
+BenchmarkLastIndexNonZeroPadding1To16	268397288	         2.235 ns/op
+BenchmarkLastIndexNonZeroPadding1To16	267367999	         2.239 ns/op
+BenchmarkLastIndexNonZeroPadding1To16	267891014	         2.240 ns/op
+BenchmarkLastIndexNonZeroPadding1To16	268423168	         2.237 ns/op
+BenchmarkLastIndexNonZeroPadding16To128	267916711	         2.242 ns/op
+BenchmarkLastIndexNonZeroPadding16To128	268321417	         2.239 ns/op
+BenchmarkLastIndexNonZeroPadding16To128	267540463	         2.243 ns/op
+BenchmarkLastIndexNonZeroPadding16To128	267942538	         2.239 ns/op
+BenchmarkLastIndexNonZeroPadding16To128	267827098	         2.240 ns/op
+BenchmarkLastIndexNonZeroPadding128To1350	267963944	         2.240 ns/op
+BenchmarkLastIndexNonZeroPadding128To1350	267906063	         2.238 ns/op
+BenchmarkLastIndexNonZeroPadding128To1350	268068666	         2.237 ns/op
+BenchmarkLastIndexNonZeroPadding128To1350	268031097	         2.237 ns/op
+BenchmarkLastIndexNonZeroPadding128To1350	268540263	         2.238 ns/op
+BenchmarkLastIndexNonZeroAllZero1350	307200656	         1.959 ns/op
+BenchmarkLastIndexNonZeroAllZero1350	305775913	         1.962 ns/op
+BenchmarkLastIndexNonZeroAllZero1350	306087772	         1.960 ns/op
+BenchmarkLastIndexNonZeroAllZero1350	306229038	         1.960 ns/op
+BenchmarkLastIndexNonZeroAllZero1350	305678330	         1.962 ns/op
+BenchmarkNonceConstructVector	296220698	         2.029 ns/op
+BenchmarkNonceConstructVector	296851879	         2.021 ns/op
+BenchmarkNonceConstructVector	296287489	         2.027 ns/op
+BenchmarkNonceConstructVector	295842088	         2.028 ns/op
+BenchmarkNonceConstructVector	296141580	         2.026 ns/op
+BenchmarkParseHeaderCurrent	303628585	         1.979 ns/op
+BenchmarkParseHeaderCurrent	302936640	         1.983 ns/op
+BenchmarkParseHeaderCurrent	301449421	         1.987 ns/op
+BenchmarkParseHeaderCurrent	302732172	         1.982 ns/op
+BenchmarkParseHeaderCurrent	302909754	         1.978 ns/op
+BenchmarkWireReaderU8	398699720	         1.506 ns/op
+BenchmarkWireReaderU8	396891337	         1.509 ns/op
+BenchmarkWireReaderU8	396927613	         1.511 ns/op
+BenchmarkWireReaderU8	396900255	         1.516 ns/op
+BenchmarkWireReaderU8	398949482	         1.507 ns/op
+BenchmarkWireReaderU16	386169369	         1.558 ns/op
+BenchmarkWireReaderU16	385378816	         1.557 ns/op
+BenchmarkWireReaderU16	384097512	         1.556 ns/op
+BenchmarkWireReaderU16	385585977	         1.559 ns/op
+BenchmarkWireReaderU16	387120652	         1.554 ns/op
+BenchmarkWireReaderU24	363161398	         1.659 ns/op
+BenchmarkWireReaderU24	360118468	         1.660 ns/op
+BenchmarkWireReaderU24	360782258	         1.657 ns/op
+BenchmarkWireReaderU24	361807968	         1.659 ns/op
+BenchmarkWireReaderU24	361953140	         1.655 ns/op
+BenchmarkWireReaderSafeSequence	344069253	         1.741 ns/op
+BenchmarkWireReaderSafeSequence	342111279	         1.745 ns/op
+BenchmarkWireReaderSafeSequence	344089105	         1.744 ns/op
+BenchmarkWireReaderSafeSequence	344054262	         1.748 ns/op
+BenchmarkWireReaderSafeSequence	343727422	         1.747 ns/op
+BenchmarkWireReaderAssumeSequence	344908381	         1.746 ns/op
+BenchmarkWireReaderAssumeSequence	342812590	         1.742 ns/op
+BenchmarkWireReaderAssumeSequence	341498108	         1.750 ns/op
+BenchmarkWireReaderAssumeSequence	341998544	         1.746 ns/op
+BenchmarkWireReaderAssumeSequence	345002377	         1.743 ns/op
+BenchmarkNewSessionTicketParseCurrent	35756241	        16.74 ns/op
+BenchmarkNewSessionTicketParseCurrent	36274233	        16.66 ns/op
+BenchmarkNewSessionTicketParseCurrent	36200300	        16.68 ns/op
+BenchmarkNewSessionTicketParseCurrent	36026772	        16.67 ns/op
+BenchmarkNewSessionTicketParseCurrent	35830101	        16.67 ns/op
+BenchmarkParseHeader	306939504	         1.959 ns/op
+BenchmarkParseHeader	306704371	         1.956 ns/op
+BenchmarkParseHeader	306892215	         1.959 ns/op
+BenchmarkParseHeader	306056898	         1.959 ns/op
+BenchmarkParseHeader	306367416	         1.956 ns/op
+BenchmarkRecordBufferNext	306329800	         1.962 ns/op
+BenchmarkRecordBufferNext	305834463	         1.961 ns/op
+BenchmarkRecordBufferNext	305577932	         1.961 ns/op
+BenchmarkRecordBufferNext	306794026	         1.957 ns/op
+BenchmarkRecordBufferNext	306337179	         1.962 ns/op
+BenchmarkClientHandshakeReplay/TLS_AES_128_GCM_SHA256	    6217	     95372 ns/op
+BenchmarkClientHandshakeReplay/TLS_AES_256_GCM_SHA384	    5736	    104862 ns/op
+BenchmarkClientHandshakeReplay/TLS_CHACHA20_POLY1305_SHA256	    6286	     95412 ns/op
+BenchmarkClientHandshakeReplay/TLS_AES_128_GCM_SHA256	    6250	     95369 ns/op
+BenchmarkClientHandshakeReplay/TLS_AES_256_GCM_SHA384	    5710	    104878 ns/op
+BenchmarkClientHandshakeReplay/TLS_CHACHA20_POLY1305_SHA256	    6153	     95723 ns/op
+BenchmarkClientHandshakeReplay/TLS_AES_128_GCM_SHA256	    6309	     95621 ns/op
+BenchmarkClientHandshakeReplay/TLS_AES_256_GCM_SHA384	    5733	    105174 ns/op
+BenchmarkClientHandshakeReplay/TLS_CHACHA20_POLY1305_SHA256	    6242	     95813 ns/op
+BenchmarkClientHandshakeReplay/TLS_AES_128_GCM_SHA256	    6356	     95471 ns/op
+BenchmarkClientHandshakeReplay/TLS_AES_256_GCM_SHA384	    5724	    104937 ns/op
+BenchmarkClientHandshakeReplay/TLS_CHACHA20_POLY1305_SHA256	    6340	     95331 ns/op
+BenchmarkClientHandshakeReplay/TLS_AES_128_GCM_SHA256	    6265	     95274 ns/op
+BenchmarkClientHandshakeReplay/TLS_AES_256_GCM_SHA384	    5709	    105019 ns/op
+BenchmarkClientHandshakeReplay/TLS_CHACHA20_POLY1305_SHA256	    6292	     95299 ns/op
+BenchmarkHandshake/impl=ztls/suite=TLS_AES_128_GCM_SHA256	    1489	    399672 ns/op
+BenchmarkHandshake/impl=ztls/suite=TLS_AES_256_GCM_SHA384	    1357	    442344 ns/op
+BenchmarkHandshake/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256	    1500	    399375 ns/op
+BenchmarkHandshake/impl=ztls/suite=TLS_AES_128_GCM_SHA256	    1492	    398758 ns/op
+BenchmarkHandshake/impl=ztls/suite=TLS_AES_256_GCM_SHA384	    1353	    442855 ns/op
+BenchmarkHandshake/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256	    1490	    403248 ns/op
+BenchmarkHandshake/impl=ztls/suite=TLS_AES_128_GCM_SHA256	    1502	    400309 ns/op
+BenchmarkHandshake/impl=ztls/suite=TLS_AES_256_GCM_SHA384	    1348	    444834 ns/op
+BenchmarkHandshake/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256	    1492	    402963 ns/op
+BenchmarkHandshake/impl=ztls/suite=TLS_AES_128_GCM_SHA256	    1482	    400365 ns/op
+BenchmarkHandshake/impl=ztls/suite=TLS_AES_256_GCM_SHA384	    1352	    443971 ns/op
+BenchmarkHandshake/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256	    1506	    399469 ns/op
+BenchmarkHandshake/impl=ztls/suite=TLS_AES_128_GCM_SHA256	    1501	    398261 ns/op
+BenchmarkHandshake/impl=ztls/suite=TLS_AES_256_GCM_SHA384	    1356	    442008 ns/op
+BenchmarkHandshake/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256	    1494	    399589 ns/op
+BenchmarkHandshakeClientStart/TLS_AES_128_GCM_SHA256	   10000	     59463 ns/op
+BenchmarkHandshakeClientStart/TLS_AES_256_GCM_SHA384	   10000	     59221 ns/op
+BenchmarkHandshakeClientStart/TLS_CHACHA20_POLY1305_SHA256	   10000	     59314 ns/op
+BenchmarkHandshakeClientStart/TLS_AES_128_GCM_SHA256	   10000	     59298 ns/op
+BenchmarkHandshakeClientStart/TLS_AES_256_GCM_SHA384	   10000	     59371 ns/op
+BenchmarkHandshakeClientStart/TLS_CHACHA20_POLY1305_SHA256	   10000	     59318 ns/op
+BenchmarkHandshakeClientStart/TLS_AES_128_GCM_SHA256	   10000	     59423 ns/op
+BenchmarkHandshakeClientStart/TLS_AES_256_GCM_SHA384	   10000	     59363 ns/op
+BenchmarkHandshakeClientStart/TLS_CHACHA20_POLY1305_SHA256	   10000	     59361 ns/op
+BenchmarkHandshakeClientStart/TLS_AES_128_GCM_SHA256	   10000	     59364 ns/op
+BenchmarkHandshakeClientStart/TLS_AES_256_GCM_SHA384	   10000	     59362 ns/op
+BenchmarkHandshakeClientStart/TLS_CHACHA20_POLY1305_SHA256	   10000	     59380 ns/op
+BenchmarkHandshakeClientStart/TLS_AES_128_GCM_SHA256	   10000	     59354 ns/op
+BenchmarkHandshakeClientStart/TLS_AES_256_GCM_SHA384	   10000	     59425 ns/op
+BenchmarkHandshakeClientStart/TLS_CHACHA20_POLY1305_SHA256	   10000	     59277 ns/op
+BenchmarkHandshakeServerAccept/TLS_AES_128_GCM_SHA256	    4972	    120882 ns/op
+BenchmarkHandshakeServerAccept/TLS_AES_256_GCM_SHA384	    4524	    133221 ns/op
+BenchmarkHandshakeServerAccept/TLS_CHACHA20_POLY1305_SHA256	    4980	    121011 ns/op
+BenchmarkHandshakeServerAccept/TLS_AES_128_GCM_SHA256	    4959	    120964 ns/op
+BenchmarkHandshakeServerAccept/TLS_AES_256_GCM_SHA384	    4464	    133052 ns/op
+BenchmarkHandshakeServerAccept/TLS_CHACHA20_POLY1305_SHA256	    4899	    121117 ns/op
+BenchmarkHandshakeServerAccept/TLS_AES_128_GCM_SHA256	    4975	    121020 ns/op
+BenchmarkHandshakeServerAccept/TLS_AES_256_GCM_SHA384	    4520	    132844 ns/op
+BenchmarkHandshakeServerAccept/TLS_CHACHA20_POLY1305_SHA256	    4941	    121046 ns/op
+BenchmarkHandshakeServerAccept/TLS_AES_128_GCM_SHA256	    4965	    121195 ns/op
+BenchmarkHandshakeServerAccept/TLS_AES_256_GCM_SHA384	    4488	    132931 ns/op
+BenchmarkHandshakeServerAccept/TLS_CHACHA20_POLY1305_SHA256	    4981	    120937 ns/op
+BenchmarkHandshakeServerAccept/TLS_AES_128_GCM_SHA256	    4966	    121472 ns/op
+BenchmarkHandshakeServerAccept/TLS_AES_256_GCM_SHA384	    4531	    132736 ns/op
+BenchmarkHandshakeServerAccept/TLS_CHACHA20_POLY1305_SHA256	    4951	    121055 ns/op
+BenchmarkHandshakeClientServerHello/TLS_AES_128_GCM_SHA256	   10000	     58555 ns/op
+BenchmarkHandshakeClientServerHello/TLS_AES_256_GCM_SHA384	   10000	     58676 ns/op
+BenchmarkHandshakeClientServerHello/TLS_CHACHA20_POLY1305_SHA256	   10000	     58579 ns/op
+BenchmarkHandshakeClientServerHello/TLS_AES_128_GCM_SHA256	   10000	     58624 ns/op
+BenchmarkHandshakeClientServerHello/TLS_AES_256_GCM_SHA384	    9985	     58761 ns/op
+BenchmarkHandshakeClientServerHello/TLS_CHACHA20_POLY1305_SHA256	   10000	     58556 ns/op
+BenchmarkHandshakeClientServerHello/TLS_AES_128_GCM_SHA256	   10000	     58691 ns/op
+BenchmarkHandshakeClientServerHello/TLS_AES_256_GCM_SHA384	   10000	     58583 ns/op
+BenchmarkHandshakeClientServerHello/TLS_CHACHA20_POLY1305_SHA256	   10000	     58663 ns/op
+BenchmarkHandshakeClientServerHello/TLS_AES_128_GCM_SHA256	   10000	     58651 ns/op
+BenchmarkHandshakeClientServerHello/TLS_AES_256_GCM_SHA384	   10000	     58634 ns/op
+BenchmarkHandshakeClientServerHello/TLS_CHACHA20_POLY1305_SHA256	   10000	     58549 ns/op
+BenchmarkHandshakeClientServerHello/TLS_AES_128_GCM_SHA256	   10000	     58638 ns/op
+BenchmarkHandshakeClientServerHello/TLS_AES_256_GCM_SHA384	   10000	     58575 ns/op
+BenchmarkHandshakeClientServerHello/TLS_CHACHA20_POLY1305_SHA256	   10000	     58691 ns/op
+BenchmarkHandshakeServerFlight/TLS_AES_128_GCM_SHA256	    4122	    144515 ns/op
+BenchmarkHandshakeServerFlight/TLS_AES_256_GCM_SHA384	    3792	    158918 ns/op
+BenchmarkHandshakeServerFlight/TLS_CHACHA20_POLY1305_SHA256	    4138	    144983 ns/op
+BenchmarkHandshakeServerFlight/TLS_AES_128_GCM_SHA256	    4153	    144421 ns/op
+BenchmarkHandshakeServerFlight/TLS_AES_256_GCM_SHA384	    3766	    159206 ns/op
+BenchmarkHandshakeServerFlight/TLS_CHACHA20_POLY1305_SHA256	    4141	    145304 ns/op
+BenchmarkHandshakeServerFlight/TLS_AES_128_GCM_SHA256	    4056	    144662 ns/op
+BenchmarkHandshakeServerFlight/TLS_AES_256_GCM_SHA384	    3790	    159113 ns/op
+BenchmarkHandshakeServerFlight/TLS_CHACHA20_POLY1305_SHA256	    4143	    144873 ns/op
+BenchmarkHandshakeServerFlight/TLS_AES_128_GCM_SHA256	    4201	    144443 ns/op
+BenchmarkHandshakeServerFlight/TLS_AES_256_GCM_SHA384	    3769	    158861 ns/op
+BenchmarkHandshakeServerFlight/TLS_CHACHA20_POLY1305_SHA256	    4096	    145438 ns/op
+BenchmarkHandshakeServerFlight/TLS_AES_128_GCM_SHA256	    4177	    144477 ns/op
+BenchmarkHandshakeServerFlight/TLS_AES_256_GCM_SHA384	    3735	    160283 ns/op
+BenchmarkHandshakeServerFlight/TLS_CHACHA20_POLY1305_SHA256	    4140	    145133 ns/op
+BenchmarkHandshakeClientFlight/TLS_AES_128_GCM_SHA256	   10000	     58309 ns/op
+BenchmarkHandshakeClientFlight/TLS_AES_256_GCM_SHA384	   10000	     58422 ns/op
+BenchmarkHandshakeClientFlight/TLS_CHACHA20_POLY1305_SHA256	   10000	     58361 ns/op
+BenchmarkHandshakeClientFlight/TLS_AES_128_GCM_SHA256	   10000	     58282 ns/op
+BenchmarkHandshakeClientFlight/TLS_AES_256_GCM_SHA384	   10000	     58290 ns/op
+BenchmarkHandshakeClientFlight/TLS_CHACHA20_POLY1305_SHA256	   10000	     58287 ns/op
+BenchmarkHandshakeClientFlight/TLS_AES_128_GCM_SHA256	   10000	     58341 ns/op
+BenchmarkHandshakeClientFlight/TLS_AES_256_GCM_SHA384	   10000	     58346 ns/op
+BenchmarkHandshakeClientFlight/TLS_CHACHA20_POLY1305_SHA256	   10000	     58466 ns/op
+BenchmarkHandshakeClientFlight/TLS_AES_128_GCM_SHA256	   10000	     58269 ns/op
+BenchmarkHandshakeClientFlight/TLS_AES_256_GCM_SHA384	   10000	     58467 ns/op
+BenchmarkHandshakeClientFlight/TLS_CHACHA20_POLY1305_SHA256	   10000	     58370 ns/op
+BenchmarkHandshakeClientFlight/TLS_AES_128_GCM_SHA256	   10000	     58226 ns/op
+BenchmarkHandshakeClientFlight/TLS_AES_256_GCM_SHA384	   10000	     58292 ns/op
+BenchmarkHandshakeClientFlight/TLS_CHACHA20_POLY1305_SHA256	   10000	     58340 ns/op
+BenchmarkHandshakeServerFinished/TLS_AES_128_GCM_SHA256	  159692	      3740 ns/op
+BenchmarkHandshakeServerFinished/TLS_AES_256_GCM_SHA384	   49324	     12156 ns/op
+BenchmarkHandshakeServerFinished/TLS_CHACHA20_POLY1305_SHA256	  146604	      4097 ns/op
+BenchmarkHandshakeServerFinished/TLS_AES_128_GCM_SHA256	  160994	      3734 ns/op
+BenchmarkHandshakeServerFinished/TLS_AES_256_GCM_SHA384	   49382	     12158 ns/op
+BenchmarkHandshakeServerFinished/TLS_CHACHA20_POLY1305_SHA256	  146358	      4054 ns/op
+BenchmarkHandshakeServerFinished/TLS_AES_128_GCM_SHA256	  160120	      3741 ns/op
+BenchmarkHandshakeServerFinished/TLS_AES_256_GCM_SHA384	   49402	     12156 ns/op
+BenchmarkHandshakeServerFinished/TLS_CHACHA20_POLY1305_SHA256	  147706	      4073 ns/op
+BenchmarkHandshakeServerFinished/TLS_AES_128_GCM_SHA256	  161388	      3736 ns/op
+BenchmarkHandshakeServerFinished/TLS_AES_256_GCM_SHA384	   49429	     12156 ns/op
+BenchmarkHandshakeServerFinished/TLS_CHACHA20_POLY1305_SHA256	  148498	      4074 ns/op
+BenchmarkHandshakeServerFinished/TLS_AES_128_GCM_SHA256	  160562	      3738 ns/op
+BenchmarkHandshakeServerFinished/TLS_AES_256_GCM_SHA384	   49392	     12158 ns/op
+BenchmarkHandshakeServerFinished/TLS_CHACHA20_POLY1305_SHA256	  146846	      4094 ns/op
+BenchmarkRecordEncrypt/TLS_AES_128_GCM_SHA256/16	 5562676	       107.7 ns/op	 148.55 MB/s
+BenchmarkRecordEncrypt/TLS_AES_128_GCM_SHA256/128	 5390283	       111.2 ns/op	1150.92 MB/s
+BenchmarkRecordEncrypt/TLS_AES_128_GCM_SHA256/1350	 3021878	       198.9 ns/op	6786.96 MB/s
+BenchmarkRecordEncrypt/TLS_AES_128_GCM_SHA256/8192	  971419	       616.2 ns/op	13294.43 MB/s
+BenchmarkRecordEncrypt/TLS_AES_128_GCM_SHA256/16384	  540510	      1106 ns/op	14817.05 MB/s
+BenchmarkRecordEncrypt/TLS_AES_256_GCM_SHA384/16	 5269887	       113.6 ns/op	 140.86 MB/s
+BenchmarkRecordEncrypt/TLS_AES_256_GCM_SHA384/128	 5171730	       116.1 ns/op	1102.33 MB/s
+BenchmarkRecordEncrypt/TLS_AES_256_GCM_SHA384/1350	 2760928	       217.3 ns/op	6213.84 MB/s
+BenchmarkRecordEncrypt/TLS_AES_256_GCM_SHA384/8192	  876297	       688.1 ns/op	11905.35 MB/s
+BenchmarkRecordEncrypt/TLS_AES_256_GCM_SHA384/16384	  466106	      1306 ns/op	12544.02 MB/s
+BenchmarkRecordEncrypt/TLS_CHACHA20_POLY1305_SHA256/16	  862170	       699.4 ns/op	  22.88 MB/s
+BenchmarkRecordEncrypt/TLS_CHACHA20_POLY1305_SHA256/128	 1000000	       594.0 ns/op	 215.49 MB/s
+BenchmarkRecordEncrypt/TLS_CHACHA20_POLY1305_SHA256/1350	  536548	      1122 ns/op	1203.43 MB/s
+BenchmarkRecordEncrypt/TLS_CHACHA20_POLY1305_SHA256/8192	  226867	      2613 ns/op	3134.82 MB/s
+BenchmarkRecordEncrypt/TLS_CHACHA20_POLY1305_SHA256/16384	  127402	      4627 ns/op	3541.17 MB/s
+BenchmarkRecordEncrypt/TLS_AES_128_GCM_SHA256/16	 5550188	       107.7 ns/op	 148.55 MB/s
+BenchmarkRecordEncrypt/TLS_AES_128_GCM_SHA256/128	 5392012	       111.3 ns/op	1150.04 MB/s
+BenchmarkRecordEncrypt/TLS_AES_128_GCM_SHA256/1350	 3015962	       199.1 ns/op	6779.90 MB/s
+BenchmarkRecordEncrypt/TLS_AES_128_GCM_SHA256/8192	  979388	       614.1 ns/op	13338.85 MB/s
+BenchmarkRecordEncrypt/TLS_AES_128_GCM_SHA256/16384	  541732	      1106 ns/op	14812.75 MB/s
+BenchmarkRecordEncrypt/TLS_AES_256_GCM_SHA384/16	 5275717	       113.7 ns/op	 140.75 MB/s
+BenchmarkRecordEncrypt/TLS_AES_256_GCM_SHA384/128	 5140336	       116.3 ns/op	1100.97 MB/s
+BenchmarkRecordEncrypt/TLS_AES_256_GCM_SHA384/1350	 2757519	       217.6 ns/op	6204.03 MB/s
+BenchmarkRecordEncrypt/TLS_AES_256_GCM_SHA384/8192	  872904	       688.9 ns/op	11891.86 MB/s
+BenchmarkRecordEncrypt/TLS_AES_256_GCM_SHA384/16384	  461092	      1302 ns/op	12581.68 MB/s
+BenchmarkRecordEncrypt/TLS_CHACHA20_POLY1305_SHA256/16	  851038	       696.1 ns/op	  22.98 MB/s
+BenchmarkRecordEncrypt/TLS_CHACHA20_POLY1305_SHA256/128	 1000000	       596.7 ns/op	 214.50 MB/s
+BenchmarkRecordEncrypt/TLS_CHACHA20_POLY1305_SHA256/1350	  537722	      1120 ns/op	1204.98 MB/s
+BenchmarkRecordEncrypt/TLS_CHACHA20_POLY1305_SHA256/8192	  227895	      2629 ns/op	3116.23 MB/s
+BenchmarkRecordEncrypt/TLS_CHACHA20_POLY1305_SHA256/16384	  130832	      4570 ns/op	3585.01 MB/s
+BenchmarkRecordEncrypt/TLS_AES_128_GCM_SHA256/16	 5537379	       108.1 ns/op	 147.95 MB/s
+BenchmarkRecordEncrypt/TLS_AES_128_GCM_SHA256/128	 5406000	       111.2 ns/op	1151.12 MB/s
+BenchmarkRecordEncrypt/TLS_AES_128_GCM_SHA256/1350	 3009386	       199.0 ns/op	6784.41 MB/s
+BenchmarkRecordEncrypt/TLS_AES_128_GCM_SHA256/8192	  998376	       618.2 ns/op	13251.51 MB/s
+BenchmarkRecordEncrypt/TLS_AES_128_GCM_SHA256/16384	  543213	      1105 ns/op	14832.93 MB/s
+BenchmarkRecordEncrypt/TLS_AES_256_GCM_SHA384/16	 5281712	       113.6 ns/op	 140.90 MB/s
+BenchmarkRecordEncrypt/TLS_AES_256_GCM_SHA384/128	 5130204	       116.3 ns/op	1100.42 MB/s
+BenchmarkRecordEncrypt/TLS_AES_256_GCM_SHA384/1350	 2738463	       218.0 ns/op	6192.79 MB/s
+BenchmarkRecordEncrypt/TLS_AES_256_GCM_SHA384/8192	  857078	       691.3 ns/op	11849.35 MB/s
+BenchmarkRecordEncrypt/TLS_AES_256_GCM_SHA384/16384	  458064	      1309 ns/op	12514.79 MB/s
+BenchmarkRecordEncrypt/TLS_CHACHA20_POLY1305_SHA256/16	  861634	       698.9 ns/op	  22.89 MB/s
+BenchmarkRecordEncrypt/TLS_CHACHA20_POLY1305_SHA256/128	 1000000	       594.5 ns/op	 215.30 MB/s
+BenchmarkRecordEncrypt/TLS_CHACHA20_POLY1305_SHA256/1350	  535872	      1121 ns/op	1203.80 MB/s
+BenchmarkRecordEncrypt/TLS_CHACHA20_POLY1305_SHA256/8192	  226033	      2629 ns/op	3115.44 MB/s
+BenchmarkRecordEncrypt/TLS_CHACHA20_POLY1305_SHA256/16384	  127706	      4567 ns/op	3587.45 MB/s
+BenchmarkRecordEncrypt/TLS_AES_128_GCM_SHA256/16	 5576062	       107.7 ns/op	 148.57 MB/s
+BenchmarkRecordEncrypt/TLS_AES_128_GCM_SHA256/128	 5395177	       111.4 ns/op	1149.52 MB/s
+BenchmarkRecordEncrypt/TLS_AES_128_GCM_SHA256/1350	 3010993	       198.9 ns/op	6785.65 MB/s
+BenchmarkRecordEncrypt/TLS_AES_128_GCM_SHA256/8192	  992235	       614.8 ns/op	13325.12 MB/s
+BenchmarkRecordEncrypt/TLS_AES_128_GCM_SHA256/16384	  521726	      1108 ns/op	14785.34 MB/s
+BenchmarkRecordEncrypt/TLS_AES_256_GCM_SHA384/16	 5285797	       113.5 ns/op	 140.95 MB/s
+BenchmarkRecordEncrypt/TLS_AES_256_GCM_SHA384/128	 5159949	       116.5 ns/op	1098.90 MB/s
+BenchmarkRecordEncrypt/TLS_AES_256_GCM_SHA384/1350	 2759677	       217.8 ns/op	6199.57 MB/s
+BenchmarkRecordEncrypt/TLS_AES_256_GCM_SHA384/8192	  869392	       702.3 ns/op	11664.96 MB/s
+BenchmarkRecordEncrypt/TLS_AES_256_GCM_SHA384/16384	  453572	      1305 ns/op	12559.17 MB/s
+BenchmarkRecordEncrypt/TLS_CHACHA20_POLY1305_SHA256/16	  867429	       695.7 ns/op	  23.00 MB/s
+BenchmarkRecordEncrypt/TLS_CHACHA20_POLY1305_SHA256/128	 1000000	       596.7 ns/op	 214.50 MB/s
+BenchmarkRecordEncrypt/TLS_CHACHA20_POLY1305_SHA256/1350	  534024	      1121 ns/op	1204.71 MB/s
+BenchmarkRecordEncrypt/TLS_CHACHA20_POLY1305_SHA256/8192	  227128	      2617 ns/op	3130.07 MB/s
+BenchmarkRecordEncrypt/TLS_CHACHA20_POLY1305_SHA256/16384	  128438	      4560 ns/op	3593.11 MB/s
+BenchmarkRecordEncrypt/TLS_AES_128_GCM_SHA256/16	 5550404	       108.1 ns/op	 148.07 MB/s
+BenchmarkRecordEncrypt/TLS_AES_128_GCM_SHA256/128	 5387763	       111.3 ns/op	1149.83 MB/s
+BenchmarkRecordEncrypt/TLS_AES_128_GCM_SHA256/1350	 3016588	       198.9 ns/op	6786.45 MB/s
+BenchmarkRecordEncrypt/TLS_AES_128_GCM_SHA256/8192	  969225	       622.3 ns/op	13163.07 MB/s
+BenchmarkRecordEncrypt/TLS_AES_128_GCM_SHA256/16384	  545528	      1106 ns/op	14812.56 MB/s
+BenchmarkRecordEncrypt/TLS_AES_256_GCM_SHA384/16	 5289199	       113.5 ns/op	 140.91 MB/s
+BenchmarkRecordEncrypt/TLS_AES_256_GCM_SHA384/128	 5187963	       116.0 ns/op	1103.92 MB/s
+BenchmarkRecordEncrypt/TLS_AES_256_GCM_SHA384/1350	 2724952	       219.0 ns/op	6164.15 MB/s
+BenchmarkRecordEncrypt/TLS_AES_256_GCM_SHA384/8192	  865707	       714.0 ns/op	11472.74 MB/s
+BenchmarkRecordEncrypt/TLS_AES_256_GCM_SHA384/16384	  442040	      1350 ns/op	12132.53 MB/s
+BenchmarkRecordEncrypt/TLS_CHACHA20_POLY1305_SHA256/16	  862641	       699.1 ns/op	  22.89 MB/s
+BenchmarkRecordEncrypt/TLS_CHACHA20_POLY1305_SHA256/128	  998469	       595.6 ns/op	 214.90 MB/s
+BenchmarkRecordEncrypt/TLS_CHACHA20_POLY1305_SHA256/1350	  531552	      1123 ns/op	1201.94 MB/s
+BenchmarkRecordEncrypt/TLS_CHACHA20_POLY1305_SHA256/8192	  230505	      2609 ns/op	3139.66 MB/s
+BenchmarkRecordEncrypt/TLS_CHACHA20_POLY1305_SHA256/16384	  129070	      4633 ns/op	3536.59 MB/s
+BenchmarkRecordDecrypt/TLS_AES_128_GCM_SHA256/16	 5935221	       101.0 ns/op	 158.46 MB/s
+BenchmarkRecordDecrypt/TLS_AES_128_GCM_SHA256/128	 5733285	       104.7 ns/op	1222.30 MB/s
+BenchmarkRecordDecrypt/TLS_AES_128_GCM_SHA256/1350	 2959555	       202.6 ns/op	6663.61 MB/s
+BenchmarkRecordDecrypt/TLS_AES_128_GCM_SHA256/8192	  930700	       642.9 ns/op	12742.11 MB/s
+BenchmarkRecordDecrypt/TLS_AES_128_GCM_SHA256/16384	  260887	      2139 ns/op	7659.54 MB/s
+BenchmarkRecordDecrypt/TLS_AES_256_GCM_SHA384/16	 5632383	       106.5 ns/op	 150.27 MB/s
+BenchmarkRecordDecrypt/TLS_AES_256_GCM_SHA384/128	 5566754	       108.0 ns/op	1185.65 MB/s
+BenchmarkRecordDecrypt/TLS_AES_256_GCM_SHA384/1350	 2762618	       217.3 ns/op	6213.47 MB/s
+BenchmarkRecordDecrypt/TLS_AES_256_GCM_SHA384/8192	  821031	       728.6 ns/op	11242.74 MB/s
+BenchmarkRecordDecrypt/TLS_AES_256_GCM_SHA384/16384	  263384	      1989 ns/op	8236.46 MB/s
+BenchmarkRecordDecrypt/TLS_CHACHA20_POLY1305_SHA256/16	 1308229	       458.6 ns/op	  34.89 MB/s
+BenchmarkRecordDecrypt/TLS_CHACHA20_POLY1305_SHA256/128	 1272674	       471.3 ns/op	 271.58 MB/s
+BenchmarkRecordDecrypt/TLS_CHACHA20_POLY1305_SHA256/1350	  656004	       895.4 ns/op	1507.74 MB/s
+BenchmarkRecordDecrypt/TLS_CHACHA20_POLY1305_SHA256/8192	  215517	      2801 ns/op	2924.17 MB/s
+BenchmarkRecordDecrypt/TLS_CHACHA20_POLY1305_SHA256/16384	  116647	      5187 ns/op	3158.61 MB/s
+BenchmarkRecordDecrypt/TLS_AES_128_GCM_SHA256/16	 5943669	       101.2 ns/op	 158.09 MB/s
+BenchmarkRecordDecrypt/TLS_AES_128_GCM_SHA256/128	 5724193	       104.9 ns/op	1220.45 MB/s
+BenchmarkRecordDecrypt/TLS_AES_128_GCM_SHA256/1350	 2962174	       202.4 ns/op	6670.58 MB/s
+BenchmarkRecordDecrypt/TLS_AES_128_GCM_SHA256/8192	  899694	       657.4 ns/op	12461.11 MB/s
+BenchmarkRecordDecrypt/TLS_AES_128_GCM_SHA256/16384	  255921	      2059 ns/op	7955.91 MB/s
+BenchmarkRecordDecrypt/TLS_AES_256_GCM_SHA384/16	 5602570	       106.7 ns/op	 149.90 MB/s
+BenchmarkRecordDecrypt/TLS_AES_256_GCM_SHA384/128	 5557233	       108.1 ns/op	1183.71 MB/s
+BenchmarkRecordDecrypt/TLS_AES_256_GCM_SHA384/1350	 2756779	       217.3 ns/op	6214.04 MB/s
+BenchmarkRecordDecrypt/TLS_AES_256_GCM_SHA384/8192	  852471	       708.4 ns/op	11563.36 MB/s
+BenchmarkRecordDecrypt/TLS_AES_256_GCM_SHA384/16384	  284868	      2054 ns/op	7975.13 MB/s
+BenchmarkRecordDecrypt/TLS_CHACHA20_POLY1305_SHA256/16	 1297472	       462.7 ns/op	  34.58 MB/s
+BenchmarkRecordDecrypt/TLS_CHACHA20_POLY1305_SHA256/128	 1237476	       485.3 ns/op	 263.77 MB/s
+BenchmarkRecordDecrypt/TLS_CHACHA20_POLY1305_SHA256/1350	  668872	       883.0 ns/op	1528.89 MB/s
+BenchmarkRecordDecrypt/TLS_CHACHA20_POLY1305_SHA256/8192	  213297	      2806 ns/op	2918.94 MB/s
+BenchmarkRecordDecrypt/TLS_CHACHA20_POLY1305_SHA256/16384	  118086	      5174 ns/op	3166.73 MB/s
+BenchmarkRecordDecrypt/TLS_AES_128_GCM_SHA256/16	 5931118	       101.0 ns/op	 158.48 MB/s
+BenchmarkRecordDecrypt/TLS_AES_128_GCM_SHA256/128	 5717012	       105.0 ns/op	1218.95 MB/s
+BenchmarkRecordDecrypt/TLS_AES_128_GCM_SHA256/1350	 2955051	       202.6 ns/op	6663.55 MB/s
+BenchmarkRecordDecrypt/TLS_AES_128_GCM_SHA256/8192	  934330	       657.9 ns/op	12451.34 MB/s
+BenchmarkRecordDecrypt/TLS_AES_128_GCM_SHA256/16384	  265346	      1889 ns/op	8673.92 MB/s
+BenchmarkRecordDecrypt/TLS_AES_256_GCM_SHA384/16	 5612683	       106.8 ns/op	 149.79 MB/s
+BenchmarkRecordDecrypt/TLS_AES_256_GCM_SHA384/128	 5538514	       108.3 ns/op	1181.47 MB/s
+BenchmarkRecordDecrypt/TLS_AES_256_GCM_SHA384/1350	 2752994	       217.6 ns/op	6205.37 MB/s
+BenchmarkRecordDecrypt/TLS_AES_256_GCM_SHA384/8192	  740976	       838.3 ns/op	9772.22 MB/s
+BenchmarkRecordDecrypt/TLS_AES_256_GCM_SHA384/16384	  253419	      2274 ns/op	7205.84 MB/s
+BenchmarkRecordDecrypt/TLS_CHACHA20_POLY1305_SHA256/16	 1240132	       483.8 ns/op	  33.07 MB/s
+BenchmarkRecordDecrypt/TLS_CHACHA20_POLY1305_SHA256/128	 1277671	       469.8 ns/op	 272.46 MB/s
+BenchmarkRecordDecrypt/TLS_CHACHA20_POLY1305_SHA256/1350	  668388	       878.6 ns/op	1536.51 MB/s
+BenchmarkRecordDecrypt/TLS_CHACHA20_POLY1305_SHA256/8192	  211627	      2802 ns/op	2923.88 MB/s
+BenchmarkRecordDecrypt/TLS_CHACHA20_POLY1305_SHA256/16384	  116362	      5202 ns/op	3149.82 MB/s
+BenchmarkRecordDecrypt/TLS_AES_128_GCM_SHA256/16	 5911522	       101.0 ns/op	 158.48 MB/s
+BenchmarkRecordDecrypt/TLS_AES_128_GCM_SHA256/128	 5707063	       105.0 ns/op	1219.55 MB/s
+BenchmarkRecordDecrypt/TLS_AES_128_GCM_SHA256/1350	 2964068	       202.5 ns/op	6668.19 MB/s
+BenchmarkRecordDecrypt/TLS_AES_128_GCM_SHA256/8192	  773212	       747.3 ns/op	10962.67 MB/s
+BenchmarkRecordDecrypt/TLS_AES_128_GCM_SHA256/16384	  258914	      2277 ns/op	7195.79 MB/s
+BenchmarkRecordDecrypt/TLS_AES_256_GCM_SHA384/16	 5643006	       106.6 ns/op	 150.06 MB/s
+BenchmarkRecordDecrypt/TLS_AES_256_GCM_SHA384/128	 5559853	       108.1 ns/op	1184.26 MB/s
+BenchmarkRecordDecrypt/TLS_AES_256_GCM_SHA384/1350	 2786250	       215.0 ns/op	6278.90 MB/s
+BenchmarkRecordDecrypt/TLS_AES_256_GCM_SHA384/8192	  776082	       764.7 ns/op	10712.57 MB/s
+BenchmarkRecordDecrypt/TLS_AES_256_GCM_SHA384/16384	  290366	      2099 ns/op	7807.36 MB/s
+BenchmarkRecordDecrypt/TLS_CHACHA20_POLY1305_SHA256/16	 1296253	       462.5 ns/op	  34.60 MB/s
+BenchmarkRecordDecrypt/TLS_CHACHA20_POLY1305_SHA256/128	 1287153	       466.3 ns/op	 274.53 MB/s
+BenchmarkRecordDecrypt/TLS_CHACHA20_POLY1305_SHA256/1350	  662517	       881.9 ns/op	1530.86 MB/s
+BenchmarkRecordDecrypt/TLS_CHACHA20_POLY1305_SHA256/8192	  210547	      2841 ns/op	2883.10 MB/s
+BenchmarkRecordDecrypt/TLS_CHACHA20_POLY1305_SHA256/16384	  115279	      5172 ns/op	3167.85 MB/s
+BenchmarkRecordDecrypt/TLS_AES_128_GCM_SHA256/16	 5916481	       101.3 ns/op	 158.02 MB/s
+BenchmarkRecordDecrypt/TLS_AES_128_GCM_SHA256/128	 5772752	       104.0 ns/op	1231.26 MB/s
+BenchmarkRecordDecrypt/TLS_AES_128_GCM_SHA256/1350	 2957637	       202.8 ns/op	6656.89 MB/s
+BenchmarkRecordDecrypt/TLS_AES_128_GCM_SHA256/8192	  825027	       713.5 ns/op	11481.10 MB/s
+BenchmarkRecordDecrypt/TLS_AES_128_GCM_SHA256/16384	  264231	      2119 ns/op	7733.17 MB/s
+BenchmarkRecordDecrypt/TLS_AES_256_GCM_SHA384/16	 5708532	       105.0 ns/op	 152.36 MB/s
+BenchmarkRecordDecrypt/TLS_AES_256_GCM_SHA384/128	 5536032	       108.1 ns/op	1183.86 MB/s
+BenchmarkRecordDecrypt/TLS_AES_256_GCM_SHA384/1350	 2760254	       217.8 ns/op	6198.81 MB/s
+BenchmarkRecordDecrypt/TLS_AES_256_GCM_SHA384/8192	  763563	       784.1 ns/op	10446.98 MB/s
+BenchmarkRecordDecrypt/TLS_AES_256_GCM_SHA384/16384	  269406	      2121 ns/op	7724.96 MB/s
+BenchmarkRecordDecrypt/TLS_CHACHA20_POLY1305_SHA256/16	 1305760	       459.5 ns/op	  34.82 MB/s
+BenchmarkRecordDecrypt/TLS_CHACHA20_POLY1305_SHA256/128	 1275002	       470.3 ns/op	 272.16 MB/s
+BenchmarkRecordDecrypt/TLS_CHACHA20_POLY1305_SHA256/1350	  657114	       895.6 ns/op	1507.42 MB/s
+BenchmarkRecordDecrypt/TLS_CHACHA20_POLY1305_SHA256/8192	  235230	      2433 ns/op	3367.04 MB/s
+BenchmarkRecordDecrypt/TLS_CHACHA20_POLY1305_SHA256/16384	  124434	      4870 ns/op	3364.35 MB/s
+BenchmarkRecordEncryptPrepared/TLS_AES_128_GCM_SHA256/16	 5686831	       105.6 ns/op	 151.45 MB/s
+BenchmarkRecordEncryptPrepared/TLS_AES_128_GCM_SHA256/128	 5570283	       107.4 ns/op	1191.71 MB/s
+BenchmarkRecordEncryptPrepared/TLS_AES_128_GCM_SHA256/1350	 3147612	       190.8 ns/op	7075.99 MB/s
+BenchmarkRecordEncryptPrepared/TLS_AES_128_GCM_SHA256/8192	 1000000	       571.2 ns/op	14340.75 MB/s
+BenchmarkRecordEncryptPrepared/TLS_AES_128_GCM_SHA256/16384	  584385	      1020 ns/op	16055.87 MB/s
+BenchmarkRecordEncryptPrepared/TLS_AES_256_GCM_SHA384/16	 5433799	       110.5 ns/op	 144.83 MB/s
+BenchmarkRecordEncryptPrepared/TLS_AES_256_GCM_SHA384/128	 5340973	       112.3 ns/op	1140.12 MB/s
+BenchmarkRecordEncryptPrepared/TLS_AES_256_GCM_SHA384/1350	 2886555	       207.6 ns/op	6502.93 MB/s
+BenchmarkRecordEncryptPrepared/TLS_AES_256_GCM_SHA384/8192	  944203	       646.8 ns/op	12665.74 MB/s
+BenchmarkRecordEncryptPrepared/TLS_AES_256_GCM_SHA384/16384	  487966	      1199 ns/op	13664.57 MB/s
+BenchmarkRecordEncryptPrepared/TLS_CHACHA20_POLY1305_SHA256/16	  866650	       694.6 ns/op	  23.03 MB/s
+BenchmarkRecordEncryptPrepared/TLS_CHACHA20_POLY1305_SHA256/128	  849699	       708.0 ns/op	 180.80 MB/s
+BenchmarkRecordEncryptPrepared/TLS_CHACHA20_POLY1305_SHA256/1350	  536294	      1118 ns/op	1207.53 MB/s
+BenchmarkRecordEncryptPrepared/TLS_CHACHA20_POLY1305_SHA256/8192	  231560	      2566 ns/op	3192.77 MB/s
+BenchmarkRecordEncryptPrepared/TLS_CHACHA20_POLY1305_SHA256/16384	  131570	      4501 ns/op	3640.12 MB/s
+BenchmarkRecordEncryptPrepared/TLS_AES_128_GCM_SHA256/16	 5653080	       105.8 ns/op	 151.29 MB/s
+BenchmarkRecordEncryptPrepared/TLS_AES_128_GCM_SHA256/128	 5565612	       107.4 ns/op	1191.68 MB/s
+BenchmarkRecordEncryptPrepared/TLS_AES_128_GCM_SHA256/1350	 3155792	       190.0 ns/op	7104.77 MB/s
+BenchmarkRecordEncryptPrepared/TLS_AES_128_GCM_SHA256/8192	 1000000	       572.1 ns/op	14320.01 MB/s
+BenchmarkRecordEncryptPrepared/TLS_AES_128_GCM_SHA256/16384	  594900	      1022 ns/op	16031.42 MB/s
+BenchmarkRecordEncryptPrepared/TLS_AES_256_GCM_SHA384/16	 5427294	       110.3 ns/op	 145.00 MB/s
+BenchmarkRecordEncryptPrepared/TLS_AES_256_GCM_SHA384/128	 5313446	       112.9 ns/op	1133.50 MB/s
+BenchmarkRecordEncryptPrepared/TLS_AES_256_GCM_SHA384/1350	 2892632	       207.7 ns/op	6499.09 MB/s
+BenchmarkRecordEncryptPrepared/TLS_AES_256_GCM_SHA384/8192	  915246	       650.8 ns/op	12587.15 MB/s
+BenchmarkRecordEncryptPrepared/TLS_AES_256_GCM_SHA384/16384	  493202	      1200 ns/op	13658.41 MB/s
+BenchmarkRecordEncryptPrepared/TLS_CHACHA20_POLY1305_SHA256/16	  859850	       695.7 ns/op	  23.00 MB/s
+BenchmarkRecordEncryptPrepared/TLS_CHACHA20_POLY1305_SHA256/128	  855561	       707.7 ns/op	 180.88 MB/s
+BenchmarkRecordEncryptPrepared/TLS_CHACHA20_POLY1305_SHA256/1350	  537529	      1118 ns/op	1207.01 MB/s
+BenchmarkRecordEncryptPrepared/TLS_CHACHA20_POLY1305_SHA256/8192	  232094	      2582 ns/op	3172.26 MB/s
+BenchmarkRecordEncryptPrepared/TLS_CHACHA20_POLY1305_SHA256/16384	  134368	      4491 ns/op	3648.24 MB/s
+BenchmarkRecordEncryptPrepared/TLS_AES_128_GCM_SHA256/16	 5666290	       105.5 ns/op	 151.68 MB/s
+BenchmarkRecordEncryptPrepared/TLS_AES_128_GCM_SHA256/128	 5578446	       107.5 ns/op	1190.45 MB/s
+BenchmarkRecordEncryptPrepared/TLS_AES_128_GCM_SHA256/1350	 3158726	       189.9 ns/op	7107.60 MB/s
+BenchmarkRecordEncryptPrepared/TLS_AES_128_GCM_SHA256/8192	 1000000	       571.9 ns/op	14323.67 MB/s
+BenchmarkRecordEncryptPrepared/TLS_AES_128_GCM_SHA256/16384	  590509	      1020 ns/op	16067.48 MB/s
+BenchmarkRecordEncryptPrepared/TLS_AES_256_GCM_SHA384/16	 5428666	       110.7 ns/op	 144.48 MB/s
+BenchmarkRecordEncryptPrepared/TLS_AES_256_GCM_SHA384/128	 5319063	       112.7 ns/op	1135.63 MB/s
+BenchmarkRecordEncryptPrepared/TLS_AES_256_GCM_SHA384/1350	 2886469	       207.6 ns/op	6503.24 MB/s
+BenchmarkRecordEncryptPrepared/TLS_AES_256_GCM_SHA384/8192	  896726	       648.7 ns/op	12627.56 MB/s
+BenchmarkRecordEncryptPrepared/TLS_AES_256_GCM_SHA384/16384	  500246	      1201 ns/op	13639.74 MB/s
+BenchmarkRecordEncryptPrepared/TLS_CHACHA20_POLY1305_SHA256/16	  861553	       697.0 ns/op	  22.95 MB/s
+BenchmarkRecordEncryptPrepared/TLS_CHACHA20_POLY1305_SHA256/128	  841358	       707.5 ns/op	 180.91 MB/s
+BenchmarkRecordEncryptPrepared/TLS_CHACHA20_POLY1305_SHA256/1350	  531739	      1118 ns/op	1207.71 MB/s
+BenchmarkRecordEncryptPrepared/TLS_CHACHA20_POLY1305_SHA256/8192	  230038	      2571 ns/op	3186.90 MB/s
+BenchmarkRecordEncryptPrepared/TLS_CHACHA20_POLY1305_SHA256/16384	  133699	      4532 ns/op	3614.93 MB/s
+BenchmarkRecordEncryptPrepared/TLS_AES_128_GCM_SHA256/16	 5681698	       105.6 ns/op	 151.51 MB/s
+BenchmarkRecordEncryptPrepared/TLS_AES_128_GCM_SHA256/128	 5606804	       107.5 ns/op	1190.70 MB/s
+BenchmarkRecordEncryptPrepared/TLS_AES_128_GCM_SHA256/1350	 3153722	       190.2 ns/op	7097.64 MB/s
+BenchmarkRecordEncryptPrepared/TLS_AES_128_GCM_SHA256/8192	 1000000	       571.9 ns/op	14323.37 MB/s
+BenchmarkRecordEncryptPrepared/TLS_AES_128_GCM_SHA256/16384	  580071	      1022 ns/op	16030.17 MB/s
+BenchmarkRecordEncryptPrepared/TLS_AES_256_GCM_SHA384/16	 5428916	       110.5 ns/op	 144.81 MB/s
+BenchmarkRecordEncryptPrepared/TLS_AES_256_GCM_SHA384/128	 5311485	       112.7 ns/op	1135.97 MB/s
+BenchmarkRecordEncryptPrepared/TLS_AES_256_GCM_SHA384/1350	 2893647	       208.1 ns/op	6488.79 MB/s
+BenchmarkRecordEncryptPrepared/TLS_AES_256_GCM_SHA384/8192	  926304	       647.4 ns/op	12653.87 MB/s
+BenchmarkRecordEncryptPrepared/TLS_AES_256_GCM_SHA384/16384	  499344	      1217 ns/op	13466.79 MB/s
+BenchmarkRecordEncryptPrepared/TLS_CHACHA20_POLY1305_SHA256/16	  840738	       696.3 ns/op	  22.98 MB/s
+BenchmarkRecordEncryptPrepared/TLS_CHACHA20_POLY1305_SHA256/128	  843553	       708.1 ns/op	 180.77 MB/s
+BenchmarkRecordEncryptPrepared/TLS_CHACHA20_POLY1305_SHA256/1350	  534694	      1119 ns/op	1206.66 MB/s
+BenchmarkRecordEncryptPrepared/TLS_CHACHA20_POLY1305_SHA256/8192	  231262	      2575 ns/op	3181.66 MB/s
+BenchmarkRecordEncryptPrepared/TLS_CHACHA20_POLY1305_SHA256/16384	  132446	      4567 ns/op	3587.51 MB/s
+BenchmarkRecordEncryptPrepared/TLS_AES_128_GCM_SHA256/16	 5702797	       105.5 ns/op	 151.66 MB/s
+BenchmarkRecordEncryptPrepared/TLS_AES_128_GCM_SHA256/128	 5592112	       107.5 ns/op	1190.98 MB/s
+BenchmarkRecordEncryptPrepared/TLS_AES_128_GCM_SHA256/1350	 3157003	       190.3 ns/op	7092.98 MB/s
+BenchmarkRecordEncryptPrepared/TLS_AES_128_GCM_SHA256/8192	 1000000	       571.4 ns/op	14337.58 MB/s
+BenchmarkRecordEncryptPrepared/TLS_AES_128_GCM_SHA256/16384	  591502	      1022 ns/op	16027.16 MB/s
+BenchmarkRecordEncryptPrepared/TLS_AES_256_GCM_SHA384/16	 5454038	       110.1 ns/op	 145.27 MB/s
+BenchmarkRecordEncryptPrepared/TLS_AES_256_GCM_SHA384/128	 5331247	       112.7 ns/op	1135.47 MB/s
+BenchmarkRecordEncryptPrepared/TLS_AES_256_GCM_SHA384/1350	 2893016	       207.5 ns/op	6506.93 MB/s
+BenchmarkRecordEncryptPrepared/TLS_AES_256_GCM_SHA384/8192	  920641	       648.1 ns/op	12640.27 MB/s
+BenchmarkRecordEncryptPrepared/TLS_AES_256_GCM_SHA384/16384	  505674	      1214 ns/op	13491.92 MB/s
+BenchmarkRecordEncryptPrepared/TLS_CHACHA20_POLY1305_SHA256/16	  857650	       695.4 ns/op	  23.01 MB/s
+BenchmarkRecordEncryptPrepared/TLS_CHACHA20_POLY1305_SHA256/128	  847399	       708.5 ns/op	 180.66 MB/s
+BenchmarkRecordEncryptPrepared/TLS_CHACHA20_POLY1305_SHA256/1350	  535585	      1117 ns/op	1209.01 MB/s
+BenchmarkRecordEncryptPrepared/TLS_CHACHA20_POLY1305_SHA256/8192	  230175	      2568 ns/op	3190.62 MB/s
+BenchmarkRecordEncryptPrepared/TLS_CHACHA20_POLY1305_SHA256/16384	  134061	      4503 ns/op	3638.61 MB/s
+BenchmarkAppClientToServer/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=16	 2877633	       208.4 ns/op	  76.77 MB/s
+BenchmarkAppClientToServer/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=128	 2822508	       212.2 ns/op	 603.21 MB/s
+BenchmarkAppClientToServer/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=1350	 1497174	       401.1 ns/op	3366.09 MB/s
+BenchmarkAppClientToServer/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=8192	  495790	      1197 ns/op	6844.07 MB/s
+BenchmarkAppClientToServer/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=16384	  283074	      2133 ns/op	7679.79 MB/s
+BenchmarkAppClientToServer/impl=ztls/suite=TLS_AES_256_GCM_SHA384/size=16	 2757627	       217.3 ns/op	  73.63 MB/s
+BenchmarkAppClientToServer/impl=ztls/suite=TLS_AES_256_GCM_SHA384/size=128	 2704437	       222.6 ns/op	 575.15 MB/s
+BenchmarkAppClientToServer/impl=ztls/suite=TLS_AES_256_GCM_SHA384/size=1350	 1380560	       434.7 ns/op	3105.93 MB/s
+BenchmarkAppClientToServer/impl=ztls/suite=TLS_AES_256_GCM_SHA384/size=8192	  437664	      1385 ns/op	5914.75 MB/s
+BenchmarkAppClientToServer/impl=ztls/suite=TLS_AES_256_GCM_SHA384/size=16384	  242482	      2480 ns/op	6607.43 MB/s
+BenchmarkAppClientToServer/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16	  516860	      1168 ns/op	  13.70 MB/s
+BenchmarkAppClientToServer/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=128	  509625	      1187 ns/op	 107.83 MB/s
+BenchmarkAppClientToServer/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1350	  295203	      2031 ns/op	 664.84 MB/s
+BenchmarkAppClientToServer/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=8192	  119998	      5026 ns/op	1629.91 MB/s
+BenchmarkAppClientToServer/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16384	   67945	      8817 ns/op	1858.23 MB/s
+BenchmarkAppClientToServer/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=16	 2875749	       208.4 ns/op	  76.79 MB/s
+BenchmarkAppClientToServer/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=128	 2856944	       210.2 ns/op	 608.98 MB/s
+BenchmarkAppClientToServer/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=1350	 1493448	       402.0 ns/op	3358.29 MB/s
+BenchmarkAppClientToServer/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=8192	  499248	      1199 ns/op	6831.11 MB/s
+BenchmarkAppClientToServer/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=16384	  280998	      2154 ns/op	7606.01 MB/s
+BenchmarkAppClientToServer/impl=ztls/suite=TLS_AES_256_GCM_SHA384/size=16	 2776376	       216.2 ns/op	  74.01 MB/s
+BenchmarkAppClientToServer/impl=ztls/suite=TLS_AES_256_GCM_SHA384/size=128	 2689218	       223.0 ns/op	 573.96 MB/s
+BenchmarkAppClientToServer/impl=ztls/suite=TLS_AES_256_GCM_SHA384/size=1350	 1375135	       436.6 ns/op	3091.82 MB/s
+BenchmarkAppClientToServer/impl=ztls/suite=TLS_AES_256_GCM_SHA384/size=8192	  439483	      1354 ns/op	6048.74 MB/s
+BenchmarkAppClientToServer/impl=ztls/suite=TLS_AES_256_GCM_SHA384/size=16384	  244338	      2515 ns/op	6515.35 MB/s
+BenchmarkAppClientToServer/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16	  514467	      1163 ns/op	  13.76 MB/s
+BenchmarkAppClientToServer/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=128	  505074	      1203 ns/op	 106.40 MB/s
+BenchmarkAppClientToServer/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1350	  299500	      2007 ns/op	 672.79 MB/s
+BenchmarkAppClientToServer/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=8192	  118011	      5046 ns/op	1623.46 MB/s
+BenchmarkAppClientToServer/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16384	   67819	      8831 ns/op	1855.19 MB/s
+BenchmarkAppClientToServer/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=16	 2884024	       208.1 ns/op	  76.87 MB/s
+BenchmarkAppClientToServer/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=128	 2830366	       212.0 ns/op	 603.87 MB/s
+BenchmarkAppClientToServer/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=1350	 1495852	       401.2 ns/op	3365.32 MB/s
+BenchmarkAppClientToServer/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=8192	  491814	      1196 ns/op	6847.66 MB/s
+BenchmarkAppClientToServer/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=16384	  279860	      2132 ns/op	7686.26 MB/s
+BenchmarkAppClientToServer/impl=ztls/suite=TLS_AES_256_GCM_SHA384/size=16	 2762662	       217.3 ns/op	  73.64 MB/s
+BenchmarkAppClientToServer/impl=ztls/suite=TLS_AES_256_GCM_SHA384/size=128	 2689843	       223.0 ns/op	 573.99 MB/s
+BenchmarkAppClientToServer/impl=ztls/suite=TLS_AES_256_GCM_SHA384/size=1350	 1381880	       434.7 ns/op	3105.58 MB/s
+BenchmarkAppClientToServer/impl=ztls/suite=TLS_AES_256_GCM_SHA384/size=8192	  443590	      1354 ns/op	6051.50 MB/s
+BenchmarkAppClientToServer/impl=ztls/suite=TLS_AES_256_GCM_SHA384/size=16384	  243914	      2481 ns/op	6602.72 MB/s
+BenchmarkAppClientToServer/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16	  508069	      1186 ns/op	  13.50 MB/s
+BenchmarkAppClientToServer/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=128	  501093	      1186 ns/op	 107.94 MB/s
+BenchmarkAppClientToServer/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1350	  299841	      2005 ns/op	 673.26 MB/s
+BenchmarkAppClientToServer/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=8192	  119764	      5019 ns/op	1632.04 MB/s
+BenchmarkAppClientToServer/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16384	   67639	      8838 ns/op	1853.82 MB/s
+BenchmarkAppClientToServer/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=16	 2874685	       207.9 ns/op	  76.94 MB/s
+BenchmarkAppClientToServer/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=128	 2873173	       209.7 ns/op	 610.28 MB/s
+BenchmarkAppClientToServer/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=1350	 1499248	       400.5 ns/op	3370.57 MB/s
+BenchmarkAppClientToServer/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=8192	  495948	      1199 ns/op	6830.27 MB/s
+BenchmarkAppClientToServer/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=16384	  279854	      2167 ns/op	7562.14 MB/s
+BenchmarkAppClientToServer/impl=ztls/suite=TLS_AES_256_GCM_SHA384/size=16	 2787584	       215.2 ns/op	  74.34 MB/s
+BenchmarkAppClientToServer/impl=ztls/suite=TLS_AES_256_GCM_SHA384/size=128	 2695099	       223.0 ns/op	 574.11 MB/s
+BenchmarkAppClientToServer/impl=ztls/suite=TLS_AES_256_GCM_SHA384/size=1350	 1374799	       436.4 ns/op	3093.33 MB/s
+BenchmarkAppClientToServer/impl=ztls/suite=TLS_AES_256_GCM_SHA384/size=8192	  445975	      1356 ns/op	6039.21 MB/s
+BenchmarkAppClientToServer/impl=ztls/suite=TLS_AES_256_GCM_SHA384/size=16384	  241282	      2475 ns/op	6619.24 MB/s
+BenchmarkAppClientToServer/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16	  519805	      1160 ns/op	  13.79 MB/s
+BenchmarkAppClientToServer/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=128	  510074	      1187 ns/op	 107.83 MB/s
+BenchmarkAppClientToServer/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1350	  298136	      2010 ns/op	 671.71 MB/s
+BenchmarkAppClientToServer/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=8192	  119050	      5041 ns/op	1625.10 MB/s
+BenchmarkAppClientToServer/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16384	   67966	      8807 ns/op	1860.41 MB/s
+BenchmarkAppClientToServer/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=16	 2866860	       208.8 ns/op	  76.61 MB/s
+BenchmarkAppClientToServer/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=128	 2832837	       212.1 ns/op	 603.45 MB/s
+BenchmarkAppClientToServer/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=1350	 1495215	       401.9 ns/op	3359.44 MB/s
+BenchmarkAppClientToServer/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=8192	  502328	      1198 ns/op	6840.45 MB/s
+BenchmarkAppClientToServer/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=16384	  279948	      2132 ns/op	7683.66 MB/s
+BenchmarkAppClientToServer/impl=ztls/suite=TLS_AES_256_GCM_SHA384/size=16	 2760003	       217.5 ns/op	  73.58 MB/s
+BenchmarkAppClientToServer/impl=ztls/suite=TLS_AES_256_GCM_SHA384/size=128	 2690612	       223.3 ns/op	 573.20 MB/s
+BenchmarkAppClientToServer/impl=ztls/suite=TLS_AES_256_GCM_SHA384/size=1350	 1379173	       434.9 ns/op	3104.29 MB/s
+BenchmarkAppClientToServer/impl=ztls/suite=TLS_AES_256_GCM_SHA384/size=8192	  440421	      1345 ns/op	6088.69 MB/s
+BenchmarkAppClientToServer/impl=ztls/suite=TLS_AES_256_GCM_SHA384/size=16384	  241468	      2478 ns/op	6610.62 MB/s
+BenchmarkAppClientToServer/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16	  519472	      1156 ns/op	  13.84 MB/s
+BenchmarkAppClientToServer/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=128	  511520	      1181 ns/op	 108.38 MB/s
+BenchmarkAppClientToServer/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1350	  296302	      2026 ns/op	 666.41 MB/s
+BenchmarkAppClientToServer/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=8192	  119044	      5038 ns/op	1626.19 MB/s
+BenchmarkAppClientToServer/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16384	   68121	      8808 ns/op	1860.02 MB/s
+BenchmarkAppServerToClient/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=16	 2837761	       211.3 ns/op	  75.73 MB/s
+BenchmarkAppServerToClient/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=128	 2726679	       219.7 ns/op	 582.71 MB/s
+BenchmarkAppServerToClient/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=1350	 1479297	       405.8 ns/op	3326.97 MB/s
+BenchmarkAppServerToClient/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=8192	  494978	      1208 ns/op	6780.44 MB/s
+BenchmarkAppServerToClient/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=16384	  280816	      2132 ns/op	7684.55 MB/s
+BenchmarkAppServerToClient/impl=ztls/suite=TLS_AES_256_GCM_SHA384/size=16	 2700279	       222.0 ns/op	  72.07 MB/s
+BenchmarkAppServerToClient/impl=ztls/suite=TLS_AES_256_GCM_SHA384/size=128	 2604439	       230.1 ns/op	 556.23 MB/s
+BenchmarkAppServerToClient/impl=ztls/suite=TLS_AES_256_GCM_SHA384/size=1350	 1361870	       440.4 ns/op	3065.50 MB/s
+BenchmarkAppServerToClient/impl=ztls/suite=TLS_AES_256_GCM_SHA384/size=8192	  442048	      1353 ns/op	6056.41 MB/s
+BenchmarkAppServerToClient/impl=ztls/suite=TLS_AES_256_GCM_SHA384/size=16384	  239059	      2490 ns/op	6580.62 MB/s
+BenchmarkAppServerToClient/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16	  515054	      1170 ns/op	  13.68 MB/s
+BenchmarkAppServerToClient/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=128	  506332	      1192 ns/op	 107.42 MB/s
+BenchmarkAppServerToClient/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1350	  297541	      2015 ns/op	 669.86 MB/s
+BenchmarkAppServerToClient/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=8192	  117370	      5085 ns/op	1610.88 MB/s
+BenchmarkAppServerToClient/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16384	   67477	      8835 ns/op	1854.40 MB/s
+BenchmarkAppServerToClient/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=16	 2828608	       211.5 ns/op	  75.67 MB/s
+BenchmarkAppServerToClient/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=128	 2712596	       220.8 ns/op	 579.80 MB/s
+BenchmarkAppServerToClient/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=1350	 1478136	       406.0 ns/op	3325.20 MB/s
+BenchmarkAppServerToClient/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=8192	  493849	      1211 ns/op	6767.39 MB/s
+BenchmarkAppServerToClient/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=16384	  283209	      2133 ns/op	7681.81 MB/s
+BenchmarkAppServerToClient/impl=ztls/suite=TLS_AES_256_GCM_SHA384/size=16	 2712174	       221.0 ns/op	  72.40 MB/s
+BenchmarkAppServerToClient/impl=ztls/suite=TLS_AES_256_GCM_SHA384/size=128	 2602401	       230.9 ns/op	 554.43 MB/s
+BenchmarkAppServerToClient/impl=ztls/suite=TLS_AES_256_GCM_SHA384/size=1350	 1357512	       441.9 ns/op	3054.98 MB/s
+BenchmarkAppServerToClient/impl=ztls/suite=TLS_AES_256_GCM_SHA384/size=8192	  441284	      1350 ns/op	6065.92 MB/s
+BenchmarkAppServerToClient/impl=ztls/suite=TLS_AES_256_GCM_SHA384/size=16384	  240721	      2485 ns/op	6593.84 MB/s
+BenchmarkAppServerToClient/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16	  513316	      1172 ns/op	  13.65 MB/s
+BenchmarkAppServerToClient/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=128	  504048	      1195 ns/op	 107.15 MB/s
+BenchmarkAppServerToClient/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1350	  292539	      2019 ns/op	 668.77 MB/s
+BenchmarkAppServerToClient/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=8192	  117524	      5011 ns/op	1634.92 MB/s
+BenchmarkAppServerToClient/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16384	   67726	      8894 ns/op	1842.21 MB/s
+BenchmarkAppServerToClient/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=16	 2829836	       212.1 ns/op	  75.42 MB/s
+BenchmarkAppServerToClient/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=128	 2726258	       219.8 ns/op	 582.23 MB/s
+BenchmarkAppServerToClient/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=1350	 1477761	       406.3 ns/op	3322.83 MB/s
+BenchmarkAppServerToClient/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=8192	  499257	      1210 ns/op	6769.71 MB/s
+BenchmarkAppServerToClient/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=16384	  280362	      2136 ns/op	7671.98 MB/s
+BenchmarkAppServerToClient/impl=ztls/suite=TLS_AES_256_GCM_SHA384/size=16	 2713257	       221.7 ns/op	  72.18 MB/s
+BenchmarkAppServerToClient/impl=ztls/suite=TLS_AES_256_GCM_SHA384/size=128	 2591689	       231.3 ns/op	 553.50 MB/s
+BenchmarkAppServerToClient/impl=ztls/suite=TLS_AES_256_GCM_SHA384/size=1350	 1363887	       440.0 ns/op	3068.40 MB/s
+BenchmarkAppServerToClient/impl=ztls/suite=TLS_AES_256_GCM_SHA384/size=8192	  446848	      1355 ns/op	6047.05 MB/s
+BenchmarkAppServerToClient/impl=ztls/suite=TLS_AES_256_GCM_SHA384/size=16384	  241480	      2483 ns/op	6597.52 MB/s
+BenchmarkAppServerToClient/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16	  508953	      1168 ns/op	  13.70 MB/s
+BenchmarkAppServerToClient/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=128	  501903	      1186 ns/op	 107.94 MB/s
+BenchmarkAppServerToClient/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1350	  297243	      2008 ns/op	 672.27 MB/s
+BenchmarkAppServerToClient/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=8192	  118282	      5069 ns/op	1616.07 MB/s
+BenchmarkAppServerToClient/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16384	   67902	      8826 ns/op	1856.26 MB/s
+BenchmarkAppServerToClient/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=16	 2841001	       211.7 ns/op	  75.58 MB/s
+BenchmarkAppServerToClient/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=128	 2727771	       220.1 ns/op	 581.65 MB/s
+BenchmarkAppServerToClient/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=1350	 1476610	       406.3 ns/op	3323.02 MB/s
+BenchmarkAppServerToClient/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=8192	  498079	      1212 ns/op	6760.20 MB/s
+BenchmarkAppServerToClient/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=16384	  280627	      2134 ns/op	7678.74 MB/s
+BenchmarkAppServerToClient/impl=ztls/suite=TLS_AES_256_GCM_SHA384/size=16	 2700242	       222.2 ns/op	  72.01 MB/s
+BenchmarkAppServerToClient/impl=ztls/suite=TLS_AES_256_GCM_SHA384/size=128	 2614321	       229.4 ns/op	 557.99 MB/s
+BenchmarkAppServerToClient/impl=ztls/suite=TLS_AES_256_GCM_SHA384/size=1350	 1361026	       440.9 ns/op	3062.10 MB/s
+BenchmarkAppServerToClient/impl=ztls/suite=TLS_AES_256_GCM_SHA384/size=8192	  440323	      1353 ns/op	6054.25 MB/s
+BenchmarkAppServerToClient/impl=ztls/suite=TLS_AES_256_GCM_SHA384/size=16384	  241954	      2482 ns/op	6600.74 MB/s
+BenchmarkAppServerToClient/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16	  518601	      1170 ns/op	  13.68 MB/s
+BenchmarkAppServerToClient/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=128	  502472	      1190 ns/op	 107.52 MB/s
+BenchmarkAppServerToClient/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1350	  296482	      2014 ns/op	 670.22 MB/s
+BenchmarkAppServerToClient/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=8192	  118722	      5023 ns/op	1631.04 MB/s
+BenchmarkAppServerToClient/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16384	   67616	      8873 ns/op	1846.45 MB/s
+BenchmarkAppServerToClient/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=16	 2836563	       211.3 ns/op	  75.71 MB/s
+BenchmarkAppServerToClient/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=128	 2717343	       220.6 ns/op	 580.18 MB/s
+BenchmarkAppServerToClient/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=1350	 1479012	       405.7 ns/op	3327.25 MB/s
+BenchmarkAppServerToClient/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=8192	  494450	      1212 ns/op	6757.62 MB/s
+BenchmarkAppServerToClient/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=16384	  278170	      2138 ns/op	7664.59 MB/s
+BenchmarkAppServerToClient/impl=ztls/suite=TLS_AES_256_GCM_SHA384/size=16	 2710137	       221.3 ns/op	  72.29 MB/s
+BenchmarkAppServerToClient/impl=ztls/suite=TLS_AES_256_GCM_SHA384/size=128	 2600960	       230.2 ns/op	 556.09 MB/s
+BenchmarkAppServerToClient/impl=ztls/suite=TLS_AES_256_GCM_SHA384/size=1350	 1359445	       441.6 ns/op	3057.17 MB/s
+BenchmarkAppServerToClient/impl=ztls/suite=TLS_AES_256_GCM_SHA384/size=8192	  448089	      1349 ns/op	6072.38 MB/s
+BenchmarkAppServerToClient/impl=ztls/suite=TLS_AES_256_GCM_SHA384/size=16384	  242342	      2481 ns/op	6603.11 MB/s
+BenchmarkAppServerToClient/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16	  515072	      1172 ns/op	  13.65 MB/s
+BenchmarkAppServerToClient/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=128	  499570	      1189 ns/op	 107.65 MB/s
+BenchmarkAppServerToClient/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1350	  300128	      2009 ns/op	 672.05 MB/s
+BenchmarkAppServerToClient/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=8192	  119648	      4957 ns/op	1652.59 MB/s
+BenchmarkAppServerToClient/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16384	   67485	      8881 ns/op	1844.74 MB/s
+BenchmarkAppPreparedClientToServer/TLS_AES_128_GCM_SHA256/16	 2888764	       207.6 ns/op	  77.08 MB/s
+BenchmarkAppPreparedClientToServer/TLS_AES_128_GCM_SHA256/128	 2857944	       210.0 ns/op	 609.55 MB/s
+BenchmarkAppPreparedClientToServer/TLS_AES_128_GCM_SHA256/1350	 1531376	       392.0 ns/op	3444.12 MB/s
+BenchmarkAppPreparedClientToServer/TLS_AES_128_GCM_SHA256/8192	  522409	      1157 ns/op	7081.28 MB/s
+BenchmarkAppPreparedClientToServer/TLS_AES_128_GCM_SHA256/16384	  291190	      2051 ns/op	7986.61 MB/s
+BenchmarkAppPreparedClientToServer/TLS_AES_256_GCM_SHA384/16	 2753756	       217.7 ns/op	  73.51 MB/s
+BenchmarkAppPreparedClientToServer/TLS_AES_256_GCM_SHA384/128	 2711768	       221.4 ns/op	 578.22 MB/s
+BenchmarkAppPreparedClientToServer/TLS_AES_256_GCM_SHA384/1350	 1407772	       426.6 ns/op	3164.63 MB/s
+BenchmarkAppPreparedClientToServer/TLS_AES_256_GCM_SHA384/8192	  455043	      1310 ns/op	6254.09 MB/s
+BenchmarkAppPreparedClientToServer/TLS_AES_256_GCM_SHA384/16384	  249556	      2408 ns/op	6803.83 MB/s
+BenchmarkAppPreparedClientToServer/TLS_CHACHA20_POLY1305_SHA256/16	  503632	      1185 ns/op	  13.51 MB/s
+BenchmarkAppPreparedClientToServer/TLS_CHACHA20_POLY1305_SHA256/128	  504289	      1182 ns/op	 108.32 MB/s
+BenchmarkAppPreparedClientToServer/TLS_CHACHA20_POLY1305_SHA256/1350	  298873	      1995 ns/op	 676.60 MB/s
+BenchmarkAppPreparedClientToServer/TLS_CHACHA20_POLY1305_SHA256/8192	  119574	      4997 ns/op	1639.52 MB/s
+BenchmarkAppPreparedClientToServer/TLS_CHACHA20_POLY1305_SHA256/16384	   67928	      8785 ns/op	1865.06 MB/s
+BenchmarkAppPreparedClientToServer/TLS_AES_128_GCM_SHA256/16	 2892032	       207.5 ns/op	  77.10 MB/s
+BenchmarkAppPreparedClientToServer/TLS_AES_128_GCM_SHA256/128	 2878885	       208.3 ns/op	 614.47 MB/s
+BenchmarkAppPreparedClientToServer/TLS_AES_128_GCM_SHA256/1350	 1536428	       390.5 ns/op	3456.95 MB/s
+BenchmarkAppPreparedClientToServer/TLS_AES_128_GCM_SHA256/8192	  515844	      1157 ns/op	7082.65 MB/s
+BenchmarkAppPreparedClientToServer/TLS_AES_128_GCM_SHA256/16384	  289221	      2076 ns/op	7892.65 MB/s
+BenchmarkAppPreparedClientToServer/TLS_AES_256_GCM_SHA384/16	 2774527	       215.8 ns/op	  74.13 MB/s
+BenchmarkAppPreparedClientToServer/TLS_AES_256_GCM_SHA384/128	 2710408	       221.5 ns/op	 577.97 MB/s
+BenchmarkAppPreparedClientToServer/TLS_AES_256_GCM_SHA384/1350	 1405280	       427.3 ns/op	3159.59 MB/s
+BenchmarkAppPreparedClientToServer/TLS_AES_256_GCM_SHA384/8192	  458172	      1314 ns/op	6233.28 MB/s
+BenchmarkAppPreparedClientToServer/TLS_AES_256_GCM_SHA384/16384	  247406	      2413 ns/op	6790.80 MB/s
+BenchmarkAppPreparedClientToServer/TLS_CHACHA20_POLY1305_SHA256/16	  521110	      1158 ns/op	  13.82 MB/s
+BenchmarkAppPreparedClientToServer/TLS_CHACHA20_POLY1305_SHA256/128	  508575	      1180 ns/op	 108.45 MB/s
+BenchmarkAppPreparedClientToServer/TLS_CHACHA20_POLY1305_SHA256/1350	  300764	      1997 ns/op	 675.96 MB/s
+BenchmarkAppPreparedClientToServer/TLS_CHACHA20_POLY1305_SHA256/8192	  118930	      5015 ns/op	1633.60 MB/s
+BenchmarkAppPreparedClientToServer/TLS_CHACHA20_POLY1305_SHA256/16384	   68836	      8720 ns/op	1878.97 MB/s
+BenchmarkAppPreparedClientToServer/TLS_AES_128_GCM_SHA256/16	 2879194	       208.3 ns/op	  76.81 MB/s
+BenchmarkAppPreparedClientToServer/TLS_AES_128_GCM_SHA256/128	 2861656	       209.8 ns/op	 610.17 MB/s
+BenchmarkAppPreparedClientToServer/TLS_AES_128_GCM_SHA256/1350	 1531663	       391.4 ns/op	3448.80 MB/s
+BenchmarkAppPreparedClientToServer/TLS_AES_128_GCM_SHA256/8192	  517834	      1155 ns/op	7093.32 MB/s
+BenchmarkAppPreparedClientToServer/TLS_AES_128_GCM_SHA256/16384	  292264	      2049 ns/op	7995.46 MB/s
+BenchmarkAppPreparedClientToServer/TLS_AES_256_GCM_SHA384/16	 2773952	       216.5 ns/op	  73.92 MB/s
+BenchmarkAppPreparedClientToServer/TLS_AES_256_GCM_SHA384/128	 2718003	       220.4 ns/op	 580.81 MB/s
+BenchmarkAppPreparedClientToServer/TLS_AES_256_GCM_SHA384/1350	 1413133	       425.0 ns/op	3176.42 MB/s
+BenchmarkAppPreparedClientToServer/TLS_AES_256_GCM_SHA384/8192	  457218	      1307 ns/op	6267.48 MB/s
+BenchmarkAppPreparedClientToServer/TLS_AES_256_GCM_SHA384/16384	  249356	      2404 ns/op	6815.95 MB/s
+BenchmarkAppPreparedClientToServer/TLS_CHACHA20_POLY1305_SHA256/16	  519382	      1166 ns/op	  13.73 MB/s
+BenchmarkAppPreparedClientToServer/TLS_CHACHA20_POLY1305_SHA256/128	  502316	      1183 ns/op	 108.17 MB/s
+BenchmarkAppPreparedClientToServer/TLS_CHACHA20_POLY1305_SHA256/1350	  299305	      2015 ns/op	 670.12 MB/s
+BenchmarkAppPreparedClientToServer/TLS_CHACHA20_POLY1305_SHA256/8192	  120754	      4913 ns/op	1667.33 MB/s
+BenchmarkAppPreparedClientToServer/TLS_CHACHA20_POLY1305_SHA256/16384	   68485	      8775 ns/op	1867.16 MB/s
+BenchmarkAppPreparedClientToServer/TLS_AES_128_GCM_SHA256/16	 2888893	       207.7 ns/op	  77.04 MB/s
+BenchmarkAppPreparedClientToServer/TLS_AES_128_GCM_SHA256/128	 2884651	       208.4 ns/op	 614.32 MB/s
+BenchmarkAppPreparedClientToServer/TLS_AES_128_GCM_SHA256/1350	 1534902	       391.2 ns/op	3451.02 MB/s
+BenchmarkAppPreparedClientToServer/TLS_AES_128_GCM_SHA256/8192	  520369	      1158 ns/op	7075.12 MB/s
+BenchmarkAppPreparedClientToServer/TLS_AES_128_GCM_SHA256/16384	  287898	      2079 ns/op	7880.80 MB/s
+BenchmarkAppPreparedClientToServer/TLS_AES_256_GCM_SHA384/16	 2760733	       217.2 ns/op	  73.68 MB/s
+BenchmarkAppPreparedClientToServer/TLS_AES_256_GCM_SHA384/128	 2711704	       221.6 ns/op	 577.55 MB/s
+BenchmarkAppPreparedClientToServer/TLS_AES_256_GCM_SHA384/1350	 1402717	       427.5 ns/op	3157.90 MB/s
+BenchmarkAppPreparedClientToServer/TLS_AES_256_GCM_SHA384/8192	  452205	      1317 ns/op	6219.22 MB/s
+BenchmarkAppPreparedClientToServer/TLS_AES_256_GCM_SHA384/16384	  247846	      2414 ns/op	6786.46 MB/s
+BenchmarkAppPreparedClientToServer/TLS_CHACHA20_POLY1305_SHA256/16	  516656	      1161 ns/op	  13.78 MB/s
+BenchmarkAppPreparedClientToServer/TLS_CHACHA20_POLY1305_SHA256/128	  504248	      1192 ns/op	 107.38 MB/s
+BenchmarkAppPreparedClientToServer/TLS_CHACHA20_POLY1305_SHA256/1350	  302131	      1993 ns/op	 677.31 MB/s
+BenchmarkAppPreparedClientToServer/TLS_CHACHA20_POLY1305_SHA256/8192	  119938	      5017 ns/op	1632.91 MB/s
+BenchmarkAppPreparedClientToServer/TLS_CHACHA20_POLY1305_SHA256/16384	   68559	      8736 ns/op	1875.40 MB/s
+BenchmarkAppPreparedClientToServer/TLS_AES_128_GCM_SHA256/16	 2878040	       208.7 ns/op	  76.66 MB/s
+BenchmarkAppPreparedClientToServer/TLS_AES_128_GCM_SHA256/128	 2850320	       210.3 ns/op	 608.52 MB/s
+BenchmarkAppPreparedClientToServer/TLS_AES_128_GCM_SHA256/1350	 1533174	       391.3 ns/op	3449.73 MB/s
+BenchmarkAppPreparedClientToServer/TLS_AES_128_GCM_SHA256/8192	  508303	      1158 ns/op	7077.27 MB/s
+BenchmarkAppPreparedClientToServer/TLS_AES_128_GCM_SHA256/16384	  290486	      2053 ns/op	7979.69 MB/s
+BenchmarkAppPreparedClientToServer/TLS_AES_256_GCM_SHA384/16	 2752935	       218.1 ns/op	  73.37 MB/s
+BenchmarkAppPreparedClientToServer/TLS_AES_256_GCM_SHA384/128	 2716166	       220.8 ns/op	 579.60 MB/s
+BenchmarkAppPreparedClientToServer/TLS_AES_256_GCM_SHA384/1350	 1405341	       426.7 ns/op	3163.79 MB/s
+BenchmarkAppPreparedClientToServer/TLS_AES_256_GCM_SHA384/8192	  444956	      1311 ns/op	6249.55 MB/s
+BenchmarkAppPreparedClientToServer/TLS_AES_256_GCM_SHA384/16384	  251226	      2441 ns/op	6712.72 MB/s
+BenchmarkAppPreparedClientToServer/TLS_CHACHA20_POLY1305_SHA256/16	  506749	      1185 ns/op	  13.51 MB/s
+BenchmarkAppPreparedClientToServer/TLS_CHACHA20_POLY1305_SHA256/128	  505446	      1195 ns/op	 107.11 MB/s
+BenchmarkAppPreparedClientToServer/TLS_CHACHA20_POLY1305_SHA256/1350	  298468	      2009 ns/op	 672.01 MB/s
+BenchmarkAppPreparedClientToServer/TLS_CHACHA20_POLY1305_SHA256/8192	  109750	      5079 ns/op	1613.02 MB/s
+BenchmarkAppPreparedClientToServer/TLS_CHACHA20_POLY1305_SHA256/16384	   68574	      8811 ns/op	1859.54 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=16	 1431404	       419.0 ns/op	  76.38 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=128	 1396276	       430.0 ns/op	 595.34 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=1350	  746146	       808.9 ns/op	3338.07 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=8192	  248853	      2406 ns/op	6810.27 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=16384	  140582	      4292 ns/op	7634.27 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_AES_256_GCM_SHA384/size=16	 1370199	       438.4 ns/op	  72.99 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_AES_256_GCM_SHA384/size=128	 1308822	       456.9 ns/op	 560.27 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_AES_256_GCM_SHA384/size=1350	  693122	       871.7 ns/op	3097.51 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_AES_256_GCM_SHA384/size=8192	  221798	      2723 ns/op	6017.33 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_AES_256_GCM_SHA384/size=16384	  116589	      5180 ns/op	6326.14 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16	  242499	      2452 ns/op	  13.05 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=128	  244795	      2496 ns/op	 102.57 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1350	  142154	      4225 ns/op	 639.04 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=8192	   56988	     10519 ns/op	1557.57 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16384	   32566	     18466 ns/op	1774.52 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=16	 1371243	       438.1 ns/op	  73.04 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=128	 1320500	       454.0 ns/op	 563.86 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=1350	  723601	       851.3 ns/op	3171.48 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=8192	  232086	      2630 ns/op	6230.63 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=16384	  126066	      4715 ns/op	6949.11 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_AES_256_GCM_SHA384/size=16	 1302351	       460.2 ns/op	  69.53 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_AES_256_GCM_SHA384/size=128	 1269686	       472.9 ns/op	 541.38 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_AES_256_GCM_SHA384/size=1350	  644739	       912.1 ns/op	2960.25 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_AES_256_GCM_SHA384/size=8192	  198682	      2897 ns/op	5655.00 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_AES_256_GCM_SHA384/size=16384	  111764	      5389 ns/op	6080.67 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16	  239514	      2473 ns/op	  12.94 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=128	  234768	      2491 ns/op	 102.78 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1350	  139051	      4244 ns/op	 636.22 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=8192	   57081	     10430 ns/op	1570.92 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16384	   32164	     18583 ns/op	1763.36 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=16	 1367907	       437.9 ns/op	  73.08 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=128	 1326891	       452.7 ns/op	 565.54 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=1350	  734107	       850.6 ns/op	3174.06 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=8192	  217945	      2660 ns/op	6159.71 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=16384	  123676	      4736 ns/op	6918.79 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_AES_256_GCM_SHA384/size=16	 1291632	       463.1 ns/op	  69.10 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_AES_256_GCM_SHA384/size=128	 1269765	       472.3 ns/op	 541.97 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_AES_256_GCM_SHA384/size=1350	  620808	       914.2 ns/op	2953.35 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_AES_256_GCM_SHA384/size=8192	  216766	      2942 ns/op	5569.01 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_AES_256_GCM_SHA384/size=16384	  110217	      5349 ns/op	6125.58 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16	  249554	      2442 ns/op	  13.10 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=128	  241244	      2494 ns/op	 102.66 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1350	  140990	      4218 ns/op	 640.18 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=8192	   55771	     10627 ns/op	1541.76 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16384	   32200	     18549 ns/op	1766.60 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=16	 1373760	       437.2 ns/op	  73.19 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=128	 1318408	       455.1 ns/op	 562.46 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=1350	  706950	       850.4 ns/op	3174.84 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=8192	  221640	      2664 ns/op	6150.55 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=16384	  125563	      4746 ns/op	6904.10 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_AES_256_GCM_SHA384/size=16	 1294872	       462.3 ns/op	  69.22 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_AES_256_GCM_SHA384/size=128	 1259679	       475.6 ns/op	 538.27 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_AES_256_GCM_SHA384/size=1350	  660156	       914.4 ns/op	2952.81 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_AES_256_GCM_SHA384/size=8192	  203668	      2918 ns/op	5615.34 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_AES_256_GCM_SHA384/size=16384	  111790	      5394 ns/op	6075.35 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16	  238591	      2477 ns/op	  12.92 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=128	  241144	      2492 ns/op	 102.72 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1350	  141602	      4224 ns/op	 639.25 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=8192	   56173	     10443 ns/op	1568.86 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16384	   32130	     18841 ns/op	1739.19 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=16	 1368628	       438.4 ns/op	  72.99 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=128	 1325134	       452.1 ns/op	 566.20 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=1350	  699384	       850.2 ns/op	3175.73 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=8192	  221529	      2663 ns/op	6152.51 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=16384	  123601	      4731 ns/op	6925.67 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_AES_256_GCM_SHA384/size=16	 1305290	       459.4 ns/op	  69.66 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_AES_256_GCM_SHA384/size=128	 1269206	       471.7 ns/op	 542.67 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_AES_256_GCM_SHA384/size=1350	  621975	       917.6 ns/op	2942.46 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_AES_256_GCM_SHA384/size=8192	  203096	      2928 ns/op	5595.28 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_AES_256_GCM_SHA384/size=16384	  111459	      5377 ns/op	6094.37 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16	  239248	      2445 ns/op	  13.09 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=128	  240357	      2489 ns/op	 102.84 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1350	  139983	      4216 ns/op	 640.44 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=8192	   56952	     10634 ns/op	1540.66 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16384	   32067	     18678 ns/op	1754.37 MB/s

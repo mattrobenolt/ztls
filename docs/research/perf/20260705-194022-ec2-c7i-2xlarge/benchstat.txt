@@ -1,0 +1,540 @@
+# capture=zig-out/perf/20260705-194022-c7i.2xlarge-openssl
+# timestamp_utc=20260705-194022
+# git_revision=89c869eb2a22c6c0f2ffe077c8f13204a92f4074
+# git_dirty=false
+# zig_version=0.15.2
+# zig_optimization_mode=ReleaseFast
+# crypto_backend=openssl
+# openssl_pkg_config_path=/nix/store/wxws7pwyzk8mbmjc1rwwwx9v184hh67v-openssl-3.6.2-dev/lib/pkgconfig
+# linked_libcrypto=/nix/store/y18pnbvfarnilsmgayswvi1khaw9wbsc-openssl-3.6.2/lib/libcrypto.so.3
+# ztls_linked_libcrypto=/nix/store/y18pnbvfarnilsmgayswvi1khaw9wbsc-openssl-3.6.2/lib/libcrypto.so.3
+# evp_linked_libcrypto=/nix/store/y18pnbvfarnilsmgayswvi1khaw9wbsc-openssl-3.6.2/lib/libcrypto.so.3
+# libssl_linked_libcrypto=/nix/store/y18pnbvfarnilsmgayswvi1khaw9wbsc-openssl-3.6.2/lib/libcrypto.so.3
+# libssl_linked_libssl=/nix/store/y18pnbvfarnilsmgayswvi1khaw9wbsc-openssl-3.6.2/lib/libssl.so.3
+# openssl_cli_version=OpenSSL 3.6.2 7 Apr 2026 (Library: OpenSSL 3.6.2 7 Apr 2026)
+# rustls_profile=release
+# rustls_version=0.23.40
+# rustc_version=rustc 1.96.0 (ac68faa20 2026-05-25)
+# benchstat_path=/nix/store/bx6pkhw0xbwzv5bvs12s5pcrbzypawq4-benchstat-unstable-2026-05-12/bin/benchstat
+# go_version=go version go1.26.3 linux/amd64
+
+## Comparable TLS rows
+                                                     │     ztls      │                openssl                │                rustls                 │
+                                                     │    sec/op     │    sec/op      vs base                │    sec/op      vs base                │
+Handshake TLS_AES_128_GCM_SHA256 1                      387.9µ ± ∞ ¹    347.8µ ± ∞ ¹   -10.32% (p=0.008 n=5)    147.2µ ± ∞ ¹   -62.06% (p=0.008 n=5)
+Handshake TLS_AES_256_GCM_SHA384 1                      428.5µ ± ∞ ¹    382.2µ ± ∞ ¹   -10.81% (p=0.008 n=5)    171.2µ ± ∞ ¹   -60.03% (p=0.008 n=5)
+Handshake TLS_CHACHA20_POLY1305_SHA256 1                388.9µ ± ∞ ¹    359.5µ ± ∞ ¹    -7.56% (p=0.008 n=5)    146.8µ ± ∞ ¹   -62.25% (p=0.008 n=5)
+AppClientToServer TLS_AES_128_GCM_SHA256 16             200.0n ± ∞ ¹    707.9n ± ∞ ¹  +253.95% (p=0.008 n=5)    378.8n ± ∞ ¹   +89.41% (p=0.008 n=5)
+AppClientToServer TLS_AES_128_GCM_SHA256 128            203.3n ± ∞ ¹    715.4n ± ∞ ¹  +251.89% (p=0.008 n=5)    388.5n ± ∞ ¹   +91.09% (p=0.008 n=5)
+AppClientToServer TLS_AES_128_GCM_SHA256 1350           388.3n ± ∞ ¹    925.2n ± ∞ ¹  +138.27% (p=0.008 n=5)    692.5n ± ∞ ¹   +78.35% (p=0.008 n=5)
+AppClientToServer TLS_AES_128_GCM_SHA256 8192           1.072µ ± ∞ ¹    2.140µ ± ∞ ¹   +99.63% (p=0.008 n=5)    2.377µ ± ∞ ¹  +121.72% (p=0.008 n=5)
+AppClientToServer TLS_AES_128_GCM_SHA256 16384          1.905µ ± ∞ ¹    3.688µ ± ∞ ¹   +93.60% (p=0.008 n=5)    4.782µ ± ∞ ¹  +151.04% (p=0.008 n=5)
+AppClientToServer TLS_AES_256_GCM_SHA384 16             208.5n ± ∞ ¹    717.0n ± ∞ ¹  +243.88% (p=0.008 n=5)    383.9n ± ∞ ¹   +84.14% (p=0.008 n=5)
+AppClientToServer TLS_AES_256_GCM_SHA384 128            214.2n ± ∞ ¹    725.6n ± ∞ ¹  +238.75% (p=0.008 n=5)    398.8n ± ∞ ¹   +86.18% (p=0.008 n=5)
+AppClientToServer TLS_AES_256_GCM_SHA384 1350           417.4n ± ∞ ¹    956.8n ± ∞ ¹  +129.23% (p=0.008 n=5)    756.2n ± ∞ ¹   +81.18% (p=0.008 n=5)
+AppClientToServer TLS_AES_256_GCM_SHA384 8192           1.295µ ± ∞ ¹    2.278µ ± ∞ ¹   +75.91% (p=0.008 n=5)    2.615µ ± ∞ ¹  +101.96% (p=0.008 n=5)
+AppClientToServer TLS_AES_256_GCM_SHA384 16384          2.377µ ± ∞ ¹    4.006µ ± ∞ ¹   +68.53% (p=0.008 n=5)    5.190µ ± ∞ ¹  +118.34% (p=0.008 n=5)
+AppClientToServer TLS_CHACHA20_POLY1305_SHA256 16      1123.0n ± ∞ ¹   1971.0n ± ∞ ¹   +75.51% (p=0.008 n=5)    503.5n ± ∞ ¹   -55.16% (p=0.008 n=5)
+AppClientToServer TLS_CHACHA20_POLY1305_SHA256 128     1143.0n ± ∞ ¹   1876.0n ± ∞ ¹   +64.13% (p=0.008 n=5)    572.8n ± ∞ ¹   -49.89% (p=0.008 n=5)
+AppClientToServer TLS_CHACHA20_POLY1305_SHA256 1350     1.936µ ± ∞ ¹    2.697µ ± ∞ ¹   +39.31% (p=0.008 n=5)    1.823µ ± ∞ ¹    -5.86% (p=0.008 n=5)
+AppClientToServer TLS_CHACHA20_POLY1305_SHA256 8192     4.811µ ± ∞ ¹    6.093µ ± ∞ ¹   +26.65% (p=0.008 n=5)    7.990µ ± ∞ ¹   +66.09% (p=0.008 n=5)
+AppClientToServer TLS_CHACHA20_POLY1305_SHA256 16384    8.491µ ± ∞ ¹   10.445µ ± ∞ ¹   +23.01% (p=0.008 n=5)   15.636µ ± ∞ ¹   +84.15% (p=0.008 n=5)
+AppServerToClient TLS_AES_128_GCM_SHA256 16             206.5n ± ∞ ¹    709.6n ± ∞ ¹  +243.63% (p=0.008 n=5)    376.5n ± ∞ ¹   +82.31% (p=0.008 n=5)
+AppServerToClient TLS_AES_128_GCM_SHA256 128            213.8n ± ∞ ¹    733.0n ± ∞ ¹  +242.84% (p=0.008 n=5)    386.1n ± ∞ ¹   +80.59% (p=0.008 n=5)
+AppServerToClient TLS_AES_128_GCM_SHA256 1350           393.2n ± ∞ ¹    918.5n ± ∞ ¹  +133.60% (p=0.008 n=5)    687.8n ± ∞ ¹   +74.92% (p=0.008 n=5)
+AppServerToClient TLS_AES_128_GCM_SHA256 8192           1.080µ ± ∞ ¹    2.144µ ± ∞ ¹   +98.52% (p=0.008 n=5)    2.400µ ± ∞ ¹  +122.26% (p=0.008 n=5)
+AppServerToClient TLS_AES_128_GCM_SHA256 16384          1.905µ ± ∞ ¹    3.754µ ± ∞ ¹   +97.06% (p=0.008 n=5)    4.795µ ± ∞ ¹  +151.70% (p=0.008 n=5)
+AppServerToClient TLS_AES_256_GCM_SHA384 16             216.0n ± ∞ ¹    721.0n ± ∞ ¹  +233.80% (p=0.008 n=5)    381.8n ± ∞ ¹   +76.77% (p=0.008 n=5)
+AppServerToClient TLS_AES_256_GCM_SHA384 128            224.0n ± ∞ ¹    729.7n ± ∞ ¹  +225.76% (p=0.008 n=5)    397.8n ± ∞ ¹   +77.60% (p=0.008 n=5)
+AppServerToClient TLS_AES_256_GCM_SHA384 1350           422.1n ± ∞ ¹    958.8n ± ∞ ¹  +127.15% (p=0.008 n=5)    753.0n ± ∞ ¹   +78.39% (p=0.008 n=5)
+AppServerToClient TLS_AES_256_GCM_SHA384 8192           1.298µ ± ∞ ¹    2.299µ ± ∞ ¹   +77.12% (p=0.008 n=5)    2.629µ ± ∞ ¹  +102.52% (p=0.008 n=5)
+AppServerToClient TLS_AES_256_GCM_SHA384 16384          2.382µ ± ∞ ¹    3.989µ ± ∞ ¹   +67.46% (p=0.008 n=5)    5.206µ ± ∞ ¹  +118.55% (p=0.008 n=5)
+AppServerToClient TLS_CHACHA20_POLY1305_SHA256 16      1130.0n ± ∞ ¹   1978.0n ± ∞ ¹   +75.04% (p=0.008 n=5)    501.6n ± ∞ ¹   -55.61% (p=0.008 n=5)
+AppServerToClient TLS_CHACHA20_POLY1305_SHA256 128     1148.0n ± ∞ ¹   1881.0n ± ∞ ¹   +63.85% (p=0.008 n=5)    571.2n ± ∞ ¹   -50.24% (p=0.008 n=5)
+AppServerToClient TLS_CHACHA20_POLY1305_SHA256 1350     1.943µ ± ∞ ¹    2.712µ ± ∞ ¹   +39.58% (p=0.008 n=5)    1.824µ ± ∞ ¹    -6.15% (p=0.008 n=5)
+AppServerToClient TLS_CHACHA20_POLY1305_SHA256 8192     4.843µ ± ∞ ¹    6.162µ ± ∞ ¹   +27.24% (p=0.008 n=5)    7.966µ ± ∞ ¹   +64.48% (p=0.008 n=5)
+AppServerToClient TLS_CHACHA20_POLY1305_SHA256 16384    8.510µ ± ∞ ¹   10.469µ ± ∞ ¹   +23.02% (p=0.008 n=5)   15.740µ ± ∞ ¹   +84.96% (p=0.008 n=5)
+AppPingPong TLS_AES_128_GCM_SHA256 16                   402.8n ± ∞ ¹   1411.0n ± ∞ ¹  +250.30% (p=0.008 n=5)    759.3n ± ∞ ¹   +88.50% (p=0.008 n=5)
+AppPingPong TLS_AES_128_GCM_SHA256 128                  416.7n ± ∞ ¹   1433.0n ± ∞ ¹  +243.89% (p=0.008 n=5)    779.2n ± ∞ ¹   +86.99% (p=0.008 n=5)
+AppPingPong TLS_AES_128_GCM_SHA256 1350                 785.7n ± ∞ ¹   1845.0n ± ∞ ¹  +134.82% (p=0.008 n=5)   1383.6n ± ∞ ¹   +76.09% (p=0.008 n=5)
+AppPingPong TLS_AES_128_GCM_SHA256 8192                 2.147µ ± ∞ ¹    4.285µ ± ∞ ¹   +99.58% (p=0.008 n=5)    4.993µ ± ∞ ¹  +132.55% (p=0.008 n=5)
+AppPingPong TLS_AES_128_GCM_SHA256 16384                3.829µ ± ∞ ¹    7.266µ ± ∞ ¹   +89.76% (p=0.008 n=5)    9.510µ ± ∞ ¹  +148.37% (p=0.008 n=5)
+AppPingPong TLS_AES_256_GCM_SHA384 16                   425.5n ± ∞ ¹   1423.0n ± ∞ ¹  +234.43% (p=0.008 n=5)    769.9n ± ∞ ¹   +80.94% (p=0.008 n=5)
+AppPingPong TLS_AES_256_GCM_SHA384 128                  435.0n ± ∞ ¹   1471.0n ± ∞ ¹  +238.16% (p=0.008 n=5)    801.5n ± ∞ ¹   +84.24% (p=0.008 n=5)
+AppPingPong TLS_AES_256_GCM_SHA384 1350                 841.2n ± ∞ ¹   1919.0n ± ∞ ¹  +128.13% (p=0.008 n=5)   1523.1n ± ∞ ¹   +81.06% (p=0.008 n=5)
+AppPingPong TLS_AES_256_GCM_SHA384 8192                 2.591µ ± ∞ ¹    4.581µ ± ∞ ¹   +76.80% (p=0.008 n=5)    5.437µ ± ∞ ¹  +109.84% (p=0.008 n=5)
+AppPingPong TLS_AES_256_GCM_SHA384 16384                4.785µ ± ∞ ¹    7.966µ ± ∞ ¹   +66.48% (p=0.008 n=5)   10.455µ ± ∞ ¹  +118.50% (p=0.008 n=5)
+AppPingPong TLS_CHACHA20_POLY1305_SHA256 16             2.253µ ± ∞ ¹    3.975µ ± ∞ ¹   +76.43% (p=0.008 n=5)    1.012µ ± ∞ ¹   -55.08% (p=0.008 n=5)
+AppPingPong TLS_CHACHA20_POLY1305_SHA256 128            2.293µ ± ∞ ¹    3.749µ ± ∞ ¹   +63.50% (p=0.008 n=5)    1.152µ ± ∞ ¹   -49.76% (p=0.008 n=5)
+AppPingPong TLS_CHACHA20_POLY1305_SHA256 1350           3.877µ ± ∞ ¹    5.393µ ± ∞ ¹   +39.10% (p=0.008 n=5)    3.647µ ± ∞ ¹    -5.93% (p=0.008 n=5)
+AppPingPong TLS_CHACHA20_POLY1305_SHA256 8192           9.663µ ± ∞ ¹   12.193µ ± ∞ ¹   +26.18% (p=0.008 n=5)   16.148µ ± ∞ ¹   +67.11% (p=0.008 n=5)
+AppPingPong TLS_CHACHA20_POLY1305_SHA256 16384          17.03µ ± ∞ ¹    20.82µ ± ∞ ¹   +22.24% (p=0.008 n=5)    31.52µ ± ∞ ¹   +85.04% (p=0.008 n=5)
+¹ need >= 6 samples for confidence interval at level 0.95
+
+                                                     │      ztls      │                openssl                │                 rustls                 │
+                                                     │      B/s       │      B/s        vs base               │      B/s        vs base                │
+AppClientToServer TLS_AES_128_GCM_SHA256 16             76.30Mi ± ∞ ¹    21.55Mi ± ∞ ¹  -71.75% (p=0.008 n=5)    40.28Mi ± ∞ ¹   -47.21% (p=0.008 n=5)
+AppClientToServer TLS_AES_128_GCM_SHA256 128            600.4Mi ± ∞ ¹    170.6Mi ± ∞ ¹  -71.58% (p=0.008 n=5)    314.2Mi ± ∞ ¹   -47.66% (p=0.008 n=5)
+AppClientToServer TLS_AES_128_GCM_SHA256 1350           3.238Gi ± ∞ ¹    1.359Gi ± ∞ ¹  -58.03% (p=0.008 n=5)    1.816Gi ± ∞ ¹   -43.92% (p=0.008 n=5)
+AppClientToServer TLS_AES_128_GCM_SHA256 8192           7.118Gi ± ∞ ¹    3.565Gi ± ∞ ¹  -49.91% (p=0.008 n=5)    3.210Gi ± ∞ ¹   -54.90% (p=0.008 n=5)
+AppClientToServer TLS_AES_128_GCM_SHA256 16384          8.009Gi ± ∞ ¹    4.138Gi ± ∞ ¹  -48.33% (p=0.008 n=5)    3.191Gi ± ∞ ¹   -60.16% (p=0.008 n=5)
+AppClientToServer TLS_AES_256_GCM_SHA384 16             73.18Mi ± ∞ ¹    21.29Mi ± ∞ ¹  -70.91% (p=0.008 n=5)    39.74Mi ± ∞ ¹   -45.69% (p=0.008 n=5)
+AppClientToServer TLS_AES_256_GCM_SHA384 128            570.0Mi ± ∞ ¹    168.2Mi ± ∞ ¹  -70.48% (p=0.008 n=5)    306.1Mi ± ∞ ¹   -46.30% (p=0.008 n=5)
+AppClientToServer TLS_AES_256_GCM_SHA384 1350           3.012Gi ± ∞ ¹    1.314Gi ± ∞ ¹  -56.37% (p=0.008 n=5)    1.663Gi ± ∞ ¹   -44.80% (p=0.008 n=5)
+AppClientToServer TLS_AES_256_GCM_SHA384 8192           5.893Gi ± ∞ ¹    3.350Gi ± ∞ ¹  -43.16% (p=0.008 n=5)    2.917Gi ± ∞ ¹   -50.50% (p=0.008 n=5)
+AppClientToServer TLS_AES_256_GCM_SHA384 16384          6.419Gi ± ∞ ¹    3.809Gi ± ∞ ¹  -40.67% (p=0.008 n=5)    2.940Gi ± ∞ ¹   -54.20% (p=0.008 n=5)
+AppClientToServer TLS_CHACHA20_POLY1305_SHA256 16      13.590Mi ± ∞ ¹    7.744Mi ± ∞ ¹  -43.02% (p=0.008 n=5)   30.308Mi ± ∞ ¹  +123.02% (p=0.008 n=5)
+AppClientToServer TLS_CHACHA20_POLY1305_SHA256 128     106.82Mi ± ∞ ¹    65.06Mi ± ∞ ¹  -39.09% (p=0.008 n=5)   213.12Mi ± ∞ ¹   +99.51% (p=0.008 n=5)
+AppClientToServer TLS_CHACHA20_POLY1305_SHA256 1350     664.9Mi ± ∞ ¹    477.4Mi ± ∞ ¹  -28.20% (p=0.008 n=5)    706.4Mi ± ∞ ¹    +6.23% (p=0.008 n=5)
+AppClientToServer TLS_CHACHA20_POLY1305_SHA256 8192    1623.8Mi ± ∞ ¹   1282.3Mi ± ∞ ¹  -21.03% (p=0.008 n=5)    977.7Mi ± ∞ ¹   -39.79% (p=0.008 n=5)
+AppClientToServer TLS_CHACHA20_POLY1305_SHA256 16384   1840.1Mi ± ∞ ¹   1495.9Mi ± ∞ ¹  -18.71% (p=0.008 n=5)    999.3Mi ± ∞ ¹   -45.70% (p=0.008 n=5)
+AppServerToClient TLS_AES_128_GCM_SHA256 16             73.91Mi ± ∞ ¹    21.51Mi ± ∞ ¹  -70.90% (p=0.008 n=5)    40.53Mi ± ∞ ¹   -45.16% (p=0.008 n=5)
+AppServerToClient TLS_AES_128_GCM_SHA256 128            571.0Mi ± ∞ ¹    166.5Mi ± ∞ ¹  -70.83% (p=0.008 n=5)    316.2Mi ± ∞ ¹   -44.63% (p=0.008 n=5)
+AppServerToClient TLS_AES_128_GCM_SHA256 1350           3.197Gi ± ∞ ¹    1.369Gi ± ∞ ¹  -57.19% (p=0.008 n=5)    1.828Gi ± ∞ ¹   -42.83% (p=0.008 n=5)
+AppServerToClient TLS_AES_128_GCM_SHA256 8192           7.064Gi ± ∞ ¹    3.559Gi ± ∞ ¹  -49.62% (p=0.008 n=5)    3.178Gi ± ∞ ¹   -55.01% (p=0.008 n=5)
+AppServerToClient TLS_AES_128_GCM_SHA256 16384          8.010Gi ± ∞ ¹    4.064Gi ± ∞ ¹  -49.26% (p=0.008 n=5)    3.182Gi ± ∞ ¹   -60.27% (p=0.008 n=5)
+AppServerToClient TLS_AES_256_GCM_SHA384 16             70.65Mi ± ∞ ¹    21.16Mi ± ∞ ¹  -70.05% (p=0.008 n=5)    39.96Mi ± ∞ ¹   -43.44% (p=0.008 n=5)
+AppServerToClient TLS_AES_256_GCM_SHA384 128            544.9Mi ± ∞ ¹    167.3Mi ± ∞ ¹  -69.30% (p=0.008 n=5)    306.9Mi ± ∞ ¹   -43.69% (p=0.008 n=5)
+AppServerToClient TLS_AES_256_GCM_SHA384 1350           2.979Gi ± ∞ ¹    1.311Gi ± ∞ ¹  -55.98% (p=0.008 n=5)    1.670Gi ± ∞ ¹   -43.94% (p=0.008 n=5)
+AppServerToClient TLS_AES_256_GCM_SHA384 8192           5.876Gi ± ∞ ¹    3.318Gi ± ∞ ¹  -43.54% (p=0.008 n=5)    2.902Gi ± ∞ ¹   -50.61% (p=0.008 n=5)
+AppServerToClient TLS_AES_256_GCM_SHA384 16384          6.406Gi ± ∞ ¹    3.825Gi ± ∞ ¹  -40.29% (p=0.008 n=5)    2.931Gi ± ∞ ¹   -54.25% (p=0.008 n=5)
+AppServerToClient TLS_CHACHA20_POLY1305_SHA256 16      13.504Mi ± ∞ ¹    7.715Mi ± ∞ ¹  -42.87% (p=0.008 n=5)   30.422Mi ± ∞ ¹  +125.28% (p=0.008 n=5)
+AppServerToClient TLS_CHACHA20_POLY1305_SHA256 128     106.32Mi ± ∞ ¹    64.89Mi ± ∞ ¹  -38.97% (p=0.008 n=5)   213.69Mi ± ∞ ¹  +101.00% (p=0.008 n=5)
+AppServerToClient TLS_CHACHA20_POLY1305_SHA256 1350     662.5Mi ± ∞ ¹    474.7Mi ± ∞ ¹  -28.35% (p=0.008 n=5)    706.0Mi ± ∞ ¹    +6.57% (p=0.008 n=5)
+AppServerToClient TLS_CHACHA20_POLY1305_SHA256 8192    1613.2Mi ± ∞ ¹   1267.9Mi ± ∞ ¹  -21.40% (p=0.008 n=5)    980.8Mi ± ∞ ¹   -39.20% (p=0.008 n=5)
+AppServerToClient TLS_CHACHA20_POLY1305_SHA256 16384   1836.1Mi ± ∞ ¹   1492.5Mi ± ∞ ¹  -18.71% (p=0.008 n=5)    992.7Mi ± ∞ ¹   -45.93% (p=0.008 n=5)
+AppPingPong TLS_AES_128_GCM_SHA256 16                   75.76Mi ± ∞ ¹    21.63Mi ± ∞ ¹  -71.45% (p=0.008 n=5)    40.19Mi ± ∞ ¹   -46.95% (p=0.008 n=5)
+AppPingPong TLS_AES_128_GCM_SHA256 128                  586.0Mi ± ∞ ¹    170.4Mi ± ∞ ¹  -70.92% (p=0.008 n=5)    313.3Mi ± ∞ ¹   -46.53% (p=0.008 n=5)
+AppPingPong TLS_AES_128_GCM_SHA256 1350                 3.201Gi ± ∞ ¹    1.363Gi ± ∞ ¹  -57.42% (p=0.008 n=5)    1.817Gi ± ∞ ¹   -43.21% (p=0.008 n=5)
+AppPingPong TLS_AES_128_GCM_SHA256 8192                 7.107Gi ± ∞ ¹    3.561Gi ± ∞ ¹  -49.90% (p=0.008 n=5)    3.056Gi ± ∞ ¹   -57.00% (p=0.008 n=5)
+AppPingPong TLS_AES_128_GCM_SHA256 16384                7.971Gi ± ∞ ¹    4.200Gi ± ∞ ¹  -47.30% (p=0.008 n=5)    3.209Gi ± ∞ ¹   -59.74% (p=0.008 n=5)
+AppPingPong TLS_AES_256_GCM_SHA384 16                   71.72Mi ± ∞ ¹    21.45Mi ± ∞ ¹  -70.09% (p=0.008 n=5)    39.63Mi ± ∞ ¹   -44.73% (p=0.008 n=5)
+AppPingPong TLS_AES_256_GCM_SHA384 128                  561.3Mi ± ∞ ¹    165.9Mi ± ∞ ¹  -70.43% (p=0.008 n=5)    304.6Mi ± ∞ ¹   -45.73% (p=0.008 n=5)
+AppPingPong TLS_AES_256_GCM_SHA384 1350                 2.989Gi ± ∞ ¹    1.311Gi ± ∞ ¹  -56.16% (p=0.008 n=5)    1.651Gi ± ∞ ¹   -44.77% (p=0.008 n=5)
+AppPingPong TLS_AES_256_GCM_SHA384 8192                 5.890Gi ± ∞ ¹    3.331Gi ± ∞ ¹  -43.45% (p=0.008 n=5)    2.806Gi ± ∞ ¹   -52.35% (p=0.008 n=5)
+AppPingPong TLS_AES_256_GCM_SHA384 16384                6.377Gi ± ∞ ¹    3.831Gi ± ∞ ¹  -39.93% (p=0.008 n=5)    2.919Gi ± ∞ ¹   -54.23% (p=0.008 n=5)
+AppPingPong TLS_CHACHA20_POLY1305_SHA256 16            13.552Mi ± ∞ ¹    7.677Mi ± ∞ ¹  -43.35% (p=0.008 n=5)   30.155Mi ± ∞ ¹  +122.52% (p=0.008 n=5)
+AppPingPong TLS_CHACHA20_POLY1305_SHA256 128           106.47Mi ± ∞ ¹    65.13Mi ± ∞ ¹  -38.83% (p=0.008 n=5)   211.92Mi ± ∞ ¹   +99.04% (p=0.008 n=5)
+AppPingPong TLS_CHACHA20_POLY1305_SHA256 1350           664.2Mi ± ∞ ¹    477.4Mi ± ∞ ¹  -28.12% (p=0.008 n=5)    706.1Mi ± ∞ ¹    +6.31% (p=0.008 n=5)
+AppPingPong TLS_CHACHA20_POLY1305_SHA256 8192          1617.0Mi ± ∞ ¹   1281.4Mi ± ∞ ¹  -20.75% (p=0.008 n=5)    967.6Mi ± ∞ ¹   -40.16% (p=0.008 n=5)
+AppPingPong TLS_CHACHA20_POLY1305_SHA256 16384         1834.6Mi ± ∞ ¹   1500.8Mi ± ∞ ¹  -18.19% (p=0.008 n=5)    991.4Mi ± ∞ ¹   -45.96% (p=0.008 n=5)
+¹ need >= 6 samples for confidence interval at level 0.95
+
+## Crypto floor rows (not TLS-to-TLS comparisons)
+                                                 │     ztls     │         evp         │
+                                                 │    sec/op    │    sec/op     vs base   │
+RecordEncrypt TLS_AES_128_GCM_SHA256 16            104.8n ± ∞ ¹
+RecordEncrypt TLS_AES_128_GCM_SHA256 128           107.6n ± ∞ ¹
+RecordEncrypt TLS_AES_128_GCM_SHA256 1350          193.9n ± ∞ ¹
+RecordEncrypt TLS_AES_128_GCM_SHA256 8192          582.6n ± ∞ ¹
+RecordEncrypt TLS_AES_128_GCM_SHA256 16384         1.032µ ± ∞ ¹
+RecordEncrypt TLS_AES_256_GCM_SHA384 16            108.8n ± ∞ ¹
+RecordEncrypt TLS_AES_256_GCM_SHA384 128           112.8n ± ∞ ¹
+RecordEncrypt TLS_AES_256_GCM_SHA384 1350          210.2n ± ∞ ¹
+RecordEncrypt TLS_AES_256_GCM_SHA384 8192          662.8n ± ∞ ¹
+RecordEncrypt TLS_AES_256_GCM_SHA384 16384         1.226µ ± ∞ ¹
+RecordEncrypt TLS_CHACHA20_POLY1305_SHA256 16      681.3n ± ∞ ¹
+RecordEncrypt TLS_CHACHA20_POLY1305_SHA256 128     580.5n ± ∞ ¹
+RecordEncrypt TLS_CHACHA20_POLY1305_SHA256 1350    1.094µ ± ∞ ¹
+RecordEncrypt TLS_CHACHA20_POLY1305_SHA256 8192    2.547µ ± ∞ ¹
+RecordEncrypt TLS_CHACHA20_POLY1305_SHA256 16384   4.488µ ± ∞ ¹
+RecordDecrypt TLS_AES_128_GCM_SHA256 16            98.82n ± ∞ ¹
+RecordDecrypt TLS_AES_128_GCM_SHA256 128           102.3n ± ∞ ¹
+RecordDecrypt TLS_AES_128_GCM_SHA256 1350          198.8n ± ∞ ¹
+RecordDecrypt TLS_AES_128_GCM_SHA256 8192          562.9n ± ∞ ¹
+RecordDecrypt TLS_AES_128_GCM_SHA256 16384         1.156µ ± ∞ ¹
+RecordDecrypt TLS_AES_256_GCM_SHA384 16            103.1n ± ∞ ¹
+RecordDecrypt TLS_AES_256_GCM_SHA384 128           106.7n ± ∞ ¹
+RecordDecrypt TLS_AES_256_GCM_SHA384 1350          214.5n ± ∞ ¹
+RecordDecrypt TLS_AES_256_GCM_SHA384 8192          661.7n ± ∞ ¹
+RecordDecrypt TLS_AES_256_GCM_SHA384 16384         1.287µ ± ∞ ¹
+RecordDecrypt TLS_CHACHA20_POLY1305_SHA256 16      448.7n ± ∞ ¹
+RecordDecrypt TLS_CHACHA20_POLY1305_SHA256 128     454.6n ± ∞ ¹
+RecordDecrypt TLS_CHACHA20_POLY1305_SHA256 1350    855.5n ± ∞ ¹
+RecordDecrypt TLS_CHACHA20_POLY1305_SHA256 8192    2.320µ ± ∞ ¹
+RecordDecrypt TLS_CHACHA20_POLY1305_SHA256 16384   4.584µ ± ∞ ¹
+Encrypt AES_128_GCM 16                                            94.85n ± ∞ ¹
+Encrypt AES_128_GCM 128                                           96.64n ± ∞ ¹
+Encrypt AES_128_GCM 1350                                          186.7n ± ∞ ¹
+Encrypt AES_128_GCM 8192                                          522.3n ± ∞ ¹
+Encrypt AES_128_GCM 16384                                         937.0n ± ∞ ¹
+Encrypt AES_128_GCM 32                                            92.94n ± ∞ ¹
+Encrypt AES_128_GCM 64                                            94.83n ± ∞ ¹
+Encrypt AES_128_GCM 256                                           109.4n ± ∞ ¹
+Encrypt AES_128_GCM 512                                           132.1n ± ∞ ¹
+Encrypt AES_128_GCM 1024                                          157.9n ± ∞ ¹
+Encrypt AES_256_GCM 16                                            98.95n ± ∞ ¹
+Encrypt AES_256_GCM 128                                           104.2n ± ∞ ¹
+Encrypt AES_256_GCM 1350                                          204.0n ± ∞ ¹
+Encrypt AES_256_GCM 8192                                          617.7n ± ∞ ¹
+Encrypt AES_256_GCM 16384                                         1.151µ ± ∞ ¹
+Encrypt AES_256_GCM 32                                            98.44n ± ∞ ¹
+Encrypt AES_256_GCM 64                                            100.3n ± ∞ ¹
+Encrypt AES_256_GCM 256                                           119.2n ± ∞ ¹
+Encrypt AES_256_GCM 512                                           144.2n ± ∞ ¹
+Encrypt AES_256_GCM 1024                                          173.8n ± ∞ ¹
+Encrypt CHACHA20_POLY1305 16                                      647.4n ± ∞ ¹
+Encrypt CHACHA20_POLY1305 128                                     580.6n ± ∞ ¹
+Encrypt CHACHA20_POLY1305 1350                                    1.091µ ± ∞ ¹
+Encrypt CHACHA20_POLY1305 8192                                    2.382µ ± ∞ ¹
+Encrypt CHACHA20_POLY1305 16384                                   4.307µ ± ∞ ¹
+Encrypt CHACHA20_POLY1305 32                                      670.1n ± ∞ ¹
+Encrypt CHACHA20_POLY1305 64                                      558.7n ± ∞ ¹
+Encrypt CHACHA20_POLY1305 256                                     600.1n ± ∞ ¹
+Encrypt CHACHA20_POLY1305 512                                     691.4n ± ∞ ¹
+Encrypt CHACHA20_POLY1305 1024                                    748.9n ± ∞ ¹
+Decrypt AES_128_GCM 16                                            91.95n ± ∞ ¹
+Decrypt AES_128_GCM 128                                           93.01n ± ∞ ¹
+Decrypt AES_128_GCM 1350                                          199.6n ± ∞ ¹
+Decrypt AES_128_GCM 8192                                          563.4n ± ∞ ¹
+Decrypt AES_128_GCM 16384                                         1.159µ ± ∞ ¹
+Decrypt AES_128_GCM 32                                            95.83n ± ∞ ¹
+Decrypt AES_128_GCM 64                                            97.19n ± ∞ ¹
+Decrypt AES_128_GCM 256                                           106.1n ± ∞ ¹
+Decrypt AES_128_GCM 512                                           139.7n ± ∞ ¹
+Decrypt AES_128_GCM 1024                                          169.7n ± ∞ ¹
+Decrypt AES_256_GCM 16                                            95.77n ± ∞ ¹
+Decrypt AES_256_GCM 128                                           100.1n ± ∞ ¹
+Decrypt AES_256_GCM 1350                                          215.7n ± ∞ ¹
+Decrypt AES_256_GCM 8192                                          651.6n ± ∞ ¹
+Decrypt AES_256_GCM 16384                                         1.360µ ± ∞ ¹
+Decrypt AES_256_GCM 32                                            99.85n ± ∞ ¹
+Decrypt AES_256_GCM 64                                            100.5n ± ∞ ¹
+Decrypt AES_256_GCM 256                                           113.8n ± ∞ ¹
+Decrypt AES_256_GCM 512                                           148.2n ± ∞ ¹
+Decrypt AES_256_GCM 1024                                          181.0n ± ∞ ¹
+Decrypt CHACHA20_POLY1305 16                                      546.6n ± ∞ ¹
+Decrypt CHACHA20_POLY1305 128                                     349.1n ± ∞ ¹
+Decrypt CHACHA20_POLY1305 1350                                    975.7n ± ∞ ¹
+Decrypt CHACHA20_POLY1305 8192                                    2.298µ ± ∞ ¹
+Decrypt CHACHA20_POLY1305 16384                                   4.378µ ± ∞ ¹
+Decrypt CHACHA20_POLY1305 32                                      555.0n ± ∞ ¹
+Decrypt CHACHA20_POLY1305 64                                      329.7n ± ∞ ¹
+Decrypt CHACHA20_POLY1305 256                                     361.9n ± ∞ ¹
+Decrypt CHACHA20_POLY1305 512                                     569.2n ± ∞ ¹
+Decrypt CHACHA20_POLY1305 1024                                    637.5n ± ∞ ¹
+BulkEncryptOnce AES_128_GCM 16                                    724.8n ± ∞ ¹
+BulkEncryptOnce AES_128_GCM 128                                   731.2n ± ∞ ¹
+BulkEncryptOnce AES_128_GCM 1350                                  822.5n ± ∞ ¹
+BulkEncryptOnce AES_128_GCM 8192                                  1.185µ ± ∞ ¹
+BulkEncryptOnce AES_128_GCM 16384                                 1.620µ ± ∞ ¹
+BulkEncryptOnce AES_128_GCM 32                                    722.2n ± ∞ ¹
+BulkEncryptOnce AES_128_GCM 64                                    725.3n ± ∞ ¹
+BulkEncryptOnce AES_128_GCM 256                                   742.6n ± ∞ ¹
+BulkEncryptOnce AES_128_GCM 512                                   775.9n ± ∞ ¹
+BulkEncryptOnce AES_128_GCM 1024                                  803.3n ± ∞ ¹
+BulkEncryptOnce AES_256_GCM 16                                    733.2n ± ∞ ¹
+BulkEncryptOnce AES_256_GCM 128                                   746.3n ± ∞ ¹
+BulkEncryptOnce AES_256_GCM 1350                                  852.4n ± ∞ ¹
+BulkEncryptOnce AES_256_GCM 8192                                  1.274µ ± ∞ ¹
+BulkEncryptOnce AES_256_GCM 16384                                 1.808µ ± ∞ ¹
+BulkEncryptOnce AES_256_GCM 32                                    731.7n ± ∞ ¹
+BulkEncryptOnce AES_256_GCM 64                                    733.2n ± ∞ ¹
+BulkEncryptOnce AES_256_GCM 256                                   760.6n ± ∞ ¹
+BulkEncryptOnce AES_256_GCM 512                                   795.7n ± ∞ ¹
+BulkEncryptOnce AES_256_GCM 1024                                  831.3n ± ∞ ¹
+BulkEncryptOnce CHACHA20_POLY1305 16                              1.447µ ± ∞ ¹
+BulkEncryptOnce CHACHA20_POLY1305 128                             1.385µ ± ∞ ¹
+BulkEncryptOnce CHACHA20_POLY1305 1350                            1.900µ ± ∞ ¹
+BulkEncryptOnce CHACHA20_POLY1305 8192                            3.234µ ± ∞ ¹
+BulkEncryptOnce CHACHA20_POLY1305 16384                           5.129µ ± ∞ ¹
+BulkEncryptOnce CHACHA20_POLY1305 32                              1.464µ ± ∞ ¹
+BulkEncryptOnce CHACHA20_POLY1305 64                              1.367µ ± ∞ ¹
+BulkEncryptOnce CHACHA20_POLY1305 256                             1.403µ ± ∞ ¹
+BulkEncryptOnce CHACHA20_POLY1305 512                             1.489µ ± ∞ ¹
+BulkEncryptOnce CHACHA20_POLY1305 1024                            1.559µ ± ∞ ¹
+BulkDecryptOnce AES_128_GCM 16                                    730.7n ± ∞ ¹
+BulkDecryptOnce AES_128_GCM 128                                   736.0n ± ∞ ¹
+BulkDecryptOnce AES_128_GCM 1350                                  815.8n ± ∞ ¹
+BulkDecryptOnce AES_128_GCM 8192                                  1.187µ ± ∞ ¹
+BulkDecryptOnce AES_128_GCM 16384                                 1.884µ ± ∞ ¹
+BulkDecryptOnce AES_128_GCM 32                                    711.7n ± ∞ ¹
+BulkDecryptOnce AES_128_GCM 64                                    732.8n ± ∞ ¹
+BulkDecryptOnce AES_128_GCM 256                                   750.1n ± ∞ ¹
+BulkDecryptOnce AES_128_GCM 512                                   762.5n ± ∞ ¹
+BulkDecryptOnce AES_128_GCM 1024                                  797.0n ± ∞ ¹
+BulkDecryptOnce AES_256_GCM 16                                    739.3n ± ∞ ¹
+BulkDecryptOnce AES_256_GCM 128                                   751.5n ± ∞ ¹
+BulkDecryptOnce AES_256_GCM 1350                                  839.9n ± ∞ ¹
+BulkDecryptOnce AES_256_GCM 8192                                  1.278µ ± ∞ ¹
+BulkDecryptOnce AES_256_GCM 16384                                 2.028µ ± ∞ ¹
+BulkDecryptOnce AES_256_GCM 32                                    723.4n ± ∞ ¹
+BulkDecryptOnce AES_256_GCM 64                                    746.8n ± ∞ ¹
+BulkDecryptOnce AES_256_GCM 256                                   765.6n ± ∞ ¹
+BulkDecryptOnce AES_256_GCM 512                                   784.8n ± ∞ ¹
+BulkDecryptOnce AES_256_GCM 1024                                  818.6n ± ∞ ¹
+BulkDecryptOnce CHACHA20_POLY1305 16                              1.350µ ± ∞ ¹
+BulkDecryptOnce CHACHA20_POLY1305 128                             923.0n ± ∞ ¹
+BulkDecryptOnce CHACHA20_POLY1305 1350                            1.781µ ± ∞ ¹
+BulkDecryptOnce CHACHA20_POLY1305 8192                            3.144µ ± ∞ ¹
+BulkDecryptOnce CHACHA20_POLY1305 16384                           5.307µ ± ∞ ¹
+BulkDecryptOnce CHACHA20_POLY1305 32                              1.365µ ± ∞ ¹
+BulkDecryptOnce CHACHA20_POLY1305 64                              907.0n ± ∞ ¹
+BulkDecryptOnce CHACHA20_POLY1305 256                             936.8n ± ∞ ¹
+BulkDecryptOnce CHACHA20_POLY1305 512                             1.387µ ± ∞ ¹
+BulkDecryptOnce CHACHA20_POLY1305 1024                            1.462µ ± ∞ ¹
+¹ need >= 6 samples for confidence interval at level 0.95
+² benchmark set differs from baseline; geomeans may not be comparable
+³ ratios must be >0 to compute geomean
+
+                                                 │     ztls      │         evp          │
+                                                 │      B/s      │      B/s       vs base   │
+RecordEncrypt TLS_AES_128_GCM_SHA256 16            145.6Mi ± ∞ ¹
+RecordEncrypt TLS_AES_128_GCM_SHA256 128           1.108Gi ± ∞ ¹
+RecordEncrypt TLS_AES_128_GCM_SHA256 1350          6.483Gi ± ∞ ¹
+RecordEncrypt TLS_AES_128_GCM_SHA256 8192          13.09Gi ± ∞ ¹
+RecordEncrypt TLS_AES_128_GCM_SHA256 16384         14.78Gi ± ∞ ¹
+RecordEncrypt TLS_AES_256_GCM_SHA384 16            140.3Mi ± ∞ ¹
+RecordEncrypt TLS_AES_256_GCM_SHA384 128           1.056Gi ± ∞ ¹
+RecordEncrypt TLS_AES_256_GCM_SHA384 1350          5.981Gi ± ∞ ¹
+RecordEncrypt TLS_AES_256_GCM_SHA384 8192          11.51Gi ± ∞ ¹
+RecordEncrypt TLS_AES_256_GCM_SHA384 16384         12.45Gi ± ∞ ¹
+RecordEncrypt TLS_CHACHA20_POLY1305_SHA256 16      22.40Mi ± ∞ ¹
+RecordEncrypt TLS_CHACHA20_POLY1305_SHA256 128     210.3Mi ± ∞ ¹
+RecordEncrypt TLS_CHACHA20_POLY1305_SHA256 1350    1.149Gi ± ∞ ¹
+RecordEncrypt TLS_CHACHA20_POLY1305_SHA256 8192    2.996Gi ± ∞ ¹
+RecordEncrypt TLS_CHACHA20_POLY1305_SHA256 16384   3.400Gi ± ∞ ¹
+RecordDecrypt TLS_AES_128_GCM_SHA256 16            154.4Mi ± ∞ ¹
+RecordDecrypt TLS_AES_128_GCM_SHA256 128           1.166Gi ± ∞ ¹
+RecordDecrypt TLS_AES_128_GCM_SHA256 1350          6.326Gi ± ∞ ¹
+RecordDecrypt TLS_AES_128_GCM_SHA256 8192          13.55Gi ± ∞ ¹
+RecordDecrypt TLS_AES_128_GCM_SHA256 16384         13.19Gi ± ∞ ¹
+RecordDecrypt TLS_AES_256_GCM_SHA384 16            148.0Mi ± ∞ ¹
+RecordDecrypt TLS_AES_256_GCM_SHA384 128           1.118Gi ± ∞ ¹
+RecordDecrypt TLS_AES_256_GCM_SHA384 1350          5.861Gi ± ∞ ¹
+RecordDecrypt TLS_AES_256_GCM_SHA384 8192          11.53Gi ± ∞ ¹
+RecordDecrypt TLS_AES_256_GCM_SHA384 16384         11.86Gi ± ∞ ¹
+RecordDecrypt TLS_CHACHA20_POLY1305_SHA256 16      34.01Mi ± ∞ ¹
+RecordDecrypt TLS_CHACHA20_POLY1305_SHA256 128     268.5Mi ± ∞ ¹
+RecordDecrypt TLS_CHACHA20_POLY1305_SHA256 1350    1.470Gi ± ∞ ¹
+RecordDecrypt TLS_CHACHA20_POLY1305_SHA256 8192    3.289Gi ± ∞ ¹
+RecordDecrypt TLS_CHACHA20_POLY1305_SHA256 16384   3.328Gi ± ∞ ¹
+Encrypt AES_128_GCM 16                                             160.9Mi ± ∞ ¹
+Encrypt AES_128_GCM 128                                            1.234Gi ± ∞ ¹
+Encrypt AES_128_GCM 1350                                           6.734Gi ± ∞ ¹
+Encrypt AES_128_GCM 8192                                           14.61Gi ± ∞ ¹
+Encrypt AES_128_GCM 16384                                          16.28Gi ± ∞ ¹
+Encrypt AES_128_GCM 32                                             328.4Mi ± ∞ ¹
+Encrypt AES_128_GCM 64                                             643.6Mi ± ∞ ¹
+Encrypt AES_128_GCM 256                                            2.179Gi ± ∞ ¹
+Encrypt AES_128_GCM 512                                            3.610Gi ± ∞ ¹
+Encrypt AES_128_GCM 1024                                           6.041Gi ± ∞ ¹
+Encrypt AES_256_GCM 16                                             154.2Mi ± ∞ ¹
+Encrypt AES_256_GCM 128                                            1.144Gi ± ∞ ¹
+Encrypt AES_256_GCM 1350                                           6.163Gi ± ∞ ¹
+Encrypt AES_256_GCM 8192                                           12.35Gi ± ∞ ¹
+Encrypt AES_256_GCM 16384                                          13.25Gi ± ∞ ¹
+Encrypt AES_256_GCM 32                                             310.0Mi ± ∞ ¹
+Encrypt AES_256_GCM 64                                             608.4Mi ± ∞ ¹
+Encrypt AES_256_GCM 256                                            2.000Gi ± ∞ ¹
+Encrypt AES_256_GCM 512                                            3.307Gi ± ∞ ¹
+Encrypt AES_256_GCM 1024                                           5.486Gi ± ∞ ¹
+Encrypt CHACHA20_POLY1305 16                                       23.57Mi ± ∞ ¹
+Encrypt CHACHA20_POLY1305 128                                      210.3Mi ± ∞ ¹
+Encrypt CHACHA20_POLY1305 1350                                     1.152Gi ± ∞ ¹
+Encrypt CHACHA20_POLY1305 8192                                     3.203Gi ± ∞ ¹
+Encrypt CHACHA20_POLY1305 16384                                    3.543Gi ± ∞ ¹
+Encrypt CHACHA20_POLY1305 32                                       45.54Mi ± ∞ ¹
+Encrypt CHACHA20_POLY1305 64                                       109.2Mi ± ∞ ¹
+Encrypt CHACHA20_POLY1305 256                                      406.8Mi ± ∞ ¹
+Encrypt CHACHA20_POLY1305 512                                      706.2Mi ± ∞ ¹
+Encrypt CHACHA20_POLY1305 1024                                     1.273Gi ± ∞ ¹
+Decrypt AES_128_GCM 16                                             165.9Mi ± ∞ ¹
+Decrypt AES_128_GCM 128                                            1.282Gi ± ∞ ¹
+Decrypt AES_128_GCM 1350                                           6.298Gi ± ∞ ¹
+Decrypt AES_128_GCM 8192                                           13.54Gi ± ∞ ¹
+Decrypt AES_128_GCM 16384                                          13.16Gi ± ∞ ¹
+Decrypt AES_128_GCM 32                                             318.5Mi ± ∞ ¹
+Decrypt AES_128_GCM 64                                             628.0Mi ± ∞ ¹
+Decrypt AES_128_GCM 256                                            2.248Gi ± ∞ ¹
+Decrypt AES_128_GCM 512                                            3.412Gi ± ∞ ¹
+Decrypt AES_128_GCM 1024                                           5.618Gi ± ∞ ¹
+Decrypt AES_256_GCM 16                                             159.3Mi ± ∞ ¹
+Decrypt AES_256_GCM 128                                            1.191Gi ± ∞ ¹
+Decrypt AES_256_GCM 1350                                           5.830Gi ± ∞ ¹
+Decrypt AES_256_GCM 8192                                           11.71Gi ± ∞ ¹
+Decrypt AES_256_GCM 16384                                          11.22Gi ± ∞ ¹
+Decrypt AES_256_GCM 32                                             305.6Mi ± ∞ ¹
+Decrypt AES_256_GCM 64                                             607.2Mi ± ∞ ¹
+Decrypt AES_256_GCM 256                                            2.095Gi ± ∞ ¹
+Decrypt AES_256_GCM 512                                            3.218Gi ± ∞ ¹
+Decrypt AES_256_GCM 1024                                           5.270Gi ± ∞ ¹
+Decrypt CHACHA20_POLY1305 16                                       27.91Mi ± ∞ ¹
+Decrypt CHACHA20_POLY1305 128                                      349.7Mi ± ∞ ¹
+Decrypt CHACHA20_POLY1305 1350                                     1.289Gi ± ∞ ¹
+Decrypt CHACHA20_POLY1305 8192                                     3.319Gi ± ∞ ¹
+Decrypt CHACHA20_POLY1305 16384                                    3.485Gi ± ∞ ¹
+Decrypt CHACHA20_POLY1305 32                                       54.99Mi ± ∞ ¹
+Decrypt CHACHA20_POLY1305 64                                       185.1Mi ± ∞ ¹
+Decrypt CHACHA20_POLY1305 256                                      674.5Mi ± ∞ ¹
+Decrypt CHACHA20_POLY1305 512                                      857.8Mi ± ∞ ¹
+Decrypt CHACHA20_POLY1305 1024                                     1.496Gi ± ∞ ¹
+BulkEncryptOnce AES_128_GCM 16                                     21.06Mi ± ∞ ¹
+BulkEncryptOnce AES_128_GCM 128                                    166.9Mi ± ∞ ¹
+BulkEncryptOnce AES_128_GCM 1350                                   1.529Gi ± ∞ ¹
+BulkEncryptOnce AES_128_GCM 8192                                   6.438Gi ± ∞ ¹
+BulkEncryptOnce AES_128_GCM 16384                                  9.419Gi ± ∞ ¹
+BulkEncryptOnce AES_128_GCM 32                                     42.26Mi ± ∞ ¹
+BulkEncryptOnce AES_128_GCM 64                                     84.14Mi ± ∞ ¹
+BulkEncryptOnce AES_128_GCM 256                                    328.8Mi ± ∞ ¹
+BulkEncryptOnce AES_128_GCM 512                                    629.3Mi ± ∞ ¹
+BulkEncryptOnce AES_128_GCM 1024                                   1.187Gi ± ∞ ¹
+BulkEncryptOnce AES_256_GCM 16                                     20.81Mi ± ∞ ¹
+BulkEncryptOnce AES_256_GCM 128                                    163.6Mi ± ∞ ¹
+BulkEncryptOnce AES_256_GCM 1350                                   1.475Gi ± ∞ ¹
+BulkEncryptOnce AES_256_GCM 8192                                   5.987Gi ± ∞ ¹
+BulkEncryptOnce AES_256_GCM 16384                                  8.437Gi ± ∞ ¹
+BulkEncryptOnce AES_256_GCM 32                                     41.71Mi ± ∞ ¹
+BulkEncryptOnce AES_256_GCM 64                                     83.25Mi ± ∞ ¹
+BulkEncryptOnce AES_256_GCM 256                                    321.0Mi ± ∞ ¹
+BulkEncryptOnce AES_256_GCM 512                                    613.7Mi ± ∞ ¹
+BulkEncryptOnce AES_256_GCM 1024                                   1.147Gi ± ∞ ¹
+BulkEncryptOnce CHACHA20_POLY1305 16                               10.54Mi ± ∞ ¹
+BulkEncryptOnce CHACHA20_POLY1305 128                              88.15Mi ± ∞ ¹
+BulkEncryptOnce CHACHA20_POLY1305 1350                             677.7Mi ± ∞ ¹
+BulkEncryptOnce CHACHA20_POLY1305 8192                             2.359Gi ± ∞ ¹
+BulkEncryptOnce CHACHA20_POLY1305 16384                            2.975Gi ± ∞ ¹
+BulkEncryptOnce CHACHA20_POLY1305 32                               20.85Mi ± ∞ ¹
+BulkEncryptOnce CHACHA20_POLY1305 64                               44.66Mi ± ∞ ¹
+BulkEncryptOnce CHACHA20_POLY1305 256                              174.0Mi ± ∞ ¹
+BulkEncryptOnce CHACHA20_POLY1305 512                              327.9Mi ± ∞ ¹
+BulkEncryptOnce CHACHA20_POLY1305 1024                             626.6Mi ± ∞ ¹
+BulkDecryptOnce AES_128_GCM 16                                     20.89Mi ± ∞ ¹
+BulkDecryptOnce AES_128_GCM 128                                    165.9Mi ± ∞ ¹
+BulkDecryptOnce AES_128_GCM 1350                                   1.541Gi ± ∞ ¹
+BulkDecryptOnce AES_128_GCM 8192                                   6.429Gi ± ∞ ¹
+BulkDecryptOnce AES_128_GCM 16384                                  8.099Gi ± ∞ ¹
+BulkDecryptOnce AES_128_GCM 32                                     42.89Mi ± ∞ ¹
+BulkDecryptOnce AES_128_GCM 64                                     83.28Mi ± ∞ ¹
+BulkDecryptOnce AES_128_GCM 256                                    325.5Mi ± ∞ ¹
+BulkDecryptOnce AES_128_GCM 512                                    640.4Mi ± ∞ ¹
+BulkDecryptOnce AES_128_GCM 1024                                   1.197Gi ± ∞ ¹
+BulkDecryptOnce AES_256_GCM 16                                     20.64Mi ± ∞ ¹
+BulkDecryptOnce AES_256_GCM 128                                    162.4Mi ± ∞ ¹
+BulkDecryptOnce AES_256_GCM 1350                                   1.497Gi ± ∞ ¹
+BulkDecryptOnce AES_256_GCM 8192                                   5.972Gi ± ∞ ¹
+BulkDecryptOnce AES_256_GCM 16384                                  7.524Gi ± ∞ ¹
+BulkDecryptOnce AES_256_GCM 32                                     42.18Mi ± ∞ ¹
+BulkDecryptOnce AES_256_GCM 64                                     81.73Mi ± ∞ ¹
+BulkDecryptOnce AES_256_GCM 256                                    318.9Mi ± ∞ ¹
+BulkDecryptOnce AES_256_GCM 512                                    622.1Mi ± ∞ ¹
+BulkDecryptOnce AES_256_GCM 1024                                   1.165Gi ± ∞ ¹
+BulkDecryptOnce CHACHA20_POLY1305 16                               11.30Mi ± ∞ ¹
+BulkDecryptOnce CHACHA20_POLY1305 128                              132.2Mi ± ∞ ¹
+BulkDecryptOnce CHACHA20_POLY1305 1350                             722.8Mi ± ∞ ¹
+BulkDecryptOnce CHACHA20_POLY1305 8192                             2.426Gi ± ∞ ¹
+BulkDecryptOnce CHACHA20_POLY1305 16384                            2.875Gi ± ∞ ¹
+BulkDecryptOnce CHACHA20_POLY1305 32                               22.36Mi ± ∞ ¹
+BulkDecryptOnce CHACHA20_POLY1305 64                               67.29Mi ± ∞ ¹
+BulkDecryptOnce CHACHA20_POLY1305 256                              260.6Mi ± ∞ ¹
+BulkDecryptOnce CHACHA20_POLY1305 512                              352.1Mi ± ∞ ¹
+BulkDecryptOnce CHACHA20_POLY1305 1024                             668.1Mi ± ∞ ¹
+¹ need >= 6 samples for confidence interval at level 0.95
+² benchmark set differs from baseline; geomeans may not be comparable
+³ ratios must be >0 to compute geomean
+
+## ztls-only diagnostic rows
+                                                             │     ztls     │
+                                                             │    sec/op    │
+LastIndexNonZeroNoPadding16 none 1                             2.156n ± ∞ ¹
+LastIndexNonZeroPadding1To16 none 1                            2.158n ± ∞ ¹
+LastIndexNonZeroPadding16To128 none 1                          2.158n ± ∞ ¹
+LastIndexNonZeroPadding128To1350 none 1                        2.157n ± ∞ ¹
+LastIndexNonZeroAllZero1350 none 1                             1.887n ± ∞ ¹
+NonceConstructVector none 1                                    1.943n ± ∞ ¹
+ParseHeaderCurrent none 1                                      1.897n ± ∞ ¹
+WireReaderU8 none 1                                            1.447n ± ∞ ¹
+WireReaderU16 none 1                                           1.491n ± ∞ ¹
+WireReaderU24 none 1                                           1.607n ± ∞ ¹
+WireReaderSafeSequence none 1                                  1.671n ± ∞ ¹
+WireReaderAssumeSequence none 1                                1.671n ± ∞ ¹
+NewSessionTicketParseCurrent none 1                            16.07n ± ∞ ¹
+ParseHeader none 1                                             1.888n ± ∞ ¹
+RecordBufferNext none 1                                        1.888n ± ∞ ¹
+ClientHandshakeReplay TLS_AES_128_GCM_SHA256 1                 92.18µ ± ∞ ¹
+ClientHandshakeReplay TLS_AES_256_GCM_SHA384 1                 101.4µ ± ∞ ¹
+ClientHandshakeReplay TLS_CHACHA20_POLY1305_SHA256 1           92.23µ ± ∞ ¹
+HandshakeClientStart TLS_AES_128_GCM_SHA256 1                  56.70µ ± ∞ ¹
+HandshakeClientStart TLS_AES_256_GCM_SHA384 1                  56.76µ ± ∞ ¹
+HandshakeClientStart TLS_CHACHA20_POLY1305_SHA256 1            56.77µ ± ∞ ¹
+HandshakeServerAccept TLS_AES_128_GCM_SHA256 1                 117.0µ ± ∞ ¹
+HandshakeServerAccept TLS_AES_256_GCM_SHA384 1                 128.2µ ± ∞ ¹
+HandshakeServerAccept TLS_CHACHA20_POLY1305_SHA256 1           116.5µ ± ∞ ¹
+HandshakeClientServerHello TLS_AES_128_GCM_SHA256 1            56.32µ ± ∞ ¹
+HandshakeClientServerHello TLS_AES_256_GCM_SHA384 1            56.14µ ± ∞ ¹
+HandshakeClientServerHello TLS_CHACHA20_POLY1305_SHA256 1      56.34µ ± ∞ ¹
+HandshakeServerFlight TLS_AES_128_GCM_SHA256 1                 139.4µ ± ∞ ¹
+HandshakeServerFlight TLS_AES_256_GCM_SHA384 1                 153.5µ ± ∞ ¹
+HandshakeServerFlight TLS_CHACHA20_POLY1305_SHA256 1           140.2µ ± ∞ ¹
+HandshakeClientFlight TLS_AES_128_GCM_SHA256 1                 56.32µ ± ∞ ¹
+HandshakeClientFlight TLS_AES_256_GCM_SHA384 1                 56.30µ ± ∞ ¹
+HandshakeClientFlight TLS_CHACHA20_POLY1305_SHA256 1           56.36µ ± ∞ ¹
+HandshakeServerFinished TLS_AES_128_GCM_SHA256 1               3.624µ ± ∞ ¹
+HandshakeServerFinished TLS_AES_256_GCM_SHA384 1               11.84µ ± ∞ ¹
+HandshakeServerFinished TLS_CHACHA20_POLY1305_SHA256 1         3.898µ ± ∞ ¹
+RecordEncryptPrepared TLS_AES_128_GCM_SHA256 16                103.0n ± ∞ ¹
+RecordEncryptPrepared TLS_AES_128_GCM_SHA256 128               106.8n ± ∞ ¹
+RecordEncryptPrepared TLS_AES_128_GCM_SHA256 1350              185.4n ± ∞ ¹
+RecordEncryptPrepared TLS_AES_128_GCM_SHA256 8192              532.1n ± ∞ ¹
+RecordEncryptPrepared TLS_AES_128_GCM_SHA256 16384             945.2n ± ∞ ¹
+RecordEncryptPrepared TLS_AES_256_GCM_SHA384 16                109.2n ± ∞ ¹
+RecordEncryptPrepared TLS_AES_256_GCM_SHA384 128               109.8n ± ∞ ¹
+RecordEncryptPrepared TLS_AES_256_GCM_SHA384 1350              203.1n ± ∞ ¹
+RecordEncryptPrepared TLS_AES_256_GCM_SHA384 8192              622.6n ± ∞ ¹
+RecordEncryptPrepared TLS_AES_256_GCM_SHA384 16384             1.156µ ± ∞ ¹
+RecordEncryptPrepared TLS_CHACHA20_POLY1305_SHA256 16          679.1n ± ∞ ¹
+RecordEncryptPrepared TLS_CHACHA20_POLY1305_SHA256 128         689.2n ± ∞ ¹
+RecordEncryptPrepared TLS_CHACHA20_POLY1305_SHA256 1350        1.089µ ± ∞ ¹
+RecordEncryptPrepared TLS_CHACHA20_POLY1305_SHA256 8192        2.509µ ± ∞ ¹
+RecordEncryptPrepared TLS_CHACHA20_POLY1305_SHA256 16384       4.411µ ± ∞ ¹
+AppPreparedClientToServer TLS_AES_128_GCM_SHA256 16            199.2n ± ∞ ¹
+AppPreparedClientToServer TLS_AES_128_GCM_SHA256 128           201.6n ± ∞ ¹
+AppPreparedClientToServer TLS_AES_128_GCM_SHA256 1350          377.2n ± ∞ ¹
+AppPreparedClientToServer TLS_AES_128_GCM_SHA256 8192          1.034µ ± ∞ ¹
+AppPreparedClientToServer TLS_AES_128_GCM_SHA256 16384         1.832µ ± ∞ ¹
+AppPreparedClientToServer TLS_AES_256_GCM_SHA384 16            208.8n ± ∞ ¹
+AppPreparedClientToServer TLS_AES_256_GCM_SHA384 128           212.2n ± ∞ ¹
+AppPreparedClientToServer TLS_AES_256_GCM_SHA384 1350          410.5n ± ∞ ¹
+AppPreparedClientToServer TLS_AES_256_GCM_SHA384 8192          1.255µ ± ∞ ¹
+AppPreparedClientToServer TLS_AES_256_GCM_SHA384 16384         2.309µ ± ∞ ¹
+AppPreparedClientToServer TLS_CHACHA20_POLY1305_SHA256 16      1.120µ ± ∞ ¹
+AppPreparedClientToServer TLS_CHACHA20_POLY1305_SHA256 128     1.139µ ± ∞ ¹
+AppPreparedClientToServer TLS_CHACHA20_POLY1305_SHA256 1350    1.925µ ± ∞ ¹
+AppPreparedClientToServer TLS_CHACHA20_POLY1305_SHA256 8192    4.776µ ± ∞ ¹
+AppPreparedClientToServer TLS_CHACHA20_POLY1305_SHA256 16384   8.411µ ± ∞ ¹
+¹ need >= 6 samples for confidence interval at level 0.95
+
+                                                             │     ztls      │
+                                                             │      B/s      │
+RecordEncryptPrepared TLS_AES_128_GCM_SHA256 16                148.2Mi ± ∞ ¹
+RecordEncryptPrepared TLS_AES_128_GCM_SHA256 128               1.117Gi ± ∞ ¹
+RecordEncryptPrepared TLS_AES_128_GCM_SHA256 1350              6.781Gi ± ∞ ¹
+RecordEncryptPrepared TLS_AES_128_GCM_SHA256 8192              14.34Gi ± ∞ ¹
+RecordEncryptPrepared TLS_AES_128_GCM_SHA256 16384             16.14Gi ± ∞ ¹
+RecordEncryptPrepared TLS_AES_256_GCM_SHA384 16                139.8Mi ± ∞ ¹
+RecordEncryptPrepared TLS_AES_256_GCM_SHA384 128               1.086Gi ± ∞ ¹
+RecordEncryptPrepared TLS_AES_256_GCM_SHA384 1350              6.191Gi ± ∞ ¹
+RecordEncryptPrepared TLS_AES_256_GCM_SHA384 8192              12.25Gi ± ∞ ¹
+RecordEncryptPrepared TLS_AES_256_GCM_SHA384 16384             13.20Gi ± ∞ ¹
+RecordEncryptPrepared TLS_CHACHA20_POLY1305_SHA256 16          22.47Mi ± ∞ ¹
+RecordEncryptPrepared TLS_CHACHA20_POLY1305_SHA256 128         177.1Mi ± ∞ ¹
+RecordEncryptPrepared TLS_CHACHA20_POLY1305_SHA256 1350        1.154Gi ± ∞ ¹
+RecordEncryptPrepared TLS_CHACHA20_POLY1305_SHA256 8192        3.041Gi ± ∞ ¹
+RecordEncryptPrepared TLS_CHACHA20_POLY1305_SHA256 16384       3.460Gi ± ∞ ¹
+AppPreparedClientToServer TLS_AES_128_GCM_SHA256 16            76.61Mi ± ∞ ¹
+AppPreparedClientToServer TLS_AES_128_GCM_SHA256 128           605.4Mi ± ∞ ¹
+AppPreparedClientToServer TLS_AES_128_GCM_SHA256 1350          3.333Gi ± ∞ ¹
+AppPreparedClientToServer TLS_AES_128_GCM_SHA256 8192          7.381Gi ± ∞ ¹
+AppPreparedClientToServer TLS_AES_128_GCM_SHA256 16384         8.328Gi ± ∞ ¹
+AppPreparedClientToServer TLS_AES_256_GCM_SHA384 16            73.09Mi ± ∞ ¹
+AppPreparedClientToServer TLS_AES_256_GCM_SHA384 128           575.4Mi ± ∞ ¹
+AppPreparedClientToServer TLS_AES_256_GCM_SHA384 1350          3.062Gi ± ∞ ¹
+AppPreparedClientToServer TLS_AES_256_GCM_SHA384 8192          6.080Gi ± ∞ ¹
+AppPreparedClientToServer TLS_AES_256_GCM_SHA384 16384         6.608Gi ± ∞ ¹
+AppPreparedClientToServer TLS_CHACHA20_POLY1305_SHA256 16      13.63Mi ± ∞ ¹
+AppPreparedClientToServer TLS_CHACHA20_POLY1305_SHA256 128     107.1Mi ± ∞ ¹
+AppPreparedClientToServer TLS_CHACHA20_POLY1305_SHA256 1350    668.7Mi ± ∞ ¹
+AppPreparedClientToServer TLS_CHACHA20_POLY1305_SHA256 8192    1.598Gi ± ∞ ¹
+AppPreparedClientToServer TLS_CHACHA20_POLY1305_SHA256 16384   1.814Gi ± ∞ ¹
+¹ need >= 6 samples for confidence interval at level 0.95
+

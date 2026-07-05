@@ -395,10 +395,13 @@ is intended for remote benchmark hosts: rsync the run directory back, then run
 emits independent outer samples; the analyzer excludes rustls groups with fewer
 than two samples instead of producing fake `n=1` comparisons.
 
-Committed capture evidence lives under `docs/research/perf/`. The first EC2
-result set is `docs/research/perf/20260613-182405-ec2-c7i-large/`, captured on a
-clean `c7i.large` benchmark host with raw ztls/EVP/libssl/rustls outputs and the
-benchstat analysis committed together.
+Committed capture evidence lives under `docs/research/perf/`. The historical
+first EC2 result set is `docs/research/perf/20260613-182405-ec2-c7i-large/`.
+The #11 remote-runner evidence is
+`docs/research/perf/20260705-183821-ec2-c7i-large/` and
+`docs/research/perf/20260705-194022-ec2-c7i-2xlarge/`, captured on clean EC2
+hosts with raw ztls/EVP/libssl/rustls outputs, full metadata, and benchstat
+analysis committed together.
 
 All benchmark binaries accept fuzzy `--filter` plus structured filters:
 `--bench <name>`, `--suite <substring>`, and `--size <bytes>`. `--bench` is an

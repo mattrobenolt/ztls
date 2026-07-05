@@ -21,12 +21,17 @@ That recipe runs `infra/bench/run-capture.sh`, which:
 7. destroys the EC2 resources on exit unless `--keep-instance` is passed.
 
 The default matrix is one `c7i.large` OpenSSL-backed capture with
-`--count=5 --benchtime=500ms`. Override it explicitly when a wider hardware
-matrix is needed:
+`--count=5 --benchtime=500ms`. The #11 evidence also includes a successful
+`c7i.2xlarge` run using the same runner. Override the matrix explicitly when a
+wider hardware sweep is needed:
 
 ```bash
 just bench-remote-capture --instance-types c7i.large,c7i.2xlarge
 ```
+
+The runner is intentionally verbose: provisioning, SSH readiness, rsync,
+remote build/capture, pullback, and analysis all emit timestamped progress, and
+long steps print 30-second heartbeats. Silence longer than that is suspicious.
 
 For smoke/debug runs only, pass a narrower benchmark after `--`:
 
@@ -130,8 +135,8 @@ cores let you pin the benchmark to one core and system/perf to the other.
 - `just bench-capture` captures ztls, raw EVP, libssl memory-BIO, and rustls rows.
 - `just bench-capture-default` captures all comparison rows locally with `--count=5 --benchtime=500ms`.
 - `just bench-remote-capture` provisions EC2, runs the default capture remotely,
-  pulls results back, writes `benchstat.txt`, and destroys the host unless
-  `--keep-instance` is passed.
+  pulls results back, writes `benchstat.txt`, emits verbose progress/heartbeat
+  logs, and destroys the host unless `--keep-instance` is passed.
 - Filter syntax: `--filter 'BenchmarkHandshake/*,BenchmarkAppClientToServer/*'`
 - `metadata.txt` records timestamp, git revision/dirty state, Zig version,
   optimization mode, OpenSSL/rustls/benchstat provenance, kernel, and available
