@@ -2,6 +2,7 @@
 ///
 /// RFC 8446 §4.4.2, §4.4.3
 const std = @import("std");
+const builtin = @import("builtin");
 const Sha256 = std.crypto.hash.sha2.Sha256;
 const testing = std.testing;
 const fuzz_compat = @import("fuzz_compat.zig");
@@ -606,10 +607,23 @@ test "parse: rejects missing trust anchor by default" {
 
 const empty_bundle: Certificate.Bundle = if (@hasDecl(Certificate.Bundle, "empty")) .empty else .{};
 
+fn addCertsFromFixturePath(bundle: *Certificate.Bundle, path: []const u8) !void {
+    if (comptime builtin.zig_version.major == 0 and builtin.zig_version.minor >= 16) {
+        return bundle.addCertsFromFilePath(
+            testing.allocator,
+            testing.io,
+            std.Io.Timestamp.now(testing.io, .real),
+            std.Io.Dir.cwd(),
+            path,
+        );
+    }
+    return bundle.addCertsFromFilePath(testing.allocator, fs.cwd(), path);
+}
+
 test "parse: validates leaf against trust bundle" {
     var bundle: Certificate.Bundle = empty_bundle;
     defer bundle.deinit(testing.allocator);
-    try bundle.addCertsFromFilePath(testing.allocator, fs.cwd(), "tests/fixtures/server.crt");
+    try addCertsFromFixturePath(&bundle, "tests/fixtures/server.crt");
 
     var buf: [1024]u8 = undefined;
     const pub_key = try parse(buildCertMsg(&buf, fixture_cert_der), .{
@@ -623,7 +637,7 @@ test "parse: validates leaf against trust bundle" {
 test "parse: validates leaf-intermediate-root chain" {
     var bundle: Certificate.Bundle = empty_bundle;
     defer bundle.deinit(testing.allocator);
-    try bundle.addCertsFromFilePath(testing.allocator, fs.cwd(), chain_root_pem);
+    try addCertsFromFixturePath(&bundle, chain_root_pem);
 
     var buf: [4096]u8 = undefined;
     const pub_key = try parse(
@@ -637,7 +651,7 @@ test "parse: validates leaf-intermediate-root chain" {
 test "parse: rejects chain with intermediate before leaf" {
     var bundle: Certificate.Bundle = empty_bundle;
     defer bundle.deinit(testing.allocator);
-    try bundle.addCertsFromFilePath(testing.allocator, fs.cwd(), chain_root_pem);
+    try addCertsFromFixturePath(&bundle, chain_root_pem);
 
     var buf: [4096]u8 = undefined;
     try testing.expectError(
@@ -652,7 +666,7 @@ test "parse: rejects chain with intermediate before leaf" {
 test "parse: rejects chain with missing intermediate" {
     var bundle: Certificate.Bundle = empty_bundle;
     defer bundle.deinit(testing.allocator);
-    try bundle.addCertsFromFilePath(testing.allocator, fs.cwd(), chain_root_pem);
+    try addCertsFromFixturePath(&bundle, chain_root_pem);
 
     var buf: [4096]u8 = undefined;
     try testing.expectError(
@@ -667,7 +681,7 @@ test "parse: rejects chain with missing intermediate" {
 test "parse: rejects chain hostname mismatch" {
     var bundle: Certificate.Bundle = empty_bundle;
     defer bundle.deinit(testing.allocator);
-    try bundle.addCertsFromFilePath(testing.allocator, fs.cwd(), chain_root_pem);
+    try addCertsFromFixturePath(&bundle, chain_root_pem);
 
     var buf: [4096]u8 = undefined;
     try testing.expectError(
@@ -693,7 +707,7 @@ test "parse: rejects untrusted leaf when bundle misses issuer" {
 
 fn nameConstraintsBundle() !Certificate.Bundle {
     var bundle: Certificate.Bundle = empty_bundle;
-    try bundle.addCertsFromFilePath(testing.allocator, fs.cwd(), nc_root_pem);
+    try addCertsFromFixturePath(&bundle, nc_root_pem);
     return bundle;
 }
 
