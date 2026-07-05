@@ -14,6 +14,7 @@ cd "$(dirname "$0")/.."
 impl=""
 crypto_backend="${ZTLS_CRYPTO_BACKEND:-openssl}"
 out_dir=""
+skip_linked_libs=false
 
 set_arg() {
   local key="$1"
@@ -34,6 +35,7 @@ while [[ $# -gt 0 ]]; do
     --crypto-backend=*)  crypto_backend="${1#*=}"; shift ;;
     --out-dir)           out_dir="$2"; shift 2 ;;
     --out-dir=*)         out_dir="${1#*=}"; shift ;;
+    --skip-linked-libs)  skip_linked_libs=true; shift ;;
     *)
       if [[ "$1" == *=* ]]; then
         key="${1%%=*}"
@@ -180,6 +182,7 @@ esac
   echo "crypto_backend=${crypto_backend}"
   echo "binary_path=${binary}"
   echo "disasm_tool=${disasm_tool[*]}"
+  echo "skip_linked_libs=${skip_linked_libs}"
   if [[ -n "${linked_libcrypto}" ]]; then
     echo "linked_libcrypto=${linked_libcrypto}"
   fi
@@ -198,14 +201,16 @@ echo "disassembling ${binary}..." >&2
 echo "extracting symbols from ${binary}..." >&2
 "${symbol_tool[@]}" "${binary}" > "${disasm_dir}/symbols.txt" 2>&1
 
-if [[ -n "${linked_libcrypto}" && -f "${linked_libcrypto}" ]]; then
-  echo "disassembling ${linked_libcrypto}..." >&2
-  "${disasm_tool[@]}" "${linked_libcrypto}" > "${disasm_dir}/libcrypto.asm" 2>&1
-fi
+if [[ "${skip_linked_libs}" != true ]]; then
+  if [[ -n "${linked_libcrypto}" && -f "${linked_libcrypto}" ]]; then
+    echo "disassembling ${linked_libcrypto}..." >&2
+    "${disasm_tool[@]}" "${linked_libcrypto}" > "${disasm_dir}/libcrypto.asm" 2>&1
+  fi
 
-if [[ -n "${linked_libssl}" && -f "${linked_libssl}" ]]; then
-  echo "disassembling ${linked_libssl}..." >&2
-  "${disasm_tool[@]}" "${linked_libssl}" > "${disasm_dir}/libssl.asm" 2>&1
+  if [[ -n "${linked_libssl}" && -f "${linked_libssl}" ]]; then
+    echo "disassembling ${linked_libssl}..." >&2
+    "${disasm_tool[@]}" "${linked_libssl}" > "${disasm_dir}/libssl.asm" 2>&1
+  fi
 fi
 
 echo "${disasm_dir}"

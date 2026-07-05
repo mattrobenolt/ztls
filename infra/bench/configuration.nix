@@ -12,6 +12,8 @@
 
   # Disable ASLR for stable benchmark addresses and fewer page-table variations.
   boot.kernel.sysctl."kernel.randomize_va_space" = 0;
+  boot.kernel.sysctl."kernel.perf_event_paranoid" = -1;
+  boot.kernel.sysctl."kernel.kptr_restrict" = 0;
 
   # Mask services not needed during benchmarking to reduce timer interrupts
   # and background CPU noise.

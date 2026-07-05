@@ -302,9 +302,10 @@ comparisons measure equivalent work*. This is the project's justification.
   `bench-analyze` for `benchstat` comparison of captures,
   `bench-remote-capture` for EC2 provision/deploy/run/pullback/analyze,
   profiling helpers `bench-disasm`, `bench-disasm-libcrypto`, and `bench-perf`,
-  and row-oriented perf/disassembly tooling `bench-perf-row` and
-  `bench-disasm-row` that capture per-implementation, per-row artifacts with
-  stable output paths and metadata under `zig-out/perf/<timestamp>/`.
+  row-oriented perf/disassembly tooling `bench-perf-row` and `bench-disasm-row`
+  that capture per-implementation, per-row artifacts with stable output paths
+  and metadata under `zig-out/perf/<timestamp>/`, and `bench-remote-perf-rows`
+  for one-command EC2 row perf/disassembly capture.
   `just ci` no longer runs benchmark measurements; benchmarks are not
   correctness evidence on uncontrolled CI runners.
 - `just bench-capture-default` writes a timestamped run directory under

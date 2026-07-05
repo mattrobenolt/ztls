@@ -44,6 +44,41 @@ Dirty worktrees are rejected by default because benchmark evidence needs a clean
 revision. Use `--allow-dirty` only for workflow debugging; do not commit or cite
 those captures as performance evidence.
 
+## Row perf/disassembly capture
+
+For #31 perf-counter and disassembly evidence, use the row runner instead of the
+full wall-time capture runner:
+
+```bash
+just bench-remote-perf-rows
+```
+
+That defaults to one `c7i.2xlarge` OpenSSL-backed host, pins row commands with
+`taskset -c 1` when available, captures the first #31 app-data rows across
+ztls/OpenSSL/rustls, generates `perf stat`, `perf record`, `perf report`,
+`perf annotate`, per-implementation benchmark-binary disassembly, deletes binary
+`perf.data` by default, pulls the result back under `zig-out/perf/`, and
+destroys EC2 resources on exit. Full linked `libcrypto`/`libssl` disassembly is
+opt-in with `--full-linked-disasm`; the default relies on `perf annotate` for
+hot linked-library snippets instead of pulling giant assembly dumps.
+
+The default row set is intentionally narrow:
+
+```text
+AppPingPong/TLS_AES_128_GCM_SHA256/1350
+AppClientToServer/TLS_CHACHA20_POLY1305_SHA256/16
+```
+
+Add the current non-equivalent handshake row only when the methodology question
+is explicit:
+
+```bash
+just bench-remote-perf-rows --include-handshake
+```
+
+The host sets `kernel.perf_event_paranoid=-1` and `kernel.kptr_restrict=0` so
+root-run `perf` can collect useful symbols and kernel/user counter data.
+
 ## Manual escape hatch
 
 The script is the source of truth, but the manual shape is useful for debugging.

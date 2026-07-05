@@ -18,6 +18,12 @@ bench-capture-default:
 bench-remote-capture *args:
     @infra/bench/run-capture.sh {{ args }}
 
+[doc("Provision EC2 benchmark host, run row perf/disassembly evidence, and pull results")]
+[group("bench")]
+[linux]
+bench-remote-perf-rows *args:
+    @infra/bench/run-perf-rows.sh {{ args }}
+
 [doc("Validate benchmark capture/analyze plumbing quickly; not benchmark evidence")]
 [group("bench")]
 bench-smoke:
