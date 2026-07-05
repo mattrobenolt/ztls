@@ -6,6 +6,7 @@ const assert = std.debug.assert;
 const testing = std.testing;
 
 const backend = @import("crypto/backend.zig");
+const entropy = @import("entropy.zig");
 const memx = @import("memx.zig");
 const hex = memx.hex;
 
@@ -25,7 +26,7 @@ pub const KeyPair = struct {
 
     pub fn generate() KeyPair {
         var secret_key: [secret_length]u8 = undefined;
-        std.crypto.random.bytes(&secret_key);
+        entropy.fill(&secret_key);
         return generateDeterministic(.init(secret_key)) catch unreachable;
     }
 
