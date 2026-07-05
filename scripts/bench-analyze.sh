@@ -107,8 +107,8 @@ normalize_rustls() {
       }
       key = row "/" $2 "/" $3;
       ns_per_op = $6 / $4;
-      line = sprintf("Benchmark%s/impl=rustls/suite=%s/size=%s %d %.3f ns/op", row, $2, $3, $4, ns_per_op);
-      if ($3 != 1) line = line sprintf(" %.2f MB/s", ($5 * 1000.0) / $6);
+      line = sprintf("Benchmark%s/impl=rustls/suite=%s/size=%s\t%d\t%.3f\tns/op", row, $2, $3, $4, ns_per_op);
+      if ($3 != 1) line = line sprintf("\t%.2f\tMB/s", ($5 * 1000.0) / $6);
       lines[++line_count] = line;
       line_keys[line_count] = key;
       counts[key]++;
@@ -174,9 +174,9 @@ warn_comparable_gaps() {
   awk '
     /^Benchmark(Handshake|AppClientToServer|AppServerToClient|AppPingPong)\// {
       line = $0
-      # Strip tab-separated metrics; only the benchmark name matters for the key.
+      # Strip metrics; only the benchmark name matters for the key.
       name_part = line
-      sub(/\t.*/, "", name_part)
+      sub(/[[:space:]].*/, "", name_part)
       n = split(name_part, parts, "/")
       bench = parts[1]
       sub(/^Benchmark/, "", bench)

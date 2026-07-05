@@ -4,7 +4,9 @@ cd "$(dirname "$0")/../.."
 
 crypto_backend="${ZTLS_CRYPTO_BACKEND:-openssl}"
 allow_dirty=false
-bench_args=(--count 5 --benchtime 500ms)
+count=5
+benchtime=500ms
+bench_filters=()
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -16,12 +18,28 @@ while [[ $# -gt 0 ]]; do
       crypto_backend="${1#*=}"
       shift
       ;;
-    --count|--benchtime|--filter|--bench|--suite|--size)
-      bench_args+=("$1" "$2")
+    --count)
+      count="$2"
       shift 2
       ;;
-    --count=*|--benchtime=*|--filter=*|--bench=*|--suite=*|--size=*)
-      bench_args+=("$1")
+    --count=*)
+      count="${1#*=}"
+      shift
+      ;;
+    --benchtime)
+      benchtime="$2"
+      shift 2
+      ;;
+    --benchtime=*)
+      benchtime="${1#*=}"
+      shift
+      ;;
+    --filter|--bench|--suite|--size)
+      bench_filters+=("$1" "$2")
+      shift 2
+      ;;
+    --filter=*|--bench=*|--suite=*|--size=*)
+      bench_filters+=("$1")
       shift
       ;;
     --allow-dirty)
@@ -52,6 +70,7 @@ fi
 git status --short >&2
 git rev-parse HEAD >&2
 
+bench_args=(--count "${count}" --benchtime "${benchtime}" "${bench_filters[@]}")
 capture="$(scripts/bench-capture.sh --crypto-backend "${crypto_backend}" "${bench_args[@]}")"
 scripts/bench-analyze.sh "${capture}" > "${capture}/benchstat.txt"
 printf '%s\n' "${capture}"
