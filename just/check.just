@@ -20,6 +20,7 @@ check-backend-aws-lc:
     trap 'rm -rf "$cache_dir" "$log"' EXIT
     PKG_CONFIG_PATH="$aws_lc_pkg_config_path" zig build test --summary all --verbose --cache-dir "$cache_dir" -Dcrypto-backend=aws-lc 2>&1 | tee "$log"
     PKG_CONFIG_PATH="$aws_lc_pkg_config_path" zig build bench-bin --summary all --verbose --cache-dir "$cache_dir" -Dcrypto-backend=aws-lc 2>&1 | tee -a "$log"
+    (cd conformance && PKG_CONFIG_PATH="$aws_lc_pkg_config_path" zig build --summary all --verbose --cache-dir "$cache_dir/conformance" -Dcrypto-backend=aws-lc) 2>&1 | tee -a "$log"
     grep -F -- "-I$aws_lc_include_dir" "$log" >/dev/null || {
         echo "AWS-LC include path was not used: $aws_lc_include_dir" >&2
         exit 1

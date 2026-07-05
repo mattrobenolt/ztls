@@ -3,10 +3,21 @@ const std = @import("std");
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
+    const env_map = if (@hasField(@TypeOf(b.graph.*), "environ_map"))
+        b.graph.environ_map
+    else
+        b.graph.env_map;
+    const env_crypto_backend = env_map.get("ZTLS_CRYPTO_BACKEND") orelse "";
+    const crypto_backend = b.option(
+        []const u8,
+        "crypto-backend",
+        "libcrypto-family backend to compile: openssl, aws-lc",
+    ) orelse if (env_crypto_backend.len > 0) env_crypto_backend else "openssl";
 
     const ztls_dep = b.dependency("ztls", .{
         .target = target,
         .optimize = optimize,
+        .@"crypto-backend" = crypto_backend,
     });
     const ztls_mod = ztls_dep.module("ztls");
 

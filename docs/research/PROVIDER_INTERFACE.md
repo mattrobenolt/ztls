@@ -194,10 +194,16 @@ pub fn verify(scheme: SignatureScheme, pubkey: PublicKey,
 Schemes required for TLS 1.3 server auth: rsa_pss_rsae_sha256/384/512, ECDSA
 P-256/384, Ed25519 (one-shot `EVP_DigestVerify`, no streaming). Backend caveat:
 OpenSSL-3-deprecated key-construction APIs such as `EC_KEY_*`,
-`EVP_PKEY_assign_EC_KEY`, `d2i_RSAPublicKey`, and `EVP_PKEY_assign_RSA` should
-not appear above the backend seam; AWS-LC does not expose the same public
-surface. The backend-portable replacement is `EVP_PKEY_fromdata` with
-`OSSL_PARAM`, or `EVP_PKEY_new_raw_public_key` for raw keys.
+`EVP_PKEY_assign_EC_KEY`, `d2i_RSAPublicKey`, and `EVP_PKEY_assign_RSA` must not
+appear above the backend seam. They may still be the correct backend-local choice
+where the linked libcrypto supports them and measurement says they are the best
+path. There is no single provider-portable replacement across the libcrypto
+family: OpenSSL 3 exposes `EVP_PKEY_fromdata` with `OSSL_PARAM`, while AWS-LC and
+BoringSSL do not expose that provider API family; `EVP_PKEY_new_raw_public_key`
+only covers raw-key algorithms such as X25519/Ed25519, not SEC1 EC public keys.
+Provider ports should therefore make the key-construction decision per backend,
+measure it, and keep the chosen OpenSSL-shaped or provider-shaped calls hidden
+inside that backend file.
 
 ### 5. Capabilities — suites / groups / signature schemes / FIPS / PQ
 
