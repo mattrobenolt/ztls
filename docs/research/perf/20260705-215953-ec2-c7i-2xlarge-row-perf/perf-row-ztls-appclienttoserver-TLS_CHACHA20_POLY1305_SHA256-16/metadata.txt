@@ -1,0 +1,21 @@
+timestamp_utc=20260705-220121
+git_revision=c8b9f03b28c13cb7e6af85e48ea8df4c4c3b7e3e
+git_dirty=false
+impl=ztls
+bench=AppClientToServer
+suite=TLS_CHACHA20_POLY1305_SHA256
+size=16
+crypto_backend=openssl
+perf_events=cycles,instructions,branches,branch-misses,cache-misses,L1-dcache-load-misses,LLC-load-misses
+perf_stat_command=perf stat -e cycles,instructions,branches,branch-misses,cache-misses,L1-dcache-load-misses,LLC-load-misses --output zig-out/perf/20260705-215953-row-perf/perf-row-ztls-appclienttoserver-TLS_CHACHA20_POLY1305_SHA256-16/perf-stat.txt -- zig-out/bin/benchmark --filter ^BenchmarkAppClientToServer/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16$ --benchtime 500ms --count 5
+perf_record_command=perf record --call-graph dwarf,16384 -F 997 --output zig-out/perf/20260705-215953-row-perf/perf-row-ztls-appclienttoserver-TLS_CHACHA20_POLY1305_SHA256-16/perf.data -- zig-out/bin/benchmark --filter ^BenchmarkAppClientToServer/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16$ --benchtime 500ms --count 5
+bench_command=zig-out/bin/benchmark --filter ^BenchmarkAppClientToServer/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16$ --benchtime 500ms --count 5
+binary_path=zig-out/bin/benchmark
+linked_libcrypto=/nix/store/y18pnbvfarnilsmgayswvi1khaw9wbsc-openssl-3.6.2/lib/libcrypto.so.3
+kernel=6.12.93
+cpu_model=Intel(R) Xeon(R) Platinum 8488C
+optimization_mode=ReleaseFast
+zig_version=0.15.2
+uname=Linux ip-10-0-1-99.us-west-2.compute.internal 6.12.93 #1-NixOS SMP PREEMPT_DYNAMIC Tue Jun  9 10:26:06 UTC 2026 x86_64 GNU/Linux
+stat_iteration_counts=447331,454510,447073,457996,453342
+record_iteration_counts=443539,438981,439856

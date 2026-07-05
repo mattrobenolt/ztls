@@ -1,0 +1,6 @@
+[ perf record: Woken up 190 times to write data ]
+[ perf record: Captured and wrote 47.303 MB zig-out/perf/20260705-215953-row-perf/perf-row-ztls-appclienttoserver-TLS_CHACHA20_POLY1305_SHA256-16/perf.data (2983 samples) ]
+ientToServer/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16	  444399	      1357 ns/op	  11.79 MB/s
+BenchmarkAppClientToServer/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16	  443539	      1353 ns/op	  11.82 MB/s
+BenchmarkAppClientToServer/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16	  438981	      1350 ns/op	  11.85 MB/s
+BenchmarkAppClientToServer/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16	  439856	      1354 ns/op	  11.82 MB/s

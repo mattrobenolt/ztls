@@ -1,0 +1,19 @@
+# started on Sun Jul  5 22:01:36 2026
+
+
+ Performance counter stats for 'bench/rustls/target/release/rustls_bench --bench rustls_app_client_to_server --suite TLS_CHACHA20_POLY1305_SHA256 --size 16 --samples 5':
+
+     9,872,592,340      cycles                                                                
+    27,587,214,774      instructions                                                          
+     2,914,195,337      branches                                                              
+           332,224      branch-misses                                                         
+                 0      cache-misses                                                          
+           605,649      L1-dcache-load-misses                                                 
+   <not supported>      LLC-load-misses                                                       
+
+       3.122559863 seconds time elapsed
+
+       3.034973000 seconds user
+       0.000990000 seconds sys
+
+

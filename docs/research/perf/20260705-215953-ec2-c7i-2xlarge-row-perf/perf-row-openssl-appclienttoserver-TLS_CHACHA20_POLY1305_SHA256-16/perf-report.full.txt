@@ -1,0 +1,1812 @@
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 2K of event 'cpu/cycles/P'
+# Event count (approx.): 9249007800
+#
+# Children      Self  Symbol                                            IPC   [IPC Coverage]
+# ........  ........  ................................................  ....................
+#
+    68.82%     0.95%  [.] tls13_cipher                                  -      -            
+            |          
+            |--67.87%--tls13_cipher
+            |          |          
+            |          |--17.03%--EVP_EncryptUpdate
+            |          |          |          
+            |          |           --16.79%--chacha20_poly1305_cipher
+            |          |                     |          
+            |          |                      --16.63%--chacha20_poly1305_aead_cipher
+            |          |                                |          
+            |          |                                |--9.87%--chacha20_cipher
+            |          |                                |          |          
+            |          |                                |           --6.78%--ChaCha20_avx512
+            |          |                                |          
+            |          |                                |--4.32%--ChaCha20_avx512
+            |          |                                |          
+            |          |                                 --1.99%--Poly1305_Update
+            |          |                                           |          
+            |          |                                            --1.79%--poly1305_blocks_vpmadd52
+            |          |          
+            |          |--16.72%--EVP_DecryptUpdate
+            |          |          |          
+            |          |           --16.31%--chacha20_poly1305_cipher
+            |          |                     |          
+            |          |                      --16.08%--chacha20_poly1305_aead_cipher
+            |          |                                |          
+            |          |                                |--9.68%--chacha20_cipher
+            |          |                                |          |          
+            |          |                                |           --6.62%--ChaCha20_avx512
+            |          |                                |          
+            |          |                                |--3.87%--ChaCha20_avx512
+            |          |                                |          
+            |          |                                 --2.12%--Poly1305_Update
+            |          |                                           |          
+            |          |                                            --1.85%--poly1305_blocks_vpmadd52
+            |          |          
+            |          |--14.25%--EVP_CIPHER_CTX_ctrl
+            |          |          |          
+            |          |          |--6.25%--OSSL_PARAM_construct_octet_string
+            |          |          |          
+            |          |          |--3.24%--chacha20_poly1305_get_ctx_params
+            |          |          |          |          
+            |          |          |           --2.97%--__memmove_avx512_unaligned_erms
+            |          |          |          
+            |          |           --3.24%--chacha20_poly1305_set_ctx_params
+            |          |                     |          
+            |          |                      --3.03%--__memmove_avx512_unaligned_erms
+            |          |          
+            |          |--8.63%--EVP_CipherInit_ex
+            |          |          |          
+            |          |          |--3.94%--chacha20_poly1305_einit
+            |          |          |          |          
+            |          |          |           --3.74%--chacha20_poly1305_initiv
+            |          |          |                     |          
+            |          |          |                      --3.57%--ossl_chacha20_einit
+            |          |          |                                |          
+            |          |          |                                 --3.20%--ossl_cipher_generic_einit
+            |          |          |                                           |          
+            |          |          |                                            --3.10%--ossl_cipher_generic_initiv
+            |          |          |                                                      |          
+            |          |          |                                                       --3.03%--__memmove_avx512_unaligned_erms
+            |          |          |          
+            |          |          |--3.61%--chacha20_poly1305_dinit
+            |          |          |          |          
+            |          |          |           --3.03%--chacha20_poly1305_initiv
+            |          |          |                     |          
+            |          |          |                      --2.86%--ossl_chacha20_dinit
+            |          |          |                                |          
+            |          |          |                                 --2.62%--ossl_cipher_generic_dinit
+            |          |          |                                           |          
+            |          |          |                                            --2.56%--ossl_cipher_generic_initiv
+            |          |          |                                                      |          
+            |          |          |                                                       --2.46%--__memmove_avx512_unaligned_erms
+            |          |          |          
+            |          |           --0.98%--evp_cipher_init_internal
+            |          |          
+            |          |--3.31%--EVP_DecryptFinal_ex
+            |          |          |          
+            |          |           --3.10%--chacha20_poly1305_final
+            |          |                     chacha20_poly1305_aead_cipher
+            |          |                     |          
+            |          |                      --2.23%--Poly1305_Update
+            |          |                                |          
+            |          |                                 --2.02%--poly1305_blocks_vpmadd52
+            |          |          
+            |          |--2.93%--EVP_EncryptFinal_ex
+            |          |          |          
+            |          |           --2.73%--chacha20_poly1305_final
+            |          |                     |          
+            |          |                      --2.63%--chacha20_poly1305_aead_cipher
+            |          |                                |          
+            |          |                                 --1.85%--Poly1305_Update
+            |          |                                           |          
+            |          |                                            --1.75%--poly1305_blocks_vpmadd52
+            |          |          
+            |          |--1.59%--WPACKET_init_static_len
+            |          |          |          
+            |          |           --1.29%--CRYPTO_zalloc
+            |          |                     |          
+            |          |                      --1.25%--CRYPTO_malloc
+            |          |                                |          
+            |          |                                 --0.99%--malloc
+            |          |          
+            |          |--1.31%--WPACKET_put_bytes__
+            |          |          |          
+            |          |           --0.74%--WPACKET_allocate_bytes
+            |          |                     |          
+            |          |                      --0.61%--WPACKET_reserve_bytes
+            |          |          
+            |           --1.05%--WPACKET_finish
+            |                     |          
+            |                      --0.75%--cfree@GLIBC_2.2.5
+            |          
+             --0.54%--SSL_read
+                       ssl3_read
+                       ssl3_read_bytes
+                       tls_read_record
+                       tls_get_more_records
+                       tls13_cipher
+
+    56.50%     0.03%  [.] SSL_write                                     -      -            
+            |          
+             --55.86%--ssl3_write_bytes
+                       |          
+                       |--53.53%--tls_write_records
+                       |          |          
+                       |           --53.46%--tls_write_records_default
+                       |                     |          
+                       |                     |--34.27%--tls13_cipher
+                       |                     |          |          
+                       |                     |          |--17.03%--EVP_EncryptUpdate
+                       |                     |          |          |          
+                       |                     |          |           --16.79%--chacha20_poly1305_cipher
+                       |                     |          |                     |          
+                       |                     |          |                      --16.63%--chacha20_poly1305_aead_cipher
+                       |                     |          |                                |          
+                       |                     |          |                                |--9.87%--chacha20_cipher
+                       |                     |          |                                |          |          
+                       |                     |          |                                |           --6.78%--ChaCha20_avx512
+                       |                     |          |                                |          
+                       |                     |          |                                |--4.32%--ChaCha20_avx512
+                       |                     |          |                                |          
+                       |                     |          |                                 --1.99%--Poly1305_Update
+                       |                     |          |                                           |          
+                       |                     |          |                                            --1.79%--poly1305_blocks_vpmadd52
+                       |                     |          |          
+                       |                     |          |--7.23%--EVP_CIPHER_CTX_ctrl
+                       |                     |          |          |          
+                       |                     |          |          |--3.24%--chacha20_poly1305_get_ctx_params
+                       |                     |          |          |          |          
+                       |                     |          |          |           --2.97%--__memmove_avx512_unaligned_erms
+                       |                     |          |          |          
+                       |                     |          |           --3.18%--OSSL_PARAM_construct_octet_string
+                       |                     |          |          
+                       |                     |          |--4.35%--EVP_CipherInit_ex
+                       |                     |          |          |          
+                       |                     |          |           --3.94%--chacha20_poly1305_einit
+                       |                     |          |                     |          
+                       |                     |          |                      --3.74%--chacha20_poly1305_initiv
+                       |                     |          |                                |          
+                       |                     |          |                                 --3.57%--ossl_chacha20_einit
+                       |                     |          |                                           |          
+                       |                     |          |                                            --3.20%--ossl_cipher_generic_einit
+                       |                     |          |                                                      |          
+                       |                     |          |                                                       --3.10%--ossl_cipher_generic_initiv
+                       |                     |          |                                                                 |          
+                       |                     |          |                                                                  --3.03%--__memmove_avx512_unaligned_erms
+                       |                     |          |          
+                       |                     |          |--2.90%--EVP_EncryptFinal_ex
+                       |                     |          |          |          
+                       |                     |          |           --2.73%--chacha20_poly1305_final
+                       |                     |          |                     |          
+                       |                     |          |                      --2.63%--chacha20_poly1305_aead_cipher
+                       |                     |          |                                |          
+                       |                     |          |                                 --1.85%--Poly1305_Update
+                       |                     |          |                                           |          
+                       |                     |          |                                            --1.75%--poly1305_blocks_vpmadd52
+                       |                     |          |          
+                       |                     |          |--0.74%--WPACKET_init_static_len
+                       |                     |          |          |          
+                       |                     |          |           --0.57%--CRYPTO_zalloc
+                       |                     |          |                     CRYPTO_malloc
+                       |                     |          |          
+                       |                     |           --0.54%--WPACKET_finish
+                       |                     |          
+                       |                     |--4.45%--tls_post_encryption_processing_default
+                       |                     |          |          
+                       |                     |           --3.74%--WPACKET_allocate_bytes
+                       |                     |          
+                       |                     |--3.38%--tls13_add_record_padding
+                       |                     |          |          
+                       |                     |           --3.14%--WPACKET_put_bytes__
+                       |                     |                     |          
+                       |                     |                      --3.04%--WPACKET_allocate_bytes
+                       |                     |          
+                       |                     |--3.27%--tls_allocate_write_buffers_default
+                       |                     |          tls_setup_write_buffer
+                       |                     |          
+                       |                     |--3.23%--WPACKET_memcpy
+                       |                     |          |          
+                       |                     |           --2.90%--__memmove_avx512_unaligned_erms
+                       |                     |          
+                       |                     |--1.96%--tls_prepare_record_header_default
+                       |                     |          |          
+                       |                     |          |--0.84%--WPACKET_put_bytes__
+                       |                     |          |          |          
+                       |                     |          |           --0.61%--WPACKET_allocate_bytes
+                       |                     |          |          
+                       |                     |           --0.78%--WPACKET_start_sub_packet_len__
+                       |                     |                     |          
+                       |                     |                      --0.51%--CRYPTO_zalloc
+                       |                     |          
+                       |                      --1.05%--tls_initialise_write_packets_default
+                       |                                |          
+                       |                                 --0.88%--WPACKET_init_static_len
+                       |                                           |          
+                       |                                            --0.67%--CRYPTO_zalloc
+                       |                                                      CRYPTO_malloc
+                       |                                                      |          
+                       |                                                       --0.50%--malloc
+                       |          
+                        --0.88%--tls_retry_write_records
+                                  |          
+                                   --0.57%--BIO_write
+
+    55.86%     1.18%  [.] ssl3_write_bytes                              -      -            
+            |          
+            |--54.68%--ssl3_write_bytes
+            |          |          
+            |          |--53.53%--tls_write_records
+            |          |          |          
+            |          |           --53.46%--tls_write_records_default
+            |          |                     |          
+            |          |                     |--34.27%--tls13_cipher
+            |          |                     |          |          
+            |          |                     |          |--17.03%--EVP_EncryptUpdate
+            |          |                     |          |          |          
+            |          |                     |          |           --16.79%--chacha20_poly1305_cipher
+            |          |                     |          |                     |          
+            |          |                     |          |                      --16.63%--chacha20_poly1305_aead_cipher
+            |          |                     |          |                                |          
+            |          |                     |          |                                |--9.87%--chacha20_cipher
+            |          |                     |          |                                |          |          
+            |          |                     |          |                                |           --6.78%--ChaCha20_avx512
+            |          |                     |          |                                |          
+            |          |                     |          |                                |--4.32%--ChaCha20_avx512
+            |          |                     |          |                                |          
+            |          |                     |          |                                 --1.99%--Poly1305_Update
+            |          |                     |          |                                           |          
+            |          |                     |          |                                            --1.79%--poly1305_blocks_vpmadd52
+            |          |                     |          |          
+            |          |                     |          |--7.23%--EVP_CIPHER_CTX_ctrl
+            |          |                     |          |          |          
+            |          |                     |          |          |--3.24%--chacha20_poly1305_get_ctx_params
+            |          |                     |          |          |          |          
+            |          |                     |          |          |           --2.97%--__memmove_avx512_unaligned_erms
+            |          |                     |          |          |          
+            |          |                     |          |           --3.18%--OSSL_PARAM_construct_octet_string
+            |          |                     |          |          
+            |          |                     |          |--4.35%--EVP_CipherInit_ex
+            |          |                     |          |          |          
+            |          |                     |          |           --3.94%--chacha20_poly1305_einit
+            |          |                     |          |                     |          
+            |          |                     |          |                      --3.74%--chacha20_poly1305_initiv
+            |          |                     |          |                                |          
+            |          |                     |          |                                 --3.57%--ossl_chacha20_einit
+            |          |                     |          |                                           |          
+            |          |                     |          |                                            --3.20%--ossl_cipher_generic_einit
+            |          |                     |          |                                                      |          
+            |          |                     |          |                                                       --3.10%--ossl_cipher_generic_initiv
+            |          |                     |          |                                                                 |          
+            |          |                     |          |                                                                  --3.03%--__memmove_avx512_unaligned_erms
+            |          |                     |          |          
+            |          |                     |          |--2.90%--EVP_EncryptFinal_ex
+            |          |                     |          |          |          
+            |          |                     |          |           --2.73%--chacha20_poly1305_final
+            |          |                     |          |                     |          
+            |          |                     |          |                      --2.63%--chacha20_poly1305_aead_cipher
+            |          |                     |          |                                |          
+            |          |                     |          |                                 --1.85%--Poly1305_Update
+            |          |                     |          |                                           |          
+            |          |                     |          |                                            --1.75%--poly1305_blocks_vpmadd52
+            |          |                     |          |          
+            |          |                     |          |--0.74%--WPACKET_init_static_len
+            |          |                     |          |          |          
+            |          |                     |          |           --0.57%--CRYPTO_zalloc
+            |          |                     |          |                     CRYPTO_malloc
+            |          |                     |          |          
+            |          |                     |           --0.54%--WPACKET_finish
+            |          |                     |          
+            |          |                     |--4.45%--tls_post_encryption_processing_default
+            |          |                     |          |          
+            |          |                     |           --3.74%--WPACKET_allocate_bytes
+            |          |                     |          
+            |          |                     |--3.38%--tls13_add_record_padding
+            |          |                     |          |          
+            |          |                     |           --3.14%--WPACKET_put_bytes__
+            |          |                     |                     |          
+            |          |                     |                      --3.04%--WPACKET_allocate_bytes
+            |          |                     |          
+            |          |                     |--3.27%--tls_allocate_write_buffers_default
+            |          |                     |          tls_setup_write_buffer
+            |          |                     |          
+            |          |                     |--3.23%--WPACKET_memcpy
+            |          |                     |          |          
+            |          |                     |           --2.90%--__memmove_avx512_unaligned_erms
+            |          |                     |          
+            |          |                     |--1.96%--tls_prepare_record_header_default
+            |          |                     |          |          
+            |          |                     |          |--0.84%--WPACKET_put_bytes__
+            |          |                     |          |          |          
+            |          |                     |          |           --0.61%--WPACKET_allocate_bytes
+            |          |                     |          |          
+            |          |                     |           --0.78%--WPACKET_start_sub_packet_len__
+            |          |                     |                     |          
+            |          |                     |                      --0.51%--CRYPTO_zalloc
+            |          |                     |          
+            |          |                      --1.05%--tls_initialise_write_packets_default
+            |          |                                |          
+            |          |                                 --0.88%--WPACKET_init_static_len
+            |          |                                           |          
+            |          |                                            --0.67%--CRYPTO_zalloc
+            |          |                                                      CRYPTO_malloc
+            |          |                                                      |          
+            |          |                                                       --0.50%--malloc
+            |          |          
+            |           --0.88%--tls_retry_write_records
+            |                     |          
+            |                      --0.57%--BIO_write
+            |          
+             --1.18%--SSL_write
+                       ssl3_write_bytes
+
+    53.53%     1.32%  [.] tls_write_records_default                     -      -            
+            |          
+            |--52.22%--tls_write_records_default
+            |          |          
+            |          |--34.27%--tls13_cipher
+            |          |          |          
+            |          |          |--17.03%--EVP_EncryptUpdate
+            |          |          |          |          
+            |          |          |           --16.79%--chacha20_poly1305_cipher
+            |          |          |                     |          
+            |          |          |                      --16.63%--chacha20_poly1305_aead_cipher
+            |          |          |                                |          
+            |          |          |                                |--9.87%--chacha20_cipher
+            |          |          |                                |          |          
+            |          |          |                                |           --6.78%--ChaCha20_avx512
+            |          |          |                                |          
+            |          |          |                                |--4.32%--ChaCha20_avx512
+            |          |          |                                |          
+            |          |          |                                 --1.99%--Poly1305_Update
+            |          |          |                                           |          
+            |          |          |                                            --1.79%--poly1305_blocks_vpmadd52
+            |          |          |          
+            |          |          |--7.23%--EVP_CIPHER_CTX_ctrl
+            |          |          |          |          
+            |          |          |          |--3.24%--chacha20_poly1305_get_ctx_params
+            |          |          |          |          |          
+            |          |          |          |           --2.97%--__memmove_avx512_unaligned_erms
+            |          |          |          |          
+            |          |          |           --3.18%--OSSL_PARAM_construct_octet_string
+            |          |          |          
+            |          |          |--4.35%--EVP_CipherInit_ex
+            |          |          |          |          
+            |          |          |           --3.94%--chacha20_poly1305_einit
+            |          |          |                     |          
+            |          |          |                      --3.74%--chacha20_poly1305_initiv
+            |          |          |                                |          
+            |          |          |                                 --3.57%--ossl_chacha20_einit
+            |          |          |                                           |          
+            |          |          |                                            --3.20%--ossl_cipher_generic_einit
+            |          |          |                                                      |          
+            |          |          |                                                       --3.10%--ossl_cipher_generic_initiv
+            |          |          |                                                                 |          
+            |          |          |                                                                  --3.03%--__memmove_avx512_unaligned_erms
+            |          |          |          
+            |          |          |--2.90%--EVP_EncryptFinal_ex
+            |          |          |          |          
+            |          |          |           --2.73%--chacha20_poly1305_final
+            |          |          |                     |          
+            |          |          |                      --2.63%--chacha20_poly1305_aead_cipher
+            |          |          |                                |          
+            |          |          |                                 --1.85%--Poly1305_Update
+            |          |          |                                           |          
+            |          |          |                                            --1.75%--poly1305_blocks_vpmadd52
+            |          |          |          
+            |          |          |--0.74%--WPACKET_init_static_len
+            |          |          |          |          
+            |          |          |           --0.57%--CRYPTO_zalloc
+            |          |          |                     CRYPTO_malloc
+            |          |          |          
+            |          |           --0.54%--WPACKET_finish
+            |          |          
+            |          |--4.48%--tls_post_encryption_processing_default
+            |          |          |          
+            |          |           --3.74%--WPACKET_allocate_bytes
+            |          |          
+            |          |--3.38%--tls13_add_record_padding
+            |          |          |          
+            |          |           --3.14%--WPACKET_put_bytes__
+            |          |                     |          
+            |          |                      --3.04%--WPACKET_allocate_bytes
+            |          |          
+            |          |--3.30%--tls_allocate_write_buffers_default
+            |          |          |          
+            |          |           --3.27%--tls_setup_write_buffer
+            |          |          
+            |          |--3.23%--WPACKET_memcpy
+            |          |          |          
+            |          |           --2.90%--__memmove_avx512_unaligned_erms
+            |          |          
+            |          |--1.96%--tls_prepare_record_header_default
+            |          |          |          
+            |          |          |--0.84%--WPACKET_put_bytes__
+            |          |          |          |          
+            |          |          |           --0.61%--WPACKET_allocate_bytes
+            |          |          |          
+            |          |           --0.78%--WPACKET_start_sub_packet_len__
+            |          |                     |          
+            |          |                      --0.51%--CRYPTO_zalloc
+            |          |          
+            |           --1.05%--tls_initialise_write_packets_default
+            |                     |          
+            |                      --0.88%--WPACKET_init_static_len
+            |                                |          
+            |                                 --0.67%--CRYPTO_zalloc
+            |                                           CRYPTO_malloc
+            |                                           |          
+            |                                            --0.50%--malloc
+            |          
+             --1.32%--SSL_write
+                       ssl3_write_bytes
+                       tls_write_records
+                       tls_write_records_default
+
+    53.53%     0.07%  [.] tls_write_records                             -      -            
+            |          
+             --53.46%--tls_write_records
+                       tls_write_records_default
+                       |          
+                       |--34.27%--tls13_cipher
+                       |          |          
+                       |          |--17.03%--EVP_EncryptUpdate
+                       |          |          |          
+                       |          |           --16.79%--chacha20_poly1305_cipher
+                       |          |                     |          
+                       |          |                      --16.63%--chacha20_poly1305_aead_cipher
+                       |          |                                |          
+                       |          |                                |--9.87%--chacha20_cipher
+                       |          |                                |          |          
+                       |          |                                |           --6.78%--ChaCha20_avx512
+                       |          |                                |          
+                       |          |                                |--4.32%--ChaCha20_avx512
+                       |          |                                |          
+                       |          |                                 --1.99%--Poly1305_Update
+                       |          |                                           |          
+                       |          |                                            --1.79%--poly1305_blocks_vpmadd52
+                       |          |          
+                       |          |--7.23%--EVP_CIPHER_CTX_ctrl
+                       |          |          |          
+                       |          |          |--3.24%--chacha20_poly1305_get_ctx_params
+                       |          |          |          |          
+                       |          |          |           --2.97%--__memmove_avx512_unaligned_erms
+                       |          |          |          
+                       |          |           --3.18%--OSSL_PARAM_construct_octet_string
+                       |          |          
+                       |          |--4.35%--EVP_CipherInit_ex
+                       |          |          |          
+                       |          |           --3.94%--chacha20_poly1305_einit
+                       |          |                     |          
+                       |          |                      --3.74%--chacha20_poly1305_initiv
+                       |          |                                |          
+                       |          |                                 --3.57%--ossl_chacha20_einit
+                       |          |                                           |          
+                       |          |                                            --3.20%--ossl_cipher_generic_einit
+                       |          |                                                      |          
+                       |          |                                                       --3.10%--ossl_cipher_generic_initiv
+                       |          |                                                                 |          
+                       |          |                                                                  --3.03%--__memmove_avx512_unaligned_erms
+                       |          |          
+                       |          |--2.90%--EVP_EncryptFinal_ex
+                       |          |          |          
+                       |          |           --2.73%--chacha20_poly1305_final
+                       |          |                     |          
+                       |          |                      --2.63%--chacha20_poly1305_aead_cipher
+                       |          |                                |          
+                       |          |                                 --1.85%--Poly1305_Update
+                       |          |                                           |          
+                       |          |                                            --1.75%--poly1305_blocks_vpmadd52
+                       |          |          
+                       |          |--0.74%--WPACKET_init_static_len
+                       |          |          |          
+                       |          |           --0.57%--CRYPTO_zalloc
+                       |          |                     CRYPTO_malloc
+                       |          |          
+                       |           --0.54%--WPACKET_finish
+                       |          
+                       |--4.45%--tls_post_encryption_processing_default
+                       |          |          
+                       |           --3.74%--WPACKET_allocate_bytes
+                       |          
+                       |--3.38%--tls13_add_record_padding
+                       |          |          
+                       |           --3.14%--WPACKET_put_bytes__
+                       |                     |          
+                       |                      --3.04%--WPACKET_allocate_bytes
+                       |          
+                       |--3.27%--tls_allocate_write_buffers_default
+                       |          tls_setup_write_buffer
+                       |          
+                       |--3.23%--WPACKET_memcpy
+                       |          |          
+                       |           --2.90%--__memmove_avx512_unaligned_erms
+                       |          
+                       |--1.96%--tls_prepare_record_header_default
+                       |          |          
+                       |          |--0.84%--WPACKET_put_bytes__
+                       |          |          |          
+                       |          |           --0.61%--WPACKET_allocate_bytes
+                       |          |          
+                       |           --0.78%--WPACKET_start_sub_packet_len__
+                       |                     |          
+                       |                      --0.51%--CRYPTO_zalloc
+                       |          
+                        --1.05%--tls_initialise_write_packets_default
+                                  |          
+                                   --0.88%--WPACKET_init_static_len
+                                             |          
+                                              --0.67%--CRYPTO_zalloc
+                                                        CRYPTO_malloc
+                                                        |          
+                                                         --0.50%--malloc
+
+    40.75%     0.07%  [.] SSL_read                                      -      -            
+            |          
+            |--40.18%--ssl3_read
+            |          |          
+            |           --39.94%--ssl3_read_bytes
+            |                     |          
+            |                      --38.70%--tls_read_record
+            |                                |          
+            |                                 --38.53%--tls_get_more_records
+            |                                           |          
+            |                                           |--34.21%--tls13_cipher
+            |                                           |          |          
+            |                                           |          |--16.69%--EVP_DecryptUpdate
+            |                                           |          |          |          
+            |                                           |          |           --16.31%--chacha20_poly1305_cipher
+            |                                           |          |                     |          
+            |                                           |          |                      --16.08%--chacha20_poly1305_aead_cipher
+            |                                           |          |                                |          
+            |                                           |          |                                |--9.68%--chacha20_cipher
+            |                                           |          |                                |          |          
+            |                                           |          |                                |           --6.62%--ChaCha20_avx512
+            |                                           |          |                                |          
+            |                                           |          |                                |--3.87%--ChaCha20_avx512
+            |                                           |          |                                |          
+            |                                           |          |                                 --2.12%--Poly1305_Update
+            |                                           |          |                                           |          
+            |                                           |          |                                            --1.85%--poly1305_blocks_vpmadd52
+            |                                           |          |          
+            |                                           |          |--6.92%--EVP_CIPHER_CTX_ctrl
+            |                                           |          |          |          
+            |                                           |          |          |--3.24%--chacha20_poly1305_set_ctx_params
+            |                                           |          |          |          |          
+            |                                           |          |          |           --3.03%--__memmove_avx512_unaligned_erms
+            |                                           |          |          |          
+            |                                           |          |           --3.08%--OSSL_PARAM_construct_octet_string
+            |                                           |          |          
+            |                                           |          |--4.25%--EVP_CipherInit_ex
+            |                                           |          |          |          
+            |                                           |          |          |--3.61%--chacha20_poly1305_dinit
+            |                                           |          |          |          |          
+            |                                           |          |          |           --3.03%--chacha20_poly1305_initiv
+            |                                           |          |          |                     |          
+            |                                           |          |          |                      --2.86%--ossl_chacha20_dinit
+            |                                           |          |          |                                |          
+            |                                           |          |          |                                 --2.62%--ossl_cipher_generic_dinit
+            |                                           |          |          |                                           |          
+            |                                           |          |          |                                            --2.56%--ossl_cipher_generic_initiv
+            |                                           |          |          |                                                      |          
+            |                                           |          |          |                                                       --2.46%--__memmove_avx512_unaligned_erms
+            |                                           |          |          |          
+            |                                           |          |           --0.58%--evp_cipher_init_internal
+            |                                           |          |          
+            |                                           |          |--3.31%--EVP_DecryptFinal_ex
+            |                                           |          |          |          
+            |                                           |          |           --3.10%--chacha20_poly1305_final
+            |                                           |          |                     chacha20_poly1305_aead_cipher
+            |                                           |          |                     |          
+            |                                           |          |                      --2.23%--Poly1305_Update
+            |                                           |          |                                |          
+            |                                           |          |                                 --2.02%--poly1305_blocks_vpmadd52
+            |                                           |          |          
+            |                                           |          |--0.85%--WPACKET_init_static_len
+            |                                           |          |          |          
+            |                                           |          |           --0.71%--CRYPTO_zalloc
+            |                                           |          |                     |          
+            |                                           |          |                      --0.68%--CRYPTO_malloc
+            |                                           |          |                                |          
+            |                                           |          |                                 --0.58%--malloc
+            |                                           |          |          
+            |                                           |           --0.77%--WPACKET_put_bytes__
+            |                                           |          
+            |                                           |--2.16%--tls_default_read_n
+            |                                           |          |          
+            |                                           |           --1.36%--BIO_read
+            |                                           |                     |          
+            |                                           |                      --1.19%--bread_conv
+            |                                           |                                |          
+            |                                           |                                 --1.02%--bio_read
+            |                                           |          
+            |                                            --0.88%--ERR_set_mark
+            |                                                      |          
+            |                                                       --0.78%--ossl_err_get_state_int
+            |          
+             --0.50%--ssl_read_internal
+
+    40.21%     0.17%  [.] ssl3_read                                     -      -            
+            |          
+             --40.04%--ssl3_read
+                       |          
+                        --39.97%--ssl3_read_bytes
+                                  |          
+                                   --38.70%--tls_read_record
+                                             |          
+                                              --38.53%--tls_get_more_records
+                                                        |          
+                                                        |--34.21%--tls13_cipher
+                                                        |          |          
+                                                        |          |--16.69%--EVP_DecryptUpdate
+                                                        |          |          |          
+                                                        |          |           --16.31%--chacha20_poly1305_cipher
+                                                        |          |                     |          
+                                                        |          |                      --16.08%--chacha20_poly1305_aead_cipher
+                                                        |          |                                |          
+                                                        |          |                                |--9.68%--chacha20_cipher
+                                                        |          |                                |          |          
+                                                        |          |                                |           --6.62%--ChaCha20_avx512
+                                                        |          |                                |          
+                                                        |          |                                |--3.87%--ChaCha20_avx512
+                                                        |          |                                |          
+                                                        |          |                                 --2.12%--Poly1305_Update
+                                                        |          |                                           |          
+                                                        |          |                                            --1.85%--poly1305_blocks_vpmadd52
+                                                        |          |          
+                                                        |          |--6.92%--EVP_CIPHER_CTX_ctrl
+                                                        |          |          |          
+                                                        |          |          |--3.24%--chacha20_poly1305_set_ctx_params
+                                                        |          |          |          |          
+                                                        |          |          |           --3.03%--__memmove_avx512_unaligned_erms
+                                                        |          |          |          
+                                                        |          |           --3.08%--OSSL_PARAM_construct_octet_string
+                                                        |          |          
+                                                        |          |--4.25%--EVP_CipherInit_ex
+                                                        |          |          |          
+                                                        |          |          |--3.61%--chacha20_poly1305_dinit
+                                                        |          |          |          |          
+                                                        |          |          |           --3.03%--chacha20_poly1305_initiv
+                                                        |          |          |                     |          
+                                                        |          |          |                      --2.86%--ossl_chacha20_dinit
+                                                        |          |          |                                |          
+                                                        |          |          |                                 --2.62%--ossl_cipher_generic_dinit
+                                                        |          |          |                                           |          
+                                                        |          |          |                                            --2.56%--ossl_cipher_generic_initiv
+                                                        |          |          |                                                      |          
+                                                        |          |          |                                                       --2.46%--__memmove_avx512_unaligned_erms
+                                                        |          |          |          
+                                                        |          |           --0.58%--evp_cipher_init_internal
+                                                        |          |          
+                                                        |          |--3.31%--EVP_DecryptFinal_ex
+                                                        |          |          |          
+                                                        |          |           --3.10%--chacha20_poly1305_final
+                                                        |          |                     chacha20_poly1305_aead_cipher
+                                                        |          |                     |          
+                                                        |          |                      --2.23%--Poly1305_Update
+                                                        |          |                                |          
+                                                        |          |                                 --2.02%--poly1305_blocks_vpmadd52
+                                                        |          |          
+                                                        |          |--0.85%--WPACKET_init_static_len
+                                                        |          |          |          
+                                                        |          |           --0.71%--CRYPTO_zalloc
+                                                        |          |                     |          
+                                                        |          |                      --0.68%--CRYPTO_malloc
+                                                        |          |                                |          
+                                                        |          |                                 --0.58%--malloc
+                                                        |          |          
+                                                        |           --0.77%--WPACKET_put_bytes__
+                                                        |          
+                                                        |--2.16%--tls_default_read_n
+                                                        |          |          
+                                                        |           --1.36%--BIO_read
+                                                        |                     |          
+                                                        |                      --1.19%--bread_conv
+                                                        |                                |          
+                                                        |                                 --1.02%--bio_read
+                                                        |          
+                                                         --0.88%--ERR_set_mark
+                                                                   |          
+                                                                    --0.78%--ossl_err_get_state_int
+
+    40.01%     0.64%  [.] ssl3_read_bytes                               -      -            
+            |          
+            |--39.37%--ssl3_read_bytes
+            |          |          
+            |           --38.70%--tls_read_record
+            |                     |          
+            |                      --38.53%--tls_get_more_records
+            |                                |          
+            |                                |--34.21%--tls13_cipher
+            |                                |          |          
+            |                                |          |--16.69%--EVP_DecryptUpdate
+            |                                |          |          |          
+            |                                |          |           --16.31%--chacha20_poly1305_cipher
+            |                                |          |                     |          
+            |                                |          |                      --16.08%--chacha20_poly1305_aead_cipher
+            |                                |          |                                |          
+            |                                |          |                                |--9.68%--chacha20_cipher
+            |                                |          |                                |          |          
+            |                                |          |                                |           --6.62%--ChaCha20_avx512
+            |                                |          |                                |          
+            |                                |          |                                |--3.87%--ChaCha20_avx512
+            |                                |          |                                |          
+            |                                |          |                                 --2.12%--Poly1305_Update
+            |                                |          |                                           |          
+            |                                |          |                                            --1.85%--poly1305_blocks_vpmadd52
+            |                                |          |          
+            |                                |          |--6.92%--EVP_CIPHER_CTX_ctrl
+            |                                |          |          |          
+            |                                |          |          |--3.24%--chacha20_poly1305_set_ctx_params
+            |                                |          |          |          |          
+            |                                |          |          |           --3.03%--__memmove_avx512_unaligned_erms
+            |                                |          |          |          
+            |                                |          |           --3.08%--OSSL_PARAM_construct_octet_string
+            |                                |          |          
+            |                                |          |--4.25%--EVP_CipherInit_ex
+            |                                |          |          |          
+            |                                |          |          |--3.61%--chacha20_poly1305_dinit
+            |                                |          |          |          |          
+            |                                |          |          |           --3.03%--chacha20_poly1305_initiv
+            |                                |          |          |                     |          
+            |                                |          |          |                      --2.86%--ossl_chacha20_dinit
+            |                                |          |          |                                |          
+            |                                |          |          |                                 --2.62%--ossl_cipher_generic_dinit
+            |                                |          |          |                                           |          
+            |                                |          |          |                                            --2.56%--ossl_cipher_generic_initiv
+            |                                |          |          |                                                      |          
+            |                                |          |          |                                                       --2.46%--__memmove_avx512_unaligned_erms
+            |                                |          |          |          
+            |                                |          |           --0.58%--evp_cipher_init_internal
+            |                                |          |          
+            |                                |          |--3.31%--EVP_DecryptFinal_ex
+            |                                |          |          |          
+            |                                |          |           --3.10%--chacha20_poly1305_final
+            |                                |          |                     chacha20_poly1305_aead_cipher
+            |                                |          |                     |          
+            |                                |          |                      --2.23%--Poly1305_Update
+            |                                |          |                                |          
+            |                                |          |                                 --2.02%--poly1305_blocks_vpmadd52
+            |                                |          |          
+            |                                |          |--0.85%--WPACKET_init_static_len
+            |                                |          |          |          
+            |                                |          |           --0.71%--CRYPTO_zalloc
+            |                                |          |                     |          
+            |                                |          |                      --0.68%--CRYPTO_malloc
+            |                                |          |                                |          
+            |                                |          |                                 --0.58%--malloc
+            |                                |          |          
+            |                                |           --0.77%--WPACKET_put_bytes__
+            |                                |          
+            |                                |--2.16%--tls_default_read_n
+            |                                |          |          
+            |                                |           --1.36%--BIO_read
+            |                                |                     |          
+            |                                |                      --1.19%--bread_conv
+            |                                |                                |          
+            |                                |                                 --1.02%--bio_read
+            |                                |          
+            |                                 --0.88%--ERR_set_mark
+            |                                           |          
+            |                                            --0.78%--ossl_err_get_state_int
+            |          
+             --0.61%--SSL_read
+                       ssl3_read
+                       ssl3_read_bytes
+
+    38.78%     0.81%  [.] chacha20_poly1305_aead_cipher                 -      -            
+            |          
+             --37.97%--chacha20_poly1305_aead_cipher
+                       |          
+                       |--19.62%--chacha20_cipher
+                       |          |          
+                       |           --13.40%--ChaCha20_avx512
+                       |          
+                       |--8.34%--Poly1305_Update
+                       |          |          
+                       |           --7.42%--poly1305_blocks_vpmadd52
+                       |          
+                       |--8.19%--ChaCha20_avx512
+                       |          
+                       |--0.74%--OPENSSL_cleanse
+                       |          
+                        --0.71%--Poly1305_Final
+                                  |          
+                                   --0.67%--poly1305_emit_base2_44
+
+    38.70%     0.17%  [.] tls_read_record                               -      -            
+            |          
+             --38.53%--tls_read_record
+                       tls_get_more_records
+                       |          
+                       |--34.21%--tls13_cipher
+                       |          |          
+                       |          |--16.69%--EVP_DecryptUpdate
+                       |          |          |          
+                       |          |           --16.31%--chacha20_poly1305_cipher
+                       |          |                     |          
+                       |          |                      --16.08%--chacha20_poly1305_aead_cipher
+                       |          |                                |          
+                       |          |                                |--9.68%--chacha20_cipher
+                       |          |                                |          |          
+                       |          |                                |           --6.62%--ChaCha20_avx512
+                       |          |                                |          
+                       |          |                                |--3.87%--ChaCha20_avx512
+                       |          |                                |          
+                       |          |                                 --2.12%--Poly1305_Update
+                       |          |                                           |          
+                       |          |                                            --1.85%--poly1305_blocks_vpmadd52
+                       |          |          
+                       |          |--6.92%--EVP_CIPHER_CTX_ctrl
+                       |          |          |          
+                       |          |          |--3.24%--chacha20_poly1305_set_ctx_params
+                       |          |          |          |          
+                       |          |          |           --3.03%--__memmove_avx512_unaligned_erms
+                       |          |          |          
+                       |          |           --3.08%--OSSL_PARAM_construct_octet_string
+                       |          |          
+                       |          |--4.25%--EVP_CipherInit_ex
+                       |          |          |          
+                       |          |          |--3.61%--chacha20_poly1305_dinit
+                       |          |          |          |          
+                       |          |          |           --3.03%--chacha20_poly1305_initiv
+                       |          |          |                     |          
+                       |          |          |                      --2.86%--ossl_chacha20_dinit
+                       |          |          |                                |          
+                       |          |          |                                 --2.62%--ossl_cipher_generic_dinit
+                       |          |          |                                           |          
+                       |          |          |                                            --2.56%--ossl_cipher_generic_initiv
+                       |          |          |                                                      |          
+                       |          |          |                                                       --2.46%--__memmove_avx512_unaligned_erms
+                       |          |          |          
+                       |          |           --0.58%--evp_cipher_init_internal
+                       |          |          
+                       |          |--3.31%--EVP_DecryptFinal_ex
+                       |          |          |          
+                       |          |           --3.10%--chacha20_poly1305_final
+                       |          |                     chacha20_poly1305_aead_cipher
+                       |          |                     |          
+                       |          |                      --2.23%--Poly1305_Update
+                       |          |                                |          
+                       |          |                                 --2.02%--poly1305_blocks_vpmadd52
+                       |          |          
+                       |          |--0.85%--WPACKET_init_static_len
+                       |          |          |          
+                       |          |           --0.71%--CRYPTO_zalloc
+                       |          |                     |          
+                       |          |                      --0.68%--CRYPTO_malloc
+                       |          |                                |          
+                       |          |                                 --0.58%--malloc
+                       |          |          
+                       |           --0.77%--WPACKET_put_bytes__
+                       |          
+                       |--2.16%--tls_default_read_n
+                       |          |          
+                       |           --1.36%--BIO_read
+                       |                     |          
+                       |                      --1.19%--bread_conv
+                       |                                |          
+                       |                                 --1.02%--bio_read
+                       |          
+                        --0.88%--ERR_set_mark
+                                  |          
+                                   --0.78%--ossl_err_get_state_int
+
+    38.66%     0.70%  [.] tls_get_more_records                          -      -            
+            |          
+            |--37.96%--tls_get_more_records
+            |          |          
+            |          |--34.21%--tls13_cipher
+            |          |          |          
+            |          |          |--16.69%--EVP_DecryptUpdate
+            |          |          |          |          
+            |          |          |           --16.31%--chacha20_poly1305_cipher
+            |          |          |                     |          
+            |          |          |                      --16.08%--chacha20_poly1305_aead_cipher
+            |          |          |                                |          
+            |          |          |                                |--9.68%--chacha20_cipher
+            |          |          |                                |          |          
+            |          |          |                                |           --6.62%--ChaCha20_avx512
+            |          |          |                                |          
+            |          |          |                                |--3.87%--ChaCha20_avx512
+            |          |          |                                |          
+            |          |          |                                 --2.12%--Poly1305_Update
+            |          |          |                                           |          
+            |          |          |                                            --1.85%--poly1305_blocks_vpmadd52
+            |          |          |          
+            |          |          |--6.92%--EVP_CIPHER_CTX_ctrl
+            |          |          |          |          
+            |          |          |          |--3.24%--chacha20_poly1305_set_ctx_params
+            |          |          |          |          |          
+            |          |          |          |           --3.03%--__memmove_avx512_unaligned_erms
+            |          |          |          |          
+            |          |          |           --3.08%--OSSL_PARAM_construct_octet_string
+            |          |          |          
+            |          |          |--4.25%--EVP_CipherInit_ex
+            |          |          |          |          
+            |          |          |          |--3.61%--chacha20_poly1305_dinit
+            |          |          |          |          |          
+            |          |          |          |           --3.03%--chacha20_poly1305_initiv
+            |          |          |          |                     |          
+            |          |          |          |                      --2.86%--ossl_chacha20_dinit
+            |          |          |          |                                |          
+            |          |          |          |                                 --2.62%--ossl_cipher_generic_dinit
+            |          |          |          |                                           |          
+            |          |          |          |                                            --2.56%--ossl_cipher_generic_initiv
+            |          |          |          |                                                      |          
+            |          |          |          |                                                       --2.46%--__memmove_avx512_unaligned_erms
+            |          |          |          |          
+            |          |          |           --0.58%--evp_cipher_init_internal
+            |          |          |          
+            |          |          |--3.31%--EVP_DecryptFinal_ex
+            |          |          |          |          
+            |          |          |           --3.10%--chacha20_poly1305_final
+            |          |          |                     chacha20_poly1305_aead_cipher
+            |          |          |                     |          
+            |          |          |                      --2.23%--Poly1305_Update
+            |          |          |                                |          
+            |          |          |                                 --2.02%--poly1305_blocks_vpmadd52
+            |          |          |          
+            |          |          |--0.85%--WPACKET_init_static_len
+            |          |          |          |          
+            |          |          |           --0.71%--CRYPTO_zalloc
+            |          |          |                     |          
+            |          |          |                      --0.68%--CRYPTO_malloc
+            |          |          |                                |          
+            |          |          |                                 --0.58%--malloc
+            |          |          |          
+            |          |           --0.77%--WPACKET_put_bytes__
+            |          |          
+            |          |--2.20%--tls_default_read_n
+            |          |          |          
+            |          |           --1.36%--BIO_read
+            |          |                     |          
+            |          |                      --1.19%--bread_conv
+            |          |                                |          
+            |          |                                 --1.02%--bio_read
+            |          |          
+            |           --0.88%--ERR_set_mark
+            |                     |          
+            |                      --0.78%--ossl_err_get_state_int
+            |          
+             --0.70%--SSL_read
+                       ssl3_read
+                       ssl3_read_bytes
+                       tls_read_record
+                       tls_get_more_records
+
+    33.21%     0.33%  [.] chacha20_poly1305_cipher                      -      -            
+            |          
+             --32.87%--chacha20_poly1305_cipher
+                       |          
+                        --32.77%--chacha20_poly1305_aead_cipher
+                                  |          
+                                  |--19.55%--chacha20_cipher
+                                  |          |          
+                                  |           --13.40%--ChaCha20_avx512
+                                  |          
+                                  |--8.19%--ChaCha20_avx512
+                                  |          
+                                   --4.12%--Poly1305_Update
+                                             |          
+                                              --3.64%--poly1305_blocks_vpmadd52
+
+    21.58%    21.51%  [.] ChaCha20_avx512                               -      -            
+            |          
+            |--11.03%--SSL_write
+            |          ssl3_write_bytes
+            |          tls_write_records
+            |          tls_write_records_default
+            |          tls13_cipher
+            |          EVP_EncryptUpdate
+            |          chacha20_poly1305_cipher
+            |          chacha20_poly1305_aead_cipher
+            |          |          
+            |          |--6.75%--chacha20_cipher
+            |          |          ChaCha20_avx512
+            |          |          
+            |           --4.28%--ChaCha20_avx512
+            |          
+             --10.48%--SSL_read
+                       ssl3_read
+                       ssl3_read_bytes
+                       tls_read_record
+                       tls_get_more_records
+                       tls13_cipher
+                       EVP_DecryptUpdate
+                       chacha20_poly1305_cipher
+                       chacha20_poly1305_aead_cipher
+                       |          
+                       |--6.62%--chacha20_cipher
+                       |          ChaCha20_avx512
+                       |          
+                        --3.87%--ChaCha20_avx512
+
+    19.62%     6.09%  [.] chacha20_cipher                               -      -            
+            |          
+            |--13.53%--chacha20_cipher
+            |          |          
+            |           --13.40%--ChaCha20_avx512
+            |          
+            |--3.09%--SSL_write
+            |          ssl3_write_bytes
+            |          tls_write_records
+            |          tls_write_records_default
+            |          tls13_cipher
+            |          EVP_EncryptUpdate
+            |          chacha20_poly1305_cipher
+            |          chacha20_poly1305_aead_cipher
+            |          chacha20_cipher
+            |          
+             --2.93%--SSL_read
+                       ssl3_read
+                       ssl3_read_bytes
+                       tls_read_record
+                       tls_get_more_records
+                       tls13_cipher
+                       EVP_DecryptUpdate
+                       chacha20_poly1305_cipher
+                       chacha20_poly1305_aead_cipher
+                       chacha20_cipher
+
+    17.03%     0.23%  [.] EVP_EncryptUpdate                             -      -            
+            |          
+             --16.79%--EVP_EncryptUpdate
+                       chacha20_poly1305_cipher
+                       |          
+                        --16.63%--chacha20_poly1305_aead_cipher
+                                  |          
+                                  |--9.87%--chacha20_cipher
+                                  |          |          
+                                  |           --6.78%--ChaCha20_avx512
+                                  |          
+                                  |--4.32%--ChaCha20_avx512
+                                  |          
+                                   --1.99%--Poly1305_Update
+                                             |          
+                                              --1.79%--poly1305_blocks_vpmadd52
+
+    16.75%     0.34%  [.] EVP_DecryptUpdate                             -      -            
+            |          
+             --16.41%--EVP_DecryptUpdate
+                       |          
+                        --16.35%--chacha20_poly1305_cipher
+                                  |          
+                                   --16.08%--chacha20_poly1305_aead_cipher
+                                             |          
+                                             |--9.68%--chacha20_cipher
+                                             |          |          
+                                             |           --6.62%--ChaCha20_avx512
+                                             |          
+                                             |--3.87%--ChaCha20_avx512
+                                             |          
+                                              --2.12%--Poly1305_Update
+                                                        |          
+                                                         --1.85%--poly1305_blocks_vpmadd52
+
+    15.39%    15.39%  [.] __memmove_avx512_unaligned_erms               -      -            
+            |          
+            |--9.27%--SSL_write
+            |          ssl3_write_bytes
+            |          |          
+            |           --9.10%--tls_write_records
+            |                     tls_write_records_default
+            |                     |          
+            |                     |--6.20%--tls13_cipher
+            |                     |          |          
+            |                     |          |--3.07%--EVP_CipherInit_ex
+            |                     |          |          chacha20_poly1305_einit
+            |                     |          |          |          
+            |                     |          |           --3.03%--chacha20_poly1305_initiv
+            |                     |          |                     ossl_chacha20_einit
+            |                     |          |                     ossl_cipher_generic_einit
+            |                     |          |                     ossl_cipher_generic_initiv
+            |                     |          |                     __memmove_avx512_unaligned_erms
+            |                     |          |          
+            |                     |           --2.97%--EVP_CIPHER_CTX_ctrl
+            |                     |                     chacha20_poly1305_get_ctx_params
+            |                     |                     __memmove_avx512_unaligned_erms
+            |                     |          
+            |                      --2.90%--WPACKET_memcpy
+            |                                __memmove_avx512_unaligned_erms
+            |          
+             --6.10%--SSL_read
+                       ssl3_read
+                       ssl3_read_bytes
+                       |          
+                        --5.97%--tls_read_record
+                                  tls_get_more_records
+                                  |          
+                                   --5.86%--tls13_cipher
+                                             |          
+                                             |--3.03%--EVP_CIPHER_CTX_ctrl
+                                             |          chacha20_poly1305_set_ctx_params
+                                             |          __memmove_avx512_unaligned_erms
+                                             |          
+                                              --2.73%--EVP_CipherInit_ex
+                                                        chacha20_poly1305_dinit
+                                                        |          
+                                                         --2.46%--chacha20_poly1305_initiv
+                                                                   ossl_chacha20_dinit
+                                                                   ossl_cipher_generic_dinit
+                                                                   ossl_cipher_generic_initiv
+                                                                   __memmove_avx512_unaligned_erms
+
+    14.28%     1.49%  [.] EVP_CIPHER_CTX_ctrl                           -      -            
+            |          
+            |--12.79%--EVP_CIPHER_CTX_ctrl
+            |          |          
+            |          |--6.25%--OSSL_PARAM_construct_octet_string
+            |          |          
+            |          |--3.27%--chacha20_poly1305_get_ctx_params
+            |          |          |          
+            |          |           --2.97%--__memmove_avx512_unaligned_erms
+            |          |          
+            |           --3.24%--chacha20_poly1305_set_ctx_params
+            |                     |          
+            |                      --3.03%--__memmove_avx512_unaligned_erms
+            |          
+            |--0.78%--SSL_write
+            |          ssl3_write_bytes
+            |          tls_write_records
+            |          tls_write_records_default
+            |          tls13_cipher
+            |          EVP_CIPHER_CTX_ctrl
+            |          
+             --0.61%--SSL_read
+                       ssl3_read
+                       ssl3_read_bytes
+                       tls_read_record
+                       tls_get_more_records
+                       tls13_cipher
+                       EVP_CIPHER_CTX_ctrl
+
+     8.77%     7.01%  [.] WPACKET_allocate_bytes                        -      -            
+            |          
+            |--6.95%--SSL_write
+            |          ssl3_write_bytes
+            |          tls_write_records
+            |          tls_write_records_default
+            |          |          
+            |          |--3.67%--tls_post_encryption_processing_default
+            |          |          WPACKET_allocate_bytes
+            |          |          
+            |           --2.97%--tls13_add_record_padding
+            |                     WPACKET_put_bytes__
+            |                     WPACKET_allocate_bytes
+            |          
+             --1.75%--WPACKET_allocate_bytes
+                       WPACKET_reserve_bytes
+
+     8.63%     0.10%  [.] EVP_CipherInit_ex                             -      -            
+            |          
+             --8.53%--EVP_CipherInit_ex
+                       |          
+                       |--3.94%--chacha20_poly1305_einit
+                       |          |          
+                       |           --3.74%--chacha20_poly1305_initiv
+                       |                     |          
+                       |                      --3.57%--ossl_chacha20_einit
+                       |                                |          
+                       |                                 --3.20%--ossl_cipher_generic_einit
+                       |                                           |          
+                       |                                            --3.10%--ossl_cipher_generic_initiv
+                       |                                                      |          
+                       |                                                       --3.03%--__memmove_avx512_unaligned_erms
+                       |          
+                       |--3.61%--chacha20_poly1305_dinit
+                       |          |          
+                       |           --3.03%--chacha20_poly1305_initiv
+                       |                     |          
+                       |                      --2.86%--ossl_chacha20_dinit
+                       |                                |          
+                       |                                 --2.62%--ossl_cipher_generic_dinit
+                       |                                           |          
+                       |                                            --2.56%--ossl_cipher_generic_initiv
+                       |                                                      |          
+                       |                                                       --2.46%--__memmove_avx512_unaligned_erms
+                       |          
+                        --0.98%--evp_cipher_init_internal
+
+     8.34%     0.85%  [.] Poly1305_Update                               -      -            
+            |          
+             --7.49%--Poly1305_Update
+                       |          
+                        --7.42%--poly1305_blocks_vpmadd52
+
+     7.42%     7.42%  [.] poly1305_blocks_vpmadd52                      -      -            
+            |          
+            |--3.88%--SSL_read
+            |          ssl3_read
+            |          ssl3_read_bytes
+            |          tls_read_record
+            |          tls_get_more_records
+            |          tls13_cipher
+            |          |          
+            |          |--2.02%--EVP_DecryptFinal_ex
+            |          |          chacha20_poly1305_final
+            |          |          chacha20_poly1305_aead_cipher
+            |          |          Poly1305_Update
+            |          |          poly1305_blocks_vpmadd52
+            |          |          
+            |           --1.85%--EVP_DecryptUpdate
+            |                     chacha20_poly1305_cipher
+            |                     chacha20_poly1305_aead_cipher
+            |                     Poly1305_Update
+            |                     poly1305_blocks_vpmadd52
+            |          
+             --3.54%--SSL_write
+                       ssl3_write_bytes
+                       tls_write_records
+                       tls_write_records_default
+                       tls13_cipher
+                       |          
+                       |--1.79%--EVP_EncryptUpdate
+                       |          chacha20_poly1305_cipher
+                       |          chacha20_poly1305_aead_cipher
+                       |          Poly1305_Update
+                       |          poly1305_blocks_vpmadd52
+                       |          
+                        --1.75%--EVP_EncryptFinal_ex
+                                  chacha20_poly1305_final
+                                  chacha20_poly1305_aead_cipher
+                                  Poly1305_Update
+                                  poly1305_blocks_vpmadd52
+
+     6.94%     0.41%  [.] chacha20_poly1305_initiv                      -      -            
+            |          
+             --6.53%--chacha20_poly1305_initiv
+                       |          
+                       |--3.64%--ossl_chacha20_einit
+                       |          |          
+                       |           --3.20%--ossl_cipher_generic_einit
+                       |                     |          
+                       |                      --3.10%--ossl_cipher_generic_initiv
+                       |                                |          
+                       |                                 --3.03%--__memmove_avx512_unaligned_erms
+                       |          
+                        --2.90%--ossl_chacha20_dinit
+                                  |          
+                                   --2.62%--ossl_cipher_generic_dinit
+                                             |          
+                                              --2.56%--ossl_cipher_generic_initiv
+                                                        |          
+                                                         --2.46%--__memmove_avx512_unaligned_erms
+
+     6.25%     6.25%  [.] OSSL_PARAM_construct_octet_string             -      -            
+            |          
+            |--3.18%--SSL_write
+            |          ssl3_write_bytes
+            |          tls_write_records
+            |          tls_write_records_default
+            |          tls13_cipher
+            |          EVP_CIPHER_CTX_ctrl
+            |          OSSL_PARAM_construct_octet_string
+            |          
+             --3.08%--SSL_read
+                       ssl3_read
+                       ssl3_read_bytes
+                       tls_read_record
+                       tls_get_more_records
+                       tls13_cipher
+                       EVP_CIPHER_CTX_ctrl
+                       OSSL_PARAM_construct_octet_string
+
+     6.20%     0.24%  [.] ossl_cipher_generic_initiv                    -      -            
+            |          
+             --5.96%--ossl_cipher_generic_initiv
+                       |          
+                        --5.79%--__memmove_avx512_unaligned_erms
+
+     5.94%     0.17%  [.] chacha20_poly1305_final                       -      -            
+            |          
+             --5.77%--chacha20_poly1305_final
+                       chacha20_poly1305_aead_cipher
+                       |          
+                       |--4.08%--Poly1305_Update
+                       |          |          
+                       |           --3.78%--poly1305_blocks_vpmadd52
+                       |          
+                       |--0.74%--OPENSSL_cleanse
+                       |          
+                        --0.71%--Poly1305_Final
+                                  |          
+                                   --0.67%--poly1305_emit_base2_44
+
+     5.30%     0.91%  [.] WPACKET_put_bytes__                           -      -            
+            |          
+            |--4.39%--WPACKET_put_bytes__
+            |          WPACKET_allocate_bytes
+            |          |          
+            |           --1.15%--WPACKET_reserve_bytes
+            |          
+             --0.51%--SSL_write
+                       ssl3_write_bytes
+                       tls_write_records
+                       tls_write_records_default
+
+     4.48%     0.07%  [.] tls_post_encryption_processing_default        -      -            
+            |          
+             --4.41%--tls_post_encryption_processing_default
+                       |          
+                        --3.74%--WPACKET_allocate_bytes
+
+     4.01%     0.03%  [.] chacha20_poly1305_einit                       -      -            
+            |          
+             --3.98%--chacha20_poly1305_einit
+                       |          
+                        --3.81%--chacha20_poly1305_initiv
+                                  |          
+                                   --3.57%--ossl_chacha20_einit
+                                             |          
+                                              --3.20%--ossl_cipher_generic_einit
+                                                        |          
+                                                         --3.10%--ossl_cipher_generic_initiv
+                                                                   |          
+                                                                    --3.03%--__memmove_avx512_unaligned_erms
+
+     3.64%     0.03%  [.] chacha20_poly1305_dinit                       -      -            
+            |          
+             --3.61%--chacha20_poly1305_dinit
+                       |          
+                        --3.03%--chacha20_poly1305_initiv
+                                  |          
+                                   --2.86%--ossl_chacha20_dinit
+                                             |          
+                                              --2.62%--ossl_cipher_generic_dinit
+                                                        |          
+                                                         --2.56%--ossl_cipher_generic_initiv
+                                                                   |          
+                                                                    --2.46%--__memmove_avx512_unaligned_erms
+
+     3.64%     0.14%  [.] ossl_chacha20_einit                           -      -            
+            |          
+             --3.50%--ossl_chacha20_einit
+                       |          
+                        --3.20%--ossl_cipher_generic_einit
+                                  |          
+                                   --3.10%--ossl_cipher_generic_initiv
+                                             |          
+                                              --3.03%--__memmove_avx512_unaligned_erms
+
+     3.38%     0.24%  [.] tls13_add_record_padding                      -      -            
+            |          
+             --3.14%--tls13_add_record_padding
+                       WPACKET_put_bytes__
+                       |          
+                        --3.04%--WPACKET_allocate_bytes
+
+     3.37%     0.13%  [.] ossl_cipher_generic_einit                     -      -            
+            |          
+             --3.23%--ossl_cipher_generic_einit
+                       ossl_cipher_generic_initiv
+                       |          
+                        --3.07%--__memmove_avx512_unaligned_erms
+
+     3.34%     0.14%  [.] EVP_DecryptFinal_ex                           -      -            
+            |          
+             --3.20%--EVP_DecryptFinal_ex
+                       |          
+                        --3.14%--chacha20_poly1305_final
+                                  |          
+                                   --3.10%--chacha20_poly1305_aead_cipher
+                                             |          
+                                              --2.23%--Poly1305_Update
+                                                        |          
+                                                         --2.02%--poly1305_blocks_vpmadd52
+
+     3.34%     0.03%  [.] tls_allocate_write_buffers_default            -      -            
+            |          
+             --3.30%--tls_allocate_write_buffers_default
+                       tls_setup_write_buffer
+
+     3.34%     0.30%  [.] chacha20_poly1305_set_ctx_params              -      -            
+            |          
+             --3.03%--chacha20_poly1305_set_ctx_params
+                       __memmove_avx512_unaligned_erms
+
+     3.30%     3.27%  [.] tls_setup_write_buffer                        -      -            
+            |          
+             --3.24%--SSL_write
+                       ssl3_write_bytes
+                       tls_write_records
+                       tls_write_records_default
+                       tls_allocate_write_buffers_default
+                       tls_setup_write_buffer
+
+     3.27%     0.30%  [.] chacha20_poly1305_get_ctx_params              -      -            
+            |          
+             --2.97%--chacha20_poly1305_get_ctx_params
+                       __memmove_avx512_unaligned_erms
+
+     3.23%     0.10%  [.] WPACKET_memcpy                                -      -            
+            |          
+             --3.13%--WPACKET_memcpy
+                       |          
+                        --2.90%--__memmove_avx512_unaligned_erms
+
+     3.17%     0.20%  [.] ossl_cipher_generic_dinit                     -      -            
+            |          
+             --2.97%--ossl_cipher_generic_dinit
+                       ossl_cipher_generic_initiv
+                       |          
+                        --2.73%--__memmove_avx512_unaligned_erms
+
+     2.97%     0.17%  [.] EVP_EncryptFinal_ex                           -      -            
+            |          
+             --2.80%--EVP_EncryptFinal_ex
+                       |          
+                        --2.76%--chacha20_poly1305_final
+                                  |          
+                                   --2.63%--chacha20_poly1305_aead_cipher
+                                             |          
+                                              --1.85%--Poly1305_Update
+                                                        |          
+                                                         --1.75%--poly1305_blocks_vpmadd52
+
+     2.93%     0.14%  [.] ossl_chacha20_dinit                           -      -            
+            |          
+             --2.79%--ossl_chacha20_dinit
+                       |          
+                        --2.66%--ossl_cipher_generic_dinit
+                                  |          
+                                   --2.56%--ossl_cipher_generic_initiv
+                                             |          
+                                              --2.46%--__memmove_avx512_unaligned_erms
+
+     2.60%     0.17%  [.] CRYPTO_zalloc                                 -      -            
+            |          
+             --2.43%--CRYPTO_zalloc
+                       |          
+                        --2.33%--CRYPTO_malloc
+                                  |          
+                                   --1.79%--malloc
+
+     2.54%     0.41%  [.] WPACKET_init_static_len                       -      -            
+            |          
+             --2.13%--WPACKET_init_static_len
+                       |          
+                        --2.03%--CRYPTO_zalloc
+                                  |          
+                                   --1.93%--CRYPTO_malloc
+                                             |          
+                                              --1.49%--malloc
+
+     2.35%     0.34%  [.] CRYPTO_malloc                                 -      -            
+            |          
+             --2.02%--CRYPTO_malloc
+                       |          
+                        --1.79%--malloc
+
+     2.27%     0.78%  [.] tls_default_read_n                            -      -            
+            |          
+            |--1.49%--tls_default_read_n
+            |          |          
+            |           --1.42%--BIO_read
+            |                     |          
+            |                      --1.19%--bread_conv
+            |                                |          
+            |                                 --1.02%--bio_read
+            |          
+             --0.74%--SSL_read
+                       ssl3_read
+                       ssl3_read_bytes
+                       tls_read_record
+                       tls_get_more_records
+                       tls_default_read_n
+
+     2.16%     1.82%  [.] WPACKET_reserve_bytes                         -      -            
+            |          
+             --1.15%--SSL_write
+                       ssl3_write_bytes
+                       tls_write_records
+                       tls_write_records_default
+                       |          
+                        --0.57%--tls_prepare_record_header_default
+
+     2.06%     0.10%  [.] tls_prepare_record_header_default             -      -            
+            |          
+             --1.96%--tls_prepare_record_header_default
+                       |          
+                       |--0.84%--WPACKET_put_bytes__
+                       |          |          
+                       |           --0.61%--WPACKET_allocate_bytes
+                       |          
+                        --0.78%--WPACKET_start_sub_packet_len__
+                                  |          
+                                   --0.51%--CRYPTO_zalloc
+
+     1.79%     1.79%  [.] malloc                                        -      -            
+            |          
+            |--1.21%--SSL_write
+            |          ssl3_write_bytes
+            |          tls_write_records
+            |          tls_write_records_default
+            |          |          
+            |           --0.50%--tls_initialise_write_packets_default
+            |                     WPACKET_init_static_len
+            |                     CRYPTO_zalloc
+            |                     CRYPTO_malloc
+            |                     malloc
+            |          
+             --0.58%--SSL_read
+                       ssl3_read
+                       ssl3_read_bytes
+                       tls_read_record
+                       tls_get_more_records
+                       tls13_cipher
+                       WPACKET_init_static_len
+                       CRYPTO_zalloc
+                       CRYPTO_malloc
+                       malloc
+
+     1.46%     0.24%  [.] BIO_read                                      -      -            
+            |          
+             --1.22%--BIO_read
+                       bread_conv
+                       |          
+                        --1.02%--bio_read
+
+     1.32%     0.27%  [.] WPACKET_finish                                -      -            
+            |          
+             --1.05%--WPACKET_finish
+                       |          
+                        --0.91%--cfree@GLIBC_2.2.5
+
+     1.29%     0.20%  [.] bread_conv                                    -      -            
+            |          
+             --1.09%--bread_conv
+                       bio_read
+
+     1.15%     0.24%  [.] ossl_err_get_state_int                        -      -            
+            |          
+             --0.91%--ossl_err_get_state_int
+
+     1.09%     0.78%  [.] bio_read                                      -      -            
+            |          
+             --0.71%--SSL_read
+                       ssl3_read
+                       ssl3_read_bytes
+                       tls_read_record
+                       tls_get_more_records
+                       tls_default_read_n
+                       BIO_read
+                       bread_conv
+                       bio_read
+
+     1.05%     0.10%  [.] tls_initialise_write_packets_default          -      -            
+            |          
+             --0.95%--tls_initialise_write_packets_default
+                       |          
+                        --0.88%--WPACKET_init_static_len
+                                  |          
+                                   --0.67%--CRYPTO_zalloc
+                                             CRYPTO_malloc
+                                             |          
+                                              --0.50%--malloc
+
+     1.02%     1.02%  [.] cfree@GLIBC_2.2.5                             -      -            
+            |          
+             --0.64%--SSL_write
+                       ssl3_write_bytes
+                       tls_write_records
+                       tls_write_records_default
+
+     0.98%     0.68%  [.] evp_cipher_init_internal                      -      -            
+     0.91%     0.27%  [.] tls_retry_write_records                       -      -            
+            |          
+             --0.64%--tls_retry_write_records
+                       |          
+                        --0.61%--BIO_write
+
+     0.88%     0.10%  [.] ERR_set_mark                                  -      -            
+            |          
+             --0.78%--ERR_set_mark
+                       ossl_err_get_state_int
+
+     0.78%     0.10%  [.] WPACKET_start_sub_packet_len__                -      -            
+            |          
+             --0.68%--WPACKET_start_sub_packet_len__
+                       |          
+                        --0.51%--CRYPTO_zalloc
+
+     0.74%     0.74%  [.] OPENSSL_cleanse                               -      -            
+     0.71%     0.03%  [.] Poly1305_Final                                -      -            
+            |          
+             --0.67%--Poly1305_Final
+                       poly1305_emit_base2_44
+
+     0.67%     0.67%  [.] poly1305_emit_base2_44                        -      -            
+     0.61%     0.20%  [.] BIO_write                                     -      -            
+     0.54%     0.54%  [.] EVP_CIPHER_CTX_get_iv_length                  -      -            
+     0.50%     0.47%  [.] ssl_read_internal                             -      -            
+     0.44%     0.07%  [.] ERR_clear_last_mark                           -      -            
+     0.44%     0.14%  [.] CRYPTO_THREAD_get_local_ex                    -      -            
+     0.44%     0.24%  [.] tls_prepare_for_encryption_default            -      -            
+     0.40%     0.40%  [.] WPACKET_get_curr                              -      -            
+     0.40%     0.20%  [.] bio_write                                     -      -            
+     0.40%     0.00%  [.] bwrite_conv                                   -      -            
+     0.40%     0.37%  [.] ssl3_write                                    -      -            
+     0.37%     0.03%  [.] ssl_release_record                            -      -            
+     0.34%     0.07%  [.] Poly1305_Init                                 -      -            
+     0.30%     0.30%  [.] WPACKET_get_length                            -      -            
+     0.30%     0.30%  [.] tls_release_record                            -      -            
+     0.27%     0.27%  [.] ossl_cipher_generic_set_ctx_params            -      -            
+     0.26%     0.14%  [.] OPENSSL_init_crypto                           -      -            
+     0.24%     0.24%  [.] memcpy@plt                                    -      -            
+     0.21%     0.21%  [.] BIO_clear_flags                               -      -            
+     0.20%     0.20%  [.] ossl_tls_handle_rlayer_return                 -      -            
+     0.20%     0.20%  [.] malloc@plt                                    -      -            
+     0.20%     0.17%  [.] ssl_write_internal                            -      -            
+     0.20%     0.00%  [.] asm_sysvec_apic_timer_interrupt               -      -            
+     0.20%     0.00%  [.] sysvec_apic_timer_interrupt                   -      -            
+     0.19%     0.07%  [.] CRYPTO_THREAD_run_once                        -      -            
+     0.18%     0.00%  [.] SSL_CTX_new_ex                                -      -            
+     0.17%     0.17%  [.] poly1305_init_base2_44                        -      -            
+     0.17%     0.17%  [.] benchmark.B.loop                              -      -            
+     0.17%     0.17%  [.] EVP_CIPHER_CTX_get_block_size                 -      -            
+     0.17%     0.17%  [.] pthread_getspecific@@GLIBC_2.34               -      -            
+     0.17%     0.17%  [.] ossl_sa_get                                   -      -            
+     0.17%     0.17%  [.] chacha20_set_ctx_params                       -      -            
+     0.17%     0.13%  [.] EVP_CIPHER_get_mode                           -      -            
+     0.17%     0.17%  [.] __errno_location                              -      -            
+     0.17%     0.00%  [.] __sysvec_apic_timer_interrupt                 -      -            
+     0.17%     0.00%  [.] hrtimer_interrupt                             -      -            
+     0.14%     0.03%  [.] WPACKET_close                                 -      -            
+     0.13%     0.13%  [.] tls13_validate_record_header                  -      -            
+     0.13%     0.00%  [.] __hrtimer_run_queues                          -      -            
+     0.13%     0.00%  [.] tick_nohz_handler                             -      -            
+     0.13%     0.00%  [.] update_process_times                          -      -            
+     0.13%     0.00%  [.] sched_tick                                    -      -            
+     0.13%     0.03%  [.] state_machine                                 -      -            
+     0.10%     0.10%  [.] WPACKET_cleanup                               -      -            
+     0.10%     0.10%  [.] tls_increment_sequence_ctr                    -      -            
+     0.10%     0.10%  [.] ossl_prov_is_running                          -      -            
+     0.10%     0.10%  [.] ChaCha20_ctr32                                -      -            
+     0.10%     0.03%  [.] tls13_post_process_record                     -      -            
+     0.10%     0.10%  [.] poly1305_init                                 -      -            
+     0.10%     0.10%  [.] CRYPTO_free@plt                               -      -            
+     0.10%     0.10%  [.] tls_get_max_records_default                   -      -            
+     0.10%     0.10%  [.] CRYPTO_zalloc@plt                             -      -            
+     0.09%     0.00%  [.] ssl_load_ciphers                              -      -            
+     0.09%     0.00%  [.] evp_generic_fetch                             -      -            
+     0.07%     0.07%  [.] __errno_location@plt                          -      -            
+     0.07%     0.07%  [.] __memset_avx512_unaligned                     -      -            
+     0.07%     0.07%  [.] EVP_CIPHER_CTX_get0_cipher@plt                -      -            
+     0.07%     0.07%  [.] bio.benchApp__anon_5388__struct_7552.benchFn  -      -            
+     0.07%     0.07%  [.] CRYPTO_THREAD_get_local                       -      -            
+     0.07%     0.07%  [.] pthread_once@plt                              -      -            
+     0.07%     0.07%  [.] tls13_common_post_process_record              -      -            
+     0.07%     0.07%  [k] native_write_msr                              -      -            
+     0.07%     0.07%  [.] ssl_cipher_apply_rule.constprop.0             -      -            
+     0.07%     0.00%  [.] ssl_create_cipher_list                        -      -            
+     0.07%     0.07%  [.] EVP_CipherUpdate                              -      -            
+     0.07%     0.07%  [.] ssl_get_max_send_fragment                     -      -            
+     0.07%     0.07%  [.] chacha20_initiv                               -      -            
+     0.07%     0.07%  [k] native_read_msr                               -      -            
+     0.07%     0.00%  [.] arch_scale_freq_tick                          -      -            
+     0.07%     0.07%  [.] tls_processed_read_pending                    -      -            
+     0.07%     0.00%  [.] perf_event_task_tick                          -      -            
+     0.07%     0.00%  [.] perf_adjust_freq_unthr_context                -      -            
+     0.06%     0.03%  [.] _dopr                                         -      -            
+     0.06%     0.00%  [.] ERR_set_error                                 -      -            
+     0.06%     0.00%  [.] ERR_vset_error                                -      -            
+     0.06%     0.00%  [.] BIO_vsnprintf                                 -      -            
+     0.06%     0.03%  [.] pthread_once@GLIBC_2.2.5                      -      -            
+     0.05%     0.00%  [.] ssl_evp_cipher_fetch                          -      -            
+     0.05%     0.00%  [.] EVP_CIPHER_fetch                              -      -            
+     0.03%     0.03%  [.] BIO_read@plt                                  -      -            
+     0.03%     0.03%  [.] CRYPTO_free                                   -      -            
+     0.03%     0.03%  [.] memcpy@plt                                    -      -            
+     0.03%     0.03%  [.] tls13_get_record_type                         -      -            
+     0.03%     0.03%  [.] CRYPTO_memcmp                                 -      -            
+     0.03%     0.03%  [.] ecp_nistz256_ord_sqr_montx                    -      -            
+     0.03%     0.00%  [.] tls_process_cert_verify                       -      -            
+     0.03%     0.00%  [.] EVP_DigestVerifyFinal                         -      -            
+     0.03%     0.00%  [.] ecdsa_digest_verify_final                     -      -            
+     0.03%     0.00%  [.] ecdsa_verify_message_final                    -      -            
+     0.03%     0.00%  [.] ossl_ecdsa_verify                             -      -            
+     0.03%     0.00%  [.] ossl_ecdsa_simple_verify_sig                  -      -            
+     0.03%     0.00%  [.] ecp_nistz256_inv_mod_ord                      -      -            
+     0.03%     0.03%  [.] ERR_clear_last_mark@plt                       -      -            
+     0.03%     0.03%  [.] EVP_CIPHER_get_flags                          -      -            
+     0.03%     0.03%  [.] ssl_get_split_send_fragment                   -      -            
+     0.03%     0.03%  [.] SSL_in_init                                   -      -            
+     0.03%     0.00%  [.] ssl_evp_md_fetch                              -      -            
+     0.03%     0.00%  [.] EVP_MD_fetch                                  -      -            
+     0.03%     0.03%  [.] WPACKET_get_total_written                     -      -            
+     0.03%     0.00%  [.] intel_pmu_disable_all                         -      -            
+     0.03%     0.00%  [.] clockevents_program_event                     -      -            
+     0.03%     0.00%  [.] lapic_next_deadline                           -      -            
+     0.03%     0.03%  [.] EVP_CipherUpdate@plt                          -      -            
+     0.03%     0.03%  [.] memset@plt                                    -      -            
+     0.03%     0.03%  [.] EVP_CIPHER_CTX_get0_cipher                    -      -            
+     0.03%     0.03%  [k] ena_timer_service                             -      -            
+     0.03%     0.00%  [.] __irq_exit_rcu                                -      -            
+     0.03%     0.00%  [.] handle_softirqs                               -      -            
+     0.03%     0.00%  [.] tmigr_handle_remote                           -      -            
+     0.03%     0.00%  [.] __walk_groups.isra.0                          -      -            
+     0.03%     0.00%  [.] tmigr_handle_remote_up                        -      -            
+     0.03%     0.00%  [.] __run_timer_base.part.0                       -      -            
+     0.03%     0.00%  [.] call_timer_fn                                 -      -            
+     0.03%     0.03%  [.] ossl_statem_check_finish_init                 -      -            
+     0.03%     0.03%  [.] x25519_fe64_add                               -      -            
+     0.03%     0.00%  [.] tls_construct_server_hello                    -      -            
+     0.03%     0.00%  [.] tls_construct_extensions                      -      -            
+     0.03%     0.00%  [.] tls_construct_stoc_key_share                  -      -            
+     0.03%     0.00%  [.] ssl_derive                                    -      -            
+     0.03%     0.00%  [.] ossl_ecx_compute_key                          -      -            
+     0.03%     0.00%  [.] ossl_x25519                                   -      -            
+     0.03%     0.00%  [.] x25519_scalar_mult                            -      -            
+     0.03%     0.03%  [.] EVP_Q_mac                                     -      -            
+     0.03%     0.00%  [.] tls_get_message_body                          -      -            
+     0.03%     0.00%  [.] ssl3_take_mac                                 -      -            
+     0.03%     0.00%  [.] tls13_final_finish_mac                        -      -            
+     0.03%     0.03%  [.] EVP_CipherFinal_ex@plt                        -      -            
+     0.03%     0.03%  [.] evp_do_ciph_ctx_getparams                     -      -            
+     0.03%     0.03%  [k] __intel_pmu_enable_all.isra.0                 -      -            
+     0.03%     0.00%  [.] entry_SYSCALL_64_after_hwframe                -      -            
+     0.03%     0.00%  [.] do_syscall_64                                 -      -            
+     0.03%     0.00%  [.] _start                                        -      -            
+     0.03%     0.00%  [.] _dl_start                                     -      -            
+     0.03%     0.00%  [.] _dl_sysdep_start                              -      -            
+     0.03%     0.00%  [.] dl_main                                       -      -            
+     0.03%     0.01%  [k] asm_exc_page_fault                            -      -            
+     0.03%     0.03%  [.] doapr_outch                                   -      -            
+     0.03%     0.00%  [.] ossl_method_construct                         -      -            
+     0.03%     0.00%  [.] ossl_algorithm_do_all                         -      -            
+     0.03%     0.00%  [.] ossl_provider_doall_activated                 -      -            
+     0.03%     0.00%  [.] algorithm_do_this                             -      -            
+     0.03%     0.00%  [.] ossl_method_construct_this                    -      -            
+     0.03%     0.00%  [.] construct_evp_method                          -      -            
+     0.03%     0.00%  [.] ossl_namemap_add_names                        -      -            
+     0.03%     0.00%  [.] namemap_add_name                              -      -            
+     0.03%     0.00%  [.] ossl_ht_insert                                -      -            
+     0.02%     0.02%  [k] perf_event_mmap                               -      -            
+     0.02%     0.00%  [.] OPENSSL_init_ssl                              -      -            
+     0.02%     0.00%  [.] __pthread_once_slow.isra.0                    -      -            
+     0.02%     0.00%  [.] ossl_init_config_ossl_                        -      -            
+     0.02%     0.00%  [.] ossl_config_int                               -      -            
+     0.02%     0.00%  [.] CONF_modules_load_file_ex                     -      -            
+     0.02%     0.00%  [.] def_load                                      -      -            
+     0.02%     0.00%  [.] def_load_bio                                  -      -            
+     0.02%     0.00%  [.] CRYPTO_strdup                                 -      -            
+     0.02%     0.00%  [.] __libc_malloc2                                -      -            
+     0.02%     0.00%  [.] _int_malloc                                   -      -            
+     0.02%     0.00%  [.] sysmalloc                                     -      -            
+     0.02%     0.00%  [.] __default_morecore@GLIBC_2.2.5                -      -            
+     0.02%     0.00%  [.] __sbrk                                        -      -            
+     0.02%     0.00%  [.] __brk                                         -      -            
+     0.02%     0.00%  [.] __do_sys_brk                                  -      -            
+     0.02%     0.00%  [.] do_brk_flags                                  -      -            
+     0.02%     0.01%  [.] _dl_relocate_object_no_relro                  -      -            
+     0.02%     0.00%  [.] _dl_relocate_object                           -      -            
+     0.02%     0.02%  [k] filemap_map_pages                             -      -            
+     0.02%     0.00%  [.] exc_page_fault                                -      -            
+     0.02%     0.00%  [.] do_user_addr_fault                            -      -            
+     0.02%     0.00%  [.] handle_mm_fault                               -      -            
+     0.02%     0.00%  [.] __handle_mm_fault                             -      -            
+     0.02%     0.00%  [.] do_fault                                      -      -            
+     0.01%     0.00%  [.] _dl_map_object_deps                           -      -            
+     0.01%     0.00%  [.] _dl_catch_exception                           -      -            
+     0.01%     0.00%  [.] openaux                                       -      -            
+     0.01%     0.00%  [.] _dl_map_new_object                            -      -            
+     0.01%     0.00%  [.] _dl_map_object_from_fd                        -      -            
+     0.01%     0.00%  [.] mmap64                                        -      -            
+     0.01%     0.00%  [.] ksys_mmap_pgoff                               -      -            
+     0.01%     0.00%  [.] vm_mmap_pgoff                                 -      -            
+     0.01%     0.00%  [.] do_mmap                                       -      -            
+     0.01%     0.01%  [k] mas_empty_area_rev                            -      -            
+     0.01%     0.01%  [k] security_vm_enough_memory_mm                  -      -            
+     0.01%     0.00%  [.] __get_unmapped_area                           -      -            
+     0.01%     0.00%  [.] thp_get_unmapped_area_vmflags                 -      -            
+     0.01%     0.00%  [.] arch_get_unmapped_area_topdown                -      -            
+     0.01%     0.00%  [.] __mmap_region                                 -      -            
+     0.01%     0.00%  [.] vm_unmapped_area                              -      -            
+
+
+#
+# (Tip: To show IPC for sampling periods use perf record -e '{cycles,instructions}:S' and then browse context)
+#

@@ -401,7 +401,10 @@ The #11 remote-runner evidence is
 `docs/research/perf/20260705-183821-ec2-c7i-large/` and
 `docs/research/perf/20260705-194022-ec2-c7i-2xlarge/`, captured on clean EC2
 hosts with raw ztls/EVP/libssl/rustls outputs, full metadata, and benchstat
-analysis committed together.
+analysis committed together. The first #31 row-level perf/disassembly evidence
+is `docs/research/perf/20260705-215953-ec2-c7i-2xlarge-row-perf/`, captured on a
+clean pinned `c7i.2xlarge` host for selected AES-GCM and ChaCha20-Poly1305
+application-data rows.
 
 All benchmark binaries accept fuzzy `--filter` plus structured filters:
 `--bench <name>`, `--suite <substring>`, and `--size <bytes>`. `--bench` is an

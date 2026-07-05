@@ -1,0 +1,10 @@
+zig_os: linux
+zig_arch: x86_64
+zig_abi: gnu
+zig_cpu: sapphirerapids
+zig_mode: ReleaseFast
+BenchmarkAppPingPong/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=1350	  638082	       928.0 ns/op	2909.48 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=1350	  650344	       924.1 ns/op	2921.79 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=1350	  638546	       926.7 ns/op	2913.57 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=1350	  648489	       926.8 ns/op	2913.25 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=1350	  653241	       926.6 ns/op	2913.75 MB/s

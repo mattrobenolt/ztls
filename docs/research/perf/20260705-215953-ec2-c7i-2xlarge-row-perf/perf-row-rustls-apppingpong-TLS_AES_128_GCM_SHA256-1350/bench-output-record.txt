@@ -1,0 +1,9 @@
+# rustls in-memory benchmark
+benchmark,suite,size,iterations,bytes,elapsed_ns,mib_per_sec
+rustls_app_ping_pong,TLS_AES_128_GCM_SHA256,1350,12427,33552900,21705399,1474.22
+rustls_app_ping_pong,TLS_AES_128_GCM_SHA256,1350,12427,33552900,20892135,1531.61
+rustls_app_ping_pong,TLS_AES_128_GCM_SHA256,1350,12427,33552900,21506837,1487.83
+rustls_app_ping_pong,TLS_AES_128_GCM_SHA256,1350,12427,33552900,21122590,1514.90
+rustls_app_ping_pong,TLS_AES_128_GCM_SHA256,1350,12427,33552900,20828774,1536.27
+[ perf record: Woken up 8 times to write data ]
+[ perf record: Captured and wrote 1.821 MB zig-out/perf/20260705-215953-row-perf/perf-row-rustls-apppingpong-TLS_AES_128_GCM_SHA256-1350/perf.data (113 samples) ]

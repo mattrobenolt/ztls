@@ -1,0 +1,7 @@
+# rustls in-memory benchmark
+benchmark,suite,size,iterations,bytes,elapsed_ns,mib_per_sec
+rustls_app_client_to_server,TLS_CHACHA20_POLY1305_SHA256,16,1048576,16777216,623793398,25.65
+rustls_app_client_to_server,TLS_CHACHA20_POLY1305_SHA256,16,1048576,16777216,624450884,25.62
+rustls_app_client_to_server,TLS_CHACHA20_POLY1305_SHA256,16,1048576,16777216,623521022,25.66
+rustls_app_client_to_server,TLS_CHACHA20_POLY1305_SHA256,16,1048576,16777216,624400102,25.62
+rustls_app_client_to_server,TLS_CHACHA20_POLY1305_SHA256,16,1048576,16777216,623101754,25.68

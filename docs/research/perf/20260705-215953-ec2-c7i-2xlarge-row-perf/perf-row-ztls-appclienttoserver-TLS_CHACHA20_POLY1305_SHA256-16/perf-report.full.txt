@@ -1,0 +1,531 @@
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 2K of event 'cpu/cycles/P'
+# Event count (approx.): 9290179429
+#
+# Children      Self  Symbol                                                                          IPC   [IPC Coverage]
+# ........  ........  ..............................................................................  ....................
+#
+    65.76%     1.71%  [.] chacha20_poly1305_aead_cipher                                               -      -            
+            |          
+            |--64.06%--chacha20_poly1305_aead_cipher
+            |          |          
+            |          |--33.62%--chacha20_cipher
+            |          |          |          
+            |          |           --23.24%--ChaCha20_avx512
+            |          |          
+            |          |--13.88%--ChaCha20_avx512
+            |          |          
+            |          |--13.68%--Poly1305_Update
+            |          |          |          
+            |          |           --11.97%--poly1305_blocks_vpmadd52
+            |          |          
+            |          |--1.27%--OPENSSL_cleanse
+            |          |          
+            |          |--0.97%--Poly1305_Final
+            |          |          poly1305_emit_base2_44
+            |          |          
+            |           --0.54%--Poly1305_Init
+            |          
+            |--0.57%--EVP_DecryptUpdate
+            |          chacha20_poly1305_cipher
+            |          chacha20_poly1305_aead_cipher
+            |          
+             --0.54%--EVP_EncryptUpdate
+                       chacha20_poly1305_cipher
+                       chacha20_poly1305_aead_cipher
+
+    57.92%     0.44%  [.] chacha20_poly1305_cipher                                                    -      -            
+            |          
+             --57.48%--chacha20_poly1305_cipher
+                       |          
+                        --57.31%--chacha20_poly1305_aead_cipher
+                                  |          
+                                  |--33.52%--chacha20_cipher
+                                  |          |          
+                                  |           --23.24%--ChaCha20_avx512
+                                  |          
+                                  |--13.88%--ChaCha20_avx512
+                                  |          
+                                  |--8.10%--Poly1305_Update
+                                  |          |          
+                                  |           --7.13%--poly1305_blocks_vpmadd52
+                                  |          
+                                   --0.50%--Poly1305_Init
+
+    37.12%    37.06%  [.] ChaCha20_avx512                                                             -      -            
+            |          
+            |--18.74%--EVP_EncryptUpdate
+            |          chacha20_poly1305_cipher
+            |          chacha20_poly1305_aead_cipher
+            |          |          
+            |          |--11.49%--chacha20_cipher
+            |          |          ChaCha20_avx512
+            |          |          
+            |           --7.25%--ChaCha20_avx512
+            |          
+             --18.32%--EVP_DecryptUpdate
+                       chacha20_poly1305_cipher
+                       chacha20_poly1305_aead_cipher
+                       |          
+                       |--11.72%--chacha20_cipher
+                       |          ChaCha20_avx512
+                       |          
+                        --6.60%--ChaCha20_avx512
+
+    33.62%    10.14%  [.] chacha20_cipher                                                             -      -            
+            |          
+            |--23.48%--chacha20_cipher
+            |          |          
+            |           --23.24%--ChaCha20_avx512
+            |          
+            |--5.29%--EVP_EncryptUpdate
+            |          chacha20_poly1305_cipher
+            |          chacha20_poly1305_aead_cipher
+            |          chacha20_cipher
+            |          
+             --4.75%--EVP_DecryptUpdate
+                       chacha20_poly1305_cipher
+                       chacha20_poly1305_aead_cipher
+                       chacha20_cipher
+
+    29.44%     0.40%  [.] EVP_EncryptUpdate                                                           -      -            
+            |          
+             --29.04%--chacha20_poly1305_cipher
+                       |          
+                        --28.73%--chacha20_poly1305_aead_cipher
+                                  |          
+                                  |--16.98%--chacha20_cipher
+                                  |          |          
+                                  |           --11.52%--ChaCha20_avx512
+                                  |          
+                                  |--7.25%--ChaCha20_avx512
+                                  |          
+                                   --3.70%--Poly1305_Update
+                                             |          
+                                              --3.02%--poly1305_blocks_vpmadd52
+
+    29.38%     0.60%  [.] EVP_DecryptUpdate                                                           -      -            
+            |          
+             --28.78%--chacha20_poly1305_cipher
+                       |          
+                        --28.48%--chacha20_poly1305_aead_cipher
+                                  |          
+                                  |--16.53%--chacha20_cipher
+                                  |          |          
+                                  |           --11.72%--ChaCha20_avx512
+                                  |          
+                                  |--6.63%--ChaCha20_avx512
+                                  |          
+                                   --4.41%--Poly1305_Update
+                                             |          
+                                              --4.11%--poly1305_blocks_vpmadd52
+
+    16.58%     0.17%  [.] EVP_CipherInit_ex                                                           -      -            
+            |          
+            |--13.06%--chacha20_poly1305_dinit
+            |          |          
+            |          |--11.95%--chacha20_poly1305_initiv
+            |          |          |          
+            |          |           --6.11%--ossl_chacha20_dinit
+            |          |                     |          
+            |          |                      --5.44%--ossl_cipher_generic_dinit
+            |          |                                |          
+            |          |                                 --5.27%--ossl_cipher_generic_initiv
+            |          |                                           |          
+            |          |                                            --5.13%--__memmove_avx512_unaligned_erms
+            |          |          
+            |           --0.60%--ossl_cipher_generic_dinit
+            |          
+            |--2.11%--chacha20_poly1305_einit
+            |          |          
+            |           --1.70%--chacha20_poly1305_initiv
+            |                     |          
+            |                      --0.77%--ossl_chacha20_einit
+            |                                |          
+            |                                 --0.53%--ossl_cipher_generic_einit
+            |          
+             --1.24%--evp_cipher_init_internal
+
+    13.68%     1.58%  [.] Poly1305_Update                                                             -      -            
+            |          
+            |--12.10%--Poly1305_Update
+            |          |          
+            |           --11.97%--poly1305_blocks_vpmadd52
+            |          
+             --0.57%--EVP_EncryptUpdate
+                       chacha20_poly1305_cipher
+                       chacha20_poly1305_aead_cipher
+                       Poly1305_Update
+
+    13.66%     6.78%  [.] chacha20_poly1305_initiv                                                    -      -            
+            |          
+            |--6.87%--chacha20_poly1305_initiv
+            |          |          
+            |          |--6.11%--ossl_chacha20_dinit
+            |          |          |          
+            |          |           --5.44%--ossl_cipher_generic_dinit
+            |          |                     |          
+            |          |                      --5.27%--ossl_cipher_generic_initiv
+            |          |                                |          
+            |          |                                 --5.13%--__memmove_avx512_unaligned_erms
+            |          |          
+            |           --0.77%--ossl_chacha20_einit
+            |                     |          
+            |                      --0.53%--ossl_cipher_generic_einit
+            |          
+             --6.78%--EVP_CipherInit_ex
+                       |          
+                       |--5.85%--chacha20_poly1305_dinit
+                       |          chacha20_poly1305_initiv
+                       |          
+                        --0.94%--chacha20_poly1305_einit
+                                  chacha20_poly1305_initiv
+
+    13.34%     1.88%  [.] EVP_CIPHER_CTX_ctrl                                                         -      -            
+            |          
+            |--5.95%--chacha20_poly1305_get_ctx_params
+            |          |          
+            |           --5.38%--__memmove_avx512_unaligned_erms
+            |          
+             --5.07%--OSSL_PARAM_construct_octet_string
+
+    13.06%     0.07%  [.] chacha20_poly1305_dinit                                                     -      -            
+            |          
+             --13.00%--chacha20_poly1305_dinit
+                       |          
+                       |--11.95%--chacha20_poly1305_initiv
+                       |          |          
+                       |           --6.11%--ossl_chacha20_dinit
+                       |                     |          
+                       |                      --5.44%--ossl_cipher_generic_dinit
+                       |                                |          
+                       |                                 --5.27%--ossl_cipher_generic_initiv
+                       |                                           |          
+                       |                                            --5.13%--__memmove_avx512_unaligned_erms
+                       |          
+                        --0.60%--ossl_cipher_generic_dinit
+
+    11.97%    11.97%  [.] poly1305_blocks_vpmadd52                                                    -      -            
+            |          
+            |--4.11%--EVP_DecryptUpdate
+            |          chacha20_poly1305_cipher
+            |          chacha20_poly1305_aead_cipher
+            |          Poly1305_Update
+            |          poly1305_blocks_vpmadd52
+            |          
+            |--3.02%--EVP_EncryptUpdate
+            |          chacha20_poly1305_cipher
+            |          chacha20_poly1305_aead_cipher
+            |          Poly1305_Update
+            |          poly1305_blocks_vpmadd52
+            |          
+            |--2.49%--EVP_DecryptFinal_ex
+            |          chacha20_poly1305_final
+            |          chacha20_poly1305_aead_cipher
+            |          Poly1305_Update
+            |          poly1305_blocks_vpmadd52
+            |          
+             --2.35%--EVP_EncryptFinal_ex
+                       chacha20_poly1305_final
+                       chacha20_poly1305_aead_cipher
+                       Poly1305_Update
+                       poly1305_blocks_vpmadd52
+
+    11.15%    11.15%  [.] __memmove_avx512_unaligned_erms                                             -      -            
+            |          
+            |--5.60%--EVP_CipherInit_ex
+            |          |          
+            |           --5.30%--chacha20_poly1305_dinit
+            |                     |          
+            |                      --5.13%--chacha20_poly1305_initiv
+            |                                ossl_chacha20_dinit
+            |                                ossl_cipher_generic_dinit
+            |                                ossl_cipher_generic_initiv
+            |                                __memmove_avx512_unaligned_erms
+            |          
+             --5.41%--EVP_CIPHER_CTX_ctrl
+                       |          
+                        --5.38%--chacha20_poly1305_get_ctx_params
+                                  __memmove_avx512_unaligned_erms
+
+     8.46%     0.27%  [.] chacha20_poly1305_final                                                     -      -            
+            |          
+             --8.18%--chacha20_poly1305_final
+                       |          
+                        --8.12%--chacha20_poly1305_aead_cipher
+                                  |          
+                                  |--5.37%--Poly1305_Update
+                                  |          |          
+                                  |           --4.84%--poly1305_blocks_vpmadd52
+                                  |          
+                                  |--1.27%--OPENSSL_cleanse
+                                  |          
+                                   --0.97%--Poly1305_Final
+                                             poly1305_emit_base2_44
+
+     6.14%     0.23%  [.] ossl_chacha20_dinit                                                         -      -            
+            |          
+             --5.90%--ossl_chacha20_dinit
+                       |          
+                        --5.44%--ossl_cipher_generic_dinit
+                                  |          
+                                   --5.27%--ossl_cipher_generic_initiv
+                                             |          
+                                              --5.13%--__memmove_avx512_unaligned_erms
+
+     6.07%     0.53%  [.] ossl_cipher_generic_dinit                                                   -      -            
+            |          
+            |--5.54%--ossl_cipher_generic_dinit
+            |          |          
+            |           --5.50%--ossl_cipher_generic_initiv
+            |                     |          
+            |                      --5.30%--__memmove_avx512_unaligned_erms
+            |          
+             --0.53%--EVP_CipherInit_ex
+                       chacha20_poly1305_dinit
+
+     6.04%     0.33%  [.] ossl_cipher_generic_initiv                                                  -      -            
+            |          
+             --5.70%--ossl_cipher_generic_initiv
+                       |          
+                        --5.60%--__memmove_avx512_unaligned_erms
+
+     5.95%     0.57%  [.] chacha20_poly1305_get_ctx_params                                            -      -            
+            |          
+            |--5.38%--chacha20_poly1305_get_ctx_params
+            |          __memmove_avx512_unaligned_erms
+            |          
+             --0.57%--EVP_CIPHER_CTX_ctrl
+                       chacha20_poly1305_get_ctx_params
+
+     5.07%     5.01%  [.] OSSL_PARAM_construct_octet_string                                           -      -            
+            |          
+             --5.01%--EVP_CIPHER_CTX_ctrl
+                       OSSL_PARAM_construct_octet_string
+
+     4.47%     0.13%  [.] EVP_DecryptFinal_ex                                                         -      -            
+            |          
+             --4.24%--chacha20_poly1305_final
+                       |          
+                        --4.03%--chacha20_poly1305_aead_cipher
+                                  |          
+                                  |--2.76%--Poly1305_Update
+                                  |          |          
+                                  |           --2.49%--poly1305_blocks_vpmadd52
+                                  |          
+                                   --0.64%--OPENSSL_cleanse
+
+     4.39%     0.23%  [.] EVP_EncryptFinal_ex                                                         -      -            
+            |          
+             --4.15%--chacha20_poly1305_final
+                       |          
+                        --4.02%--chacha20_poly1305_aead_cipher
+                                  |          
+                                  |--2.62%--Poly1305_Update
+                                  |          |          
+                                  |           --2.35%--poly1305_blocks_vpmadd52
+                                  |          
+                                  |--0.64%--OPENSSL_cleanse
+                                  |          
+                                   --0.50%--Poly1305_Final
+                                             poly1305_emit_base2_44
+
+     2.11%     0.17%  [.] chacha20_poly1305_einit                                                     -      -            
+            |          
+             --1.94%--chacha20_poly1305_einit
+                       |          
+                        --1.70%--chacha20_poly1305_initiv
+                                  |          
+                                   --0.77%--ossl_chacha20_einit
+                                             |          
+                                              --0.53%--ossl_cipher_generic_einit
+
+     1.31%     0.87%  [.] evp_cipher_init_internal                                                    -      -            
+            |          
+             --0.87%--EVP_CipherInit_ex
+                       evp_cipher_init_internal
+
+     1.27%     1.27%  [.] OPENSSL_cleanse                                                             -      -            
+            |          
+            |--0.64%--EVP_EncryptFinal_ex
+            |          chacha20_poly1305_final
+            |          chacha20_poly1305_aead_cipher
+            |          OPENSSL_cleanse
+            |          
+             --0.64%--EVP_DecryptFinal_ex
+                       chacha20_poly1305_final
+                       chacha20_poly1305_aead_cipher
+                       OPENSSL_cleanse
+
+     0.97%     0.97%  [.] poly1305_emit_base2_44                                                      -      -            
+            |          
+             --0.50%--EVP_EncryptFinal_ex
+                       chacha20_poly1305_final
+                       chacha20_poly1305_aead_cipher
+                       Poly1305_Final
+                       poly1305_emit_base2_44
+
+     0.97%     0.00%  [.] Poly1305_Final                                                              -      -            
+            |
+            ---poly1305_emit_base2_44
+
+     0.80%     0.03%  [.] ossl_chacha20_einit                                                         -      -            
+            |          
+             --0.77%--ossl_chacha20_einit
+                       |          
+                        --0.53%--ossl_cipher_generic_einit
+
+     0.73%     0.10%  [.] ossl_cipher_generic_einit                                                   -      -            
+            |          
+             --0.63%--ossl_cipher_generic_einit
+                       |          
+                        --0.53%--ossl_cipher_generic_initiv
+
+     0.64%     0.64%  [.] ossl_cipher_generic_set_ctx_params                                          -      -            
+            |          
+             --0.61%--EVP_CipherInit_ex
+                       |          
+                        --0.54%--chacha20_poly1305_dinit
+
+     0.64%     0.60%  [.] chacha20_poly1305_set_ctx_params                                            -      -            
+     0.60%     0.60%  [.] RecordLayer.decrypt                                                         -      -            
+     0.54%     0.20%  [.] Poly1305_Init                                                               -      -            
+     0.47%     0.47%  [.] RecordLayer.encryptPrepared                                                 -      -            
+     0.43%     0.43%  [.] EVP_CIPHER_CTX_get_iv_length                                                -      -            
+     0.37%     0.37%  [.] ossl_prov_is_running                                                        -      -            
+     0.30%     0.30%  [.] ChaCha20_ctr32                                                              -      -            
+     0.23%     0.23%  [.] poly1305_init_base2_44                                                      -      -            
+     0.23%     0.23%  [.] chacha20_set_ctx_params                                                     -      -            
+     0.17%     0.00%  [.] asm_sysvec_apic_timer_interrupt                                             -      -            
+     0.17%     0.00%  [.] sysvec_apic_timer_interrupt                                                 -      -            
+     0.17%     0.00%  [.] __sysvec_apic_timer_interrupt                                               -      -            
+     0.13%     0.13%  [.] chacha20_initiv                                                             -      -            
+     0.13%     0.00%  [.] hrtimer_interrupt                                                           -      -            
+     0.11%     0.00%  [.] EVP_PKEY_new_raw_private_key                                                -      -            
+     0.10%     0.10%  [.] poly1305_init                                                               -      -            
+     0.10%     0.10%  [.] memcpy@plt                                                                  -      -            
+     0.10%     0.00%  [.] __hrtimer_run_queues                                                        -      -            
+     0.10%     0.00%  [.] tick_nohz_handler                                                           -      -            
+     0.10%     0.00%  [.] update_process_times                                                        -      -            
+     0.07%     0.07%  [.] EVP_EncryptInit_ex@plt                                                      -      -            
+     0.07%     0.07%  [.] EVP_CIPHER_get_block_size                                                   -      -            
+     0.07%     0.07%  [.] benchmark.B.loop                                                            -      -            
+     0.07%     0.07%  [.] EVP_DecryptUpdate@plt                                                       -      -            
+     0.07%     0.07%  [.] bench.record_protection.benchZtlsAppData__anon_10561__struct_13485.benchFn  -      -            
+     0.07%     0.00%  [.] EVP_PKEY_fromdata                                                           -      -            
+     0.07%     0.00%  [.] evp_keymgmt_util_fromdata                                                   -      -            
+     0.07%     0.00%  [.] ecx_import                                                                  -      -            
+     0.07%     0.00%  [.] ossl_ecx_key_fromdata                                                       -      -            
+     0.07%     0.00%  [.] ossl_ecx_public_from_private                                                -      -            
+     0.07%     0.00%  [.] ossl_x25519_public_from_private                                             -      -            
+     0.07%     0.07%  [k] native_read_msr                                                             -      -            
+     0.07%     0.00%  [.] sched_tick                                                                  -      -            
+     0.07%     0.00%  [.] arch_scale_freq_tick                                                        -      -            
+     0.06%     0.00%  [.] EVP_DigestSignInit                                                          -      -            
+     0.06%     0.00%  [.] do_sigver_init                                                              -      -            
+     0.05%     0.00%  [.] evp_generic_fetch                                                           -      -            
+     0.04%     0.04%  [.] EVP_CIPHER_CTX_get_block_size                                               -      -            
+     0.03%     0.03%  [.] EVP_EncryptUpdate@plt                                                       -      -            
+     0.03%     0.03%  [k] native_write_msr                                                            -      -            
+     0.03%     0.00%  [.] clockevents_program_event                                                   -      -            
+     0.03%     0.00%  [.] lapic_next_deadline                                                         -      -            
+     0.03%     0.03%  [.] ossl_fnv1a_hash                                                             -      -            
+     0.03%     0.00%  [.] evp_keymgmt_fetch_from_prov                                                 -      -            
+     0.03%     0.00%  [.] evp_generic_fetch_from_prov                                                 -      -            
+     0.03%     0.00%  [.] ossl_namemap_name2num                                                       -      -            
+     0.03%     0.00%  [.] ossl_ht_get                                                                 -      -            
+     0.03%     0.03%  [.] cmov                                                                        -      -            
+     0.03%     0.00%  [.] ge_scalarmult_base                                                          -      -            
+     0.03%     0.00%  [.] table_select                                                                -      -            
+     0.03%     0.03%  [.] EVP_EncryptFinal_ex@plt                                                     -      -            
+     0.03%     0.03%  [.] EVP_CIPHER_CTX_ctrl@plt                                                     -      -            
+     0.03%     0.03%  [k] native_apic_msr_eoi                                                         -      -            
+     0.03%     0.03%  [.] fe_sq                                                                       -      -            
+     0.03%     0.00%  [.] fe_invert                                                                   -      -            
+     0.03%     0.03%  [.] malloc                                                                      -      -            
+     0.03%     0.00%  [.] EVP_DigestSignFinal                                                         -      -            
+     0.03%     0.00%  [.] ecdsa_digest_sign_final                                                     -      -            
+     0.03%     0.00%  [.] ossl_ecdsa_sign                                                             -      -            
+     0.03%     0.00%  [.] ossl_ecdsa_simple_sign_sig                                                  -      -            
+     0.03%     0.00%  [.] BN_new                                                                      -      -            
+     0.03%     0.00%  [.] CRYPTO_zalloc                                                               -      -            
+     0.03%     0.00%  [.] CRYPTO_malloc                                                               -      -            
+     0.03%     0.03%  [k] hrtimer_run_queues                                                          -      -            
+     0.03%     0.00%  [.] _start                                                                      -      -            
+     0.03%     0.00%  [.] _dl_start                                                                   -      -            
+     0.03%     0.00%  [.] _dl_sysdep_start                                                            -      -            
+     0.03%     0.00%  [.] dl_main                                                                     -      -            
+     0.03%     0.03%  [.] evp_md_from_algorithm                                                       -      -            
+     0.03%     0.00%  [.] ecdsa_digest_sign_init                                                      -      -            
+     0.03%     0.00%  [.] ecdsa_setup_md.isra.0                                                       -      -            
+     0.03%     0.00%  [.] EVP_MD_fetch                                                                -      -            
+     0.03%     0.00%  [.] ossl_method_construct                                                       -      -            
+     0.03%     0.00%  [.] ossl_algorithm_do_all                                                       -      -            
+     0.03%     0.00%  [.] ossl_provider_doall_activated                                               -      -            
+     0.03%     0.00%  [.] algorithm_do_this                                                           -      -            
+     0.03%     0.00%  [.] ossl_method_construct_this                                                  -      -            
+     0.03%     0.00%  [.] construct_evp_method                                                        -      -            
+     0.03%     0.03%  [.] bn_lshift_fixed_top                                                         -      -            
+     0.03%     0.00%  [.] EC_GROUP_new_by_curve_name_ex                                               -      -            
+     0.03%     0.00%  [.] ecp_nistz256group_full_init                                                 -      -            
+     0.03%     0.00%  [.] EC_POINT_set_affine_coordinates                                             -      -            
+     0.03%     0.00%  [.] ossl_ec_GFp_simple_set_Jprojective_coordinates_GFp                          -      -            
+     0.03%     0.00%  [.] BN_nnmod                                                                    -      -            
+     0.03%     0.00%  [.] BN_div                                                                      -      -            
+     0.03%     0.00%  [.] bn_div_fixed_top                                                            -      -            
+     0.02%     0.02%  [.] _dopr                                                                       -      -            
+     0.02%     0.00%  [.] EVP_PKEY_CTX_new_from_name                                                  -      -            
+     0.02%     0.00%  [.] EVP_KEYMGMT_fetch                                                           -      -            
+     0.02%     0.00%  [.] ossl_namemap_stored                                                         -      -            
+     0.02%     0.00%  [.] OBJ_NAME_do_all                                                             -      -            
+     0.02%     0.00%  [.] OPENSSL_LH_doall_arg_thunk                                                  -      -            
+     0.02%     0.00%  [.] get_legacy_cipher_names                                                     -      -            
+     0.02%     0.00%  [.] OBJ_obj2txt                                                                 -      -            
+     0.02%     0.00%  [.] BIO_snprintf                                                                -      -            
+     0.02%     0.00%  [.] BIO_vsnprintf                                                               -      -            
+     0.02%     0.01%  [.] _dl_relocate_object_no_relro                                                -      -            
+     0.02%     0.00%  [.] _dl_relocate_object                                                         -      -            
+     0.02%     0.00%  [.] asm_exc_page_fault                                                          -      -            
+     0.02%     0.02%  [.] err_shelve_state                                                            -      -            
+     0.02%     0.00%  [.] EVP_PKEY_asn1_find                                                          -      -            
+     0.02%     0.00%  [.] ossl_engine_table_select                                                    -      -            
+     0.02%     0.00%  [.] OPENSSL_init_crypto                                                         -      -            
+     0.02%     0.00%  [.] CRYPTO_THREAD_run_once                                                      -      -            
+     0.02%     0.00%  [.] pthread_once@GLIBC_2.2.5                                                    -      -            
+     0.02%     0.00%  [.] __pthread_once_slow.isra.0                                                  -      -            
+     0.02%     0.00%  [.] ossl_init_config_ossl_                                                      -      -            
+     0.02%     0.00%  [.] ossl_config_int                                                             -      -            
+     0.02%     0.00%  [.] CONF_modules_load_file_ex                                                   -      -            
+     0.02%     0.00%  [.] ERR_set_mark                                                                -      -            
+     0.02%     0.00%  [.] ossl_err_get_state_int                                                      -      -            
+     0.02%     0.00%  [.] ossl_init_load_crypto_strings_ossl_                                         -      -            
+     0.01%     0.01%  [k] sync_regs                                                                   -      -            
+     0.01%     0.00%  [.] _dl_map_object_deps                                                         -      -            
+     0.01%     0.00%  [.] _dl_catch_exception                                                         -      -            
+     0.01%     0.00%  [.] openaux                                                                     -      -            
+     0.01%     0.00%  [.] _dl_map_new_object                                                          -      -            
+     0.01%     0.00%  [.] _dl_map_object_from_fd                                                      -      -            
+     0.01%     0.01%  [k] filemap_map_pages                                                           -      -            
+     0.01%     0.00%  [.] exc_page_fault                                                              -      -            
+     0.01%     0.00%  [.] do_user_addr_fault                                                          -      -            
+     0.01%     0.00%  [.] handle_mm_fault                                                             -      -            
+     0.01%     0.00%  [.] __handle_mm_fault                                                           -      -            
+     0.01%     0.00%  [.] do_fault                                                                    -      -            
+     0.01%     0.01%  [k] can_vma_merge_right                                                         -      -            
+     0.01%     0.00%  [.] mmap64                                                                      -      -            
+     0.01%     0.00%  [.] entry_SYSCALL_64_after_hwframe                                              -      -            
+     0.01%     0.00%  [.] do_syscall_64                                                               -      -            
+     0.01%     0.00%  [.] ksys_mmap_pgoff                                                             -      -            
+     0.01%     0.00%  [.] vm_mmap_pgoff                                                               -      -            
+     0.01%     0.00%  [.] do_mmap                                                                     -      -            
+     0.01%     0.00%  [.] __mmap_region                                                               -      -            
+     0.01%     0.00%  [.] vma_merge_new_range                                                         -      -            
+
+
+#
+# (Tip: Compare performance results with: perf diff [<old file> <new file>])
+#

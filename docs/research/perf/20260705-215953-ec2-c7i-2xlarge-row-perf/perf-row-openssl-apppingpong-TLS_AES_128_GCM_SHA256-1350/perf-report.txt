@@ -1,0 +1,80 @@
+    56.40%     1.98%  [.] tls13_cipher                                  -      -            
+            |          
+            |--54.41%--tls13_cipher
+            |          |          
+            |          |--15.99%--EVP_DecryptUpdate
+            |          |          |          
+            |          |           --14.99%--ossl_gcm_stream_update
+            |          |                     |          
+            |          |                      --14.92%--gcm_cipher_internal
+            |          |                                |          
+            |          |                                |--12.53%--vaes_gcm_cipherupdate
+            |          |                                |          |          
+            |          |                                |          |--11.09%--ossl_aes_gcm_decrypt_avx512
+            |          |                                |          |          
+            |          |                                |           --1.21%--ossl_gcm_gmult_avx512
+            |          |                                |          
+            |          |                                 --1.81%--vaes_gcm_setiv
+            |          |                                           |          
+            |          |                                            --1.38%--skip_iv_len_12_init_IV
+            |          |          
+            |          |--14.45%--EVP_EncryptUpdate
+            |          |          |          
+            |          |           --13.78%--ossl_gcm_stream_update
+            |          |                     |          
+            |          |                      --13.75%--gcm_cipher_internal
+            |          |                                |          
+            |          |                                |--12.04%--vaes_gcm_cipherupdate
+            |          |                                |          |          
+            |          |                                |          |--10.93%--ossl_aes_gcm_encrypt_avx512
+            |          |                                |          |          
+            |          |                                |           --1.00%--ossl_gcm_gmult_avx512
+            |          |                                |          
+            |          |                                 --1.17%--vaes_gcm_setiv
+            |          |                                           |          
+            |          |                                            --1.01%--skip_iv_len_12_init_IV
+            |          |          
+            |          |--4.33%--EVP_CIPHER_CTX_ctrl
+            |          |          |          
+            |          |           --0.67%--ossl_gcm_set_ctx_params
+            |          |          
+            |          |--4.26%--EVP_CipherInit_ex
+            |          |          |          
+            |          |          |--2.18%--evp_cipher_init_internal
+            |          |          |          
+            |          |          |--0.67%--ossl_gcm_einit
+            |          |          |          
+            |          |          |--0.61%--ossl_gcm_dinit
+            |          |          |          
+            |          |           --0.57%--ossl_gcm_set_ctx_params
+            |          |          
+            |          |--3.62%--WPACKET_put_bytes__
+            |          |          |          
+            |          |           --2.51%--WPACKET_allocate_bytes
+            |          |                     |          
+            |          |                      --1.84%--WPACKET_reserve_bytes
+            |          |                                |          
+            |          |                                 --0.50%--WPACKET_get_curr
+            |          |          
+            |          |--2.76%--WPACKET_init_static_len
+            |          |          |          
+            |          |           --2.29%--CRYPTO_zalloc
+            |          |                     |          
+            |          |                      --2.05%--CRYPTO_malloc
+            |          |                                |          
+            |          |                                 --1.75%--malloc
+            |          |          
+            |          |--1.81%--EVP_DecryptFinal_ex
+            |          |          |          
+            |          |           --1.54%--ossl_gcm_stream_final
+            |          |                     |          
+            |          |                      --1.44%--vaes_gcm_cipherfinal
+            |          |                                |          
+            |          |                                 --0.97%--ossl_aes_gcm_finalize_avx512
+            |          |          
+            |          |--1.78%--EVP_EncryptFinal_ex
+            |          |          |          
+            |          |           --1.55%--ossl_gcm_stream_final
+            |          |                     |          
+            |          |                      --1.27%--vaes_gcm_cipherfinal
+            |          |                                |          

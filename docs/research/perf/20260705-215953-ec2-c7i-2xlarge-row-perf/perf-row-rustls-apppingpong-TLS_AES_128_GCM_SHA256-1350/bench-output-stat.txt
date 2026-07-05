@@ -1,0 +1,7 @@
+# rustls in-memory benchmark
+benchmark,suite,size,iterations,bytes,elapsed_ns,mib_per_sec
+rustls_app_ping_pong,TLS_AES_128_GCM_SHA256,1350,12427,33552900,20666482,1548.33
+rustls_app_ping_pong,TLS_AES_128_GCM_SHA256,1350,12427,33552900,20730895,1543.52
+rustls_app_ping_pong,TLS_AES_128_GCM_SHA256,1350,12427,33552900,21033490,1521.31
+rustls_app_ping_pong,TLS_AES_128_GCM_SHA256,1350,12427,33552900,20763003,1541.13
+rustls_app_ping_pong,TLS_AES_128_GCM_SHA256,1350,12427,33552900,20385317,1569.69

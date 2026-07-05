@@ -1,0 +1,9 @@
+# rustls in-memory benchmark
+benchmark,suite,size,iterations,bytes,elapsed_ns,mib_per_sec
+rustls_app_client_to_server,TLS_CHACHA20_POLY1305_SHA256,16,1048576,16777216,640417070,24.98
+rustls_app_client_to_server,TLS_CHACHA20_POLY1305_SHA256,16,1048576,16777216,640036355,25.00
+rustls_app_client_to_server,TLS_CHACHA20_POLY1305_SHA256,16,1048576,16777216,640970443,24.96
+rustls_app_client_to_server,TLS_CHACHA20_POLY1305_SHA256,16,1048576,16777216,640960736,24.96
+rustls_app_client_to_server,TLS_CHACHA20_POLY1305_SHA256,16,1048576,16777216,641902635,24.93
+[ perf record: Woken up 203 times to write data ]
+[ perf record: Captured and wrote 50.629 MB zig-out/perf/20260705-215953-row-perf/perf-row-rustls-appclienttoserver-TLS_CHACHA20_POLY1305_SHA256-16/perf.data (3193 samples) ]

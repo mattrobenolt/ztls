@@ -1,0 +1,19 @@
+# started on Sun Jul  5 22:01:21 2026
+
+
+ Performance counter stats for 'zig-out/bin/benchmark --filter ^BenchmarkAppClientToServer/impl=ztls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16$ --benchtime 500ms --count 5':
+
+     9,448,485,279      cycles                                                                
+    14,310,995,518      instructions                                                          
+     2,096,284,382      branches                                                              
+           223,778      branch-misses                                                         
+                 0      cache-misses                                                          
+           618,696      L1-dcache-load-misses                                                 
+   <not supported>      LLC-load-misses                                                       
+
+       2.995788292 seconds time elapsed
+
+       2.910175000 seconds user
+       0.001940000 seconds sys
+
+

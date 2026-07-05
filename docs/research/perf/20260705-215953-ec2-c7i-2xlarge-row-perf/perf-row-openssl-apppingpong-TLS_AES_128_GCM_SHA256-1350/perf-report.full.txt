@@ -1,0 +1,1939 @@
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 2K of event 'cpu/cycles/P'
+# Event count (approx.): 9297939821
+#
+# Children      Self  Symbol                                            IPC   [IPC Coverage]
+# ........  ........  ................................................  ....................
+#
+    56.40%     1.98%  [.] tls13_cipher                                  -      -            
+            |          
+            |--54.41%--tls13_cipher
+            |          |          
+            |          |--15.99%--EVP_DecryptUpdate
+            |          |          |          
+            |          |           --14.99%--ossl_gcm_stream_update
+            |          |                     |          
+            |          |                      --14.92%--gcm_cipher_internal
+            |          |                                |          
+            |          |                                |--12.53%--vaes_gcm_cipherupdate
+            |          |                                |          |          
+            |          |                                |          |--11.09%--ossl_aes_gcm_decrypt_avx512
+            |          |                                |          |          
+            |          |                                |           --1.21%--ossl_gcm_gmult_avx512
+            |          |                                |          
+            |          |                                 --1.81%--vaes_gcm_setiv
+            |          |                                           |          
+            |          |                                            --1.38%--skip_iv_len_12_init_IV
+            |          |          
+            |          |--14.45%--EVP_EncryptUpdate
+            |          |          |          
+            |          |           --13.78%--ossl_gcm_stream_update
+            |          |                     |          
+            |          |                      --13.75%--gcm_cipher_internal
+            |          |                                |          
+            |          |                                |--12.04%--vaes_gcm_cipherupdate
+            |          |                                |          |          
+            |          |                                |          |--10.93%--ossl_aes_gcm_encrypt_avx512
+            |          |                                |          |          
+            |          |                                |           --1.00%--ossl_gcm_gmult_avx512
+            |          |                                |          
+            |          |                                 --1.17%--vaes_gcm_setiv
+            |          |                                           |          
+            |          |                                            --1.01%--skip_iv_len_12_init_IV
+            |          |          
+            |          |--4.33%--EVP_CIPHER_CTX_ctrl
+            |          |          |          
+            |          |           --0.67%--ossl_gcm_set_ctx_params
+            |          |          
+            |          |--4.26%--EVP_CipherInit_ex
+            |          |          |          
+            |          |          |--2.18%--evp_cipher_init_internal
+            |          |          |          
+            |          |          |--0.67%--ossl_gcm_einit
+            |          |          |          
+            |          |          |--0.61%--ossl_gcm_dinit
+            |          |          |          
+            |          |           --0.57%--ossl_gcm_set_ctx_params
+            |          |          
+            |          |--3.62%--WPACKET_put_bytes__
+            |          |          |          
+            |          |           --2.51%--WPACKET_allocate_bytes
+            |          |                     |          
+            |          |                      --1.84%--WPACKET_reserve_bytes
+            |          |                                |          
+            |          |                                 --0.50%--WPACKET_get_curr
+            |          |          
+            |          |--2.76%--WPACKET_init_static_len
+            |          |          |          
+            |          |           --2.29%--CRYPTO_zalloc
+            |          |                     |          
+            |          |                      --2.05%--CRYPTO_malloc
+            |          |                                |          
+            |          |                                 --1.75%--malloc
+            |          |          
+            |          |--1.81%--EVP_DecryptFinal_ex
+            |          |          |          
+            |          |           --1.54%--ossl_gcm_stream_final
+            |          |                     |          
+            |          |                      --1.44%--vaes_gcm_cipherfinal
+            |          |                                |          
+            |          |                                 --0.97%--ossl_aes_gcm_finalize_avx512
+            |          |          
+            |          |--1.78%--EVP_EncryptFinal_ex
+            |          |          |          
+            |          |           --1.55%--ossl_gcm_stream_final
+            |          |                     |          
+            |          |                      --1.27%--vaes_gcm_cipherfinal
+            |          |                                |          
+            |          |                                 --0.91%--ossl_aes_gcm_finalize_avx512
+            |          |          
+            |          |--1.75%--WPACKET_finish
+            |          |          |          
+            |          |           --0.98%--cfree@GLIBC_2.2.5
+            |          |          
+            |          |--0.67%--__memmove_avx512_unaligned_erms
+            |          |          
+            |          |--0.54%--EVP_CipherUpdate
+            |          |          
+            |           --0.51%--EVP_CIPHER_get_mode
+            |          
+            |--1.04%--SSL_write
+            |          ssl3_write_bytes
+            |          tls_write_records
+            |          tls_write_records_default
+            |          tls13_cipher
+            |          
+             --0.88%--SSL_read
+                       ssl3_read
+                       ssl3_read_bytes
+                       tls_read_record
+                       tls_get_more_records
+                       tls13_cipher
+
+    49.92%     0.17%  [.] SSL_write                                     -      -            
+            |          
+             --48.95%--ssl3_write_bytes
+                       |          
+                       |--43.18%--tls_write_records
+                       |          |          
+                       |           --42.95%--tls_write_records_default
+                       |                     |          
+                       |                     |--27.00%--tls13_cipher
+                       |                     |          |          
+                       |                     |          |--14.25%--EVP_EncryptUpdate
+                       |                     |          |          |          
+                       |                     |          |           --13.78%--ossl_gcm_stream_update
+                       |                     |          |                     |          
+                       |                     |          |                      --13.75%--gcm_cipher_internal
+                       |                     |          |                                |          
+                       |                     |          |                                |--12.04%--vaes_gcm_cipherupdate
+                       |                     |          |                                |          |          
+                       |                     |          |                                |          |--10.93%--ossl_aes_gcm_encrypt_avx512
+                       |                     |          |                                |          |          
+                       |                     |          |                                |           --1.00%--ossl_gcm_gmult_avx512
+                       |                     |          |                                |          
+                       |                     |          |                                 --1.17%--vaes_gcm_setiv
+                       |                     |          |                                           |          
+                       |                     |          |                                            --1.01%--skip_iv_len_12_init_IV
+                       |                     |          |          
+                       |                     |          |--2.14%--EVP_CipherInit_ex
+                       |                     |          |          |          
+                       |                     |          |          |--1.14%--evp_cipher_init_internal
+                       |                     |          |          |          
+                       |                     |          |           --0.67%--ossl_gcm_einit
+                       |                     |          |          
+                       |                     |          |--1.78%--EVP_EncryptFinal_ex
+                       |                     |          |          |          
+                       |                     |          |           --1.55%--ossl_gcm_stream_final
+                       |                     |          |                     |          
+                       |                     |          |                      --1.27%--vaes_gcm_cipherfinal
+                       |                     |          |                                |          
+                       |                     |          |                                 --0.91%--ossl_aes_gcm_finalize_avx512
+                       |                     |          |          
+                       |                     |          |--1.54%--EVP_CIPHER_CTX_ctrl
+                       |                     |          |          
+                       |                     |          |--1.51%--WPACKET_put_bytes__
+                       |                     |          |          |          
+                       |                     |          |           --1.07%--WPACKET_allocate_bytes
+                       |                     |          |                     |          
+                       |                     |          |                      --0.70%--WPACKET_reserve_bytes
+                       |                     |          |          
+                       |                     |          |--1.41%--WPACKET_init_static_len
+                       |                     |          |          |          
+                       |                     |          |           --1.17%--CRYPTO_zalloc
+                       |                     |          |                     |          
+                       |                     |          |                      --1.07%--CRYPTO_malloc
+                       |                     |          |                                |          
+                       |                     |          |                                 --0.81%--malloc
+                       |                     |          |          
+                       |                     |          |--0.81%--WPACKET_finish
+                       |                     |          |          |          
+                       |                     |          |           --0.51%--cfree@GLIBC_2.2.5
+                       |                     |          |          
+                       |                     |           --0.60%--__memmove_avx512_unaligned_erms
+                       |                     |          
+                       |                     |--3.85%--tls_prepare_record_header_default
+                       |                     |          |          
+                       |                     |          |--1.64%--WPACKET_put_bytes__
+                       |                     |          |          |          
+                       |                     |          |           --0.81%--WPACKET_allocate_bytes
+                       |                     |          |                     |          
+                       |                     |          |                      --0.61%--WPACKET_reserve_bytes
+                       |                     |          |          
+                       |                     |           --1.64%--WPACKET_start_sub_packet_len__
+                       |                     |                     |          
+                       |                     |                      --0.97%--CRYPTO_zalloc
+                       |                     |                                |          
+                       |                     |                                 --0.80%--CRYPTO_malloc
+                       |                     |                                           |          
+                       |                     |                                            --0.57%--malloc
+                       |                     |          
+                       |                     |--2.61%--tls_post_encryption_processing_default
+                       |                     |          |          
+                       |                     |          |--1.04%--WPACKET_close
+                       |                     |          |          |          
+                       |                     |          |           --0.60%--cfree@GLIBC_2.2.5
+                       |                     |          |          
+                       |                     |           --0.77%--WPACKET_finish
+                       |                     |                     |          
+                       |                     |                      --0.60%--cfree@GLIBC_2.2.5
+                       |                     |          
+                       |                     |--1.98%--WPACKET_memcpy
+                       |                     |          |          
+                       |                     |          |--1.40%--__memmove_avx512_unaligned_erms
+                       |                     |          |          
+                       |                     |           --0.50%--WPACKET_allocate_bytes
+                       |                     |          
+                       |                     |--1.68%--tls_initialise_write_packets_default
+                       |                     |          |          
+                       |                     |           --1.21%--WPACKET_init_static_len
+                       |                     |                     |          
+                       |                     |                      --0.97%--CRYPTO_zalloc
+                       |                     |                                |          
+                       |                     |                                 --0.81%--CRYPTO_malloc
+                       |                     |                                           |          
+                       |                     |                                            --0.64%--malloc
+                       |                     |          
+                       |                     |--0.88%--tls_allocate_write_buffers_default
+                       |                     |          |          
+                       |                     |           --0.78%--tls_setup_write_buffer
+                       |                     |          
+                       |                     |--0.67%--tls_prepare_for_encryption_default
+                       |                     |          
+                       |                      --0.60%--tls13_add_record_padding
+                       |          
+                        --3.89%--tls_retry_write_records
+                                  |          
+                                   --3.15%--BIO_write
+                                             |          
+                                              --2.65%--bwrite_conv
+                                                        |          
+                                                         --2.51%--bio_write
+                                                                   |          
+                                                                    --1.78%--__memmove_avx512_unaligned_erms
+
+    49.02%     1.14%  [.] ssl3_write_bytes                              -      -            
+            |          
+            |--47.88%--ssl3_write_bytes
+            |          |          
+            |          |--43.22%--tls_write_records
+            |          |          |          
+            |          |           --42.95%--tls_write_records_default
+            |          |                     |          
+            |          |                     |--27.00%--tls13_cipher
+            |          |                     |          |          
+            |          |                     |          |--14.25%--EVP_EncryptUpdate
+            |          |                     |          |          |          
+            |          |                     |          |           --13.78%--ossl_gcm_stream_update
+            |          |                     |          |                     |          
+            |          |                     |          |                      --13.75%--gcm_cipher_internal
+            |          |                     |          |                                |          
+            |          |                     |          |                                |--12.04%--vaes_gcm_cipherupdate
+            |          |                     |          |                                |          |          
+            |          |                     |          |                                |          |--10.93%--ossl_aes_gcm_encrypt_avx512
+            |          |                     |          |                                |          |          
+            |          |                     |          |                                |           --1.00%--ossl_gcm_gmult_avx512
+            |          |                     |          |                                |          
+            |          |                     |          |                                 --1.17%--vaes_gcm_setiv
+            |          |                     |          |                                           |          
+            |          |                     |          |                                            --1.01%--skip_iv_len_12_init_IV
+            |          |                     |          |          
+            |          |                     |          |--2.14%--EVP_CipherInit_ex
+            |          |                     |          |          |          
+            |          |                     |          |          |--1.14%--evp_cipher_init_internal
+            |          |                     |          |          |          
+            |          |                     |          |           --0.67%--ossl_gcm_einit
+            |          |                     |          |          
+            |          |                     |          |--1.78%--EVP_EncryptFinal_ex
+            |          |                     |          |          |          
+            |          |                     |          |           --1.55%--ossl_gcm_stream_final
+            |          |                     |          |                     |          
+            |          |                     |          |                      --1.27%--vaes_gcm_cipherfinal
+            |          |                     |          |                                |          
+            |          |                     |          |                                 --0.91%--ossl_aes_gcm_finalize_avx512
+            |          |                     |          |          
+            |          |                     |          |--1.54%--EVP_CIPHER_CTX_ctrl
+            |          |                     |          |          
+            |          |                     |          |--1.51%--WPACKET_put_bytes__
+            |          |                     |          |          |          
+            |          |                     |          |           --1.07%--WPACKET_allocate_bytes
+            |          |                     |          |                     |          
+            |          |                     |          |                      --0.70%--WPACKET_reserve_bytes
+            |          |                     |          |          
+            |          |                     |          |--1.41%--WPACKET_init_static_len
+            |          |                     |          |          |          
+            |          |                     |          |           --1.17%--CRYPTO_zalloc
+            |          |                     |          |                     |          
+            |          |                     |          |                      --1.07%--CRYPTO_malloc
+            |          |                     |          |                                |          
+            |          |                     |          |                                 --0.81%--malloc
+            |          |                     |          |          
+            |          |                     |          |--0.81%--WPACKET_finish
+            |          |                     |          |          |          
+            |          |                     |          |           --0.51%--cfree@GLIBC_2.2.5
+            |          |                     |          |          
+            |          |                     |           --0.60%--__memmove_avx512_unaligned_erms
+            |          |                     |          
+            |          |                     |--3.85%--tls_prepare_record_header_default
+            |          |                     |          |          
+            |          |                     |          |--1.64%--WPACKET_put_bytes__
+            |          |                     |          |          |          
+            |          |                     |          |           --0.81%--WPACKET_allocate_bytes
+            |          |                     |          |                     |          
+            |          |                     |          |                      --0.61%--WPACKET_reserve_bytes
+            |          |                     |          |          
+            |          |                     |           --1.64%--WPACKET_start_sub_packet_len__
+            |          |                     |                     |          
+            |          |                     |                      --0.97%--CRYPTO_zalloc
+            |          |                     |                                |          
+            |          |                     |                                 --0.80%--CRYPTO_malloc
+            |          |                     |                                           |          
+            |          |                     |                                            --0.57%--malloc
+            |          |                     |          
+            |          |                     |--2.61%--tls_post_encryption_processing_default
+            |          |                     |          |          
+            |          |                     |          |--1.04%--WPACKET_close
+            |          |                     |          |          |          
+            |          |                     |          |           --0.60%--cfree@GLIBC_2.2.5
+            |          |                     |          |          
+            |          |                     |           --0.77%--WPACKET_finish
+            |          |                     |                     |          
+            |          |                     |                      --0.60%--cfree@GLIBC_2.2.5
+            |          |                     |          
+            |          |                     |--1.98%--WPACKET_memcpy
+            |          |                     |          |          
+            |          |                     |          |--1.40%--__memmove_avx512_unaligned_erms
+            |          |                     |          |          
+            |          |                     |           --0.50%--WPACKET_allocate_bytes
+            |          |                     |          
+            |          |                     |--1.68%--tls_initialise_write_packets_default
+            |          |                     |          |          
+            |          |                     |           --1.21%--WPACKET_init_static_len
+            |          |                     |                     |          
+            |          |                     |                      --0.97%--CRYPTO_zalloc
+            |          |                     |                                |          
+            |          |                     |                                 --0.81%--CRYPTO_malloc
+            |          |                     |                                           |          
+            |          |                     |                                            --0.64%--malloc
+            |          |                     |          
+            |          |                     |--0.88%--tls_allocate_write_buffers_default
+            |          |                     |          |          
+            |          |                     |           --0.78%--tls_setup_write_buffer
+            |          |                     |          
+            |          |                     |--0.67%--tls_prepare_for_encryption_default
+            |          |                     |          
+            |          |                      --0.60%--tls13_add_record_padding
+            |          |          
+            |           --3.89%--tls_retry_write_records
+            |                     |          
+            |                      --3.15%--BIO_write
+            |                                |          
+            |                                 --2.65%--bwrite_conv
+            |                                           |          
+            |                                            --2.51%--bio_write
+            |                                                      |          
+            |                                                       --1.78%--__memmove_avx512_unaligned_erms
+            |          
+             --1.14%--SSL_write
+                       ssl3_write_bytes
+
+    45.60%     0.10%  [.] SSL_read                                      -      -            
+            |          
+            |--44.90%--ssl3_read
+            |          |          
+            |           --44.43%--ssl3_read_bytes
+            |                     |          
+            |                     |--40.67%--tls_read_record
+            |                     |          |          
+            |                     |           --39.80%--tls_get_more_records
+            |                     |                     |          
+            |                     |                     |--28.35%--tls13_cipher
+            |                     |                     |          |          
+            |                     |                     |          |--15.96%--EVP_DecryptUpdate
+            |                     |                     |          |          |          
+            |                     |                     |          |           --14.99%--ossl_gcm_stream_update
+            |                     |                     |          |                     |          
+            |                     |                     |          |                      --14.92%--gcm_cipher_internal
+            |                     |                     |          |                                |          
+            |                     |                     |          |                                |--12.53%--vaes_gcm_cipherupdate
+            |                     |                     |          |                                |          |          
+            |                     |                     |          |                                |          |--11.09%--ossl_aes_gcm_decrypt_avx512
+            |                     |                     |          |                                |          |          
+            |                     |                     |          |                                |           --1.21%--ossl_gcm_gmult_avx512
+            |                     |                     |          |                                |          
+            |                     |                     |          |                                 --1.81%--vaes_gcm_setiv
+            |                     |                     |          |                                           |          
+            |                     |                     |          |                                            --1.38%--skip_iv_len_12_init_IV
+            |                     |                     |          |          
+            |                     |                     |          |--2.68%--EVP_CIPHER_CTX_ctrl
+            |                     |                     |          |          |          
+            |                     |                     |          |           --0.67%--ossl_gcm_set_ctx_params
+            |                     |                     |          |          
+            |                     |                     |          |--1.98%--EVP_CipherInit_ex
+            |                     |                     |          |          |          
+            |                     |                     |          |          |--1.04%--evp_cipher_init_internal
+            |                     |                     |          |          |          
+            |                     |                     |          |           --0.61%--ossl_gcm_dinit
+            |                     |                     |          |          
+            |                     |                     |          |--1.94%--WPACKET_put_bytes__
+            |                     |                     |          |          |          
+            |                     |                     |          |           --1.44%--WPACKET_allocate_bytes
+            |                     |                     |          |                     |          
+            |                     |                     |          |                      --1.14%--WPACKET_reserve_bytes
+            |                     |                     |          |          
+            |                     |                     |          |--1.71%--EVP_DecryptFinal_ex
+            |                     |                     |          |          |          
+            |                     |                     |          |           --1.54%--ossl_gcm_stream_final
+            |                     |                     |          |                     |          
+            |                     |                     |          |                      --1.44%--vaes_gcm_cipherfinal
+            |                     |                     |          |                                |          
+            |                     |                     |          |                                 --0.97%--ossl_aes_gcm_finalize_avx512
+            |                     |                     |          |          
+            |                     |                     |          |--1.35%--WPACKET_init_static_len
+            |                     |                     |          |          |          
+            |                     |                     |          |           --1.11%--CRYPTO_zalloc
+            |                     |                     |          |                     |          
+            |                     |                     |          |                      --0.98%--CRYPTO_malloc
+            |                     |                     |          |                                |          
+            |                     |                     |          |                                 --0.95%--malloc
+            |                     |                     |          |          
+            |                     |                     |           --0.74%--WPACKET_finish
+            |                     |                     |          
+            |                     |                     |--6.50%--tls_default_read_n
+            |                     |                     |          |          
+            |                     |                     |           --4.25%--BIO_read
+            |                     |                     |                     |          
+            |                     |                     |                      --3.85%--bread_conv
+            |                     |                     |                                |          
+            |                     |                     |                                 --3.55%--bio_read
+            |                     |                     |                                           |          
+            |                     |                     |                                            --1.91%--__memmove_avx512_unaligned_erms
+            |                     |                     |          
+            |                     |                     |--1.48%--ERR_clear_last_mark
+            |                     |                     |          |          
+            |                     |                     |           --1.38%--ossl_err_get_state_int
+            |                     |                     |                     |          
+            |                     |                     |                      --0.57%--CRYPTO_THREAD_get_local_ex
+            |                     |                     |          
+            |                     |                      --1.38%--ERR_set_mark
+            |                     |                                |          
+            |                     |                                 --1.25%--ossl_err_get_state_int
+            |                     |                                           |          
+            |                     |                                            --0.50%--CRYPTO_THREAD_get_local_ex
+            |                     |          
+            |                     |--1.65%--__memmove_avx512_unaligned_erms
+            |                     |          
+            |                      --0.60%--ssl_release_record
+            |          
+             --0.60%--ssl_read_internal
+
+    45.00%     0.47%  [.] ssl3_read                                     -      -            
+            |          
+             --44.53%--ssl3_read
+                       ssl3_read_bytes
+                       |          
+                       |--40.67%--tls_read_record
+                       |          |          
+                       |           --39.80%--tls_get_more_records
+                       |                     |          
+                       |                     |--28.35%--tls13_cipher
+                       |                     |          |          
+                       |                     |          |--15.96%--EVP_DecryptUpdate
+                       |                     |          |          |          
+                       |                     |          |           --14.99%--ossl_gcm_stream_update
+                       |                     |          |                     |          
+                       |                     |          |                      --14.92%--gcm_cipher_internal
+                       |                     |          |                                |          
+                       |                     |          |                                |--12.53%--vaes_gcm_cipherupdate
+                       |                     |          |                                |          |          
+                       |                     |          |                                |          |--11.09%--ossl_aes_gcm_decrypt_avx512
+                       |                     |          |                                |          |          
+                       |                     |          |                                |           --1.21%--ossl_gcm_gmult_avx512
+                       |                     |          |                                |          
+                       |                     |          |                                 --1.81%--vaes_gcm_setiv
+                       |                     |          |                                           |          
+                       |                     |          |                                            --1.38%--skip_iv_len_12_init_IV
+                       |                     |          |          
+                       |                     |          |--2.68%--EVP_CIPHER_CTX_ctrl
+                       |                     |          |          |          
+                       |                     |          |           --0.67%--ossl_gcm_set_ctx_params
+                       |                     |          |          
+                       |                     |          |--1.98%--EVP_CipherInit_ex
+                       |                     |          |          |          
+                       |                     |          |          |--1.04%--evp_cipher_init_internal
+                       |                     |          |          |          
+                       |                     |          |           --0.61%--ossl_gcm_dinit
+                       |                     |          |          
+                       |                     |          |--1.94%--WPACKET_put_bytes__
+                       |                     |          |          |          
+                       |                     |          |           --1.44%--WPACKET_allocate_bytes
+                       |                     |          |                     |          
+                       |                     |          |                      --1.14%--WPACKET_reserve_bytes
+                       |                     |          |          
+                       |                     |          |--1.71%--EVP_DecryptFinal_ex
+                       |                     |          |          |          
+                       |                     |          |           --1.54%--ossl_gcm_stream_final
+                       |                     |          |                     |          
+                       |                     |          |                      --1.44%--vaes_gcm_cipherfinal
+                       |                     |          |                                |          
+                       |                     |          |                                 --0.97%--ossl_aes_gcm_finalize_avx512
+                       |                     |          |          
+                       |                     |          |--1.35%--WPACKET_init_static_len
+                       |                     |          |          |          
+                       |                     |          |           --1.11%--CRYPTO_zalloc
+                       |                     |          |                     |          
+                       |                     |          |                      --0.98%--CRYPTO_malloc
+                       |                     |          |                                |          
+                       |                     |          |                                 --0.95%--malloc
+                       |                     |          |          
+                       |                     |           --0.74%--WPACKET_finish
+                       |                     |          
+                       |                     |--6.50%--tls_default_read_n
+                       |                     |          |          
+                       |                     |           --4.25%--BIO_read
+                       |                     |                     |          
+                       |                     |                      --3.85%--bread_conv
+                       |                     |                                |          
+                       |                     |                                 --3.55%--bio_read
+                       |                     |                                           |          
+                       |                     |                                            --1.91%--__memmove_avx512_unaligned_erms
+                       |                     |          
+                       |                     |--1.48%--ERR_clear_last_mark
+                       |                     |          |          
+                       |                     |           --1.38%--ossl_err_get_state_int
+                       |                     |                     |          
+                       |                     |                      --0.57%--CRYPTO_THREAD_get_local_ex
+                       |                     |          
+                       |                      --1.38%--ERR_set_mark
+                       |                                |          
+                       |                                 --1.25%--ossl_err_get_state_int
+                       |                                           |          
+                       |                                            --0.50%--CRYPTO_THREAD_get_local_ex
+                       |          
+                       |--1.65%--__memmove_avx512_unaligned_erms
+                       |          
+                        --0.60%--ssl_release_record
+
+    44.56%     1.24%  [.] ssl3_read_bytes                               -      -            
+            |          
+            |--43.32%--ssl3_read_bytes
+            |          |          
+            |          |--40.70%--tls_read_record
+            |          |          |          
+            |          |           --39.80%--tls_get_more_records
+            |          |                     |          
+            |          |                     |--28.35%--tls13_cipher
+            |          |                     |          |          
+            |          |                     |          |--15.96%--EVP_DecryptUpdate
+            |          |                     |          |          |          
+            |          |                     |          |           --14.99%--ossl_gcm_stream_update
+            |          |                     |          |                     |          
+            |          |                     |          |                      --14.92%--gcm_cipher_internal
+            |          |                     |          |                                |          
+            |          |                     |          |                                |--12.53%--vaes_gcm_cipherupdate
+            |          |                     |          |                                |          |          
+            |          |                     |          |                                |          |--11.09%--ossl_aes_gcm_decrypt_avx512
+            |          |                     |          |                                |          |          
+            |          |                     |          |                                |           --1.21%--ossl_gcm_gmult_avx512
+            |          |                     |          |                                |          
+            |          |                     |          |                                 --1.81%--vaes_gcm_setiv
+            |          |                     |          |                                           |          
+            |          |                     |          |                                            --1.38%--skip_iv_len_12_init_IV
+            |          |                     |          |          
+            |          |                     |          |--2.68%--EVP_CIPHER_CTX_ctrl
+            |          |                     |          |          |          
+            |          |                     |          |           --0.67%--ossl_gcm_set_ctx_params
+            |          |                     |          |          
+            |          |                     |          |--1.98%--EVP_CipherInit_ex
+            |          |                     |          |          |          
+            |          |                     |          |          |--1.04%--evp_cipher_init_internal
+            |          |                     |          |          |          
+            |          |                     |          |           --0.61%--ossl_gcm_dinit
+            |          |                     |          |          
+            |          |                     |          |--1.94%--WPACKET_put_bytes__
+            |          |                     |          |          |          
+            |          |                     |          |           --1.44%--WPACKET_allocate_bytes
+            |          |                     |          |                     |          
+            |          |                     |          |                      --1.14%--WPACKET_reserve_bytes
+            |          |                     |          |          
+            |          |                     |          |--1.71%--EVP_DecryptFinal_ex
+            |          |                     |          |          |          
+            |          |                     |          |           --1.54%--ossl_gcm_stream_final
+            |          |                     |          |                     |          
+            |          |                     |          |                      --1.44%--vaes_gcm_cipherfinal
+            |          |                     |          |                                |          
+            |          |                     |          |                                 --0.97%--ossl_aes_gcm_finalize_avx512
+            |          |                     |          |          
+            |          |                     |          |--1.35%--WPACKET_init_static_len
+            |          |                     |          |          |          
+            |          |                     |          |           --1.11%--CRYPTO_zalloc
+            |          |                     |          |                     |          
+            |          |                     |          |                      --0.98%--CRYPTO_malloc
+            |          |                     |          |                                |          
+            |          |                     |          |                                 --0.95%--malloc
+            |          |                     |          |          
+            |          |                     |           --0.74%--WPACKET_finish
+            |          |                     |          
+            |          |                     |--6.50%--tls_default_read_n
+            |          |                     |          |          
+            |          |                     |           --4.25%--BIO_read
+            |          |                     |                     |          
+            |          |                     |                      --3.85%--bread_conv
+            |          |                     |                                |          
+            |          |                     |                                 --3.55%--bio_read
+            |          |                     |                                           |          
+            |          |                     |                                            --1.91%--__memmove_avx512_unaligned_erms
+            |          |                     |          
+            |          |                     |--1.48%--ERR_clear_last_mark
+            |          |                     |          |          
+            |          |                     |           --1.38%--ossl_err_get_state_int
+            |          |                     |                     |          
+            |          |                     |                      --0.57%--CRYPTO_THREAD_get_local_ex
+            |          |                     |          
+            |          |                      --1.38%--ERR_set_mark
+            |          |                                |          
+            |          |                                 --1.25%--ossl_err_get_state_int
+            |          |                                           |          
+            |          |                                            --0.50%--CRYPTO_THREAD_get_local_ex
+            |          |          
+            |          |--1.65%--__memmove_avx512_unaligned_erms
+            |          |          
+            |           --0.60%--ssl_release_record
+            |          
+             --1.14%--SSL_read
+                       ssl3_read
+                       ssl3_read_bytes
+
+    43.25%     0.27%  [.] tls_write_records                             -      -            
+            |          
+             --42.98%--tls_write_records
+                       tls_write_records_default
+                       |          
+                       |--27.00%--tls13_cipher
+                       |          |          
+                       |          |--14.25%--EVP_EncryptUpdate
+                       |          |          |          
+                       |          |           --13.78%--ossl_gcm_stream_update
+                       |          |                     |          
+                       |          |                      --13.75%--gcm_cipher_internal
+                       |          |                                |          
+                       |          |                                |--12.04%--vaes_gcm_cipherupdate
+                       |          |                                |          |          
+                       |          |                                |          |--10.93%--ossl_aes_gcm_encrypt_avx512
+                       |          |                                |          |          
+                       |          |                                |           --1.00%--ossl_gcm_gmult_avx512
+                       |          |                                |          
+                       |          |                                 --1.17%--vaes_gcm_setiv
+                       |          |                                           |          
+                       |          |                                            --1.01%--skip_iv_len_12_init_IV
+                       |          |          
+                       |          |--2.14%--EVP_CipherInit_ex
+                       |          |          |          
+                       |          |          |--1.14%--evp_cipher_init_internal
+                       |          |          |          
+                       |          |           --0.67%--ossl_gcm_einit
+                       |          |          
+                       |          |--1.78%--EVP_EncryptFinal_ex
+                       |          |          |          
+                       |          |           --1.55%--ossl_gcm_stream_final
+                       |          |                     |          
+                       |          |                      --1.27%--vaes_gcm_cipherfinal
+                       |          |                                |          
+                       |          |                                 --0.91%--ossl_aes_gcm_finalize_avx512
+                       |          |          
+                       |          |--1.54%--EVP_CIPHER_CTX_ctrl
+                       |          |          
+                       |          |--1.51%--WPACKET_put_bytes__
+                       |          |          |          
+                       |          |           --1.07%--WPACKET_allocate_bytes
+                       |          |                     |          
+                       |          |                      --0.70%--WPACKET_reserve_bytes
+                       |          |          
+                       |          |--1.41%--WPACKET_init_static_len
+                       |          |          |          
+                       |          |           --1.17%--CRYPTO_zalloc
+                       |          |                     |          
+                       |          |                      --1.07%--CRYPTO_malloc
+                       |          |                                |          
+                       |          |                                 --0.81%--malloc
+                       |          |          
+                       |          |--0.81%--WPACKET_finish
+                       |          |          |          
+                       |          |           --0.51%--cfree@GLIBC_2.2.5
+                       |          |          
+                       |           --0.60%--__memmove_avx512_unaligned_erms
+                       |          
+                       |--3.85%--tls_prepare_record_header_default
+                       |          |          
+                       |          |--1.64%--WPACKET_put_bytes__
+                       |          |          |          
+                       |          |           --0.81%--WPACKET_allocate_bytes
+                       |          |                     |          
+                       |          |                      --0.61%--WPACKET_reserve_bytes
+                       |          |          
+                       |           --1.64%--WPACKET_start_sub_packet_len__
+                       |                     |          
+                       |                      --0.97%--CRYPTO_zalloc
+                       |                                |          
+                       |                                 --0.80%--CRYPTO_malloc
+                       |                                           |          
+                       |                                            --0.57%--malloc
+                       |          
+                       |--2.61%--tls_post_encryption_processing_default
+                       |          |          
+                       |          |--1.04%--WPACKET_close
+                       |          |          |          
+                       |          |           --0.60%--cfree@GLIBC_2.2.5
+                       |          |          
+                       |           --0.77%--WPACKET_finish
+                       |                     |          
+                       |                      --0.60%--cfree@GLIBC_2.2.5
+                       |          
+                       |--1.98%--WPACKET_memcpy
+                       |          |          
+                       |          |--1.40%--__memmove_avx512_unaligned_erms
+                       |          |          
+                       |           --0.50%--WPACKET_allocate_bytes
+                       |          
+                       |--1.68%--tls_initialise_write_packets_default
+                       |          |          
+                       |           --1.21%--WPACKET_init_static_len
+                       |                     |          
+                       |                      --0.97%--CRYPTO_zalloc
+                       |                                |          
+                       |                                 --0.81%--CRYPTO_malloc
+                       |                                           |          
+                       |                                            --0.64%--malloc
+                       |          
+                       |--0.88%--tls_allocate_write_buffers_default
+                       |          |          
+                       |           --0.78%--tls_setup_write_buffer
+                       |          
+                       |--0.67%--tls_prepare_for_encryption_default
+                       |          
+                        --0.60%--tls13_add_record_padding
+
+    43.05%     3.68%  [.] tls_write_records_default                     -      -            
+            |          
+            |--39.37%--tls_write_records_default
+            |          |          
+            |          |--27.00%--tls13_cipher
+            |          |          |          
+            |          |          |--14.25%--EVP_EncryptUpdate
+            |          |          |          |          
+            |          |          |           --13.78%--ossl_gcm_stream_update
+            |          |          |                     |          
+            |          |          |                      --13.75%--gcm_cipher_internal
+            |          |          |                                |          
+            |          |          |                                |--12.04%--vaes_gcm_cipherupdate
+            |          |          |                                |          |          
+            |          |          |                                |          |--10.93%--ossl_aes_gcm_encrypt_avx512
+            |          |          |                                |          |          
+            |          |          |                                |           --1.00%--ossl_gcm_gmult_avx512
+            |          |          |                                |          
+            |          |          |                                 --1.17%--vaes_gcm_setiv
+            |          |          |                                           |          
+            |          |          |                                            --1.01%--skip_iv_len_12_init_IV
+            |          |          |          
+            |          |          |--2.14%--EVP_CipherInit_ex
+            |          |          |          |          
+            |          |          |          |--1.14%--evp_cipher_init_internal
+            |          |          |          |          
+            |          |          |           --0.67%--ossl_gcm_einit
+            |          |          |          
+            |          |          |--1.78%--EVP_EncryptFinal_ex
+            |          |          |          |          
+            |          |          |           --1.55%--ossl_gcm_stream_final
+            |          |          |                     |          
+            |          |          |                      --1.27%--vaes_gcm_cipherfinal
+            |          |          |                                |          
+            |          |          |                                 --0.91%--ossl_aes_gcm_finalize_avx512
+            |          |          |          
+            |          |          |--1.54%--EVP_CIPHER_CTX_ctrl
+            |          |          |          
+            |          |          |--1.51%--WPACKET_put_bytes__
+            |          |          |          |          
+            |          |          |           --1.07%--WPACKET_allocate_bytes
+            |          |          |                     |          
+            |          |          |                      --0.70%--WPACKET_reserve_bytes
+            |          |          |          
+            |          |          |--1.41%--WPACKET_init_static_len
+            |          |          |          |          
+            |          |          |           --1.17%--CRYPTO_zalloc
+            |          |          |                     |          
+            |          |          |                      --1.07%--CRYPTO_malloc
+            |          |          |                                |          
+            |          |          |                                 --0.81%--malloc
+            |          |          |          
+            |          |          |--0.81%--WPACKET_finish
+            |          |          |          |          
+            |          |          |           --0.51%--cfree@GLIBC_2.2.5
+            |          |          |          
+            |          |           --0.60%--__memmove_avx512_unaligned_erms
+            |          |          
+            |          |--3.85%--tls_prepare_record_header_default
+            |          |          |          
+            |          |          |--1.64%--WPACKET_put_bytes__
+            |          |          |          |          
+            |          |          |           --0.81%--WPACKET_allocate_bytes
+            |          |          |                     |          
+            |          |          |                      --0.61%--WPACKET_reserve_bytes
+            |          |          |          
+            |          |           --1.64%--WPACKET_start_sub_packet_len__
+            |          |                     |          
+            |          |                      --0.97%--CRYPTO_zalloc
+            |          |                                |          
+            |          |                                 --0.80%--CRYPTO_malloc
+            |          |                                           |          
+            |          |                                            --0.57%--malloc
+            |          |          
+            |          |--2.68%--tls_post_encryption_processing_default
+            |          |          |          
+            |          |          |--1.04%--WPACKET_close
+            |          |          |          |          
+            |          |          |           --0.60%--cfree@GLIBC_2.2.5
+            |          |          |          
+            |          |           --0.77%--WPACKET_finish
+            |          |                     |          
+            |          |                      --0.60%--cfree@GLIBC_2.2.5
+            |          |          
+            |          |--1.98%--WPACKET_memcpy
+            |          |          |          
+            |          |          |--1.40%--__memmove_avx512_unaligned_erms
+            |          |          |          
+            |          |           --0.50%--WPACKET_allocate_bytes
+            |          |          
+            |          |--1.68%--tls_initialise_write_packets_default
+            |          |          |          
+            |          |           --1.21%--WPACKET_init_static_len
+            |          |                     |          
+            |          |                      --0.97%--CRYPTO_zalloc
+            |          |                                |          
+            |          |                                 --0.81%--CRYPTO_malloc
+            |          |                                           |          
+            |          |                                            --0.64%--malloc
+            |          |          
+            |          |--0.88%--tls_allocate_write_buffers_default
+            |          |          |          
+            |          |           --0.78%--tls_setup_write_buffer
+            |          |          
+            |          |--0.67%--tls_prepare_for_encryption_default
+            |          |          
+            |           --0.60%--tls13_add_record_padding
+            |          
+             --3.64%--SSL_write
+                       ssl3_write_bytes
+                       tls_write_records
+                       tls_write_records_default
+
+    40.74%     0.90%  [.] tls_read_record                               -      -            
+            |          
+            |--39.83%--tls_read_record
+            |          tls_get_more_records
+            |          |          
+            |          |--28.35%--tls13_cipher
+            |          |          |          
+            |          |          |--15.96%--EVP_DecryptUpdate
+            |          |          |          |          
+            |          |          |           --14.99%--ossl_gcm_stream_update
+            |          |          |                     |          
+            |          |          |                      --14.92%--gcm_cipher_internal
+            |          |          |                                |          
+            |          |          |                                |--12.53%--vaes_gcm_cipherupdate
+            |          |          |                                |          |          
+            |          |          |                                |          |--11.09%--ossl_aes_gcm_decrypt_avx512
+            |          |          |                                |          |          
+            |          |          |                                |           --1.21%--ossl_gcm_gmult_avx512
+            |          |          |                                |          
+            |          |          |                                 --1.81%--vaes_gcm_setiv
+            |          |          |                                           |          
+            |          |          |                                            --1.38%--skip_iv_len_12_init_IV
+            |          |          |          
+            |          |          |--2.68%--EVP_CIPHER_CTX_ctrl
+            |          |          |          |          
+            |          |          |           --0.67%--ossl_gcm_set_ctx_params
+            |          |          |          
+            |          |          |--1.98%--EVP_CipherInit_ex
+            |          |          |          |          
+            |          |          |          |--1.04%--evp_cipher_init_internal
+            |          |          |          |          
+            |          |          |           --0.61%--ossl_gcm_dinit
+            |          |          |          
+            |          |          |--1.94%--WPACKET_put_bytes__
+            |          |          |          |          
+            |          |          |           --1.44%--WPACKET_allocate_bytes
+            |          |          |                     |          
+            |          |          |                      --1.14%--WPACKET_reserve_bytes
+            |          |          |          
+            |          |          |--1.71%--EVP_DecryptFinal_ex
+            |          |          |          |          
+            |          |          |           --1.54%--ossl_gcm_stream_final
+            |          |          |                     |          
+            |          |          |                      --1.44%--vaes_gcm_cipherfinal
+            |          |          |                                |          
+            |          |          |                                 --0.97%--ossl_aes_gcm_finalize_avx512
+            |          |          |          
+            |          |          |--1.35%--WPACKET_init_static_len
+            |          |          |          |          
+            |          |          |           --1.11%--CRYPTO_zalloc
+            |          |          |                     |          
+            |          |          |                      --0.98%--CRYPTO_malloc
+            |          |          |                                |          
+            |          |          |                                 --0.95%--malloc
+            |          |          |          
+            |          |           --0.74%--WPACKET_finish
+            |          |          
+            |          |--6.50%--tls_default_read_n
+            |          |          |          
+            |          |           --4.25%--BIO_read
+            |          |                     |          
+            |          |                      --3.85%--bread_conv
+            |          |                                |          
+            |          |                                 --3.55%--bio_read
+            |          |                                           |          
+            |          |                                            --1.91%--__memmove_avx512_unaligned_erms
+            |          |          
+            |          |--1.48%--ERR_clear_last_mark
+            |          |          |          
+            |          |           --1.38%--ossl_err_get_state_int
+            |          |                     |          
+            |          |                      --0.57%--CRYPTO_THREAD_get_local_ex
+            |          |          
+            |           --1.38%--ERR_set_mark
+            |                     |          
+            |                      --1.25%--ossl_err_get_state_int
+            |                                |          
+            |                                 --0.50%--CRYPTO_THREAD_get_local_ex
+            |          
+             --0.87%--SSL_read
+                       ssl3_read
+                       ssl3_read_bytes
+                       tls_read_record
+
+    40.03%     1.57%  [.] tls_get_more_records                          -      -            
+            |          
+            |--38.46%--tls_get_more_records
+            |          |          
+            |          |--28.42%--tls13_cipher
+            |          |          |          
+            |          |          |--15.96%--EVP_DecryptUpdate
+            |          |          |          |          
+            |          |          |           --14.99%--ossl_gcm_stream_update
+            |          |          |                     |          
+            |          |          |                      --14.92%--gcm_cipher_internal
+            |          |          |                                |          
+            |          |          |                                |--12.53%--vaes_gcm_cipherupdate
+            |          |          |                                |          |          
+            |          |          |                                |          |--11.09%--ossl_aes_gcm_decrypt_avx512
+            |          |          |                                |          |          
+            |          |          |                                |           --1.21%--ossl_gcm_gmult_avx512
+            |          |          |                                |          
+            |          |          |                                 --1.81%--vaes_gcm_setiv
+            |          |          |                                           |          
+            |          |          |                                            --1.38%--skip_iv_len_12_init_IV
+            |          |          |          
+            |          |          |--2.68%--EVP_CIPHER_CTX_ctrl
+            |          |          |          |          
+            |          |          |           --0.67%--ossl_gcm_set_ctx_params
+            |          |          |          
+            |          |          |--1.98%--EVP_CipherInit_ex
+            |          |          |          |          
+            |          |          |          |--1.04%--evp_cipher_init_internal
+            |          |          |          |          
+            |          |          |           --0.61%--ossl_gcm_dinit
+            |          |          |          
+            |          |          |--1.94%--WPACKET_put_bytes__
+            |          |          |          |          
+            |          |          |           --1.44%--WPACKET_allocate_bytes
+            |          |          |                     |          
+            |          |          |                      --1.14%--WPACKET_reserve_bytes
+            |          |          |          
+            |          |          |--1.71%--EVP_DecryptFinal_ex
+            |          |          |          |          
+            |          |          |           --1.54%--ossl_gcm_stream_final
+            |          |          |                     |          
+            |          |          |                      --1.44%--vaes_gcm_cipherfinal
+            |          |          |                                |          
+            |          |          |                                 --0.97%--ossl_aes_gcm_finalize_avx512
+            |          |          |          
+            |          |          |--1.35%--WPACKET_init_static_len
+            |          |          |          |          
+            |          |          |           --1.11%--CRYPTO_zalloc
+            |          |          |                     |          
+            |          |          |                      --0.98%--CRYPTO_malloc
+            |          |          |                                |          
+            |          |          |                                 --0.95%--malloc
+            |          |          |          
+            |          |           --0.74%--WPACKET_finish
+            |          |          
+            |          |--6.54%--tls_default_read_n
+            |          |          |          
+            |          |           --4.25%--BIO_read
+            |          |                     |          
+            |          |                      --3.85%--bread_conv
+            |          |                                |          
+            |          |                                 --3.55%--bio_read
+            |          |                                           |          
+            |          |                                            --1.91%--__memmove_avx512_unaligned_erms
+            |          |          
+            |          |--1.48%--ERR_clear_last_mark
+            |          |          |          
+            |          |           --1.38%--ossl_err_get_state_int
+            |          |                     |          
+            |          |                      --0.57%--CRYPTO_THREAD_get_local_ex
+            |          |          
+            |           --1.38%--ERR_set_mark
+            |                     |          
+            |                      --1.25%--ossl_err_get_state_int
+            |                                |          
+            |                                 --0.50%--CRYPTO_THREAD_get_local_ex
+            |          
+             --1.54%--SSL_read
+                       ssl3_read
+                       ssl3_read_bytes
+                       tls_read_record
+                       tls_get_more_records
+
+    28.94%     0.94%  [.] gcm_cipher_internal                           -      -            
+            |          
+             --28.00%--gcm_cipher_internal
+                       |          
+                       |--24.61%--vaes_gcm_cipherupdate
+                       |          |          
+                       |          |--11.09%--ossl_aes_gcm_decrypt_avx512
+                       |          |          
+                       |          |--10.93%--ossl_aes_gcm_encrypt_avx512
+                       |          |          
+                       |           --2.21%--ossl_gcm_gmult_avx512
+                       |          
+                        --3.06%--vaes_gcm_setiv
+                                  |          
+                                   --2.38%--skip_iv_len_12_init_IV
+
+    28.90%     0.13%  [.] ossl_gcm_stream_update                        -      -            
+            |          
+             --28.77%--ossl_gcm_stream_update
+                       gcm_cipher_internal
+                       |          
+                       |--24.57%--vaes_gcm_cipherupdate
+                       |          |          
+                       |          |--11.09%--ossl_aes_gcm_decrypt_avx512
+                       |          |          
+                       |          |--10.93%--ossl_aes_gcm_encrypt_avx512
+                       |          |          
+                       |           --2.21%--ossl_gcm_gmult_avx512
+                       |          
+                        --2.99%--vaes_gcm_setiv
+                                  |          
+                                   --2.38%--skip_iv_len_12_init_IV
+
+    24.61%     0.37%  [.] vaes_gcm_cipherupdate                         -      -            
+            |          
+             --24.24%--vaes_gcm_cipherupdate
+                       |          
+                       |--11.09%--ossl_aes_gcm_decrypt_avx512
+                       |          
+                       |--10.93%--ossl_aes_gcm_encrypt_avx512
+                       |          
+                        --2.21%--ossl_gcm_gmult_avx512
+
+    15.99%     0.87%  [.] EVP_DecryptUpdate                             -      -            
+            |          
+            |--15.12%--EVP_DecryptUpdate
+            |          |          
+            |           --14.99%--ossl_gcm_stream_update
+            |                     |          
+            |                      --14.92%--gcm_cipher_internal
+            |                                |          
+            |                                |--12.53%--vaes_gcm_cipherupdate
+            |                                |          |          
+            |                                |          |--11.09%--ossl_aes_gcm_decrypt_avx512
+            |                                |          |          
+            |                                |           --1.21%--ossl_gcm_gmult_avx512
+            |                                |          
+            |                                 --1.81%--vaes_gcm_setiv
+            |                                           |          
+            |                                            --1.38%--skip_iv_len_12_init_IV
+            |          
+             --0.84%--SSL_read
+                       ssl3_read
+                       ssl3_read_bytes
+                       tls_read_record
+                       tls_get_more_records
+                       tls13_cipher
+                       EVP_DecryptUpdate
+
+    14.49%     0.67%  [.] EVP_EncryptUpdate                             -      -            
+            |          
+             --13.82%--EVP_EncryptUpdate
+                       ossl_gcm_stream_update
+                       |          
+                        --13.75%--gcm_cipher_internal
+                                  |          
+                                  |--12.04%--vaes_gcm_cipherupdate
+                                  |          |          
+                                  |          |--10.93%--ossl_aes_gcm_encrypt_avx512
+                                  |          |          
+                                  |           --1.00%--ossl_gcm_gmult_avx512
+                                  |          
+                                   --1.17%--vaes_gcm_setiv
+                                             |          
+                                              --1.01%--skip_iv_len_12_init_IV
+
+    11.09%    11.09%  [.] ossl_aes_gcm_decrypt_avx512                   -      -            
+            |
+            ---ssl3_read
+               ssl3_read_bytes
+               tls_read_record
+               tls_get_more_records
+               tls13_cipher
+               EVP_DecryptUpdate
+               ossl_gcm_stream_update
+               gcm_cipher_internal
+               vaes_gcm_cipherupdate
+               ossl_aes_gcm_decrypt_avx512
+
+    10.93%    10.93%  [.] ossl_aes_gcm_encrypt_avx512                   -      -            
+            |
+            ---ssl3_write_bytes
+               tls_write_records
+               tls_write_records_default
+               tls13_cipher
+               EVP_EncryptUpdate
+               ossl_gcm_stream_update
+               gcm_cipher_internal
+               vaes_gcm_cipherupdate
+               ossl_aes_gcm_encrypt_avx512
+
+     7.81%     7.78%  [.] __memmove_avx512_unaligned_erms               -      -            
+            |          
+            |--3.99%--SSL_write
+            |          ssl3_write_bytes
+            |          |          
+            |          |--2.21%--tls_write_records
+            |          |          tls_write_records_default
+            |          |          |          
+            |          |          |--1.37%--WPACKET_memcpy
+            |          |          |          __memmove_avx512_unaligned_erms
+            |          |          |          
+            |          |           --0.84%--tls13_cipher
+            |          |                     |          
+            |          |                      --0.60%--__memmove_avx512_unaligned_erms
+            |          |          
+            |           --1.78%--tls_retry_write_records
+            |                     BIO_write
+            |                     bwrite_conv
+            |                     bio_write
+            |                     __memmove_avx512_unaligned_erms
+            |          
+             --3.79%--SSL_read
+                       ssl3_read
+                       ssl3_read_bytes
+                       |          
+                       |--2.14%--tls_read_record
+                       |          tls_get_more_records
+                       |          |          
+                       |           --1.91%--tls_default_read_n
+                       |                     BIO_read
+                       |                     bread_conv
+                       |                     bio_read
+                       |                     __memmove_avx512_unaligned_erms
+                       |          
+                        --1.65%--__memmove_avx512_unaligned_erms
+
+     6.67%     2.08%  [.] tls_default_read_n                            -      -            
+            |          
+            |--4.59%--tls_default_read_n
+            |          |          
+            |           --4.39%--BIO_read
+            |                     |          
+            |                      --3.85%--bread_conv
+            |                                |          
+            |                                 --3.55%--bio_read
+            |                                           |          
+            |                                            --1.91%--__memmove_avx512_unaligned_erms
+            |          
+             --2.05%--SSL_read
+                       ssl3_read
+                       ssl3_read_bytes
+                       tls_read_record
+                       tls_get_more_records
+                       tls_default_read_n
+
+     5.73%     2.08%  [.] WPACKET_put_bytes__                           -      -            
+            |          
+            |--3.65%--WPACKET_put_bytes__
+            |          WPACKET_allocate_bytes
+            |          |          
+            |           --2.75%--WPACKET_reserve_bytes
+            |                     |          
+            |                      --0.74%--WPACKET_get_curr
+            |          
+            |--1.34%--SSL_write
+            |          ssl3_write_bytes
+            |          tls_write_records
+            |          tls_write_records_default
+            |          |          
+            |           --0.84%--tls_prepare_record_header_default
+            |                     WPACKET_put_bytes__
+            |          
+             --0.50%--SSL_read
+                       ssl3_read
+                       ssl3_read_bytes
+                       tls_read_record
+                       tls_get_more_records
+                       tls13_cipher
+                       WPACKET_put_bytes__
+
+     5.10%     1.31%  [.] WPACKET_allocate_bytes                        -      -            
+            |          
+            |--3.79%--WPACKET_allocate_bytes
+            |          WPACKET_reserve_bytes
+            |          |          
+            |           --0.84%--WPACKET_get_curr
+            |          
+             --0.98%--SSL_write
+                       ssl3_write_bytes
+                       tls_write_records
+                       tls_write_records_default
+
+     4.50%     0.24%  [.] CRYPTO_zalloc                                 -      -            
+            |          
+             --4.26%--CRYPTO_zalloc
+                       |          
+                        --3.83%--CRYPTO_malloc
+                                  |          
+                                   --2.96%--malloc
+
+     4.45%     0.53%  [.] BIO_read                                      -      -            
+            |          
+             --3.92%--BIO_read
+                       bread_conv
+                       |          
+                        --3.55%--bio_read
+                                  |          
+                                   --1.91%--__memmove_avx512_unaligned_erms
+
+     4.36%     2.89%  [.] EVP_CIPHER_CTX_ctrl                           -      -            
+            |          
+            |--1.81%--SSL_read
+            |          ssl3_read
+            |          ssl3_read_bytes
+            |          tls_read_record
+            |          tls_get_more_records
+            |          tls13_cipher
+            |          EVP_CIPHER_CTX_ctrl
+            |          
+            |--1.48%--EVP_CIPHER_CTX_ctrl
+            |          |          
+            |           --0.67%--ossl_gcm_set_ctx_params
+            |          
+             --0.97%--SSL_write
+                       ssl3_write_bytes
+                       tls_write_records
+                       tls_write_records_default
+                       tls13_cipher
+                       EVP_CIPHER_CTX_ctrl
+
+     4.36%     3.42%  [.] WPACKET_reserve_bytes                         -      -            
+            |          
+            |--2.01%--SSL_write
+            |          ssl3_write_bytes
+            |          tls_write_records
+            |          tls_write_records_default
+            |          |          
+            |           --1.04%--tls_prepare_record_header_default
+            |                     |          
+            |                      --0.51%--WPACKET_put_bytes__
+            |                                WPACKET_allocate_bytes
+            |                                WPACKET_reserve_bytes
+            |          
+            |--0.94%--WPACKET_reserve_bytes
+            |          WPACKET_get_curr
+            |          
+             --0.87%--SSL_read
+                       ssl3_read
+                       ssl3_read_bytes
+                       tls_read_record
+                       tls_get_more_records
+                       tls13_cipher
+                       WPACKET_put_bytes__
+                       WPACKET_allocate_bytes
+                       WPACKET_reserve_bytes
+
+     4.26%     0.23%  [.] EVP_CipherInit_ex                             -      -            
+            |          
+             --4.02%--EVP_CipherInit_ex
+                       |          
+                       |--2.18%--evp_cipher_init_internal
+                       |          
+                       |--0.67%--ossl_gcm_einit
+                       |          
+                       |--0.61%--ossl_gcm_dinit
+                       |          
+                        --0.57%--ossl_gcm_set_ctx_params
+
+     4.15%     0.20%  [.] tls_prepare_record_header_default             -      -            
+            |          
+             --3.95%--tls_prepare_record_header_default
+                       |          
+                       |--1.77%--WPACKET_start_sub_packet_len__
+                       |          |          
+                       |           --0.97%--CRYPTO_zalloc
+                       |                     |          
+                       |                      --0.80%--CRYPTO_malloc
+                       |                                |          
+                       |                                 --0.57%--malloc
+                       |          
+                       |--1.68%--WPACKET_put_bytes__
+                       |          |          
+                       |           --0.81%--WPACKET_allocate_bytes
+                       |                     |          
+                       |                      --0.61%--WPACKET_reserve_bytes
+                       |          
+                        --0.50%--WPACKET_reserve_bytes
+
+     4.14%     0.78%  [.] WPACKET_init_static_len                       -      -            
+            |          
+             --3.36%--WPACKET_init_static_len
+                       CRYPTO_zalloc
+                       |          
+                        --2.86%--CRYPTO_malloc
+                                  |          
+                                   --2.39%--malloc
+
+     3.95%     0.64%  [.] tls_retry_write_records                       -      -            
+            |          
+            |--3.32%--tls_retry_write_records
+            |          |          
+            |           --3.22%--BIO_write
+            |                     |          
+            |                      --2.65%--bwrite_conv
+            |                                |          
+            |                                 --2.51%--bio_write
+            |                                           |          
+            |                                            --1.78%--__memmove_avx512_unaligned_erms
+            |          
+             --0.64%--SSL_write
+                       ssl3_write_bytes
+                       tls_retry_write_records
+
+     3.95%     0.37%  [.] bread_conv                                    -      -            
+            |          
+             --3.58%--bread_conv
+                       bio_read
+                       |          
+                        --1.91%--__memmove_avx512_unaligned_erms
+
+     3.85%     0.77%  [.] CRYPTO_malloc                                 -      -            
+            |          
+            |--3.08%--CRYPTO_malloc
+            |          |          
+            |           --2.98%--malloc
+            |          
+             --0.60%--SSL_write
+                       ssl3_write_bytes
+                       tls_write_records
+                       tls_write_records_default
+
+     3.58%     1.31%  [.] bio_read                                      -      -            
+            |          
+            |--2.28%--bio_read
+            |          |          
+            |           --1.91%--__memmove_avx512_unaligned_erms
+            |          
+             --1.27%--SSL_read
+                       ssl3_read
+                       ssl3_read_bytes
+                       tls_read_record
+                       tls_get_more_records
+                       tls_default_read_n
+                       BIO_read
+                       bread_conv
+                       bio_read
+
+     3.25%     0.57%  [.] BIO_write                                     -      -            
+            |          
+            |--2.68%--BIO_write
+            |          bwrite_conv
+            |          |          
+            |           --2.51%--bio_write
+            |                     |          
+            |                      --1.78%--__memmove_avx512_unaligned_erms
+            |          
+             --0.50%--SSL_write
+                       ssl3_write_bytes
+                       tls_retry_write_records
+                       BIO_write
+
+     3.12%     0.31%  [.] ossl_gcm_stream_final                         -      -            
+            |          
+             --2.81%--ossl_gcm_stream_final
+                       |          
+                        --2.71%--vaes_gcm_cipherfinal
+                                  |          
+                                   --1.88%--ossl_aes_gcm_finalize_avx512
+
+     3.06%     0.50%  [.] vaes_gcm_setiv                                -      -            
+            |          
+             --2.55%--vaes_gcm_setiv
+                       |          
+                        --2.38%--skip_iv_len_12_init_IV
+
+     2.98%     2.98%  [.] malloc                                        -      -            
+            |          
+            |--2.01%--SSL_write
+            |          ssl3_write_bytes
+            |          tls_write_records
+            |          tls_write_records_default
+            |          |          
+            |          |--0.81%--tls13_cipher
+            |          |          WPACKET_init_static_len
+            |          |          CRYPTO_zalloc
+            |          |          CRYPTO_malloc
+            |          |          malloc
+            |          |          
+            |          |--0.64%--tls_initialise_write_packets_default
+            |          |          WPACKET_init_static_len
+            |          |          CRYPTO_zalloc
+            |          |          CRYPTO_malloc
+            |          |          malloc
+            |          |          
+            |           --0.57%--tls_prepare_record_header_default
+            |                     WPACKET_start_sub_packet_len__
+            |                     CRYPTO_zalloc
+            |                     CRYPTO_malloc
+            |                     malloc
+            |          
+             --0.95%--SSL_read
+                       ssl3_read
+                       ssl3_read_bytes
+                       tls_read_record
+                       tls_get_more_records
+                       tls13_cipher
+                       WPACKET_init_static_len
+                       CRYPTO_zalloc
+                       CRYPTO_malloc
+                       malloc
+
+     2.75%     0.40%  [.] tls_post_encryption_processing_default        -      -            
+            |          
+             --2.34%--tls_post_encryption_processing_default
+                       |          
+                       |--1.11%--WPACKET_close
+                       |          |          
+                       |           --0.60%--cfree@GLIBC_2.2.5
+                       |          
+                        --0.77%--WPACKET_finish
+                                  |          
+                                   --0.60%--cfree@GLIBC_2.2.5
+
+     2.71%     0.70%  [.] vaes_gcm_cipherfinal                          -      -            
+            |          
+             --2.01%--vaes_gcm_cipherfinal
+                       |          
+                        --1.88%--ossl_aes_gcm_finalize_avx512
+
+     2.68%     0.17%  [.] bwrite_conv                                   -      -            
+            |          
+             --2.51%--bwrite_conv
+                       bio_write
+                       |          
+                        --1.78%--__memmove_avx512_unaligned_erms
+
+     2.68%     0.40%  [.] ossl_err_get_state_int                        -      -            
+            |          
+             --2.28%--ossl_err_get_state_int
+                       |          
+                       |--1.07%--CRYPTO_THREAD_get_local_ex
+                       |          
+                       |--0.69%--OPENSSL_init_crypto
+                       |          
+                        --0.51%--ossl_sa_get
+
+     2.52%     0.67%  [.] WPACKET_finish                                -      -            
+            |          
+             --1.84%--WPACKET_finish
+                       |          
+                        --1.58%--cfree@GLIBC_2.2.5
+
+     2.51%     0.40%  [.] bio_write                                     -      -            
+            |          
+             --2.12%--bio_write
+                       |          
+                        --1.78%--__memmove_avx512_unaligned_erms
+
+     2.42%     2.38%  [.] skip_iv_len_12_init_IV                        -      -            
+            |          
+            |--1.38%--SSL_read
+            |          ssl3_read
+            |          ssl3_read_bytes
+            |          tls_read_record
+            |          tls_get_more_records
+            |          tls13_cipher
+            |          EVP_DecryptUpdate
+            |          ossl_gcm_stream_update
+            |          gcm_cipher_internal
+            |          vaes_gcm_setiv
+            |          skip_iv_len_12_init_IV
+            |          
+             --1.01%--SSL_write
+                       ssl3_write_bytes
+                       tls_write_records
+                       tls_write_records_default
+                       tls13_cipher
+                       EVP_EncryptUpdate
+                       ossl_gcm_stream_update
+                       gcm_cipher_internal
+                       vaes_gcm_setiv
+                       skip_iv_len_12_init_IV
+
+     2.24%     2.24%  [.] cfree@GLIBC_2.2.5                             -      -            
+            |          
+             --1.71%--SSL_write
+                       ssl3_write_bytes
+                       tls_write_records
+                       tls_write_records_default
+                       |          
+                       |--1.20%--tls_post_encryption_processing_default
+                       |          |          
+                       |          |--0.60%--WPACKET_close
+                       |          |          cfree@GLIBC_2.2.5
+                       |          |          
+                       |           --0.60%--WPACKET_finish
+                       |                     cfree@GLIBC_2.2.5
+                       |          
+                        --0.51%--tls13_cipher
+                                  WPACKET_finish
+                                  cfree@GLIBC_2.2.5
+
+     2.21%     2.21%  [.] ossl_gcm_gmult_avx512                         -      -            
+            |          
+            |--1.21%--SSL_read
+            |          ssl3_read
+            |          ssl3_read_bytes
+            |          tls_read_record
+            |          tls_get_more_records
+            |          tls13_cipher
+            |          EVP_DecryptUpdate
+            |          ossl_gcm_stream_update
+            |          gcm_cipher_internal
+            |          vaes_gcm_cipherupdate
+            |          ossl_gcm_gmult_avx512
+            |          
+             --1.00%--SSL_write
+                       ssl3_write_bytes
+                       tls_write_records
+                       tls_write_records_default
+                       tls13_cipher
+                       EVP_EncryptUpdate
+                       ossl_gcm_stream_update
+                       gcm_cipher_internal
+                       vaes_gcm_cipherupdate
+                       ossl_gcm_gmult_avx512
+
+     2.18%     1.87%  [.] evp_cipher_init_internal                      -      -            
+            |          
+            |--1.03%--SSL_write
+            |          ssl3_write_bytes
+            |          tls_write_records
+            |          tls_write_records_default
+            |          tls13_cipher
+            |          EVP_CipherInit_ex
+            |          evp_cipher_init_internal
+            |          
+             --0.84%--SSL_read
+                       ssl3_read
+                       ssl3_read_bytes
+                       tls_read_record
+                       tls_get_more_records
+                       tls13_cipher
+                       EVP_CipherInit_ex
+                       evp_cipher_init_internal
+
+     1.98%     0.03%  [.] WPACKET_memcpy                                -      -            
+            |          
+             --1.94%--WPACKET_memcpy
+                       |          
+                       |--1.40%--__memmove_avx512_unaligned_erms
+                       |          
+                        --0.50%--WPACKET_allocate_bytes
+
+     1.88%     1.88%  [.] ossl_aes_gcm_finalize_avx512                  -      -            
+            |          
+            |--0.97%--SSL_read
+            |          ssl3_read
+            |          ssl3_read_bytes
+            |          tls_read_record
+            |          tls_get_more_records
+            |          tls13_cipher
+            |          EVP_DecryptFinal_ex
+            |          ossl_gcm_stream_final
+            |          vaes_gcm_cipherfinal
+            |          ossl_aes_gcm_finalize_avx512
+            |          
+             --0.91%--SSL_write
+                       ssl3_write_bytes
+                       tls_write_records
+                       tls_write_records_default
+                       tls13_cipher
+                       EVP_EncryptFinal_ex
+                       ossl_gcm_stream_final
+                       vaes_gcm_cipherfinal
+                       ossl_aes_gcm_finalize_avx512
+
+     1.84%     0.23%  [.] EVP_DecryptFinal_ex                           -      -            
+            |          
+             --1.61%--EVP_DecryptFinal_ex
+                       |          
+                        --1.57%--ossl_gcm_stream_final
+                                  |          
+                                   --1.44%--vaes_gcm_cipherfinal
+                                             |          
+                                              --0.97%--ossl_aes_gcm_finalize_avx512
+
+     1.78%     0.23%  [.] EVP_EncryptFinal_ex                           -      -            
+            |          
+             --1.55%--EVP_EncryptFinal_ex
+                       ossl_gcm_stream_final
+                       |          
+                        --1.27%--vaes_gcm_cipherfinal
+                                  |          
+                                   --0.91%--ossl_aes_gcm_finalize_avx512
+
+     1.77%     0.40%  [.] WPACKET_start_sub_packet_len__                -      -            
+            |          
+             --1.37%--WPACKET_start_sub_packet_len__
+                       |          
+                        --0.97%--CRYPTO_zalloc
+                                  |          
+                                   --0.80%--CRYPTO_malloc
+                                             |          
+                                              --0.57%--malloc
+
+     1.75%     0.40%  [.] tls_initialise_write_packets_default          -      -            
+            |          
+             --1.34%--tls_initialise_write_packets_default
+                       |          
+                        --1.27%--WPACKET_init_static_len
+                                  |          
+                                   --0.97%--CRYPTO_zalloc
+                                             |          
+                                              --0.81%--CRYPTO_malloc
+                                                        |          
+                                                         --0.64%--malloc
+
+     1.48%     0.10%  [.] ERR_clear_last_mark                           -      -            
+            |          
+             --1.38%--ERR_clear_last_mark
+                       ossl_err_get_state_int
+                       |          
+                        --0.57%--CRYPTO_THREAD_get_local_ex
+
+     1.44%     0.13%  [.] ERR_set_mark                                  -      -            
+            |          
+             --1.30%--ERR_set_mark
+                       ossl_err_get_state_int
+                       |          
+                        --0.50%--CRYPTO_THREAD_get_local_ex
+
+     1.27%     1.07%  [.] ossl_gcm_set_ctx_params                       -      -            
+            |          
+             --0.84%--SSL_read
+                       ssl3_read
+                       ssl3_read_bytes
+                       tls_read_record
+                       tls_get_more_records
+                       tls13_cipher
+                       |          
+                        --0.50%--EVP_CIPHER_CTX_ctrl
+                                  ossl_gcm_set_ctx_params
+
+     1.11%     0.44%  [.] WPACKET_close                                 -      -            
+            |          
+             --0.67%--WPACKET_close
+                       |          
+                        --0.60%--cfree@GLIBC_2.2.5
+
+     1.07%     0.37%  [.] CRYPTO_THREAD_get_local_ex                    -      -            
+            |          
+             --0.70%--CRYPTO_THREAD_get_local_ex
+
+     0.97%     0.97%  [.] WPACKET_get_curr                              -      -            
+            |          
+             --0.70%--SSL_write
+                       ssl3_write_bytes
+                       tls_write_records
+                       tls_write_records_default
+
+     0.91%     0.10%  [.] tls_allocate_write_buffers_default            -      -            
+            |          
+             --0.81%--tls_allocate_write_buffers_default
+                       tls_setup_write_buffer
+
+     0.81%     0.81%  [.] tls_setup_write_buffer                        -      -            
+            |          
+             --0.78%--SSL_write
+                       ssl3_write_bytes
+                       tls_write_records
+                       tls_write_records_default
+                       tls_allocate_write_buffers_default
+                       tls_setup_write_buffer
+
+     0.77%     0.50%  [.] ssl_read_internal                             -      -            
+            |          
+             --0.50%--SSL_read
+                       ssl_read_internal
+
+     0.69%     0.47%  [.] OPENSSL_init_crypto                           -      -            
+     0.67%     0.67%  [.] EVP_CIPHER_CTX_get_iv_length                  -      -            
+     0.67%     0.37%  [.] tls_prepare_for_encryption_default            -      -            
+     0.67%     0.33%  [.] ossl_gcm_einit                                -      -            
+     0.64%     0.64%  [.] BIO_clear_flags                               -      -            
+     0.63%     0.23%  [.] tls13_add_record_padding                      -      -            
+     0.63%     0.23%  [.] ssl_release_record                            -      -            
+     0.61%     0.47%  [.] ossl_gcm_dinit                                -      -            
+     0.57%     0.57%  [.] WPACKET_get_length                            -      -            
+            |
+            ---ssl3_write_bytes
+               tls_write_records
+               tls_write_records_default
+
+     0.54%     0.54%  [.] EVP_CipherUpdate                              -      -            
+     0.54%     0.44%  [.] ossl_gcm_get_ctx_params                       -      -            
+     0.51%     0.51%  [.] ossl_sa_get                                   -      -            
+            |
+            ---ssl3_read
+               ssl3_read_bytes
+               tls_read_record
+               tls_get_more_records
+
+     0.51%     0.30%  [.] EVP_CIPHER_get_mode                           -      -            
+     0.47%     0.37%  [.] ssl3_write                                    -      -            
+     0.44%     0.27%  [.] tls13_post_process_record                     -      -            
+     0.41%     0.41%  [.] tls_increment_sequence_ctr                    -      -            
+     0.40%     0.40%  [.] pthread_getspecific@@GLIBC_2.34               -      -            
+     0.40%     0.40%  [.] ossl_tls_handle_rlayer_return                 -      -            
+     0.37%     0.37%  [.] ossl_statem_check_finish_init                 -      -            
+     0.37%     0.27%  [.] ssl_write_internal                            -      -            
+     0.34%     0.34%  [.] vaes_gcm_aadupdate                            -      -            
+     0.32%     0.10%  [.] CRYPTO_THREAD_run_once                        -      -            
+     0.30%     0.30%  [.] tls_release_record                            -      -            
+     0.27%     0.27%  [.] EVP_CIPHER_CTX_get0_cipher                    -      -            
+     0.27%     0.27%  [.] tls_get_max_records_default                   -      -            
+     0.23%     0.23%  [.] CRYPTO_free@plt                               -      -            
+     0.20%     0.20%  [.] EVP_CIPHER_get_flags                          -      -            
+     0.20%     0.20%  [.] EVP_CipherUpdate@plt                          -      -            
+     0.20%     0.20%  [.] memset@plt                                    -      -            
+     0.20%     0.20%  [.] ssl_get_max_send_fragment                     -      -            
+     0.20%     0.13%  [.] OSSL_PARAM_get_octet_string                   -      -            
+     0.17%     0.17%  [.] tls13_common_post_process_record              -      -            
+     0.17%     0.17%  [.] memcpy@plt                                    -      -            
+     0.17%     0.17%  [.] __errno_location                              -      -            
+     0.17%     0.17%  [.] ossl_aes_gcm_setiv_avx512                     -      -            
+     0.17%     0.17%  [.] OSSL_PARAM_construct_octet_string             -      -            
+     0.17%     0.17%  [.] __memset_avx512_unaligned                     -      -            
+     0.17%     0.17%  [.] WPACKET_get_total_written                     -      -            
+     0.17%     0.17%  [.] bio.benchApp__anon_5430__struct_7736.benchFn  -      -            
+     0.14%     0.14%  [.] tls13_validate_record_header                  -      -            
+     0.14%     0.14%  [.] EVP_CIPHER_CTX_get0_cipher@plt                -      -            
+     0.13%     0.13%  [.] ossl_prov_is_running                          -      -            
+     0.13%     0.13%  [.] BIO_read@plt                                  -      -            
+     0.13%     0.13%  [.] evp_do_ciph_ctx_setparams                     -      -            
+     0.13%     0.13%  [.] CRYPTO_memcmp                                 -      -            
+     0.13%     0.13%  [.] memcpy@plt                                    -      -            
+     0.12%     0.10%  [.] pthread_once@GLIBC_2.2.5                      -      -            
+     0.11%     0.00%  [.] SSL_CTX_new_ex                                -      -            
+     0.10%     0.03%  [k] asm_sysvec_apic_timer_interrupt               -      -            
+     0.10%     0.10%  [.] ssl_get_split_send_fragment                   -      -            
+     0.10%     0.10%  [.] tls_processed_read_pending                    -      -            
+     0.10%     0.10%  [.] pthread_once@plt                              -      -            
+     0.10%     0.00%  [.] state_machine                                 -      -            
+     0.10%     0.10%  [.] CRYPTO_free                                   -      -            
+     0.10%     0.10%  [.] OSSL_PARAM_set_octet_string                   -      -            
+     0.10%     0.10%  [.] CRYPTO_atomic_load                            -      -            
+     0.10%     0.10%  [.] EVP_CipherInit_ex@plt                         -      -            
+     0.10%     0.10%  [.] CRYPTO_THREAD_get_local                       -      -            
+     0.10%     0.10%  [.] EVP_CIPHER_CTX_get_block_size                 -      -            
+     0.07%     0.07%  [.] EVP_CIPHER_get_mode@plt                       -      -            
+     0.07%     0.00%  [.] sysvec_apic_timer_interrupt                   -      -            
+     0.07%     0.07%  [.] EVP_CipherFinal_ex@plt                        -      -            
+     0.07%     0.07%  [.] EVP_CIPHER_get_block_size                     -      -            
+     0.07%     0.07%  [.] EVP_CIPHER_CTX_get_iv_length@plt              -      -            
+     0.07%     0.00%  [.] tls_construct_cert_verify                     -      -            
+     0.07%     0.00%  [.] EVP_DigestSignFinal                           -      -            
+     0.07%     0.00%  [.] ecdsa_digest_sign_final                       -      -            
+     0.07%     0.00%  [.] ossl_ecdsa_sign                               -      -            
+     0.07%     0.00%  [.] ossl_ecdsa_simple_sign_sig                    -      -            
+     0.07%     0.07%  [.] __memset_avx512_unaligned_erms                -      -            
+     0.07%     0.00%  [.] SSL_CTX_free                                  -      -            
+     0.07%     0.07%  [.] __errno_location@plt                          -      -            
+     0.07%     0.07%  [.] malloc@plt                                    -      -            
+     0.06%     0.00%  [.] SSL_CTX_use_PrivateKey_file                   -      -            
+     0.06%     0.00%  [.] PEM_read_bio_PrivateKey_ex                    -      -            
+     0.06%     0.00%  [.] pem_read_bio_key                              -      -            
+     0.05%     0.00%  [.] evp_generic_fetch                             -      -            
+     0.05%     0.00%  [.] ossl_namemap_name2num                         -      -            
+     0.05%     0.00%  [.] ossl_ht_get                                   -      -            
+     0.04%     0.00%  [.] asm_exc_page_fault                            -      -            
+     0.04%     0.00%  [.] exc_page_fault                                -      -            
+     0.04%     0.00%  [.] do_user_addr_fault                            -      -            
+     0.04%     0.00%  [.] handle_mm_fault                               -      -            
+     0.04%     0.00%  [.] __handle_mm_fault                             -      -            
+     0.04%     0.00%  [.] do_fault                                      -      -            
+     0.04%     0.04%  [k] __update_load_avg_cfs_rq                      -      -            
+     0.04%     0.00%  [.] __sysvec_apic_timer_interrupt                 -      -            
+     0.04%     0.00%  [.] hrtimer_interrupt                             -      -            
+     0.04%     0.00%  [.] __hrtimer_run_queues                          -      -            
+     0.04%     0.00%  [.] tick_nohz_handler                             -      -            
+     0.04%     0.00%  [.] update_process_times                          -      -            
+     0.04%     0.00%  [.] sched_tick                                    -      -            
+     0.04%     0.00%  [.] task_tick_fair                                -      -            
+     0.04%     0.00%  [.] update_load_avg                               -      -            
+     0.03%     0.03%  [.] EVP_CipherFinal_ex                            -      -            
+     0.03%     0.03%  [.] ssl_create_cipher_list                        -      -            
+     0.03%     0.03%  [.] OSSL_DECODER_up_ref                           -      -            
+     0.03%     0.00%  [.] OSSL_DECODER_CTX_new_for_pkey                 -      -            
+     0.03%     0.00%  [.] OPENSSL_sk_deep_copy                          -      -            
+     0.03%     0.00%  [.] ossl_decoder_instance_dup                     -      -            
+     0.03%     0.03%  [.] ERR_clear_last_mark@plt                       -      -            
+     0.03%     0.03%  [.] CRYPTO_zalloc@plt                             -      -            
+     0.03%     0.03%  [.] _int_malloc                                   -      -            
+     0.03%     0.00%  [.] tls_process_finished                          -      -            
+     0.03%     0.00%  [.] tls13_change_cipher_state                     -      -            
+     0.03%     0.00%  [.] ssl_set_new_record_layer                      -      -            
+     0.03%     0.00%  [.] tls_new_record_layer                          -      -            
+     0.03%     0.00%  [.] tls_int_new_record_layer                      -      -            
+     0.03%     0.00%  [.] __libc_malloc2                                -      -            
+     0.03%     0.03%  [.] benchmark.B.loop                              -      -            
+     0.03%     0.03%  [.] evp_do_ciph_ctx_getparams                     -      -            
+     0.03%     0.03%  [.] BIO_write@plt                                 -      -            
+     0.03%     0.03%  [.] EVP_MD_CTX_get0_md                            -      -            
+     0.03%     0.03%  [.] tls_get_max_records                           -      -            
+     0.03%     0.03%  [.] SSL_write@plt                                 -      -            
+     0.03%     0.03%  [.] CRYPTO_clear_free                             -      -            
+     0.03%     0.00%  [.] BN_CTX_free                                   -      -            
+     0.03%     0.00%  [.] BN_clear_free                                 -      -            
+     0.03%     0.03%  [.] BN_free                                       -      -            
+     0.03%     0.00%  [.] ecdsa_sign_setup                              -      -            
+     0.03%     0.00%  [.] EC_POINT_free                                 -      -            
+     0.03%     0.00%  [.] ossl_ec_GFp_simple_point_finish               -      -            
+     0.03%     0.03%  [.] AUTHORITY_KEYID_free                          -      -            
+     0.03%     0.00%  [.] SSL_free                                      -      -            
+     0.03%     0.00%  [.] ossl_ssl_connection_free                      -      -            
+     0.03%     0.00%  [.] OPENSSL_sk_pop_free                           -      -            
+     0.03%     0.00%  [.] ASN1_item_free                                -      -            
+     0.03%     0.00%  [.] ossl_asn1_item_embed_free                     -      -            
+     0.03%     0.00%  [.] x509_cb                                       -      -            
+     0.03%     0.03%  [.] tls13_get_record_type                         -      -            
+     0.03%     0.03%  [k] sched_clock_cpu                               -      -            
+     0.03%     0.00%  [.] __irq_exit_rcu                                -      -            
+     0.03%     0.00%  [.] handle_softirqs                               -      -            
+     0.03%     0.00%  [.] irqtime_account_irq                           -      -            
+     0.03%     0.00%  [.] ssl_cert_free                                 -      -            
+     0.03%     0.03%  [.] ERR_set_mark@plt                              -      -            
+     0.03%     0.03%  [.] ossl_statem_get_in_handshake                  -      -            
+     0.03%     0.03%  [.] SSL_in_init                                   -      -            
+     0.03%     0.00%  [.] _start                                        -      -            
+     0.03%     0.00%  [.] _dl_start                                     -      -            
+     0.03%     0.00%  [.] _dl_sysdep_start                              -      -            
+     0.03%     0.00%  [.] dl_main                                       -      -            
+     0.03%     0.03%  [.] __strlen_evex                                 -      -            
+     0.03%     0.00%  [.] OSSL_DECODER_from_bio                         -      -            
+     0.03%     0.00%  [.] decoder_process                               -      -            
+     0.03%     0.00%  [.] pem2der_decode                                -      -            
+     0.03%     0.00%  [.] ossl_epki2pki_der_decode                      -      -            
+     0.03%     0.00%  [.] der2key_decode                                -      -            
+     0.03%     0.00%  [.] decoder_construct_pkey                        -      -            
+     0.03%     0.00%  [.] evp_keymgmt_util_make_pkey                    -      -            
+     0.03%     0.00%  [.] evp_keymgmt_util_assign_pkey                  -      -            
+     0.03%     0.00%  [.] EVP_PKEY_set_type_by_keymgmt                  -      -            
+     0.03%     0.00%  [.] ossl_namemap_doall_names                      -      -            
+     0.03%     0.00%  [.] find_ameth                                    -      -            
+     0.03%     0.00%  [.] EVP_PKEY_asn1_find_str                        -      -            
+     0.03%     0.03%  [.] __memcmp_evex_movbe                           -      -            
+     0.03%     0.00%  [.] ssl_evp_md_fetch                              -      -            
+     0.03%     0.00%  [.] EVP_MD_fetch                                  -      -            
+     0.02%     0.02%  [.] ossl_fnv1a_hash                               -      -            
+     0.02%     0.00%  [.] ssl_load_ciphers                              -      -            
+     0.02%     0.00%  [.] ssl_evp_cipher_fetch                          -      -            
+     0.02%     0.00%  [.] EVP_CIPHER_fetch                              -      -            
+     0.02%     0.00%  [.] ossl_method_construct                         -      -            
+     0.02%     0.00%  [.] ossl_algorithm_do_all                         -      -            
+     0.02%     0.00%  [.] ossl_provider_doall_activated                 -      -            
+     0.02%     0.00%  [.] algorithm_do_this                             -      -            
+     0.02%     0.00%  [.] ossl_method_construct_this                    -      -            
+     0.02%     0.00%  [.] construct_evp_method                          -      -            
+     0.02%     0.00%  [.] ossl_namemap_add_names                        -      -            
+     0.02%     0.00%  [.] namemap_add_name                              -      -            
+     0.02%     0.00%  [.] OPENSSL_init_ssl                              -      -            
+     0.02%     0.00%  [.] __pthread_once_slow.isra.0                    -      -            
+     0.02%     0.00%  [.] ossl_init_config_ossl_                        -      -            
+     0.02%     0.00%  [.] ossl_config_int                               -      -            
+     0.02%     0.00%  [.] CONF_modules_load_file_ex                     -      -            
+     0.02%     0.00%  [.] ossl_init_load_crypto_strings_ossl_           -      -            
+     0.02%     0.00%  [.] ossl_err_load_crypto_strings                  -      -            
+     0.02%     0.00%  [.] ossl_err_load_PROV_strings                    -      -            
+     0.02%     0.00%  [.] ERR_load_strings_const                        -      -            
+     0.02%     0.00%  [.] OPENSSL_LH_insert                             -      -            
+     0.02%     0.00%  [.] _dl_relocate_object                           -      -            
+     0.02%     0.00%  [.] _dl_relocate_object_no_relro                  -      -            
+     0.02%     0.02%  [k] next_uptodate_folio                           -      -            
+     0.02%     0.00%  [.] filemap_map_pages                             -      -            
+     0.01%     0.01%  [k] __list_del_entry_valid_or_report              -      -            
+     0.01%     0.00%  [.] vma_alloc_folio_noprof                        -      -            
+     0.01%     0.00%  [.] folio_alloc_mpol_noprof                       -      -            
+     0.01%     0.00%  [.] alloc_pages_mpol_noprof                       -      -            
+     0.01%     0.00%  [.] __alloc_pages_noprof                          -      -            
+     0.01%     0.00%  [.] get_page_from_freelist                        -      -            
+     0.01%     0.00%  [.] __rmqueue_pcplist                             -      -            
+     0.01%     0.00%  [.] _dl_map_object_deps                           -      -            
+     0.01%     0.00%  [.] _dl_catch_exception                           -      -            
+     0.01%     0.00%  [.] openaux                                       -      -            
+     0.01%     0.00%  [.] _dl_map_new_object                            -      -            
+     0.01%     0.00%  [.] _dl_map_object_from_fd                        -      -            
+     0.01%     0.00%  [.] entry_SYSCALL_64_after_hwframe                -      -            
+     0.01%     0.00%  [.] do_syscall_64                                 -      -            
+     0.01%     0.01%  [k] filemap_fault                                 -      -            
+     0.01%     0.00%  [.] __do_fault                                    -      -            
+     0.01%     0.01%  [k] free_pgtables                                 -      -            
+     0.01%     0.01%  [k] __fsnotify_parent                             -      -            
+     0.01%     0.00%  [.] mmap64                                        -      -            
+     0.01%     0.00%  [.] ksys_mmap_pgoff                               -      -            
+     0.01%     0.00%  [.] __GI___pread64_nocancel                       -      -            
+     0.01%     0.00%  [.] vm_mmap_pgoff                                 -      -            
+     0.01%     0.00%  [.] do_mmap                                       -      -            
+     0.01%     0.00%  [.] __mmap_region                                 -      -            
+     0.01%     0.00%  [.] __x64_sys_pread64                             -      -            
+     0.01%     0.00%  [.] vms_clean_up_area                             -      -            
+     0.01%     0.00%  [.] vfs_read                                      -      -            
+     0.01%     0.00%  [.] vms_clear_ptes                                -      -            
+
+
+#
+# (Tip: To show inline functions in call traces add --inline to perf report)
+#

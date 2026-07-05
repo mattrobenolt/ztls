@@ -1,0 +1,80 @@
+    20.15%    20.15%  [.] ring_core_0_17_14__aes_gcm_enc_update_vaes_avx2                                                                                                                                 -      -            
+    17.96%    17.96%  [.] ring_core_0_17_14__aes_gcm_dec_update_vaes_avx2                                                                                                                                 -      -            
+     8.34%     8.34%  [.] ring_core_0_17_14__gcm_ghash_vpclmulqdq_avx2_1                                                                                                                                  -      -            
+     7.15%     7.15%  [.] _ZN4ring4aead7aes_gcm4seal17h40dc3cc640a033a3E                                                                                                                                  -      -            
+     5.54%     5.54%  [.] _ZN6rustls6vecbuf14ChunkVecBuffer8write_to17h719a0c271f449832E                                                                                                                  -      -            
+     4.59%     4.59%  [.] __memmove_avx512_unaligned_erms                                                                                                                                                 -      -            
+     4.42%     4.42%  [.] _ZN4ring4aead7aes_gcm4open17h989b220cc4513285E                                                                                                                                  -      -            
+     3.70%     0.92%  [.] __libc_malloc2                                                                                                                                                                  -      -            
+            |          
+             --2.78%--_int_malloc
+                       |          
+                        --0.93%--alloc_perturb
+     2.79%     0.93%  [.] _int_free_chunk                                                                                                                                                                 -      -            
+            |          
+             --1.86%--_int_free_merge_chunk
+                       |          
+                        --0.93%--_int_free_create_chunk
+     2.79%     2.79%  [.] _ZN6rustls4conn26ConnectionCore$LT$Data$GT$19process_new_packets17h979276ca12b9a724E                                                                                            -      -            
+     2.78%     1.85%  [.] _int_malloc                                                                                                                                                                     -      -            
+            |          
+            |--1.85%--__libc_malloc2
+            |          _int_malloc
+            |          
+             --0.93%--_int_malloc
+                       alloc_perturb
+     2.75%     2.75%  [.] _ZN6rustls4msgs7message8outbound26read_opaque_message_header17hc8891282dcac4929E                                                                                                -      -            
+     1.86%     0.93%  [.] _int_free_merge_chunk                                                                                                                                                           -      -            
+            |          
+            |--0.93%--_int_free_chunk
+            |          _int_free_merge_chunk
+            |          
+             --0.93%--_int_free_merge_chunk
+                       _int_free_create_chunk
+     1.86%     1.86%  [.] _ZN6rustls12record_layer11RecordLayer16decrypt_incoming17h290ad5000bcb07dbE                                                                                                     -      -            
+     1.85%     1.85%  [.] _ZN111_$LT$rustls..crypto..ring..tls13..Tls13MessageEncrypter$u20$as$u20$rustls..crypto..cipher..MessageEncrypter$GT$7encrypt17he30c54bd2e084276E                               -      -            
+     1.59%     1.59%  [.] ring_core_0_17_14__aes_hw_ctr32_encrypt_blocks                                                                                                                                  -      -            
+     0.94%     0.94%  [.] _ZN6rustls4conn26ConnectionCore$LT$Data$GT$19process_new_packets17h0696638b299be9fbE                                                                                            -      -            
+     0.94%     0.94%  [.] malloc                                                                                                                                                                          -      -            
+     0.93%     0.93%  [.] _ZN6rustls4msgs7message8outbound15PrefixedPayload13with_capacity17hc2f53cdb1d25e47bE                                                                                            -      -            
+     0.93%     0.93%  [.] _ZN4ring4aead9algorithm9Algorithm11open_within17hb82b930c4cd7cdd1E                                                                                                              -      -            
+     0.93%     0.93%  [.] _ZN95_$LT$rustls..msgs..deframer..DeframerIter$u20$as$u20$core..iter..traits..iterator..Iterator$GT$4next17h693fada68399d157E                                                   -      -            
+     0.93%     0.93%  [.] _ZN6rustls12record_layer11RecordLayer16encrypt_outgoing17hd53f054c2958937eE                                                                                                     -      -            
+     0.93%     0.93%  [.] _int_free_create_chunk                                                                                                                                                          -      -            
+            |
+            ---_int_free_merge_chunk
+               _int_free_create_chunk
+     0.93%     0.93%  [.] _ZN6rustls12common_state11CommonState16buffer_plaintext17hb6bfa17dad6733c2E                                                                                                     -      -            
+     0.93%     0.93%  [.] _ZN12rustls_bench9bench_app17h02d194783f4005e7E                                                                                                                                 -      -            
+     0.93%     0.93%  [.] alloc_perturb                                                                                                                                                                   -      -            
+            |
+            ---_int_malloc
+               alloc_perturb
+     0.93%     0.93%  [.] fe4_sub                                                                                                                                                                         -      -            
+     0.93%     0.93%  [.] _ZN6rustls12common_state11CommonState16current_io_state17hf7dbf0b8556924b0E                                                                                                     -      -            
+     0.92%     0.92%  [.] _ZN6rustls12common_state11CommonState21process_main_protocol17h903802c88151303dE                                                                                                -      -            
+     0.92%     0.92%  [.] ring_core_0_17_14__CRYPTO_memcmp                                                                                                                                                -      -            
+     0.91%     0.91%  [.] _ZN3std2io5impls74_$LT$impl$u20$std..io..Write$u20$for$u20$alloc..vec..Vec$LT$u8$C$A$GT$$GT$14write_vectored17hec0badbfe60a2a52E                                                -      -            
+     0.91%     0.91%  [.] _ZN141_$LT$rustls..client..tls13..ExpectTraffic$u20$as$u20$rustls..common_state..State$LT$rustls..client..client_conn..ClientConnectionData$GT$$GT$6handle17he2905015e9fec006E  -      -            
+     0.61%     0.61%  [.] _ZN5alloc7raw_vec20RawVecInner$LT$A$GT$11finish_grow17ha48431eac6f5cf50E.llvm.2256914473171766654                                                                               -      -            
+     0.41%     0.00%  [.] entry_SYSCALL_64_after_hwframe                                                                                                                                                  -      -            
+     0.41%     0.00%  [.] do_syscall_64                                                                                                                                                                   -      -            
+     0.37%     0.37%  [.] ring_core_0_17_14__x25519_ge_scalarmult_base_adx                                                                                                                                -      -            
+     0.30%     0.00%  [.] _start                                                                                                                                                                          -      -            
+     0.30%     0.00%  [.] _dl_start                                                                                                                                                                       -      -            
+     0.30%     0.00%  [.] _dl_sysdep_start                                                                                                                                                                -      -            
+     0.30%     0.00%  [.] dl_main                                                                                                                                                                         -      -            
+     0.26%     0.26%  [k] task_mm_cid_work                                                                                                                                                                -      -            
+     0.26%     0.00%  [.] __libc_start_main@@GLIBC_2.34                                                                                                                                                   -      -            
+     0.26%     0.00%  [.] __frame_dummy_init_array_entry+0x7                                                                                                                                              -      -            
+     0.26%     0.00%  [.] 0x00005555555de42f                                                                                                                                                              -      -            
+     0.26%     0.00%  [.] main                                                                                                                                                                            -      -            
+     0.26%     0.00%  [.] _RNvNtCs75vJTIYSa2J_3std2rt19lang_start_internal                                                                                                                                -      -            
+     0.26%     0.00%  [.] _RNvNtNtNtNtNtCs75vJTIYSa2J_3std3sys3pal4unix14stack_overflow3imp12make_handler                                                                                                 -      -            
+     0.26%     0.00%  [.] __mmap                                                                                                                                                                          -      -            
+     0.26%     0.00%  [.] syscall_exit_to_user_mode                                                                                                                                                       -      -            
+     0.26%     0.00%  [.] task_work_run                                                                                                                                                                   -      -            
+     0.15%     0.15%  [k] mas_find                                                                                                                                                                        -      -            
+     0.15%     0.00%  [.] _dl_map_object_deps                                                                                                                                                             -      -            
+     0.15%     0.00%  [.] _dl_catch_exception                                                                                                                                                             -      -            
+     0.15%     0.00%  [.] openaux                                                                                                                                                                         -      -            

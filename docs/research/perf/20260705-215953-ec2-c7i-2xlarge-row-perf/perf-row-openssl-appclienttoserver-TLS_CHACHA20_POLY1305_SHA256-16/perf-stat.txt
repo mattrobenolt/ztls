@@ -1,0 +1,19 @@
+# started on Sun Jul  5 22:01:28 2026
+
+
+ Performance counter stats for 'zig-out/bin/bio_bench --filter ^BenchmarkAppClientToServer/impl=openssl/suite=TLS_CHACHA20_POLY1305_SHA256/size=16$ --benchtime 500ms --count 5':
+
+     9,482,834,723      cycles                                                                
+    16,401,078,915      instructions                                                          
+     2,913,376,271      branches                                                              
+         1,458,648      branch-misses                                                         
+                 0      cache-misses                                                          
+         1,232,578      L1-dcache-load-misses                                                 
+   <not supported>      LLC-load-misses                                                       
+
+       3.001623143 seconds time elapsed
+
+       2.913745000 seconds user
+       0.003890000 seconds sys
+
+

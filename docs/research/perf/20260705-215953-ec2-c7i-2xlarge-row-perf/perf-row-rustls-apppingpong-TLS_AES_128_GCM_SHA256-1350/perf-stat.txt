@@ -1,0 +1,19 @@
+# started on Sun Jul  5 22:01:19 2026
+
+
+ Performance counter stats for 'bench/rustls/target/release/rustls_bench --bench rustls_app_ping_pong --suite TLS_AES_128_GCM_SHA256 --size 1350 --samples 5':
+
+       332,718,130      cycles                                                                
+     1,061,579,722      instructions                                                          
+       123,370,160      branches                                                              
+            60,119      branch-misses                                                         
+                 0      cache-misses                                                          
+            83,134      L1-dcache-load-misses                                                 
+   <not supported>      LLC-load-misses                                                       
+
+       0.106327598 seconds time elapsed
+
+       0.135607000 seconds user
+       0.002621000 seconds sys
+
+

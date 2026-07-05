@@ -1,0 +1,6 @@
+[ perf record: Woken up 189 times to write data ]
+[ perf record: Captured and wrote 47.083 MB zig-out/perf/20260705-215953-row-perf/perf-row-openssl-appclienttoserver-TLS_CHACHA20_POLY1305_SHA256-16/perf.data (2969 samples) ]
+ientToServer/impl=openssl/suite=TLS_CHACHA20_POLY1305_SHA256/size=16	  251229	      2357 ns/op	   6.79 MB/s
+BenchmarkAppClientToServer/impl=openssl/suite=TLS_CHACHA20_POLY1305_SHA256/size=16	  250728	      2372 ns/op	   6.74 MB/s
+BenchmarkAppClientToServer/impl=openssl/suite=TLS_CHACHA20_POLY1305_SHA256/size=16	  249861	      2353 ns/op	   6.80 MB/s
+BenchmarkAppClientToServer/impl=openssl/suite=TLS_CHACHA20_POLY1305_SHA256/size=16	  256113	      2351 ns/op	   6.81 MB/s

@@ -1,0 +1,12 @@
+timestamp_utc=20260705-220152
+git_revision=c8b9f03b28c13cb7e6af85e48ea8df4c4c3b7e3e
+git_dirty=false
+impl=openssl
+crypto_backend=openssl
+binary_path=zig-out/bin/bio_bench
+disasm_tool=objdump -d
+skip_linked_libs=true
+linked_libcrypto=/nix/store/y18pnbvfarnilsmgayswvi1khaw9wbsc-openssl-3.6.2/lib/libcrypto.so.3
+linked_libssl=/nix/store/y18pnbvfarnilsmgayswvi1khaw9wbsc-openssl-3.6.2/lib/libssl.so.3
+kernel=6.12.93
+uname=Linux ip-10-0-1-99.us-west-2.compute.internal 6.12.93 #1-NixOS SMP PREEMPT_DYNAMIC Tue Jun  9 10:26:06 UTC 2026 x86_64 GNU/Linux

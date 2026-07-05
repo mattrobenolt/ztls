@@ -1,0 +1,10 @@
+timestamp_utc=20260705-220152
+git_revision=c8b9f03b28c13cb7e6af85e48ea8df4c4c3b7e3e
+git_dirty=false
+impl=rustls
+crypto_backend=openssl
+binary_path=bench/rustls/target/release/rustls_bench
+disasm_tool=objdump -d
+skip_linked_libs=true
+kernel=6.12.93
+uname=Linux ip-10-0-1-99.us-west-2.compute.internal 6.12.93 #1-NixOS SMP PREEMPT_DYNAMIC Tue Jun  9 10:26:06 UTC 2026 x86_64 GNU/Linux

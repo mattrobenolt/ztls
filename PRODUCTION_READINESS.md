@@ -352,24 +352,25 @@ comparisons measure equivalent work*. This is the project's justification.
   bench-remote-capture` now owns provisioning, deploy, SSH execution, pullback,
   analysis, dirty-tree rejection, verbose progress reporting, and default
   cleanup, with committed clean EC2 captures on `c7i.large` and `c7i.2xlarge`.
-  Pillar 3 still needs a documented repetition policy, acceptance thresholds,
-  and follow-up analysis before performance claims become marketing-grade.
+  Pillar 3 still needs a documented repetition policy and acceptance thresholds
+  before performance claims become marketing-grade.
 - **Hardware matrix has two committed x86_64 points, not a final matrix policy.**
   `infra/bench/` defaults to `c7i.large` and accepts `--instance-types` for
   broader serial matrix captures. The committed same-day `c7i.large` and
-  `c7i.2xlarge` captures prove the path across two EC2 shapes, but CPU pinning,
-  repetitions, instance-family breadth, and threshold policy remain open for
-  marketing-grade performance evidence.
-- **Benchmark equivalence methodology and row-oriented perf/disassembly
-  tooling are methodology progress, not committed perf evidence.** The per-row
-  timed-work inventories, the benchmark explanation template, and the
-  `bench-perf-row` / `bench-disasm-row` scripts define how wall-time deltas
-  will be explained with instruction/branch/cache evidence, but no committed
-  perf or disassembly artifacts exist yet. Producing durable Linux x86_64
-  perf/disassembly evidence requires the EC2 workflow (#11) or equivalent
-  bare-metal access. The `Handshake` row auth-policy asymmetry (ztls performs
-  CertificateVerify signature verification, hostname verification, and leaf
-  policy checks; rustls does not; libssl is partly opaque) remains an open
+  `c7i.2xlarge` captures prove the path across two EC2 shapes, but repetitions,
+  instance-family breadth, and threshold policy remain open for marketing-grade
+  performance evidence.
+- **Selected app-data rows now have committed perf/disassembly evidence.**
+  `docs/research/perf/20260705-215953-ec2-c7i-2xlarge-row-perf/` records pinned
+  Linux/x86_64 `perf stat`, `perf report`, `perf annotate`, symbols, and row
+  explanations for `AppPingPong/TLS_AES_128_GCM_SHA256/1350` and
+  `AppClientToServer/TLS_CHACHA20_POLY1305_SHA256/16` across ztls, OpenSSL
+  libssl, and rustls. The AES-GCM ping-pong row now has counter evidence that
+  ztls executes fewer cycles/instructions/branches than libssl and rustls; the
+  small ChaCha row now has counter evidence that rustls's ring path is cheaper
+  than ztls's OpenSSL EVP path. The `Handshake` row auth-policy asymmetry (ztls
+  performs CertificateVerify signature verification, hostname verification, and
+  leaf policy checks; rustls does not; libssl is partly opaque) remains an open
   equivalence gap that harness alignment or explicit non-equivalence
   documentation must resolve before the `Handshake` row can be claimed
   equivalent. *(#31)*

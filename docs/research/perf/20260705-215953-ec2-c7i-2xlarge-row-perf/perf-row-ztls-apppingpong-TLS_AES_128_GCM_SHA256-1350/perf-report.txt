@@ -1,0 +1,80 @@
+    67.81%     0.67%  [.] ossl_gcm_stream_update                                                       -      -            
+            |          
+             --67.14%--ossl_gcm_stream_update
+                       gcm_cipher_internal
+                       |          
+                       |--57.89%--vaes_gcm_cipherupdate
+                       |          |          
+                       |          |--27.35%--ossl_aes_gcm_decrypt_avx512
+                       |          |          
+                       |          |--26.07%--ossl_aes_gcm_encrypt_avx512
+                       |          |          
+                       |           --3.90%--ossl_gcm_gmult_avx512
+                       |          
+                       |--5.49%--vaes_gcm_setiv
+                       |          |          
+                       |           --4.79%--skip_iv_len_12_init_IV
+                       |          
+                        --0.91%--vaes_gcm_aadupdate
+    67.80%     2.85%  [.] gcm_cipher_internal                                                          -      -            
+            |          
+            |--64.95%--gcm_cipher_internal
+            |          |          
+            |          |--58.12%--vaes_gcm_cipherupdate
+            |          |          |          
+            |          |          |--27.35%--ossl_aes_gcm_decrypt_avx512
+            |          |          |          
+            |          |          |--26.07%--ossl_aes_gcm_encrypt_avx512
+            |          |          |          
+            |          |           --3.90%--ossl_gcm_gmult_avx512
+            |          |          
+            |          |--5.76%--vaes_gcm_setiv
+            |          |          |          
+            |          |           --4.79%--skip_iv_len_12_init_IV
+            |          |          
+            |           --1.07%--vaes_gcm_aadupdate
+            |          
+            |--1.30%--EVP_DecryptUpdate
+            |          ossl_gcm_stream_update
+            |          gcm_cipher_internal
+            |          
+            |--1.04%--EVP_EncryptUpdate
+            |          ossl_gcm_stream_update
+            |          gcm_cipher_internal
+            |          
+             --0.50%--ossl_gcm_stream_update
+                       gcm_cipher_internal
+    58.12%     0.80%  [.] vaes_gcm_cipherupdate                                                        -      -            
+            |          
+             --57.32%--vaes_gcm_cipherupdate
+                       |          
+                       |--27.35%--ossl_aes_gcm_decrypt_avx512
+                       |          
+                       |--26.07%--ossl_aes_gcm_encrypt_avx512
+                       |          
+                        --3.90%--ossl_gcm_gmult_avx512
+    35.24%     1.42%  [.] EVP_DecryptUpdate                                                            -      -            
+            |          
+             --33.79%--ossl_gcm_stream_update
+                       |          
+                        --33.49%--gcm_cipher_internal
+                                  |          
+                                  |--29.70%--vaes_gcm_cipherupdate
+                                  |          |          
+                                  |          |--27.35%--ossl_aes_gcm_decrypt_avx512
+                                  |          |          
+                                  |           --2.05%--ossl_gcm_gmult_avx512
+                                  |          
+                                   --2.15%--vaes_gcm_setiv
+                                             |          
+                                              --1.88%--skip_iv_len_12_init_IV
+    34.69%     1.17%  [.] EVP_EncryptUpdate                                                            -      -            
+            |          
+             --33.52%--ossl_gcm_stream_update
+                       |          
+                        --33.15%--gcm_cipher_internal
+                                  |          
+                                  |--28.19%--vaes_gcm_cipherupdate
+                                  |          |          
+                                  |          |--26.07%--ossl_aes_gcm_encrypt_avx512
+                                  |          |          

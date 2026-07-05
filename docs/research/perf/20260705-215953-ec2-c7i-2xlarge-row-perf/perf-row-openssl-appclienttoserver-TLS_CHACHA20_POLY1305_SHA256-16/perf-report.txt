@@ -1,0 +1,80 @@
+    68.82%     0.95%  [.] tls13_cipher                                  -      -            
+            |          
+            |--67.87%--tls13_cipher
+            |          |          
+            |          |--17.03%--EVP_EncryptUpdate
+            |          |          |          
+            |          |           --16.79%--chacha20_poly1305_cipher
+            |          |                     |          
+            |          |                      --16.63%--chacha20_poly1305_aead_cipher
+            |          |                                |          
+            |          |                                |--9.87%--chacha20_cipher
+            |          |                                |          |          
+            |          |                                |           --6.78%--ChaCha20_avx512
+            |          |                                |          
+            |          |                                |--4.32%--ChaCha20_avx512
+            |          |                                |          
+            |          |                                 --1.99%--Poly1305_Update
+            |          |                                           |          
+            |          |                                            --1.79%--poly1305_blocks_vpmadd52
+            |          |          
+            |          |--16.72%--EVP_DecryptUpdate
+            |          |          |          
+            |          |           --16.31%--chacha20_poly1305_cipher
+            |          |                     |          
+            |          |                      --16.08%--chacha20_poly1305_aead_cipher
+            |          |                                |          
+            |          |                                |--9.68%--chacha20_cipher
+            |          |                                |          |          
+            |          |                                |           --6.62%--ChaCha20_avx512
+            |          |                                |          
+            |          |                                |--3.87%--ChaCha20_avx512
+            |          |                                |          
+            |          |                                 --2.12%--Poly1305_Update
+            |          |                                           |          
+            |          |                                            --1.85%--poly1305_blocks_vpmadd52
+            |          |          
+            |          |--14.25%--EVP_CIPHER_CTX_ctrl
+            |          |          |          
+            |          |          |--6.25%--OSSL_PARAM_construct_octet_string
+            |          |          |          
+            |          |          |--3.24%--chacha20_poly1305_get_ctx_params
+            |          |          |          |          
+            |          |          |           --2.97%--__memmove_avx512_unaligned_erms
+            |          |          |          
+            |          |           --3.24%--chacha20_poly1305_set_ctx_params
+            |          |                     |          
+            |          |                      --3.03%--__memmove_avx512_unaligned_erms
+            |          |          
+            |          |--8.63%--EVP_CipherInit_ex
+            |          |          |          
+            |          |          |--3.94%--chacha20_poly1305_einit
+            |          |          |          |          
+            |          |          |           --3.74%--chacha20_poly1305_initiv
+            |          |          |                     |          
+            |          |          |                      --3.57%--ossl_chacha20_einit
+            |          |          |                                |          
+            |          |          |                                 --3.20%--ossl_cipher_generic_einit
+            |          |          |                                           |          
+            |          |          |                                            --3.10%--ossl_cipher_generic_initiv
+            |          |          |                                                      |          
+            |          |          |                                                       --3.03%--__memmove_avx512_unaligned_erms
+            |          |          |          
+            |          |          |--3.61%--chacha20_poly1305_dinit
+            |          |          |          |          
+            |          |          |           --3.03%--chacha20_poly1305_initiv
+            |          |          |                     |          
+            |          |          |                      --2.86%--ossl_chacha20_dinit
+            |          |          |                                |          
+            |          |          |                                 --2.62%--ossl_cipher_generic_dinit
+            |          |          |                                           |          
+            |          |          |                                            --2.56%--ossl_cipher_generic_initiv
+            |          |          |                                                      |          
+            |          |          |                                                       --2.46%--__memmove_avx512_unaligned_erms
+            |          |          |          
+            |          |           --0.98%--evp_cipher_init_internal
+            |          |          
+            |          |--3.31%--EVP_DecryptFinal_ex
+            |          |          |          
+            |          |           --3.10%--chacha20_poly1305_final
+            |          |                     chacha20_poly1305_aead_cipher

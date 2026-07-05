@@ -1,0 +1,6 @@
+[ perf record: Woken up 190 times to write data ]
+[ perf record: Captured and wrote 47.319 MB zig-out/perf/20260705-215953-row-perf/perf-row-ztls-apppingpong-TLS_AES_128_GCM_SHA256-1350/perf.data (2984 samples) ]
+PingPong/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=1350	  634828	       943.6 ns/op	2861.33 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=1350	  639951	       942.3 ns/op	2865.41 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=1350	  640645	       944.1 ns/op	2859.81 MB/s
+BenchmarkAppPingPong/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=1350	  632230	       943.4 ns/op	2862.06 MB/s

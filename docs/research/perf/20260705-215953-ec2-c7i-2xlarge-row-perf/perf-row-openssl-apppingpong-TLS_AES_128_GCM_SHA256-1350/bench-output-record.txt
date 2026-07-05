@@ -1,0 +1,6 @@
+[ perf record: Woken up 190 times to write data ]
+[ perf record: Captured and wrote 47.352 MB zig-out/perf/20260705-215953-row-perf/perf-row-openssl-apppingpong-TLS_AES_128_GCM_SHA256-1350/perf.data (2986 samples) ]
+ngPong/impl=openssl/suite=TLS_AES_128_GCM_SHA256/size=1350	  267943	      2222 ns/op	1215.16 MB/s
+BenchmarkAppPingPong/impl=openssl/suite=TLS_AES_128_GCM_SHA256/size=1350	  267372	      2221 ns/op	1215.43 MB/s
+BenchmarkAppPingPong/impl=openssl/suite=TLS_AES_128_GCM_SHA256/size=1350	  266276	      2227 ns/op	1212.25 MB/s
+BenchmarkAppPingPong/impl=openssl/suite=TLS_AES_128_GCM_SHA256/size=1350	  270642	      2224 ns/op	1214.29 MB/s

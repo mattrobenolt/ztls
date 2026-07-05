@@ -1,0 +1,19 @@
+# started on Sun Jul  5 22:00:25 2026
+
+
+ Performance counter stats for 'zig-out/bin/benchmark --filter ^BenchmarkAppPingPong/impl=ztls/suite=TLS_AES_128_GCM_SHA256/size=1350$ --benchtime 500ms --count 5':
+
+     9,475,626,962      cycles                                                                
+    29,548,583,620      instructions                                                          
+     4,001,680,013      branches                                                              
+           196,546      branch-misses                                                         
+                 0      cache-misses                                                          
+           904,329      L1-dcache-load-misses                                                 
+   <not supported>      LLC-load-misses                                                       
+
+       2.998143906 seconds time elapsed
+
+       2.939597000 seconds user
+       0.003915000 seconds sys
+
+

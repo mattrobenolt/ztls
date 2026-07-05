@@ -1,0 +1,10 @@
+zig_os: linux
+zig_arch: x86_64
+zig_abi: gnu
+zig_cpu: sapphirerapids
+zig_mode: ReleaseFast
+BenchmarkAppClientToServer/impl=openssl/suite=TLS_CHACHA20_POLY1305_SHA256/size=16	  259126	      2285 ns/op	   7.00 MB/s
+BenchmarkAppClientToServer/impl=openssl/suite=TLS_CHACHA20_POLY1305_SHA256/size=16	  263457	      2284 ns/op	   7.00 MB/s
+BenchmarkAppClientToServer/impl=openssl/suite=TLS_CHACHA20_POLY1305_SHA256/size=16	  264078	      2280 ns/op	   7.02 MB/s
+BenchmarkAppClientToServer/impl=openssl/suite=TLS_CHACHA20_POLY1305_SHA256/size=16	  258874	      2294 ns/op	   6.97 MB/s
+BenchmarkAppClientToServer/impl=openssl/suite=TLS_CHACHA20_POLY1305_SHA256/size=16	  262897	      2283 ns/op	   7.01 MB/s

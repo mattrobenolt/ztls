@@ -1,0 +1,417 @@
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 2K of event 'cpu/cycles/P'
+# Event count (approx.): 9302455003
+#
+# Children      Self  Symbol                                                                           IPC   [IPC Coverage]
+# ........  ........  ...............................................................................  ....................
+#
+    67.81%     0.67%  [.] ossl_gcm_stream_update                                                       -      -            
+            |          
+             --67.14%--ossl_gcm_stream_update
+                       gcm_cipher_internal
+                       |          
+                       |--57.89%--vaes_gcm_cipherupdate
+                       |          |          
+                       |          |--27.35%--ossl_aes_gcm_decrypt_avx512
+                       |          |          
+                       |          |--26.07%--ossl_aes_gcm_encrypt_avx512
+                       |          |          
+                       |           --3.90%--ossl_gcm_gmult_avx512
+                       |          
+                       |--5.49%--vaes_gcm_setiv
+                       |          |          
+                       |           --4.79%--skip_iv_len_12_init_IV
+                       |          
+                        --0.91%--vaes_gcm_aadupdate
+
+    67.80%     2.85%  [.] gcm_cipher_internal                                                          -      -            
+            |          
+            |--64.95%--gcm_cipher_internal
+            |          |          
+            |          |--58.12%--vaes_gcm_cipherupdate
+            |          |          |          
+            |          |          |--27.35%--ossl_aes_gcm_decrypt_avx512
+            |          |          |          
+            |          |          |--26.07%--ossl_aes_gcm_encrypt_avx512
+            |          |          |          
+            |          |           --3.90%--ossl_gcm_gmult_avx512
+            |          |          
+            |          |--5.76%--vaes_gcm_setiv
+            |          |          |          
+            |          |           --4.79%--skip_iv_len_12_init_IV
+            |          |          
+            |           --1.07%--vaes_gcm_aadupdate
+            |          
+            |--1.30%--EVP_DecryptUpdate
+            |          ossl_gcm_stream_update
+            |          gcm_cipher_internal
+            |          
+            |--1.04%--EVP_EncryptUpdate
+            |          ossl_gcm_stream_update
+            |          gcm_cipher_internal
+            |          
+             --0.50%--ossl_gcm_stream_update
+                       gcm_cipher_internal
+
+    58.12%     0.80%  [.] vaes_gcm_cipherupdate                                                        -      -            
+            |          
+             --57.32%--vaes_gcm_cipherupdate
+                       |          
+                       |--27.35%--ossl_aes_gcm_decrypt_avx512
+                       |          
+                       |--26.07%--ossl_aes_gcm_encrypt_avx512
+                       |          
+                        --3.90%--ossl_gcm_gmult_avx512
+
+    35.24%     1.42%  [.] EVP_DecryptUpdate                                                            -      -            
+            |          
+             --33.79%--ossl_gcm_stream_update
+                       |          
+                        --33.49%--gcm_cipher_internal
+                                  |          
+                                  |--29.70%--vaes_gcm_cipherupdate
+                                  |          |          
+                                  |          |--27.35%--ossl_aes_gcm_decrypt_avx512
+                                  |          |          
+                                  |           --2.05%--ossl_gcm_gmult_avx512
+                                  |          
+                                   --2.15%--vaes_gcm_setiv
+                                             |          
+                                              --1.88%--skip_iv_len_12_init_IV
+
+    34.69%     1.17%  [.] EVP_EncryptUpdate                                                            -      -            
+            |          
+             --33.52%--ossl_gcm_stream_update
+                       |          
+                        --33.15%--gcm_cipher_internal
+                                  |          
+                                  |--28.19%--vaes_gcm_cipherupdate
+                                  |          |          
+                                  |          |--26.07%--ossl_aes_gcm_encrypt_avx512
+                                  |          |          
+                                  |           --1.85%--ossl_gcm_gmult_avx512
+                                  |          
+                                  |--3.35%--vaes_gcm_setiv
+                                  |          |          
+                                  |           --2.91%--skip_iv_len_12_init_IV
+                                  |          
+                                   --0.57%--vaes_gcm_aadupdate
+
+    27.35%    27.35%  [.] ossl_aes_gcm_decrypt_avx512                                                  -      -            
+            |
+            ---ossl_gcm_stream_update
+               gcm_cipher_internal
+               vaes_gcm_cipherupdate
+               ossl_aes_gcm_decrypt_avx512
+
+    26.07%    26.07%  [.] ossl_aes_gcm_encrypt_avx512                                                  -      -            
+            |
+            ---ossl_gcm_stream_update
+               gcm_cipher_internal
+               vaes_gcm_cipherupdate
+               ossl_aes_gcm_encrypt_avx512
+
+     9.40%     5.54%  [.] EVP_CIPHER_CTX_ctrl                                                          -      -            
+            |          
+            |--1.92%--ossl_gcm_set_ctx_params
+            |          
+             --1.68%--ossl_gcm_get_ctx_params
+
+     7.82%     0.88%  [.] ossl_gcm_stream_final                                                        -      -            
+            |          
+             --6.95%--ossl_gcm_stream_final
+                       |          
+                        --6.64%--vaes_gcm_cipherfinal
+                                  |          
+                                   --5.00%--ossl_aes_gcm_finalize_avx512
+
+     6.64%     1.18%  [.] vaes_gcm_cipherfinal                                                         -      -            
+            |          
+            |--5.47%--vaes_gcm_cipherfinal
+            |          |          
+            |           --5.00%--ossl_aes_gcm_finalize_avx512
+            |          
+             --0.50%--EVP_EncryptFinal_ex
+                       ossl_gcm_stream_final
+                       vaes_gcm_cipherfinal
+
+     5.76%     0.70%  [.] vaes_gcm_setiv                                                               -      -            
+            |          
+             --5.06%--vaes_gcm_setiv
+                       |          
+                        --4.79%--skip_iv_len_12_init_IV
+
+     5.57%     0.90%  [.] EVP_DecryptFinal_ex                                                          -      -            
+            |          
+             --4.63%--ossl_gcm_stream_final
+                       |          
+                        --3.99%--vaes_gcm_cipherfinal
+                                  |          
+                                   --3.05%--ossl_aes_gcm_finalize_avx512
+
+     5.00%     4.96%  [.] ossl_aes_gcm_finalize_avx512                                                 -      -            
+            |          
+            |--3.02%--EVP_DecryptFinal_ex
+            |          ossl_gcm_stream_final
+            |          vaes_gcm_cipherfinal
+            |          ossl_aes_gcm_finalize_avx512
+            |          
+             --1.95%--EVP_EncryptFinal_ex
+                       ossl_gcm_stream_final
+                       vaes_gcm_cipherfinal
+                       ossl_aes_gcm_finalize_avx512
+
+     4.93%     0.33%  [.] EVP_CipherInit_ex                                                            -      -            
+            |          
+            |--1.94%--evp_cipher_init_internal
+            |          |          
+            |           --0.50%--EVP_CIPHER_CTX_get_iv_length
+            |          
+             --1.82%--ossl_gcm_einit
+                       |          
+                        --1.31%--__memmove_avx512_unaligned_erms
+
+     4.79%     4.79%  [.] skip_iv_len_12_init_IV                                                       -      -            
+            |          
+            |--2.91%--EVP_EncryptUpdate
+            |          ossl_gcm_stream_update
+            |          gcm_cipher_internal
+            |          vaes_gcm_setiv
+            |          skip_iv_len_12_init_IV
+            |          
+             --1.88%--EVP_DecryptUpdate
+                       ossl_gcm_stream_update
+                       gcm_cipher_internal
+                       vaes_gcm_setiv
+                       skip_iv_len_12_init_IV
+
+     3.90%     3.86%  [.] ossl_gcm_gmult_avx512                                                        -      -            
+            |          
+            |--2.05%--EVP_DecryptUpdate
+            |          ossl_gcm_stream_update
+            |          gcm_cipher_internal
+            |          vaes_gcm_cipherupdate
+            |          ossl_gcm_gmult_avx512
+            |          
+             --1.81%--EVP_EncryptUpdate
+                       ossl_gcm_stream_update
+                       gcm_cipher_internal
+                       vaes_gcm_cipherupdate
+                       ossl_gcm_gmult_avx512
+
+     3.80%     0.68%  [.] EVP_EncryptFinal_ex                                                          -      -            
+            |          
+             --2.99%--ossl_gcm_stream_final
+                       |          
+                        --2.45%--vaes_gcm_cipherfinal
+                                  |          
+                                   --1.95%--ossl_aes_gcm_finalize_avx512
+
+     2.69%     1.92%  [.] ossl_gcm_set_ctx_params                                                      -      -            
+            |          
+            |--1.55%--EVP_CIPHER_CTX_ctrl
+            |          ossl_gcm_set_ctx_params
+            |          
+             --0.77%--ossl_gcm_set_ctx_params
+                       OSSL_PARAM_get_octet_string
+
+     1.94%     1.44%  [.] evp_cipher_init_internal                                                     -      -            
+            |          
+            |--1.44%--EVP_CipherInit_ex
+            |          evp_cipher_init_internal
+            |          
+             --0.50%--evp_cipher_init_internal
+                       EVP_CIPHER_CTX_get_iv_length
+
+     1.82%     0.37%  [.] ossl_gcm_einit                                                               -      -            
+            |          
+             --1.45%--ossl_gcm_einit
+                       |          
+                        --1.31%--__memmove_avx512_unaligned_erms
+
+     1.71%     1.58%  [.] ossl_gcm_get_ctx_params                                                      -      -            
+            |          
+             --1.58%--EVP_CIPHER_CTX_ctrl
+                       ossl_gcm_get_ctx_params
+
+     1.51%     1.51%  [.] __memmove_avx512_unaligned_erms                                              -      -            
+            |          
+             --1.41%--EVP_CipherInit_ex
+                       |          
+                        --1.31%--ossl_gcm_einit
+                                  __memmove_avx512_unaligned_erms
+
+     1.11%     1.11%  [.] ClientHandshake.handleRecord                                                 -      -            
+     1.07%     1.07%  [.] vaes_gcm_aadupdate                                                           -      -            
+            |          
+             --0.57%--EVP_EncryptUpdate
+                       ossl_gcm_stream_update
+                       gcm_cipher_internal
+                       vaes_gcm_aadupdate
+
+     0.91%     0.91%  [.] RecordLayer.encryptPrepared                                                  -      -            
+     0.77%     0.64%  [.] OSSL_PARAM_get_octet_string                                                  -      -            
+     0.71%     0.71%  [.] RecordLayer.decrypt                                                          -      -            
+     0.50%     0.50%  [.] __memset_avx512_unaligned_erms                                               -      -            
+     0.50%     0.50%  [.] EVP_CIPHER_CTX_get_iv_length                                                 -      -            
+            |
+            ---evp_cipher_init_internal
+               EVP_CIPHER_CTX_get_iv_length
+
+     0.47%     0.44%  [.] CRYPTO_memcmp                                                                -      -            
+     0.47%     0.30%  [.] ossl_gcm_dinit                                                               -      -            
+     0.37%     0.37%  [.] ossl_prov_is_running                                                         -      -            
+     0.27%     0.27%  [.] EVP_CIPHER_CTX_ctrl@plt                                                      -      -            
+     0.27%     0.27%  [.] ossl_aes_gcm_setiv_avx512                                                    -      -            
+     0.24%     0.24%  [.] memcpy@plt                                                                   -      -            
+     0.23%     0.20%  [.] OSSL_PARAM_construct_octet_string                                            -      -            
+     0.20%     0.20%  [.] EVP_CIPHER_CTX_get_block_size                                                -      -            
+     0.20%     0.20%  [.] EVP_DecryptUpdate@plt                                                        -      -            
+     0.17%     0.17%  [.] bench.record_protection.benchZtlsPingPong__anon_10606__struct_13781.benchFn  -      -            
+     0.14%     0.00%  [.] asm_sysvec_apic_timer_interrupt                                              -      -            
+     0.14%     0.00%  [.] sysvec_apic_timer_interrupt                                                  -      -            
+     0.14%     0.07%  [.] OSSL_PARAM_set_octet_string                                                  -      -            
+     0.10%     0.10%  [.] EVP_EncryptUpdate@plt                                                        -      -            
+     0.10%     0.00%  [.] __sysvec_apic_timer_interrupt                                                -      -            
+     0.10%     0.00%  [.] hrtimer_interrupt                                                            -      -            
+     0.10%     0.10%  [.] EVP_EncryptInit_ex@plt                                                       -      -            
+     0.08%     0.00%  [.] EVP_PKEY_new_raw_private_key                                                 -      -            
+     0.07%     0.00%  [.] __hrtimer_run_queues                                                         -      -            
+     0.07%     0.00%  [.] tick_nohz_handler                                                            -      -            
+     0.07%     0.00%  [.] update_process_times                                                         -      -            
+     0.07%     0.00%  [.] sched_tick                                                                   -      -            
+     0.07%     0.07%  [.] benchmark.B.loop                                                             -      -            
+     0.07%     0.07%  [.] EVP_DecryptFinal_ex@plt                                                      -      -            
+     0.07%     0.07%  [.] EVP_DecryptInit_ex@plt                                                       -      -            
+     0.03%     0.03%  [k] native_write_msr                                                             -      -            
+     0.03%     0.00%  [.] perf_event_task_tick                                                         -      -            
+     0.03%     0.00%  [.] perf_adjust_freq_unthr_context                                               -      -            
+     0.03%     0.00%  [.] __intel_pmu_enable_all.isra.0                                                -      -            
+     0.03%     0.03%  [k] ktime_get_update_offsets_now                                                 -      -            
+     0.03%     0.03%  [k] __update_load_avg_se                                                         -      -            
+     0.03%     0.00%  [.] task_tick_fair                                                               -      -            
+     0.03%     0.00%  [.] update_load_avg                                                              -      -            
+     0.03%     0.03%  [.] __ecp_nistz256_sqr_montx                                                     -      -            
+     0.03%     0.00%  [.] EVP_DigestVerifyInit                                                         -      -            
+     0.03%     0.00%  [.] do_sigver_init                                                               -      -            
+     0.03%     0.00%  [.] evp_pkey_export_to_provider                                                  -      -            
+     0.03%     0.00%  [.] ec_pkey_export_to                                                            -      -            
+     0.03%     0.00%  [.] EC_POINT_point2buf                                                           -      -            
+     0.03%     0.00%  [.] ossl_ec_GFp_simple_point2oct                                                 -      -            
+     0.03%     0.00%  [.] ecp_nistz256_get_affine                                                      -      -            
+     0.03%     0.00%  [.] ecp_nistz256_sqr_mont                                                        -      -            
+     0.03%     0.03%  [.] fe_mul                                                                       -      -            
+     0.03%     0.00%  [.] EVP_PKEY_fromdata                                                            -      -            
+     0.03%     0.00%  [.] evp_keymgmt_util_fromdata                                                    -      -            
+     0.03%     0.00%  [.] ecx_import                                                                   -      -            
+     0.03%     0.00%  [.] ossl_ecx_key_fromdata                                                        -      -            
+     0.03%     0.00%  [.] ossl_ecx_public_from_private                                                 -      -            
+     0.03%     0.00%  [.] ossl_x25519_public_from_private                                              -      -            
+     0.03%     0.00%  [.] ge_scalarmult_base                                                           -      -            
+     0.03%     0.03%  [.] EVP_EncryptFinal_ex@plt                                                      -      -            
+     0.03%     0.03%  [k] timerqueue_add                                                               -      -            
+     0.03%     0.00%  [.] __irq_exit_rcu                                                               -      -            
+     0.03%     0.00%  [.] handle_softirqs                                                              -      -            
+     0.03%     0.00%  [.] tmigr_handle_remote                                                          -      -            
+     0.03%     0.00%  [.] __walk_groups.isra.0                                                         -      -            
+     0.03%     0.00%  [.] tmigr_handle_remote_up                                                       -      -            
+     0.03%     0.00%  [.] tmigr_update_events                                                          -      -            
+     0.03%     0.03%  [.] memset@plt                                                                   -      -            
+     0.03%     0.03%  [.] EVP_MD_free                                                                  -      -            
+     0.03%     0.00%  [.] __libc_start_main@@GLIBC_2.34                                                -      -            
+     0.03%     0.00%  [.] __libc_start_call_main                                                       -      -            
+     0.03%     0.00%  [.] exit                                                                         -      -            
+     0.03%     0.00%  [.] __run_exit_handlers                                                          -      -            
+     0.03%     0.00%  [.] OPENSSL_cleanup                                                              -      -            
+     0.03%     0.00%  [.] ossl_lib_ctx_default_deinit                                                  -      -            
+     0.03%     0.00%  [.] context_deinit_objs                                                          -      -            
+     0.03%     0.00%  [.] ossl_method_store_free                                                       -      -            
+     0.03%     0.00%  [.] ossl_sa_doall_arg                                                            -      -            
+     0.03%     0.00%  [.] alg_cleanup                                                                  -      -            
+     0.03%     0.00%  [.] OPENSSL_sk_pop_free                                                          -      -            
+     0.03%     0.00%  [.] impl_free                                                                    -      -            
+     0.03%     0.03%  [.] evp_do_ciph_ctx_setparams                                                    -      -            
+     0.03%     0.00%  [.] _start                                                                       -      -            
+     0.03%     0.00%  [.] _dl_start                                                                    -      -            
+     0.03%     0.00%  [.] _dl_sysdep_start                                                             -      -            
+     0.03%     0.00%  [.] dl_main                                                                      -      -            
+     0.03%     0.03%  [.] ctr_update                                                                   -      -            
+     0.03%     0.00%  [.] EVP_DigestSignFinal                                                          -      -            
+     0.03%     0.00%  [.] ecdsa_digest_sign_final                                                      -      -            
+     0.03%     0.00%  [.] ossl_ecdsa_sign                                                              -      -            
+     0.03%     0.00%  [.] ossl_ecdsa_simple_sign_sig                                                   -      -            
+     0.03%     0.00%  [.] ecdsa_sign_setup                                                             -      -            
+     0.03%     0.00%  [.] ossl_bn_gen_dsa_nonce_fixed_top                                              -      -            
+     0.03%     0.00%  [.] RAND_priv_bytes_ex                                                           -      -            
+     0.03%     0.00%  [.] rand_get0_primary                                                            -      -            
+     0.03%     0.00%  [.] rand_new_drbg                                                                -      -            
+     0.03%     0.00%  [.] EVP_RAND_instantiate                                                         -      -            
+     0.03%     0.00%  [.] drbg_ctr_instantiate_wrapper                                                 -      -            
+     0.03%     0.00%  [.] ossl_prov_drbg_instantiate                                                   -      -            
+     0.03%     0.03%  [.] x25519_scalar_mult                                                           -      -            
+     0.03%     0.00%  [.] ossl_ecx_compute_key                                                         -      -            
+     0.03%     0.00%  [.] ossl_x25519                                                                  -      -            
+     0.02%     0.02%  [.] ossl_fnv1a_hash                                                              -      -            
+     0.02%     0.00%  [.] EVP_PKEY_CTX_new_from_name                                                   -      -            
+     0.02%     0.00%  [.] EVP_KEYMGMT_fetch                                                            -      -            
+     0.02%     0.00%  [.] evp_generic_fetch                                                            -      -            
+     0.02%     0.00%  [.] ossl_namemap_stored                                                          -      -            
+     0.02%     0.00%  [.] OBJ_NAME_do_all                                                              -      -            
+     0.02%     0.00%  [.] OPENSSL_LH_doall_arg_thunk                                                   -      -            
+     0.02%     0.00%  [.] get_legacy_cipher_names                                                      -      -            
+     0.02%     0.00%  [.] ossl_namemap_add_name                                                        -      -            
+     0.02%     0.00%  [.] namemap_add_name                                                             -      -            
+     0.02%     0.00%  [.] ossl_namemap_name2num                                                        -      -            
+     0.02%     0.00%  [.] ossl_ht_get                                                                  -      -            
+     0.02%     0.00%  [.] _dl_relocate_object                                                          -      -            
+     0.02%     0.01%  [.] _dl_relocate_object_no_relro                                                 -      -            
+     0.02%     0.02%  [.] getrn                                                                        -      -            
+     0.02%     0.00%  [.] EVP_PKEY_asn1_find                                                           -      -            
+     0.02%     0.00%  [.] ossl_engine_table_select                                                     -      -            
+     0.02%     0.00%  [.] OPENSSL_init_crypto                                                          -      -            
+     0.02%     0.00%  [.] CRYPTO_THREAD_run_once                                                       -      -            
+     0.02%     0.00%  [.] pthread_once@GLIBC_2.2.5                                                     -      -            
+     0.02%     0.00%  [.] __pthread_once_slow.isra.0                                                   -      -            
+     0.02%     0.00%  [.] ossl_init_config_ossl_                                                       -      -            
+     0.02%     0.00%  [.] ossl_config_int                                                              -      -            
+     0.02%     0.00%  [.] CONF_modules_load_file_ex                                                    -      -            
+     0.02%     0.00%  [.] ERR_set_mark                                                                 -      -            
+     0.02%     0.00%  [.] ossl_err_get_state_int                                                       -      -            
+     0.02%     0.00%  [.] ossl_init_load_crypto_strings_ossl_                                          -      -            
+     0.02%     0.00%  [.] ossl_err_load_crypto_strings                                                 -      -            
+     0.02%     0.00%  [.] ossl_err_load_ERR_strings                                                    -      -            
+     0.02%     0.00%  [.] OPENSSL_LH_insert                                                            -      -            
+     0.01%     0.01%  [k] filemap_fault                                                                -      -            
+     0.01%     0.00%  [.] asm_exc_page_fault                                                           -      -            
+     0.01%     0.00%  [.] exc_page_fault                                                               -      -            
+     0.01%     0.00%  [.] do_user_addr_fault                                                           -      -            
+     0.01%     0.00%  [.] handle_mm_fault                                                              -      -            
+     0.01%     0.00%  [.] __handle_mm_fault                                                            -      -            
+     0.01%     0.00%  [.] do_fault                                                                     -      -            
+     0.01%     0.00%  [.] __do_fault                                                                   -      -            
+     0.01%     0.00%  [.] _dl_map_object_deps                                                          -      -            
+     0.01%     0.00%  [.] _dl_catch_exception                                                          -      -            
+     0.01%     0.00%  [.] openaux                                                                      -      -            
+     0.01%     0.00%  [.] _dl_map_new_object                                                           -      -            
+     0.01%     0.00%  [.] _dl_map_object_from_fd                                                       -      -            
+     0.01%     0.01%  [k] xas_load                                                                     -      -            
+     0.01%     0.00%  [.] __filemap_get_folio                                                          -      -            
+     0.01%     0.00%  [.] filemap_get_entry                                                            -      -            
+     0.01%     0.01%  [k] 0x0000000000025aaf                                                           -      -            
+     0.01%     0.00%  [.] memset                                                                       -      -            
+     0.01%     0.00%  [.] fstat64                                                                      -      -            
+     0.01%     0.00%  [.] entry_SYSCALL_64_after_hwframe                                               -      -            
+     0.01%     0.00%  [.] do_syscall_64                                                                -      -            
+     0.01%     0.00%  [.] __do_sys_newfstat                                                            -      -            
+     0.01%     0.00%  [.] vfs_fstat                                                                    -      -            
+     0.01%     0.00%  [.] ext4_file_getattr                                                            -      -            
+     0.01%     0.00%  [.] ext4_getattr                                                                 -      -            
+
+
+#
+# (Tip: When collecting LBR backtraces use --stitch-lbr to handle more than 32 deep entries: perf record --call-graph lbr ; perf report --stitch-lbr)
+#

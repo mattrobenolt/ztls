@@ -1,0 +1,80 @@
+    65.76%     1.71%  [.] chacha20_poly1305_aead_cipher                                               -      -            
+            |          
+            |--64.06%--chacha20_poly1305_aead_cipher
+            |          |          
+            |          |--33.62%--chacha20_cipher
+            |          |          |          
+            |          |           --23.24%--ChaCha20_avx512
+            |          |          
+            |          |--13.88%--ChaCha20_avx512
+            |          |          
+            |          |--13.68%--Poly1305_Update
+            |          |          |          
+            |          |           --11.97%--poly1305_blocks_vpmadd52
+            |          |          
+            |          |--1.27%--OPENSSL_cleanse
+            |          |          
+            |          |--0.97%--Poly1305_Final
+            |          |          poly1305_emit_base2_44
+            |          |          
+            |           --0.54%--Poly1305_Init
+            |          
+            |--0.57%--EVP_DecryptUpdate
+            |          chacha20_poly1305_cipher
+            |          chacha20_poly1305_aead_cipher
+            |          
+             --0.54%--EVP_EncryptUpdate
+                       chacha20_poly1305_cipher
+                       chacha20_poly1305_aead_cipher
+    57.92%     0.44%  [.] chacha20_poly1305_cipher                                                    -      -            
+            |          
+             --57.48%--chacha20_poly1305_cipher
+                       |          
+                        --57.31%--chacha20_poly1305_aead_cipher
+                                  |          
+                                  |--33.52%--chacha20_cipher
+                                  |          |          
+                                  |           --23.24%--ChaCha20_avx512
+                                  |          
+                                  |--13.88%--ChaCha20_avx512
+                                  |          
+                                  |--8.10%--Poly1305_Update
+                                  |          |          
+                                  |           --7.13%--poly1305_blocks_vpmadd52
+                                  |          
+                                   --0.50%--Poly1305_Init
+    37.12%    37.06%  [.] ChaCha20_avx512                                                             -      -            
+            |          
+            |--18.74%--EVP_EncryptUpdate
+            |          chacha20_poly1305_cipher
+            |          chacha20_poly1305_aead_cipher
+            |          |          
+            |          |--11.49%--chacha20_cipher
+            |          |          ChaCha20_avx512
+            |          |          
+            |           --7.25%--ChaCha20_avx512
+            |          
+             --18.32%--EVP_DecryptUpdate
+                       chacha20_poly1305_cipher
+                       chacha20_poly1305_aead_cipher
+                       |          
+                       |--11.72%--chacha20_cipher
+                       |          ChaCha20_avx512
+                       |          
+                        --6.60%--ChaCha20_avx512
+    33.62%    10.14%  [.] chacha20_cipher                                                             -      -            
+            |          
+            |--23.48%--chacha20_cipher
+            |          |          
+            |           --23.24%--ChaCha20_avx512
+            |          
+            |--5.29%--EVP_EncryptUpdate
+            |          chacha20_poly1305_cipher
+            |          chacha20_poly1305_aead_cipher
+            |          chacha20_cipher
+            |          
+             --4.75%--EVP_DecryptUpdate
+                       chacha20_poly1305_cipher
+                       chacha20_poly1305_aead_cipher
+                       chacha20_cipher
+    29.44%     0.40%  [.] EVP_EncryptUpdate                                                           -      -            
