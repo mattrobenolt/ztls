@@ -155,10 +155,11 @@ fi
 bench_cmd=()
 case "${impl}" in
   ztls|openssl)
-    filter="${bench}*${suite}"
+    filter="^Benchmark${bench}/impl=${impl}/suite=${suite}"
     if [[ "${size}" != "1" ]]; then
-      filter="${filter}*${size}"
+      filter="${filter}/size=${size}"
     fi
+    filter="${filter}$"
     bench_cmd=("${binary}" "--filter" "${filter}" "--benchtime" "${benchtime}")
     if [[ "${count}" != "1" ]]; then
       bench_cmd+=("--count" "${count}")
