@@ -137,6 +137,23 @@ over ad hoc prompts:
   scoped hostile-input, parser-abuse, memory-corruption, and fuzz-target work.
 - `vuln-validator` — independent validation pass that tries to disprove one
   `whitehat-hacker` finding without generating new findings.
+- `siege` — Fable 5 escalation tier for the hunts whose reasoning depth is
+  beyond opus. Reserved for the hardest, highest-value work; refuses anything
+  without a recon doc, single attack class, single surface, and trust boundary.
+- `fuzz-engineer` — owns fuzz target infrastructure, corpus, and coverage
+  mapping for Sans-I/O parser/state-machine surfaces. The Infra stage of the
+  Glasswing pipeline; builds targets and corpora, does not hunt.
+- `perf-engineer` — owns the measure → disasm → change → remeasure loop for
+  Pillar 3. Produces the perf/disasm evidence `benchmark-methodologist` audits.
+- `docs-librarian` — owns internal documentation consistency. Audits prose
+  against the `PRODUCTION_READINESS.md` spine, applies surgical corrections,
+  and proposes guardrails. Status lives in the spine, nowhere else.
+- `herald` — owns public-facing voice, branding, positioning, and user-facing
+  docs (README, why-ztls, the front door). Internal doc consistency belongs to
+  `docs-librarian`; herald speaks outward and is allowed voice and opinion.
+- `matt-nits` — mechanical auto-applier for the Matt-style checklist. Runs a
+  fixed list of pattern edits in place; never invents rules, never styles
+  vendored code.
 
 Keep them bounded: scouting, adversarial review, or implementation of a narrow
 approved plan. Treat reviewer output as advisory until the parent verifies it
