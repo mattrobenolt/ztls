@@ -1,6 +1,6 @@
 # AWS-LC provider benchmark capture — 2026-07-05 local OrbStack arm64
 
-Local provider-lane evidence for #22. This capture proves the benchmark harness can run selected comparable TLS rows with ztls linked against AWS-LC while OpenSSL libssl baselines remain linked against OpenSSL. It is not #31 performance-equivalence proof and should not be used for cross-machine marketing claims.
+Local provider-lane evidence from the #22 closure work. This capture proves the benchmark harness can run selected comparable TLS rows with ztls linked against AWS-LC while OpenSSL libssl baselines remain linked against OpenSSL. It is not #31 performance-equivalence proof and should not be used for cross-machine marketing claims.
 
 Capture command from the repository root:
 
@@ -41,6 +41,6 @@ args=--count=5 --benchtime=500ms --filter BenchmarkHandshake/,BenchmarkAppPingPo
 
 ## Caveats
 
-This is local arm64/OrbStack evidence. It is useful for #22 provider-lane coverage because it proves the AWS-LC-linked ztls benchmark path and selected comparable TLS rows run with recorded provenance. It is not durable Linux x86_64 perf/disassembly evidence, does not explain deltas, and does not close #31.
+This is local arm64/OrbStack evidence. It is useful as provider-lane coverage because it proves the AWS-LC-linked ztls benchmark path and selected comparable TLS rows run with recorded provenance. It is not durable Linux x86_64 perf/disassembly evidence, does not explain deltas, and does not close #31.
 
 The selected filter intentionally avoids the full benchmark suite so the provider-lane capture remains cheap enough for local iteration. `benchstat.txt` warns that these rows only compare `ztls` and `openssl` for the selected groups, and `n=5` is below the sample count needed for 95% confidence intervals. Treat the numbers as recorded measurements, not conclusions.

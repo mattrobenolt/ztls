@@ -250,7 +250,7 @@ features until their tracking issues land.
 | Server Certificate non-empty `request_context` needs rejection evidence | Parser/state-machine hardening | `NEGATIVE_SPACE.md` gap |
 | Server-side bad client-Finished negative unit tests are partial | Server state-machine evidence | `NEGATIVE_SPACE.md` gap |
 | Certificate and EncryptedExtensions standalone fuzz targets are absent | Parser fuzz breadth | `NEGATIVE_SPACE.md` gap |
-| Provider seam is not production-real beyond OpenSSL | Backend diversity | #22 |
+| Provider matrix still lacks FIPS/version divergence and full facade-direct Wycheproof coverage | Backend diversity | #60 |
 
 ## Boundary diagram
 
