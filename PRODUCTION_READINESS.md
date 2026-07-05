@@ -137,14 +137,15 @@ consumption-for-rejection, not resumption.
   `{1024, 2048, 4096}`) combination; non-DSA cases in the same rows stay
   visible and unrelated failures stay unexpected. The gate is narrow to the
   six exact test ids and requires structured per-case evidence, not broad
-  skip-listing. The classifier is covered by synthetic tests and locally replayed
+  skip-listing. The classifier is covered by synthetic tests, locally replayed
   by re-adapting the raw per-test `_testRun.json` files from the `ci-28722850517`
-  artifact, with unchanged totals except `expected_failed: 6`; remote workflow
-  evidence with the committed classifier is
-  still pending. The `expected_failed` count is the visibility mechanism, not a
-  closure of #52.
-  Accepted client execution remains open while remote workflow evidence with the
-  committed classifier is pending. A skip-list
+  artifact, and confirmed by strict client workflow `ci-28725543965` on
+  `6ba72b3`: `passed: 91`, `failed: 6`, `expected_failed: 6`,
+  `unexpected_skipped: 0`, `not_attempted: 205`, clean tree, and workflow
+  conclusion `success`. The `expected_failed` count is the visibility mechanism
+  for #52, not a conformance pass.
+  Accepted client execution for #48 is now strict-clean under that visible #52
+  classification; broader external conformance remains #9/#50 work. A skip-list
   narrowing tracked by #48 surfaces the strict-complete f50fcd8
   client capture's `sendEndOfEarlyDataAsServer` STRICTLY_SUCCEEDED row rather
   than the broader `*EarlyData*` skip pattern masking it as `unexpected_pass`;

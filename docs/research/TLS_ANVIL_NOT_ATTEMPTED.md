@@ -139,11 +139,11 @@ combinations tracked by #52. The `anvil_report.py` normalizer now classifies
 the six #52 rows as `expected_failed` (visible, distinct from
 `expected_skipped`) when per-case `failure_combinations` evidence proves every
 failed case is a DSA-root RSA-leaf combination. This is a visibility mechanism,
-not a closure of #52; it has been locally replayed by re-adapting the raw
-per-test `_testRun.json` files from the `ci-28722850517` artifact, with unchanged
-totals except `expected_failed: 6`, but remote workflow evidence with the
-committed classifier is still pending. The `not_attempted` buckets are now
-accounted for at the role and both-endpoint level, and the former seven #49 rows
+not a conformance pass; it has been locally replayed by re-adapting the raw
+per-test `_testRun.json` files from the `ci-28722850517` artifact and confirmed
+by strict client workflow `ci-28725543965` on `6ba72b3` with `expected_failed: 6`
+and zero unexpected results. The `not_attempted` buckets are now accounted for
+at the role and both-endpoint level, and the former seven #49 rows
 are covered by the strict client capture.
 
 Classification is not conformance execution. The explicit out-of-scope rows
