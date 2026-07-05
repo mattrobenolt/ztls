@@ -5,7 +5,7 @@
 //! API composes with actual sockets: no OpenSSL, no external processes.
 const std = @import("std");
 const print = std.debug.print;
-const net = std.net;
+const net = @import("net_compat.zig");
 const Address = net.Address;
 
 const ztls = @import("ztls");
@@ -30,10 +30,10 @@ pub fn main() !void {
     const server_keypair: ztls.x25519.KeyPair = .generate();
 
     // ── Start TCP server on an ephemeral port ────────────────
-    const addr: Address = try .parseIp(host, port);
-    var server_listener = try addr.listen(.{ .reuse_address = true });
-    defer server_listener.deinit();
-    const actual_port = server_listener.listen_address.in.getPort();
+    const addr: Address = try net.parseIp(host, port);
+    var server_listener = try net.listen(addr, .{ .reuse_address = true });
+    defer net.deinitServer(&server_listener);
+    const actual_port = net.serverPort(server_listener);
     print("[tcp]    server listening on {s}:{d}\n", .{ host, actual_port });
 
     // ── Spawn server thread (blocks in accept) ───────────────
@@ -48,12 +48,12 @@ pub fn main() !void {
 }
 
 fn serverRun(ctx: *ServerCtx) !void {
-    const conn = try ctx.listener.accept();
-    defer conn.stream.close();
+    const stream = try net.accept(ctx.listener);
+    defer net.close(stream);
     print("[server] accepted connection\n", .{});
 
     var random: ztls.Random = undefined;
-    std.crypto.random.bytes(&random.data);
+    net.fillRandom(&random.data);
 
     var hs: ztls.ServerHandshake = .init(.{
         .keypair = ctx.keypair,
@@ -72,17 +72,17 @@ fn serverRun(ctx: *ServerCtx) !void {
     var flight: ztls.ServerHandshake.FlightBuffer = .empty;
 
     while (!hs.isConnected()) {
-        const n = try conn.stream.read(rb.writable());
+        const n = try net.read(stream, rb.writable());
         if (n == 0) return error.ClientClosed;
         rb.advance(n);
         while (try rb.next()) |record| {
             const ev = try hs.handleRecord(record, &out.buffer);
             switch (ev) {
                 .write => |w| {
-                    try conn.stream.writeAll(w);
+                    try net.writeAll(stream, w);
                     hs.completeWrite();
                     if (try hs.sendServerFlightBuffered(&flight)) |flight_bytes| {
-                        try conn.stream.writeAll(flight_bytes);
+                        try net.writeAll(stream, flight_bytes);
                         hs.completeWrite();
                     }
                 },
@@ -95,7 +95,7 @@ fn serverRun(ctx: *ServerCtx) !void {
 
     // Read one application-data request and respond.
     while (true) {
-        const n = try conn.stream.read(rb.writable());
+        const n = try net.read(stream, rb.writable());
         if (n == 0) return error.ClientClosed;
         rb.advance(n);
         while (try rb.next()) |record| {
@@ -105,15 +105,15 @@ fn serverRun(ctx: *ServerCtx) !void {
                     if (!std.mem.startsWith(u8, data, "GET ")) return error.UnexpectedRequest;
                     const response = "HTTP/1.0 200 OK\r\nContent-Length: 5\r\n\r\nhello";
                     const rec = try hs.sendApplicationData(response, &out.buffer);
-                    try conn.stream.writeAll(rec);
+                    try net.writeAll(stream, rec);
                     hs.completeWrite();
                     const close = try hs.sendAlert(.close_notify, &out.buffer);
-                    try conn.stream.writeAll(close);
+                    try net.writeAll(stream, close);
                     hs.completeWrite();
                     return;
                 },
                 .write => |w| {
-                    try conn.stream.writeAll(w);
+                    try net.writeAll(stream, w);
                     hs.completeWrite();
                 },
                 .closed => return,
@@ -124,18 +124,18 @@ fn serverRun(ctx: *ServerCtx) !void {
 }
 
 fn clientRun(client_keypair: ztls.x25519.KeyPair, actual_port: u16) !void {
-    const addr: Address = try .parseIp(host, actual_port);
-    const stream = try net.tcpConnectToAddress(addr);
-    defer stream.close();
+    const addr: Address = try net.parseIp(host, actual_port);
+    const stream = try net.connect(addr);
+    defer net.close(stream);
     print("[client] connected to {s}:{d}\n", .{ host, actual_port });
 
     var random: ztls.Random = undefined;
-    std.crypto.random.bytes(&random.data);
+    net.fillRandom(&random.data);
 
     var hs: ztls.ClientHandshake = .init(.{
         .keypair = client_keypair,
         .host_name = server_name,
-        .now_sec = std.time.timestamp(),
+        .now_sec = net.timestamp(),
         .random = random,
         .insecure_no_chain_anchor = true,
         .alpn_protocols = &.{"h2"},
@@ -150,17 +150,17 @@ fn clientRun(client_keypair: ztls.x25519.KeyPair, actual_port: u16) !void {
     var storage: ztls.RecordBuffer.Storage = .empty;
     var rb: ztls.RecordBuffer = .init(&storage.buffer);
 
-    try stream.writeAll(try hs.start(&out.buffer));
+    try net.writeAll(stream, try hs.start(&out.buffer));
     hs.completeWrite();
     print("[client] ClientHello sent → state={s}\n", .{@tagName(hs.state)});
 
     while (!hs.isConnected()) {
-        const n = try stream.read(rb.writable());
+        const n = try net.read(stream, rb.writable());
         if (n == 0) return error.ServerClosed;
         rb.advance(n);
         while (try rb.next()) |record| switch (try hs.handleRecord(record, &out.buffer)) {
             .write => |w| {
-                try stream.writeAll(w);
+                try net.writeAll(stream, w);
                 hs.completeWrite();
             },
             .application_data, .closed => return error.UnexpectedDuringHandshake,
@@ -170,12 +170,12 @@ fn clientRun(client_keypair: ztls.x25519.KeyPair, actual_port: u16) !void {
     print("[client] handshake complete (ALPN={s})\n", .{hs.selectedAlpnProtocol().?});
 
     const request = "GET / HTTP/1.0\r\n\r\n";
-    try stream.writeAll(try hs.sendApplicationData(request, &out.buffer));
+    try net.writeAll(stream, try hs.sendApplicationData(request, &out.buffer));
     hs.completeWrite();
     print("[client] sent: {s}", .{request});
 
     while (true) {
-        const n = try stream.read(rb.writable());
+        const n = try net.read(stream, rb.writable());
         if (n == 0) break;
         rb.advance(n);
         while (try rb.next()) |record| switch (try hs.handleRecord(record, &out.buffer)) {
@@ -183,7 +183,7 @@ fn clientRun(client_keypair: ztls.x25519.KeyPair, actual_port: u16) !void {
                 print("[client] received: {s}\n", .{data});
             },
             .write => |w| {
-                try stream.writeAll(w);
+                try net.writeAll(stream, w);
                 hs.completeWrite();
             },
             .closed => return,

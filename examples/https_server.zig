@@ -13,7 +13,8 @@
 //! idle timeout exits non-zero so CI cannot mistake "no client" for TLS proof.
 const std = @import("std");
 const print = std.debug.print;
-const Address = std.net.Address;
+const net = @import("net_compat.zig");
+const Address = net.Address;
 
 const ztls = @import("ztls");
 
@@ -30,15 +31,15 @@ const scalar: []const u8 = &shared_fixtures.server_ecdsa_scalar;
 const response = "HTTP/1.0 200 OK\r\nContent-Length: 18\r\n\r\nHello from ztls!";
 
 pub fn main() !void {
-    const addr: Address = try .parseIp(host, port);
-    var server = try addr.listen(.{ .reuse_address = true });
-    defer server.deinit();
+    const addr: Address = try net.parseIp(host, port);
+    var server = try net.listen(addr, .{ .reuse_address = true });
+    defer net.deinitServer(&server);
     print("[https]  server listening on https://{s}:{d}/\n", .{ host, port });
 
     // Wait up to 5 seconds for a client connection so the build step
     // does not hang forever when run without a client.
     var pollfd = [1]std.posix.pollfd{.{
-        .fd = server.stream.handle,
+        .fd = net.serverFd(server),
         .events = std.posix.POLL.IN,
         .revents = 0,
     }};
@@ -52,13 +53,13 @@ pub fn main() !void {
         return error.NoClientConnected;
     }
 
-    const conn = try server.accept();
-    defer conn.stream.close();
+    const stream = try net.accept(&server);
+    defer net.close(stream);
     print("[https]  client connected\n", .{});
 
     const server_keypair: ztls.x25519.KeyPair = .generate();
     var random: ztls.Random = undefined;
-    std.crypto.random.bytes(&random.data);
+    net.fillRandom(&random.data);
     var hs: ztls.ServerHandshake = .init(.{
         .keypair = server_keypair,
         .random = random,
@@ -76,17 +77,17 @@ pub fn main() !void {
     var flight: ztls.ServerHandshake.FlightBuffer = .empty;
 
     while (!hs.isConnected()) {
-        const n = try conn.stream.read(rb.writable());
+        const n = try net.read(stream, rb.writable());
         if (n == 0) return error.ClientClosed;
         rb.advance(n);
         while (try rb.next()) |record| {
             const ev = try hs.handleRecord(record, &out.buffer);
             switch (ev) {
                 .write => |w| {
-                    try conn.stream.writeAll(w);
+                    try net.writeAll(stream, w);
                     hs.completeWrite();
                     if (try hs.sendServerFlightBuffered(&flight)) |flight_bytes| {
-                        try conn.stream.writeAll(flight_bytes);
+                        try net.writeAll(stream, flight_bytes);
                         hs.completeWrite();
                     }
                 },
@@ -99,7 +100,7 @@ pub fn main() !void {
 
     // Handle one request, send response, close gracefully.
     while (true) {
-        const n = try conn.stream.read(rb.writable());
+        const n = try net.read(stream, rb.writable());
         if (n == 0) return error.ClientClosed;
         rb.advance(n);
         while (try rb.next()) |record| {
@@ -108,16 +109,16 @@ pub fn main() !void {
                 .application_data => |data| {
                     if (std.mem.startsWith(u8, data, "GET ")) {
                         const rec = try hs.sendApplicationData(response, &out.buffer);
-                        try conn.stream.writeAll(rec);
+                        try net.writeAll(stream, rec);
                         hs.completeWrite();
                     }
                     const close = try hs.sendAlert(.close_notify, &out.buffer);
-                    try conn.stream.writeAll(close);
+                    try net.writeAll(stream, close);
                     hs.completeWrite();
                     return;
                 },
                 .write => |w| {
-                    try conn.stream.writeAll(w);
+                    try net.writeAll(stream, w);
                     hs.completeWrite();
                 },
                 .closed => return,

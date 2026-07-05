@@ -88,6 +88,10 @@ consumption-for-rejection, not resumption.
 - RFC 8448 known-answer vectors for the key schedule and transcript.
 - OpenSSL interop in both directions, covered by `zig build test`.
 - tlsfuzzer conformance, CI-gated (`just conformance/tlsfuzzer`).
+- The TLS-Anvil/tlsfuzzer Zig shims build under both Zig 0.15.2 and real Zig
+  0.16 (`cd conformance && zig build --summary all`; `cd conformance &&
+  zig_0_16 build --summary all` locally on 2026-07-05), so the external
+  conformance harness is no longer tied to the removed `std.net` APIs. *(#58)*
 - TLS-Anvil wrapper/report helper tests are CI-gated under `just conformance/ci`:
   synthetic skip-list normalization, synthetic real-output adapter coverage,
   per-run metadata/provenance capture, and per-run tool-log capture helpers.
@@ -242,11 +246,14 @@ Sans-I/O API is pleasant across every I/O model ztls claims to support.
   cells.
 - `just ci` runs deterministic TLS smoke examples through `examples-ci`:
   `example-tcp_loopback`, `example-in_memory_handshake`,
-  `example-epoll_pingpong`, and `example-iouring_pingpong`. CI still does not
-  execute manual peer-dependent demos such as `https_client`, `https_server`, or
-  `iouring_client`; those demos now exit non-zero when the peer or io_uring
-  support is unavailable, so they cannot be mistaken for proof if wired into a
-  gate later.
+  `example-epoll_pingpong`, and `example-iouring_pingpong`. The same four
+  deterministic examples also run under real Zig 0.16 locally, covering the
+  `std.Io.net` transport boundary for TCP loopback plus the raw-fd epoll and
+  io_uring examples. *(#58)*
+- CI still does not execute manual peer-dependent demos such as `https_client`,
+  `https_server`, or `iouring_client`; those demos now compile on both Zig
+  0.15.2 and Zig 0.16 and exit non-zero when the peer or io_uring support is
+  unavailable, so they cannot be mistaken for proof if wired into a gate later.
 
 **Status:** `PROVEN`
 

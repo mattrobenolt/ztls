@@ -30,16 +30,17 @@ pub fn build(b: *std.Build) void {
         .{ .name = "tlsfuzzer_server", .src = "src/tlsfuzzer_server.zig" },
         .{ .name = "anvil_client", .src = "src/anvil_client.zig" },
     }) |entry| {
+        const exe_mod = b.createModule(.{
+            .root_source_file = b.path(entry.src),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{.{ .name = "ztls", .module = ztls_mod }},
+        });
+        exe_mod.link_libc = true;
         const exe = b.addExecutable(.{
             .name = entry.name,
-            .root_module = b.createModule(.{
-                .root_source_file = b.path(entry.src),
-                .target = target,
-                .optimize = optimize,
-                .imports = &.{.{ .name = "ztls", .module = ztls_mod }},
-            }),
+            .root_module = exe_mod,
         });
-        exe.linkLibC();
         b.installArtifact(exe);
     }
 }

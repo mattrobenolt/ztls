@@ -9,7 +9,7 @@ const std = @import("std");
 const IoUring = std.os.linux.IoUring;
 const print = std.debug.print;
 const posix = std.posix;
-const net = std.net;
+const net = @import("net_compat.zig");
 const crypto = std.crypto;
 const Address = net.Address;
 const builtin = @import("builtin");
@@ -44,8 +44,8 @@ pub fn main() !void {
     };
     defer ring.deinit();
 
-    const addr: Address = try .parseIp(connect_host, port);
-    const stream = net.tcpConnectToAddress(addr) catch |err| switch (err) {
+    const addr: Address = try net.parseIp(connect_host, port);
+    const stream = net.connect(addr) catch |err| switch (err) {
         error.ConnectionRefused => {
             print("[iouring] could not connect to {s}:{d}\n", .{ connect_host, port });
             print("           Start the server first: zig build example-https_server\n", .{});
@@ -53,17 +53,17 @@ pub fn main() !void {
         },
         else => return err,
     };
-    defer stream.close();
+    defer net.close(stream);
     print("[iouring] connected to {s}:{d}\n", .{ connect_host, port });
 
     const client_keypair: ztls.x25519.KeyPair = .generate();
     var random: ztls.Random = undefined;
-    crypto.random.bytes(&random.data);
+    net.fillRandom(&random.data);
 
     var hs: ztls.ClientHandshake = .init(.{
         .keypair = client_keypair,
         .host_name = server_name,
-        .now_sec = std.time.timestamp(),
+        .now_sec = net.timestamp(),
         .random = random,
         .alpn_protocols = &.{"http/1.1"},
     });
@@ -71,7 +71,10 @@ pub fn main() !void {
 
     // Certificate verification: pinned trust anchor for the test server.
     // This is example-wrapper allocation, not ztls core allocation.
-    var bundle: crypto.Certificate.Bundle = .{};
+    var bundle: crypto.Certificate.Bundle = if (@hasDecl(crypto.Certificate.Bundle, "empty"))
+        .empty
+    else
+        .{};
     defer bundle.deinit(gpa);
     const cert_start: u32 = @intCast(bundle.bytes.items.len);
     try bundle.bytes.appendSlice(gpa, trust_anchor_der);
@@ -82,16 +85,16 @@ pub fn main() !void {
     var storage: ztls.RecordBuffer.Storage = .empty;
     var rb: ztls.RecordBuffer = .init(&storage.buffer);
 
-    try sendAll(&ring, stream.handle, try hs.start(&out.buffer));
+    try sendAll(&ring, net.fd(stream), try hs.start(&out.buffer));
     hs.completeWrite();
     print("[iouring] ClientHello sent → state={s}\n", .{@tagName(hs.state)});
 
     while (!hs.isConnected()) {
-        const n = try recvIntoRecordBuffer(&ring, stream.handle, &rb);
+        const n = try recvIntoRecordBuffer(&ring, net.fd(stream), &rb);
         if (n == 0) return error.PeerClosed;
         while (try rb.next()) |record| switch (try hs.handleRecord(record, &out.buffer)) {
             .write => |w| {
-                try sendAll(&ring, stream.handle, w);
+                try sendAll(&ring, net.fd(stream), w);
                 hs.completeWrite();
             },
             .application_data, .closed => return error.UnexpectedDuringHandshake,
@@ -101,13 +104,13 @@ pub fn main() !void {
     print("[iouring] handshake complete (ALPN={s})\n", .{hs.selectedAlpnProtocol().?});
 
     const request = "GET / HTTP/1.0\r\n\r\n";
-    try sendAll(&ring, stream.handle, try hs.sendApplicationData(request, &out.buffer));
+    try sendAll(&ring, net.fd(stream), try hs.sendApplicationData(request, &out.buffer));
     hs.completeWrite();
     print("[iouring] sent: {s}", .{request});
 
     var response_seen = false;
     while (true) {
-        const n = try recvIntoRecordBuffer(&ring, stream.handle, &rb);
+        const n = try recvIntoRecordBuffer(&ring, net.fd(stream), &rb);
         if (n == 0) break;
         while (try rb.next()) |record| switch (try hs.handleRecord(record, &out.buffer)) {
             .application_data => |data| {
@@ -115,7 +118,7 @@ pub fn main() !void {
                 response_seen = true;
             },
             .write => |w| {
-                try sendAll(&ring, stream.handle, w);
+                try sendAll(&ring, net.fd(stream), w);
                 hs.completeWrite();
             },
             .closed => {

@@ -12,13 +12,15 @@
 //! it proved TLS.
 const std = @import("std");
 const print = std.debug.print;
-const Address = std.net.Address;
+const net = @import("net_compat.zig");
+const Address = net.Address;
 
 const ztls = @import("ztls");
 
 const shared_fixtures = @import("test_fixtures/shared_fixtures.zig");
 
 const trust_anchor_der: []const u8 = &shared_fixtures.server_ecdsa_cert_der;
+const CertificateBundle = std.crypto.Certificate.Bundle;
 
 const connect_host = "127.0.0.1";
 const server_name = "ztls.server.test";
@@ -29,8 +31,8 @@ var debug_allocator: std.heap.DebugAllocator(.{}) = .init;
 pub fn main() !void {
     const gpa = debug_allocator.allocator();
     defer _ = debug_allocator.deinit();
-    const addr: Address = try .parseIp(connect_host, port);
-    const stream = std.net.tcpConnectToAddress(addr) catch |err| switch (err) {
+    const addr: Address = try net.parseIp(connect_host, port);
+    const stream = net.connect(addr) catch |err| switch (err) {
         error.ConnectionRefused => {
             print("[https]  could not connect to {s}:{d}\n", .{ connect_host, port });
             print("         Start the server first: zig build example-https_server\n", .{});
@@ -38,17 +40,17 @@ pub fn main() !void {
         },
         else => return err,
     };
-    defer stream.close();
+    defer net.close(stream);
     print("[https]  connected to {s}:{d}\n", .{ connect_host, port });
 
     const client_keypair: ztls.x25519.KeyPair = .generate();
     var random: ztls.Random = undefined;
-    std.crypto.random.bytes(&random.data);
+    net.fillRandom(&random.data);
 
     var hs: ztls.ClientHandshake = .init(.{
         .keypair = client_keypair,
         .host_name = server_name,
-        .now_sec = std.time.timestamp(),
+        .now_sec = net.timestamp(),
         .random = random,
         .alpn_protocols = &.{"http/1.1"},
     });
@@ -56,7 +58,10 @@ pub fn main() !void {
 
     // Certificate verification policy: pinned trust anchor.
     // This is example-wrapper allocation, not ztls core allocation.
-    var bundle: std.crypto.Certificate.Bundle = .{};
+    var bundle: CertificateBundle = if (@hasDecl(CertificateBundle, "empty"))
+        .empty
+    else
+        .{};
     defer bundle.deinit(gpa);
     const cert_start: u32 = @intCast(bundle.bytes.items.len);
     try bundle.bytes.appendSlice(gpa, trust_anchor_der);
@@ -67,17 +72,17 @@ pub fn main() !void {
     var storage: ztls.RecordBuffer.Storage = .empty;
     var rb: ztls.RecordBuffer = .init(&storage.buffer);
 
-    try stream.writeAll(try hs.start(&out.buffer));
+    try net.writeAll(stream, try hs.start(&out.buffer));
     hs.completeWrite();
     print("[https]  ClientHello sent → state={s}\n", .{@tagName(hs.state)});
 
     while (!hs.isConnected()) {
-        const n = try stream.read(rb.writable());
+        const n = try net.read(stream, rb.writable());
         if (n == 0) return error.ServerClosed;
         rb.advance(n);
         while (try rb.next()) |record| switch (try hs.handleRecord(record, &out.buffer)) {
             .write => |w| {
-                try stream.writeAll(w);
+                try net.writeAll(stream, w);
                 hs.completeWrite();
             },
             .application_data, .closed => return error.UnexpectedDuringHandshake,
@@ -87,13 +92,13 @@ pub fn main() !void {
     print("[https]  handshake complete (ALPN={s})\n", .{hs.selectedAlpnProtocol().?});
 
     const request = "GET / HTTP/1.0\r\n\r\n";
-    try stream.writeAll(try hs.sendApplicationData(request, &out.buffer));
+    try net.writeAll(stream, try hs.sendApplicationData(request, &out.buffer));
     hs.completeWrite();
     print("[https]  sent: {s}", .{request});
 
     var response_seen = false;
     while (true) {
-        const n = try stream.read(rb.writable());
+        const n = try net.read(stream, rb.writable());
         if (n == 0) break;
         rb.advance(n);
         while (try rb.next()) |record| switch (try hs.handleRecord(record, &out.buffer)) {
@@ -102,7 +107,7 @@ pub fn main() !void {
                 response_seen = true;
             },
             .write => |w| {
-                try stream.writeAll(w);
+                try net.writeAll(stream, w);
                 hs.completeWrite();
             },
             .closed => {

@@ -11,6 +11,7 @@ const testing = std.testing;
 const assert = std.debug.assert;
 
 const ztls = @import("ztls");
+const net = @import("net_compat.zig");
 
 const shared_fixtures = @import("test_fixtures/shared_fixtures.zig");
 const cert_der: []const u8 = &shared_fixtures.server_ecdsa_cert_der;
@@ -27,9 +28,9 @@ pub fn main() !void {
     const server_keypair: ztls.x25519.KeyPair = .generate();
 
     var client_random: ztls.Random = undefined;
-    std.crypto.random.bytes(&client_random.data);
+    net.fillRandom(&client_random.data);
     var server_random: ztls.Random = undefined;
-    std.crypto.random.bytes(&server_random.data);
+    net.fillRandom(&server_random.data);
 
     // ── Client setup ────────────────────────
     var client: ztls.ClientHandshake = .init(.{
