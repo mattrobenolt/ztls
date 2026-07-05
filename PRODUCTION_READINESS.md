@@ -441,7 +441,7 @@ each passing the same correctness and interop gates.
   value, and X25519, P-256, AEAD, and CertificateVerify signing/verification
   dispatch through the facade. Certificate-chain signature verification and path
   validation are still ztls/std-derived rather than backend-backed, and the
-  facade still lacks divergent-backend matrix evidence. *(#22)*
+  facade still lacks divergent-backend matrix evidence. *(#60)*
 - **aws-lc has a real test lane but not a full backend matrix.** The
   `-Dcrypto-backend=aws-lc` build links AWS-LC libcrypto and runs the unit suite;
   X25519 uses AWS-LC's flat `curve25519.h` API, and AEAD uses AWS-LC's
@@ -459,14 +459,14 @@ each passing the same correctness and interop gates.
   AWS-LC and OpenSSL libssl baselines linked against OpenSSL; it is measurement
   evidence, not a performance conclusion or #31 Linux x86_64 perf/disassembly
   proof. Wycheproof and provider/FIPS/version capability proof remain open.
-  *(#22)*
+  *(#60)*
 - **OpenSSL-compatible API choices still need measured backend-specific paths.**
   X25519 and AEAD now have AWS-LC-specific primitive paths; EC/RSA key
   construction and signatures still delegate to the OpenSSL-compatible
   implementation. A scratch measurement on OpenSSL 3.6.2 showed the current EC/RSA construction
   path is faster than naive `EVP_PKEY_fromdata`/decoder replacements, so
   portability must come through backend-specific fast paths, not an unmeasured
-  lowest-common API. *(#22)*
+  lowest-common API. *(#60)*
 - **Capability gating exists but is shallow.** ClientHello cipher-suite,
   supported-group, `signature_algorithms`, and `signature_algorithms_cert`
   advertisement now comes from the active backend capability declaration; server
@@ -477,13 +477,13 @@ each passing the same correctness and interop gates.
   divergent capability matrix exists yet.
   The strict-complete `b6aee2c` client TLS-Anvil capture (`ci-28722850517`)
   closes the remote P-256 evidence gap with `ComplianceRequirements: passed=2`
-  and `KeyShare: passed=5`. *(#22)*
+  and `KeyShare: passed=5`. *(#60)*
 - **Named-group/key-exchange shape is only partly generalized.** X25519 and
   P-256 ECDHE are provider-backed on the server side, and the client can now
   advertise both groups and process either ServerHello key_share locally; P-384,
   PQ, and hybrid groups still need real backend math, variable-length key-share/
   shared-secret plumbing, and provider capability tests before aws-lc differences
-  can be claimed honestly. *(#22)*
+  can be claimed honestly. *(#6, #60)*
 - **The facade contract is partly enforced by primitive tests, not a full
   matrix.** `src/crypto/backend_primitive_tests.zig` runs the same X25519,
   P-256 ECDH, AEAD, and signature primitive vectors through the backend facade
@@ -493,7 +493,7 @@ each passing the same correctness and interop gates.
   facade-direct Wycheproof coverage and a full provider matrix remain open. This
   is a narrow primitive smoke contract — it does not cover Wycheproof boundary
   vectors per provider through the facade or divergent capability matrices. The
-  full backend matrix remains open. *(#22)*
+  full backend matrix remains open. *(#60)*
 
 ---
 
