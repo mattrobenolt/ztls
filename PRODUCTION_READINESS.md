@@ -447,13 +447,12 @@ each passing the same correctness and interop gates.
   X25519 uses AWS-LC's flat `curve25519.h` API, and AEAD uses AWS-LC's
   BoringSSL-style `EVP_AEAD` one-shot API. P-256 ECDH and signature paths
   intentionally remain proven OpenSSL-compatible wrappers until measured
-  backend-specific implementations exist. Local strict-complete TLS-Anvil AWS-LC
-  captures on `4d31ccb` completed cleanly for both endpoints: server
-  `conformance/zig-out/anvil/server/awslc-20260705-092917` had `437/437`
-  finished, `passed=105`, `failed=0`, `expected_failed=0`, `expected_skipped=175`,
-  `unexpected_skipped=0`, `not_attempted=157`; client
-  `conformance/zig-out/anvil/client/awslc-20260705-092930` had `437/437`
-  finished, `passed=91`, `failed=6`, `expected_failed=6`, `expected_skipped=135`,
+  backend-specific implementations exist. CI-gated strict-complete TLS-Anvil
+  AWS-LC captures on `ca53590` completed cleanly for both endpoints: server run
+  `28746130104` had `437/437` finished, `passed=105`, `failed=0`,
+  `expected_failed=0`, `expected_skipped=175`, `unexpected_skipped=0`,
+  `not_attempted=157`; client run `28746130840` had `437/437` finished,
+  `passed=91`, `failed=6`, `expected_failed=6`, `expected_skipped=135`,
   `unexpected_skipped=0`, `not_attempted=205`. The local AWS-LC provider-lane
   benchmark capture `docs/research/perf/20260705-160550-awslc-local/` records
   selected TLS handshake and 1350-byte ping-pong rows with ztls linked against
@@ -493,9 +492,8 @@ each passing the same correctness and interop gates.
   X25519 and AEAD already run in both lanes via `zig build test`, but
   facade-direct Wycheproof coverage and a full provider matrix remain open. This
   is a narrow primitive smoke contract — it does not cover Wycheproof boundary
-  vectors per provider through the facade, divergent capability matrices, or
-  durable CI-gated provider captures. The full backend matrix remains open.
-  *(#22)*
+  vectors per provider through the facade or divergent capability matrices. The
+  full backend matrix remains open. *(#22)*
 
 ---
 
