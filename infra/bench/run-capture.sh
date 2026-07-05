@@ -2,6 +2,40 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
+log() {
+  printf '[%s] bench-remote: %s\n' "$(date -u +%H:%M:%S)" "$*" >&2
+}
+
+run_step() {
+  local label=$1
+  shift
+  local start=${SECONDS}
+  local next=30
+  log "start: ${label}"
+  "$@" &
+  local pid=$!
+  (
+    while sleep 5; do
+      local elapsed=$((SECONDS - start))
+      if ((elapsed >= next)); then
+        log "still running (${elapsed}s): ${label}"
+        next=$((next + 30))
+      fi
+    done
+  ) &
+  local heartbeat_pid=$!
+  local rc=0
+  wait "${pid}" || rc=$?
+  kill "${heartbeat_pid}" 2>/dev/null || true
+  wait "${heartbeat_pid}" 2>/dev/null || true
+  if [[ ${rc} -eq 0 ]]; then
+    log "done ($((SECONDS - start))s): ${label}"
+  else
+    log "failed ($((SECONDS - start))s, exit ${rc}): ${label}"
+    return "${rc}"
+  fi
+}
+
 instance_types="${ZTLS_BENCH_INSTANCE_TYPES:-c7i.large}"
 crypto_backend="${ZTLS_CRYPTO_BACKEND:-openssl}"
 count=5
@@ -30,7 +64,7 @@ Options:
   -h, --help               show this help
 
 Everything after -- is passed to the remote capture script, e.g.
-  -- --bench AppPingPong --suite TLS_AES_128_GCM_SHA256 --size 128
+  -- --filter 'BenchmarkAppPingPong/.*/size=128'
 USAGE
 }
 
@@ -158,7 +192,14 @@ quote_command() {
   printf '%q ' "$@"
 }
 
-tofu -chdir="${tofu_dir}" init -input=false >/dev/null
+log "instance matrix: ${instance_types}"
+log "crypto backend: ${crypto_backend}"
+log "count=${count} benchtime=${benchtime} allow_dirty=${allow_dirty} keep_instance=${keep_instance}"
+if [[ ${#extra_remote_args[@]} -gt 0 ]]; then
+  log "extra remote args: ${extra_remote_args[*]}"
+fi
+
+run_step "OpenTofu init (${tofu_dir})" tofu -chdir="${tofu_dir}" init -input=false >/dev/null
 
 mapfile -t matrix < <(split_matrix "${instance_types}")
 if [[ ${#matrix[@]} -eq 0 ]]; then
@@ -169,8 +210,9 @@ fi
 outputs=()
 for instance_type in "${matrix[@]}"; do
   safe_instance=${instance_type//[^A-Za-z0-9._-]/_}
-  echo "provisioning benchmark host: ${instance_type}" >&2
-  tofu -chdir="${tofu_dir}" apply -auto-approve -input=false -var "instance_type=${instance_type}" >/dev/null
+  log "provisioning benchmark host: ${instance_type}"
+  run_step "OpenTofu apply (${instance_type})" \
+    tofu -chdir="${tofu_dir}" apply -auto-approve -input=false -var "instance_type=${instance_type}" >/dev/null
   created=true
 
   instance_ip=$(tofu -chdir="${tofu_dir}" output -raw instance_ip)
@@ -183,13 +225,15 @@ for instance_type in "${matrix[@]}"; do
   ssh_for_key "${key_file}"
   remote="root@${instance_ip}"
 
-  echo "waiting for ${remote}" >&2
+  log "instance ready: ip=${instance_ip} region=${aws_region} key=${key_file}"
+  log "waiting for ${remote}"
   wait_for_ssh "${remote}"
 
   quoted_remote_root=$(printf '%q' "${remote_root}")
 
-  echo "deploying repo to ${remote}:${remote_root}" >&2
-  rsync -az --delete --no-owner --no-group \
+  log "deploying repo to ${remote}:${remote_root}"
+  run_step "rsync repo to ${instance_type}" \
+    rsync -az --delete --no-owner --no-group \
     --exclude .envrc.local \
     --exclude zig-out \
     --exclude .zig-cache \
@@ -203,6 +247,7 @@ for instance_type in "${matrix[@]}"; do
     -e "ssh ${ssh_opts[*]}" \
     ./ "${remote}:${remote_root}/"
 
+  log "normalizing remote ownership"
   ssh "${ssh_opts[@]}" "${remote}" \
     "rm -f ${quoted_remote_root}/.envrc.local && chown -R root:root ${quoted_remote_root}"
 
@@ -226,7 +271,7 @@ for instance_type in "${matrix[@]}"; do
   )
   quoted_remote_cmd=$(quote_command "${remote_cmd[@]}")
 
-  echo "running benchmark capture on ${instance_type}" >&2
+  log "running benchmark capture on ${instance_type}: ${quoted_remote_cmd}"
   remote_capture=$(ssh "${ssh_opts[@]}" "${remote}" "cd ${quoted_remote_root} && ${quoted_remote_cmd}")
   remote_capture=$(printf '%s\n' "${remote_capture}" | tail -n 1)
   if [[ "${remote_capture}" != zig-out/perf/* ]]; then
@@ -236,8 +281,10 @@ for instance_type in "${matrix[@]}"; do
 
   local_capture="zig-out/perf/$(basename "${remote_capture}")-${safe_instance}-${crypto_backend}"
   mkdir -p "$(dirname "${local_capture}")"
-  echo "pulling ${remote_capture} to ${local_capture}" >&2
-  rsync -az --delete \
+  log "remote capture path: ${remote_capture}"
+  log "pulling ${remote_capture} to ${local_capture}"
+  run_step "rsync results from ${instance_type}" \
+    rsync -az --delete \
     -e "ssh ${ssh_opts[*]}" \
     "${remote}:${remote_root}/${remote_capture}/" \
     "${local_capture}/"
@@ -251,7 +298,8 @@ for instance_type in "${matrix[@]}"; do
     echo "ec2_crypto_backend=${crypto_backend}"
   } >> "${local_capture}/metadata.txt"
 
-  scripts/bench-analyze.sh "${local_capture}" > "${local_capture}/benchstat.txt"
+  run_step "write benchstat for ${local_capture}" \
+    scripts/bench-analyze.sh "${local_capture}" > "${local_capture}/benchstat.txt"
   outputs+=("${local_capture}")
   printf '%s\n' "${local_capture}"
 done

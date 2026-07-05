@@ -2,6 +2,10 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
+log() {
+  printf '[%s] bench-remote-host: %s\n' "$(date -u +%H:%M:%S)" "$*" >&2
+}
+
 crypto_backend="${ZTLS_CRYPTO_BACKEND:-openssl}"
 allow_dirty=false
 count=5
@@ -34,11 +38,11 @@ while [[ $# -gt 0 ]]; do
       benchtime="${1#*=}"
       shift
       ;;
-    --filter|--bench|--suite|--size)
+    --filter)
       bench_filters+=("$1" "$2")
       shift 2
       ;;
-    --filter=*|--bench=*|--suite=*|--size=*)
+    --filter=*)
       bench_filters+=("$1")
       shift
       ;;
@@ -61,6 +65,12 @@ case "${crypto_backend}" in
     ;;
 esac
 
+log "crypto backend: ${crypto_backend}"
+log "count=${count} benchtime=${benchtime} allow_dirty=${allow_dirty}"
+if [[ ${#bench_filters[@]} -gt 0 ]]; then
+  log "bench filters: ${bench_filters[*]}"
+fi
+log "checking remote worktree cleanliness"
 if [[ "${allow_dirty}" != true ]] && [[ -n "$(git status --porcelain --untracked-files=all)" ]]; then
   echo "remote worktree is dirty; rerun with --allow-dirty only for smoke/debug captures" >&2
   git status --short >&2
@@ -68,9 +78,14 @@ if [[ "${allow_dirty}" != true ]] && [[ -n "$(git status --porcelain --untracked
 fi
 
 git status --short >&2
-git rev-parse HEAD >&2
+revision=$(git rev-parse HEAD)
+log "remote git revision: ${revision}"
 
 bench_args=(--count "${count}" --benchtime "${benchtime}" "${bench_filters[@]}")
+log "starting capture script"
 capture="$(scripts/bench-capture.sh --crypto-backend "${crypto_backend}" "${bench_args[@]}")"
+log "capture script returned: ${capture}"
+log "writing remote benchstat: ${capture}/benchstat.txt"
 scripts/bench-analyze.sh "${capture}" > "${capture}/benchstat.txt"
+log "remote capture complete: ${capture}"
 printf '%s\n' "${capture}"

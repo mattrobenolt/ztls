@@ -2,6 +2,40 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+log() {
+  printf '[%s] bench-capture: %s\n' "$(date -u +%H:%M:%S)" "$*" >&2
+}
+
+run_step() {
+  local label=$1
+  shift
+  local start=${SECONDS}
+  local next=30
+  log "start: ${label}"
+  "$@" &
+  local pid=$!
+  (
+    while sleep 5; do
+      local elapsed=$((SECONDS - start))
+      if ((elapsed >= next)); then
+        log "still running (${elapsed}s): ${label}"
+        next=$((next + 30))
+      fi
+    done
+  ) &
+  local heartbeat_pid=$!
+  local rc=0
+  wait "${pid}" || rc=$?
+  kill "${heartbeat_pid}" 2>/dev/null || true
+  wait "${heartbeat_pid}" 2>/dev/null || true
+  if [[ ${rc} -eq 0 ]]; then
+    log "done ($((SECONDS - start))s): ${label}"
+  else
+    log "failed ($((SECONDS - start))s, exit ${rc}): ${label}"
+    return "${rc}"
+  fi
+}
+
 crypto_backend="${ZTLS_CRYPTO_BACKEND:-openssl}"
 bench_args=()
 while [[ $# -gt 0 ]]; do
@@ -29,18 +63,25 @@ case "${crypto_backend}" in
     ;;
 esac
 
+log "crypto backend: ${crypto_backend}"
+log "benchmark args: ${bench_args[*]:-(default all rows)}"
+
 openssl_pkg_config_path="${ZTLS_OPENSSL_PKG_CONFIG_PATH:-}"
 if [[ -z "${openssl_pkg_config_path}" ]]; then
+  log "resolving nixpkgs#openssl.dev"
   openssl_dev=$(nix build --no-link --print-out-paths nixpkgs#openssl.dev)
   openssl_pkg_config_path="${openssl_dev}/lib/pkgconfig"
 fi
+log "OpenSSL pkg-config path: ${openssl_pkg_config_path}"
 
 if [[ "${crypto_backend}" == "aws-lc" ]]; then
   aws_lc_pkg_config_path="${ZTLS_AWS_LC_PKG_CONFIG_PATH:-}"
   if [[ -z "${aws_lc_pkg_config_path}" ]]; then
+    log "resolving nixpkgs#aws-lc.dev"
     aws_lc_dev=$(nix build --no-link --print-out-paths nixpkgs#aws-lc.dev)
     aws_lc_pkg_config_path="${aws_lc_dev}/lib/pkgconfig"
   fi
+  log "AWS-LC pkg-config path: ${aws_lc_pkg_config_path}"
 fi
 
 zig_for_backend() {
@@ -60,6 +101,7 @@ zig_for_openssl_baseline() {
 stamp="$(date -u +%Y%m%d-%H%M%S)"
 run_dir="zig-out/perf/${stamp}"
 mkdir -p "${run_dir}"
+log "capture directory: ${run_dir}"
 
 rustls_version() {
   if [[ -f bench/rustls/Cargo.lock ]]; then
@@ -148,13 +190,19 @@ run_rustls() {
     > "${run_dir}/rustls.txt"
 }
 
-zig_for_backend build -Dcrypto-backend="${crypto_backend}" bench-bin >/dev/null
-zig_for_openssl_baseline build -Dcrypto-backend=openssl bench-evp-bin bench-openssl-bin >/dev/null
+run_step "build ztls benchmark binary (${crypto_backend})" \
+  zig_for_backend build -Dcrypto-backend="${crypto_backend}" bench-bin >/dev/null
+run_step "build OpenSSL EVP/libssl benchmark binaries" \
+  zig_for_openssl_baseline build -Dcrypto-backend=openssl bench-evp-bin bench-openssl-bin >/dev/null
 
 linked_crypto="$(linked_library zig-out/bin/benchmark 'libcrypto' || true)"
 linked_evp_crypto="$(linked_library zig-out/bin/evp_bench 'libcrypto' || true)"
 linked_libssl_crypto="$(linked_library zig-out/bin/bio_bench 'libcrypto' || true)"
 linked_libssl_ssl="$(linked_library zig-out/bin/bio_bench 'libssl' || true)"
+log "ztls linked libcrypto: ${linked_crypto:-unknown}"
+log "EVP linked libcrypto: ${linked_evp_crypto:-unknown}"
+log "libssl bench linked libcrypto: ${linked_libssl_crypto:-unknown}"
+log "libssl bench linked libssl: ${linked_libssl_ssl:-unknown}"
 
 assert_linked_under "OpenSSL EVP benchmark" "${linked_evp_crypto}" "${ZTLS_OPENSSL_LIB_DIR:-}"
 assert_linked_under "OpenSSL libssl benchmark crypto" "${linked_libssl_crypto}" "${ZTLS_OPENSSL_LIB_DIR:-}"
@@ -228,9 +276,14 @@ assert_linked_under "OpenSSL libssl benchmark ssl" "${linked_libssl_ssl}" "${ZTL
   printf '\n'
 } > "${run_dir}/metadata.txt"
 
-zig_for_backend build -Dcrypto-backend="${crypto_backend}" bench -- "${bench_args[@]}" > "${run_dir}/ztls.txt"
-zig_for_openssl_baseline build -Dcrypto-backend=openssl bench-evp -- "${bench_args[@]}" > "${run_dir}/evp.txt"
-zig_for_openssl_baseline build -Dcrypto-backend=openssl bench-openssl -- "${bench_args[@]}" > "${run_dir}/libssl.txt"
-run_rustls "${bench_args[@]}"
+run_step "run ztls benchmarks -> ${run_dir}/ztls.txt" \
+  zig_for_backend build -Dcrypto-backend="${crypto_backend}" bench -- "${bench_args[@]}" > "${run_dir}/ztls.txt"
+run_step "run OpenSSL EVP crypto-floor benchmarks -> ${run_dir}/evp.txt" \
+  zig_for_openssl_baseline build -Dcrypto-backend=openssl bench-evp -- "${bench_args[@]}" > "${run_dir}/evp.txt"
+run_step "run OpenSSL libssl memory-BIO benchmarks -> ${run_dir}/libssl.txt" \
+  zig_for_openssl_baseline build -Dcrypto-backend=openssl bench-openssl -- "${bench_args[@]}" > "${run_dir}/libssl.txt"
+run_step "run rustls benchmarks -> ${run_dir}/rustls.txt" \
+  run_rustls "${bench_args[@]}"
 
+log "capture complete: ${run_dir}"
 echo "${run_dir}"

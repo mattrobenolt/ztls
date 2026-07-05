@@ -32,7 +32,7 @@ For smoke/debug runs only, pass a narrower benchmark after `--`:
 
 ```bash
 just bench-remote-capture --count 1 --benchtime 1x -- \
-  --bench AppPingPong --suite TLS_AES_128_GCM_SHA256 --size 128
+  --filter 'BenchmarkAppPingPong/.*/size=128'
 ```
 
 Dirty worktrees are rejected by default because benchmark evidence needs a clean
