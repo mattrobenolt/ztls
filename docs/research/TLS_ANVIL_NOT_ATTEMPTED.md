@@ -53,9 +53,9 @@ client 205
 | Bucket | Count | Scope | Owner |
 |---|---:|---|---|
 | `tests.client.tls13.*` | 82 | In-scope TLS 1.3 client-role rows | Exercised by the strict client capture; current failures remain tracked by #48/#9 |
-| `tests.both.lengthfield.EncryptedExtensions.*` | 2 | In-scope TLS 1.3 both-endpoint length-field rows | still #49 both-endpoint runner debt |
-| `tests.both.lengthfield.CertificateVerify.*` | 2 | In-scope TLS 1.3 both-endpoint length-field rows | still #49 both-endpoint runner debt |
-| `tests.both.lengthfield.Certificate.*TLS13` plus `certificateRequestContextLength` | 3 | In-scope TLS 1.3 both-endpoint length-field rows | still #49 both-endpoint runner debt |
+| `tests.both.lengthfield.EncryptedExtensions.*` | 2 | In-scope TLS 1.3 client-role length-field rows in the `both` package | Exercised by the strict client capture; all `STRICTLY_SUCCEEDED` |
+| `tests.both.lengthfield.CertificateVerify.*` | 2 | In-scope TLS 1.3 client-role length-field rows in the `both` package | Exercised by the strict client capture; all `STRICTLY_SUCCEEDED` |
+| `tests.both.lengthfield.Certificate.*TLS13` plus `certificateRequestContextLength` | 3 | In-scope TLS 1.3 client-role length-field rows in the `both` package | Exercised by the strict client capture; all `STRICTLY_SUCCEEDED` |
 | `tests.client.tls12.*` | 60 | Out of scope | TLS 1.2 is outside ztls scope |
 | `tests.both.lengthfield.ServerKeyExchange.*` | 5 | Out of scope | TLS 1.2 ServerKeyExchange is outside ztls scope |
 | `tests.both.lengthfield.Certificate.*TLS12` | 2 | Out of scope | TLS 1.2 Certificate length fields are outside ztls scope |
@@ -100,17 +100,22 @@ extension semantics in TLS 1.3.
 
 ## Both-endpoint accounting
 
+The TLS-Anvil package prefix `tests.both.*` is not itself an endpoint-mode claim.
+Some rows in that package carry role annotations; the seven TLS 1.3
+`EncryptedExtensions`/`CertificateVerify`/`Certificate` length-field rows are
+client-role tests and therefore run in the strict client capture.
+
 Across the current strict server/client captures, the `tests.both.*` endpoint
 mismatches classify as:
 
 | Bucket | Count | Rows |
 |---|---:|---|
-| Covered by opposite endpoint capture | 14 | client-capture TLS 1.3 extension/Hello length-field rows listed above |
-| Still #49 both-runner debt | 7 | server-capture TLS 1.3 `EncryptedExtensions`, `CertificateVerify`, and `Certificate` length-field rows |
+| Covered by opposite endpoint capture | 21 | 14 client-capture TLS 1.3 extension/Hello length-field rows listed above, plus the seven server-capture TLS 1.3 `EncryptedExtensions`/`CertificateVerify`/`Certificate` rows that pass in the strict client capture |
 | Feature-deferred | 4 | client-capture PSK extension rows tracked by #2 |
 | Out of scope | 18 | TLS 1.2/DTLS `ServerKeyExchange`, `Certificate.*TLS12`, `ClientKeyExchange`, and TLS 1.2 extension/Hello rows |
 
-The remaining `7` #49 rows are:
+The seven server-capture endpoint mismatches that pass in the strict client
+capture are:
 
 - `EncryptedExtensions.encryptedExtensionsExtensionsLength`
 - `EncryptedExtensions.encryptedExtensionsLength`
@@ -120,9 +125,9 @@ The remaining `7` #49 rows are:
 - `Certificate.certificateMessageLengthTLS13`
 - `Certificate.certificateRequestContextLength`
 
-These rows need either a real both-mode TLS-Anvil runner or fresh strict client
-per-row evidence that exercises the same wire direction. They should not be
-moved into the skip list and should not be treated as conformance passes.
+Each is `STRICTLY_SUCCEEDED` with `case_result_counts: STRICTLY_SUCCEEDED=9` in
+client workflow `ci-28722850517` at `b6aee2c`. They should not be moved into the
+skip list, and they are not #49 runner debt.
 
 ## Meaning for readiness
 
@@ -137,10 +142,9 @@ failed case is a DSA-root RSA-leaf combination. This is a visibility mechanism,
 not a closure of #52; it has been locally replayed by re-adapting the raw
 per-test `_testRun.json` files from the `ci-28722850517` artifact, with unchanged
 totals except `expected_failed: 6`, but remote workflow evidence with the
-committed classifier is still pending. The
-`not_attempted` buckets are now accounted for
-at the role and both-endpoint level, but #49 remains open on the `7`
-both-endpoint debt rows above.
+committed classifier is still pending. The `not_attempted` buckets are now
+accounted for at the role and both-endpoint level, and the former seven #49 rows
+are covered by the strict client capture.
 
 Classification is not conformance execution. The explicit out-of-scope rows
 should not be moved into `expected_skipped`; keeping endpoint-mode mismatches
@@ -152,7 +156,7 @@ endpoint role.
 - Do not use `--allow-partial` output as readiness evidence.
 - Do not add a skip-list pattern that absorbs `TestEndpointMode doesn't match`.
 - Do not close #9 from this classification alone.
-- Do not close #49 until the remaining `7` both-endpoint rows have execution
-  evidence or a documented runner limitation with an owner.
+- Do not reopen #49 on the package prefix alone; verify the row's TLS-Anvil
+  endpoint annotation and opposite-capture result.
 - Keep Pillar 1 at `PARTIAL` while external conformance remains outside required
   PR CI and the strict client run still has unexpected failures.

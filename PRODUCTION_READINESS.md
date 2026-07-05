@@ -100,8 +100,10 @@ consumption-for-rejection, not resumption.
   `expected_skipped: 175`, `unexpected_skipped: 0`, and `not_attempted: 157`.
   `docs/research/TLS_ANVIL_NOT_ATTEMPTED.md` now accounts for the server and
   client `not_attempted` buckets together: role-mismatched TLS 1.3 rows are
-  exercised by the opposite strict capture, `7` TLS 1.3 both-endpoint rows remain
-  #49 debt, and TLS 1.2/DTLS rows remain explicit out-of-scope rows. The attempted
+  exercised by the opposite strict capture, including the seven TLS 1.3
+  `EncryptedExtensions`/`CertificateVerify`/`Certificate` length-field rows that
+  pass in the strict client capture; TLS 1.2/DTLS rows remain explicit
+  out-of-scope rows. The attempted
   server-side TLS-Anvil surface is clean
   (`105/105` attempted passed), including `KeyUpdate: passed=4` and
   `ComplianceRequirements: passed=2`.
@@ -141,8 +143,8 @@ consumption-for-rejection, not resumption.
   evidence with the committed classifier is
   still pending. The `expected_failed` count is the visibility mechanism, not a
   closure of #52.
-  Accepted client execution remains open while
-  the remaining failures and the `7` #49 both-endpoint rows remain. A skip-list
+  Accepted client execution remains open while remote workflow evidence with the
+  committed classifier is pending. A skip-list
   narrowing tracked by #48 surfaces the strict-complete f50fcd8
   client capture's `sendEndOfEarlyDataAsServer` STRICTLY_SUCCEEDED row rather
   than the broader `*EarlyData*` skip pattern masking it as `unexpected_pass`;
@@ -180,10 +182,11 @@ consumption-for-rejection, not resumption.
 - **External runner coverage is still partial.** Full TLS-Anvil execution is
   not in PR `just ci`, and BoGo is explicitly deferred per
   `docs/research/BOGO_DEFERRED.md`. The completed strict server/client captures
-  account for endpoint-mode `not_attempted` rows, but `7` TLS 1.3 both-endpoint
-  length-field rows remain #49 runner debt. TLS-Anvil normalization and
-  wrapper-helper tests are gated, and the real TLS-Anvil server suite runs in a separate
-  scheduled/manual workflow. TLS-Anvil client runner/workflow wiring exists, but
+  account for endpoint-mode `not_attempted` rows, including the `tests.both.*`
+  length-field rows that are role-specific despite their package name. TLS-Anvil
+  normalization and wrapper-helper tests are gated, and the real TLS-Anvil server
+  suite runs in a separate scheduled/manual workflow. TLS-Anvil client
+  runner/workflow wiring exists, but
   accepted client execution remains open. Completed
   TLS-Anvil server evidence now has no unexpected attempted
   failures; remaining named-group scope beyond the proven server-side P-256 path
