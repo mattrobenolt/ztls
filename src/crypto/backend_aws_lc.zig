@@ -1,9 +1,10 @@
 //! AWS-LC backend primitive wrappers.
 //!
-//! X25519 uses AWS-LC's BoringSSL-style flat API. The remaining primitives
-//! delegate to the OpenSSL-compatible implementation while the build recipe
-//! links AWS-LC's libcrypto; those modules should diverge when a backend-specific
-//! fast path or API difference warrants it.
+//! X25519 uses AWS-LC's BoringSSL-style flat API. AEAD uses AWS-LC's
+//! BoringSSL-style EVP_AEAD one-shot API. The remaining primitives delegate to
+//! the OpenSSL-compatible implementation while the build recipe links AWS-LC's
+//! libcrypto; those modules should diverge when a backend-specific fast path or
+//! API difference warrants it.
 const std = @import("std");
 const assert = std.debug.assert;
 const c = @import("c_openssl.zig").openssl;
@@ -76,19 +77,44 @@ pub inline fn freeKey(key: *pkey) void {
 }
 
 pub const AeadError = compat.AeadError;
-pub const AeadContext = compat.AeadContext;
+pub const AeadContext = struct {
+    ctx: c.EVP_AEAD_CTX,
+};
 pub const aead_tag_len = compat.aead_tag_len;
 pub const aead_nonce_len = compat.aead_nonce_len;
 
-pub inline fn aeadInit(suite: CipherSuite, key_bytes: []const u8) AeadError!AeadContext {
-    return compat.aeadInit(suite, key_bytes);
+fn aeadCipher(suite: CipherSuite) *const c.EVP_AEAD {
+    return switch (suite) {
+        .aes_128_gcm_sha256 => c.EVP_aead_aes_128_gcm(),
+        .aes_256_gcm_sha384 => c.EVP_aead_aes_256_gcm(),
+        .chacha20_poly1305_sha256 => c.EVP_aead_chacha20_poly1305(),
+    } orelse unreachable;
 }
 
-pub inline fn aeadDeinit(ctx: *AeadContext) void {
-    compat.aeadDeinit(ctx);
+pub fn aeadInit(suite: CipherSuite, key_bytes: []const u8) AeadError!AeadContext {
+    var ctx: AeadContext = undefined;
+    c.EVP_AEAD_CTX_zero(&ctx.ctx);
+    if (c.EVP_AEAD_CTX_init(
+        &ctx.ctx,
+        aeadCipher(suite),
+        key_bytes.ptr,
+        key_bytes.len,
+        aead_tag_len,
+        null,
+    ) != 1) {
+        c.EVP_AEAD_CTX_cleanup(&ctx.ctx);
+        c.EVP_AEAD_CTX_zero(&ctx.ctx);
+        return error.AeadSetupFailed;
+    }
+    return ctx;
 }
 
-pub inline fn aeadEncrypt(
+pub fn aeadDeinit(ctx: *AeadContext) void {
+    c.EVP_AEAD_CTX_cleanup(&ctx.ctx);
+    c.EVP_AEAD_CTX_zero(&ctx.ctx);
+}
+
+pub fn aeadEncrypt(
     ctx: *AeadContext,
     ciphertext: []u8,
     tag: *[aead_tag_len]u8,
@@ -96,10 +122,27 @@ pub inline fn aeadEncrypt(
     ad: []const u8,
     npub: *const [aead_nonce_len]u8,
 ) AeadError!void {
-    return compat.aeadEncrypt(ctx, ciphertext, tag, plaintext, ad, npub);
+    assert(ciphertext.len == plaintext.len);
+    var tag_len: usize = 0;
+    if (c.EVP_AEAD_CTX_seal_scatter(
+        &ctx.ctx,
+        ciphertext.ptr,
+        tag,
+        &tag_len,
+        tag.len,
+        npub,
+        npub.len,
+        plaintext.ptr,
+        plaintext.len,
+        null,
+        0,
+        ad.ptr,
+        ad.len,
+    ) != 1) return error.AeadEncryptFailed;
+    if (tag_len != tag.len) return error.AeadEncryptFailed;
 }
 
-pub inline fn aeadDecrypt(
+pub fn aeadDecrypt(
     ctx: *AeadContext,
     plaintext: []u8,
     ciphertext: []const u8,
@@ -107,7 +150,19 @@ pub inline fn aeadDecrypt(
     ad: []const u8,
     npub: *const [aead_nonce_len]u8,
 ) AeadError!void {
-    return compat.aeadDecrypt(ctx, plaintext, ciphertext, tag, ad, npub);
+    assert(plaintext.len == ciphertext.len);
+    if (c.EVP_AEAD_CTX_open_gather(
+        &ctx.ctx,
+        plaintext.ptr,
+        npub,
+        npub.len,
+        ciphertext.ptr,
+        ciphertext.len,
+        tag,
+        tag.len,
+        ad.ptr,
+        ad.len,
+    ) != 1) return error.AuthenticationFailed;
 }
 
 pub const SignatureError = compat.SignatureError;

@@ -103,11 +103,10 @@ pub const Aead = union(CipherSuite) {
     /// `plaintext` must be the same length as `ciphertext`.
     ///
     /// Returns `error.AuthenticationFailed` if the tag does not verify.
-    /// On failure the `plaintext` buffer contains unauthenticated data —
-    /// OpenSSL EVP writes plaintext during `EVP_DecryptUpdate` before
-    /// `EVP_DecryptFinal_ex` checks the tag. Callers at the RecordLayer
-    /// level treat the buffer as poisoned and must not inspect it after
-    /// this error.
+    /// On failure the `plaintext` buffer contains backend-owned failure output:
+    /// some backends leave unauthenticated plaintext, while others zero the
+    /// buffer. Callers at the RecordLayer level treat the buffer as poisoned and
+    /// must not inspect it after this error.
     pub fn decrypt(
         self: Aead,
         ctx: *Context,

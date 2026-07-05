@@ -289,6 +289,29 @@ test "client group capabilities match implemented client key-share plumbing" {
     try testing.expect(capabilities.client_p256);
 }
 
+test "aead context shape matches active backend" {
+    switch (active) {
+        .openssl => try testing.expectEqual(
+            @sizeOf(backend_openssl.AeadContext),
+            @sizeOf(aead.Context),
+        ),
+        .aws_lc => try testing.expect(
+            @sizeOf(aead.Context) != @sizeOf(backend_openssl.AeadContext),
+        ),
+        .boringssl => unreachable,
+    }
+}
+
+test "aws-lc aead deinit clears inline context" {
+    if (active != .aws_lc) return error.SkipZigTest;
+
+    const key: [16]u8 = @splat(0xab);
+    var ctx = try backend_aws_lc.aeadInit(.aes_128_gcm_sha256, &key);
+    backend_aws_lc.aeadDeinit(&ctx);
+
+    for (std.mem.asBytes(&ctx)) |byte| try testing.expectEqual(@as(u8, 0), byte);
+}
+
 test "capability helpers recognize advertised algorithms" {
     for (capabilities.cipher_suites) |suite| try testing.expect(supportsCipherSuite(suite));
     for (capabilities.certificate_verify_schemes) |scheme| {

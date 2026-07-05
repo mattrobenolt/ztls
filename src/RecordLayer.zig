@@ -16,6 +16,7 @@ const Iv = aead_mod.Iv;
 const Tag = aead_mod.Tag;
 const tag_len = aead_mod.tag_len;
 const construct = aead_mod.construct;
+const backend = @import("crypto/backend.zig");
 const frame = @import("frame.zig");
 const ContentType = frame.ContentType;
 const Header = frame.Header;
@@ -90,11 +91,10 @@ pub const EncryptError = AeadError || error{
 ///
 /// Sequence number increments only on successful authentication.
 ///
-/// On `error.AuthenticationFailed`, the ciphertext region of `buf` has
-/// already been overwritten with unauthenticated plaintext by the AEAD
-/// backend (standard OpenSSL EVP decrypt-then-verify ordering).
-/// Callers must treat `buf` as poisoned after this error and must not
-/// inspect, log, or reuse its contents.
+/// On `error.AuthenticationFailed`, the ciphertext region of `buf` is
+/// backend-owned failure output. Some backends leave unauthenticated plaintext;
+/// others zero it. Callers must treat `buf` as poisoned after this error and
+/// must not inspect, log, or reuse its contents.
 ///
 /// RFC 8446 §5.2
 // ziglint-ignore: Z015 -- DecryptError is a public error-set alias.
@@ -318,13 +318,11 @@ test "encrypt/decrypt: sequence numbers advance" {
     try testing.expectEqual(@as(u64, 3), rx.seq);
 }
 
-// RFC 8446 §5.2 — on AEAD authentication failure the caller buffer is
-// overwritten with unauthenticated plaintext. This is a characterization
-// of standard OpenSSL EVP behavior (decrypt-before-verify), not a ztls
-// correctness assertion. The test exists so that any future backend or
-// EVP call-ordering change surfaces the buffer-poisoning behavior
-// explicitly.
-test "decrypt: failed auth poisons caller buffer" {
+// RFC 8446 §5.2 — on AEAD authentication failure the caller buffer contents are
+// backend-owned. OpenSSL EVP writes unauthenticated plaintext before tag
+// verification; AWS-LC EVP_AEAD zeroes the output on failure. This is not a ztls
+// correctness assertion, but the test pins the per-backend behavior explicitly.
+test "decrypt: failed auth exposes backend failure buffer behavior" {
     const key: Aes128GcmKey = .init(@splat(0xab));
     const iv: Iv = .init(@splat(0xcd));
     var tx: RecordLayer = try .init(.{ .aes_128_gcm_sha256 = key }, iv);
@@ -349,15 +347,23 @@ test "decrypt: failed auth poisons caller buffer" {
     try testing.expectError(error.AuthenticationFailed, rx.decrypt(&tampered));
     try testing.expectEqual(@as(u64, 0), rx.seq);
 
-    // Buffer contains unauthenticated plaintext — the EVP decrypt-before-verify
-    // ordering wrote real plaintext into the caller's buffer before the tag
-    // check failed.
     const inner = tampered[frame.header_len..][0..inner_len];
-    try testing.expectEqualSlices(u8, plaintext, inner[0..plaintext.len]);
-    try testing.expectEqual(
-        @as(u8, @intFromEnum(ContentType.application_data)),
-        inner[plaintext.len],
-    );
+    switch (backend.active) {
+        .openssl => {
+            // OpenSSL EVP decrypt-before-verify writes real plaintext into the
+            // caller buffer before the tag check fails.
+            try testing.expectEqualSlices(u8, plaintext, inner[0..plaintext.len]);
+            try testing.expectEqual(
+                @as(u8, @intFromEnum(ContentType.application_data)),
+                inner[plaintext.len],
+            );
+        },
+        .aws_lc => {
+            // AWS-LC EVP_AEAD promises to zero output on authentication failure.
+            for (inner) |byte| try testing.expectEqual(@as(u8, 0), byte);
+        },
+        .boringssl => unreachable,
+    }
 
     // Prove only the tampered record's buffer is poisoned, not context state:
     // a subsequent valid record (same sequence, fresh buffer) still decrypts.

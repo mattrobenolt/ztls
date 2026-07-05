@@ -415,9 +415,9 @@ each passing the same correctness and interop gates.
   round-trip, tampered-signature rejection, `BufferTooShort`, and key/scheme
   mismatch). These tests run in the normal `zig build test` lane and under
   `just check-backend-aws-lc`, so the same primitive vectors pass through both
-  the OpenSSL- and AWS-LC-linked build lanes. X25519 is backend-divergent in the
-  AWS-LC lane; P-256 ECDH, AEAD, and signature paths still delegate through
-  OpenSSL-compatible wrappers while linking AWS-LC libcrypto. This is a
+  the OpenSSL- and AWS-LC-linked build lanes. X25519 and AEAD are
+  backend-divergent in the AWS-LC lane; P-256 ECDH and signature paths still
+  delegate through OpenSSL-compatible wrappers while linking AWS-LC libcrypto. This is a
   per-primitive smoke contract, not a Wycheproof matrix or divergent capability
   proof.
 
@@ -433,15 +433,16 @@ each passing the same correctness and interop gates.
   facade still lacks divergent-backend matrix evidence. *(#22)*
 - **aws-lc has a real test lane but not a full backend matrix.** The
   `-Dcrypto-backend=aws-lc` build links AWS-LC libcrypto and runs the unit suite;
-  X25519 uses AWS-LC's flat `curve25519.h` API, while P-256 ECDH, AEAD, and
-  signature paths intentionally remain proven OpenSSL-compatible wrappers until
-  measured backend-specific implementations exist. Wycheproof, interop,
+  X25519 uses AWS-LC's flat `curve25519.h` API, and AEAD uses AWS-LC's
+  BoringSSL-style `EVP_AEAD` one-shot API. P-256 ECDH and signature paths
+  intentionally remain proven OpenSSL-compatible wrappers until measured
+  backend-specific implementations exist. Wycheproof, interop,
   conformance, benchmark measurements/evidence, and divergent capability proof
   remain open. *(#22)*
 - **OpenSSL-compatible API choices still need measured backend-specific paths.**
-  X25519 is the first AWS-LC-specific primitive path; EC/RSA key construction,
-  AEAD, and signatures still delegate to the OpenSSL-compatible implementation.
-  A scratch measurement on OpenSSL 3.6.2 showed the current EC/RSA construction
+  X25519 and AEAD now have AWS-LC-specific primitive paths; EC/RSA key
+  construction and signatures still delegate to the OpenSSL-compatible
+  implementation. A scratch measurement on OpenSSL 3.6.2 showed the current EC/RSA construction
   path is faster than naive `EVP_PKEY_fromdata`/decoder replacements, so
   portability must come through backend-specific fast paths, not an unmeasured
   lowest-common API. *(#22)*
