@@ -37,10 +37,11 @@ that the EVP/libssl app-data path beat the current record path.
 A single comptime build option selects the backend:
 
 ```
--Dcrypto-backend=openssl   # default, first concrete target
--Dcrypto-backend=awslc     # first-class design target, not landed this milestone
--Dcrypto-backend=boringssl # possible later
--Dcrypto-fips=true|false   # narrows the capability table (build-time, see below)
+-Dcrypto-backend=openssl # default OpenSSL lane
+-Dcrypto-backend=aws-lc  # selectable AWS-LC lane
+-Dcrypto-fips=true|false # narrows the capability table (build-time, see below)
+
+# BoringSSL remains a possible later backend; it is not a selectable build option yet.
 ```
 
 The rest of ztls imports one backend-agnostic module (`src/crypto/`) and never
