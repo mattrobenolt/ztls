@@ -1,0 +1,82 @@
+timestamp_utc=20260705-160550
+git_revision=ca5359085548e1f890f913f50c9df8fba30b859d
+git_dirty=false
+zig_version=0.15.2
+zig_optimization_mode=ReleaseFast
+crypto_backend=aws-lc
+openssl_pkg_config_path=/nix/store/is2mz9ln2mszv2fl59wg5rr7casdqyk5-openssl-3.6.2-dev/lib/pkgconfig
+aws_lc_pkg_config_path=/nix/store/z9bb11viplflqhh59xli3xw4k03wqria-aws-lc-1.69.0-dev/lib/pkgconfig
+linked_libcrypto=/nix/store/6386897pzawhk2m445xyl2vc6r024pl8-aws-lc-1.69.0/lib/libcrypto.so
+ztls_linked_libcrypto=/nix/store/6386897pzawhk2m445xyl2vc6r024pl8-aws-lc-1.69.0/lib/libcrypto.so
+evp_linked_libcrypto=/nix/store/bl7rmhhsy7vjb9qm3jfwgqpv3cn7wfb1-openssl-3.6.2/lib/libcrypto.so.3
+libssl_linked_libcrypto=/nix/store/bl7rmhhsy7vjb9qm3jfwgqpv3cn7wfb1-openssl-3.6.2/lib/libcrypto.so.3
+libssl_linked_libssl=/nix/store/bl7rmhhsy7vjb9qm3jfwgqpv3cn7wfb1-openssl-3.6.2/lib/libssl.so.3
+openssl_cli_version=OpenSSL 3.6.2 7 Apr 2026 (Library: OpenSSL 3.6.2 7 Apr 2026)
+rustls_profile=release
+rustls_version=0.23.40
+cpu_governor=performance
+rustc_version=rustc 1.96.0 (ac68faa20 2026-05-25)
+benchstat_path=/nix/store/3ivmlgp9kzgfzm2crq3w871bk5z6wqn5-benchstat-unstable-2026-05-12/bin/benchstat
+go_version=go version go1.26.3 linux/arm64
+
+[benchstat]
+/nix/store/3ivmlgp9kzgfzm2crq3w871bk5z6wqn5-benchstat-unstable-2026-05-12/bin/benchstat: go1.26.3
+	path	golang.org/x/perf/cmd/benchstat
+	mod	golang.org/x/perf	(devel)	
+	dep	github.com/aclements/go-moremath	v0.0.0-20210112150236-f10218a38794	
+	build	-buildmode=exe
+	build	-compiler=gc
+	build	-trimpath=true
+	build	DefaultGODEBUG=cryptocustomrand=1,tlssecpmlkem=0,urlstrictcolons=0
+	build	CGO_ENABLED=1
+	build	GOARCH=arm64
+	build	GOOS=linux
+	build	GOARM64=v8.0
+uname=Linux orbstack 7.0.11-orbstack-00360-gc9bc4d96ac70 #1 SMP PREEMPT Thu Jun  4 16:40:25 UTC 2026 aarch64 GNU/Linux
+
+[lscpu]
+Architecture:                            aarch64
+CPU op-mode(s):                          64-bit
+Byte Order:                              Little Endian
+CPU(s):                                  10
+On-line CPU(s) list:                     0-9
+Vendor ID:                               Apple
+Model name:                              -
+Model:                                   0
+Thread(s) per core:                      1
+Core(s) per cluster:                     10
+Socket(s):                               -
+Cluster(s):                              1
+Stepping:                                0x0
+CPU(s) scaling MHz:                      100%
+CPU max MHz:                             2000.0000
+CPU min MHz:                             2000.0000
+BogoMIPS:                                48.00
+Flags:                                   fp asimd evtstrm aes pmull sha1 sha2 crc32 atomics fphp asimdhp cpuid asimdrdm jscvt fcma lrcpc dcpop sha3 asimddp sha512 asimdfhm dit uscat ilrcpc flagm sb dcpodp flagm2 frint
+L1d cache:                               1.3 MiB (10 instances)
+L1i cache:                               1.9 MiB (10 instances)
+L2 cache:                                36 MiB (3 instances)
+L3 cache:                                64 MiB (1 instance)
+Vulnerability Gather data sampling:      Not affected
+Vulnerability Ghostwrite:                Not affected
+Vulnerability Indirect target selection: Not affected
+Vulnerability Itlb multihit:             Not affected
+Vulnerability L1tf:                      Not affected
+Vulnerability Mds:                       Not affected
+Vulnerability Meltdown:                  Not affected
+Vulnerability Mmio stale data:           Not affected
+Vulnerability Old microcode:             Not affected
+Vulnerability Reg file data sampling:    Not affected
+Vulnerability Retbleed:                  Not affected
+Vulnerability Spec rstack overflow:      Not affected
+Vulnerability Spec store bypass:         Vulnerable
+Vulnerability Spectre v1:                Mitigation; __user pointer sanitization
+Vulnerability Spectre v2:                Mitigation; CSV2, but not BHB
+Vulnerability Srbds:                     Not affected
+Vulnerability Tsa:                       Not affected
+Vulnerability Tsx async abort:           Not affected
+Vulnerability Vmscape:                   Not affected
+
+[sysctl]
+
+args=--count=5 --benchtime=500ms --filter BenchmarkHandshake/\,BenchmarkAppPingPong/\*/size=1350 

@@ -1,0 +1,35 @@
+zig_os: linux
+zig_arch: aarch64
+zig_abi: gnu
+zig_cpu: apple_m1
+zig_mode: ReleaseFast
+BenchmarkHandshake/impl=openssl/suite=TLS_AES_128_GCM_SHA256	    1848	    323900 ns/op
+BenchmarkHandshake/impl=openssl/suite=TLS_AES_256_GCM_SHA384	    1816	    338592 ns/op
+BenchmarkHandshake/impl=openssl/suite=TLS_CHACHA20_POLY1305_SHA256	    1869	    323164 ns/op
+BenchmarkHandshake/impl=openssl/suite=TLS_AES_128_GCM_SHA256	    1869	    320143 ns/op
+BenchmarkHandshake/impl=openssl/suite=TLS_AES_256_GCM_SHA384	    1677	    336719 ns/op
+BenchmarkHandshake/impl=openssl/suite=TLS_CHACHA20_POLY1305_SHA256	    1836	    323061 ns/op
+BenchmarkHandshake/impl=openssl/suite=TLS_AES_128_GCM_SHA256	    1827	    321243 ns/op
+BenchmarkHandshake/impl=openssl/suite=TLS_AES_256_GCM_SHA384	    1735	    334744 ns/op
+BenchmarkHandshake/impl=openssl/suite=TLS_CHACHA20_POLY1305_SHA256	    1834	    324004 ns/op
+BenchmarkHandshake/impl=openssl/suite=TLS_AES_128_GCM_SHA256	    1861	    321356 ns/op
+BenchmarkHandshake/impl=openssl/suite=TLS_AES_256_GCM_SHA384	    1810	    337077 ns/op
+BenchmarkHandshake/impl=openssl/suite=TLS_CHACHA20_POLY1305_SHA256	    1788	    326500 ns/op
+BenchmarkHandshake/impl=openssl/suite=TLS_AES_128_GCM_SHA256	    1629	    320944 ns/op
+BenchmarkHandshake/impl=openssl/suite=TLS_AES_256_GCM_SHA384	    1771	    335128 ns/op
+BenchmarkHandshake/impl=openssl/suite=TLS_CHACHA20_POLY1305_SHA256	    1848	    327090 ns/op
+BenchmarkAppPingPong/impl=openssl/suite=TLS_AES_128_GCM_SHA256/size=1350	  291900	      2059 ns/op	1311.37 MB/s
+BenchmarkAppPingPong/impl=openssl/suite=TLS_AES_256_GCM_SHA384/size=1350	  277454	      2162 ns/op	1248.75 MB/s
+BenchmarkAppPingPong/impl=openssl/suite=TLS_CHACHA20_POLY1305_SHA256/size=1350	  108793	      5527 ns/op	 488.49 MB/s
+BenchmarkAppPingPong/impl=openssl/suite=TLS_AES_128_GCM_SHA256/size=1350	  293293	      2029 ns/op	1330.62 MB/s
+BenchmarkAppPingPong/impl=openssl/suite=TLS_AES_256_GCM_SHA384/size=1350	  277590	      2153 ns/op	1253.82 MB/s
+BenchmarkAppPingPong/impl=openssl/suite=TLS_CHACHA20_POLY1305_SHA256/size=1350	  106640	      5509 ns/op	 490.12 MB/s
+BenchmarkAppPingPong/impl=openssl/suite=TLS_AES_128_GCM_SHA256/size=1350	  294398	      2030 ns/op	1329.78 MB/s
+BenchmarkAppPingPong/impl=openssl/suite=TLS_AES_256_GCM_SHA384/size=1350	  277896	      2165 ns/op	1246.89 MB/s
+BenchmarkAppPingPong/impl=openssl/suite=TLS_CHACHA20_POLY1305_SHA256/size=1350	  108843	      5442 ns/op	 496.15 MB/s
+BenchmarkAppPingPong/impl=openssl/suite=TLS_AES_128_GCM_SHA256/size=1350	  305209	      1964 ns/op	1375.07 MB/s
+BenchmarkAppPingPong/impl=openssl/suite=TLS_AES_256_GCM_SHA384/size=1350	  287265	      2087 ns/op	1293.60 MB/s
+BenchmarkAppPingPong/impl=openssl/suite=TLS_CHACHA20_POLY1305_SHA256/size=1350	  114238	      5280 ns/op	 511.32 MB/s
+BenchmarkAppPingPong/impl=openssl/suite=TLS_AES_128_GCM_SHA256/size=1350	  297380	      1973 ns/op	1368.57 MB/s
+BenchmarkAppPingPong/impl=openssl/suite=TLS_AES_256_GCM_SHA384/size=1350	  290365	      2077 ns/op	1299.83 MB/s
+BenchmarkAppPingPong/impl=openssl/suite=TLS_CHACHA20_POLY1305_SHA256/size=1350	  113455	      5272 ns/op	 512.10 MB/s

@@ -454,9 +454,12 @@ each passing the same correctness and interop gates.
   `unexpected_skipped=0`, `not_attempted=157`; client
   `conformance/zig-out/anvil/client/awslc-20260705-092930` had `437/437`
   finished, `passed=91`, `failed=6`, `expected_failed=6`, `expected_skipped=135`,
-  `unexpected_skipped=0`, `not_attempted=205`. These are local run artifacts, not
-  committed durable provider-matrix captures. Wycheproof, durable benchmark
-  measurements/evidence, and provider/FIPS/version capability proof remain open.
+  `unexpected_skipped=0`, `not_attempted=205`. The local AWS-LC provider-lane
+  benchmark capture `docs/research/perf/20260705-160550-awslc-local/` records
+  selected TLS handshake and 1350-byte ping-pong rows with ztls linked against
+  AWS-LC and OpenSSL libssl baselines linked against OpenSSL; it is measurement
+  evidence, not a performance conclusion or #31 Linux x86_64 perf/disassembly
+  proof. Wycheproof and provider/FIPS/version capability proof remain open.
   *(#22)*
 - **OpenSSL-compatible API choices still need measured backend-specific paths.**
   X25519 and AEAD now have AWS-LC-specific primitive paths; EC/RSA key

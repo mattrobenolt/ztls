@@ -1,0 +1,2 @@
+# rustls in-memory benchmark
+benchmark,suite,size,iterations,bytes,elapsed_ns,mib_per_sec

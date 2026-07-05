@@ -1,0 +1,5 @@
+zig_os: linux
+zig_arch: aarch64
+zig_abi: gnu
+zig_cpu: apple_m1
+zig_mode: ReleaseFast
