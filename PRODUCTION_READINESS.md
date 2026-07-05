@@ -405,15 +405,15 @@ each passing the same correctness and interop gates.
 - `src/certificate.zig` routes CertificateVerify public-key construction and
   signature verification through `src/crypto/backend.zig`; certificate parsing,
   chain signature verification, and path policy remain ztls/std-derived code.
-- `just check-backend-aws-lc` builds, tests, produces the benchmark binary, and
-  builds the conformance shims with AWS-LC libcrypto linked; the recipe pins
-  `PKG_CONFIG_PATH` to the AWS-LC derivation and checks the resolved include and
-  library paths in the combined build log. `zig build test` inside `.#openssl`
-  and `.#aws-lc` follows the shell-selected backend by default, while explicit
-  `-Dcrypto-backend=...` still wins. `conformance/build.zig` accepts the same
-  `-Dcrypto-backend=aws-lc` option, so `anvil_client` and `tlsfuzzer_server` can
-  now be built as AWS-LC-linked harness binaries. This is build evidence only,
-  not a strict TLS-Anvil/tlsfuzzer provider capture.
+- `just check-backend-aws-lc` builds, tests, produces the benchmark binary,
+  executes a one-row benchmark smoke, runs the in-memory example, builds the
+  conformance shims, and runs the TLS 1.3 tlsfuzzer smoke with AWS-LC libcrypto
+  linked; the recipe pins `PKG_CONFIG_PATH` to the AWS-LC derivation and checks
+  the resolved include and library paths in the combined build log. `zig build
+  test` inside `.#openssl` and `.#aws-lc` follows the shell-selected backend by
+  default, while explicit `-Dcrypto-backend=...` still wins. `conformance/build.zig`
+  accepts the same `-Dcrypto-backend=aws-lc` option, so `anvil_client` and
+  `tlsfuzzer_server` can be built as AWS-LC-linked harness binaries.
 - HKDF/HMAC/SHA transcript hashing remain on `std.crypto`, matching the roadmap
   policy unless a concrete provider/FIPS requirement appears.
 - `src/crypto/backend_primitive_tests.zig` exercises the backend facade
@@ -447,12 +447,17 @@ each passing the same correctness and interop gates.
   X25519 uses AWS-LC's flat `curve25519.h` API, and AEAD uses AWS-LC's
   BoringSSL-style `EVP_AEAD` one-shot API. P-256 ECDH and signature paths
   intentionally remain proven OpenSSL-compatible wrappers until measured
-  backend-specific implementations exist. Wycheproof, interop,
-  conformance run captures, benchmark measurements/evidence, and provider/FIPS/
-  version capability proof remain open. The conformance shims now build under the
-  AWS-LC backend, and the TLS 1.3 tlsfuzzer smoke tests pass when those shims are
-  built with `ZTLS_CRYPTO_BACKEND=aws-lc`, but no strict TLS-Anvil/tlsfuzzer
-  AWS-LC report has been captured yet. *(#22)*
+  backend-specific implementations exist. Local strict-complete TLS-Anvil AWS-LC
+  captures on `4d31ccb` completed cleanly for both endpoints: server
+  `conformance/zig-out/anvil/server/awslc-20260705-092917` had `437/437`
+  finished, `passed=105`, `failed=0`, `expected_failed=0`, `expected_skipped=175`,
+  `unexpected_skipped=0`, `not_attempted=157`; client
+  `conformance/zig-out/anvil/client/awslc-20260705-092930` had `437/437`
+  finished, `passed=91`, `failed=6`, `expected_failed=6`, `expected_skipped=135`,
+  `unexpected_skipped=0`, `not_attempted=205`. These are local run artifacts, not
+  committed durable provider-matrix captures. Wycheproof, durable benchmark
+  measurements/evidence, and provider/FIPS/version capability proof remain open.
+  *(#22)*
 - **OpenSSL-compatible API choices still need measured backend-specific paths.**
   X25519 and AEAD now have AWS-LC-specific primitive paths; EC/RSA key
   construction and signatures still delegate to the OpenSSL-compatible
@@ -486,8 +491,8 @@ each passing the same correctness and interop gates.
   facade-direct Wycheproof coverage and a full provider matrix remain open. This
   is a narrow primitive smoke contract — it does not cover Wycheproof boundary
   vectors per provider through the facade, divergent capability matrices, or
-  strict TLS-Anvil/tlsfuzzer captures per provider. The full backend matrix
-  remains open. *(#22)*
+  durable CI-gated provider captures. The full backend matrix remains open.
+  *(#22)*
 
 ---
 

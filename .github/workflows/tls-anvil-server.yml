@@ -2,12 +2,20 @@ name: tls-anvil-server
 
 on:
   workflow_dispatch:
+    inputs:
+      crypto_backend:
+        description: libcrypto-family backend to build the ztls harnesses with
+        type: choice
+        options:
+          - openssl
+          - aws-lc
+        default: openssl
   schedule:
     # Weekly Wednesday 06:17 UTC. This is real suite evidence, not PR smoke.
     - cron: "17 6 * * 3"
 
 concurrency:
-  group: tls-anvil-server-${{ github.ref }}
+  group: tls-anvil-server-${{ github.ref }}-${{ github.event.inputs.crypto_backend || 'openssl' }}
   cancel-in-progress: ${{ github.event_name == 'workflow_dispatch' }}
 
 permissions:
@@ -18,6 +26,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 120
     env:
+      CRYPTO_BACKEND: ${{ github.event.inputs.crypto_backend || 'openssl' }}
       RUN_DIR: zig-out/anvil/server/ci-${{ github.run_id }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -30,8 +39,12 @@ jobs:
         run: |
           nix develop --command bash -lc '
             set -euo pipefail
+            export ZTLS_CRYPTO_BACKEND="$CRYPTO_BACKEND"
+            if [ "$CRYPTO_BACKEND" = aws-lc ]; then
+              export PKG_CONFIG_PATH="$ZTLS_AWS_LC_PKG_CONFIG_PATH${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+            fi
             cd conformance
-            zig build
+            zig build -Dcrypto-backend="$CRYPTO_BACKEND"
             test -x zig-out/bin/tlsfuzzer_server
             test -f zig-out/tools/TLS-Anvil.jar
             test -d zig-out/tools/lib
@@ -41,6 +54,10 @@ jobs:
         run: |
           nix develop --command bash -lc '
             set -euo pipefail
+            export ZTLS_CRYPTO_BACKEND="$CRYPTO_BACKEND"
+            if [ "$CRYPTO_BACKEND" = aws-lc ]; then
+              export PKG_CONFIG_PATH="$ZTLS_AWS_LC_PKG_CONFIG_PATH${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+            fi
             just conformance/ci
           '
 
@@ -49,6 +66,10 @@ jobs:
         run: |
           nix develop --command bash -lc '
             set -euo pipefail
+            export ZTLS_CRYPTO_BACKEND="$CRYPTO_BACKEND"
+            if [ "$CRYPTO_BACKEND" = aws-lc ]; then
+              export PKG_CONFIG_PATH="$ZTLS_AWS_LC_PKG_CONFIG_PATH${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+            fi
             cd conformance
             just anvil-ci-server "$RUN_DIR" 5400
           '
@@ -71,9 +92,9 @@ jobs:
 
       - name: Upload TLS-Anvil summary and provenance
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: tls-anvil-server-summary
+          name: tls-anvil-server-${{ env.CRYPTO_BACKEND }}-summary
           path: |
             conformance/zig-out/anvil/server/ci-${{ github.run_id }}/run_metadata.json
             conformance/zig-out/anvil/server/ci-${{ github.run_id }}/report.json
@@ -87,9 +108,9 @@ jobs:
 
       - name: Upload TLS-Anvil per-test results
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: tls-anvil-server-results
+          name: tls-anvil-server-${{ env.CRYPTO_BACKEND }}-results
           path: conformance/zig-out/anvil/server/ci-${{ github.run_id }}/results/
           if-no-files-found: warn
           retention-days: 14
