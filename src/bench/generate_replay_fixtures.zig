@@ -95,7 +95,7 @@ fn captureSuite(arena: Allocator, suite: []const u8, port: u16) ![]u8 {
     defer stream.close();
 
     var hs: ztls.ClientHandshake = .init(.{
-        .keypair = client_keypair,
+        .keypairs = .init(client_keypair),
         .host_name = replay_host_name,
         .now_sec = 0,
         .random = client_random,

@@ -27,6 +27,7 @@ const kex = @import("kex.zig");
 const NamedGroup = kex.NamedGroup;
 const memx = @import("memx.zig");
 const p256 = @import("p256.zig");
+const p384 = @import("p384.zig");
 const ProtocolVersion = @import("protocol_version.zig").ProtocolVersion;
 const root = @import("root.zig");
 const CipherSuite = root.CipherSuite;
@@ -42,6 +43,7 @@ const handshake_header_len = 4;
 const ext_header_len = 2 + 2; // extension type + data length field
 const x25519_key_share_len: usize = 2 + 2 + x25519.public_length;
 const p256_key_share_len: usize = 2 + 2 + p256.public_length;
+const p384_key_share_len: usize = 2 + 2 + p384.public_length;
 const SniNameType = enum(u8) {
     host_name = 0,
     _,
@@ -84,35 +86,39 @@ fn sniExtLen(name: []const u8) u16 {
     return ext_header_len + sni_overhead + @as(u16, @intCast(name.len));
 }
 
-fn groupCount(include_p256: bool) usize {
-    return 1 + @as(usize, @intFromBool(include_p256));
+fn groupCount(include_p256: bool, include_p384: bool) usize {
+    return 1 + @as(usize, @intFromBool(include_p256)) +
+        @as(usize, @intFromBool(include_p384));
 }
 
-fn keySharesLen(include_p256: bool) usize {
-    return x25519_key_share_len + if (include_p256) p256_key_share_len else 0;
+fn keySharesLen(include_p256: bool, include_p384: bool) usize {
+    return x25519_key_share_len +
+        (if (include_p256) p256_key_share_len else 0) +
+        (if (include_p384) p384_key_share_len else 0);
 }
 
 fn extensionsLen(
     server_name: ?[]const u8,
     alpn_protocols: AlpnProtocols,
     include_p256: bool,
+    include_p384: bool,
 ) AlpnError!u16 {
     const sni: u16 = if (server_name) |n| sniExtLen(n) else 0;
     const alpn: u16 = if (alpn_protocols.len == 0) 0 else try alpnExtLen(alpn_protocols);
     const total = sni +
         alpn +
         ext_supported_versions_len +
-        ext_header_len + 2 + groupCount(include_p256) * 2 +
+        ext_header_len + 2 + groupCount(include_p256, include_p384) * 2 +
         ext_sig_algs_len +
         ext_sig_algs_cert_len +
-        ext_header_len + 2 + keySharesLen(include_p256);
+        ext_header_len + 2 + keySharesLen(include_p256, include_p384);
     assert(total <= std.math.maxInt(u16));
     return @intCast(total);
 }
 
 pub fn encodedLen(server_name: ?[]const u8, alpn_protocols: AlpnProtocols) AlpnError!usize {
     return handshake_header_len + body_fixed_len +
-        try extensionsLen(server_name, alpn_protocols, false);
+        try extensionsLen(server_name, alpn_protocols, false, false);
 }
 
 pub fn encodedLenWithP256(
@@ -120,7 +126,15 @@ pub fn encodedLenWithP256(
     alpn_protocols: AlpnProtocols,
 ) AlpnError!usize {
     return handshake_header_len + body_fixed_len +
-        try extensionsLen(server_name, alpn_protocols, true);
+        try extensionsLen(server_name, alpn_protocols, true, false);
+}
+
+pub fn encodedLenWithP256P384(
+    server_name: ?[]const u8,
+    alpn_protocols: AlpnProtocols,
+) AlpnError!usize {
+    return handshake_header_len + body_fixed_len +
+        try extensionsLen(server_name, alpn_protocols, true, true);
 }
 
 /// Errors from ClientHello2 encoding after a HelloRetryRequest.
@@ -135,6 +149,7 @@ fn singleKeyShareLen(selected_group: NamedGroup) RetryEncodeError!usize {
     return switch (selected_group) {
         .x25519 => 2 + 2 + x25519.public_length,
         .secp256r1 => 2 + 2 + p256.public_length,
+        .secp384r1 => 2 + 2 + p384.public_length,
         else => return error.UnsupportedGroup,
     };
 }
@@ -146,6 +161,7 @@ fn retryExtensionsLen(
     alpn_protocols: AlpnProtocols,
     selected_group: NamedGroup,
     cookie: ?[]const u8,
+    include_p384: bool,
 ) RetryEncodeError!u16 {
     const sni: u16 = if (server_name) |n| sniExtLen(n) else 0;
     const alpn: u16 = if (alpn_protocols.len == 0) 0 else try alpnExtLen(alpn_protocols);
@@ -154,7 +170,7 @@ fn retryExtensionsLen(
     const total = sni +
         alpn +
         ext_supported_versions_len +
-        ext_header_len + 2 + groupCount(true) * 2 +
+        ext_header_len + 2 + groupCount(true, include_p384) * 2 +
         ext_sig_algs_len +
         ext_sig_algs_cert_len +
         ext_header_len + 2 + ks +
@@ -173,11 +189,13 @@ fn retryExtensionsLen(
 /// ephemeral keys; the one matching `selected_group` is emitted in key_share.
 /// RFC 8446 §4.1.4 does not require generating a fresh key for the selected
 /// group — the existing keypair is reused.
-pub fn encodeRetryAfterHRR(
+// ziglint-ignore: Z015 -- RetryEncodeError is a public error-set alias.
+pub fn encodeRetryAfterHrr(
     out: []u8,
     random: Random,
     x25519_public_key: x25519.PublicKey,
     p256_public_key: p256.PublicKey,
+    p384_public_key: ?p384.PublicKey,
     selected_group: NamedGroup,
     cookie: ?[]const u8,
     server_name: ?[]const u8,
@@ -187,7 +205,15 @@ pub fn encodeRetryAfterHRR(
     if (cookie) |c| {
         if (c.len == 0 or c.len > std.math.maxInt(u16)) return error.BufferTooShort;
     }
-    const ext_len = try retryExtensionsLen(server_name, alpn_protocols, selected_group, cookie);
+    if (selected_group == .secp384r1 and p384_public_key == null) return error.UnsupportedGroup;
+    const include_p384 = p384_public_key != null;
+    const ext_len = try retryExtensionsLen(
+        server_name,
+        alpn_protocols,
+        selected_group,
+        cookie,
+        include_p384,
+    );
     const encoded_len = handshake_header_len + body_fixed_len + ext_len;
     if (out.len < encoded_len) return error.BufferTooShort;
 
@@ -241,10 +267,11 @@ pub fn encodeRetryAfterHRR(
 
     // supported_groups (RFC 8446 §4.2.7) — unchanged from ClientHello1.
     w.append(ExtensionType, .supported_groups);
-    w.append(u16, @intCast(2 + groupCount(true) * 2));
-    w.append(u16, @intCast(groupCount(true) * 2));
+    w.append(u16, @intCast(2 + groupCount(true, include_p384) * 2));
+    w.append(u16, @intCast(groupCount(true, include_p384) * 2));
     w.append(NamedGroup, .x25519);
     w.append(NamedGroup, .secp256r1);
+    if (include_p384) w.append(NamedGroup, .secp384r1);
 
     // signature_algorithms (RFC 8446 §4.2.3)
     w.append(ExtensionType, .signature_algorithms);
@@ -273,6 +300,12 @@ pub fn encodeRetryAfterHRR(
             w.append(NamedGroup, .secp256r1);
             w.append(u16, p256.public_length);
             w.appendSlice(&p256_public_key.data);
+        },
+        .secp384r1 => {
+            const public_key = p384_public_key orelse return error.UnsupportedGroup;
+            w.append(NamedGroup, .secp384r1);
+            w.append(u16, p384.public_length);
+            w.appendSlice(&public_key.data);
         },
         else => return error.UnsupportedGroup,
     }
@@ -322,6 +355,7 @@ pub const Parsed = struct {
     groups: SupportedGroups = .{},
     public_key: ?x25519.PublicKey = null,
     public_key_p256: ?p256.PublicKey = null,
+    public_key_p384: ?p384.PublicKey = null,
     /// Offered ClientHello extensions tracked for validating server responses.
     offered_extensions: OfferedExtensions = .initEmpty(),
 
@@ -357,7 +391,7 @@ pub fn encode(
     server_name: ?[]const u8,
     alpn_protocols: AlpnProtocols,
 ) (error{ BufferTooShort, ServerNameTooLong } || AlpnError)![]u8 {
-    return encodeInternal(out, random, public_key, null, server_name, alpn_protocols);
+    return encodeInternal(out, random, public_key, null, null, server_name, alpn_protocols);
 }
 
 pub fn encodeWithP256(
@@ -369,7 +403,37 @@ pub fn encodeWithP256(
     alpn_protocols: AlpnProtocols,
 ) (error{ BufferTooShort, ServerNameTooLong } || AlpnError)![]u8 {
     assert(backend.capabilities.client_p256);
-    return encodeInternal(out, random, public_key, public_key_p256, server_name, alpn_protocols);
+    return encodeInternal(
+        out,
+        random,
+        public_key,
+        public_key_p256,
+        null,
+        server_name,
+        alpn_protocols,
+    );
+}
+
+pub fn encodeWithP256P384(
+    out: []u8,
+    random: Random,
+    public_key: x25519.PublicKey,
+    public_key_p256: p256.PublicKey,
+    public_key_p384: ?p384.PublicKey,
+    server_name: ?[]const u8,
+    alpn_protocols: AlpnProtocols,
+) (error{ BufferTooShort, ServerNameTooLong } || AlpnError)![]u8 {
+    assert(backend.capabilities.client_p256);
+    if (public_key_p384 != null) assert(backend.capabilities.client_p384);
+    return encodeInternal(
+        out,
+        random,
+        public_key,
+        public_key_p256,
+        public_key_p384,
+        server_name,
+        alpn_protocols,
+    );
 }
 
 fn encodeInternal(
@@ -377,13 +441,15 @@ fn encodeInternal(
     random: Random,
     public_key: x25519.PublicKey,
     public_key_p256: ?p256.PublicKey,
+    public_key_p384: ?p384.PublicKey,
     server_name: ?[]const u8,
     alpn_protocols: AlpnProtocols,
 ) (error{ BufferTooShort, ServerNameTooLong } || AlpnError)![]u8 {
     // RFC 6066 §3: HostName is a DNS name, max 253 octets.
     if (server_name) |name| if (name.len > 253) return error.ServerNameTooLong;
     const include_p256 = public_key_p256 != null;
-    const ext_len = try extensionsLen(server_name, alpn_protocols, include_p256);
+    const include_p384 = public_key_p384 != null;
+    const ext_len = try extensionsLen(server_name, alpn_protocols, include_p256, include_p384);
     const encoded_len = handshake_header_len + body_fixed_len + ext_len;
     if (out.len < encoded_len) return error.BufferTooShort;
 
@@ -437,10 +503,11 @@ fn encodeInternal(
 
     // supported_groups (RFC 8446 §4.2.7)
     w.append(ExtensionType, .supported_groups);
-    w.append(u16, @intCast(2 + groupCount(include_p256) * 2));
-    w.append(u16, @intCast(groupCount(include_p256) * 2)); // named_group_list length
+    w.append(u16, @intCast(2 + groupCount(include_p256, include_p384) * 2));
+    w.append(u16, @intCast(groupCount(include_p256, include_p384) * 2)); // named_group_list length
     w.append(NamedGroup, .x25519);
     if (include_p256) w.append(NamedGroup, .secp256r1);
+    if (include_p384) w.append(NamedGroup, .secp384r1);
 
     // signature_algorithms (RFC 8446 §4.2.3)
     w.append(ExtensionType, .signature_algorithms);
@@ -455,7 +522,7 @@ fn encodeInternal(
     inline for (supported_certificate_signature_schemes) |s| w.append(SignatureScheme, s);
 
     // key_share (RFC 8446 §4.2.8)
-    const shares_len = keySharesLen(include_p256);
+    const shares_len = keySharesLen(include_p256, include_p384);
     w.append(ExtensionType, .key_share);
     w.append(u16, @intCast(2 + shares_len));
     w.append(u16, @intCast(shares_len));
@@ -465,6 +532,11 @@ fn encodeInternal(
     if (public_key_p256) |key| {
         w.append(NamedGroup, .secp256r1);
         w.append(u16, p256.public_length); // key_exchange length
+        w.appendSlice(&key.data);
+    }
+    if (public_key_p384) |key| {
+        w.append(NamedGroup, .secp384r1);
+        w.append(u16, p384.public_length); // key_exchange length
         w.appendSlice(&key.data);
     }
 
@@ -560,6 +632,7 @@ pub fn parse(msg: []const u8) ParseError!Parsed {
                 const shares = try parseKeyShare(ext);
                 parsed.public_key = shares.x25519;
                 parsed.public_key_p256 = shares.p256;
+                parsed.public_key_p384 = shares.p384;
                 got_key_share = true;
             },
             .record_size_limit => {
@@ -581,6 +654,8 @@ pub fn parse(msg: []const u8) ParseError!Parsed {
     if (parsed.public_key != null and !parsed.groups.contains(.x25519))
         return error.IllegalParameter;
     if (parsed.public_key_p256 != null and !parsed.groups.contains(.secp256r1))
+        return error.IllegalParameter;
+    if (parsed.public_key_p384 != null and !parsed.groups.contains(.secp384r1))
         return error.IllegalParameter;
     return parsed;
 }
@@ -668,7 +743,8 @@ pub const SupportedGroups = struct {
 
     fn hasImplemented(self: SupportedGroups) bool {
         return (backend.supportsServerX25519() and self.contains(.x25519)) or
-            (backend.supportsServerP256() and self.contains(.secp256r1));
+            (backend.supportsServerP256() and self.contains(.secp256r1)) or
+            (backend.supportsServerP384() and self.contains(.secp384r1));
     }
 };
 
@@ -709,6 +785,7 @@ fn hasSupportedHandshakeSignatureScheme(schemes: []const u8) bool {
 const ParsedKeyShares = struct {
     x25519: ?x25519.PublicKey = null,
     p256: ?p256.PublicKey = null,
+    p384: ?p384.PublicKey = null,
 };
 
 fn parseKeyShare(ext: []const u8) ParseError!ParsedKeyShares {
@@ -734,6 +811,12 @@ fn parseKeyShare(ext: []const u8) ParseError!ParsedKeyShares {
                 if (key.len != p256.public_length) return error.MalformedKeyShare;
                 if (key[0] != 0x04) return error.MalformedKeyShare;
                 shares.p256 = .init(key[0..p256.public_length].*);
+            },
+            .secp384r1 => {
+                if (shares.p384 != null) return error.DuplicateKeyShare;
+                if (key.len != p384.public_length) return error.MalformedKeyShare;
+                if (key[0] != 0x04) return error.MalformedKeyShare;
+                shares.p384 = .init(key[0..p384.public_length].*);
             },
             else => {},
         }
@@ -835,6 +918,124 @@ test "encodeWithP256: includes X25519 and secp256r1 key shares" {
     try testing.expect(parsed.groups.contains(.secp256r1));
     try testing.expectEqualSlices(u8, &x_key.data, &parsed.public_key.?.data);
     try testing.expectEqualSlices(u8, &p_key.data, &parsed.public_key_p256.?.data);
+}
+
+// RFC 8446 §4.2.7, §4.2.8 — client P-384 support advertises secp384r1
+// and sends a matching uncompressed 97-byte key share in the first ClientHello.
+test "encodeWithP256P384: includes X25519, secp256r1, and secp384r1 key shares" {
+    const x_key: x25519.PublicKey = .init(@splat(0x11));
+    var p_key: p256.PublicKey = .init(@splat(0x22));
+    p_key.data[0] = 0x04;
+    var p384_key: p384.PublicKey = .init(@splat(0x33));
+    p384_key.data[0] = 0x04;
+
+    var buf: [768]u8 = undefined;
+    const encoded = try encodeWithP256P384(&buf, .zero, x_key, p_key, p384_key, null, &.{});
+    const parsed = try parse(encoded);
+
+    try testing.expect(parsed.groups.contains(.x25519));
+    try testing.expect(parsed.groups.contains(.secp256r1));
+    try testing.expect(parsed.groups.contains(.secp384r1));
+    try testing.expectEqualSlices(u8, &x_key.data, &parsed.public_key.?.data);
+    try testing.expectEqualSlices(u8, &p_key.data, &parsed.public_key_p256.?.data);
+    try testing.expectEqualSlices(u8, &p384_key.data, &parsed.public_key_p384.?.data);
+}
+
+// RFC 8446 §4.2.8.2 — P-384 key shares use uncompressed SEC1 points (97 bytes).
+test "encodeWithP256P384: size matches encodedLenWithP256P384" {
+    const x_key: x25519.PublicKey = .init(@splat(0x11));
+    var p_key: p256.PublicKey = .init(@splat(0x22));
+    p_key.data[0] = 0x04;
+    var p384_key: p384.PublicKey = .init(@splat(0x33));
+    p384_key.data[0] = 0x04;
+    var buf: [768]u8 = undefined;
+    const encoded = try encodeWithP256P384(&buf, .zero, x_key, p_key, p384_key, "server", &.{});
+    try testing.expectEqual(try encodedLenWithP256P384("server", &.{}), encoded.len);
+}
+
+// RFC 8446 §4.2.8 — ClientHello parse accepts secp384r1 key share with the
+// correct 97-byte uncompressed point.
+test "parse: accepts secp384r1 key share" {
+    const seed = memx.hex(48, "000102030405060708090a0b0c0d0e0f" ++
+        "101112131415161718191a1b1c1d1e1f" ++
+        "202122232425262728292a2b2c2d2e2f");
+    const p384_keypair = try p384.KeyPair.generateDeterministic(.init(seed));
+
+    var buf: [768]u8 = undefined;
+    const encoded = try encodeWithP256P384(
+        &buf,
+        .zero,
+        .init(@splat(0)),
+        blk: {
+            var k: p256.PublicKey = .init(@splat(0));
+            k.data[0] = 0x04;
+            break :blk k;
+        },
+        p384_keypair.public_key,
+        null,
+        &.{},
+    );
+    const parsed = try parse(encoded);
+    try testing.expect(parsed.groups.contains(.secp384r1));
+    try testing.expectEqualSlices(
+        u8,
+        &p384_keypair.public_key.data,
+        &parsed.public_key_p384.?.data,
+    );
+}
+
+// RFC 8446 §4.2.8.2 — compressed P-384 points are not valid TLS key shares.
+test "parse: rejects compressed secp384r1 key share" {
+    var p384_key: p384.PublicKey = .init(@splat(0x33));
+    p384_key.data[0] = 0x02; // compressed prefix
+    var buf: [768]u8 = undefined;
+    const encoded = try encodeWithP256P384(
+        &buf,
+        .zero,
+        .init(@splat(0)),
+        blk: {
+            var k: p256.PublicKey = .init(@splat(0));
+            k.data[0] = 0x04;
+            break :blk k;
+        },
+        p384_key,
+        null,
+        &.{},
+    );
+    try testing.expectError(error.MalformedKeyShare, parse(encoded));
+}
+
+// RFC 8446 §4.1.4, §4.2.8 — ClientHello2 key_share uses the HRR selected group.
+test "encodeRetryAfterHrr: secp384r1 selected, no cookie" {
+    const x_key: x25519.PublicKey = .init(@splat(0x11));
+    var p_key: p256.PublicKey = .init(@splat(0x22));
+    p_key.data[0] = 0x04;
+    var p384_key: p384.PublicKey = .init(@splat(0x33));
+    p384_key.data[0] = 0x04;
+
+    var buf: [512]u8 = undefined;
+    const encoded = try encodeRetryAfterHrr(
+        &buf,
+        .zero,
+        x_key,
+        p_key,
+        p384_key,
+        .secp384r1,
+        null,
+        null,
+        &.{},
+    );
+    const parsed = try parse(encoded);
+
+    // key_share must contain only secp384r1.
+    try testing.expectEqual(@as(?x25519.PublicKey, null), parsed.public_key);
+    try testing.expectEqual(@as(?p256.PublicKey, null), parsed.public_key_p256);
+    try testing.expectEqualSlices(u8, &p384_key.data, &parsed.public_key_p384.?.data);
+
+    // supported_groups must still advertise all three groups.
+    try testing.expect(parsed.groups.contains(.x25519));
+    try testing.expect(parsed.groups.contains(.secp256r1));
+    try testing.expect(parsed.groups.contains(.secp384r1));
 }
 
 test "encode: SNI present when server_name set" {
@@ -1236,12 +1437,15 @@ test "parse: no shared supported group is rejected" {
     const encoded = try encode(&buf, .zero, .zero, null, &.{});
     const msg = buf[0..encoded.len];
 
-    // Rewrite every implemented group id to secp384r1 (0x0018). With .zero
-    // public key bytes these occurrences are supported_groups/key_share ids.
+    // Rewrite every implemented group id to x25519_mlkem768 (0x11ec), a named
+    // but not-yet-implemented group. With .zero public key bytes these
+    // occurrences are supported_groups/key_share ids.
     var i: usize = 0;
     while (i + 1 < msg.len) : (i += 1) {
-        if (msg[i] == 0x00 and (msg[i + 1] == 0x1d or msg[i + 1] == 0x17))
-            msg[i + 1] = 0x18;
+        if (msg[i] == 0x00 and (msg[i + 1] == 0x1d or msg[i + 1] == 0x17)) {
+            msg[i] = 0x11;
+            msg[i + 1] = 0xec;
+        }
     }
     try testing.expectError(error.UnsupportedKeyShare, parse(msg));
 }
@@ -1330,10 +1534,10 @@ test "parse: missing X25519 key share leaves public key null" {
     var buf: [512]u8 = undefined;
     const encoded = try encode(&buf, .zero, .zero, null, &.{});
     const key_share = try findExtension(buf[0..encoded.len], .key_share);
-    // Rewrite key_share group x25519 (0x001d) to secp384r1 (0x0018), while
-    // leaving supported_groups unchanged.
+    // Rewrite key_share group x25519 (0x001d) to secp521r1 (0x0019), a named
+    // but not-yet-implemented group, while leaving supported_groups unchanged.
     key_share[2] = 0x00;
-    key_share[3] = 0x18;
+    key_share[3] = 0x19;
 
     const parsed = try parse(buf[0..encoded.len]);
     try testing.expectEqual(@as(?x25519.PublicKey, null), parsed.public_key);
@@ -1394,17 +1598,20 @@ test "fuzz: parse handles arbitrary input" {
 
 // RFC 8446 §4.1.2 — ClientHello2 after HelloRetryRequest contains only the
 // selected group's key_share and echoes the cookie.
-test "encodeRetryAfterHRR: X25519 selected, no cookie" {
+test "encodeRetryAfterHrr: X25519 selected, no cookie" {
     const x_key: x25519.PublicKey = .init(@splat(0x11));
     var p_key: p256.PublicKey = .init(@splat(0x22));
     p_key.data[0] = 0x04;
+    var p384_key: p384.PublicKey = .init(@splat(0x33));
+    p384_key.data[0] = 0x04;
 
     var buf: [512]u8 = undefined;
-    const encoded = try encodeRetryAfterHRR(
+    const encoded = try encodeRetryAfterHrr(
         &buf,
         .zero,
         x_key,
         p_key,
+        p384_key,
         .x25519,
         null,
         null,
@@ -1415,24 +1622,29 @@ test "encodeRetryAfterHRR: X25519 selected, no cookie" {
     // key_share must contain only X25519.
     try testing.expectEqualSlices(u8, &x_key.data, &parsed.public_key.?.data);
     try testing.expectEqual(@as(?p256.PublicKey, null), parsed.public_key_p256);
+    try testing.expectEqual(@as(?p384.PublicKey, null), parsed.public_key_p384);
 
-    // supported_groups must still advertise both groups.
+    // supported_groups must still advertise all three groups.
     try testing.expect(parsed.groups.contains(.x25519));
     try testing.expect(parsed.groups.contains(.secp256r1));
+    try testing.expect(parsed.groups.contains(.secp384r1));
 }
 
 // RFC 8446 §4.1.4, §4.2.8 — ClientHello2 key_share uses the HRR selected group.
-test "encodeRetryAfterHRR: secp256r1 selected, no cookie" {
+test "encodeRetryAfterHrr: secp256r1 selected, no cookie" {
     const x_key: x25519.PublicKey = .init(@splat(0x11));
     var p_key: p256.PublicKey = .init(@splat(0x22));
     p_key.data[0] = 0x04;
+    var p384_key: p384.PublicKey = .init(@splat(0x33));
+    p384_key.data[0] = 0x04;
 
     var buf: [512]u8 = undefined;
-    const encoded = try encodeRetryAfterHRR(
+    const encoded = try encodeRetryAfterHrr(
         &buf,
         .zero,
         x_key,
         p_key,
+        p384_key,
         .secp256r1,
         null,
         null,
@@ -1444,24 +1656,28 @@ test "encodeRetryAfterHRR: secp256r1 selected, no cookie" {
     try testing.expectEqual(@as(?x25519.PublicKey, null), parsed.public_key);
     try testing.expectEqualSlices(u8, &p_key.data, &parsed.public_key_p256.?.data);
 
-    // supported_groups must still advertise both groups.
+    // supported_groups must still advertise all three groups.
     try testing.expect(parsed.groups.contains(.x25519));
     try testing.expect(parsed.groups.contains(.secp256r1));
+    try testing.expect(parsed.groups.contains(.secp384r1));
 }
 
 // RFC 8446 §4.2.2 — the cookie from HelloRetryRequest is echoed in ClientHello2.
-test "encodeRetryAfterHRR: includes cookie when provided" {
+test "encodeRetryAfterHrr: includes cookie when provided" {
     const x_key: x25519.PublicKey = .init(@splat(0x11));
     var p_key: p256.PublicKey = .init(@splat(0x22));
     p_key.data[0] = 0x04;
+    var p384_key: p384.PublicKey = .init(@splat(0x33));
+    p384_key.data[0] = 0x04;
     const cookie = [_]u8{ 0xde, 0xad, 0xbe, 0xef };
 
     var buf: [512]u8 = undefined;
-    const encoded = try encodeRetryAfterHRR(
+    const encoded = try encodeRetryAfterHrr(
         &buf,
         .zero,
         x_key,
         p_key,
+        p384_key,
         .x25519,
         &cookie,
         null,
@@ -1476,17 +1692,20 @@ test "encodeRetryAfterHRR: includes cookie when provided" {
 }
 
 // RFC 8446 §4.1.2 — ClientHello2 with SNI and ALPN preserves those extensions.
-test "encodeRetryAfterHRR: preserves SNI and ALPN from ClientHello1" {
+test "encodeRetryAfterHrr: preserves SNI and ALPN from ClientHello1" {
     const x_key: x25519.PublicKey = .init(@splat(0x11));
     var p_key: p256.PublicKey = .init(@splat(0x22));
     p_key.data[0] = 0x04;
+    var p384_key: p384.PublicKey = .init(@splat(0x33));
+    p384_key.data[0] = 0x04;
 
     var buf: [512]u8 = undefined;
-    const encoded = try encodeRetryAfterHRR(
+    const encoded = try encodeRetryAfterHrr(
         &buf,
         .zero,
         x_key,
         p_key,
+        p384_key,
         .x25519,
         null,
         "example.com",
@@ -1498,10 +1717,20 @@ test "encodeRetryAfterHRR: preserves SNI and ALPN from ClientHello1" {
 }
 
 // RFC 8446 §4.2.8 — an unsupported selected group is rejected.
-test "encodeRetryAfterHRR: rejects unsupported group" {
+test "encodeRetryAfterHrr: rejects unsupported group" {
     var buf: [512]u8 = undefined;
     try testing.expectError(
         error.UnsupportedGroup,
-        encodeRetryAfterHRR(&buf, .zero, .zero, .init(@splat(0)), .secp384r1, null, null, &.{}),
+        encodeRetryAfterHrr(
+            &buf,
+            .zero,
+            .zero,
+            .init(@splat(0)),
+            .init(@splat(0)),
+            .x25519_mlkem768,
+            null,
+            null,
+            &.{},
+        ),
     );
 }

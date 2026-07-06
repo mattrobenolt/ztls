@@ -90,7 +90,7 @@ pub fn benchmarkRecordBufferNext(b: *bench.B) !void {
 
 fn replayHandshake(records: []const u8, out: []u8) !void {
     var hs: ztls.ClientHandshake = .init(.{
-        .keypair = rfc8448.client_keypair,
+        .keypairs = .init(rfc8448.client_keypair),
         .host_name = rfc8448.replay_host_name,
         .now_sec = 0,
         .random = rfc8448.client_random,
@@ -158,7 +158,7 @@ fn deterministicServerKeypair() !ztls.x25519.KeyPair {
 
 fn deterministicClientHandshake() ztls.ClientHandshake {
     const client: ztls.ClientHandshake = .init(.{
-        .keypair = deterministicClientKeypair() catch unreachable,
+        .keypairs = .init(deterministicClientKeypair() catch unreachable),
         .host_name = "ztls.server.test",
         .now_sec = 0,
         .random = rfc8448.client_random,
@@ -169,7 +169,7 @@ fn deterministicClientHandshake() ztls.ClientHandshake {
 
 fn deterministicServerHandshake() ztls.ServerHandshake {
     return .init(.{
-        .keypair = deterministicServerKeypair() catch unreachable,
+        .keypairs = .init(deterministicServerKeypair() catch unreachable),
         .random = rfc8448.server_random,
     });
 }
@@ -179,7 +179,7 @@ fn connectPair(comptime suite: Suite) !struct {
     server: ztls.ServerHandshake,
 } {
     var client: ztls.ClientHandshake = .init(.{
-        .keypair = try deterministicClientKeypair(),
+        .keypairs = .init(try deterministicClientKeypair()),
         .host_name = "ztls.server.test",
         .now_sec = 0,
         .random = rfc8448.client_random,
@@ -190,7 +190,7 @@ fn connectPair(comptime suite: Suite) !struct {
     client.completeWrite();
 
     var server: ztls.ServerHandshake = ztls.ServerHandshake.init(.{
-        .keypair = try deterministicServerKeypair(),
+        .keypairs = .init(try deterministicServerKeypair()),
         .random = rfc8448.server_random,
     });
     const suites = [_]ztls.CipherSuite{suite.cipherSuite()};

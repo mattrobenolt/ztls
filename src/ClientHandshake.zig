@@ -41,9 +41,11 @@ pub const KeyUpdateRequest = handshake.KeyUpdateRequest;
 /// maxUselessRecords. Reset by application data.
 const max_post_handshake_messages = handshake.max_post_handshake_messages;
 const hkdf = @import("hkdf.zig");
+const handshake_key_pairs = @import("handshake_key_pairs.zig");
 const memx = @import("memx.zig");
 const NewSessionTicket = @import("NewSessionTicket.zig");
 const p256 = @import("p256.zig");
+const p384 = @import("p384.zig");
 const PendingWrite = @import("pending_write.zig").PendingWrite;
 const RecordLayer = @import("RecordLayer.zig");
 const root = @import("root.zig");
@@ -88,12 +90,13 @@ pub const Storage = ArrayBuffer(u8, recommended_handshake_storage);
 /// optional fields default to values that match the previous `init(keypair)` +
 /// post-init policy assignment shape. `host_name` is the single source for
 /// both SNI (the server_name extension) and certificate SAN/CN validation.
+pub const KeyPairs = handshake_key_pairs.KeyPairs;
+
 pub const Config = struct {
-    /// Ephemeral X25519 keypair. The public goes into the ClientHello key_share.
-    keypair: x25519.KeyPair,
-    /// Optional deterministic P-256 keypair for tests. When null, init()
-    /// generates one so the client can send a first-flight P-256 key_share.
-    p256_keypair: ?p256.KeyPair = null,
+    /// Ephemeral keypairs used for offered ClientHello key_share entries.
+    /// X25519 and P-256 are present by default; P-384 is opt-in to avoid
+    /// unconditional extra scalar generation and ClientHello bloat.
+    keypairs: KeyPairs,
     /// DNS name sent as SNI and checked against the leaf certificate SAN/CN.
     /// null disables both SNI and hostname verification.
     host_name: ?[]const u8,
@@ -351,10 +354,8 @@ const Suite = union(enum) {
 
 state: State,
 suite: Suite,
-/// Our ephemeral X25519 keypair. The secret computes the DHE shared secret
-/// once ServerHello arrives; the public goes into the ClientHello key_share.
-keypair: x25519.KeyPair,
-p256_keypair: p256.KeyPair,
+/// Ephemeral keypairs for the offered key shares.
+keypairs: KeyPairs,
 /// ClientHello random (RFC 8446 §4.1.2), stored from Config for start().
 random: Random = .zero,
 /// Handshake-traffic RecordLayers, installed by processServerHello.
@@ -419,8 +420,7 @@ pub fn init(config: Config) ClientHandshake {
         .state = .start,
         // Hash unknown until ServerHello: run both candidate transcripts.
         .suite = .init,
-        .keypair = config.keypair,
-        .p256_keypair = config.p256_keypair orelse .generate(),
+        .keypairs = config.keypairs,
         .random = config.random,
         .policy = .{
             .bundle = config.bundle,
@@ -449,8 +449,7 @@ pub fn deinit(self: *ClientHandshake) void {
         .start, .wait_sh => {},
     }
     self.suite.secureZero();
-    self.keypair.secret_key.secureZero();
-    self.p256_keypair.secret_key.secureZero();
+    self.keypairs.secureZero();
     self.* = undefined;
 }
 
@@ -495,11 +494,12 @@ pub fn selectedAlpnProtocol(self: *const ClientHandshake) ?[]const u8 {
 pub fn start(self: *ClientHandshake, out: []u8) StartError![]const u8 {
     assert(self.state == .start);
     if (out.len < frame.header_len) return error.BufferTooShort;
-    const ch = try client_hello.encodeWithP256(
+    const ch = try client_hello.encodeWithP256P384(
         out[frame.header_len..],
         self.random,
-        self.keypair.public_key,
-        self.p256_keypair.public_key,
+        self.keypairs.x25519.public_key,
+        self.keypairs.p256.public_key,
+        if (self.keypairs.p384) |keypair| keypair.public_key else null,
         self.policy.host_name,
         self.alpn_protocols,
     );
@@ -536,6 +536,7 @@ pub fn injectClientHello(self: *ClientHandshake, client_hello_msg: []const u8) v
         self.offered_groups = ch.groups;
         if (ch.public_key != null) self.offered_key_shares.insert(.x25519);
         if (ch.public_key_p256 != null) self.offered_key_shares.insert(.secp256r1);
+        if (ch.public_key_p384 != null) self.offered_key_shares.insert(.secp384r1);
         while (i < ch.signature_schemes.len) : (i += 2) {
             const wire_scheme = memx.readInt(u16, ch.signature_schemes[i..][0..2]);
             const scheme: SignatureScheme = @enumFromInt(wire_scheme);
@@ -808,6 +809,7 @@ fn offeredSuite(self: *const ClientHandshake, suite: CipherSuite) bool {
 /// or null if `msg` is not an HRR. Stays in wait_sh for the real ServerHello.
 ///
 /// RFC 8446 §4.1.4, §4.4.1.
+// ziglint-ignore: Z015 -- HelloRetryRequestError is a public error-set alias.
 pub fn processHelloRetryRequest(
     self: *ClientHandshake,
     msg: []const u8,
@@ -839,7 +841,7 @@ pub fn processHelloRetryRequest(
     if (!self.offered_groups.contains(group)) return error.UnsupportedKeyShareGroup;
     if (self.offered_key_shares.contains(group)) return error.IllegalParameter;
     switch (group) {
-        .x25519, .secp256r1 => {},
+        .x25519, .secp256r1, .secp384r1 => {},
         else => return error.UnsupportedKeyShareGroup,
     }
 
@@ -879,11 +881,12 @@ pub fn processHelloRetryRequest(
     }
 
     // Generate ClientHello2 with only the selected group's key_share.
-    const ch2 = try client_hello.encodeRetryAfterHRR(
+    const ch2 = try client_hello.encodeRetryAfterHrr(
         out,
         self.random,
-        self.keypair.public_key,
-        self.p256_keypair.public_key,
+        self.keypairs.x25519.public_key,
+        self.keypairs.p256.public_key,
+        if (self.keypairs.p384) |keypair| keypair.public_key else null,
         group,
         hrr.cookie,
         self.policy.host_name,
@@ -935,12 +938,27 @@ pub fn processServerHello(self: *ClientHandshake, msg: []const u8) ServerHelloEr
     }
 
     self.suite.update(msg); // transcript now covers ... || ServerHello
-    var dhe = switch (sh.key_share) {
-        .x25519 => |key| try x25519.sharedSecret(self.keypair.secret_key, key),
-        .secp256r1 => |key| try p256.sharedSecret(self.p256_keypair.secret_key, key),
+    var dhe: [48]u8 = undefined;
+    const dhe_len: usize = switch (sh.key_share) {
+        .x25519 => |key| blk: {
+            const secret = try x25519.sharedSecret(self.keypairs.x25519.secret_key, key);
+            @memcpy(dhe[0..32], &secret);
+            break :blk @as(usize, 32);
+        },
+        .secp256r1 => |key| blk: {
+            const secret = try p256.sharedSecret(self.keypairs.p256.secret_key, key);
+            @memcpy(dhe[0..32], &secret);
+            break :blk @as(usize, 32);
+        },
+        .secp384r1 => |key| blk: {
+            const keypair = self.keypairs.p384 orelse unreachable;
+            const secret = try p384.sharedSecret(keypair.secret_key, key);
+            @memcpy(dhe[0..48], &secret);
+            break :blk @as(usize, 48);
+        },
     };
-    defer crypto.secureZero(u8, &dhe);
-    const keys = try self.suite.deriveHandshakeKeys(&dhe);
+    defer crypto.secureZero(u8, dhe[0..dhe_len]);
+    const keys = try self.suite.deriveHandshakeKeys(dhe[0..dhe_len]);
     self.rx = keys.rx;
     self.tx = keys.tx;
     self.state = .wait_ee;
@@ -1355,7 +1373,7 @@ test "deriveHandshakeKeys: RFC 8448 §3 server handshake key/iv/finished" {
 // ClientHello key_share).
 fn testConfig(keypair: x25519.KeyPair) Config {
     return .{
-        .keypair = keypair,
+        .keypairs = .init(keypair),
         .host_name = null,
         .now_sec = 0,
         .random = .zero,
@@ -1414,8 +1432,7 @@ test "processServerHello: accepts secp256r1 key_share" {
     const client_p256 = try p256.KeyPair.generateDeterministic(p256_client_seed);
     const server_p256 = try p256.KeyPair.generateDeterministic(p256_server_seed);
     var hs: ClientHandshake = .init(.{
-        .keypair = rfc8448_client_keypair,
-        .p256_keypair = client_p256,
+        .keypairs = .initWithP256(rfc8448_client_keypair, client_p256),
         .host_name = null,
         .now_sec = 0,
         .random = .zero,
@@ -1424,8 +1441,8 @@ test "processServerHello: accepts secp256r1 key_share" {
     const ch = try client_hello.encodeWithP256(
         &ch_buf,
         .zero,
-        hs.keypair.public_key,
-        hs.p256_keypair.public_key,
+        hs.keypairs.x25519.public_key,
+        hs.keypairs.p256.public_key,
         null,
         &.{},
     );
@@ -1449,8 +1466,7 @@ test "processServerHello: rejects invalid secp256r1 point" {
     var bad_p256: p256.PublicKey = .init(@splat(0));
     bad_p256.data[0] = 0x04;
     var hs: ClientHandshake = .init(.{
-        .keypair = rfc8448_client_keypair,
-        .p256_keypair = client_p256,
+        .keypairs = .initWithP256(rfc8448_client_keypair, client_p256),
         .host_name = null,
         .now_sec = 0,
         .random = .zero,
@@ -1459,8 +1475,8 @@ test "processServerHello: rejects invalid secp256r1 point" {
     const ch = try client_hello.encodeWithP256(
         &ch_buf,
         .zero,
-        hs.keypair.public_key,
-        hs.p256_keypair.public_key,
+        hs.keypairs.x25519.public_key,
+        hs.keypairs.p256.public_key,
         null,
         &.{},
     );
@@ -1483,7 +1499,7 @@ test "processServerHello: rejects unoffered secp256r1 key_share" {
     const server_p256 = try p256.KeyPair.generateDeterministic(p256_server_seed);
     var hs: ClientHandshake = .init(testConfig(rfc8448_client_keypair));
     var ch_buf: [512]u8 = undefined;
-    const ch = try client_hello.encode(&ch_buf, .zero, hs.keypair.public_key, null, &.{});
+    const ch = try client_hello.encode(&ch_buf, .zero, hs.keypairs.x25519.public_key, null, &.{});
     hs.injectClientHello(ch);
 
     var sh_buf: [192]u8 = undefined;
@@ -1517,7 +1533,7 @@ test "processServerHello: rejects mismatched session id echo" {
 test "processServerHello: rejects unoffered cipher suite" {
     var hs: ClientHandshake = .init(testConfig(.generate()));
     var ch_buf: [512]u8 = undefined;
-    const ch = try client_hello.encode(&ch_buf, .zero, hs.keypair.public_key, null, &.{});
+    const ch = try client_hello.encode(&ch_buf, .zero, hs.keypairs.x25519.public_key, null, &.{});
     // Keep TLS_AES_128_GCM_SHA256 and replace the other recognized suites with unknowns.
     ch_buf[43..47].* = .{ 0x12, 0x34, 0x56, 0x78 };
     hs.injectClientHello(ch);
@@ -2692,7 +2708,7 @@ test "handleRecord: KeyUpdate flood cap fires despite empty app-data interleavin
 // (server_name extension) and certificate SAN/CN validation.
 test "start: uses Config host_name for SNI and policy" {
     var hs: ClientHandshake = .init(.{
-        .keypair = rfc8448_client_keypair,
+        .keypairs = .init(rfc8448_client_keypair),
         .host_name = "example.com",
         .now_sec = 0,
         .random = .{ .data = @splat(0xaa) },
@@ -2919,7 +2935,11 @@ fn removeP256KeyShareForTest(buf: []u8, len: usize) ![]u8 {
     const body_len = memx.readInt(u24, buf[1..4]);
     memx.writeInt(u24, buf[1..4], body_len - p256_entry_len);
     const extensions_len = memx.readInt(u16, buf[key_share.extensions_len_offset..][0..2]);
-    memx.writeInt(u16, buf[key_share.extensions_len_offset..][0..2], extensions_len - p256_entry_len);
+    memx.writeInt(
+        u16,
+        buf[key_share.extensions_len_offset..][0..2],
+        extensions_len - p256_entry_len,
+    );
     const key_share_ext_len = memx.readInt(u16, buf[offset + 2 ..][0..2]);
     memx.writeInt(u16, buf[offset + 2 ..][0..2], key_share_ext_len - p256_entry_len);
     const shares_len = memx.readInt(u16, buf[offset + 4 ..][0..2]);
@@ -2931,20 +2951,26 @@ fn encodeClientHelloMissingP256ShareForTest(out: []u8, hs: *const ClientHandshak
     const full = try client_hello.encodeWithP256(
         out,
         hs.random,
-        hs.keypair.public_key,
-        hs.p256_keypair.public_key,
+        hs.keypairs.x25519.public_key,
+        hs.keypairs.p256.public_key,
         null,
         &.{},
     );
     return removeP256KeyShareForTest(out, full.len);
 }
 
+fn hrrTestKeyPairs() !KeyPairs {
+    return .initWithP256(
+        rfc8448_client_keypair,
+        try p256.KeyPair.generateDeterministic(p256_client_seed),
+    );
+}
+
 // RFC 8446 §4.2.8 — HRR selected_group must not be a group that already had a
 // KeyShareEntry in ClientHello1.
 test "processHelloRetryRequest: rejects already-offered key_share group" {
     var hs: ClientHandshake = .init(.{
-        .keypair = rfc8448_client_keypair,
-        .p256_keypair = try p256.KeyPair.generateDeterministic(p256_client_seed),
+        .keypairs = try hrrTestKeyPairs(),
         .host_name = null,
         .now_sec = 0,
         .random = .zero,
@@ -2953,8 +2979,8 @@ test "processHelloRetryRequest: rejects already-offered key_share group" {
     const ch = try client_hello.encodeWithP256(
         &ch_buf,
         .zero,
-        hs.keypair.public_key,
-        hs.p256_keypair.public_key,
+        hs.keypairs.x25519.public_key,
+        hs.keypairs.p256.public_key,
         null,
         &.{},
     );
@@ -2972,8 +2998,7 @@ test "processHelloRetryRequest: rejects already-offered key_share group" {
 test "processHelloRetryRequest: secp256r1 selected produces ClientHello2" {
     const client_p256 = try p256.KeyPair.generateDeterministic(p256_client_seed);
     var hs: ClientHandshake = .init(.{
-        .keypair = rfc8448_client_keypair,
-        .p256_keypair = client_p256,
+        .keypairs = .initWithP256(rfc8448_client_keypair, client_p256),
         .host_name = null,
         .now_sec = 0,
         .random = .zero,
@@ -3001,8 +3026,7 @@ test "processHelloRetryRequest: secp256r1 selected produces ClientHello2" {
 // Verify the collapse by computing the expected transcript independently.
 test "processHelloRetryRequest: transcript collapse matches §4.4.1" {
     var hs: ClientHandshake = .init(.{
-        .keypair = rfc8448_client_keypair,
-        .p256_keypair = try p256.KeyPair.generateDeterministic(p256_client_seed),
+        .keypairs = try hrrTestKeyPairs(),
         .host_name = null,
         .now_sec = 0,
         .random = .zero,
@@ -3037,8 +3061,7 @@ test "processHelloRetryRequest: transcript collapse matches §4.4.1" {
 // abort with unexpected_message.
 test "processHelloRetryRequest: rejects second HRR" {
     var hs: ClientHandshake = .init(.{
-        .keypair = rfc8448_client_keypair,
-        .p256_keypair = try p256.KeyPair.generateDeterministic(p256_client_seed),
+        .keypairs = try hrrTestKeyPairs(),
         .host_name = null,
         .now_sec = 0,
         .random = .zero,
@@ -3063,8 +3086,7 @@ test "processHelloRetryRequest: rejects second HRR" {
 // RFC 8446 §4.1.4 — HRR selected_group must be one the client offered.
 test "processHelloRetryRequest: rejects unoffered selected_group" {
     var hs: ClientHandshake = .init(.{
-        .keypair = rfc8448_client_keypair,
-        .p256_keypair = try p256.KeyPair.generateDeterministic(p256_client_seed),
+        .keypairs = try hrrTestKeyPairs(),
         .host_name = null,
         .now_sec = 0,
         .random = .zero,
@@ -3087,8 +3109,7 @@ test "processHelloRetryRequest: rejects unoffered selected_group" {
 // RFC 8446 §4.1.3 — after HRR, the ServerHello cipher suite must match the HRR.
 test "processServerHello: post-HRR rejects mismatched cipher suite" {
     var hs: ClientHandshake = .init(.{
-        .keypair = rfc8448_client_keypair,
-        .p256_keypair = try p256.KeyPair.generateDeterministic(p256_client_seed),
+        .keypairs = try hrrTestKeyPairs(),
         .host_name = null,
         .now_sec = 0,
         .random = .zero,
@@ -3119,8 +3140,7 @@ test "processServerHello: post-HRR rejects mismatched cipher suite" {
 // HRR selected_group.
 test "processServerHello: post-HRR rejects mismatched key_share group" {
     var hs: ClientHandshake = .init(.{
-        .keypair = rfc8448_client_keypair,
-        .p256_keypair = try p256.KeyPair.generateDeterministic(p256_client_seed),
+        .keypairs = try hrrTestKeyPairs(),
         .host_name = null,
         .now_sec = 0,
         .random = .zero,
@@ -3153,8 +3173,7 @@ test "processServerHello: post-HRR rejects mismatched key_share group" {
 test "processServerHello: post-HRR accepts matching ServerHello" {
     const server_p256 = try p256.KeyPair.generateDeterministic(p256_server_seed);
     var hs: ClientHandshake = .init(.{
-        .keypair = rfc8448_client_keypair,
-        .p256_keypair = try p256.KeyPair.generateDeterministic(p256_client_seed),
+        .keypairs = try hrrTestKeyPairs(),
         .host_name = null,
         .now_sec = 0,
         .random = .zero,
@@ -3186,8 +3205,7 @@ test "processServerHello: post-HRR accepts matching ServerHello" {
 // a .write event, and the client stays in wait_sh.
 test "handleRecord: HRR returns ClientHello2 as write event" {
     var hs: ClientHandshake = .init(.{
-        .keypair = rfc8448_client_keypair,
-        .p256_keypair = try p256.KeyPair.generateDeterministic(p256_client_seed),
+        .keypairs = try hrrTestKeyPairs(),
         .host_name = null,
         .now_sec = 0,
         .random = .zero,
@@ -3230,8 +3248,7 @@ test "processHelloRetryRequest: returns null for normal ServerHello" {
 // cookie verbatim in the cookie extension.
 test "processHelloRetryRequest: HRR with cookie echoes cookie in CH2" {
     var hs: ClientHandshake = .init(.{
-        .keypair = rfc8448_client_keypair,
-        .p256_keypair = try p256.KeyPair.generateDeterministic(p256_client_seed),
+        .keypairs = try hrrTestKeyPairs(),
         .host_name = null,
         .now_sec = 0,
         .random = .zero,
@@ -3276,7 +3293,11 @@ test "processHelloRetryRequest: HRR with cookie echoes cookie in CH2" {
     hrr_with_cookie[3] = @intCast(new_body_len & 0xff);
     // Fix the extensions_len (u16 at offset 42: 4+2+32+1+2+1 = 42).
     const old_ext_len = memx.readInt(u16, hrr_with_cookie[42..][0..2]);
-    memx.writeInt(u16, hrr_with_cookie[42..][0..2], old_ext_len + @as(u16, @intCast(cookie_ext_len)));
+    memx.writeInt(
+        u16,
+        hrr_with_cookie[42..][0..2],
+        old_ext_len + @as(u16, @intCast(cookie_ext_len)),
+    );
 
     var out: [512]u8 = undefined;
     const ch2 = try hs.processHelloRetryRequest(hrr_with_cookie[0..new_total], &out);

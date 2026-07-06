@@ -49,6 +49,12 @@ const p256_impl = switch (active) {
     .boringssl => @compileError("BoringSSL backend not yet implemented"),
 };
 
+const p384_impl = switch (active) {
+    .openssl => backend_openssl,
+    .aws_lc => backend_aws_lc,
+    .boringssl => @compileError("BoringSSL backend not yet implemented"),
+};
+
 const aead_impl = switch (active) {
     .openssl => backend_openssl,
     .aws_lc => backend_aws_lc,
@@ -73,6 +79,7 @@ comptime {
     assert(capabilities.server_x25519 or capabilities.server_p256);
     assert(capabilities.certificate_verify_schemes.len > 0);
     assert(capabilities.certificate_signature_schemes.len > 0);
+    assert(capabilities.client_p384 == capabilities.server_p384);
 }
 
 pub fn supportsCipherSuite(suite: CipherSuite) bool {
@@ -88,6 +95,10 @@ pub fn supportsServerX25519() bool {
 
 pub fn supportsServerP256() bool {
     return capabilities.server_p256;
+}
+
+pub fn supportsServerP384() bool {
+    return capabilities.server_p384;
 }
 
 pub fn supportsCertificateVerifyScheme(scheme: SignatureScheme) bool {
@@ -148,6 +159,31 @@ pub const p256 = struct {
 
     pub inline fn freeKey(key: *pkey) void {
         p256_impl.freeKey(key);
+    }
+};
+
+pub const p384 = struct {
+    pub const Error = p384_impl.Error;
+    pub const pkey = p384_impl.pkey;
+
+    pub inline fn privateKeyFromSecret(secret: *const [48]u8) Error!*pkey {
+        return p384_impl.p384PrivateKeyFromSecret(secret);
+    }
+
+    pub inline fn publicKeyFromRaw(public_key: *const [97]u8) Error!*pkey {
+        return p384_impl.p384PublicKeyFromRaw(public_key);
+    }
+
+    pub inline fn rawPublicKeyFromPrivate(key: *pkey) Error![97]u8 {
+        return p384_impl.p384RawPublicKeyFromPrivate(key);
+    }
+
+    pub inline fn sharedSecretDerive(ours: *pkey, peer: *pkey, out: *[48]u8) Error!void {
+        return p384_impl.p384SharedSecretDerive(ours, peer, out);
+    }
+
+    pub inline fn freeKey(key: *pkey) void {
+        p384_impl.freeKey(key);
     }
 };
 

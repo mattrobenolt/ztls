@@ -21,8 +21,10 @@ pub const capabilities = struct {
 
     pub const client_x25519 = true;
     pub const client_p256 = true;
+    pub const client_p384 = true;
     pub const server_x25519 = true;
     pub const server_p256 = true;
+    pub const server_p384 = true;
 
     pub const certificate_verify_schemes: []const SignatureScheme = &.{
         .ecdsa_secp256r1_sha256,
@@ -99,6 +101,22 @@ pub inline fn p256RawPublicKeyFromPrivate(key: *pkey) Error![65]u8 {
 
 pub inline fn p256SharedSecretDerive(ours: *pkey, peer: *pkey, out: *[32]u8) Error!void {
     return compat.p256SharedSecretDerive(ours, peer, out);
+}
+
+pub inline fn p384PrivateKeyFromSecret(secret: *const [48]u8) Error!*pkey {
+    return compat.p384PrivateKeyFromSecret(secret);
+}
+
+pub inline fn p384PublicKeyFromRaw(public_key: *const [97]u8) Error!*pkey {
+    return compat.p384PublicKeyFromRaw(public_key);
+}
+
+pub inline fn p384RawPublicKeyFromPrivate(key: *pkey) Error![97]u8 {
+    return compat.p384RawPublicKeyFromPrivate(key);
+}
+
+pub inline fn p384SharedSecretDerive(ours: *pkey, peer: *pkey, out: *[48]u8) Error!void {
+    return compat.p384SharedSecretDerive(ours, peer, out);
 }
 
 pub inline fn freeKey(key: *pkey) void {

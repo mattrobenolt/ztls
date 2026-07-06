@@ -6,6 +6,7 @@ const testing = std.testing;
 
 const x25519 = @import("x25519.zig");
 const p256 = @import("p256.zig");
+const p384 = @import("p384.zig");
 
 /// RFC 8446 §4.2.7 — named group / curve identifiers used in supported_groups
 /// and key_share. Non-exhaustive: unknown peer groups parse without UB and are
@@ -25,6 +26,7 @@ pub const NamedGroup = enum(u16) {
         return switch (self) {
             .x25519 => x25519.public_length,
             .secp256r1 => p256.public_length,
+            .secp384r1 => p384.public_length,
             else => null,
         };
     }

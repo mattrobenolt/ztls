@@ -10,21 +10,18 @@ const Sha256 = std.crypto.hash.sha2.Sha256;
 const Sha384 = std.crypto.hash.sha2.Sha384;
 const mem = std.mem;
 const testing = std.testing;
-const fuzz_compat = @import("fuzz_compat.zig");
 
 const aead = @import("aead.zig");
 const alert = @import("alert.zig");
-const backend = @import("crypto/backend.zig");
 const array_buffer = @import("array_buffer.zig");
 const ArrayBuffer = array_buffer.ArrayBuffer;
 const SliceBuffer = array_buffer.SliceBuffer;
 const certificate = @import("certificate.zig");
 const CertificateChain = @import("certificate_chain.zig").CertificateChain;
-const root = @import("root.zig");
-const CipherSuite = root.CipherSuite;
-const Random = root.Random;
 const client_hello = @import("client_hello.zig");
 const ClientHandshake = @import("ClientHandshake.zig");
+const backend = @import("crypto/backend.zig");
+const default_supported_suites = backend.capabilities.cipher_suites;
 const encrypted_extensions = @import("encrypted_extensions.zig");
 const finished = @import("finished.zig");
 const frame = @import("frame.zig");
@@ -34,30 +31,37 @@ pub const OutBuffer = frame.OutBuffer;
 /// handshake plaintext is staged inside the TLS record payload region, then
 /// encrypted in place into the same backing storage.
 pub const FlightBuffer = OutBuffer;
+const fuzz_compat = @import("fuzz_compat.zig");
 const handshake = @import("handshake.zig");
 const HandshakeReader = handshake.Reader;
+const HandshakeType = handshake.Type;
+const KeyUpdateRequest = handshake.KeyUpdateRequest;
+const max_post_handshake_messages = handshake.max_post_handshake_messages;
+const HashArm = @import("suite_state.zig").HashArm;
+const hkdf = @import("hkdf.zig");
+const memx = @import("memx.zig");
+const NamedGroup = @import("kex.zig").NamedGroup;
+const p256 = @import("p256.zig");
+const handshake_key_pairs = @import("handshake_key_pairs.zig");
+const p384 = @import("p384.zig");
+const PendingWrite = @import("pending_write.zig").PendingWrite;
+const RecordLayer = @import("RecordLayer.zig");
+const root = @import("root.zig");
+const CipherSuite = root.CipherSuite;
+const Random = root.Random;
+const server_hello = @import("server_hello.zig");
+const signature = @import("signature.zig");
+pub const SignError = signature.SignError;
+pub const Signer = signature.Signer;
+const shared_fixtures = @import("test_fixtures/shared_fixtures.zig");
+const transcript_util = @import("transcript.zig");
+const x25519 = @import("x25519.zig");
+
 const HandshakeBuffer = SliceBuffer(u8);
 const FinishedFragmentBuffer = ArrayBuffer(u8, handshake_header_len + 48);
 const key_update_body_len = 1;
 const key_update_total_len = handshake_header_len + key_update_body_len;
 const KeyUpdateFragmentBuffer = ArrayBuffer(u8, key_update_total_len);
-const HandshakeType = handshake.Type;
-const KeyUpdateRequest = handshake.KeyUpdateRequest;
-const max_post_handshake_messages = handshake.max_post_handshake_messages;
-const NamedGroup = @import("kex.zig").NamedGroup;
-const HashArm = @import("suite_state.zig").HashArm;
-const hkdf = @import("hkdf.zig");
-const memx = @import("memx.zig");
-const PendingWrite = @import("pending_write.zig").PendingWrite;
-const RecordLayer = @import("RecordLayer.zig");
-const server_hello = @import("server_hello.zig");
-const signature = @import("signature.zig");
-pub const SignError = signature.SignError;
-pub const Signer = signature.Signer;
-const transcript_util = @import("transcript.zig");
-const p256 = @import("p256.zig");
-const x25519 = @import("x25519.zig");
-
 const ServerHandshake = @This();
 
 pub const State = enum {
@@ -100,11 +104,10 @@ const Suite = union(enum) {
     }
 };
 
-const default_supported_suites = backend.capabilities.cipher_suites;
-
 const ClientKeyShare = union(enum) {
     x25519: x25519.PublicKey,
     secp256r1: p256.PublicKey,
+    secp384r1: p384.PublicKey,
 };
 
 const compatibility_ccs_len = frame.header_len + 1;
@@ -126,14 +129,14 @@ pub const Storage = ArrayBuffer(u8, ch_reassembly_buffer_size);
 /// Configuration for a server handshake. Required fields have no defaults.
 /// Borrowed suite and ALPN slices are read during ClientHello processing;
 /// reassembly storage must live until the handshake reaches wait_client_finished.
+pub const KeyPairs = handshake_key_pairs.KeyPairs;
+
 pub const Config = struct {
-    /// Ephemeral X25519 keypair. The public key is used when X25519 is selected.
-    keypair: x25519.KeyPair,
+    /// Ephemeral keypairs used for ServerHello key_share entries. X25519 and
+    /// P-256 are present by default; P-384 is opt-in.
+    keypairs: KeyPairs,
     /// ServerHello random field (RFC 8446 §4.1.3). Stored and used once.
     random: Random,
-    /// Optional deterministic P-256 keypair for tests. If null, init preserves
-    /// the old behavior and generates the P-256 keypair internally.
-    p256_keypair: ?p256.KeyPair = null,
     /// Cipher suites offered by this server, in server preference order.
     supported_suites: []const CipherSuite = default_supported_suites,
     /// ALPN protocols supported by this server. Caller-owned.
@@ -148,8 +151,7 @@ const ServerCredentials = struct {
 };
 
 state: State = .wait_ch,
-keypair: x25519.KeyPair,
-p256_keypair: p256.KeyPair,
+keypairs: KeyPairs,
 random: Random,
 negotiated_group: NamedGroup = .x25519,
 suite: CipherSuite = .aes_128_gcm_sha256,
@@ -203,8 +205,7 @@ ku_frag: KeyUpdateFragmentBuffer = .empty,
 
 pub fn init(config: Config) ServerHandshake {
     return .{
-        .keypair = config.keypair,
-        .p256_keypair = config.p256_keypair orelse .generate(),
+        .keypairs = config.keypairs,
         .random = config.random,
         .supported_suites = config.supported_suites,
         .alpn_protocols = config.alpn_protocols,
@@ -224,8 +225,7 @@ pub fn deinit(self: *ServerHandshake) void {
         .wait_client_finished, .connected => self.suite_state.secureZero(),
         .wait_ch => {},
     }
-    self.keypair.secret_key.secureZero();
-    self.p256_keypair.secret_key.secureZero();
+    self.keypairs.secureZero();
     self.fin_frag.secureZero();
     self.ku_frag.secureZero();
     self.* = undefined;
@@ -426,6 +426,7 @@ fn processClientHelloMessage(
             .x25519 => if (backend.supportsServerX25519()) blk: {
                 if (ch.public_key) |public_key| {
                     if (ch.public_key_p256 != null) return error.IllegalParameter;
+                    if (ch.public_key_p384 != null) return error.IllegalParameter;
                     break :blk .{ .x25519 = public_key };
                 }
                 return error.IllegalParameter;
@@ -433,7 +434,16 @@ fn processClientHelloMessage(
             .secp256r1 => if (backend.supportsServerP256()) blk: {
                 if (ch.public_key_p256) |public_key| {
                     if (ch.public_key != null) return error.IllegalParameter;
+                    if (ch.public_key_p384 != null) return error.IllegalParameter;
                     break :blk .{ .secp256r1 = public_key };
+                }
+                return error.IllegalParameter;
+            } else return error.IllegalParameter,
+            .secp384r1 => if ((backend.supportsServerP384() and self.keypairs.p384 != null)) blk: {
+                if (ch.public_key_p384) |public_key| {
+                    if (ch.public_key != null) return error.IllegalParameter;
+                    if (ch.public_key_p256 != null) return error.IllegalParameter;
+                    break :blk .{ .secp384r1 = public_key };
                 }
                 return error.IllegalParameter;
             } else return error.IllegalParameter,
@@ -443,6 +453,9 @@ fn processClientHelloMessage(
         .{ .x25519 = ch.public_key.? }
     else if (ch.public_key_p256 != null and backend.supportsServerP256())
         .{ .secp256r1 = ch.public_key_p256.? }
+    else if (ch.public_key_p384 != null and
+        (backend.supportsServerP384() and self.keypairs.p384 != null))
+        .{ .secp384r1 = ch.public_key_p384.? }
     else if (ch.groups.contains(.x25519) and backend.supportsServerX25519()) {
         const hrr = try self.encodeHelloRetryRequest(
             ch_msg,
@@ -463,15 +476,29 @@ fn processClientHelloMessage(
         );
         self.state = .wait_ch;
         return hrr;
+    } else if (ch.groups.contains(.secp384r1) and
+        (backend.supportsServerP384() and self.keypairs.p384 != null))
+    {
+        const hrr = try self.encodeHelloRetryRequest(
+            ch_msg,
+            ch.legacy_session_id,
+            suite,
+            .secp384r1,
+            out,
+        );
+        self.state = .wait_ch;
+        return hrr;
     } else return error.UnsupportedKeyShare;
 
     self.negotiated_group = switch (client_key_share) {
         .x25519 => .x25519,
         .secp256r1 => .secp256r1,
+        .secp384r1 => .secp384r1,
     };
     const server_key_share: server_hello.KeyShare = switch (client_key_share) {
-        .x25519 => .{ .x25519 = self.keypair.public_key },
-        .secp256r1 => .{ .secp256r1 = self.p256_keypair.public_key },
+        .x25519 => .{ .x25519 = self.keypairs.x25519.public_key },
+        .secp256r1 => .{ .secp256r1 = self.keypairs.p256.public_key },
+        .secp384r1 => .{ .secp384r1 = (self.keypairs.p384 orelse unreachable).public_key },
     };
 
     const sh = try server_hello.encodeWithKeyShare(
@@ -561,11 +588,26 @@ fn installHandshakeKeys(
     sh_msg: []const u8,
     client_key_share: ClientKeyShare,
 ) (error{ IdentityElement, LibcryptoFailed } || aead.Error)!void {
-    var dhe = switch (client_key_share) {
-        .x25519 => |public_key| try x25519.sharedSecret(self.keypair.secret_key, public_key),
-        .secp256r1 => |public_key| try p256.sharedSecret(self.p256_keypair.secret_key, public_key),
+    var dhe: [48]u8 = undefined;
+    const dhe_len: usize = switch (client_key_share) {
+        .x25519 => |public_key| blk: {
+            const secret = try x25519.sharedSecret(self.keypairs.x25519.secret_key, public_key);
+            @memcpy(dhe[0..32], &secret);
+            break :blk @as(usize, 32);
+        },
+        .secp256r1 => |public_key| blk: {
+            const secret = try p256.sharedSecret(self.keypairs.p256.secret_key, public_key);
+            @memcpy(dhe[0..32], &secret);
+            break :blk @as(usize, 32);
+        },
+        .secp384r1 => |public_key| blk: {
+            const keypair = self.keypairs.p384 orelse unreachable;
+            const secret = try p384.sharedSecret(keypair.secret_key, public_key);
+            @memcpy(dhe[0..48], &secret);
+            break :blk @as(usize, 48);
+        },
     };
-    defer std.crypto.secureZero(u8, &dhe);
+    defer std.crypto.secureZero(u8, dhe[0..dhe_len]);
     switch (suite) {
         .aes_128_gcm_sha256, .chacha20_poly1305_sha256 => {
             var transcript: Sha256 = if (self.retry_transcript) |rt| switch (rt) {
@@ -579,7 +621,7 @@ fn installHandshakeKeys(
                 Sha256,
                 transcript,
                 suite,
-                &dhe,
+                dhe[0..dhe_len],
             ) };
         },
         .aes_256_gcm_sha384 => {
@@ -594,7 +636,7 @@ fn installHandshakeKeys(
                 Sha384,
                 transcript,
                 suite,
-                &dhe,
+                dhe[0..dhe_len],
             ) };
         },
     }
@@ -1276,7 +1318,6 @@ fn chooseSuite(self: *const ServerHandshake, ch: client_hello.Parsed) ?CipherSui
     return null;
 }
 
-const shared_fixtures = @import("test_fixtures/shared_fixtures.zig");
 const test_cert_der: []const u8 = &shared_fixtures.server_cert_der;
 const server_ecdsa_cert_der: []const u8 = &shared_fixtures.server_ecdsa_cert_der;
 const server_ecdsa_scalar: []const u8 = &shared_fixtures.server_ecdsa_scalar;
@@ -1284,6 +1325,12 @@ const test_p256_seed_a = memx.hex(32, "000102030405060708090a0b0c0d0e0f" ++
     "101112131415161718191a1b1c1d1e1f");
 const test_p256_seed_b = memx.hex(32, "202122232425262728292a2b2c2d2e2f" ++
     "303132333435363738393a3b3c3d3e3f");
+const test_p384_seed_a = memx.hex(48, "000102030405060708090a0b0c0d0e0f" ++
+    "101112131415161718191a1b1c1d1e1f" ++
+    "202122232425262728292a2b2c2d2e2f");
+const test_p384_seed_b = memx.hex(48, "303132333435363738393a3b3c3d3e3f" ++
+    "404142434445464748494a4b4c4d4e4f" ++
+    "505152535455565758595a5b5c5d5e5f");
 
 fn clientHelloWithKeyShareGroup(
     out: []u8,
@@ -1346,6 +1393,54 @@ fn clientHelloWithP256KeyShare(
     out[1] = @truncate(body_len >> 16);
     out[2] = @truncate(body_len >> 8);
     out[3] = @truncate(body_len);
+    const extensions_len_offset = 49;
+    const ext_len = memx.readInt(u16, out[extensions_len_offset..][0..2]);
+    memx.writeInt(u16, out[extensions_len_offset..][0..2], ext_len + @as(u16, @intCast(delta)));
+    return out[0..new_len];
+}
+
+fn clientHelloWithP384KeyShare(
+    out: []u8,
+    client_hello_msg: []const u8,
+    public_key: p384.PublicKey,
+) []const u8 {
+    @memcpy(out[0..client_hello_msg.len], client_hello_msg);
+    var i: usize = 0;
+    while (i + 4 < client_hello_msg.len) : (i += 1) {
+        if (out[i] == 0x00 and out[i + 1] == 0x0a and out[i + 2] == 0x00 and out[i + 3] == 0x04) {
+            out[i + 6] = 0x00;
+            out[i + 7] = @intFromEnum(NamedGroup.secp384r1);
+            break;
+        }
+    } else unreachable;
+
+    i = 0;
+    while (i + 4 < client_hello_msg.len) : (i += 1) {
+        if (out[i] == 0x00 and out[i + 1] == 0x33 and
+            out[i + 2] == 0x00 and out[i + 3] == 0x26) break;
+    } else unreachable;
+
+    const old_total: usize = 4 + 0x26;
+    const new_ext_len: u16 = 2 + 2 + 2 + p384.public_length;
+    const new_total: usize = 4 + new_ext_len;
+    const delta = new_total - old_total;
+    const tail_src = i + old_total;
+    @memmove(
+        out[tail_src + delta .. client_hello_msg.len + delta],
+        out[tail_src..client_hello_msg.len],
+    );
+    out[i..][0..10].* = .{
+        0x00, 0x33,
+        0x00, @intCast(new_ext_len),
+        0x00, @intCast(2 + 2 + p384.public_length),
+        0x00, @intFromEnum(NamedGroup.secp384r1),
+        0x00, @intCast(p384.public_length),
+    };
+    @memcpy(out[i + 10 ..][0..p384.public_length], &public_key.data);
+
+    const new_len = client_hello_msg.len + delta;
+    const body_len: u24 = @intCast(new_len - handshake_header_len);
+    memx.writeInt(u24, out[1..4], body_len);
     const extensions_len_offset = 49;
     const ext_len = memx.readInt(u16, out[extensions_len_offset..][0..2]);
     memx.writeInt(u16, out[extensions_len_offset..][0..2], ext_len + @as(u16, @intCast(delta)));
@@ -1486,7 +1581,7 @@ test "alertForError: parser and negotiation failures map to protocol alerts" {
 
 fn testConfig(keypair: x25519.KeyPair) Config {
     return .{
-        .keypair = keypair,
+        .keypairs = .init(keypair),
         .random = .zero,
     };
 }
@@ -1633,7 +1728,7 @@ test "acceptClientHello: emits ServerHello and installs handshake keys" {
     try testing.expectEqualSlices(u8, &server_keypair.public_key.data, &sh.key_share.x25519.data);
 
     var client_hs: ClientHandshake = .init(.{
-        .keypair = client_keypair,
+        .keypairs = .init(client_keypair),
         .host_name = "ztls.server.test",
         .now_sec = 0,
         .random = .zero,
@@ -1667,9 +1762,8 @@ test "acceptClientHello: negotiates secp256r1 key share" {
     @memcpy(record[frame.header_len..][0..p256_ch.len], p256_ch);
 
     var hs: ServerHandshake = .init(.{
-        .keypair = server_x25519,
+        .keypairs = .initWithP256(server_x25519, server_p256),
         .random = .zero,
-        .p256_keypair = server_p256,
     });
     var out: [512]u8 = undefined;
     const sh_record = try hs.acceptClientHello(
@@ -1702,6 +1796,52 @@ test "acceptClientHello: negotiates secp256r1 key share" {
     try testing.expectEqual(.wait_client_finished, hs.state);
 }
 
+// RFC 8446 §4.2.8.2, §7.1 — client and server derive matching handshake keys
+// when the only offered key share is secp384r1.
+test "acceptClientHello: negotiates secp384r1 key share" {
+    const client_x25519: x25519.KeyPair = .generate();
+    const server_x25519: x25519.KeyPair = .generate();
+    const client_p256 = try p256.KeyPair.generateDeterministic(.init(test_p256_seed_a));
+    const server_p256 = try p256.KeyPair.generateDeterministic(.init(test_p256_seed_b));
+    const client_p384 = try p384.KeyPair.generateDeterministic(.init(test_p384_seed_a));
+    const server_p384 = try p384.KeyPair.generateDeterministic(.init(test_p384_seed_b));
+
+    var ch_buf: [512]u8 = undefined;
+    const ch = try client_hello.encode(&ch_buf, .zero, client_x25519.public_key, null, &.{});
+    var p384_ch_buf: [768]u8 = undefined;
+    const p384_ch = clientHelloWithP384KeyShare(&p384_ch_buf, ch, client_p384.public_key);
+    var record: [1024]u8 = undefined;
+    const header: frame.Header = .init(.handshake, @intCast(p384_ch.len));
+    header.write(record[0..frame.header_len]);
+    @memcpy(record[frame.header_len..][0..p384_ch.len], p384_ch);
+
+    var hs: ServerHandshake = .init(.{
+        .keypairs = .initWithP256P384(server_x25519, server_p256, server_p384),
+        .random = .zero,
+    });
+    var out: [512]u8 = undefined;
+    const sh_record = try hs.acceptClientHello(
+        record[0 .. frame.header_len + p384_ch.len],
+        &out,
+    );
+    try testing.expectEqual(NamedGroup.secp384r1, hs.negotiated_group);
+
+    const hdr = try frame.parseHeader(sh_record);
+    const sh = try server_hello.parse(sh_record[frame.header_len..][0..hdr.length()]);
+    try testing.expectEqualSlices(u8, &server_p384.public_key.data, &sh.key_share.secp384r1.data);
+
+    var client_hs: ClientHandshake = .init(.{
+        .keypairs = .initWithP256P384(client_x25519, client_p256, client_p384),
+        .host_name = null,
+        .now_sec = 0,
+        .random = .zero,
+    });
+    client_hs.injectClientHello(p384_ch);
+    try client_hs.processServerHello(sh_record[frame.header_len..][0..hdr.length()]);
+    try testing.expectEqualSlices(u8, &client_hs.rx.iv.data, &hs.tx.iv.data);
+    try testing.expectEqualSlices(u8, &client_hs.tx.iv.data, &hs.rx.iv.data);
+}
+
 // RFC 8446 §6, §7.4 — malformed peer key-share material is peer input, not an
 // internal server failure.
 test "alertForError: invalid key share maps to illegal_parameter" {
@@ -1724,7 +1864,7 @@ test "acceptClientHello: emits HelloRetryRequest for missing secp256r1 key share
     const ch = try client_hello.encode(&ch_buf, .zero, client_x25519.public_key, null, &.{});
     var p256_ch_buf: [768]u8 = undefined;
     const p256_ch = clientHelloWithP256KeyShare(&p256_ch_buf, ch, client_p256.public_key);
-    patchClientHelloKeyShareGroup(p256_ch_buf[0..p256_ch.len], @intFromEnum(NamedGroup.secp384r1));
+    patchClientHelloKeyShareGroup(p256_ch_buf[0..p256_ch.len], 0x6a6a);
 
     var record: [1024]u8 = undefined;
     const header: frame.Header = .init(.handshake, @intCast(p256_ch.len));
@@ -1754,7 +1894,7 @@ test "acceptClientHello: rejects ClientHello2 that ignores HRR selected group" {
     const hrr_ch1 = clientHelloWithKeyShareGroup(
         &hrr_ch1_buf,
         ch1,
-        @intFromEnum(NamedGroup.secp384r1),
+        0x6a6a,
     );
     var ch1_record: [1024]u8 = undefined;
     const ch1_header: frame.Header = .init(.handshake, @intCast(hrr_ch1.len));
@@ -1789,7 +1929,7 @@ test "acceptClientHello: rejects ClientHello2 with extra key share" {
     const hrr_ch1 = clientHelloWithKeyShareGroup(
         &hrr_ch1_buf,
         ch1,
-        @intFromEnum(NamedGroup.secp384r1),
+        0x6a6a,
     );
     var ch1_record: [1024]u8 = undefined;
     const ch1_header: frame.Header = .init(.handshake, @intCast(hrr_ch1.len));
@@ -1822,7 +1962,7 @@ test "acceptClientHello: emits HelloRetryRequest for missing X25519 key share" {
     const hrr_ch1 = clientHelloWithKeyShareGroup(
         &hrr_ch1_buf,
         ch1,
-        @intFromEnum(NamedGroup.secp384r1),
+        0x6a6a,
     );
     var ch1_record: [1024]u8 = undefined;
     const ch1_header: frame.Header = .init(.handshake, @intCast(hrr_ch1.len));
@@ -1925,7 +2065,7 @@ test "sendAnonymousFlightForTest: client decrypts EncryptedExtensions and Finish
     );
 
     var client: ClientHandshake = .init(.{
-        .keypair = client_keypair,
+        .keypairs = .init(client_keypair),
         .host_name = "ztls.server.test",
         .now_sec = 0,
         .random = .zero,
@@ -2044,7 +2184,7 @@ test "sendAuthenticatedFlight: client decrypts authenticated server flight" {
     );
 
     var client: ClientHandshake = .init(.{
-        .keypair = client_keypair,
+        .keypairs = .init(client_keypair),
         .host_name = "ztls.server.test",
         .now_sec = 0,
         .random = .zero,
@@ -2134,7 +2274,7 @@ fn connectedTestPair() !ConnectedTestPair {
     const server_keypair: x25519.KeyPair = .generate();
 
     var client: ClientHandshake = .init(.{
-        .keypair = client_keypair,
+        .keypairs = .init(client_keypair),
         .host_name = "ztls.server.test",
         .now_sec = 0,
         .random = .zero,
@@ -2208,7 +2348,7 @@ test "sendAuthenticatedFlight: client processes CertificateVerify and Finished" 
     );
 
     var client: ClientHandshake = .init(.{
-        .keypair = client_keypair,
+        .keypairs = .init(client_keypair),
         .host_name = "ztls.server.test",
         .now_sec = 0,
         .random = .zero,
@@ -2800,7 +2940,7 @@ fn expectInMemoryAuthenticatedHandshake(suite: CipherSuite) !void {
     const server_keypair: x25519.KeyPair = .generate();
 
     var client: ClientHandshake = .init(.{
-        .keypair = client_keypair,
+        .keypairs = .init(client_keypair),
         .host_name = "ztls.server.test",
         .now_sec = 0,
         .random = .zero,
@@ -2976,7 +3116,7 @@ test "acceptClientHello: rejects ClientHello with no shared group" {
     const ch = try client_hello.encode(&ch_buf, .zero, client_keypair.public_key, null, &.{});
     var i: usize = 0;
     while (i + 1 < ch.len) : (i += 1) {
-        if (ch_buf[i] == 0x00 and ch_buf[i + 1] == 0x1d) ch_buf[i + 1] = 0x18;
+        if (ch_buf[i] == 0x00 and ch_buf[i + 1] == 0x1d) ch_buf[i..][0..2].* = .{ 0x6a, 0x6a };
     }
 
     var record: [1024]u8 = undefined;
@@ -3234,7 +3374,7 @@ test "handleRecord: reassembles ClientHello2 split across records after HRR" {
     const hrr_ch1 = clientHelloWithKeyShareGroup(
         &hrr_ch1_buf,
         ch1,
-        @intFromEnum(NamedGroup.secp384r1),
+        0x6a6a,
     );
     var ch1_record: [1024]u8 = undefined;
     const ch1_header: frame.Header = .init(.handshake, @intCast(hrr_ch1.len));

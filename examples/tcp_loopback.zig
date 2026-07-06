@@ -56,7 +56,7 @@ fn serverRun(ctx: *ServerCtx) !void {
     net.fillRandom(&random.data);
 
     var hs: ztls.ServerHandshake = .init(.{
-        .keypair = ctx.keypair,
+        .keypairs = .init(ctx.keypair),
         .random = random,
         .alpn_protocols = &.{"h2"},
     });
@@ -133,7 +133,7 @@ fn clientRun(client_keypair: ztls.x25519.KeyPair, actual_port: u16) !void {
     net.fillRandom(&random.data);
 
     var hs: ztls.ClientHandshake = .init(.{
-        .keypair = client_keypair,
+        .keypairs = .init(client_keypair),
         .host_name = server_name,
         .now_sec = net.timestamp(),
         .random = random,

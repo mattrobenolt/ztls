@@ -336,6 +336,92 @@ test "backend.p256: zero scalar private key is rejected" {
 }
 
 // ---------------------------------------------------------------------------
+// P-384 ECDH — direct backend.p384 facade
+// ---------------------------------------------------------------------------
+
+// SEC 1 §2.3.4 (via RFC 8446 §4.2.8) — P-384 uncompressed SEC1 public key is
+// 97 bytes: 0x04 || X || Y. Two parties with fixed scalars must derive the
+// same 48-byte shared secret through the backend facade.
+test "backend.p384: mutual key agreement with fixed scalars" {
+    const alice_scalar: [48]u8 = hex(
+        48,
+        "000102030405060708090a0b0c0d0e0f" ++
+            "101112131415161718191a1b1c1d1e1f" ++
+            "202122232425262728292a2b2c2d2e2f",
+    );
+    const bob_scalar: [48]u8 = hex(
+        48,
+        "303132333435363738393a3b3c3d3e3f" ++
+            "404142434445464748494a4b4c4d4e4f" ++
+            "505152535455565758595a5b5c5d5e5f",
+    );
+
+    const alice_priv = try backend.p384.privateKeyFromSecret(&alice_scalar);
+    defer backend.p384.freeKey(alice_priv);
+    const alice_pub = try backend.p384.rawPublicKeyFromPrivate(alice_priv);
+
+    const bob_priv = try backend.p384.privateKeyFromSecret(&bob_scalar);
+    defer backend.p384.freeKey(bob_priv);
+    const bob_pub = try backend.p384.rawPublicKeyFromPrivate(bob_priv);
+
+    try testing.expectEqual(@as(u8, 0x04), alice_pub[0]);
+    try testing.expectEqual(@as(u8, 0x04), bob_pub[0]);
+
+    const alice_peer = try backend.p384.publicKeyFromRaw(&bob_pub);
+    defer backend.p384.freeKey(alice_peer);
+    var alice_shared: [48]u8 = undefined;
+    try backend.p384.sharedSecretDerive(alice_priv, alice_peer, &alice_shared);
+
+    const bob_peer = try backend.p384.publicKeyFromRaw(&alice_pub);
+    defer backend.p384.freeKey(bob_peer);
+    var bob_shared: [48]u8 = undefined;
+    try backend.p384.sharedSecretDerive(bob_priv, bob_peer, &bob_shared);
+
+    try testing.expectEqualSlices(u8, &alice_shared, &bob_shared);
+}
+
+// SEC 1 §2.3.4 — an uncompressed P-384 public key must start with 0x04.
+test "backend.p384: non-04 SEC1 prefix is rejected" {
+    var scalar: [48]u8 = @splat(0);
+    scalar[47] = 1;
+
+    const priv = try backend.p384.privateKeyFromSecret(&scalar);
+    defer backend.p384.freeKey(priv);
+    const pub_bytes = try backend.p384.rawPublicKeyFromPrivate(priv);
+
+    var bad_pub = pub_bytes;
+    bad_pub[0] = 0x03;
+
+    try testing.expectError(
+        error.IdentityElement,
+        backend.p384.publicKeyFromRaw(&bad_pub),
+    );
+}
+
+// SEC 1 §2.3.3 — a point with valid 0x04 prefix but coordinates not on the
+// P-384 curve must be rejected. x=1, y=0 does not satisfy the curve equation.
+test "backend.p384: off-curve point is rejected" {
+    var off_curve: [97]u8 = @splat(0);
+    off_curve[0] = 0x04;
+    off_curve[48] = 0x01; // x = 1 (big-endian, last byte of X field)
+
+    try testing.expectError(
+        error.IdentityElement,
+        backend.p384.publicKeyFromRaw(&off_curve),
+    );
+}
+
+// SEC 1 §3.2.1 — a private key scalar must be in [1, n - 1]. Scalar zero is
+// invalid and must not construct a usable backend P-384 key.
+test "backend.p384: zero scalar private key is rejected" {
+    const scalar: [48]u8 = @splat(0);
+    try testing.expectError(
+        error.LibcryptoFailed,
+        backend.p384.privateKeyFromSecret(&scalar),
+    );
+}
+
+// ---------------------------------------------------------------------------
 // Signature — direct backend.sign facade
 // ---------------------------------------------------------------------------
 

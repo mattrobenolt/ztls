@@ -441,7 +441,7 @@ fn serverRun(
     net.fillRandom(&random.data);
     var hs_storage: ztls.ServerHandshake.Storage = .empty;
     var hs: ztls.ServerHandshake = .init(.{
-        .keypair = .generate(),
+        .keypairs = .init(.generate()),
         .random = random,
         .alpn_protocols = &.{alpn},
         .reassembly = &hs_storage.buffer,
@@ -555,7 +555,7 @@ fn clientRun(arena: Allocator, args: *const Args, port: u16) !void {
     var hs_storage: ztls.ClientHandshake.Storage = .empty;
 
     var hs: ztls.ClientHandshake = .init(.{
-        .keypair = .generate(),
+        .keypairs = .init(.generate()),
         .host_name = args.host,
         .now_sec = net.timestamp(),
         .random = random,

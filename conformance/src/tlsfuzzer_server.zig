@@ -40,7 +40,7 @@ fn handleConnection(stream: net.Stream) !void {
     // RFC 8446 §5.1 — provide storage for fragmented ClientHello reassembly.
     var reassembly_buf: [ztls.ServerHandshake.ch_reassembly_buffer_size]u8 = undefined;
     var hs: ztls.ServerHandshake = .init(.{
-        .keypair = .generate(),
+        .keypairs = .init(.generate()),
         .random = random,
         .alpn_protocols = &.{ "http/1.1", "h2" },
         .reassembly = &reassembly_buf,

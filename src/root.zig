@@ -24,6 +24,7 @@ pub const ServerHandshake = @import("ServerHandshake.zig");
 pub const signature = @import("signature.zig");
 pub const SignatureScheme = @import("signature_scheme.zig").SignatureScheme;
 pub const p256 = @import("p256.zig");
+pub const p384 = @import("p384.zig");
 pub const x25519 = @import("x25519.zig");
 
 /// RFC 8446 §4.1.2 — ClientHello random bytes.

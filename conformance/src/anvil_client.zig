@@ -47,7 +47,7 @@ pub fn main() !void {
     net.fillRandom(&random.data);
 
     var hs: ztls.ClientHandshake = .init(.{
-        .keypair = kp,
+        .keypairs = .init(kp),
         .host_name = cert_host_name,
         .now_sec = net.timestamp(),
         .random = random,

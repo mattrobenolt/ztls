@@ -146,7 +146,7 @@ var random: ztls.Random = undefined;
 std.crypto.random.bytes(&random.data);
 
 var hs: ztls.ClientHandshake = .init(.{
-    .keypair = keypair,
+    .keypairs = .init(keypair),
     .host_name = "example.com",
     .now_sec = std.time.timestamp(),
     .random = random,
@@ -181,7 +181,7 @@ The server loop is identical in shape, with two differences:
 var random: ztls.Random = undefined;
 std.crypto.random.bytes(&random.data);
 var hs: ztls.ServerHandshake = .init(.{
-    .keypair = server_keypair,
+    .keypairs = .init(server_keypair),
     .random = random,
     .alpn_protocols = &.{"h2"},
 });
@@ -327,7 +327,7 @@ Both sides offer protocol lists before the handshake begins:
 ```zig
 // Client — via Config at init time
 var hs: ztls.ClientHandshake = .init(.{
-    .keypair = keypair,
+    .keypairs = .init(keypair),
     .host_name = "example.com",
     .now_sec = std.time.timestamp(),
     .random = random,
@@ -351,7 +351,7 @@ overrides after init:
 
 ```zig
 var hs: ztls.ClientHandshake = .init(.{
-    .keypair = keypair,
+    .keypairs = .init(keypair),
     .host_name = "example.com",      // SAN/CN check + SNI
     .now_sec = std.time.timestamp(),  // validity-period check
     .bundle = &bundle,                // trust-anchor anchoring
@@ -447,7 +447,7 @@ Caller-owned types:
 
 Common drive methods:
 
-- `init(Config)` / `deinit()` — create and release a server handshake. Required Config fields are `keypair` and `random`; optional fields include `p256_keypair`, `supported_suites`, `alpn_protocols`, and ClientHello `reassembly` storage.
+- `init(Config)` / `deinit()` — create and release a server handshake. Required Config fields are `keypairs` and `random`; optional fields include `supported_suites`, `alpn_protocols`, and ClientHello `reassembly` storage.
 - `supportSuites(suites)` — override the Config-provided cipher-suite list before processing ClientHello.
 - `supportAlpn(protocols)` — override the Config-provided ALPN choices before processing ClientHello.
 - `setCredentials(certs, signer)` / `setCertificateChain(chain, signer)` — attach a leaf-first certificate chain and signer before processing ClientHello.

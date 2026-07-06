@@ -13,6 +13,7 @@ const ExtensionType = extension_type.ExtensionType;
 const handshake = @import("handshake.zig");
 const NamedGroup = @import("kex.zig").NamedGroup;
 const p256 = @import("p256.zig");
+const p384 = @import("p384.zig");
 const ProtocolVersion = @import("protocol_version.zig").ProtocolVersion;
 const wire = @import("wire.zig");
 const x25519 = @import("x25519.zig");
@@ -260,11 +261,13 @@ pub const encoded_len = 4 + 2 + 32 + 1 + 2 + 1 + 2 + (4 + 2 + 2 + 32) + (4 + 2);
 pub const KeyShare = union(enum) {
     x25519: x25519.PublicKey,
     secp256r1: p256.PublicKey,
+    secp384r1: p384.PublicKey,
 
     pub fn group(self: KeyShare) NamedGroup {
         return switch (self) {
             .x25519 => .x25519,
             .secp256r1 => .secp256r1,
+            .secp384r1 => .secp384r1,
         };
     }
 
@@ -460,6 +463,14 @@ pub fn parseWithSessionIdEcho(
                         if (key[0] != 0x04) return error.UnsupportedKeyShareGroup;
                         key_share = .{ .secp256r1 = .init(key[0..p256.public_length].*) };
                     },
+                    .secp384r1 => {
+                        if (key_len != p384.public_length) return error.UnsupportedKeyShareGroup;
+                        if (ext_end - r.pos < p384.public_length)
+                            return error.InvalidExtensionLength;
+                        const key = r.assumeReadSlice(p384.public_length);
+                        if (key[0] != 0x04) return error.UnsupportedKeyShareGroup;
+                        key_share = .{ .secp384r1 = .init(key[0..p384.public_length].*) };
+                    },
                     else => return error.UnsupportedKeyShareGroup,
                 }
                 if (r.pos != ext_end) return error.InvalidExtensionLength;
@@ -575,6 +586,38 @@ test "parse: rejects compressed secp256r1 key_share" {
         &.{},
         .aes_128_gcm_sha256,
         .{ .secp256r1 = key },
+    );
+    try testing.expectError(error.UnsupportedKeyShareGroup, parse(msg));
+}
+
+// RFC 8446 §4.2.8.2 — P-384 key shares use uncompressed SEC1 points (97 bytes).
+test "parse: accepts secp384r1 key_share" {
+    var key: p384.PublicKey = .init(@splat(0x11));
+    key.data[0] = 0x04;
+    var out: [256]u8 = undefined;
+    const msg = try encodeWithKeyShare(
+        &out,
+        @splat(0xab),
+        &.{},
+        .aes_128_gcm_sha256,
+        .{ .secp384r1 = key },
+    );
+    const parsed = try parse(msg);
+    try testing.expectEqual(.secp384r1, parsed.key_share.group());
+    try testing.expectEqualSlices(u8, &key.data, &parsed.key_share.secp384r1.data);
+}
+
+// RFC 8446 §4.2.8.2 — compressed P-384 points are not valid TLS key shares.
+test "parse: rejects compressed secp384r1 key_share" {
+    var key: p384.PublicKey = .init(@splat(0x11));
+    key.data[0] = 0x02;
+    var out: [256]u8 = undefined;
+    const msg = try encodeWithKeyShare(
+        &out,
+        @splat(0xab),
+        &.{},
+        .aes_128_gcm_sha256,
+        .{ .secp384r1 = key },
     );
     try testing.expectError(error.UnsupportedKeyShareGroup, parse(msg));
 }

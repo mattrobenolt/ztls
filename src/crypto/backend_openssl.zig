@@ -14,8 +14,10 @@ pub const capabilities = struct {
 
     pub const client_x25519 = true;
     pub const client_p256 = true;
+    pub const client_p384 = true;
     pub const server_x25519 = true;
     pub const server_p256 = true;
+    pub const server_p384 = true;
 
     pub const certificate_verify_schemes: []const SignatureScheme = &.{
         .ecdsa_secp256r1_sha256,
@@ -143,6 +145,78 @@ pub fn p256RawPublicKeyFromPrivate(key: *pkey) Error![65]u8 {
 }
 
 pub fn p256SharedSecretDerive(ours: *pkey, peer: *pkey, out: *[32]u8) Error!void {
+    const ctx = c.EVP_PKEY_CTX_new(ours, null) orelse return error.LibcryptoFailed;
+    defer c.EVP_PKEY_CTX_free(ctx);
+    if (c.EVP_PKEY_derive_init(ctx) != 1) return error.LibcryptoFailed;
+    if (c.EVP_PKEY_derive_set_peer(ctx, peer) != 1) return error.IdentityElement;
+
+    var len: usize = out.len;
+    if (c.EVP_PKEY_derive(ctx, out, &len) != 1) return error.IdentityElement;
+    if (len != out.len) return error.LibcryptoFailed;
+}
+
+// RFC 8446 §4.2.8.2 — secp384r1 (P-384) ECDHE. The uncompressed public key is
+// 0x04 || X(48) || Y(48) = 97 bytes; the shared secret is the 48-byte
+// x-coordinate.
+pub fn p384PrivateKeyFromSecret(secret: *const [48]u8) Error!*pkey {
+    const group = c.EC_GROUP_new_by_curve_name(c.NID_secp384r1) orelse
+        return error.LibcryptoFailed;
+    defer c.EC_GROUP_free(group);
+
+    const priv = c.BN_bin2bn(secret, secret.len, null) orelse return error.LibcryptoFailed;
+    defer c.BN_free(priv);
+
+    const public = c.EC_POINT_new(group) orelse return error.LibcryptoFailed;
+    defer c.EC_POINT_free(public);
+    if (c.EC_POINT_mul(group, public, priv, null, null, null) != 1)
+        return error.LibcryptoFailed;
+
+    const ec = c.EC_KEY_new_by_curve_name(c.NID_secp384r1) orelse
+        return error.LibcryptoFailed;
+    errdefer c.EC_KEY_free(ec);
+    if (c.EC_KEY_set_private_key(ec, priv) != 1) return error.LibcryptoFailed;
+    if (c.EC_KEY_set_public_key(ec, public) != 1) return error.LibcryptoFailed;
+    if (c.EC_KEY_check_key(ec) != 1) return error.LibcryptoFailed;
+
+    const key = c.EVP_PKEY_new() orelse return error.LibcryptoFailed;
+    errdefer c.EVP_PKEY_free(key);
+    if (c.EVP_PKEY_assign_EC_KEY(key, ec) != 1) return error.LibcryptoFailed;
+    return key;
+}
+
+pub fn p384PublicKeyFromRaw(public_key: *const [97]u8) Error!*pkey {
+    if (public_key[0] != 0x04) return error.IdentityElement;
+
+    var ec: ?*c.EC_KEY = c.EC_KEY_new_by_curve_name(c.NID_secp384r1) orelse
+        return error.LibcryptoFailed;
+    errdefer c.EC_KEY_free(ec);
+
+    var ptr: ?[*]const u8 = public_key;
+    if (c.o2i_ECPublicKey(&ec, &ptr, public_key.len) == null)
+        return error.IdentityElement;
+    if (c.EC_KEY_check_key(ec) != 1) return error.IdentityElement;
+
+    const key = c.EVP_PKEY_new() orelse return error.LibcryptoFailed;
+    errdefer c.EVP_PKEY_free(key);
+    if (c.EVP_PKEY_assign_EC_KEY(key, ec) != 1) return error.LibcryptoFailed;
+    return key;
+}
+
+pub fn p384RawPublicKeyFromPrivate(key: *pkey) Error![97]u8 {
+    const ec = c.EVP_PKEY_get1_EC_KEY(key) orelse return error.LibcryptoFailed;
+    defer c.EC_KEY_free(ec);
+
+    var len = c.i2o_ECPublicKey(ec, null);
+    if (len != 97) return error.LibcryptoFailed;
+    var public_key: [97]u8 = undefined;
+    var ptr: [*]u8 = &public_key;
+    len = c.i2o_ECPublicKey(ec, @ptrCast(&ptr));
+    if (len != 97) return error.LibcryptoFailed;
+    if (public_key[0] != 0x04) return error.LibcryptoFailed;
+    return public_key;
+}
+
+pub fn p384SharedSecretDerive(ours: *pkey, peer: *pkey, out: *[48]u8) Error!void {
     const ctx = c.EVP_PKEY_CTX_new(ours, null) orelse return error.LibcryptoFailed;
     defer c.EVP_PKEY_CTX_free(ctx);
     if (c.EVP_PKEY_derive_init(ctx) != 1) return error.LibcryptoFailed;

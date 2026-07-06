@@ -110,7 +110,7 @@ pub fn main() !void {
         try fixture(fba.allocator(), "server_flight_record.b64", &flight_buf);
 
     var hs: ztls.ClientHandshake = .init(.{
-        .keypair = client_keypair,
+        .keypairs = .init(client_keypair),
         .host_name = null,
         .now_sec = 0,
         .random = .zero,

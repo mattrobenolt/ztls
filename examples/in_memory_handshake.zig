@@ -34,7 +34,7 @@ pub fn main() !void {
 
     // ── Client setup ────────────────────────
     var client: ztls.ClientHandshake = .init(.{
-        .keypair = client_keypair,
+        .keypairs = .init(client_keypair),
         .host_name = "ztls.server.test",
         .now_sec = 0,
         .random = client_random,
@@ -45,7 +45,7 @@ pub fn main() !void {
 
     // ── Server setup ────────────────────────
     var server: ztls.ServerHandshake = .init(.{
-        .keypair = server_keypair,
+        .keypairs = .init(server_keypair),
         .random = server_random,
         .alpn_protocols = &.{"h2"},
     });

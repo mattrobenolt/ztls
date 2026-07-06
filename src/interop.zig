@@ -149,7 +149,7 @@ fn clientInterop(stream: Stream) !void {
     entropy.fill(&random.data);
 
     var hs: ztls.ClientHandshake = .init(.{
-        .keypair = kp,
+        .keypairs = .init(kp),
         .host_name = "localhost",
         .now_sec = 0,
         .random = random,
@@ -265,7 +265,7 @@ fn serve(stream: Stream, suite: ztls.CipherSuite) !void {
     entropy.fill(&server_random.data);
 
     var hs: ztls.ServerHandshake = .init(.{
-        .keypair = server_keypair,
+        .keypairs = .init(server_keypair),
         .random = server_random,
     });
     defer hs.deinit();

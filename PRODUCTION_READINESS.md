@@ -194,8 +194,9 @@ consumption-for-rejection, not resumption.
   suite runs in a separate scheduled/manual workflow, and the TLS-Anvil client
   runner/workflow has strict-clean evidence under the visible #52 `expected_failed`
   classification. Completed TLS-Anvil server and client evidence now have no
-  unexpected attempted failures; remaining named-group scope beyond the proven
-  server-side P-256 path
+  unexpected attempted failures; P-384 is now locally implemented through
+  OpenSSL/AWS-LC-backed key-share encode/parse and ECDHE primitive tests, but
+  external named-group conformance beyond the proven server-side P-256 path
   stays tracked under broader provider-backed group work *(#6)*. HelloRetryRequest
   server retry now passes TLS-Anvil, and client-side HRR consumption for
   supported groups omitted from ClientHello1 `key_share` is implemented with
@@ -499,15 +500,16 @@ each passing the same correctness and interop gates.
   The strict-complete `b6aee2c` client TLS-Anvil capture (`ci-28722850517`)
   closes the remote P-256 evidence gap with `ComplianceRequirements: passed=2`
   and `KeyShare: passed=5`. *(#60)*
-- **Named-group/key-exchange shape is only partly generalized.** X25519 and
-  P-256 ECDHE are provider-backed on the server side, and the client can now
-  advertise both groups and process either ServerHello key_share locally; P-384,
-  PQ, and hybrid groups still need real backend math, variable-length key-share/
-  shared-secret plumbing, and provider capability tests before aws-lc differences
-  can be claimed honestly. *(#6, #60)*
+- **Named-group/key-exchange shape is only partly generalized.** X25519,
+  P-256, and opt-in P-384 ECDHE are provider-backed on the server side, and the
+  client can advertise/process those key shares locally. P-384 has local
+  OpenSSL/AWS-LC primitive and unit coverage, but still lacks external
+  TLS-Anvil/tlsfuzzer evidence; PQ and hybrid groups still need real backend
+  math, variable-length key-share/shared-secret plumbing, and provider
+  capability tests before aws-lc differences can be claimed honestly. *(#6, #60)*
 - **The facade contract is partly enforced by primitive tests, not a full
   matrix.** `src/crypto/backend_primitive_tests.zig` runs the same X25519,
-  P-256 ECDH, AEAD, and signature primitive vectors through the backend facade
+  P-256/P-384 ECDH, AEAD, and signature primitive vectors through the backend facade
   under both the OpenSSL and AWS-LC lanes in `zig build test` and
   `just check-backend-aws-lc`. Wrapper-level Wycheproof boundary tests for
   X25519 and AEAD already run in both lanes via `zig build test`, but
