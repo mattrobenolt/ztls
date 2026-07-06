@@ -9,3 +9,11 @@ infra/bench/terraform.tfstate
 infra/bench/terraform.tfstate.backup
 *.o
 *.asm
+.DS_Store
+
+# Raster logo/wordmark concept renders. The committed assets are the SVGs in
+# images/logo/; the multi-MB image-model concepts stay local.
+images/prompt-a/
+images/prompt-b/
+images/prompt-c/
+images/wordmark/
