@@ -166,25 +166,48 @@ fn serverRun(ctx: *ServerCtx) !void {
         .{ @tagName(tx_info.cipher_type), std.mem.readInt(u64, &tx_info.rec_seq, .big) },
     );
 
-    // 4. Install kTLS ULP + TX/RX keys
+    // 4. Install kTLS ULP + TX/RX keys.
+    //
+    // Use the raw Linux setsockopt syscall directly instead of posix.setsockopt:
+    // when the kernel has no `tls` ULP module loaded, setsockopt(TCP_ULP)
+    // returns ENOENT, which posix.setsockopt does not map and would route
+    // through unexpectedErrno -> dumpCurrentStackTrace (slow/noisy). Handling
+    // errno ourselves keeps the unavailable-kernel path clean and quiet.
     const ulp_name = "tls";
-    posix.setsockopt(sockfd, ktls.SOL_TCP, ktls.TCP_ULP, ulp_name) catch |err| {
-        if (isKtlsUnavailable(err)) {
+    switch (ktlsSetsockopt(sockfd, ktls.SOL_TCP, ktls.TCP_ULP, ulp_name)) {
+        .ok => {},
+        .unavailable => {
             print("[ktls]   kTLS unavailable on this kernel, skipping\n", .{});
             return;
-        }
-        print("[ktls]   setsockopt(TCP_ULP) failed: {s}, skipping\n", .{@errorName(err)});
-        return;
-    };
+        },
+        .failed => |err| {
+            print("[ktls]   setsockopt(TCP_ULP) failed: errno {d}, skipping\n", .{err});
+            return;
+        },
+    }
 
-    installKtlsAesGcm128(sockfd, ktls.TLS_TX, tx_info) catch |err| {
-        print("[ktls]   setsockopt(TLS_TX) failed: {s}, skipping\n", .{@errorName(err)});
-        return;
-    };
-    installKtlsAesGcm128(sockfd, ktls.TLS_RX, rx_info) catch |err| {
-        print("[ktls]   setsockopt(TLS_RX) failed: {s}, skipping\n", .{@errorName(err)});
-        return;
-    };
+    switch (installKtlsAesGcm128(sockfd, ktls.TLS_TX, tx_info)) {
+        .ok => {},
+        .unavailable => {
+            print("[ktls]   kTLS TX unavailable on this kernel, skipping\n", .{});
+            return;
+        },
+        .failed => |err| {
+            print("[ktls]   setsockopt(TLS_TX) failed: errno {d}, skipping\n", .{err});
+            return;
+        },
+    }
+    switch (installKtlsAesGcm128(sockfd, ktls.TLS_RX, rx_info)) {
+        .ok => {},
+        .unavailable => {
+            print("[ktls]   kTLS RX unavailable on this kernel, skipping\n", .{});
+            return;
+        },
+        .failed => |err| {
+            print("[ktls]   setsockopt(TLS_RX) failed: errno {d}, skipping\n", .{err});
+            return;
+        },
+    }
     print("[server] kTLS installed: data plane is now kernel-owned\n", .{});
 
     // 5. Ping/pong through the kernel data plane
@@ -211,6 +234,37 @@ fn serverRun(ctx: *ServerCtx) !void {
     print("[server] connection complete; deferring close (kernel sends close_notify)\n", .{});
 }
 
+const linux = std.os.linux;
+
+/// Result of a kTLS setsockopt that may fail because the kernel lacks TLS
+/// support (ENOENT/NOPROTOOPT/OPNOTSUPP/PROTONOSUPPORT) or for another reason.
+const KtlsSetsockoptResult = union(enum) {
+    ok,
+    /// Kernel does not provide the TLS ULP / cipher — caller should skip.
+    unavailable,
+    /// Some other errno; carries the raw errno value for diagnostics.
+    failed: u16,
+};
+
+/// Raw Linux setsockopt for kTLS install. Bypasses posix.setsockopt so that
+/// ENOENT (no `tls` ULP module loaded) maps to `.unavailable` instead of
+/// routing through unexpectedErrno -> dumpCurrentStackTrace.
+fn ktlsSetsockopt(
+    sockfd: posix.socket_t,
+    level: u32,
+    optname: u32,
+    opt: []const u8,
+) KtlsSetsockoptResult {
+    const rc = linux.setsockopt(sockfd, @intCast(level), optname, opt.ptr, @intCast(opt.len));
+    const e = linux.E.init(rc);
+    return switch (e) {
+        .SUCCESS => .ok,
+        // Kernel has no tls ULP / cipher module registered.
+        .NOENT, .NOPROTOOPT, .PROTONOSUPPORT, .OPNOTSUPP => .unavailable,
+        else => |err| .{ .failed = @intFromEnum(err) },
+    };
+}
+
 /// Install a TLS 1.3 AES-GCM-128 traffic key via `setsockopt(TLS_TX/TLS_RX)`.
 /// `ztls.ktls.packAesGcm128` folds the RFC 8446 §5.3 salt/IV split and the
 /// kernel struct layout into the library, so this is just pack + setsockopt.
@@ -218,26 +272,9 @@ fn installKtlsAesGcm128(
     sockfd: posix.socket_t,
     direction: u32,
     info: ztls.RecordLayer.KtlsInfo,
-) !void {
-    const crypto_info = ktls.packAesGcm128(info) catch |err| switch (err) {
-        error.CipherMismatch => return error.UnsupportedCipher,
-    };
-    const opt_bytes = std.mem.asBytes(&crypto_info);
-    posix.setsockopt(sockfd, ktls.SOL_TLS, direction, opt_bytes) catch |err| {
-        if (isKtlsUnavailable(err)) return error.KtlsUnavailable;
-        return error.KtlsSetsockoptFailed;
-    };
-}
-
-fn isKtlsUnavailable(err: anyerror) bool {
-    return switch (err) {
-        error.NotFound,
-        error.NoDevice,
-        error.ProtocolNotSupported,
-        error.NotSupported,
-        => true,
-        else => false,
-    };
+) KtlsSetsockoptResult {
+    const crypto_info = ktls.packAesGcm128(info) catch return .{ .failed = 0 };
+    return ktlsSetsockopt(sockfd, ktls.SOL_TLS, direction, std.mem.asBytes(&crypto_info));
 }
 
 fn recvExact(sockfd: posix.socket_t, buf: []u8) !usize {
@@ -359,10 +396,23 @@ fn clientRun(client_keypair: ztls.x25519.KeyPair, actual_port: u16) !void {
     hs.completeWrite();
     print("[client] sent: {s}\n", .{ping});
 
-    // 4. Receive pong from the kernel-encrypted server
+    // 4. Receive pong from the kernel-encrypted server. If the server could
+    //    not install kTLS (kernel without tls.ko), it skips and closes the
+    //    connection; treat that reset/early-close as a graceful skip rather
+    //    than a hard error so this example never breaks CI on a kernel without
+    //    kTLS.
     while (true) {
-        const n = try net.read(stream, rb.writable());
-        if (n == 0) break;
+        const n = net.read(stream, rb.writable()) catch |err| switch (err) {
+            error.ConnectionResetByPeer, error.BrokenPipe => {
+                print("[client] server closed without pong (kTLS unavailable), skipping\n", .{});
+                return;
+            },
+            else => return err,
+        };
+        if (n == 0) {
+            print("[client] server closed without pong (kTLS unavailable), skipping\n", .{});
+            return;
+        }
         rb.advance(n);
         while (try rb.next()) |record| switch (try hs.handleRecord(record, &out.buffer)) {
             .application_data => |data| {
