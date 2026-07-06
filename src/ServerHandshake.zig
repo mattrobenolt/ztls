@@ -3625,6 +3625,126 @@ test "in-memory authenticated client-server handshake suite matrix" {
     try expectInMemoryAuthenticatedHandshake(.chacha20_poly1305_sha256);
 }
 
+// RFC 8446 §4.1.4 — full HelloRetryRequest round trip in memory: the client
+// advertises secp256r1 in supported_groups but sends only an X25519 key_share,
+// the server emits an HRR selecting secp256r1, the client sends ClientHello2
+// with a secp256r1 key_share, and the handshake completes to connected with a
+// working application-data round trip. Exercises both state machines and the
+// §4.4.1 transcript collapse end-to-end.
+test "in-memory HRR round trip reaches app data" {
+    const client_keypair: x25519.KeyPair = .generate();
+    const server_keypair: x25519.KeyPair = .generate();
+
+    var client: ClientHandshake = .init(.{
+        .keypairs = .init(client_keypair),
+        .host_name = null,
+        .now_sec = 0,
+        .random = .zero,
+    });
+    client.policy.insecure_no_chain_anchor = true;
+
+    // ClientHello1: advertise x25519 + secp256r1 in supported_groups but send
+    // a GREASE key_share (patch the X25519 key_share group to 0x6a6a) so the
+    // server has no matching key_share and must HRR. The client still has its
+    // real x25519/p256 keypairs for ClientHello2.
+    var ch1_buf: [512]u8 = undefined;
+    const ch1 = try client_hello.encode(
+        &ch1_buf,
+        .zero,
+        client.keypairs.x25519.public_key,
+        null,
+        &.{},
+    );
+    patchClientHelloKeyShareGroup(@constCast(ch1), 0x6a6a);
+    var ch1_record: [1024]u8 = undefined;
+    const ch1_header: frame.Header = .init(.handshake, @intCast(ch1.len));
+    ch1_header.write(ch1_record[0..frame.header_len]);
+    @memcpy(ch1_record[frame.header_len..][0..ch1.len], ch1);
+    client.injectClientHello(ch1);
+    client.pending_write.mark();
+    client.completeWrite();
+
+    var server: ServerHandshake = .init(testConfig(server_keypair));
+    var server_out: [4096]u8 = undefined;
+    const hrr_record = try server.acceptClientHello(
+        ch1_record[0 .. frame.header_len + ch1.len],
+        &server_out,
+    );
+    // The server must have emitted an HRR selecting a supported group (x25519,
+    // the first in the client's supported_groups that the server supports).
+    const hrr_hdr = try frame.parseHeader(hrr_record);
+    const hrr = try server_hello.parseHelloRetryRequest(
+        hrr_record[frame.header_len..][0..hrr_hdr.length()],
+    );
+    try testing.expect(hrr.selected_group != null);
+    try testing.expectEqual(.wait_ch, server.state);
+
+    // Client consumes the HRR and emits ClientHello2 as a .write event (the
+    // CH2 handshake message — frame it as a plaintext handshake record for
+    // the server).
+    var client_out: [1024]u8 = undefined;
+    var hrr_rx: [128]u8 = undefined;
+    @memcpy(hrr_rx[0..hrr_record.len], hrr_record);
+    const ch2_event = try client.handleRecord(hrr_rx[0..hrr_record.len], &client_out);
+    const ch2_msg = switch (ch2_event) {
+        .write => |w| w,
+        else => return error.UnexpectedEvent,
+    };
+    client.completeWrite();
+    try testing.expect(client.retry_selected_group != null);
+    try testing.expectEqual(hrr.selected_group.?, client.retry_selected_group.?);
+
+    // Frame ClientHello2 as a plaintext handshake record.
+    var ch2_record: [1024]u8 = undefined;
+    const ch2_header: frame.Header = .init(.handshake, @intCast(ch2_msg.len));
+    ch2_header.write(ch2_record[0..frame.header_len]);
+    @memcpy(ch2_record[frame.header_len..][0..ch2_msg.len], ch2_msg);
+
+    // Server accepts ClientHello2 and emits ServerHello.
+    const sh_record = try server.acceptClientHello(
+        ch2_record[0 .. frame.header_len + ch2_msg.len],
+        &server_out,
+    );
+    try testing.expectEqual(.wait_client_finished, server.state);
+    // Client processes the real ServerHello (post-HRR).
+    try client.processServerHello(sh_record[frame.header_len..]);
+
+    // Server sends the authenticated flight.
+    var signer = try signature.PrivateKey.fromP256Scalar(server_ecdsa_scalar[0..32]);
+    defer signer.deinit();
+    var plaintext: [4096]u8 = undefined;
+    const flight_record = try server.sendAuthenticatedFlight(
+        &.{server_ecdsa_cert_der},
+        signer.signer(),
+        &plaintext,
+        &server_out,
+    );
+    const flight_event = try client.handleRecord(server_out[0..flight_record.len], &client_out);
+    const client_finished_record = switch (flight_event) {
+        .write => |w| w,
+        else => return error.UnexpectedEvent,
+    };
+    client.completeWrite();
+    try testing.expect(client.isConnected());
+
+    try server.processClientFinished(client_out[0..client_finished_record.len]);
+    try testing.expect(server.isConnected());
+
+    // Application-data round trip under the post-HRR keys.
+    const client_app = try client.sendApplicationData("ping", &client_out);
+    client.completeWrite();
+    try testing.expectEqualStrings(
+        "ping",
+        try server.receiveApplicationData(client_out[0..client_app.len]),
+    );
+
+    const server_app = try server.sendApplicationData("pong", &server_out);
+    var server_app_mut: [128]u8 = undefined;
+    @memcpy(server_app_mut[0..server_app.len], server_app);
+    const ev = try client.handleRecord(server_app_mut[0..server_app.len], &client_out);
+    try testing.expectEqualStrings("pong", ev.application_data);
+}
+
 test "acceptClientHello: server suite preference" {
     const client_keypair: x25519.KeyPair = .generate();
     var ch_buf: [512]u8 = undefined;

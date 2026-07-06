@@ -236,8 +236,14 @@ encode PSK binders, or resume handshakes.
   RFC-cited unit tests covering the §4.4.1 transcript collapse, ClientHello2
   generation with selected-group-only key_share, rejection when HRR selects an
   already-offered key share, second-HRR rejection, unsupported-group rejection,
-  and post-HRR ServerHello cipher-suite/group consistency checks; full
-  client/server HRR state-machine support remains broader open work *(#1)*. Record-fragmentation
+  and post-HRR ServerHello cipher-suite/group consistency checks. An in-memory
+  end-to-end HRR round trip (ztls client → server HRR → ClientHello2 → server
+  flight → connected → application-data both ways) is now covered, proving both
+  state machines compose with the §4.4.1 transcript collapse. OpenSSL forced-
+  HRR interop remains ungated (it needs a client/server config knob to limit
+  offered key_share groups so a real peer can be forced to retry; the in-memory
+  e2e + TLS-Anvil HRR + unit tests cover the mechanism). *(#1, partial — e2e +
+  TLS-Anvil done; OpenSSL forced-HRR interop remains)*. Record-fragmentation
   capability is probe-positive and locally covered for fragmented ClientHello,
   Finished, and KeyUpdate; TLS-Anvil's `RecordLayer.interleaveRecords` remains a
   sender-restriction expected skip, not a missing-fragmentation result. The
