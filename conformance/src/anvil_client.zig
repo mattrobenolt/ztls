@@ -82,7 +82,7 @@ pub fn main() !void {
                     try net.writeAll(stream, w);
                     hs.completeWrite();
                 },
-                .application_data, .closed => return error.UnexpectedDuringHandshake,
+                .application_data, .closed, .key_update => return error.UnexpectedDuringHandshake,
                 .none => {},
             }
         }
@@ -113,6 +113,15 @@ pub fn main() !void {
                 .write => |w| {
                     try net.writeAll(stream, w);
                     hs.completeWrite();
+                },
+                .key_update => |ku| {
+                    // RFC 8446 §4.6.3 — a peer KeyUpdate ratchets the traffic
+                    // keys. Write the response (if any) and acknowledge it; the
+                    // anvil echo loop keeps running under the new epoch.
+                    if (ku.response) |w| {
+                        try net.writeAll(stream, w);
+                        hs.completeWrite();
+                    }
                 },
                 .closed => {
                     // RFC 8446 §6.1 — close_notify is bidirectional on orderly shutdown.

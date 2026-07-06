@@ -82,6 +82,14 @@ fn handleConnection(stream: net.Stream) !void {
                 try net.writeAll(stream, response);
                 hs.completeWrite();
             },
+            .key_update => |ku| {
+                // RFC 8446 §4.6.3 — peer KeyUpdate ratchets traffic keys.
+                // Write the response (if any) and acknowledge it; keep serving.
+                if (ku.response) |bytes| {
+                    try net.writeAll(stream, bytes);
+                    hs.completeWrite();
+                }
+            },
             .closed => {
                 harness.sendBestEffortCloseNotify(&hs, stream, &out_buf);
                 return;
