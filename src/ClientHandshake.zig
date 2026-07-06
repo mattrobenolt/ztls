@@ -1228,7 +1228,7 @@ pub const SendError = RecordLayer.EncryptError || error{ PendingWrite, Unexpecte
 /// directions carry application data. `out` receives the encrypted record and
 /// the returned slice is the bytes to send.
 // ziglint-ignore: Z015 -- SendError is a public error-set alias.
-pub const ClientFinishedError = SendError || error{
+pub const ClientFinishedError = SendError || signature.SignError || aead.Error || error{
     UnexpectedMessage,
     SignatureSchemeNotOffered,
     BufferTooShort,
@@ -1303,7 +1303,10 @@ pub fn clientFinished(self: *ClientHandshake, out: []u8) ClientFinishedError![]c
                 c.signer.context,
                 cv_input[0 .. cv_ctx_len + th_len],
                 &sig_buf,
-            ) catch return error.BufferTooShort;
+            ) catch |err| switch (err) {
+                error.BufferTooShort => return error.BufferTooShort,
+                else => |e| return e,
+            };
             const cv = certificate.encodeCertificateVerify(
                 plain_buf[plain_len..],
                 c.signer.scheme,
@@ -1317,7 +1320,10 @@ pub fn clientFinished(self: *ClientHandshake, out: []u8) ClientFinishedError![]c
     const keys = self.suite.finishHandshake(
         plain_buf[plain_len..],
         self.server_finished_hash[0..self.server_finished_hash_len],
-    ) catch return error.BufferTooShort;
+    ) catch |err| switch (err) {
+        error.BufferTooShort => return error.BufferTooShort,
+        else => |e| return e,
+    };
     plain_len += keys.finished.len;
 
     // Encrypt under the handshake-traffic key that is still installed, then
@@ -2540,8 +2546,9 @@ test "clientFinished: sends empty Certificate before Finished for CertificateReq
     }, &hs.rx.aead.aes_128_gcm_sha256.data);
 }
 
-// RFC 8446 §4.4.3 — the client CertificateVerify scheme MUST be one the server
-// offered in CertificateRequest; a mismatch is illegal_parameter.
+// RFC 8446 §4.4.2 — a client with no credentials sends an empty Certificate
+// (request_context echoed) before Finished when the server sent
+// CertificateRequest. No CertificateVerify is sent.
 test "clientFinished: empty CertificateRequest with no credentials still finishes" {
     var hs: ClientHandshake = .init(testConfig(rfc8448_client_keypair));
     hs.policy.insecure_no_chain_anchor = true;
@@ -2572,8 +2579,6 @@ test "client auth: setCredentials stores client credentials" {
     try testing.expect(hs.client_credentials != null);
 }
 
-// RFC 8446 §4.4.3 — the client CertificateVerify scheme MUST be one the server
-// offered in CertificateRequest; a mismatch errors before signing.
 // RFC 8446 §7.2 — KeyUpdate key ratchet. After the handshake, ratchet the
 // client (sending) application key one generation and check the re-derived
 // write key against the independently-computed next key (see the

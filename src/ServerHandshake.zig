@@ -439,6 +439,32 @@ pub fn alertForError(err: anyerror) alert.Description {
         error.NoApplicationProtocol => .no_application_protocol,
         error.ClientCertificateRequired => .certificate_required,
         error.UnsupportedClientCertificate => .unsupported_certificate,
+        // Client certificate chain validation errors (RFC 8446 §6.2).
+        error.MissingTrustAnchor,
+        error.CertificateIssuerNotFound,
+        => .unknown_ca,
+        error.CertificateExpired,
+        error.CertificateNotYetValid,
+        => .certificate_expired,
+        error.CertificateKeyUsageRejected,
+        error.CertificateExtendedKeyUsageRejected,
+        error.CertificateSignatureAlgorithmRejected,
+        error.CertificateSignatureAlgorithmUnsupported,
+        error.UnsupportedCertificateVersion,
+        error.CertificateKeyTooLarge,
+        => .unsupported_certificate,
+        error.CertificateFieldHasInvalidLength,
+        error.CertificateFieldHasWrongDataType,
+        error.CertificateHasInvalidBitString,
+        error.CertificateTimeInvalid,
+        error.CertificateHasUnrecognizedObjectId,
+        error.CertificateIssuerMismatch,
+        error.CertificatePublicKeyInvalid,
+        error.CertificateSignatureAlgorithmMismatch,
+        error.CertificateSignatureInvalidLength,
+        error.CertificateNameConstraintViolation,
+        error.CertificateNameConstraintUnsupported,
+        => .bad_certificate,
         error.DuplicateExtension,
         error.DuplicateKeyShare,
         error.InvalidCompressionMethod,
@@ -987,14 +1013,17 @@ fn processClientFinishedPlaintext(
                 // RFC 8446 §4.4.3 — verify the signature against the client
                 // leaf public key over client_context || transcript_hash
                 // (through the client Certificate, snapshotted here before CV
-                // is absorbed).
+                // is absorbed). The scheme MUST be one the server offered in
+                // the CertificateRequest (backend.capabilities.certificate_
+                // verify_schemes).
                 switch (self.suite_state) {
                     inline .sha256, .sha384 => |*s| {
                         const th = s.transcript.peek();
-                        try certificate.verifyClientSignature(
+                        try certificate.verifyClientSignatureWithSchemes(
                             msg.raw,
                             self.client_leaf_pub_key.constSlice(),
                             &th,
+                            backend.capabilities.certificate_verify_schemes,
                         );
                     },
                 }

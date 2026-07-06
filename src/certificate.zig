@@ -461,6 +461,22 @@ pub fn verifyClientSignature(
     return verifySignature(client_certificate_verify_context, msg, pub_key, transcript_hash);
 }
 
+/// Verify a client CertificateVerify and require the scheme to be one the
+/// server offered in the CertificateRequest. RFC 8446 §4.4.3: the signature
+/// algorithm MUST be one offered in the signature_algorithms extension of the
+/// CertificateRequest. `offered_schemes` is the set the server sent.
+pub fn verifyClientSignatureWithSchemes(
+    msg: []const u8,
+    pub_key: []const u8,
+    transcript_hash: []const u8,
+    offered_schemes: []const SignatureScheme,
+) VerifyError!void {
+    const scheme = try certificateVerifyScheme(msg);
+    if (std.mem.indexOfScalar(SignatureScheme, offered_schemes, scheme) == null)
+        return error.UnsupportedSignatureScheme;
+    return verifyClientSignature(msg, pub_key, transcript_hash);
+}
+
 fn certificateVerifyScheme(msg: []const u8) VerifyError!SignatureScheme {
     if (msg.len < 4 + 2) return error.UnexpectedEof;
     var r: wire.Reader = .init(msg);
