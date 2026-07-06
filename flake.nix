@@ -144,6 +144,20 @@
               ];
             };
 
+            # Brand asset tooling (wordmark/logo generation). Kept out of the
+            # common dev shell so ztls devs don't carry font/Python deps.
+            brand = pkgs.mkShell {
+              name = "ztls-brand";
+              packages = [
+                (pkgs.python3.withPackages (ps: [ ps.fonttools ]))
+                pkgs.jetbrains-mono
+                pkgs.just
+              ];
+              shellHook = ''
+                export ZTLS_BRAND_FONT_DIR=${pkgs.jetbrains-mono}/share/fonts
+              '';
+            };
+
             default = openssl;
           };
         };

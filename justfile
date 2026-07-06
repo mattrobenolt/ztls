@@ -3,6 +3,7 @@
 
 import 'just/check.just'
 import 'just/bench.just'
+import 'just/brand.just'
 
 [doc("Show available recipes")]
 [private]
