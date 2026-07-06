@@ -602,6 +602,37 @@ test "backend.sign: RSA-PSS SHA-256 rejects tampered signature" {
     );
 }
 
+// RFC 8446 §4.4.3 — RSA-PSS SHA-384 is advertised for CertificateVerify and
+// must round-trip through the backend facade under every provider lane.
+test "backend.sign: RSA-PSS SHA-384 sign/verify round-trip and tamper rejection" {
+    const private_key = try backend.sign.privateKeyFromPem(rsa_pss_key_pem);
+    defer backend.sign.freeKey(private_key);
+    const public_key = try rsaPssPublicKey();
+    defer backend.sign.freeKey(public_key);
+
+    const context = "TLS 1.3, client CertificateVerify";
+    const transcript_hash: [48]u8 = @splat(0x24);
+    const msg = context ++ transcript_hash;
+
+    var sig_buf: [256]u8 = undefined;
+    const sig = try backend.sign.sign(private_key, .rsa_pss_rsae_sha384, msg, &sig_buf);
+    try testing.expect(sig.len > 0);
+
+    try backend.sign.verify(
+        public_key,
+        .rsa_pss_rsae_sha384,
+        context,
+        &transcript_hash,
+        sig,
+    );
+
+    sig_buf[sig.len - 1] ^= 0xff;
+    try testing.expectError(
+        error.SignatureVerificationFailed,
+        backend.sign.verify(public_key, .rsa_pss_rsae_sha384, context, &transcript_hash, sig),
+    );
+}
+
 // RFC 8446 §4.4.3 — ECDSA P-256 SHA-256 sign/verify round-trip through the
 // backend facade using a deterministic scalar.
 test "backend.sign: ECDSA P-256 SHA-256 sign/verify round-trip" {
@@ -663,6 +694,52 @@ test "backend.sign: ECDSA P-256 SHA-256 rejects tampered signature" {
         backend.sign.verify(
             pub_key,
             .ecdsa_secp256r1_sha256,
+            context,
+            &transcript_hash,
+            sig,
+        ),
+    );
+}
+
+// RFC 8446 §4.4.3 — ECDSA P-384 SHA-384 is advertised for CertificateVerify
+// and must round-trip through the backend facade under every provider lane.
+test "backend.sign: ECDSA P-384 SHA-384 sign/verify round-trip and tamper rejection" {
+    const scalar: [48]u8 = hex(
+        48,
+        "000102030405060708090a0b0c0d0e0f" ++
+            "101112131415161718191a1b1c1d1e1f" ++
+            "202122232425262728292a2b2c2d2e2f",
+    );
+
+    const priv = try backend.p384.privateKeyFromSecret(&scalar);
+    defer backend.p384.freeKey(priv);
+
+    const pub_bytes = try backend.p384.rawPublicKeyFromPrivate(priv);
+    const pub_key = try backend.sign.ecPublicKeyFromSec1(.secp384r1, &pub_bytes);
+    defer backend.sign.freeKey(pub_key);
+
+    const context = "TLS 1.3, server CertificateVerify";
+    const transcript_hash: [48]u8 = @splat(0x66);
+    const msg = context ++ transcript_hash;
+
+    var sig_buf: [256]u8 = undefined;
+    const sig = try backend.sign.sign(priv, .ecdsa_secp384r1_sha384, msg, &sig_buf);
+    try testing.expect(sig.len > 0);
+
+    try backend.sign.verify(
+        pub_key,
+        .ecdsa_secp384r1_sha384,
+        context,
+        &transcript_hash,
+        sig,
+    );
+
+    sig_buf[0] ^= 0xff;
+    try testing.expectError(
+        error.SignatureVerificationFailed,
+        backend.sign.verify(
+            pub_key,
+            .ecdsa_secp384r1_sha384,
             context,
             &transcript_hash,
             sig,

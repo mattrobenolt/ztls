@@ -448,15 +448,15 @@ each passing the same correctness and interop gates.
   prefix rejection, and off-curve point rejection), AEAD (round-trip,
   tag-corruption, and ciphertext-corruption rejection for every
   `backend.capabilities.cipher_suites` entry, plus an RFC 8439 ChaCha20-Poly1305
-  known-answer vector), and signatures (RSA-PSS and ECDSA P-256 sign/verify
-  round-trip, tampered-signature rejection, `BufferTooShort`, and key/scheme
-  mismatch). These tests run in the normal `zig build test` lane and under
-  `just check-backend-aws-lc`, so the same primitive vectors pass through both
-  the OpenSSL- and AWS-LC-linked build lanes. X25519 and AEAD are
-  backend-divergent in the AWS-LC lane; P-256 ECDH and signature paths still
-  delegate through OpenSSL-compatible wrappers while linking AWS-LC libcrypto. This is a
-  per-primitive smoke contract, not a Wycheproof matrix or divergent capability
-  proof.
+  known-answer vector), and signatures (RSA-PSS SHA-256/SHA-384 plus ECDSA
+  P-256/P-384 sign/verify round-trip, tampered-signature rejection,
+  `BufferTooShort`, and key/scheme mismatch). These tests run in the normal
+  `zig build test` lane and under `just check-backend-aws-lc`, so the same
+  primitive vectors pass through both the OpenSSL- and AWS-LC-linked build lanes.
+  X25519 and AEAD are backend-divergent in the AWS-LC lane; P-256/P-384 ECDH and
+  signature paths still delegate through OpenSSL-compatible wrappers while
+  linking AWS-LC libcrypto. This is a per-primitive smoke contract, not a
+  Wycheproof matrix or divergent capability proof.
 
 **Status:** `PARTIAL`
 
@@ -513,10 +513,11 @@ each passing the same correctness and interop gates.
   capability tests before aws-lc differences can be claimed honestly. *(#6, #60)*
 - **The facade contract is partly enforced by primitive tests, not a full
   matrix.** `src/crypto/backend_primitive_tests.zig` runs the same X25519,
-  P-256/P-384 ECDH, AEAD, and signature primitive vectors through the backend facade
-  under both the OpenSSL and AWS-LC lanes in `zig build test` and
-  `just check-backend-aws-lc`. It now includes selected facade-direct
-  Wycheproof vectors for X25519 and all advertised AEAD suites, while the
+  P-256/P-384 ECDH, AEAD, and all currently advertised CertificateVerify
+  signature primitive vectors through the backend facade under both the OpenSSL
+  and AWS-LC lanes in `zig build test` and `just check-backend-aws-lc`. It now
+  includes selected facade-direct Wycheproof vectors for X25519 and all
+  advertised AEAD suites, while the
   wrapper-level Wycheproof tests still cover the public `x25519`/`aead` paths.
   This is a narrow primitive/vector contract — it is not a full Wycheproof
   harness, provider/FIPS divergence matrix, or certificate-chain ownership
