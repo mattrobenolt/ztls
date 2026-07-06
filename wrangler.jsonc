@@ -7,7 +7,7 @@
   },
   "assets": {
     "directory": "book",
-    "html_handling": "none"
+    "not_found_handling": "404-page"
   },
   "build": {
     "command": "zig build docs -p docs/site && mdbook build"
