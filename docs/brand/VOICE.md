@@ -115,6 +115,56 @@ claim. If you can't name the boundary, don't quote the number.
 
 ---
 
+## Not sounding like a machine
+
+The copy has to read like a person wrote it, because a person did. The tells
+below are what make LLM prose recognizable. The durable signal is register and
+structure, not a banned-word list — word fashions rot every model release, but
+the machine's underlying register (hedged, enumerative, faintly anxious to be
+helpful, a textbook with the confidence turned down) has been stable for years.
+Write against the register, not against a word list.
+
+**Kill the contrastive reframe.** This is the single most diagnostic tell.
+"It's not X, it's Y." "That sounds like a limitation; it's the point." "The
+narrow scope isn't a constraint, it's a feature." Machines love flipping a
+supposed weakness into a strength with a little rhetorical pivot. Make the point
+straight. If the scope is a feature, say what it buys you and move on.
+
+**Burst.** Humans vary sentence length hard — a three-word sentence next to a
+thirty-word one. Machines sit at a flat 15-22 words with low variance, and that
+metronome is one of the strongest statistical signals there is. Use fragments.
+Use one-line paragraphs when the point lands. Then run long when the idea needs
+room.
+
+**Don't enumerate everything.** The machine register is list-building: it keeps
+adding one more item, gesturing at completeness ("including," "such as," "also,"
+"as well as"). Tricolons on autopilot — three parallel phrases per paragraph —
+are part of this. One deliberate list-of-three for rhythm is fine. Three of them
+on one page is a tell. Cut items that are there for symmetry, not for content.
+
+**Cut hedges and empty intensifiers.** "rather than" hedging a comparison
+instead of making it. Padding verbs that sound considered but say nothing —
+"ensures," "highlights," "supports," "reflects," "enables." Intensifiers with no
+number behind them — "significantly," "effectively," "seamlessly." If you can't
+back the intensifier with evidence, the sentence is stronger without it.
+
+**Don't signpost.** "It's worth noting." "The honest footnote:" "Here's the
+thing." "To be clear." Announcing what you're about to say is filler. Just say
+it.
+
+**Spend words unevenly.** Machines develop every section to equal length. People
+dwell on the interesting part and blow through the boilerplate. If a section is
+dull but necessary, keep it short. If a point is the whole reason the doc exists,
+give it room.
+
+**On detectors.** GPTZero and Pangram are the accurate ones, but do not gate CI
+on a detector score and do not write to beat one. Chasing a classifier degrades
+the writing (the humanizer trick is literally "strip em-dashes, add typos") and
+the false-positive risk is real. A detector is at most an occasional second
+opinion. The rules above are the actual standard; the score is not.
+
+---
+
 ## Visual identity
 
 Same anti-slop rule as the prose. No generic lightning bolts, no
@@ -145,5 +195,22 @@ not quietly written into the marketing.
 ## Working notes
 
 Voice decisions Matt has ratified, so later runs don't relitigate them. Keep
-entries short and dated. (Empty until the first real README/positioning pass is
-reviewed.)
+entries short and dated.
+
+- **2026-07-05 — honesty is the position, not speed.** Ratified on the first
+  README pass. Lead with the architecture story (Sans-I/O, no engine
+  allocations, narrow scope) and treat "we publish the row where we lose" as the
+  pitch. Don't lead with a benchmark number.
+- **2026-07-05 — document performance honestly now, don't stay silent.** Matt's
+  correction: caveated current numbers with the measurement boundary named are
+  on-brand and shippable. Silence was an overcorrection. State what we have,
+  name the gaps, update as results land. Still no marketing-grade claim until
+  Pillar 3 has a repetition/threshold policy.
+- **2026-07-05 — no internal jargon in public copy.** "spine," "Pillar N,"
+  "PARTIAL/PROVEN" are internal operating vocabulary. Never in the README or any
+  user-facing doc. Refer to `PRODUCTION_READINESS.md` as what tracks done, not
+  as "the spine."
+- **2026-07-05 — write against the machine register.** See "Not sounding like a
+  machine." The first draft read AI-generated; the fixes that mattered were
+  killing contrastive reframes and flattening the metronomic sentence rhythm,
+  not swapping vocabulary. Detectors are a spot-check at most, never a CI gate.

@@ -1,12 +1,77 @@
 # ztls
 
-ztls is a pure TLS 1.3 state machine: you feed it bytes, it gives you bytes back. It does not open sockets, allocate memory, or spawn threads.
+ztls is a TLS 1.3 library that does no I/O. You feed it the bytes you read off
+the wire; it hands you back the bytes to write. Your socket, your event loop,
+your buffers. ztls just does the protocol.
 
-The supported adoption path is server-authenticated TLS 1.3 1-RTT over caller-owned buffers. ztls owns protocol state, record framing, encryption, transcript hashing, alerts, and key updates; the caller owns transport I/O, all buffers, and the drive loop.
+It's pre-alpha. The API will change out from under you. Read `docs/USAGE.md`
+before you build on it.
+
+## Why it works this way
+
+Most TLS libraries own their sockets, which means they own your I/O model too —
+blocking calls, or their async runtime, or their callback shape. ztls owns none
+of that. It's a state machine: bytes in, bytes out. Drive it from blocking
+reads, epoll, io_uring, or an in-memory pipe. The examples do all four.
+
+The state machine also never calls an allocator. You hand it buffers, it uses
+those buffers, and that's the whole memory story. Nothing hides on the heap. One
+caveat, said plainly: the primitive crypto is delegated to a libcrypto backend
+(OpenSSL today, AWS-LC next), and OpenSSL allocates during setup and inside its
+own routines. We don't pretend otherwise. But ztls's own code — parsing,
+framing, the transcript, record sequencing — allocates nothing.
+
+Scope is deliberately narrow. TLS 1.3 only, on Linux and macOS. No 1.2 fallback
+to get downgraded into, no DTLS, no Windows portability layer. That's less code
+and a smaller thing to attack.
+
+It's written in Zig, so there's no allocator in the hot path and no C in our own
+source. AEAD, key exchange, and signatures come from libcrypto; ztls handles the
+protocol wrapped around them.
+
+## Performance
+
+Speed is the reason ztls exists, so here's where it actually stands.
+
+On the in-memory application-data benchmarks, ztls beats OpenSSL's libssl on
+every suite and size we've measured. Against rustls it's a split decision. ztls
+wins on AES-GCM. It loses on small ChaCha20-Poly1305 records, where rustls's
+ring backend is simply faster than OpenSSL's EVP ChaCha path. That losing row is
+in the repo too, with the disassembly that explains it.
+
+Here's the AES-128-GCM ping-pong row at 1350-byte records, from the
+`c7i.2xlarge` capture under `docs/research/perf/20260705-194022-ec2-c7i-2xlarge/`
+(git rev `89c869e`, Zig 0.15.2 ReleaseFast, native CPU, `--count 5`):
+
+| impl | ns/op | vs ztls |
+|---|---:|---:|
+| ztls | 786 | — |
+| rustls | 1384 | +76% |
+| OpenSSL libssl | 1845 | +135% |
+
+The perf counters back this up. On that row ztls burns fewer cycles,
+instructions, and branches per op than either competitor
+(`docs/research/perf/20260705-215953-ec2-c7i-2xlarge-row-perf/`), so it isn't a
+wall-clock fluke.
+
+Now the caveats, because honest and dishonest benchmarks part ways right here:
+
+- Two x86_64 EC2 instances. That's not a hardware matrix, and there's no
+  repetition or threshold policy yet. Treat these as measurements, not a
+  marketing number.
+- rustls's harness times batches; ztls's and libssl's time single iterations.
+  The measurement shapes aren't identical. `docs/research/PERFORMANCE.md` has the
+  row-by-row equivalence methodology.
+- The full-handshake row isn't a fair fight. ztls verifies the server's
+  CertificateVerify signature; the rustls and libssl harness peers don't. We
+  report it on its own and never quote it as a head-to-head.
+
+New results replace these as they land.
 
 ## Start here
 
-Read `docs/USAGE.md` for the API guide. If code is faster, start with the CI-gated examples:
+Read `docs/USAGE.md` for the API guide. If you'd rather read code, start with the
+examples that run in CI:
 
 - `examples/in_memory_handshake.zig` — both endpoints in one process, no sockets.
 - `examples/tcp_loopback.zig` — client and server over `std.net.Stream` loopback.
@@ -20,19 +85,29 @@ nix develop .#openssl
 just examples-ci
 ```
 
-`nix develop .#aws-lc` selects the AWS-LC-flavored shell for backend work. OpenSSL is the default development shell and the default `-Dcrypto-backend`.
+`nix develop .#aws-lc` selects the AWS-LC shell for backend work. OpenSSL is the
+default devshell and the default `-Dcrypto-backend`.
 
 ## Supported surface
 
-- TLS 1.3 only. TLS 1.2, DTLS, and Windows support are out of scope.
-- Cipher suites: `TLS_AES_128_GCM_SHA256`, `TLS_AES_256_GCM_SHA384`, and `TLS_CHACHA20_POLY1305_SHA256`.
-- Examples use X25519. Server-side P-256 ECDHE exists for conformance work; broader named-group/provider work is tracked by #6.
-- Server certificate authentication is supported. Client certificate authentication is tracked by #4.
-- PSK/session resumption is tracked by #2, 0-RTT by #3, and HelloRetryRequest retry support by #1.
+The supported path is server-authenticated TLS 1.3 1-RTT over caller-owned
+buffers. ztls owns protocol state, record framing, encryption, transcript
+hashing, alerts, and key updates. You own transport I/O, the buffers, and the
+drive loop.
+
+- TLS 1.3 only. TLS 1.2, DTLS, and Windows are out of scope.
+- Cipher suites: `TLS_AES_128_GCM_SHA256`, `TLS_AES_256_GCM_SHA384`, and
+  `TLS_CHACHA20_POLY1305_SHA256`.
+- Examples use X25519. Server-side P-256 ECDHE exists for conformance work.
+  Broader named-group and provider work is tracked by #6.
+- Server certificate authentication works. Client certificate auth is tracked
+  by #4.
+- PSK/session resumption is #2, 0-RTT is #3, HelloRetryRequest retry is #1.
 
 ## Fresh project
 
-Use Zig 0.15.2 or newer. ztls links a libcrypto-family provider through `pkg-config`; the devshell supplies OpenSSL by default.
+Use Zig 0.15.2 or newer. ztls links a libcrypto-family provider through
+`pkg-config`; the devshell supplies OpenSSL by default.
 
 ```sh
 mkdir hello-ztls
@@ -40,7 +115,8 @@ cd hello-ztls
 zig init
 ```
 
-Then add ztls to the generated `build.zig.zon`. Keep the fingerprint generated by `zig init`; the dependency path must be relative to your project root.
+Add ztls to the generated `build.zig.zon`. Keep the fingerprint `zig init`
+generated; the dependency path is relative to your project root.
 
 ```zig
 .dependencies = .{
@@ -65,10 +141,11 @@ const exe_mod = b.createModule(.{
 const exe = b.addExecutable(.{ .name = "hello-ztls", .root_module = exe_mod });
 ```
 
-Then `@import("ztls")` works from `src/main.zig`. See the longer setup in `docs/USAGE.md`.
+Now `@import("ztls")` works from `src/main.zig`. The longer setup is in
+`docs/USAGE.md`.
 
 ## Project state
 
-`PRODUCTION_READINESS.md` is the status spine. Documentation in `docs/research/` explains mechanisms, evidence, and acceptance criteria; it does not replace the spine.
-
-No performance or production-readiness claim should be inferred from this README. Benchmark methodology and captures live under `docs/research/PERFORMANCE.md` and `docs/research/perf/`.
+`PRODUCTION_READINESS.md` tracks what's actually done and what "done" means. This
+README tells you what ztls is; it doesn't make status claims. Design notes, the
+threat model, and the performance evidence live under `docs/research/`.
