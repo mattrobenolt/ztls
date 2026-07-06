@@ -1,0 +1,80 @@
+    26.96%     0.00%  [.] EVP_PKEY_new_raw_private_key                                                                                                                                            -      -            
+            |          
+             --26.58%--EVP_PKEY_fromdata
+                       |          
+                        --26.52%--evp_keymgmt_util_fromdata
+                                  |          
+                                   --26.25%--ecx_import
+                                             ossl_ecx_key_fromdata
+                                             ossl_ecx_public_from_private
+                                             ossl_x25519_public_from_private
+                                             |          
+                                             |--19.64%--ge_scalarmult_base
+                                             |          |          
+                                             |          |--8.83%--fe_mul
+                                             |          |          
+                                             |          |--7.47%--ge_madd
+                                             |          |          |          
+                                             |          |           --7.16%--fe_mul
+                                             |          |          
+                                             |          |--2.57%--table_select
+                                             |          |          |          
+                                             |          |           --2.30%--cmov
+                                             |          |          
+                                             |           --0.67%--ge_p2_dbl
+                                             |          
+                                              --6.57%--fe_invert
+                                                        |          
+                                                         --3.52%--fe_sq
+    26.75%     0.00%  [.] EVP_PKEY_fromdata                                                                                                                                                       -      -            
+            |          
+             --26.68%--evp_keymgmt_util_fromdata
+                       |          
+                        --26.25%--ecx_import
+                                  ossl_ecx_key_fromdata
+                                  ossl_ecx_public_from_private
+                                  ossl_x25519_public_from_private
+                                  |          
+                                  |--19.64%--ge_scalarmult_base
+                                  |          |          
+                                  |          |--8.83%--fe_mul
+                                  |          |          
+                                  |          |--7.47%--ge_madd
+                                  |          |          |          
+                                  |          |           --7.16%--fe_mul
+                                  |          |          
+                                  |          |--2.57%--table_select
+                                  |          |          |          
+                                  |          |           --2.30%--cmov
+                                  |          |          
+                                  |           --0.67%--ge_p2_dbl
+                                  |          
+                                   --6.57%--fe_invert
+                                             |          
+                                              --3.52%--fe_sq
+    26.68%     0.00%  [.] evp_keymgmt_util_fromdata                                                                                                                                               -      -            
+            |          
+             --26.25%--ecx_import
+                       ossl_ecx_key_fromdata
+                       ossl_ecx_public_from_private
+                       ossl_x25519_public_from_private
+                       |          
+                       |--19.64%--ge_scalarmult_base
+                       |          |          
+                       |          |--8.83%--fe_mul
+                       |          |          
+                       |          |--7.47%--ge_madd
+                       |          |          |          
+                       |          |           --7.16%--fe_mul
+                       |          |          
+                       |          |--2.57%--table_select
+                       |          |          |          
+                       |          |           --2.30%--cmov
+                       |          |          
+                       |           --0.67%--ge_p2_dbl
+                       |          
+                        --6.57%--fe_invert
+                                  |          
+                                   --3.52%--fe_sq
+    26.25%     0.00%  [.] ecx_import                                                                                                                                                              -      -            
+            |

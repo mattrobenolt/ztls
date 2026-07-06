@@ -1,0 +1,80 @@
+    18.52%    18.52%  [.] ring_core_0_17_14__x25519_ge_scalarmult_base_adx                                                                          -      -            
+    17.48%    17.48%  [.] ring_core_0_17_14__fiat_curve25519_adx_mul                                                                                -      -            
+    11.61%    11.61%  [.] ring_core_0_17_14__fiat_curve25519_adx_square                                                                             -      -            
+     8.47%     8.47%  [.] ring_core_0_17_14__x25519_scalar_mult_adx                                                                                 -      -            
+     8.13%     8.13%  [.] fe4_sub                                                                                                                   -      -            
+     5.41%     5.41%  [.] ring_core_0_17_14__sha256_block_data_order_hw                                                                             -      -            
+     4.03%     4.03%  [.] fe_loose_invert                                                                                                           -      -            
+     3.16%     3.16%  [.] ring_core_0_17_14__ecp_nistz256_ord_sqr_mont_adx                                                                          -      -            
+     2.71%     2.71%  [.] __memmove_avx512_unaligned_erms                                                                                           -      -            
+     1.81%     1.81%  [.] ring_core_0_17_14__ecp_nistz256_ord_mul_mont_adx                                                                          -      -            
+     1.81%     1.81%  [.] __ecp_nistz256_mul_montx                                                                                                  -      -            
+     1.77%     1.77%  [.] ring_core_0_17_14__ecp_nistz256_select_w7_avx2                                                                            -      -            
+     1.76%     1.76%  [.] fe4_cswap                                                                                                                 -      -            
+     0.98%     0.00%  [.] entry_SYSCALL_64_after_hwframe                                                                                            -      -            
+            |
+            ---do_syscall_64
+               |          
+                --0.91%--__x64_sys_getrandom
+                          get_random_bytes_user
+     0.98%     0.00%  [.] do_syscall_64                                                                                                             -      -            
+            |          
+             --0.91%--__x64_sys_getrandom
+                       get_random_bytes_user
+     0.91%     0.00%  [.] syscall                                                                                                                   -      -            
+            |
+            ---entry_SYSCALL_64_after_hwframe
+               do_syscall_64
+               __x64_sys_getrandom
+               get_random_bytes_user
+     0.91%     0.00%  [.] __x64_sys_getrandom                                                                                                       -      -            
+            |
+            ---get_random_bytes_user
+     0.91%     0.00%  [.] get_random_bytes_user                                                                                                     -      -            
+     0.89%     0.89%  [.] __ecp_nistz256_sqr_montx                                                                                                  -      -            
+     0.88%     0.88%  [.] _ZN4ring6digest12BlockContext10try_finish17h544af28e02d4fedfE                                                             -      -            
+     0.58%     0.47%  [.] _RNvCsGIExRX8pES_7___rustc11___rdl_alloc                                                                                  -      -            
+     0.49%     0.49%  [.] _ZN4ring2ec7suite_b3ops4p25623p256_scalar_inv_to_mont17h02ade7b2fdce7cc3E                                                 -      -            
+     0.46%     0.46%  [.] _ZN6rustls5tls1312key_schedule16KeyScheduleSuite13set_encrypter17h00b7548dc37cb2b6E.llvm.4867411630375813068              -      -            
+     0.46%     0.46%  [.] malloc                                                                                                                    -      -            
+     0.46%     0.46%  [.] _ZN4ring4aead7aes_gcm4open17h989b220cc4513285E                                                                            -      -            
+     0.46%     0.46%  [.] ring_core_0_17_14__ecp_nistz256_sqr_mont_adx                                                                              -      -            
+     0.46%     0.46%  [.] _ZN6rustls12record_layer11RecordLayer16decrypt_incoming17h290ad5000bcb07dbE                                               -      -            
+     0.46%     0.46%  [.] _ZN4ring6digest7Context6update17h78b46232ce9f9858E                                                                        -      -            
+     0.46%     0.46%  [.] __vdso_clock_gettime                                                                                                      -      -            
+     0.46%     0.00%  [.] clock_gettime@@GLIBC_2.17                                                                                                 -      -            
+     0.45%     0.45%  [k] _copy_to_iter                                                                                                             -      -            
+     0.45%     0.45%  [.] malloc_consolidate                                                                                                        -      -            
+     0.45%     0.00%  [.] __libc_malloc2                                                                                                            -      -            
+     0.45%     0.00%  [.] _int_malloc                                                                                                               -      -            
+     0.45%     0.45%  [.] ring_core_0_17_14__ecp_nistz256_point_add_affine_adx                                                                      -      -            
+     0.45%     0.45%  [k] chacha_permute                                                                                                            -      -            
+     0.45%     0.00%  [.] crng_make_state                                                                                                           -      -            
+     0.45%     0.00%  [.] crng_fast_key_erasure                                                                                                     -      -            
+     0.45%     0.00%  [.] chacha_block_generic                                                                                                      -      -            
+     0.45%     0.45%  [.] _ZN90_$LT$rustls..msgs..deframer..handshake..HandshakeIter$u20$as$u20$core..ops..drop..Drop$GT$4drop17hed4e305deb3b5e4eE  -      -            
+     0.45%     0.45%  [.] _ZN6rustls12common_state11CommonState8send_msg17heb8675da2e93ffaaE                                                        -      -            
+     0.45%     0.45%  [.] _ZN4ring2ec10curve255196x2551926x25519_public_from_private17h2ea9786cb393b742E                                            -      -            
+     0.45%     0.45%  [.] _ZN6rustls6client2hs27emit_client_hello_for_retry17h728afc71d19479c0E                                                     -      -            
+     0.45%     0.45%  [.] _ZN4ring2ec7suite_b5ecdsa7signing14format_rs_asn118format_integer_tlv17h10d1a6ed557024a3E                                 -      -            
+     0.45%     0.45%  [.] _ZN6subtle9black_box17hae22cf8b03415320E                                                                                  -      -            
+     0.45%     0.45%  [.] _ZN4ring6digest7Context6finish17hf3d4513daed3e002E                                                                        -      -            
+     0.45%     0.45%  [.] _ZN4ring4hkdf8fill_okm17hba8cb96381fce154E                                                                                -      -            
+     0.44%     0.44%  [.] _ZN4ring4hmac7Context8try_sign17hcf1ea942b851cdfcE.llvm.533557211689351462                                                -      -            
+     0.44%     0.44%  [.] __ecp_nistz256_sub_fromx                                                                                                  -      -            
+     0.44%     0.44%  [k] native_write_msr                                                                                                          -      -            
+     0.44%     0.00%  [.] asm_sysvec_apic_timer_interrupt                                                                                           -      -            
+     0.44%     0.00%  [.] sysvec_apic_timer_interrupt                                                                                               -      -            
+     0.44%     0.00%  [.] __sysvec_apic_timer_interrupt                                                                                             -      -            
+     0.44%     0.00%  [.] hrtimer_interrupt                                                                                                         -      -            
+     0.44%     0.00%  [.] clockevents_program_event                                                                                                 -      -            
+     0.44%     0.00%  [.] lapic_next_deadline                                                                                                       -      -            
+     0.23%     0.23%  [.] _ZN6rustls6crypto4ring9ring_shim15agree_ephemeral17h7160dbdd9aad852fE                                                     -      -            
+     0.18%     0.00%  [.] asm_exc_page_fault                                                                                                        -      -            
+     0.18%     0.00%  [.] exc_page_fault                                                                                                            -      -            
+     0.18%     0.00%  [.] do_user_addr_fault                                                                                                        -      -            
+     0.18%     0.00%  [.] handle_mm_fault                                                                                                           -      -            
+     0.18%     0.00%  [.] __handle_mm_fault                                                                                                         -      -            
+     0.18%     0.00%  [.] do_fault                                                                                                                  -      -            
+     0.17%     0.17%  [.] _ZN81_$LT$rustls..msgs..enums..ExtensionType$u20$as$u20$rustls..msgs..codec..Codec$GT$4read17hb452c8a1bed2f33eE           -      -            
+     0.14%     0.00%  [.] _start                                                                                                                    -      -            

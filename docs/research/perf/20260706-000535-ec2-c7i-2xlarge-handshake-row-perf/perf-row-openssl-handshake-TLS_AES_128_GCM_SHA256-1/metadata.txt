@@ -1,0 +1,22 @@
+timestamp_utc=20260706-000730
+git_revision=9c87b56087193b8d868a0f95178feab0e04fc717
+git_dirty=false
+impl=openssl
+bench=Handshake
+suite=TLS_AES_128_GCM_SHA256
+size=1
+crypto_backend=openssl
+perf_events=cycles,instructions,branches,branch-misses,cache-misses,L1-dcache-load-misses,LLC-load-misses
+perf_stat_command=perf stat -e cycles,instructions,branches,branch-misses,cache-misses,L1-dcache-load-misses,LLC-load-misses --output zig-out/perf/20260706-000535-row-perf/perf-row-openssl-handshake-TLS_AES_128_GCM_SHA256-1/perf-stat.txt -- zig-out/bin/bio_bench --filter ^BenchmarkHandshake/impl=openssl/suite=TLS_AES_128_GCM_SHA256$ --benchtime 500ms --count 5
+perf_record_command=perf record --call-graph dwarf,16384 -F 997 --output zig-out/perf/20260706-000535-row-perf/perf-row-openssl-handshake-TLS_AES_128_GCM_SHA256-1/perf.data -- zig-out/bin/bio_bench --filter ^BenchmarkHandshake/impl=openssl/suite=TLS_AES_128_GCM_SHA256$ --benchtime 500ms --count 5
+bench_command=zig-out/bin/bio_bench --filter ^BenchmarkHandshake/impl=openssl/suite=TLS_AES_128_GCM_SHA256$ --benchtime 500ms --count 5
+binary_path=zig-out/bin/bio_bench
+linked_libcrypto=/nix/store/y18pnbvfarnilsmgayswvi1khaw9wbsc-openssl-3.6.2/lib/libcrypto.so.3
+linked_libssl=/nix/store/y18pnbvfarnilsmgayswvi1khaw9wbsc-openssl-3.6.2/lib/libssl.so.3
+kernel=6.12.93
+cpu_model=Intel(R) Xeon(R) Platinum 8488C
+optimization_mode=ReleaseFast
+zig_version=0.15.2
+uname=Linux ip-10-0-1-5.us-west-2.compute.internal 6.12.93 #1-NixOS SMP PREEMPT_DYNAMIC Tue Jun  9 10:26:06 UTC 2026 x86_64 GNU/Linux
+stat_iteration_counts=1474,1521,1527,1504,1516
+record_iteration_counts=1455,1455,1444

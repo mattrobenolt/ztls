@@ -1,4 +1,4 @@
-# capture=zig-out/perf/20260705-183821-c7i.large-openssl
+# capture=docs/research/perf/20260705-183821-ec2-c7i-large
 # timestamp_utc=20260705-183821
 # git_revision=5ec2eaae729d7e9aa8746650bf8288327f81fdf1
 # git_dirty=false
@@ -18,12 +18,9 @@
 # benchstat_path=/nix/store/bx6pkhw0xbwzv5bvs12s5pcrbzypawq4-benchstat-unstable-2026-05-12/bin/benchstat
 # go_version=go version go1.26.3 linux/amd64
 
-## Comparable TLS rows
+## Comparable TLS application-data rows
                                                      │     ztls      │                openssl                │                rustls                 │
                                                      │    sec/op     │    sec/op      vs base                │    sec/op      vs base                │
-Handshake TLS_AES_128_GCM_SHA256 1                      399.7µ ± ∞ ¹    357.7µ ± ∞ ¹   -10.49% (p=0.008 n=5)    152.7µ ± ∞ ¹   -61.80% (p=0.008 n=5)
-Handshake TLS_AES_256_GCM_SHA384 1                      442.9µ ± ∞ ¹    393.3µ ± ∞ ¹   -11.19% (p=0.008 n=5)    177.0µ ± ∞ ¹   -60.04% (p=0.008 n=5)
-Handshake TLS_CHACHA20_POLY1305_SHA256 1                399.6µ ± ∞ ¹    372.1µ ± ∞ ¹    -6.88% (p=0.008 n=5)    151.9µ ± ∞ ¹   -61.99% (p=0.008 n=5)
 AppClientToServer TLS_AES_128_GCM_SHA256 16             208.4n ± ∞ ¹    725.9n ± ∞ ¹  +248.32% (p=0.008 n=5)    394.6n ± ∞ ¹   +89.34% (p=0.008 n=5)
 AppClientToServer TLS_AES_128_GCM_SHA256 128            212.0n ± ∞ ¹    734.3n ± ∞ ¹  +246.37% (p=0.008 n=5)    403.2n ± ∞ ¹   +90.17% (p=0.008 n=5)
 AppClientToServer TLS_AES_128_GCM_SHA256 1350           401.2n ± ∞ ¹    947.7n ± ∞ ¹  +136.22% (p=0.008 n=5)    716.2n ± ∞ ¹   +78.51% (p=0.008 n=5)
@@ -118,6 +115,16 @@ AppPingPong TLS_CHACHA20_POLY1305_SHA256 128            97.96Mi ± ∞ ¹    63.
 AppPingPong TLS_CHACHA20_POLY1305_SHA256 1350           609.6Mi ± ∞ ¹    463.8Mi ± ∞ ¹  -23.93% (p=0.008 n=5)    678.6Mi ± ∞ ¹   +11.31% (p=0.008 n=5)
 AppPingPong TLS_CHACHA20_POLY1305_SHA256 8192          1485.4Mi ± ∞ ¹   1242.7Mi ± ∞ ¹  -16.34% (p=0.008 n=5)    931.7Mi ± ∞ ¹   -37.27% (p=0.008 n=5)
 AppPingPong TLS_CHACHA20_POLY1305_SHA256 16384         1681.7Mi ± ∞ ¹   1468.7Mi ± ∞ ¹  -12.67% (p=0.008 n=5)    948.2Mi ± ∞ ¹   -43.62% (p=0.008 n=5)
+¹ need >= 6 samples for confidence interval at level 0.95
+
+## Non-equivalent handshake rows (auth-policy differs; reported for transparency only)
+ztls verifies CertificateVerify, hostname, and leaf policy; rustls NoVerifier skips signature and policy; libssl SSL_VERIFY_NONE behavior is partly opaque. Do not use the vs-base columns below as apples-to-apples performance claims.
+
+                                         │     ztls     │               openssl               │               rustls                │
+                                         │    sec/op    │    sec/op     vs base               │    sec/op     vs base               │
+Handshake TLS_AES_128_GCM_SHA256 1         399.7µ ± ∞ ¹   357.7µ ± ∞ ¹  -10.49% (p=0.008 n=5)   152.7µ ± ∞ ¹  -61.80% (p=0.008 n=5)
+Handshake TLS_AES_256_GCM_SHA384 1         442.9µ ± ∞ ¹   393.3µ ± ∞ ¹  -11.19% (p=0.008 n=5)   177.0µ ± ∞ ¹  -60.04% (p=0.008 n=5)
+Handshake TLS_CHACHA20_POLY1305_SHA256 1   399.6µ ± ∞ ¹   372.1µ ± ∞ ¹   -6.88% (p=0.008 n=5)   151.9µ ± ∞ ¹  -61.99% (p=0.008 n=5)
 ¹ need >= 6 samples for confidence interval at level 0.95
 
 ## Crypto floor rows (not TLS-to-TLS comparisons)
@@ -537,4 +544,3 @@ AppPreparedClientToServer TLS_CHACHA20_POLY1305_SHA256 1350    644.6Mi ± ∞ ¹
 AppPreparedClientToServer TLS_CHACHA20_POLY1305_SHA256 8192    1.521Gi ± ∞ ¹
 AppPreparedClientToServer TLS_CHACHA20_POLY1305_SHA256 16384   1.739Gi ± ∞ ¹
 ¹ need >= 6 samples for confidence interval at level 0.95
-

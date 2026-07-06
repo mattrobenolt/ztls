@@ -1,0 +1,1778 @@
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 2K of event 'cpu/cycles/P'
+# Event count (approx.): 9665545091
+#
+# Children      Self  Symbol                                                                                                                                                                      IPC   [IPC Coverage]
+# ........  ........  ..........................................................................................................................................................................  ....................
+#
+    26.96%     0.00%  [.] EVP_PKEY_new_raw_private_key                                                                                                                                            -      -            
+            |          
+             --26.58%--EVP_PKEY_fromdata
+                       |          
+                        --26.52%--evp_keymgmt_util_fromdata
+                                  |          
+                                   --26.25%--ecx_import
+                                             ossl_ecx_key_fromdata
+                                             ossl_ecx_public_from_private
+                                             ossl_x25519_public_from_private
+                                             |          
+                                             |--19.64%--ge_scalarmult_base
+                                             |          |          
+                                             |          |--8.83%--fe_mul
+                                             |          |          
+                                             |          |--7.47%--ge_madd
+                                             |          |          |          
+                                             |          |           --7.16%--fe_mul
+                                             |          |          
+                                             |          |--2.57%--table_select
+                                             |          |          |          
+                                             |          |           --2.30%--cmov
+                                             |          |          
+                                             |           --0.67%--ge_p2_dbl
+                                             |          
+                                              --6.57%--fe_invert
+                                                        |          
+                                                         --3.52%--fe_sq
+
+    26.75%     0.00%  [.] EVP_PKEY_fromdata                                                                                                                                                       -      -            
+            |          
+             --26.68%--evp_keymgmt_util_fromdata
+                       |          
+                        --26.25%--ecx_import
+                                  ossl_ecx_key_fromdata
+                                  ossl_ecx_public_from_private
+                                  ossl_x25519_public_from_private
+                                  |          
+                                  |--19.64%--ge_scalarmult_base
+                                  |          |          
+                                  |          |--8.83%--fe_mul
+                                  |          |          
+                                  |          |--7.47%--ge_madd
+                                  |          |          |          
+                                  |          |           --7.16%--fe_mul
+                                  |          |          
+                                  |          |--2.57%--table_select
+                                  |          |          |          
+                                  |          |           --2.30%--cmov
+                                  |          |          
+                                  |           --0.67%--ge_p2_dbl
+                                  |          
+                                   --6.57%--fe_invert
+                                             |          
+                                              --3.52%--fe_sq
+
+    26.68%     0.00%  [.] evp_keymgmt_util_fromdata                                                                                                                                               -      -            
+            |          
+             --26.25%--ecx_import
+                       ossl_ecx_key_fromdata
+                       ossl_ecx_public_from_private
+                       ossl_x25519_public_from_private
+                       |          
+                       |--19.64%--ge_scalarmult_base
+                       |          |          
+                       |          |--8.83%--fe_mul
+                       |          |          
+                       |          |--7.47%--ge_madd
+                       |          |          |          
+                       |          |           --7.16%--fe_mul
+                       |          |          
+                       |          |--2.57%--table_select
+                       |          |          |          
+                       |          |           --2.30%--cmov
+                       |          |          
+                       |           --0.67%--ge_p2_dbl
+                       |          
+                        --6.57%--fe_invert
+                                  |          
+                                   --3.52%--fe_sq
+
+    26.25%     0.00%  [.] ecx_import                                                                                                                                                              -      -            
+            |
+            ---ossl_ecx_key_fromdata
+               ossl_ecx_public_from_private
+               ossl_x25519_public_from_private
+               |          
+               |--19.64%--ge_scalarmult_base
+               |          |          
+               |          |--8.83%--fe_mul
+               |          |          
+               |          |--7.47%--ge_madd
+               |          |          |          
+               |          |           --7.16%--fe_mul
+               |          |          
+               |          |--2.57%--table_select
+               |          |          |          
+               |          |           --2.30%--cmov
+               |          |          
+               |           --0.67%--ge_p2_dbl
+               |          
+                --6.57%--fe_invert
+                          |          
+                           --3.52%--fe_sq
+
+    26.25%     0.00%  [.] ossl_ecx_key_fromdata                                                                                                                                                   -      -            
+            |
+            ---ossl_ecx_public_from_private
+               ossl_x25519_public_from_private
+               |          
+               |--19.64%--ge_scalarmult_base
+               |          |          
+               |          |--8.83%--fe_mul
+               |          |          
+               |          |--7.47%--ge_madd
+               |          |          |          
+               |          |           --7.16%--fe_mul
+               |          |          
+               |          |--2.57%--table_select
+               |          |          |          
+               |          |           --2.30%--cmov
+               |          |          
+               |           --0.67%--ge_p2_dbl
+               |          
+                --6.57%--fe_invert
+                          |          
+                           --3.52%--fe_sq
+
+    26.25%     0.00%  [.] ossl_ecx_public_from_private                                                                                                                                            -      -            
+            |
+            ---ossl_x25519_public_from_private
+               |          
+               |--19.64%--ge_scalarmult_base
+               |          |          
+               |          |--8.83%--fe_mul
+               |          |          
+               |          |--7.47%--ge_madd
+               |          |          |          
+               |          |           --7.16%--fe_mul
+               |          |          
+               |          |--2.57%--table_select
+               |          |          |          
+               |          |           --2.30%--cmov
+               |          |          
+               |           --0.67%--ge_p2_dbl
+               |          
+                --6.57%--fe_invert
+                          |          
+                           --3.52%--fe_sq
+
+    26.25%     0.00%  [.] ossl_x25519_public_from_private                                                                                                                                         -      -            
+            |          
+            |--19.64%--ge_scalarmult_base
+            |          |          
+            |          |--8.83%--fe_mul
+            |          |          
+            |          |--7.47%--ge_madd
+            |          |          |          
+            |          |           --7.16%--fe_mul
+            |          |          
+            |          |--2.57%--table_select
+            |          |          |          
+            |          |           --2.30%--cmov
+            |          |          
+            |           --0.67%--ge_p2_dbl
+            |          
+             --6.57%--fe_invert
+                       |          
+                        --3.52%--fe_sq
+
+    24.93%     0.00%  [.] EC_POINT_mul                                                                                                                                                            -      -            
+            |
+            ---ecp_nistz256_points_mul
+               |          
+               |--10.61%--ecp_nistz256_point_add_affinex
+               |          |          
+               |          |--6.17%--__ecp_nistz256_mul_montx
+               |          |          
+               |          |--2.28%--__ecp_nistz256_sqr_montx
+               |          |          
+               |           --0.57%--__ecp_nistz256_sub_fromx
+               |          
+               |--7.29%--ecp_nistz256_point_doublex
+               |          |          
+               |          |--2.82%--__ecp_nistz256_sqr_montx
+               |          |          
+               |          |--2.62%--__ecp_nistz256_mul_montx
+               |          |          
+               |           --0.57%--__ecp_nistz256_mul_by_2x
+               |          
+               |--2.81%--ecp_nistz256_avx2_gather_w7
+               |          
+                --2.68%--ecp_nistz256_point_addx
+                          |          
+                           --1.74%--__ecp_nistz256_mul_montx
+
+    24.93%     0.44%  [.] ecp_nistz256_points_mul                                                                                                                                                 -      -            
+            |          
+             --24.49%--ecp_nistz256_points_mul
+                       |          
+                       |--10.61%--ecp_nistz256_point_add_affinex
+                       |          |          
+                       |          |--6.17%--__ecp_nistz256_mul_montx
+                       |          |          
+                       |          |--2.28%--__ecp_nistz256_sqr_montx
+                       |          |          
+                       |           --0.57%--__ecp_nistz256_sub_fromx
+                       |          
+                       |--7.29%--ecp_nistz256_point_doublex
+                       |          |          
+                       |          |--2.82%--__ecp_nistz256_sqr_montx
+                       |          |          
+                       |          |--2.62%--__ecp_nistz256_mul_montx
+                       |          |          
+                       |           --0.57%--__ecp_nistz256_mul_by_2x
+                       |          
+                       |--2.81%--ecp_nistz256_avx2_gather_w7
+                       |          
+                        --2.68%--ecp_nistz256_point_addx
+                                  |          
+                                   --1.74%--__ecp_nistz256_mul_montx
+
+    19.84%     0.10%  [.] ge_scalarmult_base                                                                                                                                                      -      -            
+            |          
+             --19.74%--ge_scalarmult_base
+                       |          
+                       |--8.97%--fe_mul
+                       |          
+                       |--7.47%--ge_madd
+                       |          |          
+                       |           --7.16%--fe_mul
+                       |          
+                       |--2.61%--table_select
+                       |          |          
+                       |           --2.30%--cmov
+                       |          
+                        --0.70%--ge_p2_dbl
+
+    16.70%    16.67%  [.] fe_mul                                                                                                                                                                  -      -            
+            |          
+             --16.47%--EVP_PKEY_new_raw_private_key
+                       EVP_PKEY_fromdata
+                       evp_keymgmt_util_fromdata
+                       ecx_import
+                       ossl_ecx_key_fromdata
+                       ossl_ecx_public_from_private
+                       ossl_x25519_public_from_private
+                       |          
+                        --15.96%--ge_scalarmult_base
+                                  |          
+                                  |--8.80%--fe_mul
+                                  |          
+                                   --7.16%--ge_madd
+                                             fe_mul
+
+    15.69%     0.00%  [.] ossl_ecx_compute_key                                                                                                                                                    -      -            
+            |
+            ---ossl_x25519
+               x25519_scalar_mult
+               |          
+               |--7.87%--x25519_fe64_sqr
+               |          
+               |--2.78%--x25519_fe64_add
+               |          
+               |--2.32%--x25519_fe64_mul
+               |          
+                --1.61%--x25519_fe64_sub
+
+    15.69%     0.00%  [.] ossl_x25519                                                                                                                                                             -      -            
+            |
+            ---x25519_scalar_mult
+               |          
+               |--7.87%--x25519_fe64_sqr
+               |          
+               |--2.78%--x25519_fe64_add
+               |          
+               |--2.32%--x25519_fe64_mul
+               |          
+                --1.61%--x25519_fe64_sub
+
+    15.69%     0.87%  [.] x25519_scalar_mult                                                                                                                                                      -      -            
+            |          
+            |--14.82%--x25519_scalar_mult
+            |          |          
+            |          |--7.87%--x25519_fe64_sqr
+            |          |          
+            |          |--2.78%--x25519_fe64_add
+            |          |          
+            |          |--2.32%--x25519_fe64_mul
+            |          |          
+            |           --1.61%--x25519_fe64_sub
+            |          
+             --0.87%--ossl_ecx_compute_key
+                       ossl_x25519
+                       x25519_scalar_mult
+
+    15.20%     0.00%  [.] EVP_DigestVerifyFinal                                                                                                                                                   -      -            
+            |          
+             --15.17%--ecdsa_digest_verify_final
+                       |          
+                        --15.13%--ecdsa_verify_message_final
+                                  |          
+                                   --15.10%--ossl_ecdsa_verify
+                                             |          
+                                              --14.90%--ossl_ecdsa_simple_verify_sig
+                                                        |          
+                                                        |--12.46%--EC_POINT_mul
+                                                        |          ecp_nistz256_points_mul
+                                                        |          |          
+                                                        |          |--7.29%--ecp_nistz256_point_doublex
+                                                        |          |          |          
+                                                        |          |          |--2.82%--__ecp_nistz256_sqr_montx
+                                                        |          |          |          
+                                                        |          |          |--2.62%--__ecp_nistz256_mul_montx
+                                                        |          |          |          
+                                                        |          |           --0.57%--__ecp_nistz256_mul_by_2x
+                                                        |          |          
+                                                        |          |--2.68%--ecp_nistz256_point_addx
+                                                        |          |          |          
+                                                        |          |           --1.74%--__ecp_nistz256_mul_montx
+                                                        |          |          
+                                                        |          |--1.32%--ecp_nistz256_point_add_affinex
+                                                        |          |          |          
+                                                        |          |           --0.88%--__ecp_nistz256_mul_montx
+                                                        |          |          
+                                                        |           --0.54%--ecp_nistz256_avx2_gather_w7
+                                                        |          
+                                                        |--1.30%--ecp_nistz256_inv_mod_ord
+                                                        |          |          
+                                                        |           --1.07%--ecp_nistz256_ord_sqr_montx
+                                                        |          
+                                                         --1.04%--ecp_nistz256_get_affine
+                                                                   |          
+                                                                    --0.97%--ecp_nistz256_sqr_mont
+                                                                              |          
+                                                                               --0.94%--__ecp_nistz256_sqr_montx
+
+    15.17%     0.03%  [.] ecdsa_digest_verify_final                                                                                                                                               -      -            
+            |          
+             --15.13%--ecdsa_digest_verify_final
+                       ecdsa_verify_message_final
+                       |          
+                        --15.10%--ossl_ecdsa_verify
+                                  |          
+                                   --14.90%--ossl_ecdsa_simple_verify_sig
+                                             |          
+                                             |--12.46%--EC_POINT_mul
+                                             |          ecp_nistz256_points_mul
+                                             |          |          
+                                             |          |--7.29%--ecp_nistz256_point_doublex
+                                             |          |          |          
+                                             |          |          |--2.82%--__ecp_nistz256_sqr_montx
+                                             |          |          |          
+                                             |          |          |--2.62%--__ecp_nistz256_mul_montx
+                                             |          |          |          
+                                             |          |           --0.57%--__ecp_nistz256_mul_by_2x
+                                             |          |          
+                                             |          |--2.68%--ecp_nistz256_point_addx
+                                             |          |          |          
+                                             |          |           --1.74%--__ecp_nistz256_mul_montx
+                                             |          |          
+                                             |          |--1.32%--ecp_nistz256_point_add_affinex
+                                             |          |          |          
+                                             |          |           --0.88%--__ecp_nistz256_mul_montx
+                                             |          |          
+                                             |           --0.54%--ecp_nistz256_avx2_gather_w7
+                                             |          
+                                             |--1.30%--ecp_nistz256_inv_mod_ord
+                                             |          |          
+                                             |           --1.07%--ecp_nistz256_ord_sqr_montx
+                                             |          
+                                              --1.04%--ecp_nistz256_get_affine
+                                                        |          
+                                                         --0.97%--ecp_nistz256_sqr_mont
+                                                                   |          
+                                                                    --0.94%--__ecp_nistz256_sqr_montx
+
+    15.13%     0.00%  [.] ecdsa_verify_message_final                                                                                                                                              -      -            
+            |          
+             --15.10%--ossl_ecdsa_verify
+                       |          
+                        --14.90%--ossl_ecdsa_simple_verify_sig
+                                  |          
+                                  |--12.46%--EC_POINT_mul
+                                  |          ecp_nistz256_points_mul
+                                  |          |          
+                                  |          |--7.29%--ecp_nistz256_point_doublex
+                                  |          |          |          
+                                  |          |          |--2.82%--__ecp_nistz256_sqr_montx
+                                  |          |          |          
+                                  |          |          |--2.62%--__ecp_nistz256_mul_montx
+                                  |          |          |          
+                                  |          |           --0.57%--__ecp_nistz256_mul_by_2x
+                                  |          |          
+                                  |          |--2.68%--ecp_nistz256_point_addx
+                                  |          |          |          
+                                  |          |           --1.74%--__ecp_nistz256_mul_montx
+                                  |          |          
+                                  |          |--1.32%--ecp_nistz256_point_add_affinex
+                                  |          |          |          
+                                  |          |           --0.88%--__ecp_nistz256_mul_montx
+                                  |          |          
+                                  |           --0.54%--ecp_nistz256_avx2_gather_w7
+                                  |          
+                                  |--1.30%--ecp_nistz256_inv_mod_ord
+                                  |          |          
+                                  |           --1.07%--ecp_nistz256_ord_sqr_montx
+                                  |          
+                                   --1.04%--ecp_nistz256_get_affine
+                                             |          
+                                              --0.97%--ecp_nistz256_sqr_mont
+                                                        |          
+                                                         --0.94%--__ecp_nistz256_sqr_montx
+
+    15.10%     0.00%  [.] ossl_ecdsa_verify                                                                                                                                                       -      -            
+            |          
+             --14.90%--ossl_ecdsa_simple_verify_sig
+                       |          
+                       |--12.46%--EC_POINT_mul
+                       |          ecp_nistz256_points_mul
+                       |          |          
+                       |          |--7.29%--ecp_nistz256_point_doublex
+                       |          |          |          
+                       |          |          |--2.82%--__ecp_nistz256_sqr_montx
+                       |          |          |          
+                       |          |          |--2.62%--__ecp_nistz256_mul_montx
+                       |          |          |          
+                       |          |           --0.57%--__ecp_nistz256_mul_by_2x
+                       |          |          
+                       |          |--2.68%--ecp_nistz256_point_addx
+                       |          |          |          
+                       |          |           --1.74%--__ecp_nistz256_mul_montx
+                       |          |          
+                       |          |--1.32%--ecp_nistz256_point_add_affinex
+                       |          |          |          
+                       |          |           --0.88%--__ecp_nistz256_mul_montx
+                       |          |          
+                       |           --0.54%--ecp_nistz256_avx2_gather_w7
+                       |          
+                       |--1.30%--ecp_nistz256_inv_mod_ord
+                       |          |          
+                       |           --1.07%--ecp_nistz256_ord_sqr_montx
+                       |          
+                        --1.04%--ecp_nistz256_get_affine
+                                  |          
+                                   --0.97%--ecp_nistz256_sqr_mont
+                                             |          
+                                              --0.94%--__ecp_nistz256_sqr_montx
+
+    14.90%     0.00%  [.] ossl_ecdsa_simple_verify_sig                                                                                                                                            -      -            
+            |          
+            |--12.46%--EC_POINT_mul
+            |          ecp_nistz256_points_mul
+            |          |          
+            |          |--7.29%--ecp_nistz256_point_doublex
+            |          |          |          
+            |          |          |--2.82%--__ecp_nistz256_sqr_montx
+            |          |          |          
+            |          |          |--2.62%--__ecp_nistz256_mul_montx
+            |          |          |          
+            |          |           --0.57%--__ecp_nistz256_mul_by_2x
+            |          |          
+            |          |--2.68%--ecp_nistz256_point_addx
+            |          |          |          
+            |          |           --1.74%--__ecp_nistz256_mul_montx
+            |          |          
+            |          |--1.32%--ecp_nistz256_point_add_affinex
+            |          |          |          
+            |          |           --0.88%--__ecp_nistz256_mul_montx
+            |          |          
+            |           --0.54%--ecp_nistz256_avx2_gather_w7
+            |          
+            |--1.30%--ecp_nistz256_inv_mod_ord
+            |          |          
+            |           --1.07%--ecp_nistz256_ord_sqr_montx
+            |          
+             --1.04%--ecp_nistz256_get_affine
+                       |          
+                        --0.97%--ecp_nistz256_sqr_mont
+                                  |          
+                                   --0.94%--__ecp_nistz256_sqr_montx
+
+    14.32%    14.32%  [.] __ecp_nistz256_sqr_montx                                                                                                                                                -      -            
+            |          
+            |--4.52%--ossl_ec_key_simple_check_key
+            |          |          
+            |          |--3.41%--ossl_ec_key_public_check
+            |          |          ossl_ec_key_public_check_quick
+            |          |          ecp_nistz256_get_affine
+            |          |          ecp_nistz256_sqr_mont
+            |          |          __ecp_nistz256_sqr_montx
+            |          |          
+            |           --1.11%--ossl_ec_key_pairwise_check
+            |                     EC_POINT_mul
+            |                     ecp_nistz256_points_mul
+            |                     ecp_nistz256_point_add_affinex
+            |                     __ecp_nistz256_sqr_montx
+            |          
+            |--4.50%--EVP_DigestVerifyFinal
+            |          ecdsa_digest_verify_final
+            |          ecdsa_verify_message_final
+            |          ossl_ecdsa_verify
+            |          ossl_ecdsa_simple_verify_sig
+            |          |          
+            |          |--3.56%--EC_POINT_mul
+            |          |          ecp_nistz256_points_mul
+            |          |          |          
+            |          |           --2.82%--ecp_nistz256_point_doublex
+            |          |                     __ecp_nistz256_sqr_montx
+            |          |          
+            |           --0.94%--ecp_nistz256_get_affine
+            |                     ecp_nistz256_sqr_mont
+            |                     __ecp_nistz256_sqr_montx
+            |          
+            |--1.71%--i2o_ECPublicKey
+            |          ossl_ec_GFp_simple_point2oct
+            |          ecp_nistz256_get_affine
+            |          ecp_nistz256_sqr_mont
+            |          __ecp_nistz256_sqr_montx
+            |          
+            |--1.17%--EVP_DigestSignFinal
+            |          ecdsa_digest_sign_final
+            |          ossl_ecdsa_sign
+            |          ossl_ecdsa_simple_sign_sig
+            |          ecdsa_sign_setup
+            |          |          
+            |           --0.94%--ecp_nistz256_get_affine
+            |                     ecp_nistz256_sqr_mont
+            |                     __ecp_nistz256_sqr_montx
+            |          
+            |--1.14%--EVP_DigestVerifyInit
+            |          do_sigver_init
+            |          evp_pkey_export_to_provider
+            |          ec_pkey_export_to
+            |          EC_POINT_point2buf
+            |          ossl_ec_GFp_simple_point2oct
+            |          ecp_nistz256_get_affine
+            |          ecp_nistz256_sqr_mont
+            |          __ecp_nistz256_sqr_montx
+            |          
+            |--0.67%--EC_POINT_mul
+            |          ecp_nistz256_points_mul
+            |          ecp_nistz256_point_add_affinex
+            |          __ecp_nistz256_sqr_montx
+            |          
+             --0.60%--EVP_DigestSignInit
+                       do_sigver_init
+                       evp_pkey_export_to_provider
+                       ec_pkey_export_to
+                       EC_POINT_point2buf
+                       ossl_ec_GFp_simple_point2oct
+                       ecp_nistz256_get_affine
+                       ecp_nistz256_sqr_mont
+                       __ecp_nistz256_sqr_montx
+
+    10.97%    10.97%  [.] __ecp_nistz256_mul_montx                                                                                                                                                -      -            
+            |          
+            |--5.24%--EVP_DigestVerifyFinal
+            |          ecdsa_digest_verify_final
+            |          ecdsa_verify_message_final
+            |          ossl_ecdsa_verify
+            |          ossl_ecdsa_simple_verify_sig
+            |          EC_POINT_mul
+            |          ecp_nistz256_points_mul
+            |          |          
+            |          |--2.62%--ecp_nistz256_point_doublex
+            |          |          __ecp_nistz256_mul_montx
+            |          |          
+            |          |--1.74%--ecp_nistz256_point_addx
+            |          |          __ecp_nistz256_mul_montx
+            |          |          
+            |           --0.88%--ecp_nistz256_point_add_affinex
+            |                     __ecp_nistz256_mul_montx
+            |          
+            |--2.44%--ossl_ec_key_simple_check_key
+            |          |          
+            |           --2.14%--ossl_ec_key_pairwise_check
+            |                     EC_POINT_mul
+            |                     ecp_nistz256_points_mul
+            |                     ecp_nistz256_point_add_affinex
+            |                     __ecp_nistz256_mul_montx
+            |          
+            |--2.15%--EC_POINT_mul
+            |          ecp_nistz256_points_mul
+            |          ecp_nistz256_point_add_affinex
+            |          __ecp_nistz256_mul_montx
+            |          
+             --1.07%--EVP_DigestSignFinal
+                       ecdsa_digest_sign_final
+                       ossl_ecdsa_sign
+                       ossl_ecdsa_simple_sign_sig
+                       ecdsa_sign_setup
+                       |          
+                        --1.01%--EC_POINT_mul
+                                  ecp_nistz256_points_mul
+                                  ecp_nistz256_point_add_affinex
+                                  __ecp_nistz256_mul_montx
+
+    10.92%     0.00%  [.] ossl_ec_key_simple_check_key                                                                                                                                            -      -            
+            |          
+            |--5.93%--ossl_ec_key_pairwise_check
+            |          |          
+            |           --5.70%--EC_POINT_mul
+            |                     ecp_nistz256_points_mul
+            |                     |          
+            |                     |--4.26%--ecp_nistz256_point_add_affinex
+            |                     |          |          
+            |                     |          |--2.14%--__ecp_nistz256_mul_montx
+            |                     |          |          
+            |                     |           --1.11%--__ecp_nistz256_sqr_montx
+            |                     |          
+            |                      --1.00%--ecp_nistz256_avx2_gather_w7
+            |          
+             --4.85%--ossl_ec_key_public_check
+                       ossl_ec_key_public_check_quick
+                       |          
+                        --4.25%--ecp_nistz256_get_affine
+                                  |          
+                                   --3.89%--ecp_nistz256_sqr_mont
+                                             |          
+                                              --3.41%--__ecp_nistz256_sqr_montx
+
+    10.61%     1.42%  [.] ecp_nistz256_point_add_affinex                                                                                                                                          -      -            
+            |          
+            |--9.19%--ecp_nistz256_point_add_affinex
+            |          |          
+            |          |--6.17%--__ecp_nistz256_mul_montx
+            |          |          
+            |          |--2.28%--__ecp_nistz256_sqr_montx
+            |          |          
+            |           --0.57%--__ecp_nistz256_sub_fromx
+            |          
+            |--0.64%--EC_POINT_mul
+            |          ecp_nistz256_points_mul
+            |          ecp_nistz256_point_add_affinex
+            |          
+             --0.64%--ossl_ec_key_simple_check_key
+                       ossl_ec_key_pairwise_check
+                       EC_POINT_mul
+                       ecp_nistz256_points_mul
+                       ecp_nistz256_point_add_affinex
+
+    10.29%     0.00%  [.] ecp_nistz256_get_affine                                                                                                                                                 -      -            
+            |          
+            |--9.56%--ecp_nistz256_sqr_mont
+            |          |          
+            |           --8.75%--__ecp_nistz256_sqr_montx
+            |          
+             --0.53%--ecp_nistz256_mul_mont
+
+     9.56%     0.81%  [.] ecp_nistz256_sqr_mont                                                                                                                                                   -      -            
+            |          
+             --8.75%--ecp_nistz256_sqr_mont
+                       __ecp_nistz256_sqr_montx
+
+     7.87%     7.84%  [.] x25519_fe64_sqr                                                                                                                                                         -      -            
+            |          
+             --7.84%--ossl_ecx_compute_key
+                       ossl_x25519
+                       x25519_scalar_mult
+                       x25519_fe64_sqr
+
+     7.53%     0.30%  [.] ge_madd                                                                                                                                                                 -      -            
+            |          
+             --7.23%--ge_madd
+                       fe_mul
+
+     7.29%     0.64%  [.] ecp_nistz256_point_doublex                                                                                                                                              -      -            
+            |          
+            |--6.65%--ecp_nistz256_point_doublex
+            |          |          
+            |          |--2.82%--__ecp_nistz256_sqr_montx
+            |          |          
+            |          |--2.62%--__ecp_nistz256_mul_montx
+            |          |          
+            |           --0.57%--__ecp_nistz256_mul_by_2x
+            |          
+             --0.64%--EVP_DigestVerifyFinal
+                       ecdsa_digest_verify_final
+                       ecdsa_verify_message_final
+                       ossl_ecdsa_verify
+                       ossl_ecdsa_simple_verify_sig
+                       EC_POINT_mul
+                       ecp_nistz256_points_mul
+                       ecp_nistz256_point_doublex
+
+     6.67%     2.58%  [.] fe_invert                                                                                                                                                               -      -            
+            |          
+            |--4.09%--fe_invert
+            |          |          
+            |           --3.62%--fe_sq
+            |          
+             --2.58%--EVP_PKEY_new_raw_private_key
+                       EVP_PKEY_fromdata
+                       evp_keymgmt_util_fromdata
+                       ecx_import
+                       ossl_ecx_key_fromdata
+                       ossl_ecx_public_from_private
+                       ossl_x25519_public_from_private
+                       fe_invert
+
+     6.11%     0.03%  [.] EC_GROUP_new_by_curve_name_ex                                                                                                                                           -      -            
+            |          
+             --5.97%--ecp_nistz256group_full_init
+                       |          
+                       |--1.64%--EC_POINT_set_affine_coordinates
+                       |          |          
+                       |          |--1.04%--ossl_ec_GFp_simple_set_Jprojective_coordinates_GFp
+                       |          |          |          
+                       |          |           --0.80%--BN_nnmod
+                       |          |                     BN_div
+                       |          |                     |          
+                       |          |                      --0.77%--bn_div_fixed_top
+                       |          |          
+                       |           --0.60%--ossl_ec_GFp_simple_is_on_curve
+                       |          
+                       |--1.34%--bin2bn
+                       |          
+                        --1.00%--ossl_ec_GFp_simple_group_set_curve
+                                  |          
+                                   --0.73%--BN_nnmod
+                                             BN_div
+                                             |          
+                                              --0.67%--bn_div_fixed_top
+
+     6.00%     0.00%  [.] ecp_nistz256group_full_init                                                                                                                                             -      -            
+            |          
+            |--1.64%--EC_POINT_set_affine_coordinates
+            |          |          
+            |          |--1.04%--ossl_ec_GFp_simple_set_Jprojective_coordinates_GFp
+            |          |          |          
+            |          |           --0.80%--BN_nnmod
+            |          |                     BN_div
+            |          |                     |          
+            |          |                      --0.77%--bn_div_fixed_top
+            |          |          
+            |           --0.60%--ossl_ec_GFp_simple_is_on_curve
+            |          
+            |--1.34%--bin2bn
+            |          
+            |--1.00%--ossl_ec_GFp_simple_group_set_curve
+            |          |          
+            |           --0.73%--BN_nnmod
+            |                     BN_div
+            |                     |          
+            |                      --0.67%--bn_div_fixed_top
+            |          
+             --0.50%--ossl_bn_mont_ctx_set
+
+     5.93%     0.00%  [.] ossl_ec_key_pairwise_check                                                                                                                                              -      -            
+            |          
+             --5.70%--EC_POINT_mul
+                       ecp_nistz256_points_mul
+                       |          
+                       |--4.26%--ecp_nistz256_point_add_affinex
+                       |          |          
+                       |          |--2.14%--__ecp_nistz256_mul_montx
+                       |          |          
+                       |           --1.11%--__ecp_nistz256_sqr_montx
+                       |          
+                        --1.00%--ecp_nistz256_avx2_gather_w7
+
+     5.45%     0.03%  [.] do_sigver_init                                                                                                                                                          -      -            
+            |          
+             --5.41%--do_sigver_init
+                       |          
+                        --4.81%--evp_pkey_export_to_provider
+                                  |          
+                                   --4.74%--ec_pkey_export_to
+                                             |          
+                                             |--2.46%--ec_import
+                                             |          |          
+                                             |          |--1.88%--ossl_ec_group_fromdata
+                                             |          |          |          
+                                             |          |           --1.55%--EC_GROUP_new_from_params
+                                             |          |                     |          
+                                             |          |                      --1.38%--EC_GROUP_new_by_curve_name_ex
+                                             |          |                                |          
+                                             |          |                                 --1.31%--ecp_nistz256group_full_init
+                                             |          |          
+                                             |           --0.58%--ossl_ec_key_fromdata
+                                             |          
+                                              --2.08%--EC_POINT_point2buf
+                                                        ossl_ec_GFp_simple_point2oct
+                                                        |          
+                                                         --1.98%--ecp_nistz256_get_affine
+                                                                   |          
+                                                                    --1.88%--ecp_nistz256_sqr_mont
+                                                                              |          
+                                                                               --1.74%--__ecp_nistz256_sqr_montx
+
+     4.85%     0.00%  [.] ossl_ec_key_public_check                                                                                                                                                -      -            
+            |
+            ---ossl_ec_key_public_check_quick
+               |          
+                --4.25%--ecp_nistz256_get_affine
+                          |          
+                           --3.89%--ecp_nistz256_sqr_mont
+                                     |          
+                                      --3.41%--__ecp_nistz256_sqr_montx
+
+     4.85%     0.00%  [.] ossl_ec_key_public_check_quick                                                                                                                                          -      -            
+            |          
+             --4.25%--ecp_nistz256_get_affine
+                       |          
+                        --3.89%--ecp_nistz256_sqr_mont
+                                  |          
+                                   --3.41%--__ecp_nistz256_sqr_montx
+
+     4.81%     0.00%  [.] evp_pkey_export_to_provider                                                                                                                                             -      -            
+            |          
+             --4.74%--ec_pkey_export_to
+                       |          
+                       |--2.46%--ec_import
+                       |          |          
+                       |          |--1.88%--ossl_ec_group_fromdata
+                       |          |          |          
+                       |          |           --1.55%--EC_GROUP_new_from_params
+                       |          |                     |          
+                       |          |                      --1.38%--EC_GROUP_new_by_curve_name_ex
+                       |          |                                |          
+                       |          |                                 --1.31%--ecp_nistz256group_full_init
+                       |          |          
+                       |           --0.58%--ossl_ec_key_fromdata
+                       |          
+                        --2.08%--EC_POINT_point2buf
+                                  ossl_ec_GFp_simple_point2oct
+                                  |          
+                                   --1.98%--ecp_nistz256_get_affine
+                                             |          
+                                              --1.88%--ecp_nistz256_sqr_mont
+                                                        |          
+                                                         --1.74%--__ecp_nistz256_sqr_montx
+
+     4.79%     0.03%  [.] EVP_DigestSignFinal                                                                                                                                                     -      -            
+            |          
+             --4.76%--ecdsa_digest_sign_final
+                       |          
+                        --4.73%--ossl_ecdsa_sign
+                                  |          
+                                   --4.63%--ossl_ecdsa_simple_sign_sig
+                                             |          
+                                              --4.53%--ecdsa_sign_setup
+                                                        |          
+                                                        |--1.78%--EC_POINT_mul
+                                                        |          ecp_nistz256_points_mul
+                                                        |          |          
+                                                        |           --1.31%--ecp_nistz256_point_add_affinex
+                                                        |                     |          
+                                                        |                      --1.01%--__ecp_nistz256_mul_montx
+                                                        |          
+                                                        |--1.27%--ecp_nistz256_inv_mod_ord
+                                                        |          |          
+                                                        |           --0.77%--ecp_nistz256_ord_sqr_montx
+                                                        |          
+                                                         --1.17%--ecp_nistz256_get_affine
+                                                                   |          
+                                                                    --1.01%--ecp_nistz256_sqr_mont
+                                                                              |          
+                                                                               --0.94%--__ecp_nistz256_sqr_montx
+
+     4.76%     0.00%  [.] ecdsa_digest_sign_final                                                                                                                                                 -      -            
+            |          
+             --4.73%--ossl_ecdsa_sign
+                       |          
+                        --4.63%--ossl_ecdsa_simple_sign_sig
+                                  |          
+                                   --4.53%--ecdsa_sign_setup
+                                             |          
+                                             |--1.78%--EC_POINT_mul
+                                             |          ecp_nistz256_points_mul
+                                             |          |          
+                                             |           --1.31%--ecp_nistz256_point_add_affinex
+                                             |                     |          
+                                             |                      --1.01%--__ecp_nistz256_mul_montx
+                                             |          
+                                             |--1.27%--ecp_nistz256_inv_mod_ord
+                                             |          |          
+                                             |           --0.77%--ecp_nistz256_ord_sqr_montx
+                                             |          
+                                              --1.17%--ecp_nistz256_get_affine
+                                                        |          
+                                                         --1.01%--ecp_nistz256_sqr_mont
+                                                                   |          
+                                                                    --0.94%--__ecp_nistz256_sqr_montx
+
+     4.74%     0.00%  [.] ec_pkey_export_to                                                                                                                                                       -      -            
+            |          
+            |--2.46%--ec_import
+            |          |          
+            |          |--1.88%--ossl_ec_group_fromdata
+            |          |          |          
+            |          |           --1.55%--EC_GROUP_new_from_params
+            |          |                     |          
+            |          |                      --1.38%--EC_GROUP_new_by_curve_name_ex
+            |          |                                |          
+            |          |                                 --1.31%--ecp_nistz256group_full_init
+            |          |          
+            |           --0.58%--ossl_ec_key_fromdata
+            |          
+             --2.08%--EC_POINT_point2buf
+                       ossl_ec_GFp_simple_point2oct
+                       |          
+                        --1.98%--ecp_nistz256_get_affine
+                                  |          
+                                   --1.88%--ecp_nistz256_sqr_mont
+                                             |          
+                                              --1.74%--__ecp_nistz256_sqr_montx
+
+     4.73%     0.00%  [.] ossl_ecdsa_sign                                                                                                                                                         -      -            
+            |          
+             --4.63%--ossl_ecdsa_simple_sign_sig
+                       |          
+                        --4.53%--ecdsa_sign_setup
+                                  |          
+                                  |--1.78%--EC_POINT_mul
+                                  |          ecp_nistz256_points_mul
+                                  |          |          
+                                  |           --1.31%--ecp_nistz256_point_add_affinex
+                                  |                     |          
+                                  |                      --1.01%--__ecp_nistz256_mul_montx
+                                  |          
+                                  |--1.27%--ecp_nistz256_inv_mod_ord
+                                  |          |          
+                                  |           --0.77%--ecp_nistz256_ord_sqr_montx
+                                  |          
+                                   --1.17%--ecp_nistz256_get_affine
+                                             |          
+                                              --1.01%--ecp_nistz256_sqr_mont
+                                                        |          
+                                                         --0.94%--__ecp_nistz256_sqr_montx
+
+     4.63%     0.00%  [.] ossl_ecdsa_simple_sign_sig                                                                                                                                              -      -            
+            |          
+             --4.53%--ecdsa_sign_setup
+                       |          
+                       |--1.78%--EC_POINT_mul
+                       |          ecp_nistz256_points_mul
+                       |          |          
+                       |           --1.31%--ecp_nistz256_point_add_affinex
+                       |                     |          
+                       |                      --1.01%--__ecp_nistz256_mul_montx
+                       |          
+                       |--1.27%--ecp_nistz256_inv_mod_ord
+                       |          |          
+                       |           --0.77%--ecp_nistz256_ord_sqr_montx
+                       |          
+                        --1.17%--ecp_nistz256_get_affine
+                                  |          
+                                   --1.01%--ecp_nistz256_sqr_mont
+                                             |          
+                                              --0.94%--__ecp_nistz256_sqr_montx
+
+     4.53%     0.00%  [.] ecdsa_sign_setup                                                                                                                                                        -      -            
+            |          
+            |--1.78%--EC_POINT_mul
+            |          ecp_nistz256_points_mul
+            |          |          
+            |           --1.31%--ecp_nistz256_point_add_affinex
+            |                     |          
+            |                      --1.01%--__ecp_nistz256_mul_montx
+            |          
+            |--1.27%--ecp_nistz256_inv_mod_ord
+            |          |          
+            |           --0.77%--ecp_nistz256_ord_sqr_montx
+            |          
+             --1.17%--ecp_nistz256_get_affine
+                       |          
+                        --1.01%--ecp_nistz256_sqr_mont
+                                  |          
+                                   --0.94%--__ecp_nistz256_sqr_montx
+
+     4.12%     4.12%  [.] fe_sq                                                                                                                                                                   -      -            
+            |          
+             --4.02%--EVP_PKEY_new_raw_private_key
+                       EVP_PKEY_fromdata
+                       evp_keymgmt_util_fromdata
+                       ecx_import
+                       ossl_ecx_key_fromdata
+                       ossl_ecx_public_from_private
+                       ossl_x25519_public_from_private
+                       |          
+                        --3.52%--fe_invert
+                                  fe_sq
+
+     4.03%     0.00%  [.] ossl_ec_GFp_simple_point2oct                                                                                                                                            -      -            
+            |          
+             --3.82%--ecp_nistz256_get_affine
+                       |          
+                        --3.69%--ecp_nistz256_sqr_mont
+                                  |          
+                                   --3.46%--__ecp_nistz256_sqr_montx
+
+     3.26%     0.00%  [.] EVP_DigestVerifyInit                                                                                                                                                    -      -            
+            |
+            ---do_sigver_init
+               |          
+                --2.90%--evp_pkey_export_to_provider
+                          |          
+                           --2.86%--ec_pkey_export_to
+                                     |          
+                                     |--1.48%--ec_import
+                                     |          |          
+                                     |           --1.18%--ossl_ec_group_fromdata
+                                     |                     |          
+                                     |                      --1.01%--EC_GROUP_new_from_params
+                                     |                                |          
+                                     |                                 --0.91%--EC_GROUP_new_by_curve_name_ex
+                                     |                                           |          
+                                     |                                            --0.87%--ecp_nistz256group_full_init
+                                     |          
+                                      --1.31%--EC_POINT_point2buf
+                                                ossl_ec_GFp_simple_point2oct
+                                                |          
+                                                 --1.24%--ecp_nistz256_get_affine
+                                                           ecp_nistz256_sqr_mont
+                                                           |          
+                                                            --1.14%--__ecp_nistz256_sqr_montx
+
+     2.95%     0.00%  [.] EC_KEY_new_by_curve_name_ex                                                                                                                                             -      -            
+            |          
+             --2.92%--EC_GROUP_new_by_curve_name_ex
+                       |          
+                        --2.88%--ecp_nistz256group_full_init
+                                  |          
+                                  |--0.64%--EC_POINT_set_affine_coordinates
+                                  |          
+                                   --0.57%--bin2bn
+
+     2.81%     2.78%  [.] ecp_nistz256_avx2_gather_w7                                                                                                                                             -      -            
+            |          
+            |--1.00%--ossl_ec_key_simple_check_key
+            |          ossl_ec_key_pairwise_check
+            |          EC_POINT_mul
+            |          ecp_nistz256_points_mul
+            |          ecp_nistz256_avx2_gather_w7
+            |          
+            |--0.87%--EC_POINT_mul
+            |          ecp_nistz256_points_mul
+            |          ecp_nistz256_avx2_gather_w7
+            |          
+             --0.54%--EVP_DigestVerifyFinal
+                       ecdsa_digest_verify_final
+                       ecdsa_verify_message_final
+                       ossl_ecdsa_verify
+                       ossl_ecdsa_simple_verify_sig
+                       EC_POINT_mul
+                       ecp_nistz256_points_mul
+                       ecp_nistz256_avx2_gather_w7
+
+     2.78%     2.78%  [.] x25519_fe64_add                                                                                                                                                         -      -            
+            |
+            ---ossl_x25519
+               x25519_scalar_mult
+               x25519_fe64_add
+
+     2.68%     0.34%  [.] ecp_nistz256_point_addx                                                                                                                                                 -      -            
+            |          
+             --2.34%--ecp_nistz256_point_addx
+                       |          
+                        --1.74%--__ecp_nistz256_mul_montx
+
+     2.61%     0.30%  [.] table_select                                                                                                                                                            -      -            
+            |          
+             --2.30%--table_select
+                       cmov
+
+     2.58%     0.03%  [.] ecp_nistz256_inv_mod_ord                                                                                                                                                -      -            
+            |          
+             --2.54%--ecp_nistz256_inv_mod_ord
+                       |          
+                       |--1.84%--ecp_nistz256_ord_sqr_montx
+                       |          
+                        --0.63%--ecp_nistz256_ord_mul_montx
+
+     2.55%     0.30%  [.] CRYPTO_zalloc                                                                                                                                                           -      -            
+            |          
+             --2.25%--CRYPTO_zalloc
+                       |          
+                        --1.98%--CRYPTO_malloc
+                                  |          
+                                  |--0.77%--__libc_malloc2
+                                  |          |          
+                                  |           --0.70%--_int_malloc
+                                  |          
+                                   --0.74%--malloc
+
+     2.46%     0.00%  [.] ec_import                                                                                                                                                               -      -            
+            |          
+            |--1.88%--ossl_ec_group_fromdata
+            |          |          
+            |           --1.55%--EC_GROUP_new_from_params
+            |                     |          
+            |                      --1.38%--EC_GROUP_new_by_curve_name_ex
+            |                                |          
+            |                                 --1.31%--ecp_nistz256group_full_init
+            |          
+             --0.58%--ossl_ec_key_fromdata
+
+     2.32%     2.32%  [.] x25519_fe64_mul                                                                                                                                                         -      -            
+            |
+            ---ossl_x25519
+               x25519_scalar_mult
+               x25519_fe64_mul
+
+     2.30%     2.30%  [.] cmov                                                                                                                                                                    -      -            
+            |
+            ---EVP_PKEY_fromdata
+               evp_keymgmt_util_fromdata
+               ecx_import
+               ossl_ecx_key_fromdata
+               ossl_ecx_public_from_private
+               ossl_x25519_public_from_private
+               ge_scalarmult_base
+               table_select
+               cmov
+
+     2.25%     0.40%  [.] CRYPTO_malloc                                                                                                                                                           -      -            
+            |          
+             --1.85%--CRYPTO_malloc
+                       |          
+                       |--0.94%--__libc_malloc2
+                       |          |          
+                       |           --0.84%--_int_malloc
+                       |          
+                        --0.85%--malloc
+
+     2.18%     0.00%  [.] EVP_DigestSignInit                                                                                                                                                      -      -            
+            |
+            ---do_sigver_init
+               |          
+                --1.91%--evp_pkey_export_to_provider
+                          |          
+                           --1.88%--ec_pkey_export_to
+                                     |          
+                                     |--0.97%--ec_import
+                                     |          |          
+                                     |           --0.70%--ossl_ec_group_fromdata
+                                     |                     |          
+                                     |                      --0.54%--EC_GROUP_new_from_params
+                                     |          
+                                      --0.77%--EC_POINT_point2buf
+                                                ossl_ec_GFp_simple_point2oct
+                                                |          
+                                                 --0.74%--ecp_nistz256_get_affine
+                                                           |          
+                                                            --0.64%--ecp_nistz256_sqr_mont
+                                                                      |          
+                                                                       --0.60%--__ecp_nistz256_sqr_montx
+
+     2.14%     0.00%  [.] EC_POINT_set_affine_coordinates                                                                                                                                         -      -            
+            |          
+            |--1.44%--ossl_ec_GFp_simple_set_Jprojective_coordinates_GFp
+            |          |          
+            |           --1.14%--BN_nnmod
+            |                     BN_div
+            |                     |          
+            |                      --1.10%--bn_div_fixed_top
+            |          
+             --0.71%--ossl_ec_GFp_simple_is_on_curve
+
+     2.08%     0.00%  [.] EC_POINT_point2buf                                                                                                                                                      -      -            
+            |
+            ---ossl_ec_GFp_simple_point2oct
+               |          
+                --1.98%--ecp_nistz256_get_affine
+                          |          
+                           --1.88%--ecp_nistz256_sqr_mont
+                                     |          
+                                      --1.74%--__ecp_nistz256_sqr_montx
+
+     2.05%     0.37%  [.] bn_expand2                                                                                                                                                              -      -            
+            |          
+             --1.68%--bn_expand2
+                       |          
+                        --1.34%--CRYPTO_zalloc
+                                  |          
+                                   --1.11%--CRYPTO_malloc
+                                             |          
+                                              --0.50%--__libc_malloc2
+                                                        _int_malloc
+
+     1.98%     1.38%  [.] bin2bn                                                                                                                                                                  -      -            
+            |          
+            |--0.74%--bin2bn
+            |          
+             --0.50%--EC_KEY_new_by_curve_name_ex
+                       EC_GROUP_new_by_curve_name_ex
+                       ecp_nistz256group_full_init
+
+     1.91%     0.00%  [.] i2o_ECPublicKey                                                                                                                                                         -      -            
+            |
+            ---ossl_ec_GFp_simple_point2oct
+               |          
+                --1.85%--ecp_nistz256_get_affine
+                          |          
+                           --1.81%--ecp_nistz256_sqr_mont
+                                     |          
+                                      --1.71%--__ecp_nistz256_sqr_montx
+
+     1.90%     0.00%  [.] BN_nnmod                                                                                                                                                                -      -            
+            |
+            ---BN_div
+               |          
+                --1.80%--bn_div_fixed_top
+
+     1.90%     0.03%  [.] BN_div                                                                                                                                                                  -      -            
+            |          
+             --1.87%--BN_div
+                       |          
+                        --1.80%--bn_div_fixed_top
+
+     1.88%     0.00%  [.] ossl_ec_group_fromdata                                                                                                                                                  -      -            
+            |          
+             --1.55%--EC_GROUP_new_from_params
+                       |          
+                        --1.38%--EC_GROUP_new_by_curve_name_ex
+                                  |          
+                                   --1.31%--ecp_nistz256group_full_init
+
+     1.87%     0.47%  [.] bn_div_fixed_top                                                                                                                                                        -      -            
+            |          
+             --1.40%--bn_div_fixed_top
+
+     1.84%     1.84%  [.] ecp_nistz256_ord_sqr_montx                                                                                                                                              -      -            
+            |          
+            |--1.07%--EVP_DigestVerifyFinal
+            |          ecdsa_digest_verify_final
+            |          ecdsa_verify_message_final
+            |          ossl_ecdsa_verify
+            |          ossl_ecdsa_simple_verify_sig
+            |          ecp_nistz256_inv_mod_ord
+            |          ecp_nistz256_ord_sqr_montx
+            |          
+             --0.77%--EVP_DigestSignFinal
+                       ecdsa_digest_sign_final
+                       ossl_ecdsa_sign
+                       ossl_ecdsa_simple_sign_sig
+                       ecdsa_sign_setup
+                       ecp_nistz256_inv_mod_ord
+                       ecp_nistz256_ord_sqr_montx
+
+     1.81%     1.81%  [.] crypto.sha2.Sha2x32(.{ 1779033703, 3144134277, 1013904242, 2773480762, 1359893119, 2600822924, 528734635, 1541459225 },256).round                                       -      -            
+     1.64%     0.03%  [.] BN_mod_mul_montgomery                                                                                                                                                   -      -            
+            |          
+             --1.61%--BN_mod_mul_montgomery
+                       |          
+                        --1.58%--bn_mul_mont_fixed_top
+                                  |          
+                                   --1.14%--bn_mul_mont
+
+     1.61%     0.07%  [.] bn_mul_mont_fixed_top                                                                                                                                                   -      -            
+            |          
+             --1.54%--bn_mul_mont_fixed_top
+                       |          
+                        --1.14%--bn_mul_mont
+
+     1.61%     1.61%  [.] x25519_fe64_sub                                                                                                                                                         -      -            
+            |
+            ---ossl_x25519
+               x25519_scalar_mult
+               x25519_fe64_sub
+
+     1.55%     0.00%  [.] EC_GROUP_new_from_params                                                                                                                                                -      -            
+            |          
+             --1.38%--EC_GROUP_new_by_curve_name_ex
+                       |          
+                        --1.31%--ecp_nistz256group_full_init
+
+     1.47%     0.00%  [.] ossl_ec_GFp_simple_set_Jprojective_coordinates_GFp                                                                                                                      -      -            
+            |          
+             --1.14%--BN_nnmod
+                       BN_div
+                       |          
+                        --1.10%--bn_div_fixed_top
+
+     1.31%     0.00%  [.] EVP_CipherInit_ex                                                                                                                                                       -      -            
+            |          
+             --1.08%--evp_cipher_init_internal
+                       |          
+                        --0.67%--EVP_CIPHER_fetch
+                                  evp_generic_fetch
+
+     1.21%     0.03%  [.] ossl_ec_GFp_simple_is_on_curve                                                                                                                                          -      -            
+            |          
+             --1.17%--ossl_ec_GFp_simple_is_on_curve
+                       |          
+                        --0.77%--BN_mod_mul_montgomery
+                                  |          
+                                   --0.74%--bn_mul_mont_fixed_top
+                                             |          
+                                              --0.70%--bn_mul_mont
+
+     1.14%     1.14%  [.] bn_mul_mont                                                                                                                                                             -      -            
+     1.14%     0.07%  [.] EVP_PKEY_free                                                                                                                                                           -      -            
+            |          
+             --0.51%--evp_pkey_free_legacy
+                       EC_KEY_free
+
+     1.10%     0.14%  [.] evp_generic_fetch                                                                                                                                                       -      -            
+            |          
+             --0.96%--evp_generic_fetch
+                       |          
+                        --0.57%--ossl_namemap_name2num
+                                  |          
+                                   --0.54%--ossl_ht_get
+
+     1.08%     0.07%  [.] evp_cipher_init_internal                                                                                                                                                -      -            
+            |          
+             --1.01%--evp_cipher_init_internal
+                       |          
+                        --0.67%--EVP_CIPHER_fetch
+                                  evp_generic_fetch
+
+     1.00%     0.03%  [.] ossl_ec_GFp_simple_group_set_curve                                                                                                                                      -      -            
+            |          
+             --0.97%--ossl_ec_GFp_simple_group_set_curve
+                       |          
+                        --0.73%--BN_nnmod
+                                  BN_div
+                                  |          
+                                   --0.67%--bn_div_fixed_top
+
+     0.98%     0.00%  [.] EC_GROUP_free                                                                                                                                                           -      -            
+     0.97%     0.97%  [.] cfree@GLIBC_2.2.5                                                                                                                                                       -      -            
+     0.94%     0.10%  [.] __libc_malloc2                                                                                                                                                          -      -            
+            |          
+             --0.84%--__libc_malloc2
+                       _int_malloc
+
+     0.94%     0.00%  [.] EC_KEY_free                                                                                                                                                             -      -            
+            |          
+             --0.70%--EC_GROUP_free
+
+     0.91%     0.81%  [.] _int_malloc                                                                                                                                                             -      -            
+     0.91%     0.91%  [.] __ecp_nistz256_sub_fromx                                                                                                                                                -      -            
+     0.85%     0.85%  [.] malloc                                                                                                                                                                  -      -            
+     0.84%     0.13%  [.] BN_free                                                                                                                                                                 -      -            
+            |          
+             --0.71%--BN_free
+
+     0.77%     0.03%  [.] ossl_namemap_name2num                                                                                                                                                   -      -            
+            |          
+             --0.74%--ossl_namemap_name2num
+                       ossl_ht_get
+                       |          
+                        --0.57%--ossl_fnv1a_hash
+
+     0.74%     0.03%  [.] ossl_ht_get                                                                                                                                                             -      -            
+            |          
+             --0.71%--ossl_ht_get
+                       |          
+                        --0.57%--ossl_fnv1a_hash
+
+     0.74%     0.50%  [.] _int_free_chunk                                                                                                                                                         -      -            
+     0.71%     0.10%  [.] BN_copy                                                                                                                                                                 -      -            
+            |          
+             --0.61%--BN_copy
+                       |          
+                        --0.57%--bn_expand2
+
+     0.70%     0.20%  [.] ge_p2_dbl                                                                                                                                                               -      -            
+     0.67%     0.00%  [.] EVP_CIPHER_fetch                                                                                                                                                        -      -            
+            |
+            ---evp_generic_fetch
+
+     0.67%     0.10%  [.] BN_clear_free                                                                                                                                                           -      -            
+            |          
+             --0.57%--BN_clear_free
+
+     0.64%     0.00%  [.] ossl_ec_GFp_simple_oct2point                                                                                                                                            -      -            
+            |          
+             --0.50%--EC_POINT_set_affine_coordinates
+
+     0.63%     0.63%  [.] ecp_nistz256_ord_mul_montx                                                                                                                                              -      -            
+     0.60%     0.00%  [.] EVP_CIPHER_CTX_free                                                                                                                                                     -      -            
+            |
+            ---EVP_CIPHER_CTX_reset
+
+     0.60%     0.07%  [.] EVP_CIPHER_CTX_reset                                                                                                                                                    -      -            
+            |          
+             --0.54%--EVP_CIPHER_CTX_reset
+
+     0.58%     0.00%  [.] ossl_ec_key_fromdata                                                                                                                                                    -      -            
+     0.57%     0.57%  [.] ossl_fnv1a_hash                                                                                                                                                         -      -            
+     0.57%     0.03%  [.] BN_CTX_free                                                                                                                                                             -      -            
+            |          
+             --0.54%--BN_CTX_free
+
+     0.57%     0.57%  [.] __ecp_nistz256_mul_by_2x                                                                                                                                                -      -            
+            |
+            ---ecdsa_digest_verify_final
+               ecdsa_verify_message_final
+               ossl_ecdsa_verify
+               ossl_ecdsa_simple_verify_sig
+               EC_POINT_mul
+               ecp_nistz256_points_mul
+               ecp_nistz256_point_doublex
+               __ecp_nistz256_mul_by_2x
+
+     0.54%     0.03%  [.] ossl_bn_mont_ctx_set                                                                                                                                                    -      -            
+            |          
+             --0.50%--ossl_bn_mont_ctx_set
+
+     0.53%     0.10%  [.] ecp_nistz256_mul_mont                                                                                                                                                   -      -            
+     0.51%     0.00%  [.] evp_pkey_free_legacy                                                                                                                                                    -      -            
+            |
+            ---EC_KEY_free
+
+     0.50%     0.03%  [.] BN_new                                                                                                                                                                  -      -            
+     0.47%     0.47%  [.] BN_get_flags                                                                                                                                                            -      -            
+     0.47%     0.07%  [.] CRYPTO_clear_free                                                                                                                                                       -      -            
+     0.47%     0.47%  [.] ecp_nistz256_neg                                                                                                                                                        -      -            
+     0.47%     0.47%  [.] BN_num_bits_word                                                                                                                                                        -      -            
+     0.47%     0.00%  [.] EVP_PKEY_new_raw_public_key                                                                                                                                             -      -            
+     0.46%     0.07%  [.] EVP_PKEY_CTX_new_from_name                                                                                                                                              -      -            
+     0.44%     0.44%  [.] OPENSSL_cleanse                                                                                                                                                         -      -            
+     0.44%     0.20%  [.] BN_CTX_get                                                                                                                                                              -      -            
+     0.44%     0.07%  [.] EC_POINT_free                                                                                                                                                           -      -            
+     0.43%     0.10%  [.] bn_rshift_fixed_top                                                                                                                                                     -      -            
+     0.43%     0.00%  [.] evp_keymgmt_util_clear_operation_cache                                                                                                                                  -      -            
+     0.43%     0.00%  [.] OPENSSL_sk_pop_free                                                                                                                                                     -      -            
+     0.43%     0.00%  [.] op_cache_free                                                                                                                                                           -      -            
+     0.40%     0.03%  [.] ossl_method_store_cache_get                                                                                                                                             -      -            
+     0.40%     0.00%  [.] evp_keymgmt_util_assign_pkey                                                                                                                                            -      -            
+     0.37%     0.03%  [.] EC_POINT_new                                                                                                                                                            -      -            
+     0.34%     0.34%  [.] crypto.sha2.Sha2x32(.{ 1779033703, 3144134277, 1013904242, 2773480762, 1359893119, 2600822924, 528734635, 1541459225 },256).final                                       -      -            
+     0.34%     0.30%  [.] malloc_consolidate                                                                                                                                                      -      -            
+     0.32%     0.03%  [.] EVP_KEYMGMT_fetch                                                                                                                                                       -      -            
+     0.30%     0.00%  [.] EVP_PKEY_set_type_by_keymgmt                                                                                                                                            -      -            
+     0.30%     0.30%  [.] __ecp_nistz256_add_tox                                                                                                                                                  -      -            
+     0.30%     0.00%  [.] BN_num_bits                                                                                                                                                             -      -            
+     0.30%     0.30%  [.] __ecp_nistz256_subx                                                                                                                                                     -      -            
+     0.27%     0.07%  [.] bn_from_montgomery_word                                                                                                                                                 -      -            
+     0.27%     0.00%  [.] i2d_ECDSA_SIG                                                                                                                                                           -      -            
+     0.27%     0.00%  [.] ossl_encode_der_dsa_sig                                                                                                                                                 -      -            
+     0.27%     0.27%  [.] pthread_rwlock_unlock@@GLIBC_2.34                                                                                                                                       -      -            
+     0.27%     0.00%  [.] CRYPTO_THREAD_unlock                                                                                                                                                    -      -            
+     0.27%     0.03%  [.] EVP_PKEY_get_raw_public_key                                                                                                                                             -      -            
+     0.27%     0.00%  [.] ossl_ec_GFp_simple_point_init                                                                                                                                           -      -            
+     0.27%     0.00%  [.] ossl_ec_GFp_simple_point_finish                                                                                                                                         -      -            
+     0.27%     0.13%  [.] bn_lshift_fixed_top                                                                                                                                                     -      -            
+     0.25%     0.03%  [.] ossl_err_get_state_int                                                                                                                                                  -      -            
+     0.24%     0.03%  [.] vaes_gcm_setkey                                                                                                                                                         -      -            
+     0.24%     0.24%  [.] __strcmp_evex                                                                                                                                                           -      -            
+     0.24%     0.24%  [.] x25519_fe64_mul121666                                                                                                                                                   -      -            
+     0.23%     0.00%  [.] ecx_export                                                                                                                                                              -      -            
+     0.23%     0.00%  [.] _int_free_maybe_consolidate.part.0                                                                                                                                      -      -            
+     0.23%     0.07%  [.] ecdsa_setup_md.isra.0                                                                                                                                                   -      -            
+     0.23%     0.00%  [.] EC_KEY_set_group                                                                                                                                                        -      -            
+     0.23%     0.00%  [.] EC_GROUP_dup                                                                                                                                                            -      -            
+     0.23%     0.00%  [.] ossl_ec_GFp_simple_point_copy                                                                                                                                           -      -            
+     0.22%     0.00%  [.] entry_SYSCALL_64_after_hwframe                                                                                                                                          -      -            
+     0.22%     0.03%  [.] do_syscall_64                                                                                                                                                           -      -            
+     0.20%     0.00%  [.] evp_keymgmt_fetch_from_prov                                                                                                                                             -      -            
+     0.20%     0.00%  [.] evp_generic_fetch_from_prov                                                                                                                                             -      -            
+     0.20%     0.03%  [.] EVP_CIPHER_CTX_get_key_length                                                                                                                                           -      -            
+     0.20%     0.00%  [.] ossl_namemap_doall_names                                                                                                                                                -      -            
+     0.20%     0.00%  [.] int_ctx_new                                                                                                                                                             -      -            
+     0.20%     0.00%  [.] ossl_encode_der_integer                                                                                                                                                 -      -            
+     0.20%     0.03%  [.] OPENSSL_LH_retrieve                                                                                                                                                     -      -            
+     0.20%     0.10%  [.] OPENSSL_strcasecmp                                                                                                                                                      -      -            
+     0.20%     0.00%  [.] ossl_bn_gen_dsa_nonce_fixed_top                                                                                                                                         -      -            
+     0.19%     0.03%  [.] ERR_set_mark                                                                                                                                                            -      -            
+     0.17%     0.17%  [.] bn_mod_add_fixed_top                                                                                                                                                    -      -            
+     0.17%     0.00%  [.] BN_mod_add_quick                                                                                                                                                        -      -            
+     0.17%     0.07%  [.] ossl_gcm_get_ctx_params                                                                                                                                                 -      -            
+     0.17%     0.00%  [.] ossl_ec_GFp_simple_group_finish                                                                                                                                         -      -            
+     0.17%     0.07%  [.] EVP_PKEY_new                                                                                                                                                            -      -            
+     0.17%     0.00%  [.] find_ameth                                                                                                                                                              -      -            
+     0.17%     0.07%  [.] getrn                                                                                                                                                                   -      -            
+     0.17%     0.07%  [.] evp_pkey_name2type                                                                                                                                                      -      -            
+     0.17%     0.17%  [.] bn_wexpand                                                                                                                                                              -      -            
+     0.17%     0.17%  [.] pthread_getspecific@@GLIBC_2.34                                                                                                                                         -      -            
+     0.17%     0.00%  [.] bn_set_words                                                                                                                                                            -      -            
+     0.17%     0.17%  [.] __memset_avx512_unaligned                                                                                                                                               -      -            
+     0.17%     0.00%  [.] o2i_ECPublicKey                                                                                                                                                         -      -            
+     0.17%     0.00%  [.] EC_KEY_oct2key                                                                                                                                                          -      -            
+     0.17%     0.00%  [.] ecdsa_digest_verify_init                                                                                                                                                -      -            
+     0.16%     0.00%  [.] ossl_gcm_stream_update                                                                                                                                                  -      -            
+     0.16%     0.03%  [.] gcm_cipher_internal                                                                                                                                                     -      -            
+     0.14%     0.10%  [.] BN_bn2bin                                                                                                                                                               -      -            
+     0.14%     0.00%  [.] ossl_gcm_dinit                                                                                                                                                          -      -            
+     0.13%     0.13%  [.] bn_init                                                                                                                                                                 -      -            
+     0.13%     0.00%  [.] OPENSSL_sk_insert                                                                                                                                                       -      -            
+     0.13%     0.03%  [.] EVP_DecryptUpdate                                                                                                                                                       -      -            
+     0.13%     0.07%  [.] ossl_ec_group_new_ex                                                                                                                                                    -      -            
+     0.13%     0.00%  [.] BN_CTX_new_ex                                                                                                                                                           -      -            
+     0.13%     0.00%  [.] ossl_ec_GFp_simple_cmp                                                                                                                                                  -      -            
+     0.13%     0.00%  [.] BN_MONT_CTX_free                                                                                                                                                        -      -            
+     0.13%     0.00%  [.] CRYPTO_THREAD_get_local_ex                                                                                                                                              -      -            
+     0.13%     0.13%  [.] ossl_aes_gcm_init_avx512                                                                                                                                                -      -            
+     0.13%     0.03%  [.] EVP_PKEY_asn1_find_str                                                                                                                                                  -      -            
+     0.13%     0.00%  [.] CRYPTO_free_ex_data                                                                                                                                                     -      -            
+     0.13%     0.07%  [.] bn_copy_words                                                                                                                                                           -      -            
+     0.13%     0.00%  [.] ossl_ec_GFp_mont_group_copy                                                                                                                                             -      -            
+     0.13%     0.13%  [.] ecp_nistz256_avx2_gather_w5                                                                                                                                             -      -            
+     0.13%     0.13%  [.] cryptox.Certificate.parse                                                                                                                                               -      -            
+     0.13%     0.00%  [.] __x64_sys_getrandom                                                                                                                                                     -      -            
+     0.13%     0.03%  [.] get_random_bytes_user                                                                                                                                                   -      -            
+     0.13%     0.13%  [.] memset@plt                                                                                                                                                              -      -            
+     0.12%     0.07%  [.] CRYPTO_THREAD_run_once                                                                                                                                                  -      -            
+     0.12%     0.03%  [.] OPENSSL_init_crypto                                                                                                                                                     -      -            
+     0.10%     0.00%  [.] EVP_PKEY_derive_set_peer_ex                                                                                                                                             -      -            
+     0.10%     0.10%  [.] sha512_block_data_order_avx2                                                                                                                                            -      -            
+     0.10%     0.00%  [.] BN_set_word                                                                                                                                                             -      -            
+     0.10%     0.03%  [.] _int_realloc                                                                                                                                                            -      -            
+     0.10%     0.00%  [.] OSSL_PARAM_BLD_push_int                                                                                                                                                 -      -            
+     0.10%     0.00%  [.] CRYPTO_realloc                                                                                                                                                          -      -            
+     0.10%     0.00%  [.] realloc                                                                                                                                                                 -      -            
+     0.10%     0.03%  [.] WPACKET_allocate_bytes                                                                                                                                                  -      -            
+     0.10%     0.00%  [.] ecdsa_digest_sign_init                                                                                                                                                  -      -            
+     0.10%     0.00%  [.] ossl_ec_group_set_params                                                                                                                                                -      -            
+     0.10%     0.00%  [.] query_cmp                                                                                                                                                               -      -            
+     0.10%     0.10%  [.] __strlen_evex                                                                                                                                                           -      -            
+     0.10%     0.03%  [.] ossl_crypto_new_ex_data_ex                                                                                                                                              -      -            
+     0.10%     0.07%  [.] OSSL_PARAM_BLD_push_octet_string                                                                                                                                        -      -            
+     0.10%     0.00%  [.] ossl_gcm_einit                                                                                                                                                          -      -            
+     0.10%     0.00%  [.] EVP_PKEY_derive_init_ex                                                                                                                                                 -      -            
+     0.10%     0.00%  [.] pkey_set_type                                                                                                                                                           -      -            
+     0.10%     0.00%  [.] WPACKET_init_null                                                                                                                                                       -      -            
+     0.10%     0.10%  [.] bn_correct_top                                                                                                                                                          -      -            
+     0.10%     0.10%  [.] EVP_CIPHER_free                                                                                                                                                         -      -            
+     0.10%     0.00%  [.] asm_sysvec_apic_timer_interrupt                                                                                                                                         -      -            
+     0.10%     0.00%  [.] sysvec_apic_timer_interrupt                                                                                                                                             -      -            
+     0.10%     0.03%  [k] __sysvec_apic_timer_interrupt                                                                                                                                           -      -            
+     0.10%     0.07%  [.] evp_keymgmt_util_cache_keyinfo                                                                                                                                          -      -            
+     0.10%     0.03%  [.] EVP_MD_CTX_free                                                                                                                                                         -      -            
+     0.10%     0.10%  [.] ossl_tolower                                                                                                                                                            -      -            
+     0.10%     0.10%  [.] __memset_avx512_unaligned_erms                                                                                                                                          -      -            
+     0.10%     0.00%  [.] BN_mod_lshift1_quick                                                                                                                                                    -      -            
+     0.10%     0.03%  [.] BN_lshift1                                                                                                                                                              -      -            
+     0.10%     0.03%  [k] crng_make_state                                                                                                                                                         -      -            
+     0.10%     0.00%  [.] EC_KEY_set_public_key                                                                                                                                                   -      -            
+     0.10%     0.00%  [.] EC_POINT_dup                                                                                                                                                            -      -            
+     0.07%     0.07%  [.] skip_iv_len_12_init_IV                                                                                                                                                  -      -            
+     0.07%     0.00%  [.] vaes_gcm_setiv                                                                                                                                                          -      -            
+     0.07%     0.04%  [.] ossl_lib_ctx_get_data                                                                                                                                                   -      -            
+     0.07%     0.07%  [.] aesni_set_encrypt_key                                                                                                                                                   -      -            
+     0.07%     0.07%  [.] BN_zero_ex                                                                                                                                                              -      -            
+     0.07%     0.07%  [.] ecp_nistz256_from_mont                                                                                                                                                  -      -            
+     0.07%     0.00%  [.] ossl_ec_curve_name2nid                                                                                                                                                  -      -            
+     0.07%     0.03%  [.] evp_keymgmt_util_query_operation_name                                                                                                                                   -      -            
+     0.07%     0.07%  [.] sha256_block_data_order_shaext                                                                                                                                          -      -            
+     0.07%     0.00%  [.] EVP_DigestSignUpdate                                                                                                                                                    -      -            
+     0.07%     0.00%  [.] SHA256_Update                                                                                                                                                           -      -            
+     0.07%     0.00%  [.] EVP_PKEY_CTX_free                                                                                                                                                       -      -            
+     0.07%     0.03%  [.] ossl_ec_pt_format_param2id                                                                                                                                              -      -            
+     0.07%     0.00%  [.] ossl_lib_ctx_get_concrete                                                                                                                                               -      -            
+     0.07%     0.00%  [.] BN_MONT_CTX_new                                                                                                                                                         -      -            
+     0.07%     0.00%  [.] OSSL_PARAM_BLD_new                                                                                                                                                      -      -            
+     0.07%     0.07%  [.] WPACKET_reserve_bytes                                                                                                                                                   -      -            
+     0.07%     0.00%  [.] ossl_ec_GFp_mont_group_finish                                                                                                                                           -      -            
+     0.07%     0.07%  [.] BN_CTX_end                                                                                                                                                              -      -            
+     0.07%     0.00%  [.] evp_is_a                                                                                                                                                                -      -            
+     0.07%     0.00%  [.] ossl_ec_group_todata                                                                                                                                                    -      -            
+     0.07%     0.03%  [.] CRYPTO_THREAD_read_lock                                                                                                                                                 -      -            
+     0.07%     0.07%  [.] bn2binpad                                                                                                                                                               -      -            
+     0.07%     0.00%  [.] EVP_MD_fetch                                                                                                                                                            -      -            
+     0.07%     0.07%  [.] bn_mul_add_words                                                                                                                                                        -      -            
+     0.07%     0.00%  [.] ENGINE_pkey_asn1_find_str                                                                                                                                               -      -            
+     0.07%     0.00%  [.] ossl_encode_der_length                                                                                                                                                  -      -            
+     0.07%     0.00%  [.] WPACKET_put_bytes__                                                                                                                                                     -      -            
+     0.07%     0.07%  [.] __memcmp_evex_movbe                                                                                                                                                     -      -            
+     0.07%     0.00%  [.] hrtimer_interrupt                                                                                                                                                       -      -            
+     0.07%     0.00%  [.] __hrtimer_run_queues                                                                                                                                                    -      -            
+     0.07%     0.00%  [.] tick_nohz_handler                                                                                                                                                       -      -            
+     0.07%     0.00%  [.] update_process_times                                                                                                                                                    -      -            
+     0.07%     0.00%  [.] sched_tick                                                                                                                                                              -      -            
+     0.07%     0.07%  [.] CRYPTO_free                                                                                                                                                             -      -            
+     0.07%     0.07%  [.] CRYPTO_calloc                                                                                                                                                           -      -            
+     0.07%     0.03%  [.] BN_ucmp                                                                                                                                                                 -      -            
+     0.07%     0.00%  [.] EVP_MD_CTX_reset                                                                                                                                                        -      -            
+     0.07%     0.07%  [.] BN_is_zero                                                                                                                                                              -      -            
+     0.07%     0.07%  [.] malloc@plt                                                                                                                                                              -      -            
+     0.07%     0.07%  [.] __memmove_avx512_unaligned_erms                                                                                                                                         -      -            
+     0.07%     0.07%  [.] EVP_CIPHER_CTX_ctrl                                                                                                                                                     -      -            
+     0.07%     0.00%  [.] EVP_DigestVerifyUpdate                                                                                                                                                  -      -            
+     0.07%     0.00%  [.] ERR_clear_last_mark                                                                                                                                                     -      -            
+     0.07%     0.00%  [.] crng_fast_key_erasure                                                                                                                                                   -      -            
+     0.07%     0.07%  [.] bn_sub_words                                                                                                                                                            -      -            
+     0.06%     0.00%  [.] EVP_EncryptUpdate                                                                                                                                                       -      -            
+     0.06%     0.00%  [.] vaes_gcm_cipherupdate                                                                                                                                                   -      -            
+     0.06%     0.03%  [.] ossl_namemap_stored                                                                                                                                                     -      -            
+     0.05%     0.01%  [.] __handle_mm_fault                                                                                                                                                       -      -            
+     0.05%     0.00%  [.] asm_exc_page_fault                                                                                                                                                      -      -            
+     0.05%     0.00%  [.] exc_page_fault                                                                                                                                                          -      -            
+     0.05%     0.00%  [.] do_user_addr_fault                                                                                                                                                      -      -            
+     0.05%     0.00%  [.] handle_mm_fault                                                                                                                                                         -      -            
+     0.05%     0.00%  [.] EVP_PKEY_asn1_find                                                                                                                                                      -      -            
+     0.05%     0.00%  [.] ossl_engine_table_select                                                                                                                                                -      -            
+     0.05%     0.00%  [.] do_fault                                                                                                                                                                -      -            
+     0.04%     0.04%  [.] OSSL_PARAM_set_uint64                                                                                                                                                   -      -            
+     0.03%     0.03%  [.] pthread_rwlock_wrlock@@GLIBC_2.34                                                                                                                                       -      -            
+     0.03%     0.00%  [.] CRYPTO_THREAD_write_lock                                                                                                                                                -      -            
+     0.03%     0.00%  [.] OPENSSL_strlcpy                                                                                                                                                         -      -            
+     0.03%     0.03%  [.] ERR_set_debug                                                                                                                                                           -      -            
+     0.03%     0.03%  [.] bn_get_top                                                                                                                                                              -      -            
+     0.03%     0.03%  [.] ossl_ec_group_simple_order_bits                                                                                                                                         -      -            
+     0.03%     0.00%  [.] BN_secure_new                                                                                                                                                           -      -            
+     0.03%     0.00%  [.] aes128gcm_newctx                                                                                                                                                        -      -            
+     0.03%     0.03%  [.] evp_keymgmt_up_ref                                                                                                                                                      -      -            
+     0.03%     0.00%  [.] ossl_lib_ctx_get_ex_data_global                                                                                                                                         -      -            
+     0.03%     0.00%  [.] ossl_ec_curve_nist2nid_int                                                                                                                                              -      -            
+     0.03%     0.03%  [.] free@plt                                                                                                                                                                -      -            
+     0.03%     0.03%  [.] EVP_KEYMGMT_free                                                                                                                                                        -      -            
+     0.03%     0.03%  [.] BN_CTX_start                                                                                                                                                            -      -            
+     0.03%     0.03%  [.] ossl_rcu_uptr_deref                                                                                                                                                     -      -            
+     0.03%     0.03%  [.] unlink_chunk.isra.0                                                                                                                                                     -      -            
+     0.03%     0.03%  [.] ecp_nistz256_gather_w7                                                                                                                                                  -      -            
+     0.03%     0.00%  [.] OPENSSL_sk_new_reserve                                                                                                                                                  -      -            
+     0.03%     0.00%  [.] ecdsa_newctx                                                                                                                                                            -      -            
+     0.03%     0.00%  [.] ECDSA_size                                                                                                                                                              -      -            
+     0.03%     0.03%  [.] ossl_param_build_set_utf8_string                                                                                                                                        -      -            
+     0.03%     0.03%  [.] EVP_MD_up_ref                                                                                                                                                           -      -            
+     0.03%     0.00%  [.] evp_md_init_internal                                                                                                                                                    -      -            
+     0.03%     0.03%  [.] extension_type.rejectDuplicateExtensions                                                                                                                                -      -            
+     0.03%     0.00%  [.] EVP_KEYMGMT_is_a                                                                                                                                                        -      -            
+     0.03%     0.03%  [.] ClientHandshake.clientFinished                                                                                                                                          -      -            
+     0.03%     0.03%  [.] ossl_ecx_key_free                                                                                                                                                       -      -            
+     0.03%     0.00%  [.] ossl_ecx_key_new                                                                                                                                                        -      -            
+     0.03%     0.03%  [.] EVP_PKEY_CTX_dup                                                                                                                                                        -      -            
+     0.03%     0.03%  [k] ext4_file_write_iter                                                                                                                                                    -      -            
+     0.03%     0.00%  [.] pwritev64                                                                                                                                                               -      -            
+     0.03%     0.00%  [.] __syscall_cancel                                                                                                                                                        -      -            
+     0.03%     0.00%  [.] __internal_syscall_cancel                                                                                                                                               -      -            
+     0.03%     0.00%  [.] __x64_sys_pwritev                                                                                                                                                       -      -            
+     0.03%     0.00%  [.] vfs_writev                                                                                                                                                              -      -            
+     0.03%     0.00%  [.] do_iter_readv_writev                                                                                                                                                    -      -            
+     0.03%     0.00%  [.] BN_set_bit                                                                                                                                                              -      -            
+     0.03%     0.03%  [.] EVP_PKEY_up_ref                                                                                                                                                         -      -            
+     0.03%     0.03%  [k] update_deadline                                                                                                                                                         -      -            
+     0.03%     0.00%  [.] task_tick_fair                                                                                                                                                          -      -            
+     0.03%     0.00%  [.] update_curr                                                                                                                                                             -      -            
+     0.03%     0.03%  [.] RecordLayer.init                                                                                                                                                        -      -            
+     0.03%     0.03%  [.] ec_query_operation_name                                                                                                                                                 -      -            
+     0.03%     0.00%  [.] ossl_ec_GFp_mont_group_init                                                                                                                                             -      -            
+     0.03%     0.00%  [.] ossl_ec_GFp_simple_group_init                                                                                                                                           -      -            
+     0.03%     0.03%  [.] CRYPTO_atomic_load                                                                                                                                                      -      -            
+     0.03%     0.03%  [.] ossl_sa_get                                                                                                                                                             -      -            
+     0.03%     0.00%  [.] EVP_CIPHER_CTX_new                                                                                                                                                      -      -            
+     0.03%     0.00%  [.] ossl_ec_encoding_param2id                                                                                                                                               -      -            
+     0.03%     0.00%  [.] ossl_ec_encoding_name2id                                                                                                                                                -      -            
+     0.03%     0.03%  [.] ClientHandshake.handleRecord                                                                                                                                            -      -            
+     0.03%     0.00%  [.] ossl_ec_pt_format_name2id                                                                                                                                               -      -            
+     0.03%     0.03%  [.] engine_table_doall                                                                                                                                                      -      -            
+     0.03%     0.03%  [.] ClientHandshake.processServerHello                                                                                                                                      -      -            
+     0.03%     0.03%  [.] ossl_provider_ctx                                                                                                                                                       -      -            
+     0.03%     0.03%  [.] ecp_nistz256_point_add_affine                                                                                                                                           -      -            
+     0.03%     0.00%  [.] CRYPTO_THREAD_lock_new                                                                                                                                                  -      -            
+     0.03%     0.03%  [.] cipher_hw_aesni_ecb                                                                                                                                                     -      -            
+     0.03%     0.00%  [.] ossl_cipher_generic_block_update                                                                                                                                        -      -            
+     0.03%     0.00%  [.] ossl_ec_GFp_mont_field_set_to_one                                                                                                                                       -      -            
+     0.03%     0.00%  [.] EVP_KEYEXCH_fetch                                                                                                                                                       -      -            
+     0.03%     0.03%  [.] OPENSSL_strncasecmp                                                                                                                                                     -      -            
+     0.03%     0.00%  [.] BN_add                                                                                                                                                                  -      -            
+     0.03%     0.00%  [.] BN_add_word                                                                                                                                                             -      -            
+     0.03%     0.03%  [.] pthread_rwlock_rdlock@GLIBC_2.2.5                                                                                                                                       -      -            
+     0.03%     0.00%  [.] ossl_ec_key_new_method_int                                                                                                                                              -      -            
+     0.03%     0.00%  [.] d2i_ECDSA_SIG                                                                                                                                                           -      -            
+     0.03%     0.00%  [.] ossl_decode_der_dsa_sig                                                                                                                                                 -      -            
+     0.03%     0.00%  [.] ossl_decode_der_integer                                                                                                                                                 -      -            
+     0.03%     0.00%  [.] EVP_DigestFinal_ex                                                                                                                                                      -      -            
+     0.03%     0.00%  [.] sha256_internal_final                                                                                                                                                   -      -            
+     0.03%     0.00%  [.] SHA256_Final                                                                                                                                                            -      -            
+     0.03%     0.03%  [.] BN_is_one                                                                                                                                                               -      -            
+     0.03%     0.03%  [.] EC_POINT_cmp                                                                                                                                                            -      -            
+     0.03%     0.00%  [.] evp_pkey_ctx_free_old_ops                                                                                                                                               -      -            
+     0.03%     0.00%  [.] ecdsa_freectx                                                                                                                                                           -      -            
+     0.03%     0.03%  [.] OBJ_nid2obj                                                                                                                                                             -      -            
+     0.03%     0.00%  [.] OBJ_nid2sn                                                                                                                                                              -      -            
+     0.03%     0.03%  [.] ameth_cmp_BSEARCH_CMP_FN                                                                                                                                                -      -            
+     0.03%     0.00%  [.] pkey_asn1_find                                                                                                                                                          -      -            
+     0.03%     0.00%  [.] ossl_bsearch                                                                                                                                                            -      -            
+     0.03%     0.00%  [.] ossl_ec_GFp_simple_group_copy                                                                                                                                           -      -            
+     0.03%     0.03%  [.] EC_POINT_get_affine_coordinates                                                                                                                                         -      -            
+     0.03%     0.03%  [.] ossl_aes_gcm_decrypt_avx512                                                                                                                                             -      -            
+     0.03%     0.03%  [.] WPACKET_finish                                                                                                                                                          -      -            
+     0.03%     0.03%  [.] OSSL_PARAM_BLD_to_param                                                                                                                                                 -      -            
+     0.03%     0.00%  [.] RAND_priv_bytes_ex                                                                                                                                                      -      -            
+     0.03%     0.00%  [.] EVP_RAND_generate                                                                                                                                                       -      -            
+     0.03%     0.00%  [.] evp_rand_generate_locked                                                                                                                                                -      -            
+     0.03%     0.00%  [.] ossl_prov_drbg_generate                                                                                                                                                 -      -            
+     0.03%     0.00%  [.] get_parent_reseed_count                                                                                                                                                 -      -            
+     0.03%     0.00%  [.] drbg_ctr_get_ctx_params                                                                                                                                                 -      -            
+     0.03%     0.03%  [.] EVP_CIPHER_up_ref                                                                                                                                                       -      -            
+     0.03%     0.03%  [.] ServerHandshake.acceptClientHello                                                                                                                                       -      -            
+     0.03%     0.03%  [.] EVP_KEYMGMT_up_ref                                                                                                                                                      -      -            
+     0.03%     0.00%  [.] ossl_digest_md_to_nid                                                                                                                                                   -      -            
+     0.03%     0.03%  [.] BN_usub                                                                                                                                                                 -      -            
+     0.03%     0.00%  [.] BN_mod_sub_quick                                                                                                                                                        -      -            
+     0.03%     0.00%  [.] BN_sub                                                                                                                                                                  -      -            
+     0.03%     0.03%  [.] OPENSSL_sk_free                                                                                                                                                         -      -            
+     0.03%     0.00%  [.] OSSL_PARAM_BLD_push_utf8_string                                                                                                                                         -      -            
+     0.03%     0.03%  [.] certificate_policy.verifyServerAuthWithSignatureSchemes                                                                                                                 -      -            
+     0.03%     0.03%  [.] evp_md_ctx_clear_digest                                                                                                                                                 -      -            
+     0.03%     0.00%  [.] BN_mod_mul                                                                                                                                                              -      -            
+     0.03%     0.03%  [.] crypto.hkdf.Hkdf(crypto.hmac.Hmac(crypto.sha2.Sha2x32(.{ 1779033703, 3144134277, 1013904242, 2773480762, 1359893119, 2600822924, 528734635, 1541459225 },256))).expand  -      -            
+     0.03%     0.03%  [.] ecx_get_params                                                                                                                                                          -      -            
+     0.03%     0.00%  [.] ERR_set_error                                                                                                                                                           -      -            
+     0.03%     0.00%  [.] ERR_vset_error                                                                                                                                                          -      -            
+     0.03%     0.03%  [k] native_write_msr                                                                                                                                                        -      -            
+     0.03%     0.00%  [.] perf_event_task_tick                                                                                                                                                    -      -            
+     0.03%     0.00%  [.] perf_adjust_freq_unthr_context                                                                                                                                          -      -            
+     0.03%     0.00%  [.] intel_pmu_disable_all                                                                                                                                                   -      -            
+     0.03%     0.03%  [.] bn_add_words                                                                                                                                                            -      -            
+     0.03%     0.00%  [.] ECDSA_SIG_free                                                                                                                                                          -      -            
+     0.03%     0.03%  [.] pthread_once@plt                                                                                                                                                        -      -            
+     0.03%     0.00%  [.] EC_GROUP_copy                                                                                                                                                           -      -            
+     0.03%     0.03%  [k] chacha_block_generic                                                                                                                                                    -      -            
+     0.03%     0.00%  [.] BN_MONT_CTX_copy                                                                                                                                                        -      -            
+     0.03%     0.03%  [k] memcpy_orig                                                                                                                                                             -      -            
+     0.03%     0.00%  [.] _start                                                                                                                                                                  -      -            
+     0.03%     0.00%  [.] _dl_start                                                                                                                                                               -      -            
+     0.03%     0.00%  [.] _dl_sysdep_start                                                                                                                                                        -      -            
+     0.03%     0.00%  [.] dl_main                                                                                                                                                                 -      -            
+     0.03%     0.03%  [k] __rcu_read_unlock                                                                                                                                                       -      -            
+     0.03%     0.00%  [.] ossl_aes_gcm_encrypt_avx512                                                                                                                                             -      -            
+     0.03%     0.00%  [.] filemap_map_pages                                                                                                                                                       -      -            
+     0.03%     0.00%  [.] set_pte_range                                                                                                                                                           -      -            
+     0.03%     0.00%  [.] folio_add_file_rmap_ptes                                                                                                                                                -      -            
+     0.02%     0.02%  [.] fmtint                                                                                                                                                                  -      -            
+     0.02%     0.00%  [.] OBJ_NAME_do_all                                                                                                                                                         -      -            
+     0.02%     0.00%  [.] OPENSSL_LH_doall_arg_thunk                                                                                                                                              -      -            
+     0.02%     0.00%  [.] get_legacy_cipher_names                                                                                                                                                 -      -            
+     0.02%     0.00%  [.] OBJ_obj2txt                                                                                                                                                             -      -            
+     0.02%     0.00%  [.] BIO_snprintf                                                                                                                                                            -      -            
+     0.02%     0.00%  [.] BIO_vsnprintf                                                                                                                                                           -      -            
+     0.02%     0.00%  [.] _dopr                                                                                                                                                                   -      -            
+     0.02%     0.00%  [.] _dl_relocate_object                                                                                                                                                     -      -            
+     0.02%     0.00%  [.] _dl_relocate_object_no_relro                                                                                                                                            -      -            
+     0.02%     0.02%  [k] futex_wake                                                                                                                                                              -      -            
+     0.02%     0.00%  [.] pthread_once@GLIBC_2.2.5                                                                                                                                                -      -            
+     0.02%     0.00%  [.] __pthread_once_slow.isra.0                                                                                                                                              -      -            
+     0.02%     0.00%  [.] ossl_init_config_ossl_                                                                                                                                                  -      -            
+     0.02%     0.00%  [.] ossl_config_int                                                                                                                                                         -      -            
+     0.02%     0.00%  [.] CONF_modules_load_file_ex                                                                                                                                               -      -            
+     0.02%     0.00%  [.] ossl_init_thread_start                                                                                                                                                  -      -            
+     0.02%     0.00%  [.] __x64_sys_futex                                                                                                                                                         -      -            
+     0.02%     0.00%  [.] do_futex                                                                                                                                                                -      -            
+     0.02%     0.00%  [.] __do_fault                                                                                                                                                              -      -            
+     0.01%     0.01%  [k] __filemap_get_folio                                                                                                                                                     -      -            
+     0.01%     0.00%  [.] filemap_fault                                                                                                                                                           -      -            
+     0.01%     0.00%  [.] _dl_map_object_deps                                                                                                                                                     -      -            
+     0.01%     0.00%  [.] _dl_catch_exception                                                                                                                                                     -      -            
+     0.01%     0.00%  [.] openaux                                                                                                                                                                 -      -            
+     0.01%     0.00%  [.] _dl_map_new_object                                                                                                                                                      -      -            
+     0.01%     0.00%  [.] _dl_map_object_from_fd                                                                                                                                                  -      -            
+     0.00%     0.00%  [k] get_page_from_freelist                                                                                                                                                  -      -            
+     0.00%     0.00%  [k] vma_interval_tree_remove                                                                                                                                                -      -            
+     0.00%     0.00%  [.] memset                                                                                                                                                                  -      -            
+     0.00%     0.00%  [.] mmap64                                                                                                                                                                  -      -            
+     0.00%     0.00%  [.] ksys_mmap_pgoff                                                                                                                                                         -      -            
+     0.00%     0.00%  [.] vm_mmap_pgoff                                                                                                                                                           -      -            
+     0.00%     0.00%  [.] do_mmap                                                                                                                                                                 -      -            
+     0.00%     0.00%  [.] __mmap_region                                                                                                                                                           -      -            
+     0.00%     0.00%  [.] pte_alloc_one                                                                                                                                                           -      -            
+     0.00%     0.00%  [.] vms_gather_munmap_vmas                                                                                                                                                  -      -            
+     0.00%     0.00%  [.] __split_vma                                                                                                                                                             -      -            
+     0.00%     0.00%  [.] alloc_pages_mpol_noprof                                                                                                                                                 -      -            
+     0.00%     0.00%  [.] __alloc_pages_noprof                                                                                                                                                    -      -            
+     0.00%     0.00%  [.] vma_prepare                                                                                                                                                             -      -            
+
+
+#
+# (Tip: When collecting LBR backtraces use --stitch-lbr to handle more than 32 deep entries: perf record --call-graph lbr ; perf report --stitch-lbr)
+#

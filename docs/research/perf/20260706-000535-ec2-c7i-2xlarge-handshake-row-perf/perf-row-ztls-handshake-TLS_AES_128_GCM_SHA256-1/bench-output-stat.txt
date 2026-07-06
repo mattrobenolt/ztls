@@ -1,0 +1,10 @@
+zig_os: linux
+zig_arch: x86_64
+zig_abi: gnu
+zig_cpu: sapphirerapids
+zig_mode: ReleaseFast
+BenchmarkHandshake/impl=ztls/suite=TLS_AES_128_GCM_SHA256	    1365	    436995 ns/op
+BenchmarkHandshake/impl=ztls/suite=TLS_AES_128_GCM_SHA256	    1351	    436907 ns/op
+BenchmarkHandshake/impl=ztls/suite=TLS_AES_128_GCM_SHA256	    1382	    438427 ns/op
+BenchmarkHandshake/impl=ztls/suite=TLS_AES_128_GCM_SHA256	    1377	    436279 ns/op
+BenchmarkHandshake/impl=ztls/suite=TLS_AES_128_GCM_SHA256	    1358	    437531 ns/op

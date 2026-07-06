@@ -1,0 +1,7 @@
+# rustls in-memory benchmark
+benchmark,suite,size,iterations,bytes,elapsed_ns,mib_per_sec
+rustls_handshake,TLS_AES_128_GCM_SHA256,1,256,256,43183155,5928.24
+rustls_handshake,TLS_AES_128_GCM_SHA256,1,256,256,42587262,6011.19
+rustls_handshake,TLS_AES_128_GCM_SHA256,1,256,256,42240540,6060.53
+rustls_handshake,TLS_AES_128_GCM_SHA256,1,256,256,42492359,6024.61
+rustls_handshake,TLS_AES_128_GCM_SHA256,1,256,256,43684430,5860.21

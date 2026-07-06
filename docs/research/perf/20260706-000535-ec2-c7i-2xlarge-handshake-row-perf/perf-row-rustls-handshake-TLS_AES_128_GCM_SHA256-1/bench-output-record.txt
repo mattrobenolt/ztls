@@ -1,0 +1,9 @@
+# rustls in-memory benchmark
+benchmark,suite,size,iterations,bytes,elapsed_ns,mib_per_sec
+rustls_handshake,TLS_AES_128_GCM_SHA256,1,256,256,44742011,5721.69
+rustls_handshake,TLS_AES_128_GCM_SHA256,1,256,256,43943175,5825.71
+rustls_handshake,TLS_AES_128_GCM_SHA256,1,256,256,44378160,5768.60
+rustls_handshake,TLS_AES_128_GCM_SHA256,1,256,256,44253288,5784.88
+rustls_handshake,TLS_AES_128_GCM_SHA256,1,256,256,44405839,5765.01
+[ perf record: Woken up 15 times to write data ]
+[ perf record: Captured and wrote 3.612 MB zig-out/perf/20260706-000535-row-perf/perf-row-rustls-handshake-TLS_AES_128_GCM_SHA256-1/perf.data (226 samples) ]

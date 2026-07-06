@@ -1,0 +1,6 @@
+[ perf record: Woken up 190 times to write data ]
+[ perf record: Captured and wrote 47.351 MB zig-out/perf/20260706-000535-row-perf/perf-row-ztls-handshake-TLS_AES_128_GCM_SHA256-1/perf.data (2986 samples) ]
+=TLS_AES_128_GCM_SHA256	    1324	    448918 ns/op
+BenchmarkHandshake/impl=ztls/suite=TLS_AES_128_GCM_SHA256	    1332	    449199 ns/op
+BenchmarkHandshake/impl=ztls/suite=TLS_AES_128_GCM_SHA256	    1347	    447534 ns/op
+BenchmarkHandshake/impl=ztls/suite=TLS_AES_128_GCM_SHA256	    1330	    449616 ns/op

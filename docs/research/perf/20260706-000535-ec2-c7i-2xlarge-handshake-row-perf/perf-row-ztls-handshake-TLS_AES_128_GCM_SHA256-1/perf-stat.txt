@@ -1,0 +1,19 @@
+# started on Mon Jul  6 00:07:22 2026
+
+
+ Performance counter stats for 'zig-out/bin/benchmark --filter ^BenchmarkHandshake/impl=ztls/suite=TLS_AES_128_GCM_SHA256$ --benchtime 500ms --count 5':
+
+     9,837,803,808      cycles                                                                
+    32,486,294,381      instructions                                                          
+     1,689,703,979      branches                                                              
+         3,468,458      branch-misses                                                         
+                 0      cache-misses                                                          
+        53,803,103      L1-dcache-load-misses                                                 
+   <not supported>      LLC-load-misses                                                       
+
+       2.992628146 seconds time elapsed
+
+       2.907401000 seconds user
+       0.005836000 seconds sys
+
+

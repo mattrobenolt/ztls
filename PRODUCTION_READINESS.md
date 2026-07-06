@@ -361,7 +361,8 @@ comparisons measure equivalent work*. This is the project's justification.
   `c7i.2xlarge` captures prove the path across two EC2 shapes, but repetitions,
   instance-family breadth, and threshold policy remain open for marketing-grade
   performance evidence.
-- **Selected app-data rows now have committed perf/disassembly evidence.**
+- **Selected app-data rows and the non-equivalent handshake row now have
+  committed perf/disassembly evidence.**
   `docs/research/perf/20260705-215953-ec2-c7i-2xlarge-row-perf/` records pinned
   Linux/x86_64 `perf stat`, `perf report`, `perf annotate`, symbols, and row
   explanations for `AppPingPong/TLS_AES_128_GCM_SHA256/1350` and
@@ -371,9 +372,11 @@ comparisons measure equivalent work*. This is the project's justification.
   small ChaCha row now has counter evidence that rustls's ring path is cheaper
   than ztls's OpenSSL EVP path. The `Handshake` row has been explicitly demoted
   from comparable output because the auth-policy work differs across harnesses;
-  a follow-up row-perf capture with `--include-handshake` should document those
-  per-implementation costs for transparency, but no cross-implementation
-  handshake performance claim is allowed from the current row. *(#31)*
+  `docs/research/perf/20260706-000535-ec2-c7i-2xlarge-handshake-row-perf/`
+  records pinned row-perf evidence showing ztls and libssl both perform
+  CertificateVerify verification while rustls `NoVerifier` does not. No
+  cross-implementation handshake performance claim is allowed from the current
+  row.
 
 ---
 
@@ -464,8 +467,8 @@ each passing the same correctness and interop gates.
   benchmark capture `docs/research/perf/20260705-160550-awslc-local/` records
   selected TLS handshake and 1350-byte ping-pong rows with ztls linked against
   AWS-LC and OpenSSL libssl baselines linked against OpenSSL; it is measurement
-  evidence, not a performance conclusion or #31 Linux x86_64 perf/disassembly
-  proof. Wycheproof and provider/FIPS/version capability proof remain open.
+  evidence, not a performance conclusion or Linux x86_64 perf/disassembly proof.
+  Wycheproof and provider/FIPS/version capability proof remain open.
   *(#60)*
 - **OpenSSL-compatible API choices still need measured backend-specific paths.**
   X25519 and AEAD now have AWS-LC-specific primitive paths; EC/RSA key

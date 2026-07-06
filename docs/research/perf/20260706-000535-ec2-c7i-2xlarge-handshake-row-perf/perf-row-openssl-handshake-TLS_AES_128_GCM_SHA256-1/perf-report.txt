@@ -1,0 +1,80 @@
+    94.44%     0.13%  [.] state_machine                                       -      -            
+            |          
+            |--19.64%--tls_process_cert_verify
+            |          |          
+            |          |--18.50%--EVP_DigestVerifyFinal
+            |          |          |          
+            |          |           --18.43%--ecdsa_digest_verify_final
+            |          |                     ecdsa_verify_message_final
+            |          |                     ossl_ecdsa_verify
+            |          |                     |          
+            |          |                      --18.13%--ossl_ecdsa_simple_verify_sig
+            |          |                                |          
+            |          |                                |--14.91%--EC_POINT_mul
+            |          |                                |          ecp_nistz256_points_mul
+            |          |                                |          |          
+            |          |                                |          |--8.81%--ecp_nistz256_point_doublex
+            |          |                                |          |          |          
+            |          |                                |          |          |--3.27%--__ecp_nistz256_mul_montx
+            |          |                                |          |          |          
+            |          |                                |          |          |--2.81%--__ecp_nistz256_sqr_montx
+            |          |                                |          |          |          
+            |          |                                |          |          |--1.05%--__ecp_nistz256_mul_by_2x
+            |          |                                |          |          |          
+            |          |                                |          |           --0.57%--__ecp_nistz256_sub_fromx
+            |          |                                |          |          
+            |          |                                |          |--3.64%--ecp_nistz256_point_addx
+            |          |                                |          |          |          
+            |          |                                |          |           --2.50%--__ecp_nistz256_mul_montx
+            |          |                                |          |          
+            |          |                                |          |--1.41%--ecp_nistz256_point_add_affinex
+            |          |                                |          |          |          
+            |          |                                |          |           --0.87%--__ecp_nistz256_mul_montx
+            |          |                                |          |          
+            |          |                                |           --0.57%--ecp_nistz256_avx2_gather_w7
+            |          |                                |          
+            |          |                                |--1.49%--ecp_nistz256_inv_mod_ord
+            |          |                                |          |          
+            |          |                                |           --1.22%--ecp_nistz256_ord_sqr_montx
+            |          |                                |          
+            |          |                                 --1.25%--ecp_nistz256_get_affine
+            |          |                                           |          
+            |          |                                            --1.19%--ecp_nistz256_sqr_mont
+            |          |                                                      |          
+            |          |                                                       --1.12%--__ecp_nistz256_sqr_montx
+            |          |          
+            |           --0.54%--EVP_DigestVerifyInit_ex
+            |                     do_sigver_init
+            |          
+            |--16.98%--tls_construct_server_hello
+            |          |          
+            |           --16.91%--tls_construct_extensions
+            |                     |          
+            |                      --16.78%--tls_construct_stoc_key_share
+            |                                |          
+            |                                |--9.01%--ssl_derive
+            |                                |          |          
+            |                                |          |--7.83%--ossl_ecx_compute_key
+            |                                |          |          ossl_x25519
+            |                                |          |          x25519_scalar_mult
+            |                                |          |          |          
+            |                                |          |          |--3.28%--x25519_fe64_sqr
+            |                                |          |          |          
+            |                                |          |          |--1.42%--x25519_fe64_add
+            |                                |          |          |          
+            |                                |          |          |--1.28%--x25519_fe64_mul
+            |                                |          |          |          
+            |                                |          |           --0.88%--x25519_fe64_sub
+            |                                |          |          
+            |                                |           --0.95%--ssl_gensecret
+            |                                |                     tls13_generate_secret
+            |                                |                     |          
+            |                                |                      --0.91%--kdf_tls1_3_derive
+            |                                |          
+            |                                 --7.70%--ssl_generate_pkey
+            |                                           |          
+            |                                            --7.63%--EVP_PKEY_generate
+            |                                                      evp_keymgmt_util_gen
+            |                                                      |          
+            |                                                       --7.56%--evp_keymgmt_gen
+            |                                                                 x25519_gen

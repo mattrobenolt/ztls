@@ -1,0 +1,19 @@
+# started on Mon Jul  6 00:07:37 2026
+
+
+ Performance counter stats for 'bench/rustls/target/release/rustls_bench --bench rustls_handshake --suite TLS_AES_128_GCM_SHA256 --size 1 --samples 5':
+
+       702,921,899      cycles                                                                
+     2,290,432,137      instructions                                                          
+        83,758,366      branches                                                              
+           516,158      branch-misses                                                         
+                 0      cache-misses                                                          
+         2,020,645      L1-dcache-load-misses                                                 
+   <not supported>      LLC-load-misses                                                       
+
+       0.216210390 seconds time elapsed
+
+       0.205300000 seconds user
+       0.004858000 seconds sys
+
+

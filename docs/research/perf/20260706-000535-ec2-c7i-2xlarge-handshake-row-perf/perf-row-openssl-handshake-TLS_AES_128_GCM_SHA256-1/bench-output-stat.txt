@@ -1,0 +1,10 @@
+zig_os: linux
+zig_arch: x86_64
+zig_abi: gnu
+zig_cpu: sapphirerapids
+zig_mode: ReleaseFast
+BenchmarkHandshake/impl=openssl/suite=TLS_AES_128_GCM_SHA256	    1474	    393913 ns/op
+BenchmarkHandshake/impl=openssl/suite=TLS_AES_128_GCM_SHA256	    1521	    394601 ns/op
+BenchmarkHandshake/impl=openssl/suite=TLS_AES_128_GCM_SHA256	    1527	    391893 ns/op
+BenchmarkHandshake/impl=openssl/suite=TLS_AES_128_GCM_SHA256	    1504	    393776 ns/op
+BenchmarkHandshake/impl=openssl/suite=TLS_AES_128_GCM_SHA256	    1516	    392200 ns/op

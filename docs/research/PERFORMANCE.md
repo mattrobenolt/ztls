@@ -404,7 +404,9 @@ hosts with raw ztls/EVP/libssl/rustls outputs, full metadata, and benchstat
 analysis committed together. The first #31 row-level perf/disassembly evidence
 is `docs/research/perf/20260705-215953-ec2-c7i-2xlarge-row-perf/`, captured on a
 clean pinned `c7i.2xlarge` host for selected AES-GCM and ChaCha20-Poly1305
-application-data rows.
+application-data rows. The non-equivalent full-handshake row has separate
+transparency evidence in
+`docs/research/perf/20260706-000535-ec2-c7i-2xlarge-handshake-row-perf/`.
 
 All benchmark binaries accept fuzzy `--filter` plus structured filters:
 `--bench <name>`, `--suite <substring>`, and `--size <bytes>`. `--bench` is an
