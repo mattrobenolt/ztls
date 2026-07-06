@@ -10,6 +10,6 @@
     "html_handling": "none"
   },
   "build": {
-    "command": "just docs"
+    "command": "zig build docs -p docs/site && mdbook build"
   }
 }
