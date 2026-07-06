@@ -87,7 +87,7 @@ fn serverRun(ctx: *ServerCtx) !void {
                     }
                 },
                 .none => {},
-                .application_data, .closed => return error.UnexpectedDuringHandshake,
+                .application_data, .closed, .key_update => return error.UnexpectedDuringHandshake,
             }
         }
     }
@@ -117,6 +117,12 @@ fn serverRun(ctx: *ServerCtx) !void {
                     hs.completeWrite();
                 },
                 .closed => return,
+                .key_update => |ku| {
+                    if (ku.response) |w| {
+                        try net.writeAll(stream, w);
+                        hs.completeWrite();
+                    }
+                },
                 .none => {},
             }
         }
@@ -163,7 +169,7 @@ fn clientRun(client_keypair: ztls.x25519.KeyPair, actual_port: u16) !void {
                 try net.writeAll(stream, w);
                 hs.completeWrite();
             },
-            .application_data, .closed => return error.UnexpectedDuringHandshake,
+            .application_data, .closed, .key_update => return error.UnexpectedDuringHandshake,
             .none => {},
         };
     }
@@ -187,6 +193,12 @@ fn clientRun(client_keypair: ztls.x25519.KeyPair, actual_port: u16) !void {
                 hs.completeWrite();
             },
             .closed => return,
+            .key_update => |ku| {
+                if (ku.response) |w| {
+                    try net.writeAll(stream, w);
+                    hs.completeWrite();
+                }
+            },
             .none => {},
         };
     }

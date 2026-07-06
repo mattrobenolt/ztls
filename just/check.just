@@ -45,6 +45,7 @@ examples-ci:
     zig build example-in_memory_handshake --summary all
     zig build example-epoll_pingpong --summary all
     zig build example-iouring_pingpong --summary all
+    zig build example-ktls_server --summary all
 
 [doc("Check formatting and lint (for CI)")]
 [group("check")]

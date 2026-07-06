@@ -565,10 +565,34 @@ pub const Event = union(enum) {
     /// A record that MUST be written to the transport: the client Finished
     /// during the handshake, or a KeyUpdate response. Written into `out`.
     write: []const u8,
+    /// The peer's KeyUpdate ratcheted one or both traffic keys. The caller
+    /// must reinstall kTLS keys (or otherwise rotate) before sending or
+    /// receiving more application data. RFC 8446 §4.6.3, §7.2.
+    key_update: KeyUpdateEvent,
     /// Handled internally; nothing for the caller to do.
     none,
     /// The peer sent close_notify.
     closed,
+};
+
+/// Surfaced when a peer KeyUpdate changes one or both traffic-key epochs.
+/// RFC 8446 §4.6.3. For kTLS callers: `rx` means the kernel RX path is paused
+/// (EKEYEXPIRED) until the new key is installed via `setsockopt(TLS_RX)`;
+/// `tx` means the caller must reinstall `TLS_TX` after writing `response` and
+/// calling `completeWrite()`.
+pub const KeyUpdateEvent = struct {
+    /// Record to send first (the KeyUpdate response), or null if the peer sent
+    /// `update_not_requested` and no response is needed. The caller MUST write
+    /// this to the transport and call `completeWrite()` before reinstalling
+    /// `TLS_TX`. The response is encrypted under the OLD TX key — the engine
+    /// ratchets TX inside `sendKeyUpdate` after encryption.
+    response: ?[]const u8,
+    /// RX traffic key was ratcheted — caller must reinstall `TLS_RX`.
+    rx: bool,
+    /// TX traffic key was ratcheted (we are sending a KeyUpdate response) —
+    /// caller must reinstall `TLS_TX` after writing `response` and calling
+    /// `completeWrite()`.
+    tx: bool,
 };
 
 pub const HandleError = ProcessError || ReceiveError || error{PendingWrite};
@@ -583,7 +607,7 @@ pub fn isConnected(self: *const ClientHandshake) bool {
 /// handshake it drives the flight (auto-emitting the client Finished as
 /// `.write` when the server's flight completes); once connected it returns
 /// decrypted application data, handles post-handshake control messages
-/// (KeyUpdate), and surfaces a KeyUpdate response as `.write`. `record` is
+/// (KeyUpdate), and surfaces a KeyUpdate response as `.key_update`. `record` is
 /// decrypted in place; `out` receives any record to send. RFC 8446 §5.
 // ziglint-ignore: Z015 -- HandleError is a public error-set alias.
 pub fn handleRecord(self: *ClientHandshake, record: []u8, out: []u8) HandleError!Event {
@@ -595,6 +619,7 @@ pub fn handleRecord(self: *ClientHandshake, record: []u8, out: []u8) HandleError
     else
         .none;
     if (ev == .write) self.pending_write.mark();
+    if (ev == .key_update and ev.key_update.response != null) self.pending_write.mark();
     return ev;
 }
 
@@ -1223,6 +1248,7 @@ fn receiveConnected(self: *ClientHandshake, record: []u8, out: []u8) ReceiveErro
         .handshake => {
             if (dec.content.len == 0) return error.UnexpectedMessage;
             var respond = false;
+            var saw_key_update = false;
             var hr: HandshakeReader = .init(dec.content);
             while (try hr.next()) |msg| {
                 self.post_handshake_count +|= 1;
@@ -1244,6 +1270,7 @@ fn receiveConnected(self: *ClientHandshake, record: []u8, out: []u8) ReceiveErro
                         const next_rx = try self.suite.ratchetServerKey();
                         self.rx.deinit();
                         self.rx = next_rx;
+                        saw_key_update = true;
                     },
                     .new_session_ticket => {
                         // parsed and ignored until PSK resumption
@@ -1253,10 +1280,16 @@ fn receiveConnected(self: *ClientHandshake, record: []u8, out: []u8) ReceiveErro
                 }
             }
             // One response covers any number of update_requested KeyUpdates.
-            return if (respond)
-                return .{ .write = try self.sendKeyUpdate(out, .update_not_requested) }
-            else
-                .none;
+            // RFC 8446 §4.6.3, §7.2 — surface the epoch changes so kTLS callers
+            // can reinstall kernel keys. The response record is encrypted
+            // under the OLD TX key inside sendKeyUpdate (which then ratchets
+            // TX), so the caller must write it before reinstalling TLS_TX.
+            if (!saw_key_update) return .none;
+            if (respond) {
+                const resp = try self.sendKeyUpdate(out, .update_not_requested);
+                return .{ .key_update = .{ .response = resp, .rx = true, .tx = true } };
+            }
+            return .{ .key_update = .{ .response = null, .rx = true, .tx = false } };
         },
         .alert => {
             const a = try alert.parse(dec.content);
@@ -2456,7 +2489,8 @@ test "handleRecord: application data returns plaintext and resets the flood coun
 
 // RFC 8446 §4.6.3 — a server KeyUpdate(update_requested) must ratchet our
 // receive key and elicit our own KeyUpdate(update_not_requested), encrypted
-// under the old send key.
+// under the old send key. The event surfaces as `.key_update` carrying both
+// epoch changes and the response record.
 test "handleRecord: server KeyUpdate(update_requested) ratchets rx and responds" {
     var hs = try connectedTestClient();
 
@@ -2480,8 +2514,11 @@ test "handleRecord: server KeyUpdate(update_requested) ratchets rx and responds"
     var out: [64]u8 = undefined;
     const ev = try hs.handleRecord(rx_buf[0..ku_wire.len], &out);
 
-    // We responded with our own KeyUpdate, encrypted under the OLD send key.
-    const resp = ev.write;
+    // The event carries both epoch changes and the response record.
+    try testing.expect(ev == .key_update);
+    try testing.expectEqual(true, ev.key_update.rx);
+    try testing.expectEqual(true, ev.key_update.tx);
+    const resp = ev.key_update.response.?;
     var resp_buf: [64]u8 = undefined;
     @memcpy(resp_buf[0..resp.len], resp);
     const dec = try client_send_mirror.decrypt(resp_buf[0..resp.len]);
@@ -2556,6 +2593,92 @@ test "handleRecord: invalid server KeyUpdate request is rejected" {
     @memcpy(rx_buf[0..wire_rec.len], wire_rec);
     var out: [64]u8 = undefined;
     try testing.expectError(error.IllegalParameter, hs.handleRecord(rx_buf[0..wire_rec.len], &out));
+}
+
+// RFC 8446 §4.6.3 — a server KeyUpdate(update_not_requested) ratchets only
+// the receive key; no response is needed. The event surfaces as
+// `.key_update` with rx=true, tx=false, response=null.
+test "handleRecord: server KeyUpdate(update_not_requested) surfaces key_update rx only" {
+    var hs = try connectedTestClient();
+    const rx_ktls_0 = hs.rxKtlsInfo();
+    const tx_ktls_0 = hs.txKtlsInfo();
+    var server_tx = try hs.rx.clone();
+    defer server_tx.deinit();
+
+    const ku = [_]u8{
+        @intFromEnum(HandshakeType.key_update),              0x00, 0x00, 0x01,
+        @intFromEnum(KeyUpdateRequest.update_not_requested),
+    };
+    var ku_buf: [64]u8 = undefined;
+    const ku_wire = try server_tx.encrypt(.handshake, &ku, &ku_buf);
+    var rx_buf: [64]u8 = undefined;
+    @memcpy(rx_buf[0..ku_wire.len], ku_wire);
+    var out: [64]u8 = undefined;
+    const ev = try hs.handleRecord(rx_buf[0..ku_wire.len], &out);
+
+    try testing.expect(ev == .key_update);
+    try testing.expectEqual(true, ev.key_update.rx);
+    try testing.expectEqual(false, ev.key_update.tx);
+    try testing.expectEqual(@as(?[]const u8, null), ev.key_update.response);
+
+    // RX material changed; TX material unchanged.
+    const rx_ktls_1 = hs.rxKtlsInfo();
+    const tx_ktls_1 = hs.txKtlsInfo();
+    try testing.expect(!mem.eql(
+        u8,
+        rx_ktls_0.key[0..rx_ktls_0.key_len],
+        rx_ktls_1.key[0..rx_ktls_1.key_len],
+    ));
+    try testing.expect(mem.eql(
+        u8,
+        tx_ktls_0.key[0..tx_ktls_0.key_len],
+        tx_ktls_1.key[0..tx_ktls_1.key_len],
+    ));
+    try testing.expectEqualSlices(u8, &([_]u8{0} ** 8), &rx_ktls_1.rec_seq);
+}
+
+// RFC 8446 §4.6.3, §7.2 — after a self-initiated sendKeyUpdate(.update_requested),
+// TX ratchets inside that call. When the peer's response KeyUpdate(update_not_requested)
+// arrives, the event surfaces rx=true, tx=false, response=null.
+test "handleRecord: self-initiated sendKeyUpdate response surfaces rx only" {
+    var hs = try connectedTestClient();
+    const tx_ktls_0 = hs.txKtlsInfo();
+
+    // Self-initiated KeyUpdate: TX ratchets inside the call.
+    var out: [64]u8 = undefined;
+    const ku_resp = try hs.sendKeyUpdate(&out, .update_requested);
+    _ = ku_resp;
+    hs.completeWrite();
+    const tx_ktls_1 = hs.txKtlsInfo();
+    try testing.expect(!mem.eql(
+        u8,
+        tx_ktls_0.key[0..tx_ktls_0.key_len],
+        tx_ktls_1.key[0..tx_ktls_1.key_len],
+    ));
+
+    // Peer responds with KeyUpdate(update_not_requested) under the peer's
+    // next TX key (which mirrors our next RX key). Build a mirror of our
+    // pre-ratchet RX, then ratchet it to produce the peer's response.
+    var peer_tx = try hs.rx.clone();
+    defer peer_tx.deinit();
+    const ku_nr = [_]u8{
+        @intFromEnum(HandshakeType.key_update),              0x00, 0x00, 0x01,
+        @intFromEnum(KeyUpdateRequest.update_not_requested),
+    };
+    var ku_buf: [64]u8 = undefined;
+    const ku_wire = try peer_tx.encrypt(.handshake, &ku_nr, &ku_buf);
+    var rx_buf: [64]u8 = undefined;
+    @memcpy(rx_buf[0..ku_wire.len], ku_wire);
+
+    const ev = try hs.handleRecord(rx_buf[0..ku_wire.len], &out);
+    try testing.expect(ev == .key_update);
+    try testing.expectEqual(true, ev.key_update.rx);
+    try testing.expectEqual(false, ev.key_update.tx);
+    try testing.expectEqual(@as(?[]const u8, null), ev.key_update.response);
+
+    // RX material changed again (second ratchet).
+    const rx_ktls_1 = hs.rxKtlsInfo();
+    try testing.expectEqualSlices(u8, &([_]u8{0} ** 8), &rx_ktls_1.rec_seq);
 }
 
 // RFC 8446 §6.1 — close_notify is the only alert that cleanly closes.

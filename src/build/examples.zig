@@ -39,6 +39,7 @@ pub fn addSteps(b: *Build, opts: struct {
             "iouring_client",
             "iouring_pingpong",
             "epoll_pingpong",
+            "ktls_server",
         };
         for (linux_examples) |name| {
             const exe_mod = b.createModule(.{

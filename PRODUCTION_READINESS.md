@@ -389,14 +389,25 @@ comparisons measure equivalent work*. This is the project's justification.
   CertificateVerify verification while rustls `NoVerifier` does not. No
   cross-implementation handshake performance claim is allowed from the current
   row.
-- **kTLS offload support is API-partial.** `RecordLayer.ktlsInfo()` now exports
-  copied TLS 1.3 traffic key material, Linux kTLS cipher-type values, split
-  AES-GCM salt/IV, ChaCha20-Poly1305 IV, and current big-endian record sequence
-  with RFC-cited tests proving nonce reconstruction and deinit-safe copy
-  semantics. `ClientHandshake` and `ServerHandshake` expose `txKtlsInfo()` /
-  `rxKtlsInfo()` accessors, and post-KeyUpdate tests prove exported epochs carry
-  new keys with sequence number reset to zero. Full KeyUpdate event surfacing for
-  kernel-owned RX remains open before kTLS can be called usable. *(#29)*
+- **kTLS offload support is API-complete with a CI-gated example.**
+  `RecordLayer.ktlsInfo()` now exports copied TLS 1.3 traffic key material,
+  Linux kTLS cipher-type values, split AES-GCM salt/IV, ChaCha20-Poly1305 IV,
+  and current big-endian record sequence with RFC-cited tests proving nonce
+  reconstruction and deinit-safe copy semantics. `ClientHandshake` and
+  `ServerHandshake` expose `txKtlsInfo()` / `rxKtlsInfo()` accessors, and
+  post-KeyUpdate tests prove exported epochs carry new keys with sequence
+  number reset to zero. KeyUpdate event surfacing is now implemented: both
+  `ClientHandshake.Event` and `ServerHandshake.Event` carry a `key_update`
+  variant that surfaces RX and TX epoch changes and an optional response
+  record, so kTLS callers can reinstall `TLS_RX`/`TLS_TX` at the right
+  moment. The `examples/ktls_server.zig` Linux loopback example demonstrates
+  the full userspace-handshake → kernel-data-plane loop including KeyUpdate
+  re-key: the server completes the TLS 1.3 handshake in userspace, processes
+  a client-initiated KeyUpdate (handling the `key_update` event), installs
+  kTLS TX/RX via `setsockopt` with the post-KeyUpdate key material, and
+  exchanges a kernel-encrypted/decrypted ping/pong against a ztls userspace
+  client. The example is committed and CI-gated (`examples-ci`); runtime
+  confirmation on ubuntu-latest is pending CI. *(#29)*
 
 ---
 

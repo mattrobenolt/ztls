@@ -173,6 +173,12 @@ fn clientInterop(stream: Stream) !void {
                 try writeAll(stream, w);
                 hs.completeWrite();
             },
+            .key_update => |ku| {
+                if (ku.response) |w| {
+                    try writeAll(stream, w);
+                    hs.completeWrite();
+                }
+            },
             .application_data, .closed => return error.UnexpectedDuringHandshake,
             .none => {},
         };
@@ -191,6 +197,12 @@ fn clientInterop(stream: Stream) !void {
             .write => |w| {
                 try writeAll(stream, w);
                 hs.completeWrite();
+            },
+            .key_update => |ku| {
+                if (ku.response) |w| {
+                    try writeAll(stream, w);
+                    hs.completeWrite();
+                }
             },
             .none => {},
             .closed => return error.ServerClosedBeforeResponse,
@@ -297,6 +309,12 @@ fn serve(stream: Stream, suite: ztls.CipherSuite) !void {
                         hs.completeWrite();
                     }
                 },
+                .key_update => |ku| {
+                    if (ku.response) |w| {
+                        try writeAll(stream, w);
+                        hs.completeWrite();
+                    }
+                },
                 .none => {},
                 .application_data => |data| {
                     if (!hs.isConnected()) return error.UnexpectedDuringHandshake;
@@ -316,6 +334,12 @@ fn serve(stream: Stream, suite: ztls.CipherSuite) !void {
             .write => |w| {
                 try writeAll(stream, w);
                 hs.completeWrite();
+            },
+            .key_update => |ku| {
+                if (ku.response) |w| {
+                    try writeAll(stream, w);
+                    hs.completeWrite();
+                }
             },
             .closed => return,
             .none => {},

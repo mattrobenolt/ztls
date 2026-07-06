@@ -92,7 +92,7 @@ pub fn main() !void {
                     }
                 },
                 .none => {},
-                .application_data, .closed => return error.UnexpectedDuringHandshake,
+                .application_data, .closed, .key_update => return error.UnexpectedDuringHandshake,
             }
         }
     }
@@ -122,6 +122,12 @@ pub fn main() !void {
                     hs.completeWrite();
                 },
                 .closed => return,
+                .key_update => |ku| {
+                    if (ku.response) |w| {
+                        try net.writeAll(stream, w);
+                        hs.completeWrite();
+                    }
+                },
                 .none => {},
             }
         }

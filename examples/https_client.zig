@@ -85,7 +85,7 @@ pub fn main() !void {
                 try net.writeAll(stream, w);
                 hs.completeWrite();
             },
-            .application_data, .closed => return error.UnexpectedDuringHandshake,
+            .application_data, .closed, .key_update => return error.UnexpectedDuringHandshake,
             .none => {},
         };
     }
@@ -113,6 +113,12 @@ pub fn main() !void {
             .closed => {
                 print("[https]  server sent close_notify\n", .{});
                 return;
+            },
+            .key_update => |ku| {
+                if (ku.response) |w| {
+                    try net.writeAll(stream, w);
+                    hs.completeWrite();
+                }
             },
             .none => {},
         };

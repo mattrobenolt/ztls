@@ -311,8 +311,31 @@ pub fn needsServerFlight(self: *const ServerHandshake) bool {
 pub const Event = union(enum) {
     application_data: []const u8,
     write: []const u8,
+    /// The peer's KeyUpdate ratcheted one or both traffic keys. See
+    /// `KeyUpdateEvent` for details. RFC 8446 §4.6.3, §7.2.
+    key_update: KeyUpdateEvent,
     none,
     closed,
+};
+
+/// Surfaced when a peer KeyUpdate changes one or both traffic-key epochs.
+/// RFC 8446 §4.6.3. For kTLS callers: `rx` means the kernel RX path is paused
+/// (EKEYEXPIRED) until the new key is installed via `setsockopt(TLS_RX)`;
+/// `tx` means the caller must reinstall `TLS_TX` after writing `response` and
+/// calling `completeWrite()`.
+pub const KeyUpdateEvent = struct {
+    /// Record to send first (the KeyUpdate response), or null if the peer sent
+    /// `update_not_requested` and no response is needed. The caller MUST write
+    /// this to the transport and call `completeWrite()` before reinstalling
+    /// `TLS_TX`. The response is encrypted under the OLD TX key — the engine
+    /// ratchets TX inside `sendKeyUpdate` after encryption.
+    response: ?[]const u8,
+    /// RX traffic key was ratcheted — caller must reinstall `TLS_RX`.
+    rx: bool,
+    /// TX traffic key was ratcheted (we are sending a KeyUpdate response) —
+    /// caller must reinstall `TLS_TX` after writing `response` and calling
+    /// `completeWrite()`.
+    tx: bool,
 };
 
 pub const AcceptError =
@@ -968,6 +991,7 @@ pub fn handleRecord(
         .connected => try self.handleConnected(record, out),
     };
     if (ev == .write) self.pending_write.mark();
+    if (ev == .key_update and ev.key_update.response != null) self.pending_write.mark();
     return ev;
 }
 
@@ -1282,9 +1306,11 @@ fn handleConnected(self: *ServerHandshake, record: []u8, out: []u8) ReceiveError
                 self.rx = next_rx;
                 self.ku_frag.clear();
 
-                if (request == .update_requested)
-                    return .{ .write = try self.sendKeyUpdate(out, .update_not_requested) };
-                return .none;
+                if (request == .update_requested) {
+                    const resp = try self.sendKeyUpdate(out, .update_not_requested);
+                    return .{ .key_update = .{ .response = resp, .rx = true, .tx = true } };
+                }
+                return .{ .key_update = .{ .response = null, .rx = true, .tx = false } };
             }
             return .none;
         },
@@ -2720,7 +2746,8 @@ test "handleRecord: rejects client KeyUpdate before Finished" {
 
 // RFC 8446 §4.6.3 — a client KeyUpdate(update_requested) ratchets the
 // server receive key and elicits a server KeyUpdate(update_not_requested),
-// encrypted under the old send key.
+// encrypted under the old send key. The event surfaces as `.key_update`
+// carrying both epoch changes and the response record.
 test "handleRecord: client KeyUpdate(update_requested) ratchets rx and responds" {
     var server = try connectedTestServer();
     const rx_ktls_0 = server.rxKtlsInfo();
@@ -2741,7 +2768,10 @@ test "handleRecord: client KeyUpdate(update_requested) ratchets rx and responds"
     var out: [64]u8 = undefined;
     const ev = try server.handleRecord(rx_buf[0..ku_wire.len], &out);
 
-    const resp = ev.write;
+    try testing.expect(ev == .key_update);
+    try testing.expectEqual(true, ev.key_update.rx);
+    try testing.expectEqual(true, ev.key_update.tx);
+    const resp = ev.key_update.response.?;
     var resp_buf: [64]u8 = undefined;
     @memcpy(resp_buf[0..resp.len], resp);
     const dec = try server_tx_old.decrypt(resp_buf[0..resp.len]);
@@ -2777,8 +2807,11 @@ test "handleRecord: client KeyUpdate(update_requested) ratchets rx and responds"
 }
 
 // RFC 8446 §4.6.3 — update_not_requested only ratchets the receive key.
+// The event surfaces as `.key_update` with rx=true, tx=false, response=null.
 test "handleRecord: client KeyUpdate(update_not_requested) ratchets rx only" {
     var server = try connectedTestServer();
+    const rx_ktls_0 = server.rxKtlsInfo();
+    const tx_ktls_0 = server.txKtlsInfo();
     var client_tx = try server.rx.clone();
     defer client_tx.deinit();
 
@@ -2791,10 +2824,27 @@ test "handleRecord: client KeyUpdate(update_not_requested) ratchets rx only" {
     var rx_buf: [64]u8 = undefined;
     @memcpy(rx_buf[0..ku_wire.len], ku_wire);
     var out: [64]u8 = undefined;
-    try testing.expectEqual(
-        Event.none,
-        try server.handleRecord(rx_buf[0..ku_wire.len], &out),
-    );
+    const ev = try server.handleRecord(rx_buf[0..ku_wire.len], &out);
+
+    try testing.expect(ev == .key_update);
+    try testing.expectEqual(true, ev.key_update.rx);
+    try testing.expectEqual(false, ev.key_update.tx);
+    try testing.expectEqual(@as(?[]const u8, null), ev.key_update.response);
+
+    // RX material changed; TX material unchanged.
+    const rx_ktls_1 = server.rxKtlsInfo();
+    const tx_ktls_1 = server.txKtlsInfo();
+    try testing.expect(!mem.eql(
+        u8,
+        rx_ktls_0.key[0..rx_ktls_0.key_len],
+        rx_ktls_1.key[0..rx_ktls_1.key_len],
+    ));
+    try testing.expect(mem.eql(
+        u8,
+        tx_ktls_0.key[0..tx_ktls_0.key_len],
+        tx_ktls_1.key[0..tx_ktls_1.key_len],
+    ));
+    try testing.expectEqualSlices(u8, &([_]u8{0} ** 8), &rx_ktls_1.rec_seq);
 
     var client_tx_1 = try server.rx.clone();
     defer client_tx_1.deinit();
@@ -2831,6 +2881,49 @@ test "sendKeyUpdate: server-initiated KeyUpdate encrypts under old key then ratc
     try testing.expectEqualSlices(u8, &([_]u8{0} ** 8), &tx_ktls_1.rec_seq);
     try testing.expectError(error.PendingWrite, server.sendKeyUpdate(&out, .update_requested));
     server.completeWrite();
+}
+
+// RFC 8446 §4.6.3, §7.2 — after a self-initiated sendKeyUpdate(.update_requested),
+// TX ratchets inside that call. When the peer's response KeyUpdate(update_not_requested)
+// arrives, the event surfaces rx=true, tx=false, response=null.
+test "handleRecord: self-initiated sendKeyUpdate response surfaces rx only" {
+    var server = try connectedTestServer();
+    const tx_ktls_0 = server.txKtlsInfo();
+
+    // Self-initiated KeyUpdate: TX ratchets inside the call.
+    var out: [64]u8 = undefined;
+    _ = try server.sendKeyUpdate(&out, .update_requested);
+    server.completeWrite();
+    const tx_ktls_1 = server.txKtlsInfo();
+    try testing.expect(!mem.eql(
+        u8,
+        tx_ktls_0.key[0..tx_ktls_0.key_len],
+        tx_ktls_1.key[0..tx_ktls_1.key_len],
+    ));
+
+    // Peer responds with KeyUpdate(update_not_requested) under the peer's
+    // next TX key (which mirrors our next RX key). Build a mirror of our
+    // pre-ratchet RX, then ratchet it to produce the peer's response.
+    var peer_tx = try server.rx.clone();
+    defer peer_tx.deinit();
+    const ku_nr = [_]u8{
+        @intFromEnum(HandshakeType.key_update),              0x00, 0x00, 0x01,
+        @intFromEnum(KeyUpdateRequest.update_not_requested),
+    };
+    var ku_buf: [64]u8 = undefined;
+    const ku_wire = try peer_tx.encrypt(.handshake, &ku_nr, &ku_buf);
+    var rx_buf: [64]u8 = undefined;
+    @memcpy(rx_buf[0..ku_wire.len], ku_wire);
+
+    const ev = try server.handleRecord(rx_buf[0..ku_wire.len], &out);
+    try testing.expect(ev == .key_update);
+    try testing.expectEqual(true, ev.key_update.rx);
+    try testing.expectEqual(false, ev.key_update.tx);
+    try testing.expectEqual(@as(?[]const u8, null), ev.key_update.response);
+
+    // RX material changed again (second ratchet).
+    const rx_ktls_1 = server.rxKtlsInfo();
+    try testing.expectEqualSlices(u8, &([_]u8{0} ** 8), &rx_ktls_1.rec_seq);
 }
 
 // RFC 8446 §5.1 — a KeyUpdate must align with a record boundary.
@@ -3046,7 +3139,7 @@ test "key update: simultaneous update_requested remains connected" {
         &server_out,
     );
     const server_response = switch (server_event) {
-        .write => |w| w,
+        .key_update => |ku| ku.response.?,
         else => return error.UnexpectedEvent,
     };
     var server_response_wire: [64]u8 = undefined;
@@ -3059,24 +3152,32 @@ test "key update: simultaneous update_requested remains connected" {
         &client_out,
     );
     const client_response = switch (client_event) {
-        .write => |w| w,
+        .key_update => |ku| ku.response.?,
         else => return error.UnexpectedEvent,
     };
     var client_response_wire: [64]u8 = undefined;
     @memcpy(client_response_wire[0..client_response.len], client_response);
     pair.client.completeWrite();
 
-    try testing.expectEqual(
-        ClientHandshake.Event.none,
-        try pair.client.handleRecord(server_response_wire[0..server_response.len], &client_out),
+    // The peer's response KeyUpdate(update_not_requested) surfaces as
+    // key_update with rx=true, tx=false, response=null.
+    const client_final = try pair.client.handleRecord(
+        server_response_wire[0..server_response.len],
+        &client_out,
     );
-    try testing.expectEqual(
-        Event.none,
-        try pair.server.handleRecord(
-            client_response_wire[0..client_response.len],
-            &server_out,
-        ),
+    try testing.expect(client_final == .key_update);
+    try testing.expectEqual(true, client_final.key_update.rx);
+    try testing.expectEqual(false, client_final.key_update.tx);
+    try testing.expectEqual(@as(?[]const u8, null), client_final.key_update.response);
+
+    const server_final = try pair.server.handleRecord(
+        client_response_wire[0..client_response.len],
+        &server_out,
     );
+    try testing.expect(server_final == .key_update);
+    try testing.expectEqual(true, server_final.key_update.rx);
+    try testing.expectEqual(false, server_final.key_update.tx);
+    try testing.expectEqual(@as(?[]const u8, null), server_final.key_update.response);
 
     var client_app_buf: [64]u8 = undefined;
     const client_app = try pair.client.sendApplicationData("client pong", &client_app_buf);
@@ -3945,8 +4046,10 @@ test "handleRecord: server reassembles 1-byte fragmented KeyUpdate(update_reques
         const wire = try client_tx.encrypt(.handshake, ku_parts[4], &wire_buf);
         @memcpy(rx_buf[0..wire.len], wire);
         const ev = try server.handleRecord(rx_buf[0..wire.len], &out);
-        try testing.expect(ev == .write);
-        const resp = ev.write;
+        try testing.expect(ev == .key_update);
+        try testing.expectEqual(true, ev.key_update.rx);
+        try testing.expectEqual(true, ev.key_update.tx);
+        const resp = ev.key_update.response.?;
         var resp_buf: [64]u8 = undefined;
         @memcpy(resp_buf[0..resp.len], resp);
 
@@ -3996,7 +4099,16 @@ test "handleRecord: fragmented KeyUpdate(update_not_requested) works" {
         const wire = try client_tx.encrypt(.handshake, part, &wire_buf);
         @memcpy(rx_buf[0..wire.len], wire);
         const ev = try server.handleRecord(rx_buf[0..wire.len], &out);
-        try testing.expectEqual(Event.none, ev);
+        // The final fragment completes the KeyUpdate and surfaces as
+        // key_update with rx=true, tx=false, response=null. Earlier
+        // fragments return .none while reassembly is in progress.
+        if (ev == .key_update) {
+            try testing.expectEqual(true, ev.key_update.rx);
+            try testing.expectEqual(false, ev.key_update.tx);
+            try testing.expectEqual(@as(?[]const u8, null), ev.key_update.response);
+        } else {
+            try testing.expectEqual(Event.none, ev);
+        }
     }
 
     // Server rx ratcheted; app data under new key works.

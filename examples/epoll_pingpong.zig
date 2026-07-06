@@ -507,6 +507,9 @@ fn serverRun(
                     try conn.send(&hs, try hs.sendAlert(.close_notify, &out.buffer));
                     break :outer;
                 },
+                .key_update => |ku| {
+                    if (ku.response) |w| try conn.send(&hs, w);
+                },
                 .none => {},
             }
         }
@@ -614,6 +617,9 @@ fn clientRun(arena: Allocator, args: *const Args, port: u16) !void {
                     stdout.writeAll("[client] server sent close_notify\n");
                     try conn.send(&hs, try hs.sendAlert(.close_notify, &out.buffer));
                     break :outer;
+                },
+                .key_update => |ku| {
+                    if (ku.response) |w| try conn.send(&hs, w);
                 },
                 .none => {},
             }
