@@ -1,14 +1,7 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="images/logo/logo-dark.svg">
-    <img src="images/logo/logo.svg" alt="ztls" width="80" height="80">
-  </picture>
-</p>
-
-<p align="center">
-  <picture>
     <source media="(prefers-color-scheme: dark)" srcset="images/logo/wordmark-dark.svg">
-    <img src="images/logo/wordmark.svg" alt="ztls — Sans-I/O TLS 1.3 in Zig" width="320">
+    <img src="images/logo/wordmark.svg" alt="ztls — Sans-I/O TLS 1.3 in Zig" width="340">
   </picture>
 </p>
 
