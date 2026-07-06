@@ -447,7 +447,7 @@ Caller-owned types:
 
 Common drive methods:
 
-- `init(Config)` / `deinit()` — create and release a server handshake. Required Config fields are `keypairs` and `random`; optional fields include `supported_suites`, `alpn_protocols`, and ClientHello `reassembly` storage.
+- `init(Config)` / `deinit()` — create and release a server handshake. Required Config fields are `keypairs` and `random`; optional fields include `supported_suites`, `alpn_protocols`, `client_auth`, and ClientHello `reassembly` storage.
 - `supportSuites(suites)` — override the Config-provided cipher-suite list before processing ClientHello.
 - `supportAlpn(protocols)` — override the Config-provided ALPN choices before processing ClientHello.
 - `setCredentials(certs, signer)` / `setCertificateChain(chain, signer)` — attach a leaf-first certificate chain and signer before processing ClientHello.

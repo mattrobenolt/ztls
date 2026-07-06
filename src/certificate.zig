@@ -27,6 +27,7 @@ const wire = @import("wire.zig");
 pub const ParseError = error{
     UnexpectedEof,
     InvalidHandshakeType,
+    InvalidHandshakeLength,
     UnexpectedCertificateRequestContext,
     EmptyCertificateList,
     InvalidExtensionLength,
@@ -43,6 +44,11 @@ pub const ParseError = error{
     Certificate.Parsed.NameConstraintError;
 
 pub const EncodeError = error{ BufferTooShort, RequestContextTooLong };
+
+pub const ClientCertificateStatus = enum {
+    empty,
+    present,
+};
 
 pub fn encodedLen(certs_der: []const []const u8) usize {
     return encodedLenWithRequestContext(0, certs_der);
@@ -86,6 +92,49 @@ pub fn encodeWithRequestContext(
         w.append(u16, 0x0000);
     }
     return w.written();
+}
+
+/// Parse a client Certificate message enough for server-side client-auth state
+/// machine decisions. Full client certificate validation is intentionally left
+/// to the later #4 verification slice; this helper validates framing,
+/// request_context echo, list bounds, and per-entry extension syntax.
+///
+/// RFC 8446 §4.4.2
+// ziglint-ignore: Z015 -- ParseError is a public error-set alias.
+pub fn parseClientCertificate(
+    msg: []const u8,
+    expected_request_context: []const u8,
+) ParseError!ClientCertificateStatus {
+    if (msg.len < 4 + 1 + 3) return error.UnexpectedEof;
+    var r: wire.Reader = .init(msg);
+
+    const handshake_type = r.assumeRead(handshake.Type);
+    if (handshake_type != .certificate) return error.InvalidHandshakeType;
+    const body_len = r.assumeRead(u24);
+    if (body_len != msg.len - 4) return error.InvalidHandshakeLength;
+
+    const ctx_len = r.assumeRead(u8);
+    if (r.remaining().len < ctx_len + 3) return error.UnexpectedEof;
+    const request_context = r.assumeReadSlice(ctx_len);
+    if (!std.mem.eql(u8, request_context, expected_request_context))
+        return error.UnexpectedCertificateRequestContext;
+
+    const list_len = r.assumeRead(u24);
+    if (r.remaining().len < list_len) return error.UnexpectedEof;
+    if (list_len == 0) return .empty;
+
+    const list_end = r.pos + list_len;
+    while (r.pos < list_end) {
+        if (list_end - r.pos < 3) return error.UnexpectedEof;
+        const cert_len = r.assumeRead(u24);
+        if (list_end - r.pos < cert_len + 2) return error.UnexpectedEof;
+        r.assumeSkip(cert_len);
+        const ext_len = r.assumeRead(u16);
+        if (list_end - r.pos < ext_len) return error.UnexpectedEof;
+        try parseCertificateEntryExtensions(r.assumeReadSlice(ext_len));
+    }
+    if (r.pos != list_end) return error.UnexpectedEof;
+    return .present;
 }
 
 /// Parse a Certificate handshake message and extract the leaf certificate
@@ -448,6 +497,25 @@ test "encodeWithRequestContext: rejects oversized request context" {
     try testing.expectError(
         error.RequestContextTooLong,
         encodeWithRequestContext(&buf, &context, &.{}),
+    );
+}
+
+// RFC 8446 §4.4.2 — client Certificate in response to a handshake-time
+// CertificateRequest echoes the request_context and may carry an empty list.
+test "parseClientCertificate: accepts empty certificate with matching context" {
+    var out: [64]u8 = undefined;
+    const encoded = try encodeWithRequestContext(&out, &.{}, &.{});
+    try testing.expectEqual(.empty, try parseClientCertificate(encoded, &.{}));
+}
+
+// RFC 8446 §4.4.2 — client Certificate request_context must match the
+// CertificateRequest context byte-for-byte.
+test "parseClientCertificate: rejects mismatched request context" {
+    var out: [64]u8 = undefined;
+    const encoded = try encodeWithRequestContext(&out, &.{0x01}, &.{});
+    try testing.expectError(
+        error.UnexpectedCertificateRequestContext,
+        parseClientCertificate(encoded, &.{}),
     );
 }
 

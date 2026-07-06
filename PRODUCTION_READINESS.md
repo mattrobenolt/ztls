@@ -127,9 +127,13 @@ consumption-for-rejection, not resumption.
   now passes after the #48 unsolicited extension slice. A #4 precursor now
   accepts handshake-time `CertificateRequest` and emits an empty client
   `Certificate` before `Finished` when no client credentials are configured;
+  the server can now emit handshake-time `CertificateRequest` for optional or
+  required client auth, accept the empty-certificate optional path, and reject
+  the required-empty path with `certificate_required` in local tests.
   `ClientAuthentication.clientSendsCertificateAndFinMessage` is now
   `STRICTLY_SUCCEEDED`, and the stale `*ClientAuth*` expected-skip entry has
-  been removed. Full client-certificate authentication remains deferred. All six
+  been removed. Real client certificate chains, CertificateVerify emission, and
+  server-side client cert verification remain deferred. All six
   remaining unexpected failures align with TLS-Anvil `DSA_WITH_SHA256`
   certificate parameter combinations that ztls correctly rejects during server
   Certificate processing; closed #52 classifies those DSA-root TLS-Anvil

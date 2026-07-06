@@ -18,6 +18,7 @@ const ArrayBuffer = array_buffer.ArrayBuffer;
 const SliceBuffer = array_buffer.SliceBuffer;
 const certificate = @import("certificate.zig");
 const CertificateChain = @import("certificate_chain.zig").CertificateChain;
+const certificate_request = @import("certificate_request.zig");
 const client_hello = @import("client_hello.zig");
 const ClientHandshake = @import("ClientHandshake.zig");
 const backend = @import("crypto/backend.zig");
@@ -131,6 +132,12 @@ pub const Storage = ArrayBuffer(u8, ch_reassembly_buffer_size);
 /// reassembly storage must live until the handshake reaches wait_client_finished.
 pub const KeyPairs = handshake_key_pairs.KeyPairs;
 
+pub const ClientAuthPolicy = enum {
+    none,
+    optional,
+    required,
+};
+
 pub const Config = struct {
     /// Ephemeral keypairs used for ServerHello key_share entries. X25519 and
     /// P-256 are present by default; P-384 is opt-in.
@@ -141,6 +148,9 @@ pub const Config = struct {
     supported_suites: []const CipherSuite = default_supported_suites,
     /// ALPN protocols supported by this server. Caller-owned.
     alpn_protocols: root.AlpnProtocols = &.{},
+    /// Server-side client certificate policy. Full non-empty client
+    /// certificate verification is a later #4 slice.
+    client_auth: ClientAuthPolicy = .none,
     /// Optional caller-owned ClientHello reassembly storage.
     reassembly: ?[]u8 = null,
 };
@@ -158,6 +168,7 @@ suite: CipherSuite = .aes_128_gcm_sha256,
 suite_state: Suite = undefined,
 supported_suites: []const CipherSuite = default_supported_suites,
 alpn_protocols: root.AlpnProtocols = &.{},
+client_auth: ClientAuthPolicy = .none,
 selected_alpn: ?[]const u8 = null,
 /// SNI hostname sent by the client in the server_name extension (RFC 6066 §3).
 /// Populated after acceptClientHello / handleRecord returns the first write event.
@@ -209,6 +220,7 @@ pub fn init(config: Config) ServerHandshake {
         .random = config.random,
         .supported_suites = config.supported_suites,
         .alpn_protocols = config.alpn_protocols,
+        .client_auth = config.client_auth,
         .ch_buf = if (config.reassembly) |buf| .init(buf) else .empty,
     };
 }
@@ -316,15 +328,22 @@ pub const AcceptError =
 
 pub const FlightError =
     encrypted_extensions.EncodeError ||
+    certificate_request.EncodeError ||
     certificate.EncodeError ||
     RecordLayer.EncryptError ||
     SignError ||
     error{ MissingServerCredentials, PendingWrite };
 
 pub const ClientFinishedError =
-    RecordLayer.DecryptError || finished.VerifyError || frame.ParseError || error{
+    RecordLayer.DecryptError ||
+    finished.VerifyError ||
+    frame.ParseError ||
+    certificate.ParseError ||
+    error{
         UnexpectedRecord,
         UnexpectedMessage,
+        ClientCertificateRequired,
+        UnsupportedClientCertificate,
     };
 
 pub const SendError = RecordLayer.EncryptError || error{PendingWrite};
@@ -364,6 +383,8 @@ pub fn alertForError(err: anyerror) alert.Description {
         error.UnsupportedKeyShare,
         => .handshake_failure,
         error.NoApplicationProtocol => .no_application_protocol,
+        error.ClientCertificateRequired => .certificate_required,
+        error.UnsupportedClientCertificate => .unsupported_certificate,
         error.DuplicateExtension,
         error.DuplicateKeyShare,
         error.InvalidCompressionMethod,
@@ -818,6 +839,15 @@ fn encodeAuthenticatedFlight(
     self.suite_state.update(ee);
     pos += ee.len;
 
+    if (self.client_auth != .none) {
+        const cr = try certificate_request.encode(
+            plaintext[pos..],
+            backend.capabilities.certificate_verify_schemes,
+        );
+        self.suite_state.update(cr);
+        pos += cr.len;
+    }
+
     const cert = try chain.encode(plaintext[pos..]);
     self.suite_state.update(cert);
     pos += cert.len;
@@ -875,7 +905,19 @@ fn processClientFinishedPlaintext(
 ) ClientFinishedError!void {
     assert(self.state == .wait_client_finished);
     var hr: HandshakeReader = .init(plaintext);
-    const msg = (try hr.next()) orelse return error.UnexpectedMessage;
+    var msg = (try hr.next()) orelse return error.UnexpectedMessage;
+
+    if (self.client_auth != .none) {
+        if (msg.type != .certificate) return error.UnexpectedMessage;
+        const status = try certificate.parseClientCertificate(msg.raw, &.{});
+        self.suite_state.update(msg.raw);
+        switch (status) {
+            .empty => if (self.client_auth == .required) return error.ClientCertificateRequired,
+            .present => return error.UnsupportedClientCertificate,
+        }
+        msg = (try hr.next()) orelse return error.UnexpectedMessage;
+    }
+
     if (msg.type != .finished) return error.UnexpectedMessage;
     if (try hr.next() != null) return error.UnexpectedMessage;
     try self.verifyClientFinished(msg.raw);
@@ -1570,6 +1612,8 @@ test "alertForError: parser and negotiation failures map to protocol alerts" {
         .{ .err = error.UnsupportedKeyShare, .description = .handshake_failure },
         .{ .err = error.UnsupportedSignatureScheme, .description = .illegal_parameter },
         .{ .err = error.NoApplicationProtocol, .description = .no_application_protocol },
+        .{ .err = error.ClientCertificateRequired, .description = .certificate_required },
+        .{ .err = error.UnsupportedClientCertificate, .description = .unsupported_certificate },
         .{ .err = error.DuplicateExtension, .description = .illegal_parameter },
         .{ .err = error.DuplicateKeyShare, .description = .illegal_parameter },
         .{ .err = error.InvalidCompressionMethod, .description = .illegal_parameter },
@@ -2203,6 +2247,63 @@ test "sendAuthenticatedFlight: client decrypts authenticated server flight" {
     try testing.expectEqual(@as(?HandshakeReader.Message, null), try hr.next());
 }
 
+// RFC 8446 §4.3.2 — when client authentication is configured, the server's
+// authenticated flight sends CertificateRequest between EncryptedExtensions
+// and Certificate.
+test "sendAuthenticatedFlight: optional client auth sends CertificateRequest" {
+    const client_keypair: x25519.KeyPair = .generate();
+    const server_keypair: x25519.KeyPair = .generate();
+    var ch_buf: [512]u8 = undefined;
+    const ch = try client_hello.encode(&ch_buf, .zero, client_keypair.public_key, null, &.{});
+    var ch_record: [1024]u8 = undefined;
+    const header: frame.Header = .init(.handshake, @intCast(ch.len));
+    header.write(ch_record[0..frame.header_len]);
+    @memcpy(ch_record[frame.header_len..][0..ch.len], ch);
+
+    var server: ServerHandshake = .init(.{
+        .keypairs = .init(server_keypair),
+        .random = .zero,
+        .client_auth = .optional,
+    });
+    var sh_out: [256]u8 = undefined;
+    const sh_record = try server.acceptClientHello(
+        ch_record[0 .. frame.header_len + ch.len],
+        &sh_out,
+    );
+
+    var signer: signature.PrivateKey = try .fromP256Scalar(server_ecdsa_scalar[0..32]);
+    defer signer.deinit();
+    var plaintext: [4096]u8 = undefined;
+    var flight_out: [4096]u8 = undefined;
+    const flight_record = try server.sendAuthenticatedFlight(
+        &.{test_cert_der},
+        signer.signer(),
+        &plaintext,
+        &flight_out,
+    );
+
+    var client: ClientHandshake = .init(.{
+        .keypairs = .init(client_keypair),
+        .host_name = "ztls.server.test",
+        .now_sec = 0,
+        .random = .zero,
+    });
+    client.policy.insecure_no_chain_anchor = true;
+    client.injectClientHello(ch);
+    try client.processServerHello(sh_record[frame.header_len..]);
+    const dec = try client.rx.decrypt(flight_out[0..flight_record.len]);
+
+    var hr: HandshakeReader = .init(dec.content);
+    try testing.expectEqual(.encrypted_extensions, (try hr.next()).?.type);
+    const cr = (try hr.next()).?;
+    try testing.expectEqual(.certificate_request, cr.type);
+    _ = try certificate_request.parse(cr.raw);
+    try testing.expectEqual(.certificate, (try hr.next()).?.type);
+    try testing.expectEqual(.certificate_verify, (try hr.next()).?.type);
+    try testing.expectEqual(.finished, (try hr.next()).?.type);
+    try testing.expectEqual(@as(?HandshakeReader.Message, null), try hr.next());
+}
+
 fn encryptAllZeroInnerForTest(tx: *RecordLayer, inner_len: usize, out: []u8) ![]u8 {
     const total = frame.header_len + inner_len + aead.tag_len;
     const header: frame.Header = .init(.application_data, @intCast(inner_len + aead.tag_len));
@@ -2309,6 +2410,113 @@ fn connectedTestPair() !ConnectedTestPair {
     try expectHandshakeSecretsZero(&server);
 
     return .{ .client = client, .server = server };
+}
+
+// RFC 8446 §4.4.2, §4.4.4 — when the server requests client authentication
+// and the client has no credentials, optional client auth accepts an empty
+// Certificate followed by Finished.
+test "processClientFinished: optional client auth accepts empty Certificate" {
+    const client_keypair: x25519.KeyPair = .generate();
+    const server_keypair: x25519.KeyPair = .generate();
+
+    var client: ClientHandshake = .init(.{
+        .keypairs = .init(client_keypair),
+        .host_name = "ztls.server.test",
+        .now_sec = 0,
+        .random = .zero,
+    });
+    client.policy.insecure_no_chain_anchor = true;
+    var client_out: [1024]u8 = undefined;
+    const ch_record = try client.start(&client_out);
+    client.completeWrite();
+
+    var server: ServerHandshake = .init(.{
+        .keypairs = .init(server_keypair),
+        .random = .zero,
+        .client_auth = .optional,
+    });
+    var server_out: [4096]u8 = undefined;
+    const sh_record = try server.acceptClientHello(ch_record, &server_out);
+    try client.processServerHello(sh_record[frame.header_len..]);
+
+    var signer = try signature.PrivateKey.fromP256Scalar(server_ecdsa_scalar[0..32]);
+    defer signer.deinit();
+    var plaintext: [4096]u8 = undefined;
+    const flight_record = try server.sendAuthenticatedFlight(
+        &.{server_ecdsa_cert_der},
+        signer.signer(),
+        &plaintext,
+        &server_out,
+    );
+    const client_event = try client.handleRecord(server_out[0..flight_record.len], &client_out);
+    const client_finished_record = switch (client_event) {
+        .write => |w| w,
+        else => return error.UnexpectedEvent,
+    };
+
+    var inspect_rx = try server.rx.clone();
+    defer inspect_rx.deinit();
+    var inspect_buf: [1024]u8 = undefined;
+    @memcpy(inspect_buf[0..client_finished_record.len], client_finished_record);
+    const dec = try inspect_rx.decrypt(inspect_buf[0..client_finished_record.len]);
+    var hr: HandshakeReader = .init(dec.content);
+    const cert = (try hr.next()).?;
+    try testing.expectEqual(.certificate, cert.type);
+    try testing.expectEqual(.empty, try certificate.parseClientCertificate(cert.raw, &.{}));
+    try testing.expectEqual(.finished, (try hr.next()).?.type);
+    try testing.expectEqual(@as(?HandshakeReader.Message, null), try hr.next());
+
+    client.completeWrite();
+    try server.processClientFinished(client_out[0..client_finished_record.len]);
+    try testing.expectEqual(.connected, server.state);
+}
+
+// RFC 8446 §4.4.2 — a server that requires client authentication rejects an
+// empty client Certificate with certificate_required.
+test "processClientFinished: required client auth rejects empty Certificate" {
+    const client_keypair: x25519.KeyPair = .generate();
+    const server_keypair: x25519.KeyPair = .generate();
+
+    var client: ClientHandshake = .init(.{
+        .keypairs = .init(client_keypair),
+        .host_name = "ztls.server.test",
+        .now_sec = 0,
+        .random = .zero,
+    });
+    client.policy.insecure_no_chain_anchor = true;
+    var client_out: [1024]u8 = undefined;
+    const ch_record = try client.start(&client_out);
+    client.completeWrite();
+
+    var server: ServerHandshake = .init(.{
+        .keypairs = .init(server_keypair),
+        .random = .zero,
+        .client_auth = .required,
+    });
+    var server_out: [4096]u8 = undefined;
+    const sh_record = try server.acceptClientHello(ch_record, &server_out);
+    try client.processServerHello(sh_record[frame.header_len..]);
+
+    var signer = try signature.PrivateKey.fromP256Scalar(server_ecdsa_scalar[0..32]);
+    defer signer.deinit();
+    var plaintext: [4096]u8 = undefined;
+    const flight_record = try server.sendAuthenticatedFlight(
+        &.{server_ecdsa_cert_der},
+        signer.signer(),
+        &plaintext,
+        &server_out,
+    );
+    const client_event = try client.handleRecord(server_out[0..flight_record.len], &client_out);
+    const client_finished_record = switch (client_event) {
+        .write => |w| w,
+        else => return error.UnexpectedEvent,
+    };
+
+    try testing.expectError(
+        error.ClientCertificateRequired,
+        server.processClientFinished(client_out[0..client_finished_record.len]),
+    );
+    try testing.expectEqual(.wait_client_finished, server.state);
 }
 
 test "sendAuthenticatedFlight: client processes CertificateVerify and Finished" {
