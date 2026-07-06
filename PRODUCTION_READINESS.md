@@ -396,18 +396,29 @@ comparisons measure equivalent work*. This is the project's justification.
   reconstruction and deinit-safe copy semantics. `ClientHandshake` and
   `ServerHandshake` expose `txKtlsInfo()` / `rxKtlsInfo()` accessors, and
   post-KeyUpdate tests prove exported epochs carry new keys with sequence
-  number reset to zero. KeyUpdate event surfacing is now implemented: both
+  number reset to zero. KeyUpdate event surfacing is implemented: both
   `ClientHandshake.Event` and `ServerHandshake.Event` carry a `key_update`
   variant that surfaces RX and TX epoch changes and an optional response
   record, so kTLS callers can reinstall `TLS_RX`/`TLS_TX` at the right
   moment. The `examples/ktls_server.zig` Linux loopback example demonstrates
-  the full userspace-handshake → kernel-data-plane loop including KeyUpdate
-  re-key: the server completes the TLS 1.3 handshake in userspace, processes
-  a client-initiated KeyUpdate (handling the `key_update` event), installs
-  kTLS TX/RX via `setsockopt` with the post-KeyUpdate key material, and
-  exchanges a kernel-encrypted/decrypted ping/pong against a ztls userspace
-  client. The example is committed and CI-gated (`examples-ci`); runtime
-  confirmation on ubuntu-latest is pending CI. *(#29)*
+  the full userspace-handshake → kernel-data-plane loop including a
+  pre-install KeyUpdate: the server completes the TLS 1.3 handshake in
+  userspace, processes a client-initiated KeyUpdate (handling the
+  `key_update` event), installs kTLS TX/RX via `setsockopt` with the
+  post-KeyUpdate key material, and exchanges a kernel-encrypted/decrypted
+  ping/pong against a ztls userspace client. The example is CI-gated
+  (`examples-ci`) and proven on ubuntu-latest (run 28808144027, green): the
+  kernel decrypted the client's `ping` and encrypted the server's `pong`
+  using ztls-extracted keys, and the ztls userspace client decrypted the
+  kernel-encrypted `pong`; on a kernel without `tls.ko` it gracefully skips
+  with exit 0. The `ztls.ktls` namespace exposes the Linux UAPI constants
+  and `packAesGcm128`/`packAesGcm256`/`packChaCha20Poly1305` helpers that
+  fold the RFC 8446 §5.3 salt/IV split into the library. Residual scope:
+  the example does the KeyUpdate in userspace before installing kTLS, not a
+  live mid-stream re-key of an already-installed kTLS session (once kTLS RX
+  is installed the kernel consumes encrypted records, so ztls cannot see a
+  KeyUpdate via `handleRecord`); that would need a manual-ratchet API and
+  kernel `EKEYEXPIRED` integration, tracked separately if wanted. *(#29)*
 
 ---
 
