@@ -1,4 +1,13 @@
-# ztls
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="images/logo/logo-dark.svg">
+    <img src="images/logo/logo.svg" alt="ztls" width="88" height="88">
+  </picture>
+</p>
+
+<h1 align="center">ztls</h1>
+
+<p align="center">Sans-I/O TLS 1.3 in Zig</p>
 
 ztls is a TLS 1.3 library that does no I/O. You feed it the bytes you read off
 the wire; it hands you back the bytes to write. Your socket, your event loop,
