@@ -511,12 +511,12 @@ each passing the same correctness and interop gates.
   matrix.** `src/crypto/backend_primitive_tests.zig` runs the same X25519,
   P-256/P-384 ECDH, AEAD, and signature primitive vectors through the backend facade
   under both the OpenSSL and AWS-LC lanes in `zig build test` and
-  `just check-backend-aws-lc`. Wrapper-level Wycheproof boundary tests for
-  X25519 and AEAD already run in both lanes via `zig build test`, but
-  facade-direct Wycheproof coverage and a full provider matrix remain open. This
-  is a narrow primitive smoke contract — it does not cover Wycheproof boundary
-  vectors per provider through the facade or divergent capability matrices. The
-  full backend matrix remains open. *(#60)*
+  `just check-backend-aws-lc`. It now includes selected facade-direct
+  Wycheproof vectors for X25519 and all advertised AEAD suites, while the
+  wrapper-level Wycheproof tests still cover the public `x25519`/`aead` paths.
+  This is a narrow primitive/vector contract — it is not a full Wycheproof
+  harness, provider/FIPS divergence matrix, or certificate-chain ownership
+  decision. The full backend matrix remains open. *(#60)*
 
 ---
 

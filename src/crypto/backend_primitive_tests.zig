@@ -7,10 +7,9 @@
 //! test entry point in `src/test.zig` imports this file unconditionally.
 //!
 //! The goal is a narrow contract: the same known vectors must pass regardless
-//! of which libcrypto-family provider is linked. This is not a Wycheproof
-//! harness and does not claim full matrix evidence — it is a per-primitive
-//! smoke contract that the facade dispatches and the backend produces correct
-//! results for representative inputs.
+//! of which libcrypto-family provider is linked. This includes selected
+//! facade-direct Wycheproof vectors, but is not a full Wycheproof harness or
+//! full provider matrix claim.
 const std = @import("std");
 const testing = std.testing;
 
@@ -82,8 +81,34 @@ test "backend.x25519: RFC 7748 §6.1 mutual key agreement" {
     try testing.expectEqualSlices(u8, &alice_shared, &bob_shared);
 }
 
-// RFC 7748 §6.1 — all-zero shared secret indicates a low-order peer public key
-// and must be rejected by the backend facade.
+// Wycheproof v1 (google-wycheproof 0.9rc5) — X25519 tcId 1, normal case,
+// exercised directly through the backend facade.
+test "backend.x25519: Wycheproof tcId 1 shared secret" {
+    const scalar: [32]u8 = hex(
+        32,
+        "c8a9d5a91091ad851c668b0736c1c9a02936c0d3ad62670858088047ba057475",
+    );
+    const peer_pub: [32]u8 = hex(
+        32,
+        "504a36999f489cd2fdbc08baff3d88fa00569ba986cba22548ffde80f9806829",
+    );
+    const want: [32]u8 = hex(
+        32,
+        "436a2c040cf45fea9b29a0cb81b1f41458f863d0d61b453d0a982720d6d61320",
+    );
+
+    var priv = try backend.x25519.privateKeyFromSecret(&scalar);
+    defer backend.x25519.freeKey(&priv);
+    var peer = try backend.x25519.publicKeyFromRaw(&peer_pub);
+    defer backend.x25519.freeKey(&peer);
+
+    var shared: [32]u8 = undefined;
+    try backend.x25519.sharedSecretDerive(&priv, &peer, &shared);
+    try testing.expectEqualSlices(u8, &want, &shared);
+}
+
+// RFC 7748 §6.1 / Wycheproof low-order public keys — all-zero shared secret
+// indicates a low-order peer public key and must be rejected by the backend facade.
 test "backend.x25519: all-zero public key is rejected (IdentityElement)" {
     const scalar: [32]u8 = hex(
         32,
@@ -199,6 +224,102 @@ test "backend.aead: ciphertext corruption is rejected for every advertised ciphe
             backend.aead.decrypt(&ctx, &decrypted, &ciphertext, &tag, ad, &nonce),
         );
     }
+}
+
+// Wycheproof v1 (google-wycheproof 0.9rc5) — AES-128-GCM tcId 2, exercised
+// directly through the backend facade with tag corruption rejection.
+test "backend.aead: Wycheproof AES-128-GCM tcId 2" {
+    const key: [16]u8 = hex(16, "5b9604fe14eadba931b0ccf34843dab9");
+    const nonce: [12]u8 = hex(12, "921d2507fa8007b7bd067d34");
+    const ad = hex(16, "00112233445566778899aabbccddeeff");
+    const plaintext = hex(16, "001d0c231287c1182784554ca3a21908");
+    const expected_ct = hex(16, "49d8b9783e911913d87094d1f63cc765");
+    const expected_tag = hex(16, "1e348ba07cca2cf04c618cb4d43a5b92");
+
+    var ctx: backend.aead.Context = try backend.aead.init(.aes_128_gcm_sha256, &key);
+    defer backend.aead.deinit(&ctx);
+
+    var ciphertext: [plaintext.len]u8 = undefined;
+    var tag: [backend.aead.tag_len]u8 = undefined;
+    try backend.aead.encrypt(&ctx, &ciphertext, &tag, &plaintext, &ad, &nonce);
+    try testing.expectEqualSlices(u8, &expected_ct, &ciphertext);
+    try testing.expectEqualSlices(u8, &expected_tag, &tag);
+
+    var decrypted: [plaintext.len]u8 = undefined;
+    try backend.aead.decrypt(&ctx, &decrypted, &ciphertext, &tag, &ad, &nonce);
+    try testing.expectEqualSlices(u8, &plaintext, &decrypted);
+
+    tag[0] ^= 1;
+    try testing.expectError(
+        error.AuthenticationFailed,
+        backend.aead.decrypt(&ctx, &decrypted, &ciphertext, &tag, &ad, &nonce),
+    );
+}
+
+// Wycheproof v1 (google-wycheproof 0.9rc5) — AES-256-GCM non-empty AAD
+// boundary vector, exercised directly through the backend facade.
+test "backend.aead: Wycheproof AES-256-GCM AAD boundary" {
+    const key: [32]u8 = hex(
+        32,
+        "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    );
+    const nonce: [12]u8 = hex(12, "000102030405060708090a0b");
+    const ad = hex(16, "00112233445566778899aabbccddeeff");
+    const plaintext = hex(16, "001d0c231287c1182784554ca3a21908");
+    const expected_ct = hex(16, "471fda38d7620303aac5c2c7124b6165");
+    const expected_tag = hex(16, "01af015e2daf8b415dc2027e8d51aa80");
+
+    var ctx: backend.aead.Context = try backend.aead.init(.aes_256_gcm_sha384, &key);
+    defer backend.aead.deinit(&ctx);
+
+    var ciphertext: [plaintext.len]u8 = undefined;
+    var tag: [backend.aead.tag_len]u8 = undefined;
+    try backend.aead.encrypt(&ctx, &ciphertext, &tag, &plaintext, &ad, &nonce);
+    try testing.expectEqualSlices(u8, &expected_ct, &ciphertext);
+    try testing.expectEqualSlices(u8, &expected_tag, &tag);
+
+    var decrypted: [plaintext.len]u8 = undefined;
+    try backend.aead.decrypt(&ctx, &decrypted, &ciphertext, &tag, &ad, &nonce);
+    try testing.expectEqualSlices(u8, &plaintext, &decrypted);
+
+    tag[0] ^= 1;
+    try testing.expectError(
+        error.AuthenticationFailed,
+        backend.aead.decrypt(&ctx, &decrypted, &ciphertext, &tag, &ad, &nonce),
+    );
+}
+
+// Wycheproof v1 (google-wycheproof 0.9rc5) — ChaCha20-Poly1305 non-empty AAD
+// boundary vector, exercised directly through the backend facade.
+test "backend.aead: Wycheproof ChaCha20-Poly1305 AAD boundary" {
+    const key: [32]u8 = hex(
+        32,
+        "cc56b680552eb75008f5484b4cb803fa5063ebd6eab91f6ab6aef4916a766273",
+    );
+    const nonce: [12]u8 = hex(12, "99e23ec48985bccdeeab60f1");
+    const ad = hex(16, "00112233445566778899aabbccddeeff");
+    const plaintext = hex(1, "2a");
+    const expected_ct = hex(1, "3a");
+    const expected_tag = hex(16, "d7d9204f3da54c5438a2454128a7438e");
+
+    var ctx: backend.aead.Context = try backend.aead.init(.chacha20_poly1305_sha256, &key);
+    defer backend.aead.deinit(&ctx);
+
+    var ciphertext: [plaintext.len]u8 = undefined;
+    var tag: [backend.aead.tag_len]u8 = undefined;
+    try backend.aead.encrypt(&ctx, &ciphertext, &tag, &plaintext, &ad, &nonce);
+    try testing.expectEqualSlices(u8, &expected_ct, &ciphertext);
+    try testing.expectEqualSlices(u8, &expected_tag, &tag);
+
+    var decrypted: [plaintext.len]u8 = undefined;
+    try backend.aead.decrypt(&ctx, &decrypted, &ciphertext, &tag, &ad, &nonce);
+    try testing.expectEqualSlices(u8, &plaintext, &decrypted);
+
+    tag[15] ^= 1;
+    try testing.expectError(
+        error.AuthenticationFailed,
+        backend.aead.decrypt(&ctx, &decrypted, &ciphertext, &tag, &ad, &nonce),
+    );
 }
 
 // RFC 8439 §2.8.2 — ChaCha20-Poly1305 known-answer vector through the backend facade.
