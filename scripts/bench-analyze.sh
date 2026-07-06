@@ -144,13 +144,18 @@ normalize_rustls "${run}/rustls.txt" "${rustls_norm}"
 
 all_norm="${tmp_dir}/all.txt"
 tls_norm="${tmp_dir}/tls-comparable.txt"
+handshake_norm="${tmp_dir}/handshake-non-equivalent.txt"
 crypto_norm="${tmp_dir}/crypto-floor.txt"
 other_norm="${tmp_dir}/ztls-non-comparable.txt"
 cat "${ztls_norm}" "${evp_norm}" "${libssl_norm}" "${rustls_norm}" > "${all_norm}"
 
 awk '
-  /^Benchmark(Handshake|AppClientToServer|AppServerToClient|AppPingPong)\// { print }
+  /^Benchmark(AppClientToServer|AppServerToClient|AppPingPong)\// { print }
 ' "${all_norm}" > "${tls_norm}"
+
+awk '
+  /^BenchmarkHandshake\// { print }
+' "${all_norm}" > "${handshake_norm}"
 
 awk '
   /^Benchmark(RecordEncrypt|RecordDecrypt|Encrypt|Decrypt|BulkEncryptOnce|BulkDecryptOnce)\// { print }
@@ -172,7 +177,7 @@ warn_comparable_gaps() {
   # mismatched sample counts. A "row group" is identified by bench/suite/size;
   # the implementations present are extracted from the impl= tag.
   awk '
-    /^Benchmark(Handshake|AppClientToServer|AppServerToClient|AppPingPong)\// {
+    /^Benchmark(AppClientToServer|AppServerToClient|AppPingPong)\// {
       line = $0
       # Strip metrics; only the benchmark name matters for the key.
       name_part = line
@@ -261,6 +266,13 @@ run_benchstat() {
 }
 
 warn_comparable_gaps "${tls_norm}"
-run_benchstat "Comparable TLS rows" "${tls_norm}"
+run_benchstat "Comparable TLS application-data rows" "${tls_norm}"
+if [[ -s "${handshake_norm}" ]]; then
+  echo "## Non-equivalent handshake rows (auth-policy differs; reported for transparency only)"
+  echo "ztls verifies CertificateVerify, hostname, and leaf policy; rustls NoVerifier skips signature and policy; libssl SSL_VERIFY_NONE behavior is partly opaque. Do not use the vs-base columns below as apples-to-apples performance claims."
+  echo
+  benchstat -row ".name /suite /size" -col /impl "${handshake_norm}" | sed '/^geomean[[:space:]]/d'
+  echo
+fi
 run_benchstat "Crypto floor rows (not TLS-to-TLS comparisons)" "${crypto_norm}"
 run_benchstat "ztls-only diagnostic rows" "${other_norm}"

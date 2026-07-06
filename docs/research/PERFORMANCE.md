@@ -87,7 +87,7 @@ not sockets.
 
 | Row group | ztls row | libssl memory-BIO row | rustls row | Comparison status |
 | --- | --- | --- | --- | --- |
-| Full handshake | `Handshake` | `Handshake` | `rustls_handshake` | Usable with caveats across all three. Full TLS 1.3 handshake, no resumption, X25519, server-only EC P-256 certificate, in-memory transport. **Auth-policy asymmetry:** ztls skips chain-anchor trust verification (`insecure_no_chain_anchor = true`) but still performs CertificateVerify signature verification (ECDSA P-256 verify against the certificate public key), hostname verification for `ztls.server.test`, and leaf policy checks. rustls `NoVerifier` skips chain policy and `verify_tls13_signature` (no signature math). libssl `SSL_VERIFY_NONE` skips trust-store validation and hostname checking; whether libssl still verifies the CertificateVerify signature internally is opaque. This is a real work asymmetry — see the `Handshake` timed-work inventory below. Do not treat this row as equivalent without perf evidence that these checks are or are not a hot fraction. |
+| Full handshake | `Handshake` | `Handshake` | `rustls_handshake` | **Non-equivalent across implementations; reported separately from comparable TLS rows.** Full TLS 1.3 handshake, no resumption, X25519, server-only EC P-256 certificate, in-memory transport, but the auth work differs: ztls skips chain-anchor trust verification (`insecure_no_chain_anchor = true`) while still performing CertificateVerify signature verification, hostname verification for `ztls.server.test`, and leaf policy checks; rustls `NoVerifier` skips chain policy and `verify_tls13_signature`; libssl `SSL_VERIFY_NONE` skips trust-store validation and hostname checking, and its CertificateVerify behavior is partly opaque. `bench-analyze` emits this row in a non-equivalent handshake section; do not use it for apples-to-apples claims. |
 | ClientHello construction | `HandshakeClientStart` | — | `rustls_handshake_client_start` | Diagnostic until audited. libssl does not expose this split below `SSL_do_handshake`, and ztls/rustls key-generation boundaries must be proven before comparison. |
 | Server accepts ClientHello | `HandshakeServerAccept` | — | `rustls_handshake_server_accept` | Diagnostic until audited. Both names refer to the ClientHello consumption point, but the exact timed construction/processing boundary still needs proof. |
 | Client processes ServerHello | `HandshakeClientServerHello` | — | — | ztls-only profiling row. rustls processes more of the encrypted server flight in the next client step, so there is no honest rustls peer. |
@@ -215,7 +215,7 @@ than papered over.
   per-iteration variance. With `--samples N`, rustls emits N independent
   aggregate samples, but each sample still covers 256 internal handshakes.
 
-**Key asymmetries for the `Handshake` row:**
+**Why the `Handshake` row is not a comparable TLS row:**
 
 1. **Signature verification:** ztls does real ECDSA P-256 verify; rustls does
    none; libssl is opaque. This is the most important work asymmetry.

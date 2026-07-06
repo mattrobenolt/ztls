@@ -285,14 +285,15 @@ comparisons measure equivalent work*. This is the project's justification.
   OpenSSL EVP raw-AEAD rows, OpenSSL/libssl memory-BIO rows, and rustls
   in-memory client/server rows. It defines which rows are comparable across
   ztls/libssl/rustls and which are intentionally ztls-only or raw-crypto rows.
-  It now includes per-row timed-work inventories for the four comparable TLS
-  row groups (`Handshake`, `AppClientToServer`, `AppServerToClient`,
-  `AppPingPong`) documenting the exact work each harness performs inside the
-  timed loop, including the auth-policy asymmetry: ztls performs
+  It now includes per-row timed-work inventories for the comparable
+  application-data row groups (`AppClientToServer`, `AppServerToClient`,
+  `AppPingPong`) and the explicitly non-equivalent `Handshake` row. The
+  handshake inventory documents the auth-policy asymmetry: ztls performs
   CertificateVerify signature verification, hostname verification, and leaf
   policy checks while rustls's `NoVerifier` does not, and libssl's
-  `SSL_VERIFY_NONE` internal CertificateVerify behavior is opaque. The
-  `Handshake` row is labeled "usable with caveats" rather than equivalent.
+  `SSL_VERIFY_NONE` internal CertificateVerify behavior is opaque. `bench-analyze`
+  emits `Handshake` in a separate non-equivalent section, not in the comparable
+  TLS application-data table.
 - `docs/research/perf/EXPLANATION_TEMPLATE.md` provides a per-row writeup
   template with timed-work inventory, raw timing table, normalized perf counter
   summary, hot symbols/disassembly notes, copy/allocation behavior, conclusion, and
@@ -368,12 +369,11 @@ comparisons measure equivalent work*. This is the project's justification.
   libssl, and rustls. The AES-GCM ping-pong row now has counter evidence that
   ztls executes fewer cycles/instructions/branches than libssl and rustls; the
   small ChaCha row now has counter evidence that rustls's ring path is cheaper
-  than ztls's OpenSSL EVP path. The `Handshake` row auth-policy asymmetry (ztls
-  performs CertificateVerify signature verification, hostname verification, and
-  leaf policy checks; rustls does not; libssl is partly opaque) remains an open
-  equivalence gap that harness alignment or explicit non-equivalence
-  documentation must resolve before the `Handshake` row can be claimed
-  equivalent. *(#31)*
+  than ztls's OpenSSL EVP path. The `Handshake` row has been explicitly demoted
+  from comparable output because the auth-policy work differs across harnesses;
+  a follow-up row-perf capture with `--include-handshake` should document those
+  per-implementation costs for transparency, but no cross-implementation
+  handshake performance claim is allowed from the current row. *(#31)*
 
 ---
 
