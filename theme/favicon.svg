@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="none" role="img" aria-label="ztls">
+  <style>
+    :root { --ink: #16181d; }
+    @media (prefers-color-scheme: dark) { :root { --ink: #f2f0ea; } }
+    path { stroke: var(--ink); }
+    circle { fill: var(--ink); }
+  </style>
+  <path d="M24 28 H76 L24 72 H76" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="24" cy="28" r="7.5"/>
+  <circle cx="76" cy="72" r="7.5"/>
+</svg>

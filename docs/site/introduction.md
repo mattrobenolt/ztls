@@ -1,3 +1,11 @@
+<p align="center">
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="72" height="72" fill="none" role="img" aria-label="ztls">
+    <path d="M24 28 H76 L24 72 H76" stroke="currentColor" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="24" cy="28" r="7.5" fill="currentColor"/>
+    <circle cx="76" cy="72" r="7.5" fill="currentColor"/>
+  </svg>
+</p>
+
 # ztls
 
 ztls is a TLS 1.3 library that does no I/O. You feed it the bytes you read off
