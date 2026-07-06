@@ -197,8 +197,13 @@ consumption-for-rejection, not resumption.
   unexpected attempted failures; remaining named-group scope beyond the proven
   server-side P-256 path
   stays tracked under broader provider-backed group work *(#6)*. HelloRetryRequest
-  server retry now passes TLS-Anvil, but full client/server HRR
-  state-machine support remains broader open work *(#1)*. Record-fragmentation
+  server retry now passes TLS-Anvil, and client-side HRR consumption for
+  supported groups omitted from ClientHello1 `key_share` is implemented with
+  RFC-cited unit tests covering the §4.4.1 transcript collapse, ClientHello2
+  generation with selected-group-only key_share, rejection when HRR selects an
+  already-offered key share, second-HRR rejection, unsupported-group rejection,
+  and post-HRR ServerHello cipher-suite/group consistency checks; full
+  client/server HRR state-machine support remains broader open work *(#1)*. Record-fragmentation
   capability is probe-positive and locally covered for fragmented ClientHello,
   Finished, and KeyUpdate; TLS-Anvil's `RecordLayer.interleaveRecords` remains a
   sender-restriction expected skip, not a missing-fragmentation result. The

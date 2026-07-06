@@ -58,7 +58,7 @@ pub const ParseError = error{
     MissingExtension,
 };
 
-const hello_retry_request_random = [_]u8{
+pub const hello_retry_request_random = [_]u8{
     0xcf, 0x21, 0xad, 0x74, 0xe5, 0x9a, 0x61, 0x11,
     0xbe, 0x1d, 0x8c, 0x02, 0x1e, 0x65, 0xb8, 0x91,
     0xc2, 0xa2, 0x11, 0x16, 0x7a, 0xbb, 0x8c, 0x5e,
@@ -112,6 +112,8 @@ pub const HrrParseError = error{
     UnsupportedTlsVersion,
     /// Semantic protocol violation requiring illegal_parameter.
     IllegalParameter,
+    /// legacy_session_id_echo does not match the ClientHello legacy_session_id.
+    InvalidSessionIdEcho,
     /// legacy_compression_method is not null compression.
     InvalidCompressionMethod,
     /// A recognized extension appeared in a message where TLS 1.3 does not allow it.
@@ -133,6 +135,13 @@ pub const HrrParseError = error{
 ///
 /// RFC 8446 §4.1.4, §4.2.2, §4.2.8.
 pub fn parseHelloRetryRequest(msg: []const u8) HrrParseError!HelloRetryRequest {
+    return parseHelloRetryRequestWithSessionIdEcho(msg, null);
+}
+
+pub fn parseHelloRetryRequestWithSessionIdEcho(
+    msg: []const u8,
+    expected_session_id: ?[]const u8,
+) HrrParseError!HelloRetryRequest {
     if (msg.len < 4) return error.UnexpectedEof;
     var r: wire.Reader = .init(msg);
 
@@ -152,7 +161,10 @@ pub fn parseHelloRetryRequest(msg: []const u8) HrrParseError!HelloRetryRequest {
 
     const session_id_len = r.assumeRead(u8);
     if (r.remaining().len < session_id_len + 2 + 1 + 2) return error.UnexpectedEof;
-    r.assumeSkip(session_id_len); // legacy_session_id_echo
+    const session_id_echo = r.assumeReadSlice(session_id_len);
+    if (expected_session_id) |expected| {
+        if (!mem.eql(u8, session_id_echo, expected)) return error.InvalidSessionIdEcho;
+    }
 
     const cipher_suite = CipherSuite.fromWire(r.assumeRead(u16)) orelse return error.InvalidEnumTag;
     const compression_method = r.assumeRead(CompressionMethod);
@@ -875,6 +887,21 @@ test "encodeHelloRetryRequest: parse round-trip" {
     try testing.expectEqual(.aes_128_gcm_sha256, hrr.cipher_suite);
     try testing.expectEqual(NamedGroup.x25519, hrr.selected_group.?);
     try testing.expectEqual(@as(?[]const u8, null), hrr.cookie);
+}
+
+// RFC 8446 §4.1.4 — HRR legacy_session_id_echo must match ClientHello.
+test "parseHelloRetryRequest: rejects mismatched session id echo" {
+    var out: [128]u8 = undefined;
+    const msg = try encodeHelloRetryRequest(
+        &out,
+        &.{ 0xaa, 0xbb },
+        .aes_128_gcm_sha256,
+        .x25519,
+    );
+    try testing.expectError(
+        error.InvalidSessionIdEcho,
+        parseHelloRetryRequestWithSessionIdEcho(msg, &.{ 0xaa, 0xcc }),
+    );
 }
 
 // RFC 8446 §4.1.4, RFC 8448 §5 — basic HRR parse.

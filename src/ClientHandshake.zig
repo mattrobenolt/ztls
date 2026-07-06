@@ -55,7 +55,9 @@ const server_hello = @import("server_hello.zig");
 const SignatureScheme = @import("signature_scheme.zig").SignatureScheme;
 const suite_state = @import("suite_state.zig");
 const HashArm = suite_state.HashArm;
+const transcript_util = @import("transcript.zig");
 const x25519 = @import("x25519.zig");
+const NamedGroup = @import("kex.zig").NamedGroup;
 
 const ClientHandshake = @This();
 
@@ -138,7 +140,8 @@ pub const HandshakeKeys = struct {
 };
 
 /// RFC 8446 Appendix A.1 — client state machine, trimmed to the flows we
-/// support (full 1-RTT handshake, no PSK, no client credentials, no HelloRetryRequest).
+/// support (full 1-RTT handshake, no PSK, no client credentials). HRR is
+/// handled inline in wait_sh without a separate state.
 pub const State = enum {
     start,
     wait_sh,
@@ -388,6 +391,9 @@ offered_signature_schemes: OfferedSignatureSchemesBuffer = .empty,
 /// Offered ClientHello extensions tracked for validating server responses.
 offered_extensions: OfferedExtensions = .initEmpty(),
 offered_groups: client_hello.SupportedGroups = .{},
+/// Groups that had KeyShareEntry values in ClientHello1. HRR selected_group
+/// must not be one of these groups. RFC 8446 §4.2.8.
+offered_key_shares: client_hello.SupportedGroups = .{},
 /// ALPN protocols offered in ClientHello. Caller-owned, must live until start().
 alpn_protocols: AlpnProtocols = &.{},
 selected_alpn: SelectedAlpnBuffer = .empty,
@@ -400,6 +406,10 @@ received_certificate_request: bool = false,
 /// after that point, but application traffic secrets are still derived here.
 server_finished_hash: [48]u8 = @splat(0),
 server_finished_hash_len: u8 = 0,
+/// The named group selected by HelloRetryRequest, or null if no HRR was
+/// received. Set during HRR processing; the real ServerHello must use the
+/// same group. RFC 8446 §4.1.4.
+retry_selected_group: ?NamedGroup = null,
 
 /// Start a client handshake from a Config. The Config's `host_name` is the
 /// single source for SNI and certificate validation; `now_sec` is required.
@@ -510,6 +520,7 @@ pub fn injectClientHello(self: *ClientHandshake, client_hello_msg: []const u8) v
     self.offered_signature_schemes.clear();
     self.offered_extensions = .initEmpty();
     self.offered_groups = .{};
+    self.offered_key_shares = .{};
     const parsed = client_hello.parse(client_hello_msg) catch null;
     if (parsed) |ch| {
         self.legacy_session_id.appendSlice(ch.legacy_session_id) catch
@@ -523,6 +534,8 @@ pub fn injectClientHello(self: *ClientHandshake, client_hello_msg: []const u8) v
         i = 0;
         self.offered_extensions = ch.offered_extensions;
         self.offered_groups = ch.groups;
+        if (ch.public_key != null) self.offered_key_shares.insert(.x25519);
+        if (ch.public_key_p256 != null) self.offered_key_shares.insert(.secp256r1);
         while (i < ch.signature_schemes.len) : (i += 2) {
             const wire_scheme = memx.readInt(u16, ch.signature_schemes[i..][0..2]);
             const scheme: SignatureScheme = @enumFromInt(wire_scheme);
@@ -702,7 +715,8 @@ pub fn sendPreparedApplicationData(
 }
 
 pub const ProcessError = frame.ParseError || RecordLayer.DecryptError ||
-    ServerHelloError || FlightError || SendError || alert.ParseError ||
+    ServerHelloError || HelloRetryRequestError || FlightError || SendError ||
+    alert.ParseError ||
     error{ IncompleteRecord, UnexpectedRecord, UnexpectedMessage, PeerAlert };
 
 // Handshake-phase inbound: drive the flight from one record, returning the
@@ -724,10 +738,16 @@ fn processHandshakeRecord(
             return null;
         },
         // ServerHello is the only handshake message that arrives unencrypted.
+        // RFC 8446 §4.1.4: a HelloRetryRequest has the same wire type (0x02)
+        // but a fixed Random value. Detect HRR before normal ServerHello
+        // processing; if it is an HRR, generate ClientHello2 and stay in
+        // wait_sh for the real ServerHello.
         .handshake => {
             if (self.state != .wait_sh) return error.UnexpectedRecord;
             if (hdr.length() == 0) return error.UnexpectedRecord;
-            try self.processServerHello(record[frame.header_len..][0..hdr.length()]);
+            const msg = record[frame.header_len..][0..hdr.length()];
+            if (try self.processHelloRetryRequest(msg, out)) |ch2| return ch2;
+            try self.processServerHello(msg);
             return null;
         },
         // Encrypted records: decrypt with rx, then feed the server flight. rx
@@ -762,11 +782,120 @@ pub const ServerHelloError = server_hello.ParseError || aead.Error || error{
     LibcryptoFailed,
 };
 
+/// Errors from HelloRetryRequest processing and ClientHello2 generation.
+pub const HelloRetryRequestError = server_hello.HrrParseError ||
+    client_hello.RetryEncodeError ||
+    error{
+        UnsupportedCipherSuite,
+        UnsupportedKeyShareGroup,
+        IllegalParameter,
+        UnexpectedMessage,
+        BufferTooShort,
+    };
+
 fn offeredSuite(self: *const ClientHandshake, suite: CipherSuite) bool {
     for (self.offered_suites.constSlice()) |offered| {
         if (offered == suite) return true;
     }
     return false;
+}
+
+/// Check if `msg` is a HelloRetryRequest and, if so, process it: validate the
+/// selected group and cipher suite, perform the RFC 8446 §4.4.1 transcript
+/// collapse, generate ClientHello2 with only the selected group's key_share
+/// (and cookie if present), and absorb it into the transcript. Returns the
+/// ClientHello2 handshake message bytes (to be framed and sent by the caller)
+/// or null if `msg` is not an HRR. Stays in wait_sh for the real ServerHello.
+///
+/// RFC 8446 §4.1.4, §4.4.1.
+pub fn processHelloRetryRequest(
+    self: *ClientHandshake,
+    msg: []const u8,
+    out: []u8,
+) HelloRetryRequestError!?[]const u8 {
+    assert(self.state == .wait_sh);
+    // Fast path: if the Random field doesn't match the HRR sentinel, this is
+    // a normal ServerHello. The Random is at offset 6 (after the 4-byte
+    // handshake header + 2-byte legacy_version), but bounds-check first.
+    if (msg.len < 6 + 32) return null;
+    if (!mem.eql(u8, msg[6..][0..32], &server_hello.hello_retry_request_random))
+        return null;
+
+    // RFC 8446 §4.1.4: a second HelloRetryRequest is illegal. The client must
+    // abort with unexpected_message.
+    if (self.retry_selected_group != null) return error.UnexpectedMessage;
+
+    const hrr = try server_hello.parseHelloRetryRequestWithSessionIdEcho(
+        msg,
+        self.legacy_session_id.constSlice(),
+    );
+
+    // Validate the cipher suite was offered in ClientHello1.
+    if (!self.offeredSuite(hrr.cipher_suite)) return error.UnsupportedCipherSuite;
+
+    // Validate the selected group is one we offered and support, but did not
+    // already include as a KeyShareEntry in ClientHello1. RFC 8446 §4.2.8.
+    const group = hrr.selected_group orelse return error.IllegalParameter;
+    if (!self.offered_groups.contains(group)) return error.UnsupportedKeyShareGroup;
+    if (self.offered_key_shares.contains(group)) return error.IllegalParameter;
+    switch (group) {
+        .x25519, .secp256r1 => {},
+        else => return error.UnsupportedKeyShareGroup,
+    }
+
+    // Collapse the dual transcript to the negotiated hash's arm, carrying over
+    // the hasher that already absorbed ClientHello1. RFC 8446 §4.4.1.
+    const b = self.suite.buffering;
+    self.suite = switch (hrr.cipher_suite) {
+        .aes_128_gcm_sha256, .chacha20_poly1305_sha256 => .{
+            .sha256 = .{ .transcript = b.sha256, .aead = hrr.cipher_suite },
+        },
+        .aes_256_gcm_sha384 => .{
+            .sha384 = .{ .transcript = b.sha384, .aead = hrr.cipher_suite },
+        },
+    };
+
+    // RFC 8446 §4.4.1 transcript collapse:
+    //   Transcript-Hash(ClientHello1, HelloRetryRequest, ... Mn) =
+    //     Hash(message_hash || 00 00 Hash.length || Hash(ClientHello1) ||
+    //          HelloRetryRequest || ... || Mn)
+    // Reset the running hash, feed the synthetic message_hash, then feed HRR.
+    switch (self.suite) {
+        .sha256 => |*s| {
+            const ch1_hash = s.transcript.peek();
+            s.transcript = .init(.{});
+            const synthetic = transcript_util.messageHashSynthetic(32, ch1_hash);
+            s.transcript.update(&synthetic);
+            s.transcript.update(msg);
+        },
+        .sha384 => |*s| {
+            const ch1_hash = s.transcript.peek();
+            s.transcript = .init(.{});
+            const synthetic = transcript_util.messageHashSynthetic(48, ch1_hash);
+            s.transcript.update(&synthetic);
+            s.transcript.update(msg);
+        },
+        .buffering => unreachable,
+    }
+
+    // Generate ClientHello2 with only the selected group's key_share.
+    const ch2 = try client_hello.encodeRetryAfterHRR(
+        out,
+        self.random,
+        self.keypair.public_key,
+        self.p256_keypair.public_key,
+        group,
+        hrr.cookie,
+        self.policy.host_name,
+        self.alpn_protocols,
+    );
+
+    // Absorb ClientHello2 into the transcript. RFC 8446 §4.4.1.
+    self.suite.update(ch2);
+
+    self.retry_selected_group = group;
+    // Stay in wait_sh for the real ServerHello.
+    return ch2;
 }
 
 /// Process the server's ServerHello: parse it, absorb it into the transcript,
@@ -778,19 +907,34 @@ pub fn processServerHello(self: *ClientHandshake, msg: []const u8) ServerHelloEr
     const sh = try server_hello.parseWithSessionIdEcho(msg, self.legacy_session_id.constSlice());
     if (!self.offeredSuite(sh.cipher_suite)) return error.UnsupportedCipherSuite;
     if (!self.offered_groups.contains(sh.key_share.group())) return error.UnsupportedKeyShareGroup;
-    // Collapse the dual transcript to the negotiated hash's arm, carrying over
-    // the hasher that already absorbed ClientHello.
-    const b = self.suite.buffering;
-    self.suite = switch (sh.cipher_suite) {
-        .aes_128_gcm_sha256, .chacha20_poly1305_sha256 => .{
-            .sha256 = .{ .transcript = b.sha256, .aead = sh.cipher_suite },
-        },
-        .aes_256_gcm_sha384 => .{
-            .sha384 = .{ .transcript = b.sha384, .aead = sh.cipher_suite },
-        },
-    };
 
-    self.suite.update(msg); // transcript now covers ClientHello || ServerHello
+    if (self.retry_selected_group) |hrr_group| {
+        // Post-HRR ServerHello: the suite is already collapsed, and the
+        // cipher suite and key_share group must match the HRR.
+        // RFC 8446 §4.1.3: the server MUST select the same cipher suite in
+        // the HelloRetryRequest and the ServerHello.
+        const hrr_suite = switch (self.suite) {
+            .sha256 => |s| s.aead,
+            .sha384 => |s| s.aead,
+            .buffering => unreachable,
+        };
+        if (sh.cipher_suite != hrr_suite) return error.IllegalParameter;
+        if (sh.key_share.group() != hrr_group) return error.IllegalParameter;
+    } else {
+        // First (and only) ServerHello with no prior HRR: collapse the dual
+        // transcript to the negotiated hash's arm.
+        const b = self.suite.buffering;
+        self.suite = switch (sh.cipher_suite) {
+            .aes_128_gcm_sha256, .chacha20_poly1305_sha256 => .{
+                .sha256 = .{ .transcript = b.sha256, .aead = sh.cipher_suite },
+            },
+            .aes_256_gcm_sha384 => .{
+                .sha384 = .{ .transcript = b.sha384, .aead = sh.cipher_suite },
+            },
+        };
+    }
+
+    self.suite.update(msg); // transcript now covers ... || ServerHello
     var dhe = switch (sh.key_share) {
         .x25519 => |key| try x25519.sharedSecret(self.keypair.secret_key, key),
         .secp256r1 => |key| try p256.sharedSecret(self.p256_keypair.secret_key, key),
@@ -2717,4 +2861,445 @@ fn fuzzProcessFlight(_: void, input: []const u8) anyerror!void {
 
 test "fuzz: processFlight handles arbitrary decrypted bytes" {
     try fuzz_compat.fuzzBytes(fuzzProcessFlight, {}, .{});
+}
+
+// ----------------------------------------------------------------------------
+// HelloRetryRequest client-side tests — RFC 8446 §4.1.4, §4.4.1
+// ----------------------------------------------------------------------------
+
+// Helper: encode an HRR handshake message for testing.
+fn encodeHrrForTest(
+    out: []u8,
+    session_id: []const u8,
+    suite: CipherSuite,
+    group: NamedGroup,
+) ![]const u8 {
+    return server_hello.encodeHelloRetryRequest(out, session_id, suite, group);
+}
+
+const ExtensionInfoForTest = struct {
+    offset: usize,
+    extensions_len_offset: usize,
+};
+
+fn findClientHelloExtensionForTest(msg: []const u8, ext_type: u16) !ExtensionInfoForTest {
+    var pos: usize = 4 + 2 + 32;
+    const sid_len = msg[pos];
+    pos += 1 + sid_len;
+    const cipher_suites_len = memx.readInt(u16, msg[pos..][0..2]);
+    pos += 2 + cipher_suites_len;
+    const compression_methods_len = msg[pos];
+    pos += 1 + compression_methods_len;
+    const extensions_len_offset = pos;
+    const extensions_len = memx.readInt(u16, msg[pos..][0..2]);
+    pos += 2;
+    const extensions_end = pos + extensions_len;
+    while (pos < extensions_end) {
+        const found_type = memx.readInt(u16, msg[pos..][0..2]);
+        const ext_len = memx.readInt(u16, msg[pos + 2 ..][0..2]);
+        if (found_type == ext_type) return .{
+            .offset = pos,
+            .extensions_len_offset = extensions_len_offset,
+        };
+        pos += 4 + ext_len;
+    }
+    return error.MissingExtension;
+}
+
+fn removeP256KeyShareForTest(buf: []u8, len: usize) ![]u8 {
+    const key_share = try findClientHelloExtensionForTest(buf[0..len], 0x0033);
+    const offset = key_share.offset;
+    const p256_entry_len = 2 + 2 + p256.public_length;
+    const x25519_entry_len = 2 + 2 + x25519.public_length;
+    const p256_offset = offset + 4 + 2 + x25519_entry_len;
+
+    @memmove(buf[p256_offset .. len - p256_entry_len], buf[p256_offset + p256_entry_len .. len]);
+    const new_len = len - p256_entry_len;
+
+    const body_len = memx.readInt(u24, buf[1..4]);
+    memx.writeInt(u24, buf[1..4], body_len - p256_entry_len);
+    const extensions_len = memx.readInt(u16, buf[key_share.extensions_len_offset..][0..2]);
+    memx.writeInt(u16, buf[key_share.extensions_len_offset..][0..2], extensions_len - p256_entry_len);
+    const key_share_ext_len = memx.readInt(u16, buf[offset + 2 ..][0..2]);
+    memx.writeInt(u16, buf[offset + 2 ..][0..2], key_share_ext_len - p256_entry_len);
+    const shares_len = memx.readInt(u16, buf[offset + 4 ..][0..2]);
+    memx.writeInt(u16, buf[offset + 4 ..][0..2], shares_len - p256_entry_len);
+    return buf[0..new_len];
+}
+
+fn encodeClientHelloMissingP256ShareForTest(out: []u8, hs: *const ClientHandshake) ![]u8 {
+    const full = try client_hello.encodeWithP256(
+        out,
+        hs.random,
+        hs.keypair.public_key,
+        hs.p256_keypair.public_key,
+        null,
+        &.{},
+    );
+    return removeP256KeyShareForTest(out, full.len);
+}
+
+// RFC 8446 §4.2.8 — HRR selected_group must not be a group that already had a
+// KeyShareEntry in ClientHello1.
+test "processHelloRetryRequest: rejects already-offered key_share group" {
+    var hs: ClientHandshake = .init(.{
+        .keypair = rfc8448_client_keypair,
+        .p256_keypair = try p256.KeyPair.generateDeterministic(p256_client_seed),
+        .host_name = null,
+        .now_sec = 0,
+        .random = .zero,
+    });
+    var ch_buf: [512]u8 = undefined;
+    const ch = try client_hello.encodeWithP256(
+        &ch_buf,
+        .zero,
+        hs.keypair.public_key,
+        hs.p256_keypair.public_key,
+        null,
+        &.{},
+    );
+    hs.injectClientHello(ch);
+
+    var hrr_buf: [128]u8 = undefined;
+    const hrr = try encodeHrrForTest(&hrr_buf, &.{}, .aes_128_gcm_sha256, .x25519);
+
+    var out: [512]u8 = undefined;
+    try testing.expectError(error.IllegalParameter, hs.processHelloRetryRequest(hrr, &out));
+}
+
+// RFC 8446 §4.1.4 — a valid HRR for secp256r1 produces ClientHello2 with only
+// the secp256r1 key_share.
+test "processHelloRetryRequest: secp256r1 selected produces ClientHello2" {
+    const client_p256 = try p256.KeyPair.generateDeterministic(p256_client_seed);
+    var hs: ClientHandshake = .init(.{
+        .keypair = rfc8448_client_keypair,
+        .p256_keypair = client_p256,
+        .host_name = null,
+        .now_sec = 0,
+        .random = .zero,
+    });
+    var ch_buf: [512]u8 = undefined;
+    const ch = try encodeClientHelloMissingP256ShareForTest(&ch_buf, &hs);
+    hs.injectClientHello(ch);
+
+    var hrr_buf: [128]u8 = undefined;
+    const hrr = try encodeHrrForTest(&hrr_buf, &.{}, .aes_128_gcm_sha256, .secp256r1);
+
+    var out: [512]u8 = undefined;
+    const ch2 = try hs.processHelloRetryRequest(hrr, &out);
+    try testing.expect(ch2 != null);
+    try testing.expectEqual(.wait_sh, hs.state);
+    try testing.expectEqual(NamedGroup.secp256r1, hs.retry_selected_group.?);
+
+    const parsed = try client_hello.parse(ch2.?);
+    try testing.expectEqual(@as(?x25519.PublicKey, null), parsed.public_key);
+    try testing.expectEqualSlices(u8, &client_p256.public_key.data, &parsed.public_key_p256.?.data);
+}
+
+// RFC 8446 §4.4.1 — the transcript after HRR is:
+//   Hash(message_hash || 00 00 Hash.length || Hash(ClientHello1) || HRR || CH2)
+// Verify the collapse by computing the expected transcript independently.
+test "processHelloRetryRequest: transcript collapse matches §4.4.1" {
+    var hs: ClientHandshake = .init(.{
+        .keypair = rfc8448_client_keypair,
+        .p256_keypair = try p256.KeyPair.generateDeterministic(p256_client_seed),
+        .host_name = null,
+        .now_sec = 0,
+        .random = .zero,
+    });
+    var ch_buf: [512]u8 = undefined;
+    const ch = try encodeClientHelloMissingP256ShareForTest(&ch_buf, &hs);
+    hs.injectClientHello(ch);
+
+    // Compute Hash(ClientHello1) independently for comparison.
+    var ch1_hash: [32]u8 = undefined;
+    Sha256.hash(ch, &ch1_hash, .{});
+
+    var hrr_buf: [128]u8 = undefined;
+    const hrr = try encodeHrrForTest(&hrr_buf, &.{}, .aes_128_gcm_sha256, .secp256r1);
+
+    var out: [512]u8 = undefined;
+    const ch2 = try hs.processHelloRetryRequest(hrr, &out);
+
+    // Independently compute the expected transcript: synthetic || HRR || CH2.
+    var expected: Sha256 = .init(.{});
+    const synthetic = transcript_util.messageHashSynthetic(32, ch1_hash);
+    expected.update(&synthetic);
+    expected.update(hrr);
+    expected.update(ch2.?);
+
+    const actual = hs.suite.sha256.transcript.peek();
+    const expected_hash = expected.peek();
+    try testing.expectEqualSlices(u8, &expected_hash, &actual);
+}
+
+// RFC 8446 §4.1.4 — a second HelloRetryRequest is illegal; the client must
+// abort with unexpected_message.
+test "processHelloRetryRequest: rejects second HRR" {
+    var hs: ClientHandshake = .init(.{
+        .keypair = rfc8448_client_keypair,
+        .p256_keypair = try p256.KeyPair.generateDeterministic(p256_client_seed),
+        .host_name = null,
+        .now_sec = 0,
+        .random = .zero,
+    });
+    var ch_buf: [512]u8 = undefined;
+    const ch = try encodeClientHelloMissingP256ShareForTest(&ch_buf, &hs);
+    hs.injectClientHello(ch);
+
+    var hrr_buf: [128]u8 = undefined;
+    const hrr = try encodeHrrForTest(&hrr_buf, &.{}, .aes_128_gcm_sha256, .secp256r1);
+
+    var out: [512]u8 = undefined;
+    _ = try hs.processHelloRetryRequest(hrr, &out);
+
+    // Feed a second HRR — must be rejected.
+    try testing.expectError(
+        error.UnexpectedMessage,
+        hs.processHelloRetryRequest(hrr, &out),
+    );
+}
+
+// RFC 8446 §4.1.4 — HRR selected_group must be one the client offered.
+test "processHelloRetryRequest: rejects unoffered selected_group" {
+    var hs: ClientHandshake = .init(.{
+        .keypair = rfc8448_client_keypair,
+        .p256_keypair = try p256.KeyPair.generateDeterministic(p256_client_seed),
+        .host_name = null,
+        .now_sec = 0,
+        .random = .zero,
+    });
+    var ch_buf: [512]u8 = undefined;
+    const ch = try encodeClientHelloMissingP256ShareForTest(&ch_buf, &hs);
+    hs.injectClientHello(ch);
+
+    // secp384r1 is not offered by the client (only X25519 and secp256r1).
+    var hrr_buf: [128]u8 = undefined;
+    const hrr = try encodeHrrForTest(&hrr_buf, &.{}, .aes_128_gcm_sha256, .secp384r1);
+
+    var out: [512]u8 = undefined;
+    try testing.expectError(
+        error.UnsupportedKeyShareGroup,
+        hs.processHelloRetryRequest(hrr, &out),
+    );
+}
+
+// RFC 8446 §4.1.3 — after HRR, the ServerHello cipher suite must match the HRR.
+test "processServerHello: post-HRR rejects mismatched cipher suite" {
+    var hs: ClientHandshake = .init(.{
+        .keypair = rfc8448_client_keypair,
+        .p256_keypair = try p256.KeyPair.generateDeterministic(p256_client_seed),
+        .host_name = null,
+        .now_sec = 0,
+        .random = .zero,
+    });
+    var ch_buf: [512]u8 = undefined;
+    const ch = try encodeClientHelloMissingP256ShareForTest(&ch_buf, &hs);
+    hs.injectClientHello(ch);
+
+    var hrr_buf: [128]u8 = undefined;
+    const hrr = try encodeHrrForTest(&hrr_buf, &.{}, .aes_128_gcm_sha256, .secp256r1);
+
+    var out: [512]u8 = undefined;
+    _ = try hs.processHelloRetryRequest(hrr, &out);
+
+    // ServerHello with a different cipher suite (SHA-384) must be rejected.
+    var sh_buf: [192]u8 = undefined;
+    const sh = try server_hello.encode(
+        &sh_buf,
+        @splat(0xab),
+        &.{},
+        .aes_256_gcm_sha384,
+        .zero,
+    );
+    try testing.expectError(error.IllegalParameter, hs.processServerHello(sh));
+}
+
+// RFC 8446 §4.1.3 — after HRR, the ServerHello key_share group must match the
+// HRR selected_group.
+test "processServerHello: post-HRR rejects mismatched key_share group" {
+    var hs: ClientHandshake = .init(.{
+        .keypair = rfc8448_client_keypair,
+        .p256_keypair = try p256.KeyPair.generateDeterministic(p256_client_seed),
+        .host_name = null,
+        .now_sec = 0,
+        .random = .zero,
+    });
+    var ch_buf: [512]u8 = undefined;
+    const ch = try encodeClientHelloMissingP256ShareForTest(&ch_buf, &hs);
+    hs.injectClientHello(ch);
+
+    // HRR selects secp256r1.
+    var hrr_buf: [128]u8 = undefined;
+    const hrr = try encodeHrrForTest(&hrr_buf, &.{}, .aes_128_gcm_sha256, .secp256r1);
+
+    var out: [512]u8 = undefined;
+    _ = try hs.processHelloRetryRequest(hrr, &out);
+
+    // ServerHello with X25519 key_share (mismatched group) must be rejected.
+    var sh_buf: [128]u8 = undefined;
+    const sh = try server_hello.encode(
+        &sh_buf,
+        @splat(0xab),
+        &.{},
+        .aes_128_gcm_sha256,
+        .init(@splat(0xcd)),
+    );
+    try testing.expectError(error.IllegalParameter, hs.processServerHello(sh));
+}
+
+// RFC 8446 §4.1.3, §4.1.4 — after HRR for secp256r1, the real ServerHello with
+// matching cipher suite and secp256r1 key_share is accepted and derives keys.
+test "processServerHello: post-HRR accepts matching ServerHello" {
+    const server_p256 = try p256.KeyPair.generateDeterministic(p256_server_seed);
+    var hs: ClientHandshake = .init(.{
+        .keypair = rfc8448_client_keypair,
+        .p256_keypair = try p256.KeyPair.generateDeterministic(p256_client_seed),
+        .host_name = null,
+        .now_sec = 0,
+        .random = .zero,
+    });
+    var ch_buf: [512]u8 = undefined;
+    const ch = try encodeClientHelloMissingP256ShareForTest(&ch_buf, &hs);
+    hs.injectClientHello(ch);
+
+    var hrr_buf: [128]u8 = undefined;
+    const hrr = try encodeHrrForTest(&hrr_buf, &.{}, .aes_128_gcm_sha256, .secp256r1);
+
+    var out: [512]u8 = undefined;
+    _ = try hs.processHelloRetryRequest(hrr, &out);
+
+    // Real ServerHello with secp256r1 key_share and the same cipher suite.
+    var sh_buf: [192]u8 = undefined;
+    const sh = try server_hello.encodeWithKeyShare(
+        &sh_buf,
+        @splat(0xab),
+        &.{},
+        .aes_128_gcm_sha256,
+        .{ .secp256r1 = server_p256.public_key },
+    );
+    try hs.processServerHello(sh);
+    try testing.expectEqual(.wait_ee, hs.state);
+}
+
+// RFC 8446 §4.1.4 — handleRecord with an HRR record returns ClientHello2 as
+// a .write event, and the client stays in wait_sh.
+test "handleRecord: HRR returns ClientHello2 as write event" {
+    var hs: ClientHandshake = .init(.{
+        .keypair = rfc8448_client_keypair,
+        .p256_keypair = try p256.KeyPair.generateDeterministic(p256_client_seed),
+        .host_name = null,
+        .now_sec = 0,
+        .random = .zero,
+    });
+    var ch_buf: [512]u8 = undefined;
+    const ch = try encodeClientHelloMissingP256ShareForTest(&ch_buf, &hs);
+    hs.injectClientHello(ch);
+
+    var hrr_buf: [128]u8 = undefined;
+    const hrr = try encodeHrrForTest(&hrr_buf, &.{}, .aes_128_gcm_sha256, .secp256r1);
+    // Wrap HRR in a plaintext handshake record.
+    var hrr_record: [192]u8 = undefined;
+    const header: frame.Header = .init(.handshake, @intCast(hrr.len));
+    header.write(hrr_record[0..frame.header_len]);
+    @memcpy(hrr_record[frame.header_len..][0..hrr.len], hrr);
+
+    var out: [512]u8 = undefined;
+    const ev = try hs.handleRecord(hrr_record[0 .. frame.header_len + hrr.len], &out);
+    switch (ev) {
+        .write => {},
+        else => try testing.expectEqual(.write, @as(std.meta.Tag(Event), ev)),
+    }
+    try testing.expectEqual(.wait_sh, hs.state);
+    try testing.expectEqual(NamedGroup.secp256r1, hs.retry_selected_group.?);
+}
+
+// RFC 8446 §4.1.4 — a normal ServerHello (non-HRR) is not affected by the HRR
+// fast-path check. processHelloRetryRequest returns null for non-HRR messages.
+test "processHelloRetryRequest: returns null for normal ServerHello" {
+    var hs: ClientHandshake = .init(testConfig(rfc8448_client_keypair));
+    hs.injectClientHello(&rfc8448_client_hello);
+
+    var out: [512]u8 = undefined;
+    const result = try hs.processHelloRetryRequest(&rfc8448_server_hello, &out);
+    try testing.expectEqual(@as(?[]const u8, null), result);
+    try testing.expectEqual(@as(?NamedGroup, null), hs.retry_selected_group);
+}
+
+// RFC 8446 §4.2.2 — HRR with a cookie produces ClientHello2 that echoes the
+// cookie verbatim in the cookie extension.
+test "processHelloRetryRequest: HRR with cookie echoes cookie in CH2" {
+    var hs: ClientHandshake = .init(.{
+        .keypair = rfc8448_client_keypair,
+        .p256_keypair = try p256.KeyPair.generateDeterministic(p256_client_seed),
+        .host_name = null,
+        .now_sec = 0,
+        .random = .zero,
+    });
+    var ch_buf: [512]u8 = undefined;
+    const ch = try encodeClientHelloMissingP256ShareForTest(&ch_buf, &hs);
+    hs.injectClientHello(ch);
+
+    // Build an HRR with a cookie by hand: encode a normal HRR then inject a
+    // cookie extension into the extensions block.
+    var hrr_buf: [256]u8 = undefined;
+    const hrr_base = try server_hello.encodeHelloRetryRequest(
+        &hrr_buf,
+        &.{},
+        .aes_128_gcm_sha256,
+        .secp256r1,
+    );
+    // The HRR extensions are: key_share (6 bytes) + supported_versions (6 bytes) = 12.
+    // Append a cookie extension (4-byte header + 2-byte cookie_len + cookie bytes).
+    const cookie = [_]u8{ 0xde, 0xad, 0xbe, 0xef };
+    const cookie_ext = [_]u8{ 0x00, 0x2c } ++ // cookie extension type
+        [_]u8{ 0x00, @intCast(2 + cookie.len) } ++ // extension_data length
+        [_]u8{ 0x00, @intCast(cookie.len) } ++ // cookie vector length
+        cookie;
+
+    // We need to rewrite the HRR to include the cookie extension. The easiest
+    // way is to rebuild it: copy the base HRR, insert the cookie ext before the
+    // last 6 bytes (supported_versions), and fix the lengths.
+    var hrr_with_cookie: [256]u8 = undefined;
+    const base_len = hrr_base.len;
+    const cookie_ext_len = cookie_ext.len;
+    // The last 6 bytes are supported_versions; insert cookie before them.
+    const sv_offset = base_len - 6;
+    @memcpy(hrr_with_cookie[0..sv_offset], hrr_base[0..sv_offset]);
+    @memcpy(hrr_with_cookie[sv_offset..][0..cookie_ext_len], &cookie_ext);
+    @memcpy(hrr_with_cookie[sv_offset + cookie_ext_len ..][0..6], hrr_base[sv_offset..base_len]);
+    const new_total = base_len + cookie_ext_len;
+    // Fix the handshake body length (bytes 1..4, u24).
+    const new_body_len: u24 = @intCast(new_total - 4);
+    hrr_with_cookie[1] = @intCast(new_body_len >> 16);
+    hrr_with_cookie[2] = @intCast((new_body_len >> 8) & 0xff);
+    hrr_with_cookie[3] = @intCast(new_body_len & 0xff);
+    // Fix the extensions_len (u16 at offset 42: 4+2+32+1+2+1 = 42).
+    const old_ext_len = memx.readInt(u16, hrr_with_cookie[42..][0..2]);
+    memx.writeInt(u16, hrr_with_cookie[42..][0..2], old_ext_len + @as(u16, @intCast(cookie_ext_len)));
+
+    var out: [512]u8 = undefined;
+    const ch2 = try hs.processHelloRetryRequest(hrr_with_cookie[0..new_total], &out);
+    try testing.expect(ch2 != null);
+    try testing.expectEqual(.wait_sh, hs.state);
+
+    // Verify CH2 contains the cookie extension by searching for the cookie
+    // extension type (0x002c) followed by the cookie bytes.
+    var found_cookie = false;
+    var i: usize = 0;
+    while (i + 6 < ch2.?.len) : (i += 1) {
+        if (ch2.?[i] == 0x00 and ch2.?[i + 1] == 0x2c) {
+            const ext_data_len = memx.readInt(u16, ch2.?[i + 2 ..][0..2]);
+            if (ext_data_len == 2 + cookie.len) {
+                const cookie_len = memx.readInt(u16, ch2.?[i + 4 ..][0..2]);
+                if (cookie_len == cookie.len and
+                    mem.eql(u8, ch2.?[i + 6 ..][0..cookie.len], &cookie))
+                {
+                    found_cookie = true;
+                    break;
+                }
+            }
+        }
+    }
+    try testing.expect(found_cookie);
 }

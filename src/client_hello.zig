@@ -123,6 +123,171 @@ pub fn encodedLenWithP256(
         try extensionsLen(server_name, alpn_protocols, true);
 }
 
+/// Errors from ClientHello2 encoding after a HelloRetryRequest.
+pub const RetryEncodeError = error{
+    BufferTooShort,
+    ServerNameTooLong,
+    UnsupportedGroup,
+} || AlpnError;
+
+/// Compute the key_share extension body length for a single selected group.
+fn singleKeyShareLen(selected_group: NamedGroup) RetryEncodeError!usize {
+    return switch (selected_group) {
+        .x25519 => 2 + 2 + x25519.public_length,
+        .secp256r1 => 2 + 2 + p256.public_length,
+        else => return error.UnsupportedGroup,
+    };
+}
+
+/// Compute the total extensions length for a ClientHello2 with only the
+/// selected group's key_share and an optional cookie.
+fn retryExtensionsLen(
+    server_name: ?[]const u8,
+    alpn_protocols: AlpnProtocols,
+    selected_group: NamedGroup,
+    cookie: ?[]const u8,
+) RetryEncodeError!u16 {
+    const sni: u16 = if (server_name) |n| sniExtLen(n) else 0;
+    const alpn: u16 = if (alpn_protocols.len == 0) 0 else try alpnExtLen(alpn_protocols);
+    const cookie_len: u16 = if (cookie) |c| ext_header_len + 2 + @as(u16, @intCast(c.len)) else 0;
+    const ks = try singleKeyShareLen(selected_group);
+    const total = sni +
+        alpn +
+        ext_supported_versions_len +
+        ext_header_len + 2 + groupCount(true) * 2 +
+        ext_sig_algs_len +
+        ext_sig_algs_cert_len +
+        ext_header_len + 2 + ks +
+        cookie_len;
+    assert(total <= std.math.maxInt(u16));
+    return @intCast(total);
+}
+
+/// Encode a ClientHello2 handshake message in response to a HelloRetryRequest.
+/// RFC 8446 §4.1.2: the second ClientHello is identical to the first except:
+///   - key_share contains only a KeyShareEntry for the HRR selected_group
+///   - cookie extension is included if the HRR provided one
+///   - supported_groups, cipher_suites, and other extensions remain unchanged
+///
+/// `x25519_public_key` and `p256_public_key` are the client's existing
+/// ephemeral keys; the one matching `selected_group` is emitted in key_share.
+/// RFC 8446 §4.1.4 does not require generating a fresh key for the selected
+/// group — the existing keypair is reused.
+pub fn encodeRetryAfterHRR(
+    out: []u8,
+    random: Random,
+    x25519_public_key: x25519.PublicKey,
+    p256_public_key: p256.PublicKey,
+    selected_group: NamedGroup,
+    cookie: ?[]const u8,
+    server_name: ?[]const u8,
+    alpn_protocols: AlpnProtocols,
+) RetryEncodeError![]u8 {
+    if (server_name) |name| if (name.len > 253) return error.ServerNameTooLong;
+    if (cookie) |c| {
+        if (c.len == 0 or c.len > std.math.maxInt(u16)) return error.BufferTooShort;
+    }
+    const ext_len = try retryExtensionsLen(server_name, alpn_protocols, selected_group, cookie);
+    const encoded_len = handshake_header_len + body_fixed_len + ext_len;
+    if (out.len < encoded_len) return error.BufferTooShort;
+
+    var w: wire.Writer = .init(out);
+
+    // Handshake header (RFC 8446 §4)
+    w.append(handshake.Type, .client_hello);
+    w.append(u24, @intCast(body_fixed_len + ext_len));
+
+    // ClientHello body (RFC 8446 §4.1.2) — same as ClientHello1.
+    w.append(ProtocolVersion, legacy_version);
+    w.appendSlice(&random.data);
+    w.append(u8, 0x00); // legacy_session_id: empty
+    w.append(u16, cipher_suite_count * 2);
+    inline for (supported_cipher_suites) |cs| w.append(CipherSuite, cs);
+    w.append(u8, 0x01); // legacy_compression_methods length
+    w.append(CompressionMethod, .no_compression);
+    w.append(u16, ext_len);
+
+    // server_name (RFC 8446 §4.2, RFC 6066 §3)
+    if (server_name) |name| {
+        const name_len: u16 = @intCast(name.len);
+        const entry_len: u16 = 1 + 2 + name_len;
+        const list_len: u16 = entry_len;
+        const ext_data_len: u16 = 2 + entry_len;
+        w.append(ExtensionType, .server_name);
+        w.append(u16, ext_data_len);
+        w.append(u16, list_len);
+        w.append(SniNameType, .host_name);
+        w.append(u16, name_len);
+        w.appendSlice(name);
+    }
+
+    // application_layer_protocol_negotiation (RFC 7301 §3.1)
+    if (alpn_protocols.len != 0) {
+        const ext_data_len = try alpnExtDataLen(alpn_protocols);
+        w.append(ExtensionType, .alpn);
+        w.append(u16, ext_data_len);
+        w.append(u16, ext_data_len - 2);
+        for (alpn_protocols) |protocol| {
+            w.append(u8, @intCast(protocol.len));
+            w.appendSlice(protocol);
+        }
+    }
+
+    // supported_versions (RFC 8446 §4.2.1)
+    w.append(ExtensionType, .supported_versions);
+    w.append(u16, 3);
+    w.append(u8, 0x02); // versions list length
+    w.append(ProtocolVersion, .tls_1_3);
+
+    // supported_groups (RFC 8446 §4.2.7) — unchanged from ClientHello1.
+    w.append(ExtensionType, .supported_groups);
+    w.append(u16, @intCast(2 + groupCount(true) * 2));
+    w.append(u16, @intCast(groupCount(true) * 2));
+    w.append(NamedGroup, .x25519);
+    w.append(NamedGroup, .secp256r1);
+
+    // signature_algorithms (RFC 8446 §4.2.3)
+    w.append(ExtensionType, .signature_algorithms);
+    w.append(u16, 2 + sig_scheme_count * 2);
+    w.append(u16, sig_scheme_count * 2);
+    inline for (supported_signature_schemes) |s| w.append(SignatureScheme, s);
+
+    // signature_algorithms_cert (RFC 8446 §4.2.3)
+    w.append(ExtensionType, .signature_algorithms_cert);
+    w.append(u16, 2 + cert_sig_scheme_count * 2);
+    w.append(u16, cert_sig_scheme_count * 2);
+    inline for (supported_certificate_signature_schemes) |s| w.append(SignatureScheme, s);
+
+    // key_share (RFC 8446 §4.2.8) — only the selected group's KeyShareEntry.
+    const ks_len = try singleKeyShareLen(selected_group);
+    w.append(ExtensionType, .key_share);
+    w.append(u16, @intCast(2 + ks_len));
+    w.append(u16, @intCast(ks_len));
+    switch (selected_group) {
+        .x25519 => {
+            w.append(NamedGroup, .x25519);
+            w.append(u16, x25519.public_length);
+            w.appendSlice(&x25519_public_key.data);
+        },
+        .secp256r1 => {
+            w.append(NamedGroup, .secp256r1);
+            w.append(u16, p256.public_length);
+            w.appendSlice(&p256_public_key.data);
+        },
+        else => return error.UnsupportedGroup,
+    }
+
+    // cookie (RFC 8446 §4.2.2) — echoed verbatim from HelloRetryRequest.
+    if (cookie) |c| {
+        w.append(ExtensionType, .cookie);
+        w.append(u16, @intCast(2 + c.len));
+        w.append(u16, @intCast(c.len));
+        w.appendSlice(c);
+    }
+
+    return w.written();
+}
+
 /// Encode a ClientHello handshake message into `out`.
 ///
 /// Returns the written slice. Feed it into the transcript hash before wrapping
@@ -496,7 +661,7 @@ pub const SupportedGroups = struct {
         return self.set.contains(known);
     }
 
-    fn insert(self: *SupportedGroups, group: NamedGroup) void {
+    pub fn insert(self: *SupportedGroups, group: NamedGroup) void {
         const known = KnownGroup.fromNamed(group) orelse return;
         self.set.insert(known);
     }
@@ -1225,4 +1390,118 @@ test "fuzz: parse handles arbitrary input" {
     var seed_buf: [512]u8 = undefined;
     const seed = encode(&seed_buf, .zero, .zero, null, &.{}) catch &seed_buf;
     try fuzz_compat.fuzzBytes(fuzzParse, {}, .{ .corpus = &.{seed} });
+}
+
+// RFC 8446 §4.1.2 — ClientHello2 after HelloRetryRequest contains only the
+// selected group's key_share and echoes the cookie.
+test "encodeRetryAfterHRR: X25519 selected, no cookie" {
+    const x_key: x25519.PublicKey = .init(@splat(0x11));
+    var p_key: p256.PublicKey = .init(@splat(0x22));
+    p_key.data[0] = 0x04;
+
+    var buf: [512]u8 = undefined;
+    const encoded = try encodeRetryAfterHRR(
+        &buf,
+        .zero,
+        x_key,
+        p_key,
+        .x25519,
+        null,
+        null,
+        &.{},
+    );
+    const parsed = try parse(encoded);
+
+    // key_share must contain only X25519.
+    try testing.expectEqualSlices(u8, &x_key.data, &parsed.public_key.?.data);
+    try testing.expectEqual(@as(?p256.PublicKey, null), parsed.public_key_p256);
+
+    // supported_groups must still advertise both groups.
+    try testing.expect(parsed.groups.contains(.x25519));
+    try testing.expect(parsed.groups.contains(.secp256r1));
+}
+
+// RFC 8446 §4.1.4, §4.2.8 — ClientHello2 key_share uses the HRR selected group.
+test "encodeRetryAfterHRR: secp256r1 selected, no cookie" {
+    const x_key: x25519.PublicKey = .init(@splat(0x11));
+    var p_key: p256.PublicKey = .init(@splat(0x22));
+    p_key.data[0] = 0x04;
+
+    var buf: [512]u8 = undefined;
+    const encoded = try encodeRetryAfterHRR(
+        &buf,
+        .zero,
+        x_key,
+        p_key,
+        .secp256r1,
+        null,
+        null,
+        &.{},
+    );
+    const parsed = try parse(encoded);
+
+    // key_share must contain only secp256r1.
+    try testing.expectEqual(@as(?x25519.PublicKey, null), parsed.public_key);
+    try testing.expectEqualSlices(u8, &p_key.data, &parsed.public_key_p256.?.data);
+
+    // supported_groups must still advertise both groups.
+    try testing.expect(parsed.groups.contains(.x25519));
+    try testing.expect(parsed.groups.contains(.secp256r1));
+}
+
+// RFC 8446 §4.2.2 — the cookie from HelloRetryRequest is echoed in ClientHello2.
+test "encodeRetryAfterHRR: includes cookie when provided" {
+    const x_key: x25519.PublicKey = .init(@splat(0x11));
+    var p_key: p256.PublicKey = .init(@splat(0x22));
+    p_key.data[0] = 0x04;
+    const cookie = [_]u8{ 0xde, 0xad, 0xbe, 0xef };
+
+    var buf: [512]u8 = undefined;
+    const encoded = try encodeRetryAfterHRR(
+        &buf,
+        .zero,
+        x_key,
+        p_key,
+        .x25519,
+        &cookie,
+        null,
+        &.{},
+    );
+
+    // Verify the cookie extension is present by finding it in the encoded bytes.
+    const ext = try findExtension(encoded, .cookie);
+    // cookie extension_data = u16 cookie_len || cookie bytes
+    try testing.expectEqual(@as(u16, cookie.len), memx.readInt(u16, ext[0..2]));
+    try testing.expectEqualSlices(u8, &cookie, ext[2..][0..cookie.len]);
+}
+
+// RFC 8446 §4.1.2 — ClientHello2 with SNI and ALPN preserves those extensions.
+test "encodeRetryAfterHRR: preserves SNI and ALPN from ClientHello1" {
+    const x_key: x25519.PublicKey = .init(@splat(0x11));
+    var p_key: p256.PublicKey = .init(@splat(0x22));
+    p_key.data[0] = 0x04;
+
+    var buf: [512]u8 = undefined;
+    const encoded = try encodeRetryAfterHRR(
+        &buf,
+        .zero,
+        x_key,
+        p_key,
+        .x25519,
+        null,
+        "example.com",
+        &.{"h2"},
+    );
+    const parsed = try parse(encoded);
+    try testing.expectEqualStrings("example.com", parsed.server_name.?);
+    try testing.expectEqualStrings("h2", parsed.selectAlpn(&.{"h2"}).?);
+}
+
+// RFC 8446 §4.2.8 — an unsupported selected group is rejected.
+test "encodeRetryAfterHRR: rejects unsupported group" {
+    var buf: [512]u8 = undefined;
+    try testing.expectError(
+        error.UnsupportedGroup,
+        encodeRetryAfterHRR(&buf, .zero, .zero, .init(@splat(0)), .secp384r1, null, null, &.{}),
+    );
 }
