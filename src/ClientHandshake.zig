@@ -55,6 +55,10 @@ const AlpnProtocols = root.AlpnProtocols;
 const Random = root.Random;
 const server_hello = @import("server_hello.zig");
 const SignatureScheme = @import("signature_scheme.zig").SignatureScheme;
+const signature = @import("signature.zig");
+pub const Signer = signature.Signer;
+const certificate_chain = @import("certificate_chain.zig");
+pub const CertificateChain = certificate_chain.CertificateChain;
 const suite_state = @import("suite_state.zig");
 const HashArm = suite_state.HashArm;
 const transcript_util = @import("transcript.zig");
@@ -73,7 +77,13 @@ const OfferedSignatureSchemesBuffer = ArrayBuffer(SignatureScheme, 16);
 const SelectedAlpnBuffer = ArrayBuffer(u8, 255);
 const CertificateRequestContextBuffer = ArrayBuffer(u8, 255);
 const HandshakeBuffer = SliceBuffer(u8);
-const max_empty_client_certificate_len = certificate.encodedLenWithRequestContext(255, &.{});
+
+/// Caller-owned client certificate chain and signer for client auth.
+/// Mirrors ServerHandshake.ServerCredentials. RFC 8446 §4.4.2, §4.4.3.
+const ClientCredentials = struct {
+    chain: CertificateChain,
+    signer: Signer,
+};
 
 /// Comfortable default for handshake-message reassembly across records, sized
 /// to hold the server's Certificate chain plus margin. Unlike the server's
@@ -402,7 +412,19 @@ selected_alpn: SelectedAlpnBuffer = .empty,
 /// asks for client authentication. Empty context is valid, so the bool carries
 /// presence separately.
 certificate_request_context: CertificateRequestContextBuffer = .empty,
+/// Signature schemes the server offered in CertificateRequest, captured so
+/// the client CertificateVerify scheme can be checked against them at
+/// clientFinished time (RFC 8446 §4.4.3: the scheme MUST be one the server
+/// offered). Slices into the record buffer would not survive across records.
+offered_cr_signature_schemes: OfferedSignatureSchemesBuffer = .empty,
 received_certificate_request: bool = false,
+/// Caller-owned client certificate chain + signer for client authentication.
+/// null sends an empty Certificate when the server sends CertificateRequest
+/// (existing behavior). When set, the client emits a real Certificate chain
+/// and a CertificateVerify signed with the client private key before Finished.
+/// RFC 8446 §4.4.2, §4.4.3. Caller-owned: ztls stores references and does not
+/// copy; the chain and signer must outlive the handshake.
+client_credentials: ?ClientCredentials = null,
 /// Transcript hash through the server Finished. Client-auth messages are sent
 /// after that point, but application traffic secrets are still derived here.
 server_finished_hash: [48]u8 = @splat(0),
@@ -484,6 +506,21 @@ pub fn offerAlpn(self: *ClientHandshake, protocols: AlpnProtocols) void {
 pub fn selectedAlpnProtocol(self: *const ClientHandshake) ?[]const u8 {
     if (self.selected_alpn.len == 0) return null;
     return self.selected_alpn.constSlice();
+}
+
+/// Store caller-owned client certificate credentials for client authentication.
+/// `certs_der` is a list of DER certificates (leaf first) and `signer` signs
+/// the client CertificateVerify. Both must outlive the handshake; ztls stores
+/// references and does not copy. Call before start(). RFC 8446 §4.4.2, §4.4.3.
+pub fn setCredentials(self: *ClientHandshake, certs_der: []const []const u8, signer: Signer) void {
+    self.setCertificateChain(.init(certs_der), signer);
+}
+
+/// Store a caller-owned certificate chain + signer for client auth. See
+/// setCredentials for lifetime requirements.
+pub fn setCertificateChain(self: *ClientHandshake, chain: CertificateChain, signer: Signer) void {
+    assert(self.state == .start);
+    self.client_credentials = .{ .chain = chain, .signer = signer };
 }
 
 /// Begin the handshake: encode a ClientHello using the Config's `host_name`
@@ -689,6 +726,7 @@ pub fn alertForError(err: anyerror) alert.Description {
         error.UnofferedAlpnProtocol,
         error.UnsupportedKeyShareGroup,
         error.UnsupportedSignatureScheme,
+        error.SignatureSchemeNotOffered,
         => .illegal_parameter,
         error.InvalidHandshakeType,
         error.UnexpectedRecord,
@@ -754,6 +792,7 @@ pub fn rxKtlsInfo(self: *const ClientHandshake) RecordLayer.KtlsInfo {
 
 pub const ProcessError = frame.ParseError || RecordLayer.DecryptError ||
     ServerHelloError || HelloRetryRequestError || FlightError || SendError ||
+    ClientFinishedError ||
     alert.ParseError ||
     error{ IncompleteRecord, UnexpectedRecord, UnexpectedMessage, PeerAlert };
 
@@ -1123,6 +1162,15 @@ fn processFlightMessage(
                 if (cr.request_context.len != 0) return error.UnexpectedCertificateRequestContext;
                 self.certificate_request_context.clear();
                 self.certificate_request_context.appendSlice(cr.request_context) catch unreachable;
+                // Capture the server-offered signature schemes so clientFinished
+                // can reject a signer whose scheme the server did not offer
+                // (RFC 8446 §4.4.3).
+                self.offered_cr_signature_schemes.clear();
+                var it = cr.schemeIterator();
+                while (try it.next()) |scheme| {
+                    self.offered_cr_signature_schemes.append(scheme) catch
+                        return error.HandshakeBufferTooShort;
+                }
                 self.received_certificate_request = true;
                 self.suite.update(msg.raw);
                 self.state = .wait_cert;
@@ -1180,36 +1228,105 @@ pub const SendError = RecordLayer.EncryptError || error{ PendingWrite, Unexpecte
 /// directions carry application data. `out` receives the encrypted record and
 /// the returned slice is the bytes to send.
 // ziglint-ignore: Z015 -- SendError is a public error-set alias.
-pub fn clientFinished(self: *ClientHandshake, out: []u8) SendError![]const u8 {
+pub const ClientFinishedError = SendError || error{
+    UnexpectedMessage,
+    SignatureSchemeNotOffered,
+    BufferTooShort,
+};
+
+/// Produce the client Finished as a wire-ready (encrypted) record and promote
+/// to application traffic keys. RFC 8446 §4.4.4, §7.1. Advances
+/// send_finished -> connected.
+///
+/// The plaintext flight is [Certificate] [CertificateVerify] Finished, all
+/// encrypted under the still-active handshake-traffic key, then rx/tx are
+/// promoted to application-traffic keys. The optional Certificate +
+/// CertificateVerify carry client authentication when the server sent
+/// CertificateRequest and the client has credentials (RFC 8446 §4.4.2,
+/// §4.4.3). A client with no credentials sends an empty Certificate, matching
+/// the pre-client-auth behavior. `out` receives the encrypted record.
+// ziglint-ignore: Z015 -- ClientFinishedError is a public error-set alias.
+pub fn clientFinished(self: *ClientHandshake, out: []u8) ClientFinishedError![]const u8 {
     assert(self.state == .send_finished);
     if (self.server_flight_progress != .finished_verified) return error.UnexpectedMessage;
-
     if (self.server_finished_hash_len == 0) return error.UnexpectedMessage;
 
-    // Plaintext carries optional empty Certificate followed by Finished. Both
-    // are encrypted under the client handshake-traffic key.
-    var plain_buf: [max_empty_client_certificate_len + 4 + 48]u8 = undefined;
+    // The whole client flight (Certificate [+ CertificateVerify] + Finished)
+    // is encrypted into one record, so the plaintext is bounded by the record
+    // plaintext limit. RFC 8446 §5.2.
+    var plain_buf: [frame.max_plaintext_len]u8 = undefined;
     defer crypto.secureZero(u8, &plain_buf);
     var plain_len: usize = 0;
+
     if (self.received_certificate_request) {
-        const cert = certificate.encodeWithRequestContext(
-            plain_buf[0..],
-            self.certificate_request_context.constSlice(),
-            &.{},
-        ) catch unreachable;
+        const creds = self.client_credentials;
+        const ctx = self.certificate_request_context.constSlice();
+
+        // Certificate: real chain when credentials are configured, empty
+        // otherwise (existing behavior). RFC 8446 §4.4.2.
+        const cert = if (creds) |c|
+            c.chain.encodeWithRequestContext(plain_buf[plain_len..], ctx) catch
+                return error.BufferTooShort
+        else
+            certificate.encodeWithRequestContext(
+                plain_buf[plain_len..],
+                ctx,
+                &.{},
+            ) catch unreachable;
         self.suite.update(cert);
         plain_len += cert.len;
+
+        // CertificateVerify only when the client has a signer. RFC 8446 §4.4.3:
+        // the signature scheme MUST be one the server offered in the
+        // CertificateRequest, and the signature is over
+        // client_context || transcript_hash (through Certificate).
+        if (creds) |c| {
+            if (std.mem.indexOfScalar(
+                SignatureScheme,
+                self.offered_cr_signature_schemes.constSlice(),
+                c.signer.scheme,
+            ) == null) return error.SignatureSchemeNotOffered;
+
+            const cv_ctx_len = certificate.client_certificate_verify_context.len;
+            var cv_input: [cv_ctx_len + 48]u8 = undefined;
+            cv_input[0..cv_ctx_len].* = certificate.client_certificate_verify_context.*;
+            const th_len: usize = switch (self.suite) {
+                .buffering => unreachable,
+                inline .sha256, .sha384 => |*s| blk: {
+                    const th = s.transcript.peek();
+                    @memcpy(cv_input[cv_ctx_len..][0..th.len], &th);
+                    break :blk th.len;
+                },
+            };
+            var sig_buf: [512]u8 = undefined;
+            const sig = c.signer.sign(
+                c.signer.context,
+                cv_input[0 .. cv_ctx_len + th_len],
+                &sig_buf,
+            ) catch return error.BufferTooShort;
+            const cv = certificate.encodeCertificateVerify(
+                plain_buf[plain_len..],
+                c.signer.scheme,
+                sig,
+            ) catch return error.BufferTooShort;
+            self.suite.update(cv);
+            plain_len += cv.len;
+        }
     }
 
-    const keys = try self.suite.finishHandshake(
+    const keys = self.suite.finishHandshake(
         plain_buf[plain_len..],
         self.server_finished_hash[0..self.server_finished_hash_len],
-    );
+    ) catch return error.BufferTooShort;
     plain_len += keys.finished.len;
 
     // Encrypt under the handshake-traffic key that is still installed, then
     // promote: the Finished is the last handshake-protected message.
-    const record = try self.tx.encrypt(.handshake, plain_buf[0..plain_len], out);
+    const record = self.tx.encrypt(
+        .handshake,
+        plain_buf[0..plain_len],
+        out,
+    ) catch return error.BufferTooShort;
     self.tx.deinit();
     self.rx.deinit();
     self.tx = keys.tx;
@@ -1596,6 +1713,7 @@ test "processServerHello: rejects unoffered cipher suite" {
 // time): server_flight.b64 = EE||Cert||CV||Finished plaintext;
 // server_flight_record.b64 = the same flight as an encrypted wire record.
 const rfc8448_archive = @embedFile("test_fixtures/rfc8448.txtar");
+const shared_fixtures = @import("test_fixtures/shared_fixtures.zig");
 
 // Decode a base64 entry from the embedded RFC 8448 archive into `out`.
 // Test-only — the txtar import lives inside the function so the public ztls
@@ -2422,6 +2540,40 @@ test "clientFinished: sends empty Certificate before Finished for CertificateReq
     }, &hs.rx.aead.aes_128_gcm_sha256.data);
 }
 
+// RFC 8446 §4.4.3 — the client CertificateVerify scheme MUST be one the server
+// offered in CertificateRequest; a mismatch is illegal_parameter.
+test "clientFinished: empty CertificateRequest with no credentials still finishes" {
+    var hs: ClientHandshake = .init(testConfig(rfc8448_client_keypair));
+    hs.policy.insecure_no_chain_anchor = true;
+    hs.injectClientHello(&rfc8448_client_hello);
+    try hs.processServerHello(&rfc8448_server_hello);
+    var flight_buf: [1024]u8 = undefined;
+    try hs.processFlight(rfc8448Fixture("server_flight.b64", &flight_buf), hs.policy);
+
+    // No credentials, but simulate a CertificateRequest: clientFinished must
+    // still emit the empty-Certificate + Finished path without hanging.
+    hs.received_certificate_request = true;
+    hs.certificate_request_context.clear();
+    hs.offered_cr_signature_schemes.clear();
+
+    var out: [4096]u8 = undefined;
+    const record = try hs.clientFinished(&out);
+    try testing.expect(record.len > 0);
+}
+
+// Isolate: fromP256Scalar + setCredentials alone (no clientFinished sign path).
+test "client auth: setCredentials stores client credentials" {
+    var hs: ClientHandshake = .init(testConfig(rfc8448_client_keypair));
+    var signer: signature.PrivateKey = try .fromP256Scalar(
+        shared_fixtures.server_ecdsa_scalar[0..32],
+    );
+    defer signer.deinit();
+    hs.setCredentials(&.{&shared_fixtures.server_ecdsa_cert_der}, signer.signer());
+    try testing.expect(hs.client_credentials != null);
+}
+
+// RFC 8446 §4.4.3 — the client CertificateVerify scheme MUST be one the server
+// offered in CertificateRequest; a mismatch errors before signing.
 // RFC 8446 §7.2 — KeyUpdate key ratchet. After the handshake, ratchet the
 // client (sending) application key one generation and check the re-derived
 // write key against the independently-computed next key (see the

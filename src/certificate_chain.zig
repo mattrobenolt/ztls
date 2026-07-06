@@ -29,6 +29,28 @@ pub const CertificateChain = union(enum) {
             .single => |cert_der| certificate.encode(out, &.{cert_der}),
         };
     }
+
+    /// Encode a Certificate message echoing the CertificateRequest
+    /// request_context (RFC 8446 §4.4.2). Used by the client when responding to
+    /// a server CertificateRequest.
+    pub fn encodeWithRequestContext(
+        self: CertificateChain,
+        out: []u8,
+        request_context: []const u8,
+    ) certificate.EncodeError![]const u8 {
+        return switch (self) {
+            .slice => |certs_der| certificate.encodeWithRequestContext(
+                out,
+                request_context,
+                certs_der,
+            ),
+            .single => |cert_der| certificate.encodeWithRequestContext(
+                out,
+                request_context,
+                &.{cert_der},
+            ),
+        };
+    }
 };
 
 test "CertificateChain: single certificate view" {

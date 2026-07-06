@@ -134,8 +134,18 @@ encode PSK binders, or resume handshakes.
   the required-empty path with `certificate_required` in local tests.
   `ClientAuthentication.clientSendsCertificateAndFinMessage` is now
   `STRICTLY_SUCCEEDED`, and the stale `*ClientAuth*` expected-skip entry has
-  been removed. Real client certificate chains, CertificateVerify emission, and
-  server-side client cert verification remain deferred. All six
+  been removed. Client-auth emission is now implemented: `ClientHandshake`
+  exposes `setCredentials`/`setCertificateChain` (caller-owned chain + signer),
+  captures the server-offered CertificateRequest signature schemes, and emits a
+  real Certificate chain plus a CertificateVerify signed with the client private
+  key over `client_context || transcript_hash` (through Certificate) before
+  Finished; the scheme is checked against the server-offered set
+  (`SignatureSchemeNotOffered` -> `illegal_parameter`). A client with no
+  credentials still sends an empty Certificate, preserving the prior behavior.
+  Server-side verification of a non-empty client Certificate + CertificateVerify
+  + chain remains deferred (`processClientFinished` still rejects a non-empty
+  client certificate with `UnsupportedClientCertificate`), and OpenSSL client-
+  auth interop both directions is not yet wired. *(#4, partial)* All six
   remaining unexpected failures align with TLS-Anvil `DSA_WITH_SHA256`
   certificate parameter combinations that ztls correctly rejects during server
   Certificate processing; closed #52 classifies those DSA-root TLS-Anvil
