@@ -204,10 +204,11 @@ fn serverRun(ctx: *ServerCtx) !void {
     _ = try sendAll(sockfd, "pong");
     print("[server] sent (kernel-encrypted): pong\n", .{});
 
-    // 6. close_notify
-    // With kTLS TX installed, closing the fd sends a close_notify.
-    _ = posix.close(sockfd);
-    print("[server] connection closed (kernel sends close_notify)\n", .{});
+    // 6. close_notify — handled by the `defer net.close(stream)` below:
+    // with kTLS TX installed, closing the fd makes the kernel send a
+    // close_notify. Do NOT close explicitly here — the defer owns the fd,
+    // and a double close hits EBADF (posix.close maps EBADF to unreachable).
+    print("[server] connection complete; deferring close (kernel sends close_notify)\n", .{});
 }
 
 /// Install a TLS 1.3 AES-GCM-128 traffic key via `setsockopt(TLS_TX/TLS_RX)`.
