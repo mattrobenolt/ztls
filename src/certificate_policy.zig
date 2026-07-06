@@ -16,6 +16,9 @@ pub const PolicyError = error{
 pub const LeafUsage = enum {
     none,
     server_auth,
+    /// Client-auth leaf policy: no EKU/KU enforcement yet (honest partial —
+    /// client EKU/key-usage policy can be tightened in a follow-up).
+    client_auth,
 };
 
 /// Certificate validation policy.

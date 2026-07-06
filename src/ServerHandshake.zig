@@ -63,6 +63,11 @@ const FinishedFragmentBuffer = ArrayBuffer(u8, handshake_header_len + 48);
 const key_update_body_len = 1;
 const key_update_total_len = handshake_header_len + key_update_body_len;
 const KeyUpdateFragmentBuffer = ArrayBuffer(u8, key_update_total_len);
+
+/// Upper bound on a client leaf public key we retain for CertificateVerify
+/// verification. Covers RSA-4096 (~525-byte DER) with margin.
+const max_client_leaf_pub_key = 1024;
+const ClientLeafPubKeyBuffer = ArrayBuffer(u8, max_client_leaf_pub_key);
 const ServerHandshake = @This();
 
 pub const State = enum {
@@ -151,6 +156,18 @@ pub const Config = struct {
     /// Server-side client certificate policy. Full non-empty client
     /// certificate verification is a later #4 slice.
     client_auth: ClientAuthPolicy = .none,
+    /// Trust anchors for client certificate chain validation. Required when
+    /// client_auth is .optional or .required and the client sends a non-empty
+    /// certificate. If null, the server rejects non-empty client certificates
+    /// unless insecure_no_client_chain_anchor is set.
+    client_auth_bundle: ?*const std.crypto.Certificate.Bundle = null,
+    /// Test/demo opt-out from trust-anchor verification for client certs.
+    /// Production servers should leave this false and provide
+    /// client_auth_bundle.
+    insecure_no_client_chain_anchor: bool = false,
+    /// Current time in seconds since the Unix epoch for client certificate
+    /// validity checks. Required when client_auth is non-none.
+    client_auth_now_sec: i64 = 0,
     /// Optional caller-owned ClientHello reassembly storage.
     reassembly: ?[]u8 = null,
 };
@@ -169,6 +186,11 @@ suite_state: Suite = undefined,
 supported_suites: []const CipherSuite = default_supported_suites,
 alpn_protocols: root.AlpnProtocols = &.{},
 client_auth: ClientAuthPolicy = .none,
+/// Policy for verifying client certificate chains. Initialized from Config.
+client_cert_policy: certificate.Policy = .{ .leaf_usage = .server_auth },
+/// Leaf public key extracted from the client Certificate, retained until
+/// CertificateVerify verification. Copied so it survives across records.
+client_leaf_pub_key: ClientLeafPubKeyBuffer = .empty,
 selected_alpn: ?[]const u8 = null,
 /// SNI hostname sent by the client in the server_name extension (RFC 6066 §3).
 /// Populated after acceptClientHello / handleRecord returns the first write event.
@@ -221,6 +243,12 @@ pub fn init(config: Config) ServerHandshake {
         .supported_suites = config.supported_suites,
         .alpn_protocols = config.alpn_protocols,
         .client_auth = config.client_auth,
+        .client_cert_policy = .{
+            .bundle = config.client_auth_bundle,
+            .insecure_no_chain_anchor = config.insecure_no_client_chain_anchor,
+            .now_sec = config.client_auth_now_sec,
+            .leaf_usage = .client_auth,
+        },
         .ch_buf = if (config.reassembly) |buf| .init(buf) else .empty,
     };
 }
@@ -240,6 +268,7 @@ pub fn deinit(self: *ServerHandshake) void {
     self.keypairs.secureZero();
     self.fin_frag.secureZero();
     self.ku_frag.secureZero();
+    self.client_leaf_pub_key.secureZero();
     self.* = undefined;
 }
 
@@ -362,11 +391,13 @@ pub const ClientFinishedError =
     finished.VerifyError ||
     frame.ParseError ||
     certificate.ParseError ||
+    certificate.VerifyError ||
     error{
         UnexpectedRecord,
         UnexpectedMessage,
         ClientCertificateRequired,
         UnsupportedClientCertificate,
+        CertificateKeyTooLarge,
     };
 
 pub const SendError = RecordLayer.EncryptError || error{PendingWrite};
@@ -932,13 +963,45 @@ fn processClientFinishedPlaintext(
 
     if (self.client_auth != .none) {
         if (msg.type != .certificate) return error.UnexpectedMessage;
+        // The handshake-time CertificateRequest context is empty; the client
+        // echoes it. RFC 8446 §4.4.2.
         const status = try certificate.parseClientCertificate(msg.raw, &.{});
-        self.suite_state.update(msg.raw);
         switch (status) {
-            .empty => if (self.client_auth == .required) return error.ClientCertificateRequired,
-            .present => return error.UnsupportedClientCertificate,
+            .empty => {
+                if (self.client_auth == .required) return error.ClientCertificateRequired;
+                self.suite_state.update(msg.raw);
+                msg = (try hr.next()) orelse return error.UnexpectedMessage;
+            },
+            .present => {
+                // Parse the chain and extract the leaf public key. The leaf
+                // key is retained for CertificateVerify verification, which
+                // may arrive in this same record or a later one. RFC 8446
+                // §4.4.2, §4.4.3.
+                const pk = try certificate.parseClientChain(msg.raw, &.{}, self.client_cert_policy);
+                self.client_leaf_pub_key.clear();
+                self.client_leaf_pub_key.appendSlice(pk) catch return error.CertificateKeyTooLarge;
+                self.suite_state.update(msg.raw);
+                // Next message must be CertificateVerify.
+                msg = (try hr.next()) orelse return error.UnexpectedMessage;
+                if (msg.type != .certificate_verify) return error.UnexpectedMessage;
+                // RFC 8446 §4.4.3 — verify the signature against the client
+                // leaf public key over client_context || transcript_hash
+                // (through the client Certificate, snapshotted here before CV
+                // is absorbed).
+                switch (self.suite_state) {
+                    inline .sha256, .sha384 => |*s| {
+                        const th = s.transcript.peek();
+                        try certificate.verifyClientSignature(
+                            msg.raw,
+                            self.client_leaf_pub_key.constSlice(),
+                            &th,
+                        );
+                    },
+                }
+                self.suite_state.update(msg.raw);
+                msg = (try hr.next()) orelse return error.UnexpectedMessage;
+            },
         }
-        msg = (try hr.next()) orelse return error.UnexpectedMessage;
     }
 
     if (msg.type != .finished) return error.UnexpectedMessage;
@@ -2555,6 +2618,138 @@ test "processClientFinished: required client auth rejects empty Certificate" {
         server.processClientFinished(client_out[0..client_finished_record.len]),
     );
     try testing.expectEqual(.wait_client_finished, server.state);
+}
+
+// RFC 8446 §4.4.2, §4.4.3, §4.4.4 — required client auth with real client
+// credentials: the client sends Certificate (chain) + CertificateVerify, the
+// server verifies the CertificateVerify against the client leaf public key and
+// accepts the handshake. insecure_no_client_chain_anchor is set so the
+// self-signed fixture chain is accepted without a trust bundle; the
+// CertificateVerify still proves possession of the private key. This exercises
+// the client sign path through the real handleRecord drive loop.
+test "processClientFinished: required client auth verifies real client Certificate + CV" {
+    const client_keypair: x25519.KeyPair = .generate();
+    const server_keypair: x25519.KeyPair = .generate();
+
+    var client: ClientHandshake = .init(.{
+        .keypairs = .init(client_keypair),
+        .host_name = "ztls.server.test",
+        .now_sec = 0,
+        .random = .zero,
+    });
+    client.policy.insecure_no_chain_anchor = true;
+    // Client credentials (reuse the self-signed ECDSA fixture as client creds).
+    var client_signer = try signature.PrivateKey.fromP256Scalar(server_ecdsa_scalar[0..32]);
+    defer client_signer.deinit();
+    client.setCredentials(&.{server_ecdsa_cert_der}, client_signer.signer());
+    var client_out: [4096]u8 = undefined;
+    const ch_record = try client.start(&client_out);
+    client.completeWrite();
+
+    var server: ServerHandshake = .init(.{
+        .keypairs = .init(server_keypair),
+        .random = .zero,
+        .client_auth = .required,
+        .insecure_no_client_chain_anchor = true,
+    });
+    var server_out: [4096]u8 = undefined;
+    const sh_record = try server.acceptClientHello(ch_record, &server_out);
+    try client.processServerHello(sh_record[frame.header_len..]);
+
+    var signer = try signature.PrivateKey.fromP256Scalar(server_ecdsa_scalar[0..32]);
+    defer signer.deinit();
+    var plaintext: [4096]u8 = undefined;
+    const flight_record = try server.sendAuthenticatedFlight(
+        &.{server_ecdsa_cert_der},
+        signer.signer(),
+        &plaintext,
+        &server_out,
+    );
+    // The server flight includes a CertificateRequest; the client now has
+    // credentials, so its Finished carries Certificate + CertificateVerify.
+    const client_event = try client.handleRecord(server_out[0..flight_record.len], &client_out);
+    const client_finished_record = switch (client_event) {
+        .write => |w| w,
+        else => return error.UnexpectedEvent,
+    };
+
+    // Inspect the client flight: Certificate (non-empty) + CertificateVerify +
+    // Finished, in that order. RFC 8446 §4.4.2, §4.4.3, §4.4.4.
+    var inspect_rx = try server.rx.clone();
+    defer inspect_rx.deinit();
+    var inspect_buf: [4096]u8 = undefined;
+    @memcpy(inspect_buf[0..client_finished_record.len], client_finished_record);
+    const dec = try inspect_rx.decrypt(inspect_buf[0..client_finished_record.len]);
+    var hr: HandshakeReader = .init(dec.content);
+    const cert_msg = (try hr.next()).?;
+    try testing.expectEqual(.certificate, cert_msg.type);
+    try testing.expectEqual(.present, try certificate.parseClientCertificate(cert_msg.raw, &.{}));
+    const cv_msg = (try hr.next()).?;
+    try testing.expectEqual(.certificate_verify, cv_msg.type);
+    try testing.expectEqual(.finished, (try hr.next()).?.type);
+    try testing.expectEqual(@as(?HandshakeReader.Message, null), try hr.next());
+
+    client.completeWrite();
+    try server.processClientFinished(client_out[0..client_finished_record.len]);
+    try testing.expectEqual(.connected, server.state);
+}
+
+// RFC 8446 §4.4.3 — a client CertificateVerify whose signature does not match
+// the leaf certificate public key is rejected (decrypt_error). The client
+// presents the fixture cert but signs with a different private key.
+test "processClientFinished: required client auth rejects forged CertificateVerify" {
+    const client_keypair: x25519.KeyPair = .generate();
+    const server_keypair: x25519.KeyPair = .generate();
+
+    var client: ClientHandshake = .init(.{
+        .keypairs = .init(client_keypair),
+        .host_name = "ztls.server.test",
+        .now_sec = 0,
+        .random = .zero,
+    });
+    client.policy.insecure_no_chain_anchor = true;
+    // Present the fixture cert but sign with a DISTINCT private key (all-zeros
+    // scalar is invalid for P-256; use a deterministic non-fixture scalar).
+    const wrong_scalar = [_]u8{0x42} ** 32;
+    var client_signer = try signature.PrivateKey.fromP256Scalar(&wrong_scalar);
+    defer client_signer.deinit();
+    client.setCredentials(&.{server_ecdsa_cert_der}, client_signer.signer());
+    var client_out: [4096]u8 = undefined;
+    const ch_record = try client.start(&client_out);
+    client.completeWrite();
+
+    var server: ServerHandshake = .init(.{
+        .keypairs = .init(server_keypair),
+        .random = .zero,
+        .client_auth = .required,
+        .insecure_no_client_chain_anchor = true,
+    });
+    var server_out: [4096]u8 = undefined;
+    const sh_record = try server.acceptClientHello(ch_record, &server_out);
+    try client.processServerHello(sh_record[frame.header_len..]);
+
+    var signer = try signature.PrivateKey.fromP256Scalar(server_ecdsa_scalar[0..32]);
+    defer signer.deinit();
+    var plaintext: [4096]u8 = undefined;
+    const flight_record = try server.sendAuthenticatedFlight(
+        &.{server_ecdsa_cert_der},
+        signer.signer(),
+        &plaintext,
+        &server_out,
+    );
+    const client_event = try client.handleRecord(server_out[0..flight_record.len], &client_out);
+    const client_finished_record = switch (client_event) {
+        .write => |w| w,
+        else => return error.UnexpectedEvent,
+    };
+    client.completeWrite();
+
+    // The server verifies the CertificateVerify against the fixture cert's
+    // public key, but the signature was made with a different key.
+    try testing.expectError(
+        error.SignatureVerificationFailed,
+        server.processClientFinished(client_out[0..client_finished_record.len]),
+    );
 }
 
 test "sendAuthenticatedFlight: client processes CertificateVerify and Finished" {

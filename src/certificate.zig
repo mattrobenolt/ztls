@@ -137,6 +137,92 @@ pub fn parseClientCertificate(
     return .present;
 }
 
+/// Parse a client Certificate handshake message (echoing the CertificateRequest
+/// request_context), extract the leaf public key as a slice into `msg`, and run
+/// chain validation per `policy`. Mirrors `parse` but accepts the non-empty
+/// client request_context and uses the client-auth leaf policy. The caller must
+/// keep `msg` alive until `verifyClientSignature` has been called.
+/// RFC 8446 §4.4.2 (client Certificate), §4.4.3 (client CertificateVerify).
+// ziglint-ignore: Z015 -- ParseError is a public error-set alias.
+pub fn parseClientChain(
+    msg: []const u8,
+    expected_request_context: []const u8,
+    policy: Policy,
+) ParseError![]const u8 {
+    if (msg.len < 4 + 1 + 3) return error.UnexpectedEof;
+    var r: wire.Reader = .init(msg);
+
+    const handshake_type = r.assumeRead(handshake.Type);
+    if (handshake_type != .certificate) return error.InvalidHandshakeType;
+    r.assumeSkip(3); // body length
+
+    const ctx_len = r.assumeRead(u8);
+    if (r.remaining().len < ctx_len + 3) return error.UnexpectedEof;
+    const request_context = r.assumeReadSlice(ctx_len);
+    if (!std.mem.eql(u8, request_context, expected_request_context))
+        return error.UnexpectedCertificateRequestContext;
+
+    const list_len = r.assumeRead(u24);
+    if (list_len == 0) return error.EmptyCertificateList;
+    if (r.remaining().len < list_len) return error.UnexpectedEof;
+
+    const list_end = r.pos + list_len;
+    var cert_index: usize = 0;
+    var leaf_pub_key: ?[]const u8 = null;
+    var subject_to_verify: ?Certificate.Parsed = null;
+    var chain: ArrayBuffer(Certificate.Parsed, 8) = .empty;
+
+    while (r.pos < list_end) {
+        if (list_end - r.pos < 3) return error.UnexpectedEof;
+        const cert_len = r.assumeRead(u24);
+        if (list_end - r.pos < cert_len + 2) return error.UnexpectedEof;
+        const cert_der = r.assumeReadSlice(cert_len);
+        const ext_len = r.assumeRead(u16);
+        if (list_end - r.pos < ext_len) return error.UnexpectedEof;
+        try parseCertificateEntryExtensions(r.assumeReadSlice(ext_len));
+
+        const cert: Certificate = .{ .buffer = cert_der, .index = 0 };
+        const parsed = try cert.parse();
+        chain.append(parsed) catch return error.CertificateChainTooLong;
+
+        if (cert_index == 0) {
+            leaf_pub_key = parsed.pubKey();
+            switch (policy.leaf_usage) {
+                .none, .client_auth => {},
+                .server_auth => try certificate_policy.verifyServerAuthWithSignatureSchemes(
+                    parsed,
+                    policy.certificate_signature_schemes,
+                ),
+            }
+            if (policy.host_name) |host_name| try parsed.verifyHostName(host_name);
+        }
+        if (subject_to_verify) |subject| try subject.verify(parsed, policy.now_sec);
+        subject_to_verify = parsed;
+        cert_index += 1;
+    }
+    if (r.pos != list_end) return error.UnexpectedEof;
+
+    const subject = subject_to_verify orelse return error.EmptyCertificateList;
+    try verifyChainCertificateSignatureAlgorithms(
+        chain.constSlice(),
+        policy.certificate_signature_schemes,
+    );
+    if (policy.bundle) |bundle| {
+        const trust_anchor = try certificate_policy.findVerifiedIssuerInBundle(
+            bundle,
+            subject,
+            policy.now_sec,
+        );
+        try verifyChainNameConstraints(chain.constSlice(), trust_anchor);
+    } else if (!policy.insecure_no_chain_anchor) {
+        return error.MissingTrustAnchor;
+    } else {
+        try verifyChainNameConstraints(chain.constSlice(), null);
+    }
+
+    return leaf_pub_key orelse error.EmptyCertificateList;
+}
+
 /// Parse a Certificate handshake message and extract the leaf certificate
 /// public key as a slice into `msg`. The caller must keep `msg` alive until
 /// verifySignature has been called. Chain anchoring requires a trust bundle or
@@ -182,7 +268,7 @@ pub fn parse(msg: []const u8, policy: Policy) ParseError![]const u8 {
         if (cert_index == 0) {
             leaf_pub_key = parsed.pubKey();
             switch (policy.leaf_usage) {
-                .none => {},
+                .none, .client_auth => {},
                 .server_auth => try certificate_policy.verifyServerAuthWithSignatureSchemes(
                     parsed,
                     policy.certificate_signature_schemes,
