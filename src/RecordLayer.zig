@@ -31,6 +31,30 @@ pub const DecryptedRecord = struct {
     content: []u8,
 };
 
+/// Linux kTLS cipher type values from include/uapi/linux/tls.h.
+/// These are kernel UAPI values, not TLS cipher-suite code points.
+pub const KtlsCipherType = enum(u16) {
+    aes_gcm_128 = 51,
+    aes_gcm_256 = 52,
+    chacha20_poly1305 = 54,
+};
+
+/// TLS 1.3 traffic-key material packed for a caller that wants to configure
+/// Linux kTLS. This is a value type: it copies secret material out of
+/// RecordLayer so callers never borrow slices into state that deinit() will
+/// secure-zero.
+pub const KtlsInfo = struct {
+    version: u16 = 0x0304,
+    cipher_type: KtlsCipherType,
+    key: [32]u8 = @splat(0),
+    key_len: u8,
+    salt: [4]u8 = @splat(0),
+    salt_len: u8,
+    iv: [12]u8 = @splat(0),
+    iv_len: u8,
+    rec_seq: [8]u8,
+};
+
 /// Bytes added to plaintext length to produce the encrypted wire record.
 /// Accounts for the 5-byte header, content type byte, and 16-byte AEAD tag.
 pub const overhead = frame.header_len + 1 + tag_len;
@@ -61,6 +85,48 @@ pub fn clone(self: *const RecordLayer) AeadError!RecordLayer {
     var copy: RecordLayer = try .init(self.aead, self.iv);
     copy.seq = self.seq;
     return copy;
+}
+
+/// Export the current traffic key, base IV, and sequence number for caller-side
+/// Linux kTLS setup. RFC 8446 §5.3 constructs the per-record nonce from the
+/// 12-byte IV XOR sequence number; Linux kTLS splits AES-GCM IVs into a 4-byte
+/// salt and 8-byte IV but uses the same nonce construction.
+pub fn ktlsInfo(self: *const RecordLayer) KtlsInfo {
+    var info: KtlsInfo = switch (self.aead) {
+        .aes_128_gcm_sha256 => |key| .{
+            .cipher_type = .aes_gcm_128,
+            .key_len = key.data.len,
+            .salt_len = 4,
+            .iv_len = 8,
+            .rec_seq = memx.toBytes(u64, self.seq),
+        },
+        .aes_256_gcm_sha384 => |key| .{
+            .cipher_type = .aes_gcm_256,
+            .key_len = key.data.len,
+            .salt_len = 4,
+            .iv_len = 8,
+            .rec_seq = memx.toBytes(u64, self.seq),
+        },
+        .chacha20_poly1305_sha256 => |key| .{
+            .cipher_type = .chacha20_poly1305,
+            .key_len = key.data.len,
+            .salt_len = 0,
+            .iv_len = 12,
+            .rec_seq = memx.toBytes(u64, self.seq),
+        },
+    };
+
+    switch (self.aead) {
+        inline else => |key| info.key[0..key.data.len].* = key.data,
+    }
+    switch (self.aead) {
+        .aes_128_gcm_sha256, .aes_256_gcm_sha384 => {
+            info.salt = self.iv.data[0..4].*;
+            info.iv[0..8].* = self.iv.data[4..12].*;
+        },
+        .chacha20_poly1305_sha256 => info.iv = self.iv.data,
+    }
+    return info;
 }
 
 pub const DecryptError = frame.ParseError || AeadError || error{
@@ -249,6 +315,60 @@ test "deinit: clears caller-visible traffic key material" {
     try testing.expectEqualSlices(u8, &Iv.zero.data, &rl.iv.data);
     try testing.expectEqual(@as(u64, 0), rl.seq);
     try testing.expectEqual(@as(u64, 0), rl.key_limit);
+}
+
+// RFC 8446 §5.3 — Linux kTLS AES-GCM salt/IV split reconstructs the TLS 1.3 nonce.
+test "ktlsInfo: AES-GCM salt and IV reconstruct RFC 8446 nonce" {
+    const key: Aes128GcmKey = .init(@splat(0xab));
+    const iv: Iv = .init(.{ 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b });
+    var rl: RecordLayer = try .init(.{ .aes_128_gcm_sha256 = key }, iv);
+    defer rl.deinit();
+    rl.seq = 0x0102030405060708;
+
+    const info = rl.ktlsInfo();
+    try testing.expectEqual(@as(u16, 0x0304), info.version);
+    try testing.expectEqual(KtlsCipherType.aes_gcm_128, info.cipher_type);
+    try testing.expectEqual(@as(u8, 16), info.key_len);
+    try testing.expectEqual(@as(u8, 4), info.salt_len);
+    try testing.expectEqual(@as(u8, 8), info.iv_len);
+    try testing.expectEqualSlices(u8, &key.data, info.key[0..info.key_len]);
+    try testing.expectEqualSlices(u8, iv.data[0..4], &info.salt);
+    try testing.expectEqualSlices(u8, iv.data[4..12], info.iv[0..info.iv_len]);
+    try testing.expectEqualSlices(u8, &memx.toBytes(u64, rl.seq), &info.rec_seq);
+
+    var kernel_nonce: [12]u8 = undefined;
+    kernel_nonce[0..4].* = info.salt;
+    kernel_nonce[4..12].* = info.iv[0..8].*;
+    for (kernel_nonce[4..12], info.rec_seq) |*byte, seq_byte| byte.* ^= seq_byte;
+
+    const expected = construct(&iv, rl.seq);
+    try testing.expectEqualSlices(u8, &expected.data, &kernel_nonce);
+}
+
+// Linux kTLS UAPI values are not TLS cipher-suite code points.
+test "ktlsInfo: cipher type uses Linux UAPI values" {
+    var aes256: RecordLayer = try .init(.{ .aes_256_gcm_sha384 = .init(@splat(0x22)) }, .zero);
+    defer aes256.deinit();
+    var chacha: RecordLayer = try .init(.{ .chacha20_poly1305_sha256 = .init(@splat(0x33)) }, .zero);
+    defer chacha.deinit();
+
+    const aes_info = aes256.ktlsInfo();
+    const chacha_info = chacha.ktlsInfo();
+    try testing.expectEqual(KtlsCipherType.aes_gcm_256, aes_info.cipher_type);
+    try testing.expectEqual(@as(u16, 52), @intFromEnum(aes_info.cipher_type));
+    try testing.expectEqual(KtlsCipherType.chacha20_poly1305, chacha_info.cipher_type);
+    try testing.expectEqual(@as(u16, 54), @intFromEnum(chacha_info.cipher_type));
+    try testing.expectEqual(@as(u8, 0), chacha_info.salt_len);
+    try testing.expectEqual(@as(u8, 12), chacha_info.iv_len);
+}
+
+// RFC 8446 §7.1 — exported kTLS key material is copied before RecordLayer zeroes itself.
+test "ktlsInfo: exported key material survives RecordLayer deinit" {
+    const key: Aes128GcmKey = .init(@splat(0xab));
+    var rl: RecordLayer = try .init(.{ .aes_128_gcm_sha256 = key }, .zero);
+    const info = rl.ktlsInfo();
+    rl.deinit();
+    try testing.expectEqualSlices(u8, &key.data, info.key[0..info.key_len]);
 }
 
 test "encrypt/decrypt: key update required at AEAD usage limit" {
