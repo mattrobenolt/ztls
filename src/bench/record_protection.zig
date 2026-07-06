@@ -107,7 +107,11 @@ fn replayHandshake(records: []const u8, out: []u8) !void {
         switch (try hs.handleRecord(record, out)) {
             .write => hs.completeWrite(),
             .none => {},
-            .application_data, .closed, .key_update => return error.UnexpectedDuringHandshake,
+            .application_data,
+            .closed,
+            .key_update,
+            .new_session_ticket,
+            => return error.UnexpectedDuringHandshake,
         }
     }
     if (!hs.isConnected()) return error.HandshakeIncomplete;

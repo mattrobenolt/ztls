@@ -82,7 +82,7 @@ pub fn main() !void {
                     try net.writeAll(stream, w);
                     hs.completeWrite();
                 },
-                .application_data, .closed, .key_update => return error.UnexpectedDuringHandshake,
+                .application_data, .closed, .key_update, .new_session_ticket => return error.UnexpectedDuringHandshake,
                 .none => {},
             }
         }
@@ -123,6 +123,7 @@ pub fn main() !void {
                         hs.completeWrite();
                     }
                 },
+                .new_session_ticket => {},
                 .closed => {
                     // RFC 8446 §6.1 — close_notify is bidirectional on orderly shutdown.
                     const rec = try hs.sendAlert(.close_notify, &out);

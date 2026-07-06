@@ -122,7 +122,11 @@ fn captureSuite(arena: Allocator, suite: []const u8, port: u16) ![]u8 {
                     hs.completeWrite();
                 },
                 .none => {},
-                .application_data, .closed, .key_update => return error.UnexpectedDuringHandshake,
+                .application_data,
+                .closed,
+                .key_update,
+                .new_session_ticket,
+                => return error.UnexpectedDuringHandshake,
             }
         }
     }
