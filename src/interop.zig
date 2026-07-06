@@ -223,7 +223,10 @@ fn clientInterop(stream: Stream) !void {
                     hs.completeWrite();
                 }
             },
-            .application_data, .closed => return error.UnexpectedDuringHandshake,
+            .application_data,
+            .closed,
+            .new_session_ticket,
+            => return error.UnexpectedDuringHandshake,
             .none => {},
         };
     }
@@ -248,6 +251,7 @@ fn clientInterop(stream: Stream) !void {
                     hs.completeWrite();
                 }
             },
+            .new_session_ticket => {},
             .none => {},
             .closed => return error.ServerClosedBeforeResponse,
         };
@@ -661,7 +665,10 @@ fn clientInteropWithCreds(stream: Stream) !void {
                     hs.completeWrite();
                 }
             },
-            .application_data, .closed => return error.UnexpectedDuringHandshake,
+            .application_data,
+            .closed,
+            .new_session_ticket,
+            => return error.UnexpectedDuringHandshake,
             .none => {},
         };
     }
@@ -686,6 +693,7 @@ fn clientInteropWithCreds(stream: Stream) !void {
                     hs.completeWrite();
                 }
             },
+            .new_session_ticket => {},
             .none => {},
             .closed => return error.ServerClosedBeforeResponse,
         };

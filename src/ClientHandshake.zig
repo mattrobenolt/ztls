@@ -65,6 +65,29 @@ const transcript_util = @import("transcript.zig");
 const x25519 = @import("x25519.zig");
 const NamedGroup = @import("kex.zig").NamedGroup;
 
+/// Caller-owned resumption ticket material derived from a NewSessionTicket.
+/// The caller stores these and offers them later in a pre_shared_key
+/// extension to resume a session. RFC 8446 §4.6.1, §4.2.11.
+pub const SessionTicket = struct {
+    /// Opaque ticket identity bytes (copied from the NewSessionTicket). The
+    /// caller owns this storage; ztls copies into the fixed buffer below.
+    identity: [256]u8 = @splat(0),
+    identity_len: u16 = 0,
+    /// PSK derived from the resumption_master_secret and the ticket nonce
+    /// (HKDF-Expand-Label(resumption_master_secret, "resumption", nonce,
+    /// Hash.length)). RFC 8446 §4.6.1, §7.4/§7.5.
+    psk: [48]u8 = @splat(0),
+    psk_len: u8 = 0,
+    /// RFC 8446 §4.6.1 — ticket_age_add added to the client's view of ticket
+    /// age to obfuscate it in the pre_shared_key extension.
+    ticket_age_add: u32 = 0,
+    /// RFC 8446 §4.6.1 — ticket lifetime in seconds.
+    ticket_lifetime: u32 = 0,
+    /// RFC 8446 §4.6.1, §4.2.10 — max_early_data_size from the early_data
+    /// extension, if present (for 0-RTT policy; #3).
+    max_early_data_size: ?u32 = null,
+};
+
 const ClientHandshake = @This();
 
 /// Upper bound on a leaf public key we retain across records. Covers RSA-4096
@@ -299,6 +322,16 @@ const Suite = union(enum) {
                 s.server_app_secret = H.serverApplicationTrafficSecret(master, &app_th);
 
                 s.transcript.update(fin); // client Finished now part of the transcript
+
+                // RFC 8446 §7.5 — resumption_master_secret over the transcript
+                // through the client Finished. Derived before
+                // forgetHandshakeSecrets wipes the handshake_secret (which feeds
+                // the master secret).
+                const res_th_raw = s.transcript.peek();
+                var res_th: H.TranscriptHash = undefined;
+                @memcpy(res_th.data[0..], res_th_raw[0..]);
+                s.resumption_master = H.resumptionMasterSecret(master, &res_th);
+                s.resumption_master_valid = true;
 
                 var tx = try H.makeRecordLayer(s.aead, s.client_app_secret);
                 errdefer tx.deinit();
@@ -612,6 +645,12 @@ pub const Event = union(enum) {
     /// must reinstall kTLS keys (or otherwise rotate) before sending or
     /// receiving more application data. RFC 8446 §4.6.3, §7.2.
     key_update: KeyUpdateEvent,
+    /// The server sent a NewSessionTicket post-handshake. The caller may call
+    /// `deriveSessionTicket` to obtain a storable `SessionTicket` (identity +
+    /// PSK + age/lifetime). The parsed fields borrow the caller's record
+    /// buffer; copy what you need before the next `handleRecord`. RFC 8446
+    /// §4.6.1.
+    new_session_ticket: NewSessionTicket,
     /// Handled internally; nothing for the caller to do.
     none,
     /// The peer sent close_notify.
@@ -794,6 +833,36 @@ pub fn txKtlsInfo(self: *const ClientHandshake) RecordLayer.KtlsInfo {
 pub fn rxKtlsInfo(self: *const ClientHandshake) RecordLayer.KtlsInfo {
     assert(self.state == .connected);
     return self.rx.ktlsInfo();
+}
+
+/// Derive a caller-storable `SessionTicket` (identity + PSK + age/lifetime
+/// metadata) from a parsed NewSessionTicket received post-handshake. The PSK is
+/// HKDF-Expand-Label(resumption_master_secret, "resumption", ticket_nonce,
+/// Hash.length). RFC 8446 §4.6.1, §7.4/§7.5. Returns an error if the
+/// handshake has not completed (no resumption_master_secret yet).
+pub fn deriveSessionTicket(
+    self: *const ClientHandshake,
+    nst: NewSessionTicket,
+) error{ NoResumptionSecret, TicketIdentityTooLong }!SessionTicket {
+    assert(self.state == .connected);
+    if (nst.ticket.len > 256) return error.TicketIdentityTooLong;
+    var ticket: SessionTicket = .{
+        .identity_len = @intCast(nst.ticket.len),
+        .ticket_age_add = nst.ticket_age_add,
+        .ticket_lifetime = nst.ticket_lifetime,
+        .max_early_data_size = nst.max_early_data_size,
+    };
+    @memcpy(ticket.identity[0..nst.ticket.len], nst.ticket);
+    switch (self.suite) {
+        .buffering => return error.NoResumptionSecret,
+        inline .sha256, .sha384 => |*s| {
+            if (!s.resumption_master_valid) return error.NoResumptionSecret;
+            const psk = @TypeOf(s.*).Hkdf.resumptionPsk(s.resumption_master, nst.ticket_nonce);
+            ticket.psk_len = @intCast(psk.data.len);
+            @memcpy(ticket.psk[0..psk.data.len], &psk.data);
+        },
+    }
+    return ticket;
 }
 
 pub const ProcessError = frame.ParseError || RecordLayer.DecryptError ||
@@ -1378,6 +1447,7 @@ fn receiveConnected(self: *ClientHandshake, record: []u8, out: []u8) ReceiveErro
             if (dec.content.len == 0) return error.UnexpectedMessage;
             var respond = false;
             var saw_key_update = false;
+            var nst_event: ?NewSessionTicket = null;
             var hr: HandshakeReader = .init(dec.content);
             while (try hr.next()) |msg| {
                 self.post_handshake_count +|= 1;
@@ -1402,8 +1472,11 @@ fn receiveConnected(self: *ClientHandshake, record: []u8, out: []u8) ReceiveErro
                         saw_key_update = true;
                     },
                     .new_session_ticket => {
-                        // parsed and ignored until PSK resumption
-                        _ = try NewSessionTicket.parse(msg.raw);
+                        // Parse and surface to the caller; the caller calls
+                        // deriveSessionTicket to store resumption material.
+                        // RFC 8446 §4.6.1. If multiple tickets are coalesced in
+                        // one record, the last one is surfaced.
+                        nst_event = try NewSessionTicket.parse(msg.raw);
                     },
                     else => return error.UnexpectedMessage,
                 }
@@ -1413,12 +1486,18 @@ fn receiveConnected(self: *ClientHandshake, record: []u8, out: []u8) ReceiveErro
             // can reinstall kernel keys. The response record is encrypted
             // under the OLD TX key inside sendKeyUpdate (which then ratchets
             // TX), so the caller must write it before reinstalling TLS_TX.
-            if (!saw_key_update) return .none;
-            if (respond) {
-                const resp = try self.sendKeyUpdate(out, .update_not_requested);
-                return .{ .key_update = .{ .response = resp, .rx = true, .tx = true } };
+            // A KeyUpdate must be the last message in its record (§5.1), so a
+            // NewSessionTicket in the same record would precede it; the key
+            // epoch change takes priority over surfacing the ticket.
+            if (saw_key_update) {
+                if (respond) {
+                    const resp = try self.sendKeyUpdate(out, .update_not_requested);
+                    return .{ .key_update = .{ .response = resp, .rx = true, .tx = true } };
+                }
+                return .{ .key_update = .{ .response = null, .rx = true, .tx = false } };
             }
-            return .{ .key_update = .{ .response = null, .rx = true, .tx = false } };
+            if (nst_event) |nst| return .{ .new_session_ticket = nst };
+            return .none;
         },
         .alert => {
             const a = try alert.parse(dec.content);
@@ -2901,7 +2980,10 @@ test "handleRecord: fatal alert returns PeerAlert" {
     try testing.expectError(error.PeerAlert, hs.handleRecord(rx_buf[0..wire_rec.len], &out));
 }
 
-test "handleRecord: NewSessionTicket is parsed and ignored" {
+// RFC 8446 §4.6.1 — a post-handshake NewSessionTicket is parsed and surfaced
+// to the caller as a .new_session_ticket event (the caller calls
+// deriveSessionTicket to store resumption material).
+test "handleRecord: NewSessionTicket is surfaced as an event" {
     var hs = try connectedTestClient();
     const next_rx = try hs.suite.ratchetServerKey();
     hs.rx.deinit();
@@ -2918,7 +3000,51 @@ test "handleRecord: NewSessionTicket is parsed and ignored" {
     var server_tx = try hs.rx.clone();
     defer server_tx.deinit();
     const record = try server_tx.encrypt(.handshake, &ticket, &wire_buf);
-    try testing.expectEqual(Event.none, try hs.handleRecord(record, &out));
+    const ev = try hs.handleRecord(record, &out);
+    try testing.expect(ev == .new_session_ticket);
+    const nst = ev.new_session_ticket;
+    try testing.expectEqual(@as(u32, 0x00000e10), nst.ticket_lifetime);
+    try testing.expectEqual(@as(u32, 0x12345678), nst.ticket_age_add);
+    try testing.expectEqualSlices(u8, &.{0xaa}, nst.ticket_nonce);
+    try testing.expectEqualSlices(u8, &.{0xbb}, nst.ticket);
+    try testing.expectEqual(@as(?u32, null), nst.max_early_data_size);
+
+    // The caller can derive a storable SessionTicket (PSK over the
+    // resumption_master_secret + nonce).
+    const session = try hs.deriveSessionTicket(nst);
+    try testing.expectEqual(@as(u16, 1), session.identity_len);
+    try testing.expectEqual(@as(u8, 0xbb), session.identity[0]);
+    try testing.expectEqual(@as(u32, 0x12345678), session.ticket_age_add);
+    try testing.expect(session.psk_len > 0);
+}
+
+// RFC 8448 §3/§4 — the live 1-RTT handshake (§3) must derive the
+// resumption_master_secret that §4 uses to derive the ticket PSK. The vector
+// matches hkdf.zig's standalone HkdfSha256 test, but here it is proven through
+// the real clientFinished transcript path.
+test "clientFinished: RFC 8448 §4 resumption_master_secret over the live transcript" {
+    var hs = try connectedTestClient();
+    switch (hs.suite) {
+        .sha256 => |*s| {
+            try testing.expect(s.resumption_master_valid);
+            try testing.expectEqualSlices(u8, &.{
+                0x7d, 0xf2, 0x35, 0xf2, 0x03, 0x1d, 0x2a, 0x05,
+                0x12, 0x87, 0xd0, 0x2b, 0x02, 0x41, 0xb0, 0xbf,
+                0xda, 0xf8, 0x6c, 0xc8, 0x56, 0x23, 0x1f, 0x2d,
+                0x5a, 0xba, 0x46, 0xc4, 0x34, 0xec, 0x19, 0x6c,
+            }, &s.resumption_master.data);
+            // RFC 8448 §4 ticket nonce is 00 00 -> the PSK used by the resumed
+            // handshake.
+            const psk = hkdf.HkdfSha256.resumptionPsk(s.resumption_master, &.{ 0x00, 0x00 });
+            try testing.expectEqualSlices(u8, &.{
+                0x4e, 0xcd, 0x0e, 0xb6, 0xec, 0x3b, 0x4d, 0x87,
+                0xf5, 0xd6, 0x02, 0x8f, 0x92, 0x2c, 0xa4, 0xc5,
+                0x85, 0x1a, 0x27, 0x7f, 0xd4, 0x13, 0x11, 0xc9,
+                0xe6, 0x2d, 0x2c, 0x94, 0x92, 0xe1, 0xc4, 0xf3,
+            }, &psk.data);
+        },
+        else => return error.UnexpectedSuite,
+    }
 }
 
 test "handleRecord: malformed NewSessionTicket is rejected" {
