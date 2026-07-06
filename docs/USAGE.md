@@ -284,6 +284,12 @@ record drain. The writer must not call back into ztls.
 
 `.application_data` during the handshake is an error (`UnexpectedDuringHandshake`) because application data must not arrive before the handshake completes.
 
+## kTLS key export
+
+After the handshake is connected, `txKtlsInfo()` and `rxKtlsInfo()` return copied Linux kTLS key material for the current traffic-key epoch. `tx` is the local write direction; `rx` is the peer write direction. The core still does no socket I/O and does not call `setsockopt`.
+
+For caller-initiated KeyUpdate, send the KeyUpdate record, call `completeWrite()` after it is fully written, then call `txKtlsInfo()` and install that value as the new kernel TX key before the next kernel send. For inbound KeyUpdate, the engine-owned record path ratchets `rx`; callers using kernel-owned RX must treat this as a sequencing contract they own and install the new `rxKtlsInfo()` value when they process a KeyUpdate boundary. Full kTLS RX event surfacing remains a separate API concern; do not poll once at handshake completion and assume the epoch is permanent.
+
 ## Server credentials
 
 Unlike the client, which only needs a certificate policy, the server must send a certificate chain and sign the `CertificateVerify` message. Configure that before processing the ClientHello:
@@ -423,6 +429,7 @@ Common drive methods:
 - `sendApplicationData(plaintext, out)` / `sendPreparedApplicationData(len, out)` — emit one encrypted application-data record.
 - `sendAlert(description, out)` — emit `close_notify` or a fatal alert.
 - `sendKeyUpdate(request, out)` — emit a post-handshake KeyUpdate.
+- `txKtlsInfo()` / `rxKtlsInfo()` — copy current traffic-key epoch material for caller-owned Linux kTLS setup.
 - `completeWrite()` — acknowledge the previous emitted record.
 - `selectedAlpnProtocol()` — negotiated ALPN protocol, or `null`.
 
@@ -460,6 +467,7 @@ Common drive methods:
 - `selectedAlpnProtocol()` — negotiated ALPN protocol, or `null`.
 - `sendApplicationData(plaintext, out)` / `sendPreparedApplicationData(len, out)` — emit one encrypted application-data record.
 - `sendAlert(description, out)` and `sendKeyUpdate(request, out)` — post-handshake emits.
+- `txKtlsInfo()` / `rxKtlsInfo()` — copy current traffic-key epoch material for caller-owned Linux kTLS setup.
 - `completeWrite()` — acknowledge the previous emitted record.
 
 Low-level in-memory hooks used by `examples/in_memory_handshake.zig`: `acceptClientHello`, `processClientFinished`, and `receiveApplicationData`.

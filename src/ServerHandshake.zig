@@ -1345,6 +1345,18 @@ pub fn sendPreparedApplicationData(
     return handshake.sendPreparedApplicationData(self, plaintext_len, out);
 }
 
+/// Export the current server-write traffic key epoch for caller-owned kTLS TX setup.
+pub fn txKtlsInfo(self: *const ServerHandshake) RecordLayer.KtlsInfo {
+    assert(self.state == .connected);
+    return self.tx.ktlsInfo();
+}
+
+/// Export the current client-write traffic key epoch for caller-owned kTLS RX setup.
+pub fn rxKtlsInfo(self: *const ServerHandshake) RecordLayer.KtlsInfo {
+    assert(self.state == .connected);
+    return self.rx.ktlsInfo();
+}
+
 // ziglint-ignore: Z015 -- ReceiveError is a public error-set alias.
 pub fn receiveApplicationData(self: *ServerHandshake, record: []u8) ReceiveError![]const u8 {
     assert(self.state == .connected);
@@ -2711,6 +2723,8 @@ test "handleRecord: rejects client KeyUpdate before Finished" {
 // encrypted under the old send key.
 test "handleRecord: client KeyUpdate(update_requested) ratchets rx and responds" {
     var server = try connectedTestServer();
+    const rx_ktls_0 = server.rxKtlsInfo();
+    const tx_ktls_0 = server.txKtlsInfo();
     var client_tx = try server.rx.clone();
     defer client_tx.deinit();
     var server_tx_old = try server.tx.clone();
@@ -2737,6 +2751,20 @@ test "handleRecord: client KeyUpdate(update_requested) ratchets rx and responds"
         @intFromEnum(KeyUpdateRequest.update_not_requested),
     }, dec.content);
     server.completeWrite();
+    const rx_ktls_1 = server.rxKtlsInfo();
+    const tx_ktls_1 = server.txKtlsInfo();
+    try testing.expect(!mem.eql(
+        u8,
+        rx_ktls_0.key[0..rx_ktls_0.key_len],
+        rx_ktls_1.key[0..rx_ktls_1.key_len],
+    ));
+    try testing.expect(!mem.eql(
+        u8,
+        tx_ktls_0.key[0..tx_ktls_0.key_len],
+        tx_ktls_1.key[0..tx_ktls_1.key_len],
+    ));
+    try testing.expectEqualSlices(u8, &([_]u8{0} ** 8), &rx_ktls_1.rec_seq);
+    try testing.expectEqualSlices(u8, &([_]u8{0} ** 8), &tx_ktls_1.rec_seq);
 
     var client_tx_1 = try server.rx.clone();
     defer client_tx_1.deinit();
@@ -2781,6 +2809,7 @@ test "handleRecord: client KeyUpdate(update_not_requested) ratchets rx only" {
 // RFC 8446 §4.6.3 — server KeyUpdate is encrypted under the old send key, then ratchets.
 test "sendKeyUpdate: server-initiated KeyUpdate encrypts under old key then ratchets tx" {
     var server = try connectedTestServer();
+    const tx_ktls_0 = server.txKtlsInfo();
     var peer_rx_old = try server.tx.clone();
     defer peer_rx_old.deinit();
     var out: [64]u8 = undefined;
@@ -2793,6 +2822,13 @@ test "sendKeyUpdate: server-initiated KeyUpdate encrypts under old key then ratc
         @intFromEnum(HandshakeType.key_update),          0x00, 0x00, 0x01,
         @intFromEnum(KeyUpdateRequest.update_requested),
     }, dec.content);
+    const tx_ktls_1 = server.txKtlsInfo();
+    try testing.expect(!mem.eql(
+        u8,
+        tx_ktls_0.key[0..tx_ktls_0.key_len],
+        tx_ktls_1.key[0..tx_ktls_1.key_len],
+    ));
+    try testing.expectEqualSlices(u8, &([_]u8{0} ** 8), &tx_ktls_1.rec_seq);
     try testing.expectError(error.PendingWrite, server.sendKeyUpdate(&out, .update_requested));
     server.completeWrite();
 }

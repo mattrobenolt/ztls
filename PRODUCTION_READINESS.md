@@ -393,8 +393,10 @@ comparisons measure equivalent work*. This is the project's justification.
   copied TLS 1.3 traffic key material, Linux kTLS cipher-type values, split
   AES-GCM salt/IV, ChaCha20-Poly1305 IV, and current big-endian record sequence
   with RFC-cited tests proving nonce reconstruction and deinit-safe copy
-  semantics. KeyUpdate event surfacing and the caller sequencing contract remain
-  open before kTLS can be called usable. *(#29)*
+  semantics. `ClientHandshake` and `ServerHandshake` expose `txKtlsInfo()` /
+  `rxKtlsInfo()` accessors, and post-KeyUpdate tests prove exported epochs carry
+  new keys with sequence number reset to zero. Full KeyUpdate event surfacing for
+  kernel-owned RX remains open before kTLS can be called usable. *(#29)*
 
 ---
 

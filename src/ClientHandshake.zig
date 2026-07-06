@@ -715,6 +715,18 @@ pub fn sendPreparedApplicationData(
     return handshake.sendPreparedApplicationData(self, plaintext_len, out);
 }
 
+/// Export the current client-write traffic key epoch for caller-owned kTLS TX setup.
+pub fn txKtlsInfo(self: *const ClientHandshake) RecordLayer.KtlsInfo {
+    assert(self.state == .connected);
+    return self.tx.ktlsInfo();
+}
+
+/// Export the current server-write traffic key epoch for caller-owned kTLS RX setup.
+pub fn rxKtlsInfo(self: *const ClientHandshake) RecordLayer.KtlsInfo {
+    assert(self.state == .connected);
+    return self.rx.ktlsInfo();
+}
+
 pub const ProcessError = frame.ParseError || RecordLayer.DecryptError ||
     ServerHelloError || HelloRetryRequestError || FlightError || SendError ||
     alert.ParseError ||
@@ -2452,6 +2464,8 @@ test "handleRecord: server KeyUpdate(update_requested) ratchets rx and responds"
     // send-key mirror to decrypt the response. Capture the server's secret_0
     // before receive() ratchets our rx, so we can advance it independently.
     const server_secret_0 = hs.suite.sha256.server_app_secret;
+    const rx_ktls_0 = hs.rxKtlsInfo();
+    const tx_ktls_0 = hs.txKtlsInfo();
     var server_tx = try hs.rx.clone();
     defer server_tx.deinit();
     var client_send_mirror = try hs.tx.clone();
@@ -2474,6 +2488,20 @@ test "handleRecord: server KeyUpdate(update_requested) ratchets rx and responds"
     try testing.expectEqual(.handshake, dec.content_type);
     try testing.expectEqualSlices(u8, &.{ 0x18, 0x00, 0x00, 0x01, 0x00 }, dec.content);
     hs.completeWrite(); // acknowledge the response was sent
+    const rx_ktls_1 = hs.rxKtlsInfo();
+    const tx_ktls_1 = hs.txKtlsInfo();
+    try testing.expect(!mem.eql(
+        u8,
+        rx_ktls_0.key[0..rx_ktls_0.key_len],
+        rx_ktls_1.key[0..rx_ktls_1.key_len],
+    ));
+    try testing.expect(!mem.eql(
+        u8,
+        tx_ktls_0.key[0..tx_ktls_0.key_len],
+        tx_ktls_1.key[0..tx_ktls_1.key_len],
+    ));
+    try testing.expectEqualSlices(u8, &([_]u8{0} ** 8), &rx_ktls_1.rec_seq);
+    try testing.expectEqualSlices(u8, &([_]u8{0} ** 8), &tx_ktls_1.rec_seq);
 
     // rx ratcheted: a following server record under the next key decrypts.
     // Advance the server's send secret independently (in lockstep with our rx).
