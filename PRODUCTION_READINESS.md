@@ -80,7 +80,9 @@ server flight with client verification gates, application data, alerts,
 `close_notify`,
 post-handshake KeyUpdate (both directions, flood-bounded, record-boundary
 enforced). NewSessionTicket is parsed for structural validity and discarded —
-consumption-for-rejection, not resumption.
+consumption-for-rejection, not resumption. PSK/resumption key-schedule helpers
+are covered by RFC 8448 §3/§4 vectors, but ztls still does not store tickets,
+encode PSK binders, or resume handshakes.
 
 **Current evidence (real, and good):**
 
