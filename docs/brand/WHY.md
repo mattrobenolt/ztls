@@ -48,8 +48,9 @@ Reach for ztls when:
 
 Being honest about this is the whole brand, so here it is straight:
 
-- **Anything in production.** It's pre-alpha and unaudited. `SECURITY.md` says
-  this plainly.
+- **Anything in production.** It's pre-alpha and unaudited.
+  [`SECURITY.md`](https://github.com/mattrobenolt/ztls/blob/main/SECURITY.md)
+  says this plainly.
 - **A drop-in OpenSSL replacement.** ztls does the TLS state machine. It does
   not manage sockets, load OS trust stores, or hand you a `connect()`. You write
   the drive loop. The examples show how, but it's your code.
@@ -70,7 +71,9 @@ benchmarks, ztls does less work per record than libssl across the board, and les
 than rustls on AES-GCM. It loses to rustls on small ChaCha20-Poly1305 records,
 and that row is published with the disassembly that explains why.
 
-The honest caveats are in the README and in `docs/research/PERFORMANCE.md`: two
+The honest caveats are in the
+[README](https://github.com/mattrobenolt/ztls/blob/main/README.md) and in
+[`docs/research/PERFORMANCE.md`](https://github.com/mattrobenolt/ztls/blob/main/docs/research/PERFORMANCE.md): two
 x86_64 EC2 shapes so far, no repetition or threshold policy yet, and a
 measurement-shape difference between the harnesses. So the current numbers are
 measurements, not a marketing headline. When the methodology is hardened enough
@@ -82,8 +85,8 @@ the design, in the open, with the losses shown.
 
 ## Where to go next
 
-- `README.md` — what it is and how to start.
-- `docs/USAGE.md` — the API guide and drive-loop patterns.
-- `docs/research/PERFORMANCE.md` — benchmark methodology and the raw captures.
-- `docs/research/THREAT_MODEL.md` — the attacker model and the caller/engine line.
-- `PRODUCTION_READINESS.md` — what's proven, what isn't, and how we know.
+- [`README.md`](https://github.com/mattrobenolt/ztls/blob/main/README.md) — what it is and how to start.
+- [`docs/USAGE.md`](https://github.com/mattrobenolt/ztls/blob/main/docs/USAGE.md) — the API guide and drive-loop patterns.
+- [`docs/research/PERFORMANCE.md`](https://github.com/mattrobenolt/ztls/blob/main/docs/research/PERFORMANCE.md) — benchmark methodology and the raw captures.
+- [`docs/research/THREAT_MODEL.md`](https://github.com/mattrobenolt/ztls/blob/main/docs/research/THREAT_MODEL.md) — the attacker model and the caller/engine line.
+- [`PRODUCTION_READINESS.md`](https://github.com/mattrobenolt/ztls/blob/main/PRODUCTION_READINESS.md) — what's proven, what isn't, and how we know.

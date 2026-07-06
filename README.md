@@ -9,8 +9,8 @@ ztls is a TLS 1.3 library that does no I/O. You feed it the bytes you read off
 the wire; it hands you back the bytes to write. Your socket, your event loop,
 your buffers. ztls just does the protocol.
 
-It's pre-alpha. The API will change out from under you. Read `docs/USAGE.md`
-before you build on it.
+It's pre-alpha. The API will change out from under you. Read
+[`docs/USAGE.md`](docs/USAGE.md) before you build on it.
 
 ## Why it works this way
 
@@ -45,7 +45,8 @@ ring backend is simply faster than OpenSSL's EVP ChaCha path. That losing row is
 in the repo too, with the disassembly that explains it.
 
 Here's the AES-128-GCM ping-pong row at 1350-byte records, from the
-`c7i.2xlarge` capture under `docs/research/perf/20260705-194022-ec2-c7i-2xlarge/`
+`c7i.2xlarge` capture under
+[`docs/research/perf/20260705-194022-ec2-c7i-2xlarge/`](docs/research/perf/20260705-194022-ec2-c7i-2xlarge/)
 (git rev `89c869e`, Zig 0.15.2 ReleaseFast, native CPU, `--count 5`):
 
 | impl | ns/op | vs ztls |
@@ -56,8 +57,8 @@ Here's the AES-128-GCM ping-pong row at 1350-byte records, from the
 
 The perf counters back this up. On that row ztls burns fewer cycles,
 instructions, and branches per op than either competitor
-(`docs/research/perf/20260705-215953-ec2-c7i-2xlarge-row-perf/`), so it isn't a
-wall-clock fluke.
+([`docs/research/perf/20260705-215953-ec2-c7i-2xlarge-row-perf/`](docs/research/perf/20260705-215953-ec2-c7i-2xlarge-row-perf/)),
+so it isn't a wall-clock fluke.
 
 Now the caveats, because honest and dishonest benchmarks part ways right here:
 
@@ -65,7 +66,8 @@ Now the caveats, because honest and dishonest benchmarks part ways right here:
   repetition or threshold policy yet. Treat these as measurements, not a
   marketing number.
 - rustls's harness times batches; ztls's and libssl's time single iterations.
-  The measurement shapes aren't identical. `docs/research/PERFORMANCE.md` has the
+  The measurement shapes aren't identical.
+  [`docs/research/PERFORMANCE.md`](docs/research/PERFORMANCE.md) has the
   row-by-row equivalence methodology.
 - The full-handshake row isn't a fair fight. ztls verifies the server's
   CertificateVerify signature; the rustls and libssl harness peers don't. We
@@ -75,13 +77,13 @@ New results replace these as they land.
 
 ## Start here
 
-Read `docs/USAGE.md` for the API guide. If you'd rather read code, start with the
-examples that run in CI:
+Read [`docs/USAGE.md`](docs/USAGE.md) for the API guide. If you'd rather read
+code, start with the examples that run in CI:
 
-- `examples/in_memory_handshake.zig` — both endpoints in one process, no sockets.
-- `examples/tcp_loopback.zig` — client and server over `std.net.Stream` loopback.
-- `examples/epoll_pingpong.zig` — non-blocking Linux epoll ping-pong.
-- `examples/iouring_pingpong.zig` — Linux io_uring ping-pong.
+- [`examples/in_memory_handshake.zig`](examples/in_memory_handshake.zig) — both endpoints in one process, no sockets.
+- [`examples/tcp_loopback.zig`](examples/tcp_loopback.zig) — client and server over `std.net.Stream` loopback.
+- [`examples/epoll_pingpong.zig`](examples/epoll_pingpong.zig) — non-blocking Linux epoll ping-pong.
+- [`examples/iouring_pingpong.zig`](examples/iouring_pingpong.zig) — Linux io_uring ping-pong.
 
 Run them from the devshell:
 
@@ -104,10 +106,12 @@ drive loop.
 - Cipher suites: `TLS_AES_128_GCM_SHA256`, `TLS_AES_256_GCM_SHA384`, and
   `TLS_CHACHA20_POLY1305_SHA256`.
 - Examples use X25519. Server-side P-256 ECDHE exists for conformance work.
-  Broader named-group and provider work is tracked by #6.
+  Broader named-group and provider work is tracked by [#6](https://github.com/mattrobenolt/ztls/issues/6).
 - Server certificate authentication works. Client certificate auth is tracked
-  by #4.
-- PSK/session resumption is #2, 0-RTT is #3, HelloRetryRequest retry is #1.
+  by [#4](https://github.com/mattrobenolt/ztls/issues/4).
+- PSK/session resumption is [#2](https://github.com/mattrobenolt/ztls/issues/2),
+  0-RTT is [#3](https://github.com/mattrobenolt/ztls/issues/3),
+  HelloRetryRequest retry is [#1](https://github.com/mattrobenolt/ztls/issues/1).
 
 ## Fresh project
 
@@ -147,10 +151,11 @@ const exe = b.addExecutable(.{ .name = "hello-ztls", .root_module = exe_mod });
 ```
 
 Now `@import("ztls")` works from `src/main.zig`. The longer setup is in
-`docs/USAGE.md`.
+[`docs/USAGE.md`](docs/USAGE.md).
 
 ## Project state
 
-`PRODUCTION_READINESS.md` tracks what's actually done and what "done" means. This
-README tells you what ztls is; it doesn't make status claims. Design notes, the
-threat model, and the performance evidence live under `docs/research/`.
+[`PRODUCTION_READINESS.md`](PRODUCTION_READINESS.md) tracks what's actually done
+and what "done" means. This README tells you what ztls is; it doesn't make status
+claims. Design notes, the threat model, and the performance evidence live under
+[`docs/research/`](docs/research/).

@@ -9,15 +9,18 @@ ztls has not had an external security audit. The API is not stable. It has not
 been deployed anywhere that matters. Do not put it in front of real traffic or
 real secrets yet.
 
-That is not false modesty. `PRODUCTION_READINESS.md` tracks exactly what is
-proven and what isn't, with the evidence behind each claim. If you're weighing
+That is not false modesty.
+[`PRODUCTION_READINESS.md`](https://github.com/mattrobenolt/ztls/blob/main/PRODUCTION_READINESS.md)
+tracks exactly what is proven and what isn't, with the evidence behind each
+claim. If you're weighing
 ztls for anything security-sensitive, read that first, then decide.
 
 What ztls does have: RFC-cited tests, RFC 8448 known-answer vectors, OpenSSL
 interop in both directions, tlsfuzzer and TLS-Anvil conformance runs, Wycheproof
 boundary vectors at the crypto seam, fuzzing on the parser and record-decrypt
-surfaces, and a documented threat model at `docs/research/THREAT_MODEL.md`. That
-is real evidence. It is not a substitute for an audit.
+surfaces, and a documented threat model at
+[`docs/research/THREAT_MODEL.md`](https://github.com/mattrobenolt/ztls/blob/main/docs/research/THREAT_MODEL.md).
+That is real evidence. It is not a substitute for an audit.
 
 ## Reporting a vulnerability
 
@@ -44,8 +47,9 @@ Out of scope:
 - The libcrypto backend itself (OpenSSL, AWS-LC). Report primitive crypto bugs
   upstream. Report *misuse* of the backend by ztls here.
 - Anything the caller owns: transport I/O, buffer lifetime, trust-store
-  provisioning, the drive loop. `docs/research/THREAT_MODEL.md` draws the line
-  between ztls's responsibilities and the caller's.
+  provisioning, the drive loop.
+  [`docs/research/THREAT_MODEL.md`](https://github.com/mattrobenolt/ztls/blob/main/docs/research/THREAT_MODEL.md)
+  draws the line between ztls's responsibilities and the caller's.
 - Features that don't exist yet (client cert auth, PSK/resumption, 0-RTT). Those
   are tracked as open issues, not vulnerabilities.
 

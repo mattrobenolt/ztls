@@ -27,10 +27,10 @@ The engine owns the TLS protocol: framing, encryption, transcript hashing, alert
 
 `docs/USAGE.md` is the reference. If you want executable adoption paths first, read the CI-gated examples:
 
-- `examples/in_memory_handshake.zig` — both engines in one process, no sockets. Read this first: it shows the full 1-RTT handshake and application data in both directions.
-- `examples/tcp_loopback.zig` — ztls client plus ztls server over `std.net.Stream` on loopback.
-- `examples/epoll_pingpong.zig` — non-blocking Linux epoll client/server ping-pong.
-- `examples/iouring_pingpong.zig` — Linux io_uring client/server ping-pong.
+- [`examples/in_memory_handshake.zig`](https://github.com/mattrobenolt/ztls/blob/main/examples/in_memory_handshake.zig) — both engines in one process, no sockets. Read this first: it shows the full 1-RTT handshake and application data in both directions.
+- [`examples/tcp_loopback.zig`](https://github.com/mattrobenolt/ztls/blob/main/examples/tcp_loopback.zig) — ztls client plus ztls server over `std.net.Stream` on loopback.
+- [`examples/epoll_pingpong.zig`](https://github.com/mattrobenolt/ztls/blob/main/examples/epoll_pingpong.zig) — non-blocking Linux epoll client/server ping-pong.
+- [`examples/iouring_pingpong.zig`](https://github.com/mattrobenolt/ztls/blob/main/examples/iouring_pingpong.zig) — Linux io_uring client/server ping-pong.
 
 `just examples-ci` builds and runs those paths. If a drive-loop shape here diverges from those examples, this document is the stale side.
 

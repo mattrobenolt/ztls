@@ -6,3 +6,7 @@ src = "docs/site"
 
 [build]
 build-dir = "book"
+
+[preprocessor.ztls-links]
+command = "bun run scripts/docs/mdbook-links.js"
+after = ["links"]
