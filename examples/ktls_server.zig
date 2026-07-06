@@ -345,7 +345,10 @@ fn clientRun(client_keypair: ztls.x25519.KeyPair, actual_port: u16) !void {
                     hs.completeWrite();
                 }
             },
-            .application_data, .closed => return error.UnexpectedDuringHandshake,
+            .application_data,
+            .closed,
+            .new_session_ticket,
+            => return error.UnexpectedDuringHandshake,
             .none => {},
         };
     }
@@ -386,6 +389,7 @@ fn clientRun(client_keypair: ztls.x25519.KeyPair, actual_port: u16) !void {
                 print("[client] received early data: {s}\n", .{data});
             },
             .closed => return error.ServerClosedEarly,
+            .new_session_ticket => {},
             .none => {},
         };
     }
@@ -432,6 +436,7 @@ fn clientRun(client_keypair: ztls.x25519.KeyPair, actual_port: u16) !void {
                     hs.completeWrite();
                 }
             },
+            .new_session_ticket => {},
             .closed => return,
             .none => {},
         };

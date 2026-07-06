@@ -621,6 +621,7 @@ fn clientRun(arena: Allocator, args: *const Args, port: u16) !void {
                 .key_update => |ku| {
                     if (ku.response) |w| try conn.send(&hs, w);
                 },
+                .new_session_ticket => {},
                 .none => {},
             }
         }

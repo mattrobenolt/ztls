@@ -183,7 +183,11 @@ fn clientRun(client_keypair: ztls.x25519.KeyPair, actual_port: u16) !void {
                 try sendAll(&ring, net.fd(stream), w);
                 hs.completeWrite();
             },
-            .application_data, .closed, .key_update => return error.UnexpectedDuringHandshake,
+            .application_data,
+            .closed,
+            .key_update,
+            .new_session_ticket,
+            => return error.UnexpectedDuringHandshake,
             .none => {},
         };
     }
@@ -226,6 +230,7 @@ fn clientRun(client_keypair: ztls.x25519.KeyPair, actual_port: u16) !void {
                     hs.completeWrite();
                 }
             },
+            .new_session_ticket => {},
             .none => {},
         };
     }
