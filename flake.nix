@@ -46,6 +46,9 @@
             };
           };
           rustToolchain = pkgs.rust-bin.stable.latest.default;
+          wrangler = pkgs.writeShellScriptBin "wrangler" ''
+            exec ${pkgs.bun}/bin/bunx --bun wrangler@4.58.0 "$@"
+          '';
           commonPackages =
             (with pkgs; [
               ast-grep
@@ -141,6 +144,23 @@
               packages = [
                 pkgs.aws-lc.dev
                 pkgs.aws-lc
+              ];
+            };
+
+            # Docs site tooling: Zig autodoc build (needs the crypto backend
+            # env) plus mdBook and wrangler for building and publishing the
+            # Cloudflare site. Built on the OpenSSL backend shell.
+            docs = backendShell {
+              name = "ztls-docs";
+              backend = "openssl";
+              pkgConfigPath = "${pkgs.openssl.dev}/lib/pkgconfig";
+              libDir = "${pkgs.openssl.out}/lib";
+              packages = [
+                pkgs.openssl.dev
+                pkgs.openssl.out
+                pkgs.mdbook
+                pkgs.bun
+                wrangler
               ];
             };
 

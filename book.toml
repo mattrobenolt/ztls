@@ -1,0 +1,8 @@
+[book]
+title = "ztls"
+authors = ["ztls contributors"]
+language = "en"
+src = "docs/site"
+
+[build]
+build-dir = "book"

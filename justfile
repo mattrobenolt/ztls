@@ -4,6 +4,7 @@
 import 'just/check.just'
 import 'just/bench.just'
 import 'just/brand.just'
+import 'just/docs.just'
 
 [doc("Show available recipes")]
 [private]

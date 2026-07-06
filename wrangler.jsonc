@@ -1,0 +1,15 @@
+{
+  "$schema": "https://unpkg.com/wrangler@4.58.0/config-schema.json",
+  "name": "ztls-withmatt-com",
+  "compatibility_date": "2025-12-10",
+  "observability": {
+    "enabled": false
+  },
+  "assets": {
+    "directory": "book",
+    "html_handling": "none"
+  },
+  "build": {
+    "command": "just docs"
+  }
+}

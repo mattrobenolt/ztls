@@ -109,4 +109,19 @@ pub fn build(b: *Build) void {
         .ztls_mod = mod,
         .txtar_mod = txtar_mod,
     });
+
+    // Zig autodoc for the public API. `zig build docs -p docs/site` installs the
+    // generated HTML into the mdBook source tree at docs/site/zig-docs, where
+    // `mdbook build` sweeps it into the published site at /zig-docs/.
+    const docs_obj = b.addObject(.{
+        .name = "ztls-docs",
+        .root_module = mod,
+    });
+    const docs_install = b.addInstallDirectory(.{
+        .source_dir = docs_obj.getEmittedDocs(),
+        .install_dir = .prefix,
+        .install_subdir = "zig-docs",
+    });
+    const docs_step = b.step("docs", "Generate Zig API docs");
+    docs_step.dependOn(&docs_install.step);
 }
