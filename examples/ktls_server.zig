@@ -48,31 +48,10 @@ const host = "127.0.0.1";
 const server_name = "ztls.server.test";
 const port: u16 = 0; // OS-assigned ephemeral port
 
-// Linux kTLS UAPI constants (include/uapi/linux/tls.h)
-const sol_tcp: i32 = 6;
-const tcp_ulp: u32 = 31;
-const sol_tls: i32 = 282; // IPPROTO_TCP + 256
-const tls_tx: u32 = 1;
-const tls_rx: u32 = 2;
-const tls_1_3_version: u16 = 0x0304;
-
-// cipher_type values (include/uapi/linux/tls.h)
-const tls_cipher_aes_gcm_128: u16 = 51;
-
-/// `struct tls_crypto_info` from include/uapi/linux/tls.h.
-const TlsCryptoInfo = extern struct {
-    version: u16,
-    cipher_type: u16,
-};
-
-/// `struct tls12_crypto_info_aes_gcm_128` from include/uapi/linux/tls.h.
-const Tls12CryptoInfoAesGcm128 = extern struct {
-    info: TlsCryptoInfo,
-    iv: [8]u8,
-    key: [16]u8,
-    salt: [4]u8,
-    rec_seq: [8]u8,
-};
+// Linux kTLS UAPI constants and struct layouts come from `ztls.ktls` so the
+// caller never handles the kernel struct layout or the RFC 8446 §5.3 salt/IV
+// split directly.
+const ktls = ztls.ktls;
 
 const ServerCtx = struct {
     listener: *net.Server,
@@ -189,7 +168,7 @@ fn serverRun(ctx: *ServerCtx) !void {
 
     // 4. Install kTLS ULP + TX/RX keys
     const ulp_name = "tls";
-    posix.setsockopt(sockfd, sol_tcp, tcp_ulp, ulp_name) catch |err| {
+    posix.setsockopt(sockfd, ktls.SOL_TCP, ktls.TCP_ULP, ulp_name) catch |err| {
         if (isKtlsUnavailable(err)) {
             print("[ktls]   kTLS unavailable on this kernel, skipping\n", .{});
             return;
@@ -198,11 +177,11 @@ fn serverRun(ctx: *ServerCtx) !void {
         return;
     };
 
-    installKtlsAesGcm128(sockfd, tls_tx, tx_info) catch |err| {
+    installKtlsAesGcm128(sockfd, ktls.TLS_TX, tx_info) catch |err| {
         print("[ktls]   setsockopt(TLS_TX) failed: {s}, skipping\n", .{@errorName(err)});
         return;
     };
-    installKtlsAesGcm128(sockfd, tls_rx, rx_info) catch |err| {
+    installKtlsAesGcm128(sockfd, ktls.TLS_RX, rx_info) catch |err| {
         print("[ktls]   setsockopt(TLS_RX) failed: {s}, skipping\n", .{@errorName(err)});
         return;
     };
@@ -232,27 +211,18 @@ fn serverRun(ctx: *ServerCtx) !void {
 }
 
 /// Install a TLS 1.3 AES-GCM-128 traffic key via `setsockopt(TLS_TX/TLS_RX)`.
-/// The 12-byte TLS 1.3 IV splits into salt[0..4] + iv[4..12] per
-/// include/uapi/linux/tls.h. RFC 8446 §5.3 constructs the per-record nonce
-/// from the 12-byte IV XOR sequence number.
+/// `ztls.ktls.packAesGcm128` folds the RFC 8446 §5.3 salt/IV split and the
+/// kernel struct layout into the library, so this is just pack + setsockopt.
 fn installKtlsAesGcm128(
     sockfd: posix.socket_t,
     direction: u32,
     info: ztls.RecordLayer.KtlsInfo,
 ) !void {
-    if (info.cipher_type != .aes_gcm_128) return error.UnsupportedCipher;
-    var crypto_info: Tls12CryptoInfoAesGcm128 = .{
-        .info = .{
-            .version = tls_1_3_version,
-            .cipher_type = tls_cipher_aes_gcm_128,
-        },
-        .iv = info.iv[0..8].*,
-        .key = info.key[0..16].*,
-        .salt = info.salt[0..4].*,
-        .rec_seq = info.rec_seq,
+    const crypto_info = ktls.packAesGcm128(info) catch |err| switch (err) {
+        error.CipherMismatch => return error.UnsupportedCipher,
     };
     const opt_bytes = std.mem.asBytes(&crypto_info);
-    posix.setsockopt(sockfd, sol_tls, direction, opt_bytes) catch |err| {
+    posix.setsockopt(sockfd, ktls.SOL_TLS, direction, opt_bytes) catch |err| {
         if (isKtlsUnavailable(err)) return error.KtlsUnavailable;
         return error.KtlsSetsockoptFailed;
     };
