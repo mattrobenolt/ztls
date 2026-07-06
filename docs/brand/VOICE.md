@@ -178,6 +178,22 @@ brings renders back, herald critiques and iterates. Judge a render the way you'd
 judge copy — does it communicate the intent, does it fit the voice, is it honest
 to the project.
 
+### The assets and how to use them
+
+- **Mark** (`images/logo/logo.svg`, `logo-dark.svg`): a lowercase-z data path
+  with filled endpoint nodes — bytes enter top-left, exit bottom-right. It is
+  both the letter z and a state-transition diagram. Use it where an icon is
+  needed: favicon, social-preview card, org avatar.
+- **Wordmark** (`images/logo/wordmark.svg`, `wordmark-dark.svg`): `.ztls` in
+  JetBrains Mono over the tagline, glyphs outlined to paths. The leading dot
+  echoes `.name = .ztls` in `build.zig.zon`. Use it for headers (README, a
+  future site). Regenerate with `just brand-wordmark`.
+- **Do not stack the mark and the wordmark.** The mark is a z and the wordmark
+  opens with `.z`; together they read as two z's and look redundant. Header
+  gets the wordmark; icon slots get the mark. They don't share a lockup.
+- **Colors:** near-black `#16181d` and off-white `#f2f0ea` are the core pair;
+  tagline gray is `#5b606b` (light) / `#9aa0ab` (dark). Monochrome by default.
+
 ---
 
 ## The one rule
