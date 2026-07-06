@@ -320,7 +320,11 @@ test "deinit: clears caller-visible traffic key material" {
 // RFC 8446 §5.3 — Linux kTLS AES-GCM salt/IV split reconstructs the TLS 1.3 nonce.
 test "ktlsInfo: AES-GCM salt and IV reconstruct RFC 8446 nonce" {
     const key: Aes128GcmKey = .init(@splat(0xab));
-    const iv: Iv = .init(.{ 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b });
+    const iv: Iv = .init(.{
+        0x00, 0x01, 0x02, 0x03,
+        0x04, 0x05, 0x06, 0x07,
+        0x08, 0x09, 0x0a, 0x0b,
+    });
     var rl: RecordLayer = try .init(.{ .aes_128_gcm_sha256 = key }, iv);
     defer rl.deinit();
     rl.seq = 0x0102030405060708;
@@ -349,7 +353,10 @@ test "ktlsInfo: AES-GCM salt and IV reconstruct RFC 8446 nonce" {
 test "ktlsInfo: cipher type uses Linux UAPI values" {
     var aes256: RecordLayer = try .init(.{ .aes_256_gcm_sha384 = .init(@splat(0x22)) }, .zero);
     defer aes256.deinit();
-    var chacha: RecordLayer = try .init(.{ .chacha20_poly1305_sha256 = .init(@splat(0x33)) }, .zero);
+    var chacha: RecordLayer = try .init(
+        .{ .chacha20_poly1305_sha256 = .init(@splat(0x33)) },
+        .zero,
+    );
     defer chacha.deinit();
 
     const aes_info = aes256.ktlsInfo();
