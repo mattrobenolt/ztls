@@ -1,4 +1,4 @@
-#!/usr/bin/env bun
+#!/usr/bin/env node
 // mdBook preprocessor: keep the docs site's internal navigation internal.
 //
 // The site chapters {{#include}} GitHub-native markdown (WHY/USAGE/SECURITY).
@@ -7,6 +7,8 @@
 // URLs that have an in-book chapter to the local page, so "see the guide" stays
 // on the docs site instead of bouncing out to GitHub. Everything else (status
 // dashboard, research docs, examples, issues) correctly stays pointed at GitHub.
+
+const fs = require("node:fs");
 
 const REPO = "https://github.com/mattrobenolt/ztls";
 
@@ -45,7 +47,7 @@ function walk(items) {
 if (process.argv[2] === "supports") process.exit(0);
 
 try {
-  const [, book] = JSON.parse(await Bun.stdin.text());
+  const [, book] = JSON.parse(fs.readFileSync(0, "utf8"));
   walk(book.items ?? book.sections ?? []);
   process.stdout.write(JSON.stringify(book));
 } catch (e) {

@@ -8,5 +8,5 @@ src = "docs/site"
 build-dir = "book"
 
 [preprocessor.ztls-links]
-command = "bun run scripts/docs/mdbook-links.js"
+command = "node scripts/docs/mdbook-links.js"
 after = ["links"]

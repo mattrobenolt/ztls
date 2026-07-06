@@ -47,7 +47,7 @@
           };
           rustToolchain = pkgs.rust-bin.stable.latest.default;
           wrangler = pkgs.writeShellScriptBin "wrangler" ''
-            exec ${pkgs.bun}/bin/bunx --bun wrangler@4.58.0 "$@"
+            exec ${pkgs.nodejs}/bin/npx wrangler@4.107.0 "$@"
           '';
           commonPackages =
             (with pkgs; [
@@ -159,7 +159,7 @@
                 pkgs.openssl.dev
                 pkgs.openssl.out
                 pkgs.mdbook
-                pkgs.bun
+                pkgs.nodejs
                 wrangler
               ];
             };
