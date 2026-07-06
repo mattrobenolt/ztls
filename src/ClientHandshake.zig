@@ -73,7 +73,13 @@ const max_leaf_pub_key = 1024;
 const LeafPublicKeyBuffer = ArrayBuffer(u8, max_leaf_pub_key);
 const LegacySessionIdBuffer = ArrayBuffer(u8, 32);
 const OfferedSuitesBuffer = ArrayBuffer(CipherSuite, 8);
-const OfferedSignatureSchemesBuffer = ArrayBuffer(SignatureScheme, 16);
+// Upper bound on the number of signature schemes a peer may offer in a
+// CertificateRequest / ClientHello. OpenSSL s_server offers ~16+ schemes in
+// its CertificateRequest, so size generously above the backend's own
+// certificate_verify_schemes set. RFC 8446 §4.2.3 has no hard cap; this is a
+// defensive bound that maps overflow to HandshakeBufferTooShort rather than
+// silent truncation (which would make a valid scheme look unoffered).
+const OfferedSignatureSchemesBuffer = ArrayBuffer(SignatureScheme, 64);
 const SelectedAlpnBuffer = ArrayBuffer(u8, 255);
 const CertificateRequestContextBuffer = ArrayBuffer(u8, 255);
 const HandshakeBuffer = SliceBuffer(u8);

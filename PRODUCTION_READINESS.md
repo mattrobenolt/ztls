@@ -134,23 +134,34 @@ encode PSK binders, or resume handshakes.
   the required-empty path with `certificate_required` in local tests.
   `ClientAuthentication.clientSendsCertificateAndFinMessage` is now
   `STRICTLY_SUCCEEDED`, and the stale `*ClientAuth*` expected-skip entry has
-  been removed. Client-auth emission and server-side verification are now
-  implemented: `ClientHandshake` exposes `setCredentials`/`setCertificateChain`
-  (caller-owned chain + signer), captures the server-offered CertificateRequest
-  signature schemes, and emits a real Certificate chain plus a CertificateVerify
-  signed with the client private key over `client_context || transcript_hash`
-  (through Certificate) before Finished; the scheme is checked against the
-  server-offered set (`SignatureSchemeNotOffered` -> `illegal_parameter`). A
-  client with no credentials still sends an empty Certificate, preserving the
-  prior behavior. `ServerHandshake` now verifies a non-empty client Certificate
-  chain (`certificate.parseClientChain` with the server's `client_auth_bundle`
-  or `insecure_no_client_chain_anchor` opt-in) and the client CertificateVerify
-  against the leaf public key (`certificate.verifyClientSignature`), accepting
-  the handshake only when Certificate + CertificateVerify + Finished all verify;
+  been removed. Client-auth emission, server-side verification, and OpenSSL
+  interop both directions are now implemented: `ClientHandshake` exposes
+  `setCredentials`/`setCertificateChain` (caller-owned chain + signer),
+  captures the server-offered CertificateRequest signature schemes, and emits a
+  real Certificate chain plus a CertificateVerify signed with the client private
+  key over `client_context || transcript_hash` (through Certificate) before
+  Finished; the scheme is checked against the server-offered set
+  (`SignatureSchemeNotOffered` -> `illegal_parameter`). A client with no
+  credentials still sends an empty Certificate, preserving the prior behavior.
+  `ServerHandshake` verifies a non-empty client Certificate chain
+  (`certificate.parseClientChain` with the server's `client_auth_bundle` or
+  `insecure_no_client_chain_anchor` opt-in) and the client CertificateVerify
+  against the leaf public key (`certificate.verifyClientSignatureWithSchemes`,
+  which also checks the scheme against the server offer), accepting the
+  handshake only when Certificate + CertificateVerify + Finished all verify;
   a forged CertificateVerify is rejected with `SignatureVerificationFailed`
-  (`decrypt_error`). In-memory ztls client ↔ server required-auth integration
-  tests cover the success path and the forged-CV rejection. OpenSSL client-auth
-  interop both directions is not yet wired. *(#4, partial — interop remaining)*
+  (`decrypt_error`). Application-traffic-secret derivation on the server now
+  uses a transcript snapshot through the server Finished (RFC 8446 §7.1) so the
+  client Certificate/CertificateVerify absorbed afterwards does not perturb the
+  app-secret transcript. In-memory ztls client ↔ server required-auth
+  integration tests cover the success path and the forged-CV rejection, and
+  OpenSSL interop both directions is CI-gated in `src/interop.zig`: a ztls
+  server requiring auth accepts an `openssl s_client -cert -key` peer, and a
+  ztls client with credentials completes against `openssl s_server -Verify
+  -CAfile`. Residual: client-auth leaf EKU/KU enforcement is a no-op
+  (`LeafUsage.client_auth` skips it — honest partial); the offered-scheme
+  rejection of a malicious client CV has no dedicated test (defensive guard).
+  *(#4, done — interop proven; EKU/KU and the malicious-scheme test remain)*
   All six
   remaining unexpected failures align with TLS-Anvil `DSA_WITH_SHA256`
   certificate parameter combinations that ztls correctly rejects during server

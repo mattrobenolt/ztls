@@ -69,6 +69,50 @@ test "OpenSSL s_client interoperates with ztls server" {
     }
 }
 
+// RFC 8446 §4.7.2, §4.4.2, §4.4.3 — ztls server requiring client authentication
+// accepts a client certificate presented by `openssl s_client -cert -key`.
+test "OpenSSL s_client with -cert interoperates with ztls server (required client auth)" {
+    var arena_allocator: heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_allocator.deinit();
+    const arena = arena_allocator.allocator();
+
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const dir = try tmpDirPath(arena, &tmp);
+    const client_cert_path = try fs.path.join(arena, &.{ dir, "client.pem" });
+    const client_key_path = try fs.path.join(arena, &.{ dir, "client.key" });
+    try genCert(arena, client_cert_path, client_key_path);
+
+    try runServerClientAuthSuite(
+        arena,
+        client_cert_path,
+        client_key_path,
+        17433,
+    );
+}
+
+// RFC 8446 §4.7.2, §4.4.2, §4.4.3 — ztls client presenting a certificate to
+// `openssl s_server -Verify` completes the handshake and exchanges data.
+test "ztls client with credentials interoperates with OpenSSL s_server -Verify" {
+    var arena_allocator: heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_allocator.deinit();
+    const arena = arena_allocator.allocator();
+
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const dir = try tmpDirPath(arena, &tmp);
+    // s_server needs a server cert/key (self-signed) and a CAfile that trusts
+    // the ztls client's self-signed fixture certificate. The fixture cert is
+    // self-signed, so its own PEM is the CAfile.
+    const server_cert_path = try fs.path.join(arena, &.{ dir, "server.pem" });
+    const server_key_path = try fs.path.join(arena, &.{ dir, "server.key" });
+    try genCert(arena, server_cert_path, server_key_path);
+    const client_ca_path = try fs.path.join(arena, &.{ dir, "client_ca.pem" });
+    try writeFixtureCertPem(arena, client_ca_path);
+
+    try runClientAuthClientSuite(arena, server_cert_path, server_key_path, client_ca_path, 18433);
+}
+
 fn runClientSuite(
     arena: Allocator,
     cert_path: []const u8,
@@ -360,6 +404,313 @@ fn sendResponse(
     const close = try hs.sendAlert(.close_notify, out);
     try writeAll(stream, close);
     hs.completeWrite();
+}
+
+// RFC 8446 §4.7.2 — ztls server requiring client auth, exercised against an
+// `openssl s_client -cert -key` peer. The server uses
+// insecure_no_client_chain_anchor so the self-signed openssl client cert is
+// accepted without a trust bundle; the CertificateVerify still proves key
+// possession. Reuses one cipher suite (AES-128-GCM) for the smoke.
+fn runServerClientAuthSuite(
+    arena: Allocator,
+    client_cert_path: []const u8,
+    client_key_path: []const u8,
+    port: u16,
+) !void {
+    var args: ServerAuthArgs = .{ .port = port };
+    const thread = try std.Thread.spawn(.{}, serverClientAuthThread, .{&args});
+
+    var child = try startClientWithCert(arena, client_cert_path, client_key_path, port);
+    defer killChild(&child);
+    try writeFileAll(child.stdin.?, "GET / HTTP/1.0\r\n\r\n");
+    closeFile(child.stdin.?);
+    child.stdin = null;
+
+    var stdout_buf: [4096]u8 = undefined;
+    const n = try readFileAll(child.stdout.?, &stdout_buf);
+    const term = try waitChild(&child);
+    thread.join();
+
+    if (!exitedZero(term)) return error.OpenSslClientFailed;
+    if (!mem.containsAtLeast(u8, stdout_buf[0..n], 1, "hello")) return error.NoServerResponse;
+}
+
+const ServerAuthArgs = struct {
+    port: u16,
+};
+
+fn serverClientAuthThread(args: *const ServerAuthArgs) !void {
+    const addr = try parseAddress(host, args.port);
+    var server = try listen(addr);
+    defer deinitServer(&server);
+    const stream = try accept(&server);
+    defer closeStream(stream);
+    try serveClientAuth(stream);
+}
+
+fn serveClientAuth(stream: Stream) !void {
+    const server_keypair: ztls.x25519.KeyPair = .generate();
+    var server_random: ztls.Random = undefined;
+    entropy.fill(&server_random.data);
+
+    var hs: ztls.ServerHandshake = .init(.{
+        .keypairs = .init(server_keypair),
+        .random = server_random,
+        .client_auth = .required,
+        .insecure_no_client_chain_anchor = true,
+    });
+    defer hs.deinit();
+    hs.supportAlpn(&.{alpn_protocol});
+    const supported = [_]ztls.CipherSuite{.aes_128_gcm_sha256};
+    hs.supportSuites(&supported);
+
+    var signer = try ztls.signature.PrivateKey.fromP256Scalar(server_scalar[0..32]);
+    defer signer.deinit();
+    hs.setCredentials(&.{server_cert_der}, signer.signer());
+
+    var storage: ztls.RecordBuffer.Storage = .empty;
+    var rb: ztls.RecordBuffer = .init(&storage.buffer);
+    var out: [4096]u8 = undefined;
+    errdefer |err| sendBestEffortAlert(&hs, stream, err, &out);
+
+    while (!hs.isConnected()) {
+        const n = try read(stream, rb.writable());
+        if (n == 0) return error.ClientClosed;
+        rb.advance(n);
+        while (try rb.next()) |record| {
+            const ev = try hs.handleRecord(record, &out);
+            switch (ev) {
+                .write => |w| {
+                    try writeAll(stream, w);
+                    hs.completeWrite();
+                    if (try hs.sendPreparedServerFlight(&out)) |flight| {
+                        try writeAll(stream, flight);
+                        hs.completeWrite();
+                    }
+                },
+                .key_update => |ku| {
+                    if (ku.response) |w| {
+                        try writeAll(stream, w);
+                        hs.completeWrite();
+                    }
+                },
+                .none => {},
+                .application_data => |data| {
+                    if (!hs.isConnected()) return error.UnexpectedDuringHandshake;
+                    return sendResponse(stream, &hs, data, &out);
+                },
+                .closed => return error.UnexpectedDuringHandshake,
+            }
+        }
+    }
+
+    while (true) {
+        const n = try read(stream, rb.writable());
+        if (n == 0) return error.ClientClosed;
+        rb.advance(n);
+        while (try rb.next()) |record| switch (try hs.handleRecord(record, &out)) {
+            .application_data => |data| return sendResponse(stream, &hs, data, &out),
+            .write => |w| {
+                try writeAll(stream, w);
+                hs.completeWrite();
+            },
+            .key_update => |ku| {
+                if (ku.response) |w| {
+                    try writeAll(stream, w);
+                    hs.completeWrite();
+                }
+            },
+            .closed => return,
+            .none => {},
+        };
+    }
+}
+
+fn startClientWithCert(
+    arena: Allocator,
+    cert_path: []const u8,
+    key_path: []const u8,
+    port: u16,
+) !Child {
+    const port_str = try std.fmt.allocPrint(arena, "{d}", .{port});
+    const connect_to = try std.fmt.allocPrint(arena, "{s}:{s}", .{ host, port_str });
+    const argv = &.{
+        "openssl",                "s_client",
+        "-tls1_3",                "-connect",
+        connect_to,               "-ciphersuites",
+        "TLS_AES_128_GCM_SHA256", "-alpn",
+        alpn_protocol,            "-cert",
+        cert_path,                "-key",
+        key_path,                 "-quiet",
+    };
+    if (comptime is_zig_16) {
+        return std.process.spawn(testing.io, .{
+            .argv = argv,
+            .stdin = .pipe,
+            .stdout = .pipe,
+            .stderr = .ignore,
+        });
+    }
+
+    var child = Child.init(argv, arena);
+    child.stdin_behavior = .Pipe;
+    child.stdout_behavior = .Pipe;
+    child.stderr_behavior = .Ignore;
+    try child.spawn();
+    return child;
+}
+
+// RFC 8446 §4.7.2 — ztls client presenting credentials to `openssl s_server
+// -Verify -CAfile`. The client reuses the self-signed ECDSA fixture as its
+// client certificate; the CAfile is the fixture cert PEM (self-signed = its
+// own CA). The client skips server chain validation (insecure_no_chain_anchor)
+// since the openssl s_server uses a generated self-signed cert.
+fn runClientAuthClientSuite(
+    arena: Allocator,
+    server_cert_path: []const u8,
+    server_key_path: []const u8,
+    client_ca_path: []const u8,
+    port: u16,
+) !void {
+    var child = try startServerVerify(
+        arena,
+        server_cert_path,
+        server_key_path,
+        client_ca_path,
+        port,
+    );
+    defer killChild(&child);
+    // Give s_server a moment to bind.
+    const stream = try connectWithRetry(port);
+    defer closeStream(stream);
+    try clientInteropWithCreds(stream);
+}
+
+fn startServerVerify(
+    arena: Allocator,
+    cert_path: []const u8,
+    key_path: []const u8,
+    ca_path: []const u8,
+    port: u16,
+) !Child {
+    const port_str = try std.fmt.allocPrint(arena, "{d}", .{port});
+    const argv = &.{
+        "openssl",                "s_server",
+        "-tls1_3",                "-ciphersuites",
+        "TLS_AES_128_GCM_SHA256", "-key",
+        key_path,                 "-cert",
+        cert_path,                "-port",
+        port_str,                 "-www",
+        "-alpn",                  alpn_protocol,
+        "-Verify",                "1",
+        "-CAfile",                ca_path,
+        "-quiet",
+    };
+    if (comptime is_zig_16) {
+        return std.process.spawn(testing.io, .{
+            .argv = argv,
+            .stdout = .ignore,
+            .stderr = .ignore,
+        });
+    }
+
+    var child = Child.init(argv, arena);
+    child.stdout_behavior = .Ignore;
+    child.stderr_behavior = .Ignore;
+    try child.spawn();
+    return child;
+}
+
+fn clientInteropWithCreds(stream: Stream) !void {
+    const kp: ztls.x25519.KeyPair = .generate();
+    var random: ztls.Random = undefined;
+    entropy.fill(&random.data);
+
+    var hs: ztls.ClientHandshake = .init(.{
+        .keypairs = .init(kp),
+        .host_name = "localhost",
+        .now_sec = 0,
+        .random = random,
+        .insecure_no_chain_anchor = true,
+        .alpn_protocols = &.{alpn_protocol},
+    });
+    // Present the self-signed ECDSA fixture as the client certificate.
+    var client_signer = try ztls.signature.PrivateKey.fromP256Scalar(server_scalar[0..32]);
+    defer client_signer.deinit();
+    hs.setCredentials(&.{server_cert_der}, client_signer.signer());
+
+    var out: [4096]u8 = undefined;
+    var storage: ztls.RecordBuffer.Storage = .empty;
+    var rb: ztls.RecordBuffer = .init(&storage.buffer);
+
+    try writeAll(stream, try hs.start(&out));
+    hs.completeWrite();
+
+    while (!hs.isConnected()) {
+        const n = try read(stream, rb.writable());
+        if (n == 0) return error.ServerClosed;
+        rb.advance(n);
+        while (try rb.next()) |record| switch (try hs.handleRecord(record, &out)) {
+            .write => |w| {
+                try writeAll(stream, w);
+                hs.completeWrite();
+            },
+            .key_update => |ku| {
+                if (ku.response) |w| {
+                    try writeAll(stream, w);
+                    hs.completeWrite();
+                }
+            },
+            .application_data, .closed => return error.UnexpectedDuringHandshake,
+            .none => {},
+        };
+    }
+    try testing.expectEqualStrings(alpn_protocol, hs.selectedAlpnProtocol().?);
+
+    try writeAll(stream, try hs.sendApplicationData("GET / HTTP/1.0\r\n\r\n", &out));
+    hs.completeWrite();
+
+    while (true) {
+        const n = try read(stream, rb.writable());
+        if (n == 0) break;
+        rb.advance(n);
+        while (try rb.next()) |record| switch (try hs.handleRecord(record, &out)) {
+            .application_data => |data| if (mem.startsWith(u8, data, "HTTP/1.0 200")) return,
+            .write => |w| {
+                try writeAll(stream, w);
+                hs.completeWrite();
+            },
+            .key_update => |ku| {
+                if (ku.response) |w| {
+                    try writeAll(stream, w);
+                    hs.completeWrite();
+                }
+            },
+            .none => {},
+            .closed => return error.ServerClosedBeforeResponse,
+        };
+    }
+    return error.NoHttpResponse;
+}
+
+/// Write the self-signed ECDSA fixture certificate (shared_fixtures.server_ecdsa_cert_der)
+/// as a PEM file so `openssl s_server -Verify -CAfile` trusts the ztls client's
+/// client certificate (the fixture is self-signed, so it is its own CA).
+fn writeFixtureCertPem(arena: Allocator, pem_path: []const u8) !void {
+    // PEM is base64 of the DER wrapped in BEGIN/END CERTIFICATE lines.
+    const der = server_cert_der;
+    const enc = std.base64.standard.Encoder;
+    const b64_len = enc.calcSize(der.len);
+    var b64_buf: [4096]u8 = undefined;
+    if (b64_len > b64_buf.len) return error.BufferTooShort;
+    const encoded = enc.encode(b64_buf[0..b64_len], der);
+
+    const pem = try std.fmt.allocPrint(
+        arena,
+        "-----BEGIN CERTIFICATE-----\n{s}\n-----END CERTIFICATE-----\n",
+        .{encoded},
+    );
+    try fs.cwd().writeFile(.{ .sub_path = pem_path, .data = pem });
 }
 
 fn sendBestEffortAlert(

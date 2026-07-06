@@ -59,7 +59,12 @@ const transcript_util = @import("transcript.zig");
 const x25519 = @import("x25519.zig");
 
 const HandshakeBuffer = SliceBuffer(u8);
-const FinishedFragmentBuffer = ArrayBuffer(u8, handshake_header_len + 48);
+// Bounds a reassembled client-flight plaintext (Certificate [+ CertificateVerify]
+// + Finished) during wait_client_finished. The no-client-auth flight is just
+// Finished (52 bytes), but with client auth the flight carries the client
+// certificate chain and CertificateVerify too, so size for a full record
+// plaintext. RFC 8446 §5.2.
+const FinishedFragmentBuffer = ArrayBuffer(u8, frame.max_plaintext_len);
 const key_update_body_len = 1;
 const key_update_total_len = handshake_header_len + key_update_body_len;
 const KeyUpdateFragmentBuffer = ArrayBuffer(u8, key_update_total_len);
@@ -191,6 +196,13 @@ client_cert_policy: certificate.Policy = .{ .leaf_usage = .server_auth },
 /// Leaf public key extracted from the client Certificate, retained until
 /// CertificateVerify verification. Copied so it survives across records.
 client_leaf_pub_key: ClientLeafPubKeyBuffer = .empty,
+/// Transcript hash through the server Finished, snapshotted when the server
+/// flight is emitted. RFC 8446 §7.1: application traffic secrets are derived
+/// from the transcript through the server Finished, independent of any client
+/// Certificate/CertificateVerify that follows. Without this snapshot the
+/// client-auth path would derive app secrets from the wrong transcript.
+server_finished_hash: [48]u8 = @splat(0),
+server_finished_hash_len: u8 = 0,
 selected_alpn: ?[]const u8 = null,
 /// SNI hostname sent by the client in the server_name extension (RFC 6066 §3).
 /// Populated after acceptClientHello / handleRecord returns the first write event.
@@ -806,6 +818,11 @@ fn sendAnonymousFlightForTest(self: *ServerHandshake, out: []u8) FlightError![]c
                 &th,
             );
             s.transcript.update(fin);
+            // Snapshot the transcript through the server Finished for app-
+            // secret derivation (RFC 8446 §7.1). Mirrors encodeAuthenticatedFlight.
+            const fin_th = s.transcript.peek();
+            self.server_finished_hash[0..fin_th.len].* = fin_th;
+            self.server_finished_hash_len = @intCast(fin_th.len);
             pos += fin.len;
         },
     }
@@ -962,6 +979,12 @@ fn encodeAuthenticatedFlight(
                 &th,
             );
             s.transcript.update(fin);
+            // Snapshot the transcript through the server Finished for app-
+            // secret derivation (RFC 8446 §7.1). The client flight that
+            // follows must not perturb this hash.
+            const fin_th = s.transcript.peek();
+            self.server_finished_hash[0..fin_th.len].* = fin_th;
+            self.server_finished_hash_len = @intCast(fin_th.len);
             pos += fin.len;
         },
     }
@@ -1052,10 +1075,17 @@ fn verifyClientFinished(
             const H = @TypeOf(s.*).Hkdf;
             const th = s.transcript.peek();
             try finished.verify(@TypeOf(s.transcript), msg_raw, &s.client_finished_key.data, &th);
+            // RFC 8446 §7.1: application traffic secrets are derived from the
+            // transcript through the server Finished (snapshotted when the
+            // server flight was emitted), not the live transcript which now
+            // includes the client flight.
+            if (self.server_finished_hash_len == 0) return error.UnexpectedMessage;
+            var app_th: H.TranscriptHash = undefined;
+            @memcpy(app_th.data[0..], self.server_finished_hash[0..self.server_finished_hash_len]);
             var master = H.masterSecret(s.handshake_secret);
             defer master.secureZero();
-            s.client_app_secret = H.clientApplicationTrafficSecret(master, &.init(th));
-            s.server_app_secret = H.serverApplicationTrafficSecret(master, &.init(th));
+            s.client_app_secret = H.clientApplicationTrafficSecret(master, &app_th);
+            s.server_app_secret = H.serverApplicationTrafficSecret(master, &app_th);
             var next_rx = try H.makeRecordLayer(s.aead, s.client_app_secret);
             errdefer next_rx.deinit();
             const next_tx = try H.makeRecordLayer(s.aead, s.server_app_secret);
@@ -1277,51 +1307,68 @@ fn handleWaitClientFinished(self: *ServerHandshake, record: []u8) HandleError!Ev
                 self.fin_frag.clear();
                 return error.UnexpectedMessage;
             }
-            // Buffer the plaintext and try to reassemble a complete Finished.
+            // Buffer the plaintext and reassemble the client flight
+            // (Certificate [+ CertificateVerify] + Finished, or just Finished
+            // when client auth is off). RFC 8446 §4.4, §5.1.
             self.fin_frag.appendSlice(dec.content) catch {
                 self.fin_frag.clear();
                 return error.UnexpectedMessage;
             };
 
             const fragment = self.fin_frag.constSlice();
-            if (fragment.len >= handshake_header_len) {
-                if (fragment[0] != @intFromEnum(HandshakeType.finished)) {
-                    self.fin_frag.clear();
-                    return error.UnexpectedMessage;
-                }
-                const finished_len = (@as(u24, fragment[1]) << 16) |
-                    (@as(u24, fragment[2]) << 8) |
-                    fragment[3];
-                if (finished_len > 48) {
-                    self.fin_frag.clear();
-                    return error.UnexpectedMessage;
-                }
-            }
+            if (fragment.len < handshake_header_len) break :blk .none;
 
+            // Walk complete handshake messages; stop at the first partial or
+            // trailing byte after the last complete message.
             var hr: HandshakeReader = .init(fragment);
-            const maybe_msg = hr.next() catch {
-                // Still partial: wait for more fragments.
-                break :blk .none;
-            };
-            const msg = maybe_msg orelse break :blk .none;
-            if (msg.type != .finished) {
-                self.fin_frag.clear();
-                return error.UnexpectedMessage;
+            var saw_finished = false;
+            while (true) {
+                const maybe_msg = hr.next() catch |err| switch (err) {
+                    // Partial message: more fragments needed. If we already saw
+                    // a Finished, a trailing partial is illegal.
+                    error.UnexpectedEof => {
+                        if (saw_finished) {
+                            self.fin_frag.clear();
+                            return error.UnexpectedMessage;
+                        }
+                        break :blk .none;
+                    },
+                };
+                const msg = maybe_msg orelse {
+                    // Buffer fully drained. If no Finished yet, wait for more.
+                    if (!saw_finished) break :blk .none;
+                    break;
+                };
+                // Only the client-flight messages are valid here. A KeyUpdate
+                // or any other handshake message during wait_client_finished
+                // is rejected. RFC 8446 Appendix A.2.
+                switch (msg.type) {
+                    .certificate, .certificate_verify => {},
+                    .finished => saw_finished = true,
+                    else => {
+                        self.fin_frag.clear();
+                        return error.UnexpectedMessage;
+                    },
+                }
+                // After a Finished, nothing else may follow in the flight.
+                if (saw_finished) {
+                    const extra = hr.next() catch {
+                        self.fin_frag.clear();
+                        return error.UnexpectedMessage;
+                    };
+                    if (extra != null) {
+                        self.fin_frag.clear();
+                        return error.UnexpectedMessage;
+                    }
+                    break;
+                }
             }
-            // Check no trailing data after the Finished message.
-            const maybe_extra = hr.next() catch {
-                self.fin_frag.clear();
-                return error.UnexpectedMessage;
-            };
-            if (maybe_extra != null) {
-                self.fin_frag.clear();
-                return error.UnexpectedMessage;
-            }
+            if (!saw_finished) break :blk .none; // still partial: wait for more
 
-            // Complete Finished: verify and install application traffic keys.
-            const finished_msg = msg.raw;
+            // Complete client flight: validate Certificate [+ CV] + Finished.
+            const flight = fragment;
             self.fin_frag.clear();
-            try self.verifyClientFinished(finished_msg);
+            try self.processClientFinishedPlaintext(flight);
             break :blk .none;
         },
         .alert => blk: {
