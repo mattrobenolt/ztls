@@ -671,7 +671,10 @@ fn processClientHelloMessage(
                             var th: H.TranscriptHash = undefined;
                             Sha256.hash(ch_msg, &th.data, .{});
                             const early_traffic = H.clientEarlyTrafficSecret(early, &th);
-                            self.early_rx = try H.makeRecordLayer(sel.entry.cipher_suite, early_traffic);
+                            self.early_rx = try H.makeRecordLayer(
+                                sel.entry.cipher_suite,
+                                early_traffic,
+                            );
                         },
                         .aes_256_gcm_sha384 => {
                             const H = hkdf.HkdfSha384;
@@ -679,7 +682,10 @@ fn processClientHelloMessage(
                             var th: H.TranscriptHash = undefined;
                             Sha384.hash(ch_msg, &th.data, .{});
                             const early_traffic = H.clientEarlyTrafficSecret(early, &th);
-                            self.early_rx = try H.makeRecordLayer(sel.entry.cipher_suite, early_traffic);
+                            self.early_rx = try H.makeRecordLayer(
+                                sel.entry.cipher_suite,
+                                early_traffic,
+                            );
                         },
                     }
                 }
