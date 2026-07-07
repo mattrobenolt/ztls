@@ -104,7 +104,7 @@ pub fn supportsServerP384() bool {
     return capabilities.server_p384;
 }
 
-pub fn supportsServerX25519MLKEM768() bool {
+pub fn supportsServerX25519Mlkem768() bool {
     return capabilities.server_x25519_mlkem768;
 }
 
