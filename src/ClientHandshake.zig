@@ -70,14 +70,12 @@ const NamedGroup = @import("kex.zig").NamedGroup;
 /// extension to resume a session. RFC 8446 §4.6.1, §4.2.11.
 pub const SessionTicket = struct {
     /// Opaque ticket identity bytes (copied from the NewSessionTicket). The
-    /// caller owns this storage; ztls copies into the fixed buffer below.
-    identity: [256]u8 = @splat(0),
-    identity_len: u16 = 0,
+    /// caller owns this storage; ztls copies into the fixed-capacity buffer.
+    identity: ArrayBuffer(u8, 256) = .empty,
     /// PSK derived from the resumption_master_secret and the ticket nonce
     /// (HKDF-Expand-Label(resumption_master_secret, "resumption", nonce,
-    /// Hash.length)). RFC 8446 §4.6.1, §7.4/§7.5.
-    psk: [48]u8 = @splat(0),
-    psk_len: u8 = 0,
+    /// Hash.length)). RFC 8446 §4.6.1, §7.4/§7.5. Capacity covers SHA-384.
+    psk: ArrayBuffer(u8, 48) = .empty,
     /// RFC 8446 §4.6.1 — ticket_age_add added to the client's view of ticket
     /// age to obfuscate it in the pre_shared_key extension.
     ticket_age_add: u32 = 0,
@@ -605,7 +603,7 @@ pub fn startWithPsk(
 ) StartError![]const u8 {
     assert(self.state == .start);
     if (out.len < frame.header_len) return error.BufferTooShort;
-    const identity = ticket.identity[0..ticket.identity_len];
+    const identity = ticket.identity.constSlice();
     // binder hash length is the PSK's original cipher suite hash length.
     const binder_len: u8 = switch (ticket.cipher_suite) {
         .aes_128_gcm_sha256, .chacha20_poly1305_sha256 => 32,
@@ -632,7 +630,7 @@ pub fn startWithPsk(
     // Compute the binder over the truncated prefix. RFC 8446 §4.2.11.2:
     // binder = HMAC(finished_key, Hash(prefix)), where the binder key chain is
     // pskEarlySecret(psk) -> resumptionBinderKey -> finishedKey.
-    const psk = ticket.psk[0..ticket.psk_len];
+    const psk = ticket.psk.constSlice();
     switch (ticket.cipher_suite) {
         .aes_128_gcm_sha256, .chacha20_poly1305_sha256 => {
             const H = hkdf.HkdfSha256;
@@ -924,19 +922,17 @@ pub fn deriveSessionTicket(
     assert(self.state == .connected);
     if (nst.ticket.len > 256) return error.TicketIdentityTooLong;
     var ticket: SessionTicket = .{
-        .identity_len = @intCast(nst.ticket.len),
         .ticket_age_add = nst.ticket_age_add,
         .ticket_lifetime = nst.ticket_lifetime,
         .max_early_data_size = nst.max_early_data_size,
     };
-    @memcpy(ticket.identity[0..nst.ticket.len], nst.ticket);
+    ticket.identity.appendSlice(nst.ticket) catch unreachable;
     switch (self.suite) {
         .buffering => return error.NoResumptionSecret,
         inline .sha256, .sha384 => |*s| {
             if (!s.resumption_master_valid) return error.NoResumptionSecret;
             const psk = @TypeOf(s.*).Hkdf.resumptionPsk(s.resumption_master, nst.ticket_nonce);
-            ticket.psk_len = @intCast(psk.data.len);
-            @memcpy(ticket.psk[0..psk.data.len], &psk.data);
+            ticket.psk.appendSlice(&psk.data) catch unreachable;
             ticket.cipher_suite = s.aead;
         },
     }
@@ -3090,10 +3086,10 @@ test "handleRecord: NewSessionTicket is surfaced as an event" {
     // The caller can derive a storable SessionTicket (PSK over the
     // resumption_master_secret + nonce).
     const session = try hs.deriveSessionTicket(nst);
-    try testing.expectEqual(@as(u16, 1), session.identity_len);
-    try testing.expectEqual(@as(u8, 0xbb), session.identity[0]);
+    try testing.expectEqual(@as(usize, 1), session.identity.len);
+    try testing.expectEqual(@as(u8, 0xbb), session.identity.constSlice()[0]);
     try testing.expectEqual(@as(u32, 0x12345678), session.ticket_age_add);
-    try testing.expect(session.psk_len > 0);
+    try testing.expect(session.psk.len > 0);
 }
 
 // RFC 8448 §3/§4 — the live 1-RTT handshake (§3) must derive the
@@ -3146,13 +3142,11 @@ test "startWithPsk: binder matches an independent HMAC over the prefix" {
     const psk = hkdf.HkdfSha256.resumptionPsk(resumption_master, &.{ 0x00, 0x00 });
     const identity = [_]u8{ 0x2c, 0x03, 0x5d, 0x82, 0x93, 0x59 };
     var ticket: SessionTicket = .{
-        .identity_len = identity.len,
         .ticket_age_add = 0x262a6494,
         .cipher_suite = .aes_128_gcm_sha256,
-        .psk_len = @intCast(psk.data.len),
     };
-    @memcpy(ticket.identity[0..identity.len], &identity);
-    @memcpy(ticket.psk[0..psk.data.len], &psk.data);
+    ticket.identity.appendSlice(&identity) catch unreachable;
+    ticket.psk.appendSlice(&psk.data) catch unreachable;
 
     var out: [1024]u8 = undefined;
     const record = try hs.startWithPsk(ticket, &out);
