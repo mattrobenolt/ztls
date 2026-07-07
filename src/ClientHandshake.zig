@@ -157,6 +157,10 @@ pub const Config = struct {
     /// ALPN protocols offered in ClientHello. Caller-owned; must live until
     /// start() encodes them.
     alpn_protocols: AlpnProtocols = &.{},
+    /// Offer an X25519MLKEM768 (PQ hybrid) key_share in the ClientHello.
+    /// Requires a large enough `out` buffer for start() (the ClientHello grows
+    /// by ~1216 bytes). draft-ietf-tls-ecdhe-mlkem-05 §4.1.
+    offer_pq_key_share: bool = false,
     /// Optional caller-owned storage for handshake-message reassembly. When
     /// non-null, the engine reassembles flight messages that span records.
     reassembly: ?[]u8 = null,
@@ -483,6 +487,8 @@ offered_psk_cipher_suite: CipherSuite = .aes_128_gcm_sha256,
 /// Finished, derived from the PSK early secret + the ClientHello transcript.
 /// null when 0-RTT is not offered. RFC 8446 §4.2.10, §7.1.
 early_tx: ?RecordLayer = null,
+/// Whether to offer an X25519MLKEM768 PQ hybrid key_share. From Config.
+offer_pq_key_share: bool = false,
 /// KEM hybrid key handle (X25519MLKEM768 etc.) for PQ key exchange.
 /// Set by start() when the backend supports the group; the client sends the
 /// KEM public key as part of its key_share and decapsulates the server's
@@ -517,6 +523,7 @@ pub fn init(config: Config) ClientHandshake {
             .host_name = config.host_name,
         },
         .alpn_protocols = config.alpn_protocols,
+        .offer_pq_key_share = config.offer_pq_key_share,
         .handshake_buf = if (config.reassembly) |buf| .init(buf) else .empty,
     };
 }
@@ -600,11 +607,16 @@ pub fn start(self: *ClientHandshake, out: []u8) StartError![]const u8 {
     assert(self.state == .start);
     if (out.len < frame.header_len) return error.BufferTooShort;
 
-    // Generate a KEM keypair if the backend supports X25519MLKEM768.
-    // draft-ietf-tls-ecdhe-mlkem-05 §4.1. This increases the ClientHello by
-    // ~1216 bytes; callers must provide a large enough `out` buffer.
+    // Generate a KEM keypair if the backend supports X25519MLKEM768 AND the
+    // caller provided a large enough buffer (>=2048). This is opt-in by buffer
+    // size: callers who want KEM must provide a large buffer; callers with a
+    // small buffer get a plain ECDHE ClientHello.
+    // draft-ietf-tls-ecdhe-mlkem-05 §4.1.
     var kem_share: ?client_hello.KemShare = null;
-    if (backend.capabilities.client_x25519_mlkem768 and out.len >= 2048) {
+    if (self.offer_pq_key_share and
+        backend.capabilities.client_x25519_mlkem768 and
+        out.len >= 2048)
+    {
         const kem_key = mlkem.generateX25519Mlkem768() catch null;
         if (kem_key) |k| {
             self.kem_key = k;

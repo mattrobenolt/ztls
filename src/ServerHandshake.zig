@@ -4211,6 +4211,7 @@ test "in-memory X25519MLKEM768 KEM handshake reaches app data" {
         .host_name = null,
         .now_sec = 0,
         .random = .zero,
+        .offer_pq_key_share = true,
     });
     client.policy.insecure_no_chain_anchor = true;
 
