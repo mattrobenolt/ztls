@@ -10,6 +10,7 @@ const Sha256 = std.crypto.hash.sha2.Sha256;
 const Sha384 = std.crypto.hash.sha2.Sha384;
 const mem = std.mem;
 const testing = std.testing;
+const builtin = @import("builtin");
 
 const aead = @import("aead.zig");
 const alert = @import("alert.zig");
@@ -735,7 +736,9 @@ fn processClientHelloMessage(
             } else return error.IllegalParameter,
             else => return error.IllegalParameter,
         }
-    else if (ch.kem_key_share != null and backend.supportsServerX25519Mlkem768()) blk: {
+    else if (ch.kem_key_share != null and backend.supportsServerX25519Mlkem768() and
+        builtin.cpu.arch == .aarch64)
+    blk: {
         // Try KEM encapsulation; if it fails (e.g. the libcrypto build
         // doesn't support the algorithm at runtime), fall back to ECDHE.
         // draft-ietf-tls-ecdhe-mlkem-05 §4.
