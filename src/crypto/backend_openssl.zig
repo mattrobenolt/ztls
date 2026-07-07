@@ -15,9 +15,11 @@ pub const capabilities = struct {
     pub const client_x25519 = true;
     pub const client_p256 = true;
     pub const client_p384 = true;
+    pub const client_x25519_mlkem768 = true;
     pub const server_x25519 = true;
     pub const server_p256 = true;
     pub const server_p384 = true;
+    pub const server_x25519_mlkem768 = true;
 
     pub const certificate_verify_schemes: []const SignatureScheme = &.{
         .ecdsa_secp256r1_sha256,

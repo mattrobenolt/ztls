@@ -80,6 +80,9 @@ comptime {
     assert(capabilities.certificate_verify_schemes.len > 0);
     assert(capabilities.certificate_signature_schemes.len > 0);
     assert(capabilities.client_p384 == capabilities.server_p384);
+assert(
+    capabilities.client_x25519_mlkem768 == capabilities.server_x25519_mlkem768,
+);
 }
 
 pub fn supportsCipherSuite(suite: CipherSuite) bool {
@@ -99,6 +102,10 @@ pub fn supportsServerP256() bool {
 
 pub fn supportsServerP384() bool {
     return capabilities.server_p384;
+}
+
+pub fn supportsServerX25519MLKEM768() bool {
+    return capabilities.server_x25519_mlkem768;
 }
 
 pub fn supportsCertificateVerifyScheme(scheme: SignatureScheme) bool {
