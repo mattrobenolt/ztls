@@ -39,6 +39,115 @@ pub const capabilities = struct {
 };
 
 pub const Error = error{ LibcryptoFailed, IdentityElement };
+
+/// ML-KEM hybrid KEX types (RFC 9180 + draft-ietf-tls-ecdhe-mlkem).
+/// OpenSSL 3.5+ and AWS-LC expose these as provider-backed KEM algorithms
+/// (encap/decap, not key-agreement derive).
+pub const KemKey = *pkey;
+pub const KemPeerKey = *pkey;
+
+/// Generate an ML-KEM hybrid keypair (e.g. X25519MLKEM768).
+/// Caller must freeKey the result.
+pub fn kemKeygen(name: [*:0]const u8) Error!KemKey {
+    const key = c.EVP_PKEY_Q_keygen(null, null, name) orelse return error.LibcryptoFailed;
+    return key;
+}
+
+/// Extract the raw public key (TLS key_share bytes) from a KEM key.
+pub fn kemPublic(key: KemKey, out: []u8) Error![]u8 {
+    var len: usize = out.len;
+    if (c.EVP_PKEY_get_octet_string_param(
+        key,
+        c.OSSL_PKEY_PARAM_PUB_KEY,
+        out.ptr,
+        out.len,
+        &len,
+    ) != 1) return error.LibcryptoFailed;
+    return out[0..len];
+}
+
+/// Load a peer's raw public key into an EVP_PKEY for encapsulation.
+pub fn kemLoadPublic(
+    name: [*:0]const u8,
+    pub_key: []const u8,
+) Error!KemPeerKey {
+    var params: [2]c.OSSL_PARAM = undefined;
+    params[0] = c.OSSL_PARAM_construct_octet_string(
+        c.OSSL_PKEY_PARAM_PUB_KEY,
+        @constCast(pub_key.ptr),
+        pub_key.len,
+    );
+    params[1] = c.OSSL_PARAM_construct_end();
+
+    const ctx = c.EVP_PKEY_CTX_new_from_name(null, name, null) orelse
+        return error.LibcryptoFailed;
+    defer c.EVP_PKEY_CTX_free(ctx);
+    if (c.EVP_PKEY_fromdata_init(ctx) != 1) return error.LibcryptoFailed;
+
+    var peer: ?*pkey = null;
+    if (c.EVP_PKEY_fromdata(
+        ctx,
+        &peer,
+        c.EVP_PKEY_PUBLIC_KEY,
+        &params,
+    ) != 1) return error.LibcryptoFailed;
+    return peer.?;
+}
+
+/// Server: encapsulate using the client's public key.
+/// `enc_out` receives the ciphertext (sent as server key_share).
+/// `sec_out` receives the shared secret (fed to the key schedule).
+pub fn kemEncapsulate(
+    peer_key: KemPeerKey,
+    enc_out: []u8,
+    sec_out: []u8,
+) Error!struct { enc: []u8, sec: []u8 } {
+    const ctx = c.EVP_PKEY_CTX_new(peer_key, null) orelse
+        return error.LibcryptoFailed;
+    defer c.EVP_PKEY_CTX_free(ctx);
+    if (c.EVP_PKEY_encapsulate_init(ctx, null) != 1)
+        return error.LibcryptoFailed;
+
+    var enc_len: usize = enc_out.len;
+    var sec_len: usize = sec_out.len;
+    if (c.EVP_PKEY_encapsulate(
+        ctx,
+        enc_out.ptr,
+        &enc_len,
+        sec_out.ptr,
+        &sec_len,
+    ) != 1) return error.LibcryptoFailed;
+    return .{ .enc = enc_out[0..enc_len], .sec = sec_out[0..sec_len] };
+}
+
+/// Client: decapsulate using our private key + server's ciphertext.
+/// `sec_out` receives the shared secret.
+pub fn kemDecapsulate(
+    our_key: KemKey,
+    enc: []const u8,
+    sec_out: []u8,
+) Error![]u8 {
+    const ctx = c.EVP_PKEY_CTX_new(our_key, null) orelse
+        return error.LibcryptoFailed;
+    defer c.EVP_PKEY_CTX_free(ctx);
+    if (c.EVP_PKEY_decapsulate_init(ctx, null) != 1)
+        return error.LibcryptoFailed;
+
+    var sec_len: usize = sec_out.len;
+    if (c.EVP_PKEY_decapsulate(
+        ctx,
+        sec_out.ptr,
+        &sec_len,
+        @constCast(enc.ptr),
+        enc.len,
+    ) != 1) return error.LibcryptoFailed;
+    return sec_out[0..sec_len];
+}
+
+pub fn freeKey(key: anytype) void {
+    c.EVP_PKEY_free(key);
+}
+
 pub const pkey = c.EVP_PKEY;
 pub const x25519_pkey = *pkey;
 
@@ -230,10 +339,6 @@ pub fn p384SharedSecretDerive(ours: *pkey, peer: *pkey, out: *[48]u8) Error!void
 pub fn x25519FreeKey(key: *x25519_pkey) void {
     c.EVP_PKEY_free(key.*);
     key.* = undefined;
-}
-
-pub fn freeKey(key: *pkey) void {
-    c.EVP_PKEY_free(key);
 }
 
 pub const AeadError = error{

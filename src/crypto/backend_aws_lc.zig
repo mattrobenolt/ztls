@@ -47,6 +47,15 @@ pub const capabilities = struct {
 
 pub const Error = compat.Error;
 pub const pkey = compat.pkey;
+pub const KemKey = compat.KemKey;
+pub const KemPeerKey = compat.KemPeerKey;
+pub const kemKeygen = compat.kemKeygen;
+pub const kemPublic = compat.kemPublic;
+pub const kemLoadPublic = compat.kemLoadPublic;
+pub const kemEncapsulate = compat.kemEncapsulate;
+pub const kemDecapsulate = compat.kemDecapsulate;
+pub const freeKey = compat.freeKey;
+
 pub const x25519_pkey = union(enum) {
     private: [32]u8,
     public: [32]u8,
@@ -117,10 +126,6 @@ pub inline fn p384RawPublicKeyFromPrivate(key: *pkey) Error![97]u8 {
 
 pub inline fn p384SharedSecretDerive(ours: *pkey, peer: *pkey, out: *[48]u8) Error!void {
     return compat.p384SharedSecretDerive(ours, peer, out);
-}
-
-pub inline fn freeKey(key: *pkey) void {
-    compat.freeKey(key);
 }
 
 pub const AeadError = compat.AeadError;
