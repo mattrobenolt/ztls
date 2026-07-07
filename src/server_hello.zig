@@ -16,6 +16,8 @@ const p256 = @import("p256.zig");
 const p384 = @import("p384.zig");
 const ProtocolVersion = @import("protocol_version.zig").ProtocolVersion;
 const wire = @import("wire.zig");
+const array_buffer = @import("array_buffer.zig");
+const ArrayBuffer = array_buffer.ArrayBuffer;
 const x25519 = @import("x25519.zig");
 
 const ext_header_len = 2 + 2;
@@ -276,8 +278,7 @@ pub const KeyShare = union(enum) {
     /// specified by the group.
     kem: struct {
         group: NamedGroup,
-        data: [max_kem_share_len]u8,
-        len: u16,
+        data: ArrayBuffer(u8, max_kem_share_len),
     },
 
     pub fn group(self: KeyShare) NamedGroup {
@@ -292,7 +293,7 @@ pub const KeyShare = union(enum) {
     fn bytes(self: *const KeyShare) []const u8 {
         return switch (self.*) {
             inline .x25519, .secp256r1, .secp384r1 => |*key| &key.data,
-            .kem => |k| k.data[0..k.len],
+            .kem => |k| k.data.constSlice(),
         };
     }
 };
@@ -544,12 +545,11 @@ pub fn parseWithSessionIdEcho(
                         if (key_len > max_kem_share_len) return error.UnsupportedKeyShareGroup;
                         if (ext_end - r.pos < key_len) return error.InvalidExtensionLength;
                         const key = r.assumeReadSlice(key_len);
-                        var kem_data: [max_kem_share_len]u8 = @splat(0);
-                        @memcpy(kem_data[0..key_len], key);
+                        var kem_data: ArrayBuffer(u8, max_kem_share_len) = .empty;
+                        kem_data.appendSliceAssumeCapacity(key);
                         key_share = .{ .kem = .{
                             .group = group,
                             .data = kem_data,
-                            .len = @intCast(key_len),
                         } };
                     },
                     else => return error.UnsupportedKeyShareGroup,

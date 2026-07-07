@@ -34,6 +34,8 @@ const CipherSuite = root.CipherSuite;
 const Random = root.Random;
 const SignatureScheme = @import("signature_scheme.zig").SignatureScheme;
 const wire = @import("wire.zig");
+const array_buffer = @import("array_buffer.zig");
+const ArrayBuffer = array_buffer.ArrayBuffer;
 const server_hello = @import("server_hello.zig");
 const x25519 = @import("x25519.zig");
 
@@ -1092,8 +1094,7 @@ const ParsedKeyShares = struct {
 /// KEM key_share stored in both ParsedKeyShares and Parsed.
 pub const ParsedKemKeyShare = struct {
     group: NamedGroup,
-    data: [server_hello.max_kem_share_len]u8,
-    len: u16,
+    data: ArrayBuffer(u8, server_hello.max_kem_share_len),
 };
 
 fn parseKeyShare(ext: []const u8) ParseError!ParsedKeyShares {
@@ -1132,13 +1133,9 @@ fn parseKeyShare(ext: []const u8) ParseError!ParsedKeyShares {
                 if (shares.kem != null) return error.DuplicateKeyShare;
                 if (key.len > server_hello.max_kem_share_len)
                     return error.MalformedKeyShare;
-                var kem: ParsedKemKeyShare = .{
-                    .group = group,
-                    .data = undefined,
-                    .len = @intCast(key.len),
-                };
-                @memcpy(kem.data[0..key.len], key);
-                shares.kem = kem;
+                var kem_data: ArrayBuffer(u8, server_hello.max_kem_share_len) = .empty;
+                kem_data.appendSliceAssumeCapacity(key);
+                shares.kem = .{ .group = group, .data = kem_data };
             },
             else => {},
         }

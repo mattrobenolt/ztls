@@ -704,10 +704,8 @@ fn processClientHelloMessage(
     // KEM encapsulation state. Populated when the server selects a KEM group.
     // draft-ietf-tls-ecdhe-mlkem-05 §4.2. Declared here because the KEM
     // branch in the key_share selection below needs to write to them.
-    var kem_enc: ?[server_hello.max_kem_share_len]u8 = null;
-    var kem_enc_len: u16 = 0;
-    var kem_sec: ?[80]u8 = null;
-    var kem_sec_len: u8 = 0;
+    var kem_enc: ?ArrayBuffer(u8, server_hello.max_kem_share_len) = null;
+    var kem_sec: ?ArrayBuffer(u8, 80) = null;
 
     const client_key_share: ClientKeyShare = if (self.retry_selected_group) |selected_group|
         switch (selected_group) {
@@ -741,17 +739,19 @@ fn processClientHelloMessage(
         // Try KEM encapsulation; if it fails (e.g. the libcrypto build
         // doesn't support the algorithm at runtime), fall back to ECDHE.
         const k = ch.kem_key_share.?;
-        const peer = mlkem_mod.loadPeerPublic(k.data[0..k.len]) catch null;
+        const peer = mlkem_mod.loadPeerPublic(k.data.constSlice()) catch null;
         if (peer) |p| {
             defer mlkem_mod.freeKey(p);
             var enc: [server_hello.max_kem_share_len]u8 = undefined;
             var sec: [80]u8 = undefined;
             const result = mlkem_mod.encapsulate(p, &enc, &sec) catch null;
             if (result) |r| {
-                kem_enc = enc;
-                kem_enc_len = @intCast(r.enc.len);
-                kem_sec = sec;
-                kem_sec_len = @intCast(r.sec.len);
+                var enc_buf: ArrayBuffer(u8, server_hello.max_kem_share_len) = .empty;
+                enc_buf.appendSliceAssumeCapacity(r.enc);
+                kem_enc = enc_buf;
+                var sec_buf: ArrayBuffer(u8, 80) = .empty;
+                sec_buf.appendSliceAssumeCapacity(r.sec);
+                kem_sec = sec_buf;
                 break :blk .{ .kem = k };
             }
         }
@@ -815,15 +815,17 @@ fn processClientHelloMessage(
     // KEM variables were declared earlier (before the key_share selection).
     if (client_key_share == .kem) {
         const k = client_key_share.kem;
-        const peer = try mlkem_mod.loadPeerPublic(k.data[0..k.len]);
+        const peer = try mlkem_mod.loadPeerPublic(k.data.constSlice());
         defer mlkem_mod.freeKey(peer);
         var enc: [server_hello.max_kem_share_len]u8 = undefined;
         var sec: [80]u8 = undefined;
         const result = try mlkem_mod.encapsulate(peer, &enc, &sec);
-        kem_enc = enc;
-        kem_enc_len = @intCast(result.enc.len);
-        kem_sec = sec;
-        kem_sec_len = @intCast(result.sec.len);
+        var enc_buf: ArrayBuffer(u8, server_hello.max_kem_share_len) = .empty;
+        enc_buf.appendSliceAssumeCapacity(result.enc);
+        kem_enc = enc_buf;
+        var sec_buf: ArrayBuffer(u8, 80) = .empty;
+        sec_buf.appendSliceAssumeCapacity(result.sec);
+        kem_sec = sec_buf;
     }
 
     const server_key_share: server_hello.KeyShare = switch (client_key_share) {
@@ -832,8 +834,7 @@ fn processClientHelloMessage(
         .secp384r1 => .{ .secp384r1 = (self.keypairs.p384 orelse unreachable).public_key },
         .kem => |k| .{ .kem = .{
             .group = k.group,
-            .data = (kem_enc orelse @splat(0)),
-            .len = kem_enc_len,
+            .data = kem_enc orelse .empty,
         } },
     };
 
@@ -868,7 +869,6 @@ fn processClientHelloMessage(
         sh,
         client_key_share,
         kem_sec,
-        kem_sec_len,
     );
     self.state = .wait_client_finished;
     return out[0..out_len];
@@ -940,8 +940,7 @@ fn installHandshakeKeys(
     ch_msg: []const u8,
     sh_msg: []const u8,
     client_key_share: ClientKeyShare,
-    kem_sec: ?[80]u8,
-    kem_sec_len: u8,
+    kem_sec: ?ArrayBuffer(u8, 80),
 ) (error{ IdentityElement, LibcryptoFailed } || aead.Error)!void {
     var dhe: [80]u8 = undefined;
     const dhe_len: usize = switch (client_key_share) {
@@ -965,8 +964,9 @@ fn installHandshakeKeys(
         // draft-ietf-tls-ecdhe-mlkem-05 §4.3.
         .kem => blk: {
             if (kem_sec == null) return error.LibcryptoFailed;
-            @memcpy(dhe[0..kem_sec_len], kem_sec.?[0..kem_sec_len]);
-            break :blk @as(usize, kem_sec_len);
+            const sec = kem_sec.?.constSlice();
+            @memcpy(dhe[0..sec.len], sec);
+            break :blk sec.len;
         },
     };
     defer std.crypto.secureZero(u8, dhe[0..dhe_len]);

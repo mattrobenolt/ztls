@@ -1296,7 +1296,7 @@ pub fn processServerHello(self: *ClientHandshake, msg: []const u8) ServerHelloEr
             var sec: [80]u8 = undefined;
             const shared = try mlkem.decapsulate(
                 self.kem_key.?,
-                k.data[0..k.len],
+                k.data.constSlice(),
                 &sec,
             );
             @memcpy(dhe[0..shared.len], shared);
