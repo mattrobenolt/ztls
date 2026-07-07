@@ -321,6 +321,182 @@ pub fn encodeRetryAfterHrr(
     return w.written();
 }
 
+/// PskKeyExchangeMode (RFC 8446 §4.2.9).
+pub const PskKeyExchangeMode = enum(u8) {
+    psk_ke = 0,
+    psk_dhe_ke = 1,
+};
+
+/// Result of `encodeWithPsk`: the encoded ClientHello plus the offsets the
+/// caller needs to compute and patch in the PSK binder. `prefix_len` is the
+/// number of bytes from the start of the message that the binder transcript
+/// hash covers (up to and including the identities, excluding the binders
+/// list). `binder_offset` is where the binder value (of `binder_len` bytes)
+/// must be written after the caller computes it. RFC 8446 §4.2.11.2.
+pub const PskEncodeResult = struct {
+    msg: []u8,
+    prefix_len: usize,
+    binder_offset: usize,
+    binder_len: u8,
+};
+
+/// Encode a ClientHello offering a PSK for session resumption. Builds the full
+/// message with `psk_key_exchange_modes` and a `pre_shared_key` extension (the
+/// LAST extension, per RFC 8446 §4.2.11) carrying one identity. The binder is
+/// left zero-filled; the caller computes it over `msg[0..prefix_len]` and
+/// writes it at `msg[binder_offset..][0..binder_len]`.
+///
+/// `identity` is the ticket bytes, `obfuscated_ticket_age` is
+/// `(ticket_age + ticket_age_add) mod 2^32`, and `binder_len` is the hash
+/// length of the PSK's cipher suite (32 for SHA-256, 48 for SHA-384).
+pub fn encodeWithPsk(
+    out: []u8,
+    random: Random,
+    public_key: x25519.PublicKey,
+    public_key_p256: ?p256.PublicKey,
+    public_key_p384: ?p384.PublicKey,
+    server_name: ?[]const u8,
+    alpn_protocols: AlpnProtocols,
+    psk_mode: PskKeyExchangeMode,
+    identity: []const u8,
+    obfuscated_ticket_age: u32,
+    binder_len: u8,
+) (error{ BufferTooShort, ServerNameTooLong, IdentityTooLong } || AlpnError)!PskEncodeResult {
+    if (server_name) |name| if (name.len > 253) return error.ServerNameTooLong;
+    if (identity.len > 256) return error.IdentityTooLong;
+    const include_p256 = public_key_p256 != null;
+    const include_p384 = public_key_p384 != null;
+
+    // psk_key_exchange_modes extension: 2 (ext header) + 2 (ext_data len) +
+    // 1 (list len) + 1 (mode) = 6 bytes.
+    const psk_kem_ext_len: usize = 4 + 1 + 1;
+
+    // pre_shared_key extension (RFC 8446 §4.2.11). ext_data =
+    // identities (2-byte list len + per identity: 2 + identity.len + 4) +
+    // binders (2-byte list len + per binder: 2 + binder_len).
+    const identities_len: usize = 2 + 2 + identity.len + 4;
+    const binders_len: usize = 2 + 2 + binder_len;
+    const psk_ext_data_len: usize = identities_len + binders_len;
+    const psk_ext_len: usize = 4 + psk_ext_data_len;
+
+    const base_ext_len = try extensionsLen(server_name, alpn_protocols, include_p256, include_p384);
+    const ext_len = base_ext_len + psk_kem_ext_len + psk_ext_len;
+    const encoded_len = handshake_header_len + body_fixed_len + ext_len;
+    if (out.len < encoded_len) return error.BufferTooShort;
+
+    var w: wire.Writer = .init(out);
+
+    // Handshake header — body length includes the full pre_shared_key ext
+    // (binders included), per RFC 8446 §4.2.11.2.
+    w.append(handshake.Type, .client_hello);
+    w.append(u24, @intCast(body_fixed_len + ext_len));
+
+    // ClientHello body
+    w.append(ProtocolVersion, legacy_version);
+    w.appendSlice(&random.data);
+    w.append(u8, 0x00); // legacy_session_id: empty
+    w.append(u16, cipher_suite_count * 2);
+    inline for (supported_cipher_suites) |cs| w.append(CipherSuite, cs);
+    w.append(u8, 0x01); // legacy_compression_methods length
+    w.append(CompressionMethod, .no_compression);
+    w.append(u16, @intCast(ext_len));
+
+    // The base extensions (server_name, alpn, supported_versions,
+    // supported_groups, signature_algorithms, signature_algorithms_cert,
+    // key_share) are identical to encodeInternal. Re-emit them in order.
+    if (server_name) |name| {
+        const name_len: u16 = @intCast(name.len);
+        const entry_len: u16 = 1 + 2 + name_len;
+        const list_len: u16 = entry_len;
+        const ext_data_len: u16 = 2 + entry_len;
+        w.append(ExtensionType, .server_name);
+        w.append(u16, ext_data_len);
+        w.append(u16, list_len);
+        w.append(SniNameType, .host_name);
+        w.append(u16, name_len);
+        w.appendSlice(name);
+    }
+    if (alpn_protocols.len != 0) {
+        const ext_data_len = try alpnExtDataLen(alpn_protocols);
+        w.append(ExtensionType, .alpn);
+        w.append(u16, ext_data_len);
+        w.append(u16, ext_data_len - 2);
+        for (alpn_protocols) |protocol| {
+            w.append(u8, @intCast(protocol.len));
+            w.appendSlice(protocol);
+        }
+    }
+    w.append(ExtensionType, .supported_versions);
+    w.append(u16, 3);
+    w.append(u8, 0x02);
+    w.append(ProtocolVersion, .tls_1_3);
+
+    w.append(ExtensionType, .supported_groups);
+    w.append(u16, @intCast(2 + groupCount(include_p256, include_p384) * 2));
+    w.append(u16, @intCast(groupCount(include_p256, include_p384) * 2));
+    w.append(NamedGroup, .x25519);
+    if (include_p256) w.append(NamedGroup, .secp256r1);
+    if (include_p384) w.append(NamedGroup, .secp384r1);
+
+    w.append(ExtensionType, .signature_algorithms);
+    w.append(u16, 2 + sig_scheme_count * 2);
+    w.append(u16, sig_scheme_count * 2);
+    inline for (supported_signature_schemes) |s| w.append(SignatureScheme, s);
+
+    w.append(ExtensionType, .signature_algorithms_cert);
+    w.append(u16, 2 + cert_sig_scheme_count * 2);
+    w.append(u16, cert_sig_scheme_count * 2);
+    inline for (supported_certificate_signature_schemes) |s| w.append(SignatureScheme, s);
+
+    const shares_len = keySharesLen(include_p256, include_p384);
+    w.append(ExtensionType, .key_share);
+    w.append(u16, @intCast(2 + shares_len));
+    w.append(u16, @intCast(shares_len));
+    w.append(NamedGroup, .x25519);
+    w.append(u16, x25519.public_length);
+    w.appendSlice(&public_key.data);
+    if (public_key_p256) |key| {
+        w.append(NamedGroup, .secp256r1);
+        w.append(u16, p256.public_length);
+        w.appendSlice(&key.data);
+    }
+    if (public_key_p384) |key| {
+        w.append(NamedGroup, .secp384r1);
+        w.append(u16, p384.public_length);
+        w.appendSlice(&key.data);
+    }
+
+    // psk_key_exchange_modes (RFC 8446 §4.2.9). Not the last extension.
+    w.append(ExtensionType, .psk_key_exchange_modes);
+    w.append(u16, 2); // ext_data len
+    w.append(u8, 1); // list len
+    w.append(PskKeyExchangeMode, psk_mode);
+
+    // pre_shared_key (RFC 8446 §4.2.11) — MUST be the last extension.
+    w.append(ExtensionType, .pre_shared_key);
+    w.append(u16, @intCast(psk_ext_data_len));
+    // identities list
+    w.append(u16, @intCast(identities_len - 2));
+    w.append(u16, @intCast(identity.len));
+    w.appendSlice(identity);
+    w.append(u32, obfuscated_ticket_age);
+    // The prefix the binder hash covers ends here (after the identities).
+    const prefix_len = w.pos;
+    // binders list (placeholder zero binder; caller patches it).
+    w.append(u16, @intCast(binders_len - 2)); // binders list len
+    w.append(u16, @intCast(binder_len)); // binder entry len
+    const binder_offset = w.pos;
+    var binder_buf: [48]u8 = @splat(0);
+    w.appendSlice(binder_buf[0..binder_len]);
+
+    return .{
+        .msg = w.written(),
+        .prefix_len = prefix_len,
+        .binder_offset = binder_offset,
+        .binder_len = binder_len,
+    };
+}
+
 /// Encode a ClientHello handshake message into `out`.
 ///
 /// Returns the written slice. Feed it into the transcript hash before wrapping
@@ -828,6 +1004,60 @@ test "encode: size matches encodedLen" {
     var buf: [512]u8 = undefined;
     const encoded = try encode(&buf, .zero, .zero, "server", &.{});
     try testing.expectEqual(try encodedLen("server", &.{}), encoded.len);
+}
+
+// RFC 8446 §4.2.11 — pre_shared_key is the last extension; the binder prefix
+// ends after the identities; the binder placeholder is zero-filled and at the
+// reported offset.
+test "encodeWithPsk: pre_shared_key is last, binder prefix and offset are correct" {
+    const x_key: x25519.PublicKey = .init(@splat(0x11));
+    const identity = [_]u8{ 0xaa, 0xbb, 0xcc };
+    var buf: [1024]u8 = undefined;
+    const r = try encodeWithPsk(
+        &buf,
+        .zero,
+        x_key,
+        null,
+        null,
+        null,
+        &.{},
+        .psk_dhe_ke,
+        &identity,
+        0x11223344,
+        32,
+    );
+    try testing.expect(r.msg.len > 0);
+
+    // pre_shared_key (0x0029) must be the last extension. Scan extensions and
+    // confirm 0x0029 is the final one and psk_key_exchange_modes (0x002d)
+    // precedes it.
+    var seen_psk_last = false;
+    var seen_kem = false;
+    var i: usize = 39; // skip header(4)+version(2)+random(32)+sid_len(1)
+    i += 0; // sid is empty
+    i += 2 + cipher_suite_count * 2 + 1 + 1 + 2; // cipher suites + compression + ext list len
+    while (i + 4 <= r.msg.len) {
+        const ext_type = (@as(u16, r.msg[i]) << 8) | r.msg[i + 1];
+        const ext_data_len = (@as(u16, r.msg[i + 2]) << 8) | r.msg[i + 3];
+        if (ext_type == @intFromEnum(ExtensionType.psk_key_exchange_modes)) seen_kem = true;
+        if (ext_type == @intFromEnum(ExtensionType.pre_shared_key)) {
+            // Must be the last extension: no bytes after its ext_data.
+            try testing.expectEqual(i + 4 + ext_data_len, r.msg.len);
+            seen_psk_last = true;
+        }
+        i += 4 + ext_data_len;
+    }
+    try testing.expect(seen_psk_last);
+    try testing.expect(seen_kem);
+
+    // The binder placeholder is zero-filled at the reported offset.
+    try testing.expectEqual(@as(usize, r.binder_offset + r.binder_len), r.msg.len);
+    for (r.msg[r.binder_offset..][0..r.binder_len]) |b| try testing.expectEqual(@as(u8, 0), b);
+
+    // The prefix ends right after the identities (before the binders list
+    // length field). prefix_len + 2 (binders list len) + 2 (binder entry len)
+    // + binder_len == msg.len.
+    try testing.expectEqual(r.prefix_len + 2 + 2 + r.binder_len, r.msg.len);
 }
 
 // RFC 8446 §4.2.8 — encodedLenWithP256 accounts for the second key share.

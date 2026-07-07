@@ -244,6 +244,19 @@ fn Hkdf(comptime Hmac: type) type {
             return out;
         }
 
+        /// RFC 8446 §4.2.11.2 — compute a PSK binder: HMAC(finished_key,
+        /// transcript_hash) over the truncated ClientHello prefix. The binder
+        /// key is resumptionBinderKey(pskEarlySecret(psk)); the finished_key is
+        /// finishedKey(binder_key). `transcript_hash` is Hash(prefix).
+        pub fn binder(
+            finished_key: FinishedKey,
+            transcript_hash: *const TranscriptHash,
+        ) [prk_len]u8 {
+            var out: [prk_len]u8 = undefined;
+            Hmac.create(&out, &transcript_hash.data, &finished_key.data);
+            return out;
+        }
+
         /// RFC 8446 §7.3 — derive the write key from a traffic secret.
         pub inline fn trafficKey(
             comptime key: CipherSuite,

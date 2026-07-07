@@ -86,6 +86,11 @@ pub const SessionTicket = struct {
     /// RFC 8446 §4.6.1, §4.2.10 — max_early_data_size from the early_data
     /// extension, if present (for 0-RTT policy; #3).
     max_early_data_size: ?u32 = null,
+    /// Cipher suite of the session that issued this ticket. The PSK binder is
+    /// computed with this suite's hash (the hash under which the PSK was
+    /// derived), so the offering client must use the same hash even before the
+    /// new handshake negotiates a suite. RFC 8446 §4.2.11.2, §7.1.
+    cipher_suite: CipherSuite = .aes_128_gcm_sha256,
 };
 
 const ClientHandshake = @This();
@@ -521,7 +526,7 @@ pub fn completeWrite(self: *ClientHandshake) void {
     self.pending_write.clear();
 }
 
-pub const StartError = error{ BufferTooShort, ServerNameTooLong } || AlpnError;
+pub const StartError = error{ BufferTooShort, ServerNameTooLong, IdentityTooLong } || AlpnError;
 
 /// Provide caller-owned storage for reassembling handshake messages that span
 /// encrypted records (large certificate chains, fragmented flights). Without
@@ -579,6 +584,78 @@ pub fn start(self: *ClientHandshake, out: []u8) StartError![]const u8 {
         self.policy.host_name,
         self.alpn_protocols,
     );
+    const header: frame.Header = .init(.handshake, @intCast(ch.len));
+    header.write(out[0..frame.header_len]);
+    self.injectClientHello(ch);
+    self.pending_write.mark();
+    return out[0 .. frame.header_len + ch.len];
+}
+
+/// Begin a PSK resumption handshake: encode a ClientHello offering `ticket` in
+/// a pre_shared_key extension (the last extension, RFC 8446 §4.2.11) with a
+/// psk_dhe_ke key exchange mode, compute the PSK binder over the truncated
+/// ClientHello prefix (§4.2.11.2), and patch it in. The full ClientHello is
+/// absorbed into the transcript. `out` receives the wire-ready record. RFC
+/// 8446 §4.1.3, §4.2.11.
+// ziglint-ignore: Z015 -- StartError is a public error-set alias.
+pub fn startWithPsk(
+    self: *ClientHandshake,
+    ticket: SessionTicket,
+    out: []u8,
+) StartError![]const u8 {
+    assert(self.state == .start);
+    if (out.len < frame.header_len) return error.BufferTooShort;
+    const identity = ticket.identity[0..ticket.identity_len];
+    // binder hash length is the PSK's original cipher suite hash length.
+    const binder_len: u8 = switch (ticket.cipher_suite) {
+        .aes_128_gcm_sha256, .chacha20_poly1305_sha256 => 32,
+        .aes_256_gcm_sha384 => 48,
+    };
+    const r = try client_hello.encodeWithPsk(
+        out[frame.header_len..],
+        self.random,
+        self.keypairs.x25519.public_key,
+        self.keypairs.p256.public_key,
+        if (self.keypairs.p384) |keypair| keypair.public_key else null,
+        self.policy.host_name,
+        self.alpn_protocols,
+        .psk_dhe_ke,
+        identity,
+        // obfuscated_ticket_age = (ticket_age + ticket_age_add) mod 2^32;
+        // the caller adds the real age. For a fresh offer at age 0 this is
+        // just ticket_age_add.
+        ticket.ticket_age_add,
+        binder_len,
+    );
+    const ch = r.msg;
+
+    // Compute the binder over the truncated prefix. RFC 8446 §4.2.11.2:
+    // binder = HMAC(finished_key, Hash(prefix)), where the binder key chain is
+    // pskEarlySecret(psk) -> resumptionBinderKey -> finishedKey.
+    const psk = ticket.psk[0..ticket.psk_len];
+    switch (ticket.cipher_suite) {
+        .aes_128_gcm_sha256, .chacha20_poly1305_sha256 => {
+            const H = hkdf.HkdfSha256;
+            const early = H.pskEarlySecret(psk);
+            const binder_key = H.resumptionBinderKey(early);
+            const fin_key = H.finishedKey(.{ .data = binder_key.data });
+            var th: H.TranscriptHash = undefined;
+            Sha256.hash(ch[0..r.prefix_len], &th.data, .{});
+            const binder = H.binder(fin_key, &th);
+            @memcpy(ch[r.binder_offset..][0..binder_len], &binder);
+        },
+        .aes_256_gcm_sha384 => {
+            const H = hkdf.HkdfSha384;
+            const early = H.pskEarlySecret(psk);
+            const binder_key = H.resumptionBinderKey(early);
+            const fin_key = H.finishedKey(.{ .data = binder_key.data });
+            var th: H.TranscriptHash = undefined;
+            Sha384.hash(ch[0..r.prefix_len], &th.data, .{});
+            const binder = H.binder(fin_key, &th);
+            @memcpy(ch[r.binder_offset..][0..binder_len], &binder);
+        },
+    }
+
     const header: frame.Header = .init(.handshake, @intCast(ch.len));
     header.write(out[0..frame.header_len]);
     self.injectClientHello(ch);
@@ -860,6 +937,7 @@ pub fn deriveSessionTicket(
             const psk = @TypeOf(s.*).Hkdf.resumptionPsk(s.resumption_master, nst.ticket_nonce);
             ticket.psk_len = @intCast(psk.data.len);
             @memcpy(ticket.psk[0..psk.data.len], &psk.data);
+            ticket.cipher_suite = s.aead;
         },
     }
     return ticket;
@@ -3045,6 +3123,57 @@ test "clientFinished: RFC 8448 §4 resumption_master_secret over the live transc
         },
         else => return error.UnexpectedSuite,
     }
+}
+
+// RFC 8446 §4.2.11.2 — startWithPsk encodes a ClientHello offering a PSK
+// with the binder computed over the truncated prefix and patched in. Verify
+// the binder matches an independent HMAC over the same prefix.
+test "startWithPsk: binder matches an independent HMAC over the prefix" {
+    var hs: ClientHandshake = .init(.{
+        .keypairs = .init(.generate()),
+        .host_name = null,
+        .now_sec = 0,
+        .random = .zero,
+    });
+    // Use the RFC 8448 §4 PSK (nonce 00 00 from the §3 resumption master) so
+    // the binder key chain is the vector-tested one.
+    const resumption_master: hkdf.HkdfSha256.Prk = .init(.{
+        0x7d, 0xf2, 0x35, 0xf2, 0x03, 0x1d, 0x2a, 0x05,
+        0x12, 0x87, 0xd0, 0x2b, 0x02, 0x41, 0xb0, 0xbf,
+        0xda, 0xf8, 0x6c, 0xc8, 0x56, 0x23, 0x1f, 0x2d,
+        0x5a, 0xba, 0x46, 0xc4, 0x34, 0xec, 0x19, 0x6c,
+    });
+    const psk = hkdf.HkdfSha256.resumptionPsk(resumption_master, &.{ 0x00, 0x00 });
+    const identity = [_]u8{ 0x2c, 0x03, 0x5d, 0x82, 0x93, 0x59 };
+    var ticket: SessionTicket = .{
+        .identity_len = identity.len,
+        .ticket_age_add = 0x262a6494,
+        .cipher_suite = .aes_128_gcm_sha256,
+        .psk_len = @intCast(psk.data.len),
+    };
+    @memcpy(ticket.identity[0..identity.len], &identity);
+    @memcpy(ticket.psk[0..psk.data.len], &psk.data);
+
+    var out: [1024]u8 = undefined;
+    const record = try hs.startWithPsk(ticket, &out);
+    const ch = record[frame.header_len..];
+
+    // Re-derive the binder independently over the prefix (everything before
+    // the binders list). The prefix length = ch.len - 2 (binders list len) - 2
+    // (binder entry len) - 32 (binder).
+    const prefix_len = ch.len - 2 - 2 - 32;
+    const early = hkdf.HkdfSha256.pskEarlySecret(&psk.data);
+    const binder_key = hkdf.HkdfSha256.resumptionBinderKey(early);
+    const fin_key = hkdf.HkdfSha256.finishedKey(.{ .data = binder_key.data });
+    var th: hkdf.HkdfSha256.TranscriptHash = undefined;
+    Sha256.hash(ch[0..prefix_len], &th.data, .{});
+    const expected = hkdf.HkdfSha256.binder(fin_key, &th);
+
+    // The binder is at the end of the CH (last 32 bytes).
+    try testing.expectEqualSlices(u8, &expected, ch[ch.len - 32 ..][0..32]);
+
+    // The offered identity appears in the pre_shared_key extension.
+    try testing.expect(std.mem.indexOf(u8, ch, &identity) != null);
 }
 
 test "handleRecord: malformed NewSessionTicket is rejected" {
