@@ -599,7 +599,24 @@ pub fn setCertificateChain(self: *ClientHandshake, chain: CertificateChain, sign
 pub fn start(self: *ClientHandshake, out: []u8) StartError![]const u8 {
     assert(self.state == .start);
     if (out.len < frame.header_len) return error.BufferTooShort;
-    const ch = try client_hello.encodeWithP256P384(
+
+    // Generate a KEM keypair if the backend supports X25519MLKEM768.
+    // draft-ietf-tls-ecdhe-mlkem-05 §4.1. This increases the ClientHello by
+    // ~1216 bytes; callers must provide a large enough `out` buffer.
+    var kem_share: ?client_hello.KemShare = null;
+    if (backend.capabilities.client_x25519_mlkem768 and out.len >= 2048) {
+        const kem_key = mlkem.generateX25519Mlkem768() catch null;
+        if (kem_key) |k| {
+            self.kem_key = k;
+            var pub_buf: [mlkem.x25519_mlkem768_public_length]u8 = undefined;
+            const pub_key = mlkem.publicKey(k, &pub_buf) catch null;
+            if (pub_key) |pk| {
+                kem_share = .{ .group = .x25519_mlkem768, .data = pk };
+            }
+        }
+    }
+
+    const ch = try client_hello.encodeWithKem(
         out[frame.header_len..],
         self.random,
         self.keypairs.x25519.public_key,
@@ -607,6 +624,7 @@ pub fn start(self: *ClientHandshake, out: []u8) StartError![]const u8 {
         if (self.keypairs.p384) |keypair| keypair.public_key else null,
         self.policy.host_name,
         self.alpn_protocols,
+        kem_share,
     );
     const header: frame.Header = .init(.handshake, @intCast(ch.len));
     header.write(out[0..frame.header_len]);

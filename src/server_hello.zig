@@ -538,6 +538,20 @@ pub fn parseWithSessionIdEcho(
                         if (key[0] != 0x04) return error.UnsupportedKeyShareGroup;
                         key_share = .{ .secp384r1 = .init(key[0..p384.public_length].*) };
                     },
+                    // KEM hybrid groups — variable-length key_share.
+                    // draft-ietf-tls-ecdhe-mlkem-05 §4.2.
+                    .x25519_mlkem768, .secp256r1_mlkem768, .secp384r1_mlkem1024 => {
+                        if (key_len > max_kem_share_len) return error.UnsupportedKeyShareGroup;
+                        if (ext_end - r.pos < key_len) return error.InvalidExtensionLength;
+                        const key = r.assumeReadSlice(key_len);
+                        var kem_data: [max_kem_share_len]u8 = @splat(0);
+                        @memcpy(kem_data[0..key_len], key);
+                        key_share = .{ .kem = .{
+                            .group = group,
+                            .data = kem_data,
+                            .len = @intCast(key_len),
+                        } };
+                    },
                     else => return error.UnsupportedKeyShareGroup,
                 }
                 if (r.pos != ext_end) return error.InvalidExtensionLength;
