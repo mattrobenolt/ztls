@@ -13,6 +13,7 @@ const testing = std.testing;
 
 const aead = @import("aead.zig");
 const alert = @import("alert.zig");
+const wiremod = @import("wire.zig");
 const array_buffer = @import("array_buffer.zig");
 const ArrayBuffer = array_buffer.ArrayBuffer;
 const SliceBuffer = array_buffer.SliceBuffer;
@@ -54,6 +55,19 @@ const server_hello = @import("server_hello.zig");
 const signature = @import("signature.zig");
 pub const SignError = signature.SignError;
 pub const Signer = signature.Signer;
+
+/// Caller-provided PSK lookup for session resumption (RFC 8446 §4.2.11). The
+/// server calls `lookup` for each offered identity; a non-null result carries
+/// the PSK and the cipher suite under which it was derived (the binder hash
+/// uses that suite's hash). Caller-owned: ztls stores no heap state.
+pub const PskEntry = struct {
+    psk: []const u8,
+    cipher_suite: CipherSuite,
+};
+pub const PskLookup = struct {
+    context: *anyopaque,
+    lookup: *const fn (context: *anyopaque, identity: []const u8) ?PskEntry,
+};
 const shared_fixtures = @import("test_fixtures/shared_fixtures.zig");
 const transcript_util = @import("transcript.zig");
 const x25519 = @import("x25519.zig");
@@ -292,6 +306,85 @@ pub fn supportSuites(self: *ServerHandshake, suites: []const CipherSuite) void {
 pub fn supportAlpn(self: *ServerHandshake, protocols: root.AlpnProtocols) void {
     assert(self.state == .wait_ch);
     self.alpn_protocols = protocols;
+}
+
+/// Select and verify a PSK identity from a parsed ClientHello (RFC 8446
+/// §4.2.11). For each offered identity, look up the PSK via `lookup`, derive
+/// the binder key, compute the binder transcript hash over `msg[0..
+/// parsed.binders_offset]`, and compare to the offered binder. Returns the
+/// first verifying entry plus its index, or null if the client offered no PSK
+/// or no identity verified. Malformed binders return an error.
+pub fn selectPsk(
+    parsed: client_hello.Parsed,
+    msg: []const u8,
+    lookup: PskLookup,
+) error{ InvalidExtensionLength, InvalidVectorLength, UnexpectedEof, BinderMismatch }!?struct {
+    entry: PskEntry,
+    identity_index: usize,
+} {
+    const psk_ext = parsed.psk_ext orelse return null;
+    // identities list: 2-byte len + entries (2-byte identity len + identity +
+    // 4-byte obfuscated_ticket_age). binders list follows.
+    var idr: wiremod.Reader = .init(psk_ext);
+    const identities_len = idr.read(u16) catch return error.UnexpectedEof;
+    if (2 + identities_len + 2 > psk_ext.len) return error.InvalidExtensionLength;
+    const identities_end = idr.pos + identities_len;
+    // binders list starts after the identities.
+    var br: wiremod.Reader = .{ .buf = psk_ext, .pos = identities_end };
+    const binders_len = br.read(u16) catch return error.UnexpectedEof;
+    if (2 + identities_len + 2 + binders_len != psk_ext.len) return error.InvalidExtensionLength;
+
+    const prefix = msg[0..parsed.binders_offset];
+    var idx: usize = 0;
+    while (idr.pos < identities_end) {
+        const identity_len = idr.read(u16) catch return error.UnexpectedEof;
+        if (identities_end - idr.pos < identity_len + 4) return error.InvalidVectorLength;
+        const identity = idr.readSlice(identity_len) catch return error.UnexpectedEof;
+        _ = idr.readSlice(4) catch return error.UnexpectedEof; // obfuscated_ticket_age
+        // binder entry: 2-byte len + binder bytes.
+        const binder_len = br.read(u16) catch return error.UnexpectedEof;
+        if (br.remaining().len < binder_len) return error.InvalidVectorLength;
+        const offered_binder = br.readSlice(binder_len) catch return error.UnexpectedEof;
+
+        if (lookup.lookup(lookup.context, identity)) |entry| {
+            const ok = switch (entry.cipher_suite) {
+                .aes_128_gcm_sha256, .chacha20_poly1305_sha256 => verifyBinderSha(
+                    hkdf.HkdfSha256,
+                    Sha256,
+                    entry.psk,
+                    prefix,
+                    offered_binder,
+                ),
+                .aes_256_gcm_sha384 => verifyBinderSha(
+                    hkdf.HkdfSha384,
+                    Sha384,
+                    entry.psk,
+                    prefix,
+                    offered_binder,
+                ),
+            };
+            if (ok) return .{ .entry = entry, .identity_index = idx };
+        }
+        idx += 1;
+    }
+    return null;
+}
+
+fn verifyBinderSha(
+    comptime H: type,
+    comptime Hash: type,
+    psk: []const u8,
+    prefix: []const u8,
+    offered_binder: []const u8,
+) bool {
+    if (offered_binder.len != H.prk_len) return false;
+    const early = H.pskEarlySecret(psk);
+    const binder_key = H.resumptionBinderKey(early);
+    const fin_key = H.finishedKey(.{ .data = binder_key.data });
+    var th: H.TranscriptHash = undefined;
+    Hash.hash(prefix, &th.data, .{});
+    const expected = H.binder(fin_key, &th);
+    return std.mem.eql(u8, offered_binder, &expected);
 }
 
 /// Store caller-owned credentials for the authenticated server flight.
@@ -3623,6 +3716,103 @@ test "in-memory authenticated client-server handshake suite matrix" {
     try expectInMemoryAuthenticatedHandshake(.aes_128_gcm_sha256);
     try expectInMemoryAuthenticatedHandshake(.aes_256_gcm_sha384);
     try expectInMemoryAuthenticatedHandshake(.chacha20_poly1305_sha256);
+}
+
+// RFC 8446 §4.2.11 — selectPsk parses a PSK ClientHello, looks up the PSK,
+// and verifies the binder over the truncated prefix.
+test "selectPsk: verifies the binder for a matching PSK identity" {
+    const resumption_master: hkdf.HkdfSha256.Prk = .init(.{
+        0x7d, 0xf2, 0x35, 0xf2, 0x03, 0x1d, 0x2a, 0x05,
+        0x12, 0x87, 0xd0, 0x2b, 0x02, 0x41, 0xb0, 0xbf,
+        0xda, 0xf8, 0x6c, 0xc8, 0x56, 0x23, 0x1f, 0x2d,
+        0x5a, 0xba, 0x46, 0xc4, 0x34, 0xec, 0x19, 0x6c,
+    });
+    const psk = hkdf.HkdfSha256.resumptionPsk(resumption_master, &.{ 0x00, 0x00 });
+    const identity = [_]u8{ 0x2c, 0x03, 0x5d, 0x82, 0x93, 0x59 };
+
+    var client: ClientHandshake = .init(.{
+        .keypairs = .init(.generate()),
+        .host_name = null,
+        .now_sec = 0,
+        .random = .zero,
+    });
+    var ticket: ClientHandshake.SessionTicket = .{
+        .ticket_age_add = 0x262a6494,
+        .cipher_suite = .aes_128_gcm_sha256,
+    };
+    ticket.identity.appendSliceAssumeCapacity(&identity);
+    ticket.psk.appendSliceAssumeCapacity(&psk.data);
+
+    var out: [1024]u8 = undefined;
+    const record = try client.startWithPsk(ticket, &out);
+    const ch_msg = record[frame.header_len..];
+    const parsed = try client_hello.parse(ch_msg);
+
+    const Lookup = struct {
+        const Self = @This();
+        psk: []const u8,
+        identity: []const u8,
+        fn l(ctx: *anyopaque, id: []const u8) ?PskEntry {
+            const self: *Self = @ptrCast(@alignCast(ctx));
+            if (std.mem.eql(u8, id, self.identity))
+                return .{ .psk = self.psk, .cipher_suite = .aes_128_gcm_sha256 };
+            return null;
+        }
+    };
+    var lookup_ctx: Lookup = .{ .psk = &psk.data, .identity = &identity };
+    const lookup: PskLookup = .{ .context = &lookup_ctx, .lookup = Lookup.l };
+
+    const sel = try selectPsk(parsed, ch_msg, lookup);
+    try testing.expect(sel != null);
+    try testing.expectEqual(@as(usize, 0), sel.?.identity_index);
+}
+
+test "selectPsk: returns null when the PSK binder does not verify" {
+    const identity = [_]u8{ 0x2c, 0x03, 0x5d, 0x82, 0x93, 0x59 };
+    const wrong_psk = [_]u8{0x42} ** 32;
+
+    var client: ClientHandshake = .init(.{
+        .keypairs = .init(.generate()),
+        .host_name = null,
+        .now_sec = 0,
+        .random = .zero,
+    });
+    var ticket: ClientHandshake.SessionTicket = .{
+        .ticket_age_add = 0,
+        .cipher_suite = .aes_128_gcm_sha256,
+    };
+    ticket.identity.appendSliceAssumeCapacity(&identity);
+    ticket.psk.appendSliceAssumeCapacity(&wrong_psk);
+    var out: [1024]u8 = undefined;
+    const record = try client.startWithPsk(ticket, &out);
+    const ch_msg = record[frame.header_len..];
+    const parsed = try client_hello.parse(ch_msg);
+
+    const right_psk = blk: {
+        const rm: hkdf.HkdfSha256.Prk = .init(.{
+            0x7d, 0xf2, 0x35, 0xf2, 0x03, 0x1d, 0x2a, 0x05,
+            0x12, 0x87, 0xd0, 0x2b, 0x02, 0x41, 0xb0, 0xbf,
+            0xda, 0xf8, 0x6c, 0xc8, 0x56, 0x23, 0x1f, 0x2d,
+            0x5a, 0xba, 0x46, 0xc4, 0x34, 0xec, 0x19, 0x6c,
+        });
+        break :blk hkdf.HkdfSha256.resumptionPsk(rm, &.{ 0x00, 0x00 });
+    };
+    const Lookup = struct {
+        const Self = @This();
+        psk: []const u8,
+        identity: []const u8,
+        fn l(ctx: *anyopaque, id: []const u8) ?PskEntry {
+            const self: *Self = @ptrCast(@alignCast(ctx));
+            if (std.mem.eql(u8, id, self.identity))
+                return .{ .psk = self.psk, .cipher_suite = .aes_128_gcm_sha256 };
+            return null;
+        }
+    };
+    var lookup_ctx: Lookup = .{ .psk = &right_psk.data, .identity = &identity };
+    const lookup: PskLookup = .{ .context = &lookup_ctx, .lookup = Lookup.l };
+
+    const sel = try selectPsk(parsed, ch_msg, lookup);
+    try testing.expectEqual(@as(?@TypeOf(sel.?), null), sel);
 }
 
 // RFC 8446 §4.1.4 — full HelloRetryRequest round trip in memory: the client

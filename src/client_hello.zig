@@ -534,6 +534,16 @@ pub const Parsed = struct {
     public_key_p384: ?p384.PublicKey = null,
     /// Offered ClientHello extensions tracked for validating server responses.
     offered_extensions: OfferedExtensions = .initEmpty(),
+    /// pre_shared_key extension (RFC 8446 §4.2.11), if present. `psk_ext`
+    /// points at the full extension ext_data (identities + binders) in the
+    /// ClientHello buffer; `binders_offset` is the byte offset within the
+    /// ClientHello message where the binders list begins (the binder hash
+    /// covers msg[0..binders_offset]). Null when the client did not offer PSK.
+    psk_ext: ?[]const u8 = null,
+    binders_offset: usize = 0,
+    /// psk_key_exchange_modes (RFC 8446 §4.2.9), if present. Slice into the
+    /// ClientHello buffer (the modes list, after the list-length byte).
+    psk_key_exchange_modes: ?[]const u8 = null,
 
     pub fn offersSuite(self: Parsed, suite: CipherSuite) bool {
         var i: usize = 0;
@@ -818,6 +828,25 @@ pub fn parse(msg: []const u8) ParseError!Parsed {
                 if (ext.len != 2) return error.InvalidExtensionLength;
                 parsed.offered_extensions.insert(.record_size_limit);
             },
+            .psk_key_exchange_modes => {
+                // RFC 8446 §4.2.9. ext_data = 1-byte list length + modes.
+                if (ext.len < 2) return error.InvalidExtensionLength;
+                const list_len = ext[0];
+                if (list_len + 1 != ext.len) return error.InvalidExtensionLength;
+                parsed.psk_key_exchange_modes = ext[1..];
+            },
+            .pre_shared_key => {
+                // RFC 8446 §4.2.11 — pre_shared_key MUST be the last extension.
+                if (r.pos != extensions_end) return error.IllegalParameter;
+                if (ext.len < 4) return error.InvalidExtensionLength;
+                const identities_len = (@as(usize, ext[0]) << 8) | ext[1];
+                if (2 + identities_len + 2 > ext.len) return error.InvalidExtensionLength;
+                parsed.psk_ext = ext;
+                // Binder transcript hash covers msg up to the binders list
+                // (excluding the binders list itself). §4.2.11.2.
+                const ext_offset = @intFromPtr(ext.ptr) - @intFromPtr(msg.ptr);
+                parsed.binders_offset = ext_offset + 2 + identities_len;
+            },
             else => {},
         }
     }
@@ -1058,6 +1087,36 @@ test "encodeWithPsk: pre_shared_key is last, binder prefix and offset are correc
     // length field). prefix_len + 2 (binders list len) + 2 (binder entry len)
     // + binder_len == msg.len.
     try testing.expectEqual(r.prefix_len + 2 + 2 + r.binder_len, r.msg.len);
+}
+
+// RFC 8446 §4.2.11 — parse() extracts the pre_shared_key extension, records
+// the binder transcript prefix offset, and validates that pre_shared_key is
+// the last extension.
+test "parse: ClientHello with pre_shared_key round-trips" {
+    const x_key: x25519.PublicKey = .init(@splat(0x11));
+    const identity = [_]u8{ 0xaa, 0xbb, 0xcc };
+    var buf: [1024]u8 = undefined;
+    const r = try encodeWithPsk(
+        &buf,
+        .zero,
+        x_key,
+        null,
+        null,
+        null,
+        &.{},
+        .psk_dhe_ke,
+        &identity,
+        0x11223344,
+        32,
+    );
+    const parsed = try parse(r.msg);
+    try testing.expect(parsed.psk_ext != null);
+    try testing.expect(parsed.psk_key_exchange_modes != null);
+    // binders_offset matches the encoder's prefix_len (both point at the start
+    // of the binders list within the message).
+    try testing.expectEqual(r.prefix_len, parsed.binders_offset);
+    // The identity appears in the parsed ext_data.
+    try testing.expect(std.mem.indexOf(u8, parsed.psk_ext.?, &identity) != null);
 }
 
 // RFC 8446 §4.2.8 — encodedLenWithP256 accounts for the second key share.
