@@ -91,7 +91,14 @@ handshake completes to connected with an application-data round trip, and
 OpenSSL resumption interop is CI-gated: a ztls client captures an NST from
 openssl s_server on connection 1 and resumes with it on connection 2. The
 client state machine handles the PSK resumption flight (EE + Finished, no
-server Certificate/CertificateVerify). 0-RTT early data is #3.
+server Certificate/CertificateVerify). 0-RTT early data is implemented: the
+client can offer early_data + derive the client_early_traffic_secret and send
+0-RTT data (sendEarlyData); the server derives the early traffic key from the
+selected PSK + ClientHello transcript and decrypts 0-RTT records, enforcing
+max_early_data_size. 0-RTT is disabled by default (offer_early_data=false) and
+the caller is responsible for replay-safe policy — 0-RTT data is not
+forward-secret and can be replayed by a network attacker. An in-memory 0-RTT
+test proves the early traffic key derivation + record flow end-to-end.
 
 **Current evidence (real, and good):**
 
