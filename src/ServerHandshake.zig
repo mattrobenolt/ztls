@@ -738,6 +738,7 @@ fn processClientHelloMessage(
     else if (ch.kem_key_share != null and backend.supportsServerX25519Mlkem768()) blk: {
         // Try KEM encapsulation; if it fails (e.g. the libcrypto build
         // doesn't support the algorithm at runtime), fall back to ECDHE.
+        // draft-ietf-tls-ecdhe-mlkem-05 §4.
         const k = ch.kem_key_share.?;
         const peer = mlkem_mod.loadPeerPublic(k.data.constSlice()) catch null;
         if (peer) |p| {
@@ -756,11 +757,12 @@ fn processClientHelloMessage(
             }
         }
         // KEM failed — fall through to ECDHE.
-        if (ch.public_key != null and backend.supportsServerX25519())
-            break :blk .{ .x25519 = ch.public_key.? };
-        if (ch.public_key_p256 != null and backend.supportsServerP256())
-            break :blk .{ .secp256r1 = ch.public_key_p256.? };
-        return error.UnsupportedKeyShare;
+        break :blk if (ch.public_key != null and backend.supportsServerX25519())
+            .{ .x25519 = ch.public_key.? }
+        else if (ch.public_key_p256 != null and backend.supportsServerP256())
+            .{ .secp256r1 = ch.public_key_p256.? }
+        else
+            return error.UnsupportedKeyShare;
     } else if (ch.public_key != null and backend.supportsServerX25519())
         .{ .x25519 = ch.public_key.? }
     else if (ch.public_key_p256 != null and backend.supportsServerP256())
@@ -4202,6 +4204,10 @@ test "in-memory 0-RTT early data is decrypted by the server" {
 // the handshake completes with the hybrid shared secret.
 test "in-memory X25519MLKEM768 KEM handshake reaches app data" {
     if (!backend.supportsServerX25519Mlkem768()) return error.SkipZigTest;
+    // Runtime check: try to generate a KEM key. If the provider doesn't
+    // support it at runtime (e.g. the default provider isn't loaded), skip.
+    const test_key = mlkem_mod.generateX25519Mlkem768() catch return error.SkipZigTest;
+    mlkem_mod.freeKey(test_key);
 
     const client_keypair: x25519.KeyPair = .generate();
     const server_keypair: x25519.KeyPair = .generate();
