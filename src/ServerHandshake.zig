@@ -780,14 +780,36 @@ fn processClientHelloMessage(
         .secp384r1 => .secp384r1,
         .kem => |k| k.group,
     };
+    // For KEM groups, encapsulate BEFORE encoding the ServerHello so the
+    // ciphertext can be included in the server key_share.
+    // draft-ietf-tls-ecdhe-mlkem-05 §4.2. For ECDHE, the server key_share is
+    // the server's ephemeral public key (known before encoding).
+    var kem_enc: ?[server_hello.max_kem_share_len]u8 = null;
+    var kem_enc_len: u16 = 0;
+    var kem_sec: ?[80]u8 = null;
+    var kem_sec_len: u8 = 0;
+    if (client_key_share == .kem) {
+        const k = client_key_share.kem;
+        const peer = try mlkem_mod.loadPeerPublic(k.data[0..k.len]);
+        defer mlkem_mod.freeKey(peer);
+        var enc: [server_hello.max_kem_share_len]u8 = undefined;
+        var sec: [80]u8 = undefined;
+        const result = try mlkem_mod.encapsulate(peer, &enc, &sec);
+        kem_enc = enc;
+        kem_enc_len = @intCast(result.enc.len);
+        kem_sec = sec;
+        kem_sec_len = @intCast(result.sec.len);
+    }
+
     const server_key_share: server_hello.KeyShare = switch (client_key_share) {
         .x25519 => .{ .x25519 = self.keypairs.x25519.public_key },
         .secp256r1 => .{ .secp256r1 = self.keypairs.p256.public_key },
         .secp384r1 => .{ .secp384r1 = (self.keypairs.p384 orelse unreachable).public_key },
-        // KEM: the server key_share is set during installHandshakeKeys after
-        // encapsulation (the ciphertext is the server key_share). Use a
-        // placeholder here; it will be overwritten.
-        .kem => |k| .{ .kem = .{ .group = k.group, .data = @splat(0), .len = 0 } },
+        .kem => |k| .{ .kem = .{
+            .group = k.group,
+            .data = (kem_enc orelse @splat(0)),
+            .len = kem_enc_len,
+        } },
     };
 
     const sh = if (self.selected_psk != null)
@@ -815,7 +837,14 @@ fn processClientHelloMessage(
         out_len += try appendCompatibilityChangeCipherSpec(out[out_len..]);
     }
 
-    try self.installHandshakeKeys(suite, ch_msg, sh, client_key_share);
+    try self.installHandshakeKeys(
+        suite,
+        ch_msg,
+        sh,
+        client_key_share,
+        kem_sec,
+        kem_sec_len,
+    );
     self.state = .wait_client_finished;
     return out[0..out_len];
 }
@@ -886,6 +915,8 @@ fn installHandshakeKeys(
     ch_msg: []const u8,
     sh_msg: []const u8,
     client_key_share: ClientKeyShare,
+    kem_sec: ?[80]u8,
+    kem_sec_len: u8,
 ) (error{ IdentityElement, LibcryptoFailed } || aead.Error)!void {
     var dhe: [80]u8 = undefined;
     const dhe_len: usize = switch (client_key_share) {
@@ -905,23 +936,12 @@ fn installHandshakeKeys(
             @memcpy(dhe[0..48], &secret);
             break :blk @as(usize, 48);
         },
-        // KEM hybrid: encapsulate using the client's public key.
-        // draft-ietf-tls-ecdhe-mlkem-05 §4.2. The shared secret is the
-        // concatenation of the ML-KEM and ECDHE shared secrets.
-        .kem => |k| blk: {
-            const peer = try mlkem_mod.loadPeerPublic(k.data[0..k.len]);
-            defer mlkem_mod.freeKey(peer);
-            var enc: [server_hello.max_kem_share_len]u8 = undefined;
-            var sec: [80]u8 = undefined;
-            const result = try mlkem_mod.encapsulate(peer, &enc, &sec);
-            @memcpy(dhe[0..result.sec.len], result.sec);
-            // Store the ciphertext as the server key_share for the ServerHello.
-            // This will be patched into the sh_msg by the caller.
-            // TODO: the current architecture encodes the ServerHello before
-            // installHandshakeKeys; for KEM, the ciphertext isn't known until
-            // encapsulation. This needs restructuring: either encapsulate
-            // before encoding the ServerHello, or use a two-pass approach.
-            break :blk result.sec.len;
+        // KEM hybrid: use the pre-computed shared secret from encapsulation.
+        // draft-ietf-tls-ecdhe-mlkem-05 §4.3.
+        .kem => blk: {
+            if (kem_sec == null) return error.LibcryptoFailed;
+            @memcpy(dhe[0..kem_sec_len], kem_sec.?[0..kem_sec_len]);
+            break :blk @as(usize, kem_sec_len);
         },
     };
     defer std.crypto.secureZero(u8, dhe[0..dhe_len]);
