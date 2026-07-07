@@ -25,6 +25,9 @@ pub const ServerHello = struct {
     cipher_suite: CipherSuite,
     /// Server's ephemeral public key from the key_share extension.
     key_share: KeyShare,
+    /// PSK identity index selected by the server (RFC 8446 §4.2.11), or null
+    /// when the server did not resume with a PSK.
+    selected_identity: ?u16 = null,
 };
 
 pub const ParseError = error{
@@ -369,7 +372,54 @@ pub fn encodeWithKeyShare(
     return w.written();
 }
 
-/// Parse a ServerHello handshake message.
+/// Encode a ServerHello that selects a PSK identity (RFC 8446 §4.1.3, §4.2.11).
+/// Adds a pre_shared_key extension carrying the selected_identity index after
+/// supported_versions. Used for psk_dhe_ke resumption (key_share is still
+/// present) or psk_ke (key_share omitted by the caller via an empty key_share —
+/// not currently used, ztls only does psk_dhe_ke).
+pub fn encodeWithKeyShareAndPsk(
+    out: []u8,
+    random: [32]u8,
+    session_id_echo: []const u8,
+    cipher_suite: CipherSuite,
+    key_share: KeyShare,
+    selected_identity: u16,
+) EncodeError![]const u8 {
+    if (session_id_echo.len > 32) return error.BufferTooShort;
+    const key = key_share.bytes();
+    const key_share_ext_len: u16 = @intCast(2 + 2 + key.len);
+    const psk_ext_len: u16 = @intCast(ext_header_len + 2); // ext header + u16 index
+    const extensions_len: u16 = (ext_header_len + key_share_ext_len) +
+        (ext_header_len + 2) + psk_ext_len;
+    const len = 4 + 2 + 32 + 1 + session_id_echo.len + 2 + 1 + 2 + extensions_len;
+    if (out.len < len) return error.BufferTooShort;
+
+    var w: wire.Writer = .init(out);
+    w.append(handshake.Type, .server_hello);
+    w.append(u24, @intCast(len - 4));
+    w.append(ProtocolVersion, .tls_1_2);
+    w.appendSlice(&random);
+    w.append(u8, @intCast(session_id_echo.len));
+    w.appendSlice(session_id_echo);
+    w.append(CipherSuite, cipher_suite);
+    w.append(CompressionMethod, .no_compression);
+
+    w.append(u16, extensions_len);
+    w.append(ExtensionType, .key_share);
+    w.append(u16, key_share_ext_len);
+    w.append(NamedGroup, key_share.group());
+    w.append(u16, @intCast(key.len));
+    w.appendSlice(key);
+    w.append(ExtensionType, .supported_versions);
+    w.append(u16, 0x0002);
+    w.append(ProtocolVersion, .tls_1_3);
+    // pre_shared_key (RFC 8446 §4.2.11): ext_data is a single u16
+    // selected_identity.
+    w.append(ExtensionType, .pre_shared_key);
+    w.append(u16, 2);
+    w.append(u16, selected_identity);
+    return w.written();
+}
 ///
 /// `msg` must be the complete handshake message including the 4-byte header
 /// (type + 3-byte length). Feed it into the transcript hash before calling.
@@ -422,6 +472,7 @@ pub fn parseWithSessionIdEcho(
     var got_supported_versions = false;
     var key_share: KeyShare = undefined;
     var got_key_share = false;
+    var selected_identity: ?u16 = null;
 
     while (r.pos < extensions_end) {
         if (extensions_end - r.pos < 4) return error.InvalidExtensionLength;
@@ -476,6 +527,15 @@ pub fn parseWithSessionIdEcho(
                 if (r.pos != ext_end) return error.InvalidExtensionLength;
                 got_key_share = true;
             },
+            // pre_shared_key (RFC 8446 §4.2.11): server selects a PSK identity.
+            // ext_data is a single u16 selected_identity. MUST be the last
+            // extension.
+            .pre_shared_key => {
+                if (selected_identity != null) return error.DuplicateExtension;
+                if (r.pos + ext_len != extensions_end) return error.IllegalParameter;
+                if (ext_len != 2) return error.InvalidExtensionLength;
+                selected_identity = r.assumeRead(u16);
+            },
             else => {
                 if (ext_type.isGrease()) return error.UnexpectedExtension;
                 switch (ext_type) {
@@ -488,7 +548,6 @@ pub fn parseWithSessionIdEcho(
                     .status_request_v2,
                     .signed_certificate_timestamp,
                     .padding,
-                    .pre_shared_key,
                     .early_data,
                     .cookie,
                     .psk_key_exchange_modes,
@@ -527,6 +586,7 @@ pub fn parseWithSessionIdEcho(
     return .{
         .cipher_suite = cipher_suite,
         .key_share = key_share,
+        .selected_identity = selected_identity,
     };
 }
 

@@ -376,12 +376,17 @@ const Suite = union(enum) {
     /// secret rooted there — traffic keys and both finished keys — because the
     /// running hash moves on and cannot be rewound. The handshake secret and
     /// finished keys are retained in the arm; the RecordLayers are returned.
-    fn deriveHandshakeKeys(self: *Suite, dhe: []const u8) aead.Error!HandshakeKeys {
+    fn deriveHandshakeKeys(
+        self: *Suite,
+        dhe: []const u8,
+        psk: ?[]const u8,
+    ) aead.Error!HandshakeKeys {
         switch (self.*) {
             .buffering => unreachable,
             inline .sha256, .sha384 => |*s| {
                 const H = @TypeOf(s.*).Hkdf;
-                s.handshake_secret = H.handshakeSecret(H.early_secret, dhe);
+                const early = if (psk) |p| H.pskEarlySecret(p) else H.early_secret;
+                s.handshake_secret = H.handshakeSecret(early, dhe);
 
                 const th = s.transcript.peek();
                 var client_secret =
@@ -467,6 +472,14 @@ received_certificate_request: bool = false,
 /// RFC 8446 §4.4.2, §4.4.3. Caller-owned: ztls stores references and does not
 /// copy; the chain and signer must outlive the handshake.
 client_credentials: ?ClientCredentials = null,
+/// PSK offered for resumption via startWithPsk (RFC 8446 §4.2.11), retained
+/// so processServerHello can use it as the early secret when the server
+/// selects it. Caller-owned: the PSK bytes live in the SessionTicket the
+/// caller passed to startWithPsk, which must outlive the handshake.
+offered_psk: ?[]const u8 = null,
+offered_psk_cipher_suite: CipherSuite = .aes_128_gcm_sha256,
+/// The cipher suite field is needed to pick the right HKDF hash for the early
+/// secret; it must match the negotiated suite for resumption.
 /// Transcript hash through the server Finished. Client-auth messages are sent
 /// after that point, but application traffic secrets are still derived here.
 server_finished_hash: [48]u8 = @splat(0),
@@ -598,7 +611,7 @@ pub fn start(self: *ClientHandshake, out: []u8) StartError![]const u8 {
 // ziglint-ignore: Z015 -- StartError is a public error-set alias.
 pub fn startWithPsk(
     self: *ClientHandshake,
-    ticket: SessionTicket,
+    ticket: *const SessionTicket,
     out: []u8,
 ) StartError![]const u8 {
     assert(self.state == .start);
@@ -656,6 +669,11 @@ pub fn startWithPsk(
 
     const header: frame.Header = .init(.handshake, @intCast(ch.len));
     header.write(out[0..frame.header_len]);
+    // Retain the offered PSK so processServerHello can use it as the early
+    // secret if the server selects it. The PSK bytes live in the caller's
+    // SessionTicket, which must outlive the handshake.
+    self.offered_psk = psk;
+    self.offered_psk_cipher_suite = ticket.cipher_suite;
     self.injectClientHello(ch);
     self.pending_write.mark();
     return out[0 .. frame.header_len + ch.len];
@@ -1183,7 +1201,15 @@ pub fn processServerHello(self: *ClientHandshake, msg: []const u8) ServerHelloEr
         },
     };
     defer crypto.secureZero(u8, dhe[0..dhe_len]);
-    const keys = try self.suite.deriveHandshakeKeys(dhe[0..dhe_len]);
+    // PSK resumption (RFC 8446 §4.2.11): if the server selected our offered
+    // PSK, use it as the early secret. ztls offers a single identity, so the
+    // selected index must be 0.
+    const psk: ?[]const u8 = if (sh.selected_identity) |idx| blk: {
+        if (idx != 0) return error.IllegalParameter;
+        if (self.offered_psk == null) return error.UnexpectedExtension;
+        break :blk self.offered_psk;
+    } else null;
+    const keys = try self.suite.deriveHandshakeKeys(dhe[0..dhe_len], psk);
     self.rx = keys.rx;
     self.tx = keys.tx;
     self.state = .wait_ee;
@@ -1675,7 +1701,7 @@ test "deriveHandshakeKeys: RFC 8448 §3 server handshake key/iv/finished" {
     const b = hs.suite.buffering;
     hs.suite = .{ .sha256 = .{ .transcript = b.sha256, .aead = .aes_128_gcm_sha256 } };
 
-    const keys = try hs.suite.deriveHandshakeKeys(&dhe);
+    const keys = try hs.suite.deriveHandshakeKeys(&dhe, null);
 
     // server_write_key
     try testing.expectEqualSlices(u8, &.{
@@ -3149,7 +3175,7 @@ test "startWithPsk: binder matches an independent HMAC over the prefix" {
     ticket.psk.appendSliceAssumeCapacity(&psk.data);
 
     var out: [1024]u8 = undefined;
-    const record = try hs.startWithPsk(ticket, &out);
+    const record = try hs.startWithPsk(&ticket, &out);
     const ch = record[frame.header_len..];
 
     // Re-derive the binder independently over the prefix (everything before

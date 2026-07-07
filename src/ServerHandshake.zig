@@ -189,6 +189,11 @@ pub const Config = struct {
     client_auth_now_sec: i64 = 0,
     /// Optional caller-owned ClientHello reassembly storage.
     reassembly: ?[]u8 = null,
+    /// Optional caller-owned PSK lookup for session resumption (RFC 8446
+    /// §4.2.11). When set, the server verifies offered PSK binders and, if one
+    /// verifies, resumes with that PSK (psk_dhe_ke) instead of a full
+    /// handshake. Caller-owned: ztls stores no heap state.
+    psk_lookup: ?PskLookup = null,
 };
 
 const ServerCredentials = struct {
@@ -233,6 +238,15 @@ pending_write: PendingWrite = .idle,
 post_handshake_count: u8 = 0,
 retry_transcript: ?RetryTranscript = null,
 retry_selected_group: ?NamedGroup = null,
+/// PSK selected from the client's pre_shared_key offer (RFC 8446 §4.2.11),
+/// set when the server resumes. `selected_psk_index` is echoed in the
+/// ServerHello pre_shared_key extension. The PSK bytes are caller-owned (the
+/// PskLookup outlives the handshake).
+selected_psk: ?PskEntry = null,
+selected_psk_index: u16 = 0,
+/// Caller-configured PSK lookup (from Config.psk_lookup). Carried on state
+/// so processClientHelloMessage can use it.
+psk_lookup: ?PskLookup = null,
 /// Caller-owned certificate DER slices and signer used for the authenticated
 /// server flight. The DER bytes, slice-of-slices, and PrivateKey backing the
 /// Signer must outlive this handshake. ztls stores references and does not copy
@@ -276,6 +290,7 @@ pub fn init(config: Config) ServerHandshake {
             .leaf_usage = .client_auth,
         },
         .ch_buf = if (config.reassembly) |buf| .init(buf) else .empty,
+        .psk_lookup = config.psk_lookup,
     };
 }
 
@@ -318,7 +333,7 @@ pub fn selectPsk(
     parsed: client_hello.Parsed,
     msg: []const u8,
     lookup: PskLookup,
-) error{ InvalidExtensionLength, InvalidVectorLength, UnexpectedEof, BinderMismatch }!?struct {
+) error{ InvalidExtensionLength, InvalidVectorLength, UnexpectedEof }!?struct {
     entry: PskEntry,
     identity_index: usize,
 } {
@@ -627,6 +642,19 @@ fn processClientHelloMessage(
         return error.NoApplicationProtocol;
     self.client_server_name = ch.server_name;
 
+    // PSK resumption (RFC 8446 §4.2.11): if a caller-provided lookup is
+    // configured and the client offered pre_shared_key, verify a binder and
+    // select the first verifying identity. The PSK becomes the early secret;
+    // the ServerHello echoes the selected index in pre_shared_key.
+    if (self.psk_lookup) |lookup| {
+        if (ch.psk_ext != null) {
+            if (try selectPsk(ch, ch_msg, lookup)) |sel| {
+                self.selected_psk = sel.entry;
+                self.selected_psk_index = @intCast(sel.identity_index);
+            }
+        }
+    }
+
     const client_key_share: ClientKeyShare = if (self.retry_selected_group) |selected_group|
         switch (selected_group) {
             .x25519 => if (backend.supportsServerX25519()) blk: {
@@ -707,13 +735,23 @@ fn processClientHelloMessage(
         .secp384r1 => .{ .secp384r1 = (self.keypairs.p384 orelse unreachable).public_key },
     };
 
-    const sh = try server_hello.encodeWithKeyShare(
-        out[frame.header_len..],
-        self.random.data,
-        ch.legacy_session_id,
-        suite,
-        server_key_share,
-    );
+    const sh = if (self.selected_psk != null)
+        try server_hello.encodeWithKeyShareAndPsk(
+            out[frame.header_len..],
+            self.random.data,
+            ch.legacy_session_id,
+            suite,
+            server_key_share,
+            self.selected_psk_index,
+        )
+    else
+        try server_hello.encodeWithKeyShare(
+            out[frame.header_len..],
+            self.random.data,
+            ch.legacy_session_id,
+            suite,
+            server_key_share,
+        );
     const header: frame.Header = .init(.handshake, @intCast(sh.len));
     header.write(out[0..frame.header_len]);
 
@@ -822,12 +860,17 @@ fn installHandshakeKeys(
             } else .init(.{});
             transcript.update(ch_msg);
             transcript.update(sh_msg);
+            const early = if (self.selected_psk) |sp|
+                hkdf.HkdfSha256.pskEarlySecret(sp.psk)
+            else
+                hkdf.HkdfSha256.early_secret;
             self.suite_state = .{ .sha256 = makeHandshakeArm(
                 hkdf.HkdfSha256,
                 Sha256,
                 transcript,
                 suite,
                 dhe[0..dhe_len],
+                early,
             ) };
         },
         .aes_256_gcm_sha384 => {
@@ -843,6 +886,10 @@ fn installHandshakeKeys(
                 transcript,
                 suite,
                 dhe[0..dhe_len],
+                if (self.selected_psk) |sp|
+                    hkdf.HkdfSha384.pskEarlySecret(sp.psk)
+                else
+                    hkdf.HkdfSha384.early_secret,
             ) };
         },
     }
@@ -872,8 +919,9 @@ fn makeHandshakeArm(
     transcript: Hash,
     aead_key: CipherSuite,
     dhe: []const u8,
+    early: H.Prk,
 ) HashArm(H, Hash) {
-    var handshake_secret = H.handshakeSecret(H.early_secret, dhe);
+    var handshake_secret = H.handshakeSecret(early, dhe);
     const th = transcript.peek();
     var client_secret = H.clientHandshakeTrafficSecret(handshake_secret, &.init(th));
     var server_secret = H.serverHandshakeTrafficSecret(handshake_secret, &.init(th));
@@ -3744,7 +3792,7 @@ test "selectPsk: verifies the binder for a matching PSK identity" {
     ticket.psk.appendSliceAssumeCapacity(&psk.data);
 
     var out: [1024]u8 = undefined;
-    const record = try client.startWithPsk(ticket, &out);
+    const record = try client.startWithPsk(&ticket, &out);
     const ch_msg = record[frame.header_len..];
     const parsed = try client_hello.parse(ch_msg);
 
@@ -3784,7 +3832,7 @@ test "selectPsk: returns null when the PSK binder does not verify" {
     ticket.identity.appendSliceAssumeCapacity(&identity);
     ticket.psk.appendSliceAssumeCapacity(&wrong_psk);
     var out: [1024]u8 = undefined;
-    const record = try client.startWithPsk(ticket, &out);
+    const record = try client.startWithPsk(&ticket, &out);
     const ch_msg = record[frame.header_len..];
     const parsed = try client_hello.parse(ch_msg);
 
@@ -3813,6 +3861,101 @@ test "selectPsk: returns null when the PSK binder does not verify" {
 
     const sel = try selectPsk(parsed, ch_msg, lookup);
     try testing.expectEqual(@as(?@TypeOf(sel.?), null), sel);
+}
+
+// RFC 8446 §4.2.11, §7.1 — in-memory PSK resumption (psk_dhe_ke): the client
+// offers a PSK, the server verifies the binder and selects it, and the
+// handshake completes to connected with matching keys and an application-data
+// round trip. Exercises the full PSK key schedule (PSK early secret + ECDHE).
+test "in-memory PSK resumption reaches app data" {
+    const resumption_master: hkdf.HkdfSha256.Prk = .init(.{
+        0x7d, 0xf2, 0x35, 0xf2, 0x03, 0x1d, 0x2a, 0x05,
+        0x12, 0x87, 0xd0, 0x2b, 0x02, 0x41, 0xb0, 0xbf,
+        0xda, 0xf8, 0x6c, 0xc8, 0x56, 0x23, 0x1f, 0x2d,
+        0x5a, 0xba, 0x46, 0xc4, 0x34, 0xec, 0x19, 0x6c,
+    });
+    const psk = hkdf.HkdfSha256.resumptionPsk(resumption_master, &.{ 0x00, 0x00 });
+    const identity = [_]u8{ 0x2c, 0x03, 0x5d, 0x82, 0x93, 0x59 };
+
+    var client: ClientHandshake = .init(.{
+        .keypairs = .init(.generate()),
+        .host_name = null,
+        .now_sec = 0,
+        .random = .zero,
+    });
+    client.policy.insecure_no_chain_anchor = true;
+    var ticket: ClientHandshake.SessionTicket = .{
+        .ticket_age_add = 0x262a6494,
+        .cipher_suite = .aes_128_gcm_sha256,
+    };
+    ticket.identity.appendSliceAssumeCapacity(&identity);
+    ticket.psk.appendSliceAssumeCapacity(&psk.data);
+    var client_out: [4096]u8 = undefined;
+    const ch_record = try client.startWithPsk(&ticket, &client_out);
+    client.completeWrite();
+
+    const Lookup = struct {
+        const Self = @This();
+        psk: []const u8,
+        identity: []const u8,
+        fn l(ctx: *anyopaque, id: []const u8) ?PskEntry {
+            const self: *Self = @ptrCast(@alignCast(ctx));
+            if (std.mem.eql(u8, id, self.identity))
+                return .{ .psk = self.psk, .cipher_suite = .aes_128_gcm_sha256 };
+            return null;
+        }
+    };
+    var lookup_ctx: Lookup = .{ .psk = &psk.data, .identity = &identity };
+
+    var server: ServerHandshake = .init(.{
+        .keypairs = .init(.generate()),
+        .random = .zero,
+        .psk_lookup = .{ .context = &lookup_ctx, .lookup = Lookup.l },
+    });
+    try testing.expect(server.selected_psk == null);
+    var server_out: [4096]u8 = undefined;
+    const sh_record = try server.acceptClientHello(ch_record, &server_out);
+    // The server selected the PSK.
+    try testing.expect(server.selected_psk != null);
+    try testing.expectEqual(@as(u16, 0), server.selected_psk_index);
+
+    try client.processServerHello(sh_record[frame.header_len..]);
+
+    // The server sends an authenticated flight (with PSK resumption, the
+    // server still sends Certificate/CertificateVerify/Finished — psk_dhe_ke
+    // keeps the server auth). Use the test helper flight.
+    var signer = try signature.PrivateKey.fromP256Scalar(server_ecdsa_scalar[0..32]);
+    defer signer.deinit();
+    var plaintext: [4096]u8 = undefined;
+    const flight_record = try server.sendAuthenticatedFlight(
+        &.{server_ecdsa_cert_der},
+        signer.signer(),
+        &plaintext,
+        &server_out,
+    );
+    const ev = try client.handleRecord(server_out[0..flight_record.len], &client_out);
+    const client_finished = switch (ev) {
+        .write => |w| w,
+        else => return error.UnexpectedEvent,
+    };
+    client.completeWrite();
+    try testing.expect(client.isConnected());
+
+    try server.processClientFinished(client_out[0..client_finished.len]);
+    try testing.expect(server.isConnected());
+
+    // Application-data round trip under the PSK-derived keys.
+    const client_app = try client.sendApplicationData("ping", &client_out);
+    client.completeWrite();
+    try testing.expectEqualStrings(
+        "ping",
+        try server.receiveApplicationData(client_out[0..client_app.len]),
+    );
+    const server_app = try server.sendApplicationData("pong", &server_out);
+    var server_app_mut: [128]u8 = undefined;
+    @memcpy(server_app_mut[0..server_app.len], server_app);
+    const app_ev = try client.handleRecord(server_app_mut[0..server_app.len], &client_out);
+    try testing.expectEqualStrings("pong", app_ev.application_data);
 }
 
 // RFC 8446 §4.1.4 — full HelloRetryRequest round trip in memory: the client
