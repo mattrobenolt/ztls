@@ -926,13 +926,13 @@ pub fn deriveSessionTicket(
         .ticket_lifetime = nst.ticket_lifetime,
         .max_early_data_size = nst.max_early_data_size,
     };
-    ticket.identity.appendSlice(nst.ticket) catch unreachable;
+    ticket.identity.appendSliceAssumeCapacity(nst.ticket);
     switch (self.suite) {
         .buffering => return error.NoResumptionSecret,
         inline .sha256, .sha384 => |*s| {
             if (!s.resumption_master_valid) return error.NoResumptionSecret;
             const psk = @TypeOf(s.*).Hkdf.resumptionPsk(s.resumption_master, nst.ticket_nonce);
-            ticket.psk.appendSlice(&psk.data) catch unreachable;
+            ticket.psk.appendSliceAssumeCapacity(&psk.data);
             ticket.cipher_suite = s.aead;
         },
     }
@@ -3145,8 +3145,8 @@ test "startWithPsk: binder matches an independent HMAC over the prefix" {
         .ticket_age_add = 0x262a6494,
         .cipher_suite = .aes_128_gcm_sha256,
     };
-    ticket.identity.appendSlice(&identity) catch unreachable;
-    ticket.psk.appendSlice(&psk.data) catch unreachable;
+    ticket.identity.appendSliceAssumeCapacity(&identity);
+    ticket.psk.appendSliceAssumeCapacity(&psk.data);
 
     var out: [1024]u8 = undefined;
     const record = try hs.startWithPsk(ticket, &out);
