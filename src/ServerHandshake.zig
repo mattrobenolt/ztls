@@ -701,6 +701,14 @@ fn processClientHelloMessage(
         }
     }
 
+    // KEM encapsulation state. Populated when the server selects a KEM group.
+    // draft-ietf-tls-ecdhe-mlkem-05 §4.2. Declared here because the KEM
+    // branch in the key_share selection below needs to write to them.
+    var kem_enc: ?[server_hello.max_kem_share_len]u8 = null;
+    var kem_enc_len: u16 = 0;
+    var kem_sec: ?[80]u8 = null;
+    var kem_sec_len: u8 = 0;
+
     const client_key_share: ClientKeyShare = if (self.retry_selected_group) |selected_group|
         switch (selected_group) {
             .x25519 => if (backend.supportsServerX25519()) blk: {
@@ -729,8 +737,31 @@ fn processClientHelloMessage(
             } else return error.IllegalParameter,
             else => return error.IllegalParameter,
         }
-    else if (ch.kem_key_share != null and backend.supportsServerX25519Mlkem768())
-        .{ .kem = ch.kem_key_share.? }
+    else if (ch.kem_key_share != null and backend.supportsServerX25519Mlkem768()) blk: {
+        // Try KEM encapsulation; if it fails (e.g. the libcrypto build
+        // doesn't support the algorithm at runtime), fall back to ECDHE.
+        const k = ch.kem_key_share.?;
+        const peer = mlkem_mod.loadPeerPublic(k.data[0..k.len]) catch null;
+        if (peer) |p| {
+            defer mlkem_mod.freeKey(p);
+            var enc: [server_hello.max_kem_share_len]u8 = undefined;
+            var sec: [80]u8 = undefined;
+            const result = mlkem_mod.encapsulate(p, &enc, &sec) catch null;
+            if (result) |r| {
+                kem_enc = enc;
+                kem_enc_len = @intCast(r.enc.len);
+                kem_sec = sec;
+                kem_sec_len = @intCast(r.sec.len);
+                break :blk .{ .kem = k };
+            }
+        }
+        // KEM failed — fall through to ECDHE.
+        if (ch.public_key != null and backend.supportsServerX25519())
+            break :blk .{ .x25519 = ch.public_key.? };
+        if (ch.public_key_p256 != null and backend.supportsServerP256())
+            break :blk .{ .secp256r1 = ch.public_key_p256.? };
+        return error.UnsupportedKeyShare;
+    }
     else if (ch.public_key != null and backend.supportsServerX25519())
         .{ .x25519 = ch.public_key.? }
     else if (ch.public_key_p256 != null and backend.supportsServerP256())
@@ -782,10 +813,7 @@ fn processClientHelloMessage(
     // ciphertext can be included in the server key_share.
     // draft-ietf-tls-ecdhe-mlkem-05 §4.2. For ECDHE, the server key_share is
     // the server's ephemeral public key (known before encoding).
-    var kem_enc: ?[server_hello.max_kem_share_len]u8 = null;
-    var kem_enc_len: u16 = 0;
-    var kem_sec: ?[80]u8 = null;
-    var kem_sec_len: u8 = 0;
+    // KEM variables were declared earlier (before the key_share selection).
     if (client_key_share == .kem) {
         const k = client_key_share.kem;
         const peer = try mlkem_mod.loadPeerPublic(k.data[0..k.len]);
