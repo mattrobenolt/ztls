@@ -91,15 +91,17 @@ fn sniExtLen(name: []const u8) u16 {
     return ext_header_len + sni_overhead + @as(u16, @intCast(name.len));
 }
 
-fn groupCount(include_p256: bool, include_p384: bool) usize {
+fn groupCount(include_p256: bool, include_p384: bool, has_kem: bool) usize {
     return 1 + @as(usize, @intFromBool(include_p256)) +
-        @as(usize, @intFromBool(include_p384));
+        @as(usize, @intFromBool(include_p384)) +
+        @as(usize, @intFromBool(has_kem));
 }
 
-fn keySharesLen(include_p256: bool, include_p384: bool) usize {
+fn keySharesLen(include_p256: bool, include_p384: bool, kem: ?KemShare) usize {
     return x25519_key_share_len +
         (if (include_p256) p256_key_share_len else 0) +
-        (if (include_p384) p384_key_share_len else 0);
+        (if (include_p384) p384_key_share_len else 0) +
+        (if (kem) |k| 2 + 2 + k.data.len else 0);
 }
 
 fn extensionsLen(
@@ -107,24 +109,25 @@ fn extensionsLen(
     alpn_protocols: AlpnProtocols,
     include_p256: bool,
     include_p384: bool,
+    kem: ?KemShare,
 ) AlpnError!u16 {
     const sni: u16 = if (server_name) |n| sniExtLen(n) else 0;
     const alpn: u16 = if (alpn_protocols.len == 0) 0 else try alpnExtLen(alpn_protocols);
     const total = sni +
         alpn +
         ext_supported_versions_len +
-        ext_header_len + 2 + groupCount(include_p256, include_p384) * 2 +
+        ext_header_len + 2 + groupCount(include_p256, include_p384, kem != null) * 2 +
         ext_sig_algs_len +
         ext_sig_algs_cert_len +
         ext_psk_kem_len +
-        ext_header_len + 2 + keySharesLen(include_p256, include_p384);
+        ext_header_len + 2 + keySharesLen(include_p256, include_p384, kem);
     assert(total <= std.math.maxInt(u16));
     return @intCast(total);
 }
 
 pub fn encodedLen(server_name: ?[]const u8, alpn_protocols: AlpnProtocols) AlpnError!usize {
     return handshake_header_len + body_fixed_len +
-        try extensionsLen(server_name, alpn_protocols, false, false);
+        try extensionsLen(server_name, alpn_protocols, false, false, null);
 }
 
 pub fn encodedLenWithP256(
@@ -132,7 +135,7 @@ pub fn encodedLenWithP256(
     alpn_protocols: AlpnProtocols,
 ) AlpnError!usize {
     return handshake_header_len + body_fixed_len +
-        try extensionsLen(server_name, alpn_protocols, true, false);
+        try extensionsLen(server_name, alpn_protocols, true, false, null);
 }
 
 pub fn encodedLenWithP256P384(
@@ -140,7 +143,7 @@ pub fn encodedLenWithP256P384(
     alpn_protocols: AlpnProtocols,
 ) AlpnError!usize {
     return handshake_header_len + body_fixed_len +
-        try extensionsLen(server_name, alpn_protocols, true, true);
+        try extensionsLen(server_name, alpn_protocols, true, true, null);
 }
 
 /// Errors from ClientHello2 encoding after a HelloRetryRequest.
@@ -176,7 +179,7 @@ fn retryExtensionsLen(
     const total = sni +
         alpn +
         ext_supported_versions_len +
-        ext_header_len + 2 + groupCount(true, include_p384) * 2 +
+        ext_header_len + 2 + groupCount(true, include_p384, false) * 2 +
         ext_sig_algs_len +
         ext_sig_algs_cert_len +
         ext_header_len + 2 + ks +
@@ -273,8 +276,8 @@ pub fn encodeRetryAfterHrr(
 
     // supported_groups (RFC 8446 §4.2.7) — unchanged from ClientHello1.
     w.append(ExtensionType, .supported_groups);
-    w.append(u16, @intCast(2 + groupCount(true, include_p384) * 2));
-    w.append(u16, @intCast(groupCount(true, include_p384) * 2));
+    w.append(u16, @intCast(2 + groupCount(true, include_p384, false) * 2));
+    w.append(u16, @intCast(groupCount(true, include_p384, false) * 2));
     w.append(NamedGroup, .x25519);
     w.append(NamedGroup, .secp256r1);
     if (include_p384) w.append(NamedGroup, .secp384r1);
@@ -333,12 +336,18 @@ pub const PskKeyExchangeMode = enum(u8) {
     psk_dhe_ke = 1,
 };
 
-/// Result of `encodeWithPsk`: the encoded ClientHello plus the offsets the
-/// caller needs to compute and patch in the PSK binder. `prefix_len` is the
+/// Optional KEM hybrid key_share for the ClientHello.
+/// draft-ietf-tls-ecdhe-mlkem-05 §4.1.
+pub const KemShare = struct {
+    group: NamedGroup,
+    data: []const u8,
+};
 /// number of bytes from the start of the message that the binder transcript
 /// hash covers (up to and including the identities, excluding the binders
 /// list). `binder_offset` is where the binder value (of `binder_len` bytes)
 /// must be written after the caller computes it. RFC 8446 §4.2.11.2.
+/// Result of `encodeWithPsk`: the encoded ClientHello plus the offsets the
+/// caller needs to compute and patch in the PSK binder. `prefix_len` is the
 pub const PskEncodeResult = struct {
     msg: []u8,
     prefix_len: usize,
@@ -384,7 +393,13 @@ pub fn encodeWithPsk(
     const psk_ext_data_len: usize = identities_len + binders_len;
     const psk_ext_len: usize = 4 + psk_ext_data_len;
 
-    const base_ext_len = try extensionsLen(server_name, alpn_protocols, include_p256, include_p384);
+    const base_ext_len = try extensionsLen(
+        server_name,
+        alpn_protocols,
+        include_p256,
+        include_p384,
+        null,
+    );
     // base_ext_len already includes psk_key_exchange_modes (added in slice E).
     // early_data ext (if offered): 4 bytes (ext header + 0-length ext_data).
     const early_data_ext_len: usize = if (offer_early_data) 4 else 0;
@@ -440,8 +455,8 @@ pub fn encodeWithPsk(
     w.append(ProtocolVersion, .tls_1_3);
 
     w.append(ExtensionType, .supported_groups);
-    w.append(u16, @intCast(2 + groupCount(include_p256, include_p384) * 2));
-    w.append(u16, @intCast(groupCount(include_p256, include_p384) * 2));
+    w.append(u16, @intCast(2 + groupCount(include_p256, include_p384, false) * 2));
+    w.append(u16, @intCast(groupCount(include_p256, include_p384, false) * 2));
     w.append(NamedGroup, .x25519);
     if (include_p256) w.append(NamedGroup, .secp256r1);
     if (include_p384) w.append(NamedGroup, .secp384r1);
@@ -456,7 +471,7 @@ pub fn encodeWithPsk(
     w.append(u16, cert_sig_scheme_count * 2);
     inline for (supported_certificate_signature_schemes) |s| w.append(SignatureScheme, s);
 
-    const shares_len = keySharesLen(include_p256, include_p384);
+    const shares_len = keySharesLen(include_p256, include_p384, null);
     w.append(ExtensionType, .key_share);
     w.append(u16, @intCast(2 + shares_len));
     w.append(u16, @intCast(shares_len));
@@ -598,7 +613,7 @@ pub fn encode(
     server_name: ?[]const u8,
     alpn_protocols: AlpnProtocols,
 ) (error{ BufferTooShort, ServerNameTooLong } || AlpnError)![]u8 {
-    return encodeInternal(out, random, public_key, null, null, server_name, alpn_protocols);
+    return encodeInternal(out, random, public_key, null, null, server_name, alpn_protocols, null);
 }
 
 pub fn encodeWithP256(
@@ -618,6 +633,7 @@ pub fn encodeWithP256(
         null,
         server_name,
         alpn_protocols,
+        null,
     );
 }
 
@@ -630,6 +646,32 @@ pub fn encodeWithP256P384(
     server_name: ?[]const u8,
     alpn_protocols: AlpnProtocols,
 ) (error{ BufferTooShort, ServerNameTooLong } || AlpnError)![]u8 {
+    return encodeWithKem(
+        out,
+        random,
+        public_key,
+        public_key_p256,
+        public_key_p384,
+        server_name,
+        alpn_protocols,
+        null,
+    );
+}
+
+/// Encode a ClientHello with an optional KEM hybrid key_share.
+/// draft-ietf-tls-ecdhe-mlkem-05 §4.1. When `kem_share` is non-null, the
+/// KEM group is added to supported_groups and the KEM public key is added
+/// to the key_share extension.
+pub fn encodeWithKem(
+    out: []u8,
+    random: Random,
+    public_key: x25519.PublicKey,
+    public_key_p256: p256.PublicKey,
+    public_key_p384: ?p384.PublicKey,
+    server_name: ?[]const u8,
+    alpn_protocols: AlpnProtocols,
+    kem_share: ?KemShare,
+) (error{ BufferTooShort, ServerNameTooLong } || AlpnError)![]u8 {
     assert(backend.capabilities.client_p256);
     if (public_key_p384 != null) assert(backend.capabilities.client_p384);
     return encodeInternal(
@@ -640,6 +682,7 @@ pub fn encodeWithP256P384(
         public_key_p384,
         server_name,
         alpn_protocols,
+        kem_share,
     );
 }
 
@@ -651,12 +694,19 @@ fn encodeInternal(
     public_key_p384: ?p384.PublicKey,
     server_name: ?[]const u8,
     alpn_protocols: AlpnProtocols,
+    kem_share: ?KemShare,
 ) (error{ BufferTooShort, ServerNameTooLong } || AlpnError)![]u8 {
     // RFC 6066 §3: HostName is a DNS name, max 253 octets.
     if (server_name) |name| if (name.len > 253) return error.ServerNameTooLong;
     const include_p256 = public_key_p256 != null;
     const include_p384 = public_key_p384 != null;
-    const ext_len = try extensionsLen(server_name, alpn_protocols, include_p256, include_p384);
+    const ext_len = try extensionsLen(
+        server_name,
+        alpn_protocols,
+        include_p256,
+        include_p384,
+        kem_share,
+    );
     const encoded_len = handshake_header_len + body_fixed_len + ext_len;
     if (out.len < encoded_len) return error.BufferTooShort;
 
@@ -710,11 +760,12 @@ fn encodeInternal(
 
     // supported_groups (RFC 8446 §4.2.7)
     w.append(ExtensionType, .supported_groups);
-    w.append(u16, @intCast(2 + groupCount(include_p256, include_p384) * 2));
-    w.append(u16, @intCast(groupCount(include_p256, include_p384) * 2)); // named_group_list length
+    w.append(u16, @intCast(2 + groupCount(include_p256, include_p384, kem_share != null) * 2));
+    w.append(u16, @intCast(groupCount(include_p256, include_p384, kem_share != null) * 2));
     w.append(NamedGroup, .x25519);
     if (include_p256) w.append(NamedGroup, .secp256r1);
     if (include_p384) w.append(NamedGroup, .secp384r1);
+    if (kem_share) |k| w.append(NamedGroup, k.group);
 
     // signature_algorithms (RFC 8446 §4.2.3)
     w.append(ExtensionType, .signature_algorithms);
@@ -736,7 +787,7 @@ fn encodeInternal(
     w.append(PskKeyExchangeMode, .psk_dhe_ke);
 
     // key_share (RFC 8446 §4.2.8)
-    const shares_len = keySharesLen(include_p256, include_p384);
+    const shares_len = keySharesLen(include_p256, include_p384, kem_share);
     w.append(ExtensionType, .key_share);
     w.append(u16, @intCast(2 + shares_len));
     w.append(u16, @intCast(shares_len));
@@ -752,6 +803,12 @@ fn encodeInternal(
         w.append(NamedGroup, .secp384r1);
         w.append(u16, p384.public_length); // key_exchange length
         w.appendSlice(&key.data);
+    }
+    // KEM hybrid key_share (draft-ietf-tls-ecdhe-mlkem-05 §4.1).
+    if (kem_share) |k| {
+        w.append(NamedGroup, k.group);
+        w.append(u16, @intCast(k.data.len));
+        w.appendSlice(k.data);
     }
 
     return w.written();
