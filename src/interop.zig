@@ -59,6 +59,25 @@ test "OpenSSL s_server interoperates with ztls client" {
     }
 }
 
+// RFC 8446 §4.6.1, §4.2.11 — ztls client resumes with openssl s_server:
+// connection 1 completes a full handshake and captures the NewSessionTicket
+// the server issues; connection 2 offers that ticket (startWithPsk) and the
+// server resumes with the PSK.
+test "ztls client resumes with OpenSSL s_server (PSK resumption)" {
+    var arena_allocator: heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_allocator.deinit();
+    const arena = arena_allocator.allocator();
+
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const dir = try tmpDirPath(arena, &tmp);
+    const cert_path = try fs.path.join(arena, &.{ dir, "cert.pem" });
+    const key_path = try fs.path.join(arena, &.{ dir, "key.pem" });
+    try genCert(arena, cert_path, key_path);
+
+    try runResumptionInterop(arena, cert_path, key_path, 19433);
+}
+
 test "OpenSSL s_client interoperates with ztls server" {
     var arena_allocator: heap.ArenaAllocator = .init(testing.allocator);
     defer arena_allocator.deinit();
@@ -125,6 +144,26 @@ fn runClientSuite(
     const stream = try connectWithRetry(port);
     defer closeStream(stream);
     try clientInterop(stream);
+}
+
+fn runResumptionInterop(
+    arena: Allocator,
+    cert_path: []const u8,
+    key_path: []const u8,
+    port: u16,
+) !void {
+    var server = try startServer(arena, cert_path, key_path, "TLS_AES_128_GCM_SHA256", port);
+    defer killChild(&server);
+
+    // Connection 1: full handshake, capture the NewSessionTicket.
+    const stream1 = try connectWithRetry(port);
+    var ticket: ztls.ClientHandshake.SessionTicket = try clientInteropCaptureTicket(stream1);
+    closeStream(stream1);
+
+    // Connection 2: offer the ticket and resume.
+    const stream2 = try connectWithRetry(port);
+    defer closeStream(stream2);
+    try clientInteropResume(stream2, &ticket);
 }
 
 fn genCert(arena: Allocator, cert_path: []const u8, key_path: []const u8) !void {
@@ -231,6 +270,164 @@ fn clientInterop(stream: Stream) !void {
         };
     }
     try testing.expectEqualStrings(alpn_protocol, hs.selectedAlpnProtocol().?);
+
+    try writeAll(stream, try hs.sendApplicationData("GET / HTTP/1.0\r\n\r\n", &out));
+    hs.completeWrite();
+
+    while (true) {
+        const n = try read(stream, rb.writable());
+        if (n == 0) break;
+        rb.advance(n);
+        while (try rb.next()) |record| switch (try hs.handleRecord(record, &out)) {
+            .application_data => |data| if (mem.startsWith(u8, data, "HTTP/1.0 200")) return,
+            .write => |w| {
+                try writeAll(stream, w);
+                hs.completeWrite();
+            },
+            .key_update => |ku| {
+                if (ku.response) |w| {
+                    try writeAll(stream, w);
+                    hs.completeWrite();
+                }
+            },
+            .new_session_ticket => {},
+            .none => {},
+            .closed => return error.ServerClosedBeforeResponse,
+        };
+    }
+    return error.NoHttpResponse;
+}
+
+/// Connection 1 of PSK resumption: complete a full handshake, capture the
+/// NewSessionTicket the server issues post-handshake, derive a SessionTicket,
+/// and exchange a request/response so the connection closes cleanly.
+fn clientInteropCaptureTicket(stream: Stream) !ztls.ClientHandshake.SessionTicket {
+    const kp: ztls.x25519.KeyPair = .generate();
+    var random: ztls.Random = undefined;
+    entropy.fill(&random.data);
+
+    var hs: ztls.ClientHandshake = .init(.{
+        .keypairs = .init(kp),
+        .host_name = "localhost",
+        .now_sec = 0,
+        .random = random,
+        .insecure_no_chain_anchor = true,
+        .alpn_protocols = &.{alpn_protocol},
+    });
+
+    var out: [4096]u8 = undefined;
+    var storage: ztls.RecordBuffer.Storage = .empty;
+    var rb: ztls.RecordBuffer = .init(&storage.buffer);
+
+    try writeAll(stream, try hs.start(&out));
+    hs.completeWrite();
+
+    while (!hs.isConnected()) {
+        const n = try read(stream, rb.writable());
+        if (n == 0) return error.ServerClosed;
+        rb.advance(n);
+        while (try rb.next()) |record| switch (try hs.handleRecord(record, &out)) {
+            .write => |w| {
+                try writeAll(stream, w);
+                hs.completeWrite();
+            },
+            .key_update => |ku| {
+                if (ku.response) |w| {
+                    try writeAll(stream, w);
+                    hs.completeWrite();
+                }
+            },
+            .application_data,
+            .closed,
+            .new_session_ticket,
+            => return error.UnexpectedDuringHandshake,
+            .none => {},
+        };
+    }
+
+    // Read post-handshake records until a NewSessionTicket arrives. The server
+    // may send the NST immediately or after the request; send the GET and read
+    // until both the NST and the response are seen.
+    try writeAll(stream, try hs.sendApplicationData("GET / HTTP/1.0\r\n\r\n", &out));
+    hs.completeWrite();
+
+    var ticket: ?ztls.ClientHandshake.SessionTicket = null;
+    var got_response = false;
+    while (true) {
+        const n = try read(stream, rb.writable());
+        if (n == 0) break;
+        rb.advance(n);
+        while (try rb.next()) |record| switch (try hs.handleRecord(record, &out)) {
+            .new_session_ticket => |nst| {
+                ticket = try hs.deriveSessionTicket(nst);
+            },
+            .application_data => |data| if (mem.startsWith(u8, data, "HTTP/1.0 200")) {
+                got_response = true;
+            },
+            .write => |w| {
+                try writeAll(stream, w);
+                hs.completeWrite();
+            },
+            .key_update => |ku| {
+                if (ku.response) |w| {
+                    try writeAll(stream, w);
+                    hs.completeWrite();
+                }
+            },
+            .closed => break,
+            .none => {},
+        };
+        if (ticket != null and got_response) break;
+    }
+    if (ticket == null) return error.NoSessionTicket;
+    return ticket.?;
+}
+
+/// Connection 2 of PSK resumption: offer the captured ticket and complete the
+/// resumed handshake, then exchange application data.
+fn clientInteropResume(stream: Stream, ticket: *const ztls.ClientHandshake.SessionTicket) !void {
+    const kp: ztls.x25519.KeyPair = .generate();
+    var random: ztls.Random = undefined;
+    entropy.fill(&random.data);
+
+    var hs: ztls.ClientHandshake = .init(.{
+        .keypairs = .init(kp),
+        .host_name = "localhost",
+        .now_sec = 0,
+        .random = random,
+        .insecure_no_chain_anchor = true,
+        .alpn_protocols = &.{alpn_protocol},
+    });
+
+    var out: [4096]u8 = undefined;
+    var storage: ztls.RecordBuffer.Storage = .empty;
+    var rb: ztls.RecordBuffer = .init(&storage.buffer);
+
+    try writeAll(stream, try hs.startWithPsk(ticket, &out));
+    hs.completeWrite();
+
+    while (!hs.isConnected()) {
+        const n = try read(stream, rb.writable());
+        if (n == 0) return error.ServerClosed;
+        rb.advance(n);
+        while (try rb.next()) |record| switch (try hs.handleRecord(record, &out)) {
+            .write => |w| {
+                try writeAll(stream, w);
+                hs.completeWrite();
+            },
+            .key_update => |ku| {
+                if (ku.response) |w| {
+                    try writeAll(stream, w);
+                    hs.completeWrite();
+                }
+            },
+            .application_data,
+            .closed,
+            .new_session_ticket,
+            => return error.UnexpectedDuringHandshake,
+            .none => {},
+        };
+    }
 
     try writeAll(stream, try hs.sendApplicationData("GET / HTTP/1.0\r\n\r\n", &out));
     hs.completeWrite();

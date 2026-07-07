@@ -1351,6 +1351,17 @@ fn processFlightMessage(
                 self.state = .wait_cert;
             },
             .certificate => try self.processServerCertificate(msg, policy),
+            // PSK resumption (psk_dhe_ke without server Certificate): the
+            // server sends Finished directly after EncryptedExtensions.
+            // RFC 8446 §4.1.3, §2.2.
+            .finished => {
+                if (self.offered_psk == null) return error.UnexpectedMessage;
+                self.suite.verifyServerFinished(msg.raw) catch return error.InvalidVerifyData;
+                self.server_flight_progress = .finished_verified;
+                self.suite.update(msg.raw);
+                self.saveServerFinishedHash();
+                self.state = .send_finished;
+            },
             else => return error.UnexpectedMessage,
         },
         .wait_cert => try self.processServerCertificate(msg, policy),
@@ -3181,7 +3192,7 @@ test "startWithPsk: binder matches an independent HMAC over the prefix" {
     // Re-derive the binder independently over the prefix (everything before
     // the binders list). The prefix length = ch.len - 2 (binders list len) - 2
     // (binder entry len) - 32 (binder).
-    const prefix_len = ch.len - 2 - 2 - 32;
+    const prefix_len = ch.len - 2 - 1 - 32;
     const early = hkdf.HkdfSha256.pskEarlySecret(&psk.data);
     const binder_key = hkdf.HkdfSha256.resumptionBinderKey(early);
     const fin_key = hkdf.HkdfSha256.finishedKey(.{ .data = binder_key.data });

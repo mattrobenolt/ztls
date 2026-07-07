@@ -60,6 +60,10 @@ const body_fixed_len =
     2; // extensions length
 
 const ext_supported_versions_len = ext_header_len + 1 + 2;
+/// psk_key_exchange_modes (RFC 8446 §4.2.9): ext header + 1-byte list len +
+/// 1-byte mode (psk_dhe_ke). Always advertised so the client can receive
+/// NewSessionTickets.
+const ext_psk_kem_len = ext_header_len + 1 + 1;
 const ext_sig_algs_len = ext_header_len + 2 + sig_scheme_count * 2;
 const ext_sig_algs_cert_len = ext_header_len + 2 + cert_sig_scheme_count * 2;
 comptime {
@@ -111,6 +115,7 @@ fn extensionsLen(
         ext_header_len + 2 + groupCount(include_p256, include_p384) * 2 +
         ext_sig_algs_len +
         ext_sig_algs_cert_len +
+        ext_psk_kem_len +
         ext_header_len + 2 + keySharesLen(include_p256, include_p384);
     assert(total <= std.math.maxInt(u16));
     return @intCast(total);
@@ -367,20 +372,19 @@ pub fn encodeWithPsk(
     const include_p256 = public_key_p256 != null;
     const include_p384 = public_key_p384 != null;
 
-    // psk_key_exchange_modes extension: 2 (ext header) + 2 (ext_data len) +
-    // 1 (list len) + 1 (mode) = 6 bytes.
-    const psk_kem_ext_len: usize = 4 + 1 + 1;
-
-    // pre_shared_key extension (RFC 8446 §4.2.11). ext_data =
+    // psk_key_exchange_modes is emitted as part of the base extensions
+    // (extensionsLen accounts for it). pre_shared_key ext_data =
     // identities (2-byte list len + per identity: 2 + identity.len + 4) +
-    // binders (2-byte list len + per binder: 2 + binder_len).
+    // binders (2-byte list len + per binder: 1-byte entry len + binder).
+    // RFC 8446 §4.2.11: PskBinderEntry uses a 1-byte length prefix.
     const identities_len: usize = 2 + 2 + identity.len + 4;
-    const binders_len: usize = 2 + 2 + binder_len;
+    const binders_len: usize = 2 + 1 + binder_len;
     const psk_ext_data_len: usize = identities_len + binders_len;
     const psk_ext_len: usize = 4 + psk_ext_data_len;
 
     const base_ext_len = try extensionsLen(server_name, alpn_protocols, include_p256, include_p384);
-    const ext_len = base_ext_len + psk_kem_ext_len + psk_ext_len;
+    // base_ext_len already includes psk_key_exchange_modes (added in slice E).
+    const ext_len = base_ext_len + psk_ext_len;
     const encoded_len = handshake_header_len + body_fixed_len + ext_len;
     if (out.len < encoded_len) return error.BufferTooShort;
 
@@ -484,7 +488,7 @@ pub fn encodeWithPsk(
     const prefix_len = w.pos;
     // binders list (placeholder zero binder; caller patches it).
     w.append(u16, @intCast(binders_len - 2)); // binders list len
-    w.append(u16, @intCast(binder_len)); // binder entry len
+    w.append(u8, binder_len); // binder entry len (1-byte, RFC 8446 §4.2.11)
     const binder_offset = w.pos;
     var binder_buf: [48]u8 = @splat(0);
     w.appendSlice(binder_buf[0..binder_len]);
@@ -706,6 +710,13 @@ fn encodeInternal(
     w.append(u16, 2 + cert_sig_scheme_count * 2);
     w.append(u16, cert_sig_scheme_count * 2);
     inline for (supported_certificate_signature_schemes) |s| w.append(SignatureScheme, s);
+
+    // psk_key_exchange_modes (RFC 8446 §4.2.9) — advertise psk_dhe_ke so the
+    // server may issue NewSessionTickets for future resumption.
+    w.append(ExtensionType, .psk_key_exchange_modes);
+    w.append(u16, 2);
+    w.append(u8, 1);
+    w.append(PskKeyExchangeMode, .psk_dhe_ke);
 
     // key_share (RFC 8446 §4.2.8)
     const shares_len = keySharesLen(include_p256, include_p384);
@@ -1084,9 +1095,9 @@ test "encodeWithPsk: pre_shared_key is last, binder prefix and offset are correc
     for (r.msg[r.binder_offset..][0..r.binder_len]) |b| try testing.expectEqual(@as(u8, 0), b);
 
     // The prefix ends right after the identities (before the binders list
-    // length field). prefix_len + 2 (binders list len) + 2 (binder entry len)
+    // length field). prefix_len + 2 (binders list len) + 1 (binder entry len)
     // + binder_len == msg.len.
-    try testing.expectEqual(r.prefix_len + 2 + 2 + r.binder_len, r.msg.len);
+    try testing.expectEqual(r.prefix_len + 2 + 1 + r.binder_len, r.msg.len);
 }
 
 // RFC 8446 §4.2.11 — parse() extracts the pre_shared_key extension, records

@@ -357,7 +357,7 @@ pub fn selectPsk(
         const identity = idr.readSlice(identity_len) catch return error.UnexpectedEof;
         _ = idr.readSlice(4) catch return error.UnexpectedEof; // obfuscated_ticket_age
         // binder entry: 2-byte len + binder bytes.
-        const binder_len = br.read(u16) catch return error.UnexpectedEof;
+        const binder_len = br.read(u8) catch return error.UnexpectedEof;
         if (br.remaining().len < binder_len) return error.InvalidVectorLength;
         const offered_binder = br.readSlice(binder_len) catch return error.UnexpectedEof;
 
