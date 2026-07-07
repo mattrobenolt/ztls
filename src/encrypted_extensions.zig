@@ -129,6 +129,14 @@ pub fn parse(msg: []const u8, offered_alpn: []const []const u8, opts: Options) P
                     return error.UnsupportedExtension;
                 if (ext.len != 2) return error.InvalidExtensionLength;
             },
+            // RFC 8446 §4.2.10 — early_data in EncryptedExtensions signals the
+            // server accepts 0-RTT. Empty ext_data. Only valid when the client
+            // offered early_data.
+            .early_data => {
+                if (!opts.offered_extensions.contains(.early_data))
+                    return error.UnsupportedExtension;
+                if (ext.len != 0) return error.InvalidExtensionLength;
+            },
             // RFC 8446 §4.2 — recognized extensions sent in a message where
             // they are not specified are semantic errors, not ignorable grease.
             .status_request,
@@ -136,7 +144,6 @@ pub fn parse(msg: []const u8, offered_alpn: []const []const u8, opts: Options) P
             .heartbeat,
             .padding,
             .pre_shared_key,
-            .early_data,
             .status_request_v2,
             .signed_certificate_timestamp,
             .supported_versions,

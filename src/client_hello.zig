@@ -857,6 +857,7 @@ pub fn parse(msg: []const u8) ParseError!Parsed {
                 // ext_data. Only valid with pre_shared_key.
                 if (ext.len != 0) return error.InvalidExtensionLength;
                 parsed.offered_early_data = true;
+                parsed.offered_extensions.insert(.early_data);
             },
             .psk_key_exchange_modes => {
                 // RFC 8446 §4.2.9. ext_data = 1-byte list length + modes.

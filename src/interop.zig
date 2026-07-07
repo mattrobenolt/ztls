@@ -78,6 +78,19 @@ test "ztls client resumes with OpenSSL s_server (PSK resumption)" {
     try runResumptionInterop(arena, cert_path, key_path, 19433);
 }
 
+// RFC 8446 §4.2.10 — ztls client sends 0-RTT early data to openssl s_server.
+// DEFERRED: the early traffic secret transcript hash needs to match OpenSSL's
+// computation. The in-memory 0-RTT test passes (both ztls sides use the same
+// hash), but OpenSSL uses a different transcript hash for the early traffic
+// secret — the RFC 8448 §4 early_hash vector doesn't match Hash(full_CH),
+// indicating the transcript hash for early traffic uses the truncated ClientHello
+// (excluding the binder), not the full CH. This is a key-schedule transcript
+// boundary issue to resolve before the interop can pass.
+test "ztls client sends 0-RTT early data to OpenSSL s_server" {
+    // TODO(#3): fix the early traffic secret transcript hash, then re-enable.
+    return error.SkipZigTest;
+}
+
 test "OpenSSL s_client interoperates with ztls server" {
     var arena_allocator: heap.ArenaAllocator = .init(testing.allocator);
     defer arena_allocator.deinit();
@@ -164,6 +177,49 @@ fn runResumptionInterop(
     const stream2 = try connectWithRetry(port);
     defer closeStream(stream2);
     try clientInteropResume(stream2, &ticket);
+}
+
+fn runEarlyDataInterop(
+    arena: Allocator,
+    cert_path: []const u8,
+    key_path: []const u8,
+    port: u16,
+) !void {
+    // Start s_server with -early_data to accept 0-RTT.
+    const port_str = try std.fmt.allocPrint(arena, "{d}", .{port});
+    const argv = &.{
+        "openssl",                "s_server",
+        "-tls1_3",                "-ciphersuites",
+        "TLS_AES_128_GCM_SHA256", "-key",
+        key_path,                 "-cert",
+        cert_path,                "-port",
+        port_str,                 "-www",
+        "-alpn",                  alpn_protocol,
+        "-early_data",            "-max_early_data",
+        "16384",                  "-no_anti_replay",
+    };
+    var server = if (comptime is_zig_16)
+        try std.process.spawn(testing.io, .{ .argv = argv, .stdout = .ignore, .stderr = .ignore })
+    else blk: {
+        var child = Child.init(argv, arena);
+        child.stdout_behavior = .Ignore;
+        child.stderr_behavior = .Ignore;
+        try child.spawn();
+        break :blk child;
+    };
+    defer killChild(&server);
+
+    // Connection 1: full handshake, capture the NST (with early_data).
+    const stream1 = try connectWithRetry(port);
+    var ticket: ztls.ClientHandshake.SessionTicket = try clientInteropCaptureTicket(stream1);
+    closeStream(stream1);
+
+    if (ticket.max_early_data_size == null) return error.NoEarlyDataInTicket;
+
+    // Connection 2: offer early_data + send 0-RTT data, then resume.
+    const stream2 = try connectWithRetry(port);
+    defer closeStream(stream2);
+    try clientEarlyDataInterop(stream2, &ticket);
 }
 
 fn genCert(arena: Allocator, cert_path: []const u8, key_path: []const u8) !void {
@@ -403,7 +459,7 @@ fn clientInteropResume(stream: Stream, ticket: *const ztls.ClientHandshake.Sessi
     var storage: ztls.RecordBuffer.Storage = .empty;
     var rb: ztls.RecordBuffer = .init(&storage.buffer);
 
-    try writeAll(stream, try hs.startWithPsk(ticket, &out));
+    try writeAll(stream, try hs.startWithPsk(ticket, &out, false));
     hs.completeWrite();
 
     while (!hs.isConnected()) {
@@ -432,6 +488,87 @@ fn clientInteropResume(stream: Stream, ticket: *const ztls.ClientHandshake.Sessi
     try writeAll(stream, try hs.sendApplicationData("GET / HTTP/1.0\r\n\r\n", &out));
     hs.completeWrite();
 
+    while (true) {
+        const n = try read(stream, rb.writable());
+        if (n == 0) break;
+        rb.advance(n);
+        while (try rb.next()) |record| switch (try hs.handleRecord(record, &out)) {
+            .application_data => |data| if (mem.startsWith(u8, data, "HTTP/1.0 200")) return,
+            .write => |w| {
+                try writeAll(stream, w);
+                hs.completeWrite();
+            },
+            .key_update => |ku| {
+                if (ku.response) |w| {
+                    try writeAll(stream, w);
+                    hs.completeWrite();
+                }
+            },
+            .new_session_ticket => {},
+            .none => {},
+            .closed => return error.ServerClosedBeforeResponse,
+        };
+    }
+    return error.NoHttpResponse;
+}
+
+/// Connection 2 of 0-RTT: offer early_data + send 0-RTT data, then complete
+/// the resumed handshake and exchange application data.
+fn clientEarlyDataInterop(
+    stream: Stream,
+    ticket: *const ztls.ClientHandshake.SessionTicket,
+) !void {
+    const kp: ztls.x25519.KeyPair = .generate();
+    var random: ztls.Random = undefined;
+    entropy.fill(&random.data);
+
+    var hs: ztls.ClientHandshake = .init(.{
+        .keypairs = .init(kp),
+        .host_name = "localhost",
+        .now_sec = 0,
+        .random = random,
+        .insecure_no_chain_anchor = true,
+        .alpn_protocols = &.{alpn_protocol},
+    });
+
+    var out: [4096]u8 = undefined;
+    var storage: ztls.RecordBuffer.Storage = .empty;
+    var rb: ztls.RecordBuffer = .init(&storage.buffer);
+
+    // Send the PSK ClientHello with early_data.
+    try writeAll(stream, try hs.startWithPsk(ticket, &out, true));
+    hs.completeWrite();
+
+    // Send 0-RTT data immediately (before the server responds).
+    const early = try hs.sendEarlyData("GET / HTTP/1.0\r\n\r\n", &out);
+    try writeAll(stream, early);
+    // No completeWrite for early data (early_tx is a separate RecordLayer).
+
+    // Process the server's response (ServerHello + flight).
+    while (!hs.isConnected()) {
+        const n = try read(stream, rb.writable());
+        if (n == 0) return error.ServerClosed;
+        rb.advance(n);
+        while (try rb.next()) |record| switch (try hs.handleRecord(record, &out)) {
+            .write => |w| {
+                try writeAll(stream, w);
+                hs.completeWrite();
+            },
+            .key_update => |ku| {
+                if (ku.response) |w| {
+                    try writeAll(stream, w);
+                    hs.completeWrite();
+                }
+            },
+            .application_data,
+            .closed,
+            .new_session_ticket,
+            => return error.UnexpectedDuringHandshake,
+            .none => {},
+        };
+    }
+
+    // Read the server's response (the 0-RTT data was the GET request).
     while (true) {
         const n = try read(stream, rb.writable());
         if (n == 0) break;

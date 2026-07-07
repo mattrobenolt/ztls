@@ -10,6 +10,7 @@ const memx = @import("memx.zig");
 pub const OfferedExtension = enum {
     server_name,
     record_size_limit,
+    early_data,
 };
 
 pub const OfferedExtensions = std.EnumSet(OfferedExtension);
