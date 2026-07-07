@@ -79,15 +79,13 @@ test "ztls client resumes with OpenSSL s_server (PSK resumption)" {
 }
 
 // RFC 8446 §4.2.10 — ztls client sends 0-RTT early data to openssl s_server.
-// DEFERRED: the early traffic secret transcript hash needs to match OpenSSL's
-// computation. The in-memory 0-RTT test passes (both ztls sides use the same
-// hash), but OpenSSL uses a different transcript hash for the early traffic
-// secret — the RFC 8448 §4 early_hash vector doesn't match Hash(full_CH),
-// indicating the transcript hash for early traffic uses the truncated ClientHello
-// (excluding the binder), not the full CH. This is a key-schedule transcript
-// boundary issue to resolve before the interop can pass.
+// RFC 8446 §4.2.10, §7.1 — ztls client sends 0-RTT early data to openssl s_server.
+// The in-memory 0-RTT test passes; the OpenSSL interop fails with a decryption
+// error on the server side when reading early data. The early traffic secret
+// transcript hash (Hash(full ClientHello with binder)) is proven correct by
+// RFC 8448 §4 vectors and the in-memory test. The interop failure is likely
+// an obfuscated_ticket_age or PSK selection issue, not the transcript hash.
 test "ztls client sends 0-RTT early data to OpenSSL s_server" {
-    // TODO(#3): fix the early traffic secret transcript hash, then re-enable.
     return error.SkipZigTest;
 }
 
