@@ -14,6 +14,7 @@ pub const ExtensionType = @import("extension_type.zig").ExtensionType;
 pub const frame = @import("frame.zig");
 pub const hkdf = @import("hkdf.zig");
 pub const kex = @import("kex.zig");
+pub const mlkem = @import("mlkem.zig");
 pub const ktls = @import("ktls.zig");
 pub const Outbox = @import("Outbox.zig");
 const memx = @import("memx.zig");

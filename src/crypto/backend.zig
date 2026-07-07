@@ -51,7 +51,7 @@ const sign_impl = switch (active) {
     .boringssl => @compileError("BoringSSL backend not yet implemented"),
 };
 
-const kem_impl = switch (active) {
+pub const kem_impl = switch (active) {
     .openssl => backend_openssl,
     .@"aws-lc" => backend_aws_lc,
     .boringssl => @compileError("BoringSSL backend not yet implemented"),

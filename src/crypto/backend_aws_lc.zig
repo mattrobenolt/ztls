@@ -22,11 +22,11 @@ pub const capabilities = struct {
     pub const client_x25519 = true;
     pub const client_p256 = true;
     pub const client_p384 = true;
-    pub const client_x25519_mlkem768 = true;
+    pub const client_x25519_mlkem768 = false;
     pub const server_x25519 = true;
     pub const server_p256 = true;
     pub const server_p384 = true;
-    pub const server_x25519_mlkem768 = true;
+    pub const server_x25519_mlkem768 = false;
 
     pub const certificate_verify_schemes: []const SignatureScheme = &.{
         .ecdsa_secp256r1_sha256,
@@ -49,13 +49,42 @@ pub const capabilities = struct {
 
 pub const Error = compat.Error;
 pub const pkey = compat.pkey;
-pub const KemKey = compat.KemKey;
-pub const KemPeerKey = compat.KemPeerKey;
-pub const kemKeygen = compat.kemKeygen;
-pub const kemPublic = compat.kemPublic;
-pub const kemLoadPublic = compat.kemLoadPublic;
-pub const kemEncapsulate = compat.kemEncapsulate;
-pub const kemDecapsulate = compat.kemDecapsulate;
+// KEM functions are OpenSSL-only for now. AWS-LC 5.0 has the NID for
+// X25519MLKEM768 but the EVP_PKEY keygen path doesn't support hybrid KEM
+// yet. These stubs ensure the backend compiles; the capability flags are
+// false so the KEM path is never reached under AWS-LC.
+pub const KemKey = *c.EVP_PKEY;
+pub const KemPeerKey = *c.EVP_PKEY;
+pub fn kemKeygen(name: [*:0]const u8) compat.Error!KemKey {
+    _ = name;
+    return error.LibcryptoFailed;
+}
+pub fn kemPublic(key: KemKey, out: []u8) compat.Error![]u8 {
+    _ = key;
+    _ = out;
+    return error.LibcryptoFailed;
+}
+pub fn kemLoadPublic(name: [*:0]const u8, pub_key: []const u8) compat.Error!KemPeerKey {
+    _ = name;
+    _ = pub_key;
+    return error.LibcryptoFailed;
+}
+pub fn kemEncapsulate(
+    peer: KemPeerKey,
+    enc_out: []u8,
+    sec_out: []u8,
+) compat.Error!struct { enc: []u8, sec: []u8 } {
+    _ = peer;
+    _ = enc_out;
+    _ = sec_out;
+    return error.LibcryptoFailed;
+}
+pub fn kemDecapsulate(key: KemKey, enc: []const u8, sec_out: []u8) compat.Error![]u8 {
+    _ = key;
+    _ = enc;
+    _ = sec_out;
+    return error.LibcryptoFailed;
+}
 pub const freeKey = compat.freeKey;
 
 pub const x25519_pkey = union(enum) {

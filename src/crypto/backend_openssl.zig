@@ -60,7 +60,7 @@ pub fn kemPublic(key: KemKey, out: []u8) Error![]u8 {
     var len: usize = out.len;
     if (c.EVP_PKEY_get_octet_string_param(
         key,
-        c.OSSL_PKEY_PARAM_PUB_KEY,
+        "encoded-pub-key",
         out.ptr,
         out.len,
         &len,
