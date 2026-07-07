@@ -761,8 +761,7 @@ fn processClientHelloMessage(
         if (ch.public_key_p256 != null and backend.supportsServerP256())
             break :blk .{ .secp256r1 = ch.public_key_p256.? };
         return error.UnsupportedKeyShare;
-    }
-    else if (ch.public_key != null and backend.supportsServerX25519())
+    } else if (ch.public_key != null and backend.supportsServerX25519())
         .{ .x25519 = ch.public_key.? }
     else if (ch.public_key_p256 != null and backend.supportsServerP256())
         .{ .secp256r1 = ch.public_key_p256.? }
