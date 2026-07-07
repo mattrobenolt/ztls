@@ -140,11 +140,7 @@ const ClientKeyShare = union(enum) {
     secp384r1: p384.PublicKey,
     /// KEM hybrid key_share (client side: the raw key_exchange bytes from
     /// the ClientHello key_share entry). draft-ietf-tls-ecdhe-mlkem-05 §4.1.
-    kem: struct {
-        group: NamedGroup,
-        data: [server_hello.max_kem_share_len]u8,
-        len: u16,
-    },
+    kem: client_hello.ParsedKemKeyShare,
 };
 
 const compatibility_ccs_len = frame.header_len + 1;
@@ -740,6 +736,10 @@ fn processClientHelloMessage(
     else if (ch.public_key_p384 != null and
         (backend.supportsServerP384() and self.keypairs.p384 != null))
         .{ .secp384r1 = ch.public_key_p384.? }
+        // KEM hybrid: prefer X25519MLKEM768 if the client offered it and the
+        // backend supports it. draft-ietf-tls-ecdhe-mlkem-05 §4.
+    else if (ch.kem_key_share != null and backend.supportsServerX25519Mlkem768())
+        .{ .kem = ch.kem_key_share.? }
     else if (ch.groups.contains(.x25519) and backend.supportsServerX25519()) {
         const hrr = try self.encodeHelloRetryRequest(
             ch_msg,
