@@ -2016,13 +2016,16 @@ test "processServerHello: rejects unoffered cipher suite" {
 // RFC 8448 §3 vectors, base64-encoded inside a txtar archive (decoded at test
 // time): server_flight.b64 = EE||Cert||CV||Finished plaintext;
 // server_flight_record.b64 = the same flight as an encrypted wire record.
-const rfc8448_archive = @embedFile("test_fixtures/rfc8448.txtar");
-const shared_fixtures = @import("test_fixtures/shared_fixtures.zig");
+//
+// The fixture imports live inside the function so the public ztls module
+// never requires test_fixtures (which is a symlink outside src/ and not
+// included in the published tarball). Issue #66.
 
 // Decode a base64 entry from the embedded RFC 8448 archive into `out`.
 // Test-only — the txtar import lives inside the function so the public ztls
 // module never requires the dependency.
 fn rfc8448Fixture(name: []const u8, out: []u8) []u8 {
+    const rfc8448_archive = @embedFile("test_fixtures/rfc8448.txtar");
     var archive = txtar.parse(testing.allocator, rfc8448_archive) catch unreachable;
     defer archive.deinit(testing.allocator);
     for (archive.files) |f| {
@@ -2868,6 +2871,7 @@ test "clientFinished: empty CertificateRequest with no credentials still finishe
 
 // Isolate: fromP256Scalar + setCredentials alone (no clientFinished sign path).
 test "client auth: setCredentials stores client credentials" {
+    const shared_fixtures = @import("test_fixtures/shared_fixtures.zig");
     var hs: ClientHandshake = .init(testConfig(rfc8448_client_keypair));
     var signer: signature.PrivateKey = try .fromP256Scalar(
         shared_fixtures.server_ecdsa_scalar[0..32],

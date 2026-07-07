@@ -73,7 +73,6 @@ pub const PskLookup = struct {
     context: *anyopaque,
     lookup: *const fn (context: *anyopaque, identity: []const u8) ?PskEntry,
 };
-const shared_fixtures = @import("test_fixtures/shared_fixtures.zig");
 const transcript_util = @import("transcript.zig");
 const x25519 = @import("x25519.zig");
 const mlkem_mod = @import("mlkem.zig");
@@ -1805,9 +1804,25 @@ fn chooseSuite(self: *const ServerHandshake, ch: client_hello.Parsed) ?CipherSui
     return null;
 }
 
-const test_cert_der: []const u8 = &shared_fixtures.server_cert_der;
-const server_ecdsa_cert_der: []const u8 = &shared_fixtures.server_ecdsa_cert_der;
-const server_ecdsa_scalar: []const u8 = &shared_fixtures.server_ecdsa_scalar;
+// Test fixture accessors. Wrapped in functions so the @import of
+// test_fixtures is never analyzed unless a test actually calls these —
+// the published tarball doesn't include test_fixtures (it's a symlink
+// outside src/). Issue #66.
+fn testCertDer() []const u8 {
+    // ziglint-ignore: Z028, Z007
+    const f = @import("test_fixtures/shared_fixtures.zig");
+    return &f.server_cert_der;
+}
+fn serverEcdsaCertDer() []const u8 {
+    // ziglint-ignore: Z028, Z007
+    const f = @import("test_fixtures/shared_fixtures.zig");
+    return &f.server_ecdsa_cert_der;
+}
+fn serverEcdsaScalar() []const u8 {
+    // ziglint-ignore: Z028, Z007
+    const f = @import("test_fixtures/shared_fixtures.zig");
+    return &f.server_ecdsa_scalar;
+}
 const test_p256_seed_a = memx.hex(32, "000102030405060708090a0b0c0d0e0f" ++
     "101112131415161718191a1b1c1d1e1f");
 const test_p256_seed_b = memx.hex(32, "202122232425262728292a2b2c2d2e2f" ++
@@ -2617,10 +2632,10 @@ test "sendPreparedServerFlight: credentials and pending write are enforced" {
         server_without_credentials.sendPreparedServerFlight(&flight_out),
     );
 
-    var signer: signature.PrivateKey = try .fromP256Scalar(server_ecdsa_scalar[0..32]);
+    var signer: signature.PrivateKey = try .fromP256Scalar(serverEcdsaScalar()[0..32]);
     defer signer.deinit();
     var server: ServerHandshake = .init(testConfig(.generate()));
-    server.setCredentials(&.{server_ecdsa_cert_der}, signer.signer());
+    server.setCredentials(&.{serverEcdsaCertDer()}, signer.signer());
     _ = try server.acceptClientHello(ch_record[0 .. frame.header_len + ch.len], &sh_out);
     server.pending_write.mark();
     try testing.expectError(error.PendingWrite, server.sendPreparedServerFlight(&flight_out));
@@ -2660,13 +2675,13 @@ test "sendAuthenticatedFlight: client decrypts authenticated server flight" {
         &sh_out,
     );
 
-    var signer: signature.PrivateKey = try .fromP256Scalar(server_ecdsa_scalar[0..32]);
+    var signer: signature.PrivateKey = try .fromP256Scalar(serverEcdsaScalar()[0..32]);
     defer signer.deinit();
     const signer_api = signer.signer();
     var plaintext: [4096]u8 = undefined;
     var flight_out: [4096]u8 = undefined;
     const flight_record = try server.sendAuthenticatedFlight(
-        &.{test_cert_der},
+        &.{testCertDer()},
         signer_api,
         &plaintext,
         &flight_out,
@@ -2716,12 +2731,12 @@ test "sendAuthenticatedFlight: optional client auth sends CertificateRequest" {
         &sh_out,
     );
 
-    var signer: signature.PrivateKey = try .fromP256Scalar(server_ecdsa_scalar[0..32]);
+    var signer: signature.PrivateKey = try .fromP256Scalar(serverEcdsaScalar()[0..32]);
     defer signer.deinit();
     var plaintext: [4096]u8 = undefined;
     var flight_out: [4096]u8 = undefined;
     const flight_record = try server.sendAuthenticatedFlight(
-        &.{test_cert_der},
+        &.{testCertDer()},
         signer.signer(),
         &plaintext,
         &flight_out,
@@ -2835,12 +2850,12 @@ fn connectedTestPair() !ConnectedTestPair {
     const sh_record = try server.acceptClientHello(ch_record, &server_out);
     try client.processServerHello(sh_record[frame.header_len..]);
 
-    var signer = try signature.PrivateKey.fromP256Scalar(server_ecdsa_scalar[0..32]);
+    var signer = try signature.PrivateKey.fromP256Scalar(serverEcdsaScalar()[0..32]);
     defer signer.deinit();
     const signer_api = signer.signer();
     var plaintext: [4096]u8 = undefined;
     const flight_record = try server.sendAuthenticatedFlight(
-        &.{server_ecdsa_cert_der},
+        &.{serverEcdsaCertDer()},
         signer_api,
         &plaintext,
         &server_out,
@@ -2884,11 +2899,11 @@ test "processClientFinished: optional client auth accepts empty Certificate" {
     const sh_record = try server.acceptClientHello(ch_record, &server_out);
     try client.processServerHello(sh_record[frame.header_len..]);
 
-    var signer = try signature.PrivateKey.fromP256Scalar(server_ecdsa_scalar[0..32]);
+    var signer = try signature.PrivateKey.fromP256Scalar(serverEcdsaScalar()[0..32]);
     defer signer.deinit();
     var plaintext: [4096]u8 = undefined;
     const flight_record = try server.sendAuthenticatedFlight(
-        &.{server_ecdsa_cert_der},
+        &.{serverEcdsaCertDer()},
         signer.signer(),
         &plaintext,
         &server_out,
@@ -2942,11 +2957,11 @@ test "processClientFinished: required client auth rejects empty Certificate" {
     const sh_record = try server.acceptClientHello(ch_record, &server_out);
     try client.processServerHello(sh_record[frame.header_len..]);
 
-    var signer = try signature.PrivateKey.fromP256Scalar(server_ecdsa_scalar[0..32]);
+    var signer = try signature.PrivateKey.fromP256Scalar(serverEcdsaScalar()[0..32]);
     defer signer.deinit();
     var plaintext: [4096]u8 = undefined;
     const flight_record = try server.sendAuthenticatedFlight(
-        &.{server_ecdsa_cert_der},
+        &.{serverEcdsaCertDer()},
         signer.signer(),
         &plaintext,
         &server_out,
@@ -2983,9 +2998,9 @@ test "processClientFinished: required client auth verifies real client Certifica
     });
     client.policy.insecure_no_chain_anchor = true;
     // Client credentials (reuse the self-signed ECDSA fixture as client creds).
-    var client_signer = try signature.PrivateKey.fromP256Scalar(server_ecdsa_scalar[0..32]);
+    var client_signer = try signature.PrivateKey.fromP256Scalar(serverEcdsaScalar()[0..32]);
     defer client_signer.deinit();
-    client.setCredentials(&.{server_ecdsa_cert_der}, client_signer.signer());
+    client.setCredentials(&.{serverEcdsaCertDer()}, client_signer.signer());
     var client_out: [4096]u8 = undefined;
     const ch_record = try client.start(&client_out);
     client.completeWrite();
@@ -3000,11 +3015,11 @@ test "processClientFinished: required client auth verifies real client Certifica
     const sh_record = try server.acceptClientHello(ch_record, &server_out);
     try client.processServerHello(sh_record[frame.header_len..]);
 
-    var signer = try signature.PrivateKey.fromP256Scalar(server_ecdsa_scalar[0..32]);
+    var signer = try signature.PrivateKey.fromP256Scalar(serverEcdsaScalar()[0..32]);
     defer signer.deinit();
     var plaintext: [4096]u8 = undefined;
     const flight_record = try server.sendAuthenticatedFlight(
-        &.{server_ecdsa_cert_der},
+        &.{serverEcdsaCertDer()},
         signer.signer(),
         &plaintext,
         &server_out,
@@ -3057,7 +3072,7 @@ test "processClientFinished: required client auth rejects forged CertificateVeri
     const wrong_scalar = [_]u8{0x42} ** 32;
     var client_signer = try signature.PrivateKey.fromP256Scalar(&wrong_scalar);
     defer client_signer.deinit();
-    client.setCredentials(&.{server_ecdsa_cert_der}, client_signer.signer());
+    client.setCredentials(&.{serverEcdsaCertDer()}, client_signer.signer());
     var client_out: [4096]u8 = undefined;
     const ch_record = try client.start(&client_out);
     client.completeWrite();
@@ -3072,11 +3087,11 @@ test "processClientFinished: required client auth rejects forged CertificateVeri
     const sh_record = try server.acceptClientHello(ch_record, &server_out);
     try client.processServerHello(sh_record[frame.header_len..]);
 
-    var signer = try signature.PrivateKey.fromP256Scalar(server_ecdsa_scalar[0..32]);
+    var signer = try signature.PrivateKey.fromP256Scalar(serverEcdsaScalar()[0..32]);
     defer signer.deinit();
     var plaintext: [4096]u8 = undefined;
     const flight_record = try server.sendAuthenticatedFlight(
-        &.{server_ecdsa_cert_der},
+        &.{serverEcdsaCertDer()},
         signer.signer(),
         &plaintext,
         &server_out,
@@ -3120,13 +3135,13 @@ test "sendAuthenticatedFlight: client processes CertificateVerify and Finished" 
         &sh_out,
     );
 
-    var signer: signature.PrivateKey = try .fromP256Scalar(server_ecdsa_scalar[0..32]);
+    var signer: signature.PrivateKey = try .fromP256Scalar(serverEcdsaScalar()[0..32]);
     defer signer.deinit();
     const signer_api = signer.signer();
     var plaintext: [4096]u8 = undefined;
     var flight_out: [4096]u8 = undefined;
     const flight_record = try server.sendAuthenticatedFlight(
-        &.{server_ecdsa_cert_der},
+        &.{serverEcdsaCertDer()},
         signer_api,
         &plaintext,
         &flight_out,
@@ -3844,12 +3859,12 @@ fn expectInMemoryAuthenticatedHandshake(suite: CipherSuite) !void {
     try testing.expectEqual(suite, server.suite);
     try client.processServerHello(sh_record[frame.header_len..]);
 
-    var signer = try signature.PrivateKey.fromP256Scalar(server_ecdsa_scalar[0..32]);
+    var signer = try signature.PrivateKey.fromP256Scalar(serverEcdsaScalar()[0..32]);
     defer signer.deinit();
     const signer_api = signer.signer();
     var plaintext: [4096]u8 = undefined;
     const flight_record = try server.sendAuthenticatedFlight(
-        &.{server_ecdsa_cert_der},
+        &.{serverEcdsaCertDer()},
         signer_api,
         &plaintext,
         &server_out,
@@ -4051,11 +4066,11 @@ test "in-memory PSK resumption reaches app data" {
     // The server sends an authenticated flight (with PSK resumption, the
     // server still sends Certificate/CertificateVerify/Finished — psk_dhe_ke
     // keeps the server auth). Use the test helper flight.
-    var signer = try signature.PrivateKey.fromP256Scalar(server_ecdsa_scalar[0..32]);
+    var signer = try signature.PrivateKey.fromP256Scalar(serverEcdsaScalar()[0..32]);
     defer signer.deinit();
     var plaintext: [4096]u8 = undefined;
     const flight_record = try server.sendAuthenticatedFlight(
-        &.{server_ecdsa_cert_der},
+        &.{serverEcdsaCertDer()},
         signer.signer(),
         &plaintext,
         &server_out,
@@ -4157,11 +4172,11 @@ test "in-memory 0-RTT early data is decrypted by the server" {
     _ = sh_ev; // ServerHello is processed, handshake keys installed.
 
     // Send the authenticated flight.
-    var signer = try signature.PrivateKey.fromP256Scalar(server_ecdsa_scalar[0..32]);
+    var signer = try signature.PrivateKey.fromP256Scalar(serverEcdsaScalar()[0..32]);
     defer signer.deinit();
     var plaintext: [4096]u8 = undefined;
     const flight_record = try server.sendAuthenticatedFlight(
-        &.{server_ecdsa_cert_der},
+        &.{serverEcdsaCertDer()},
         signer.signer(),
         &plaintext,
         &server_out,
@@ -4221,11 +4236,11 @@ test "in-memory X25519MLKEM768 KEM handshake reaches app data" {
     const sh_ev = try client.handleRecord(server_out[0..sh_record.len], &client_out);
     _ = sh_ev;
 
-    var signer = try signature.PrivateKey.fromP256Scalar(server_ecdsa_scalar[0..32]);
+    var signer = try signature.PrivateKey.fromP256Scalar(serverEcdsaScalar()[0..32]);
     defer signer.deinit();
     var plaintext: [4096]u8 = undefined;
     const flight_record = try server.sendAuthenticatedFlight(
-        &.{server_ecdsa_cert_der},
+        &.{serverEcdsaCertDer()},
         signer.signer(),
         &plaintext,
         &server_out,
@@ -4340,11 +4355,11 @@ test "in-memory HRR round trip reaches app data" {
     try client.processServerHello(sh_record[frame.header_len..]);
 
     // Server sends the authenticated flight.
-    var signer = try signature.PrivateKey.fromP256Scalar(server_ecdsa_scalar[0..32]);
+    var signer = try signature.PrivateKey.fromP256Scalar(serverEcdsaScalar()[0..32]);
     defer signer.deinit();
     var plaintext: [4096]u8 = undefined;
     const flight_record = try server.sendAuthenticatedFlight(
-        &.{server_ecdsa_cert_der},
+        &.{serverEcdsaCertDer()},
         signer.signer(),
         &plaintext,
         &server_out,

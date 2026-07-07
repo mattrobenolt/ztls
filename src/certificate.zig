@@ -19,9 +19,6 @@ const extension_type = @import("extension_type.zig");
 const ExtensionType = extension_type.ExtensionType;
 const handshake = @import("handshake.zig");
 pub const SignatureScheme = @import("signature_scheme.zig").SignatureScheme;
-const cert_fixtures = @import("test_fixtures/certificate_fixtures.zig");
-const shared_fixtures = @import("test_fixtures/shared_fixtures.zig");
-const sig_fixtures = @import("test_fixtures/sig_fixtures.zig");
 const wire = @import("wire.zig");
 
 pub const ParseError = error{
@@ -508,23 +505,62 @@ fn verifySignature(
 }
 
 // Fixtures generated with: scripts/gen-fixtures.sh
-// Transcript hash: SHA-256("test transcript")
-const fixture_cert_der: []const u8 = &shared_fixtures.server_cert_der;
-const fixture_cv_sig: []const u8 = &sig_fixtures.cv_sig;
-const fixture_rsa_pss_cert_der: []const u8 = &cert_fixtures.rsa_pss_cert_der;
-const fixture_rsa_pss_cv_sig: []const u8 = &sig_fixtures.rsa_pss_cv_sig;
-const fixture_rsa_pss_cv_salt20_sig: []const u8 = &sig_fixtures.rsa_pss_cv_salt20_sig;
+// Wrapped in functions so the @import of test_fixtures is never analyzed
+// unless a test calls these — the published tarball doesn't include
+// test_fixtures (symlink outside src/). Issue #66.
+fn FixturesShared() type {
+    // ziglint-ignore: Z028
+    return @import("test_fixtures/shared_fixtures.zig");
+}
+fn FixturesCert() type {
+    // ziglint-ignore: Z028
+    return @import("test_fixtures/certificate_fixtures.zig");
+}
+fn FixturesSig() type {
+    // ziglint-ignore: Z028
+    return @import("test_fixtures/sig_fixtures.zig");
+}
+fn fixtureCertDer() []const u8 {
+    return &FixturesShared().server_cert_der;
+}
+fn fixtureCvSig() []const u8 {
+    return &FixturesSig().cv_sig;
+}
+fn fixtureRsaPssCertDer() []const u8 {
+    return &FixturesCert().rsa_pss_cert_der;
+}
+fn fixtureRsaPssCvSig() []const u8 {
+    return &FixturesSig().rsa_pss_cv_sig;
+}
+fn fixtureRsaPssCvSalt20Sig() []const u8 {
+    return &FixturesSig().rsa_pss_cv_salt20_sig;
+}
 const chain_root_pem = "tests/fixtures/chain/root.crt";
-const chain_leaf_der: []const u8 = &cert_fixtures.chain_leaf_der;
-const chain_intermediate_der: []const u8 = &cert_fixtures.chain_intermediate_der;
-const name_constraints_der: []const u8 = &cert_fixtures.name_constraints_der;
-const name_constraints_noncritical_der: []const u8 =
-    &cert_fixtures.name_constraints_noncritical_der;
+fn chainLeafDer() []const u8 {
+    return &FixturesCert().chain_leaf_der;
+}
+fn chainIntermediateDer() []const u8 {
+    return &FixturesCert().chain_intermediate_der;
+}
+fn nameConstraintsDer() []const u8 {
+    return &FixturesCert().name_constraints_der;
+}
+fn nameConstraintsNoncriticalDer() []const u8 {
+    return &FixturesCert().name_constraints_noncritical_der;
+}
 const nc_root_pem = "tests/fixtures/nameconstraints/root.crt";
-const nc_intermediate_der: []const u8 = &cert_fixtures.nc_intermediate_der;
-const nc_leaf_allowed_der: []const u8 = &cert_fixtures.nc_leaf_allowed_der;
-const nc_leaf_excluded_der: []const u8 = &cert_fixtures.nc_leaf_excluded_der;
-const nc_leaf_outside_der: []const u8 = &cert_fixtures.nc_leaf_outside_der;
+fn ncIntermediateDer() []const u8 {
+    return &FixturesCert().nc_intermediate_der;
+}
+fn ncLeafAllowedDer() []const u8 {
+    return &FixturesCert().nc_leaf_allowed_der;
+}
+fn ncLeafExcludedDer() []const u8 {
+    return &FixturesCert().nc_leaf_excluded_der;
+}
+fn ncLeafOutsideDer() []const u8 {
+    return &FixturesCert().nc_leaf_outside_der;
+}
 
 fn buildCertMsg(buf: []u8, cert_der: []const u8) []const u8 {
     return buildCertChainMsg(buf, &.{cert_der});
@@ -567,7 +603,7 @@ const test_transcript_hash = blk: {
 
 test "parse: extracts public key from ECDSA P-256 certificate" {
     var buf: [1024]u8 = undefined;
-    const pub_key = try parse(buildCertMsg(&buf, fixture_cert_der), .{
+    const pub_key = try parse(buildCertMsg(&buf, fixtureCertDer()), .{
         .insecure_no_chain_anchor = true,
     });
     try testing.expect(pub_key.len > 0);
@@ -575,7 +611,7 @@ test "parse: extracts public key from ECDSA P-256 certificate" {
 
 test "parse: wrong handshake type" {
     var buf: [1024]u8 = undefined;
-    _ = buildCertMsg(&buf, fixture_cert_der);
+    _ = buildCertMsg(&buf, fixtureCertDer());
     buf[0] = 0x01;
     try testing.expectError(error.InvalidHandshakeType, parse(&buf, .{}));
 }
@@ -624,7 +660,7 @@ test "parseClientCertificate: rejects mismatched request context" {
 // RFC 8446 §4.4.2 — server Certificate request_context is always empty.
 test "parse: rejects non-empty server certificate request context" {
     var buf: [2048]u8 = undefined;
-    const encoded = buildCertMsg(&buf, fixture_cert_der);
+    const encoded = buildCertMsg(&buf, fixtureCertDer());
     @memmove(buf[6 .. encoded.len + 1], buf[5..encoded.len]);
     buf[4] = 1;
     buf[5] = 0xaa;
@@ -648,7 +684,7 @@ test "parse: rejects empty certificate list" {
 // its declared length must exactly bound the contained CertificateEntry values.
 test "parse: rejects certificate list length shorter than entries" {
     var buf: [1024]u8 = undefined;
-    const msg = buildCertMsg(&buf, fixture_cert_der);
+    const msg = buildCertMsg(&buf, fixtureCertDer());
     const shortened_list_len = msg.len - 4 - 1 - 3 - 1;
     buf[5..8].* = .{
         @intCast(shortened_list_len >> 16),
@@ -663,8 +699,8 @@ test "parse: rejects certificate list length shorter than entries" {
 
 test "encode: round trips certificate chain" {
     var buf: [4096]u8 = undefined;
-    const msg = try encode(&buf, &.{ chain_leaf_der, chain_intermediate_der });
-    try testing.expectEqual(encodedLen(&.{ chain_leaf_der, chain_intermediate_der }), msg.len);
+    const msg = try encode(&buf, &.{ chainLeafDer(), chainIntermediateDer() });
+    try testing.expectEqual(encodedLen(&.{ chainLeafDer(), chainIntermediateDer() }), msg.len);
     const pub_key = try parse(msg, .{
         .host_name = "chain.test",
         .now_sec = 1_780_300_000,
@@ -677,7 +713,7 @@ test "encode: round trips certificate chain" {
 // so a server CertificateEntry status_request extension is unsupported.
 test "parse: rejects unsupported CertificateEntry status_request" {
     var buf: [2048]u8 = undefined;
-    const msg = buildCertMsg(&buf, fixture_cert_der);
+    const msg = buildCertMsg(&buf, fixtureCertDer());
     const ext = [_]u8{ 0x00, 0x05, 0x00, 0x00 };
     const with_ext = appendLeafCertificateExtensions(&buf, msg.len, &ext);
     try testing.expectError(
@@ -690,7 +726,7 @@ test "parse: rejects unsupported CertificateEntry status_request" {
 // CertificateEntry signed_certificate_timestamp extension is unsupported.
 test "parse: rejects unsupported CertificateEntry SCT" {
     var buf: [2048]u8 = undefined;
-    const msg = buildCertMsg(&buf, fixture_cert_der);
+    const msg = buildCertMsg(&buf, fixtureCertDer());
     const ext = [_]u8{ 0x00, 0x12, 0x00, 0x00 };
     const with_ext = appendLeafCertificateExtensions(&buf, msg.len, &ext);
     try testing.expectError(
@@ -703,7 +739,7 @@ test "parse: rejects unsupported CertificateEntry SCT" {
 // Certificate message.
 test "parse: rejects forbidden CertificateEntry status_request_v2" {
     var buf: [2048]u8 = undefined;
-    const msg = buildCertMsg(&buf, fixture_cert_der);
+    const msg = buildCertMsg(&buf, fixtureCertDer());
     const ext = [_]u8{ 0x00, 0x11, 0x00, 0x00 };
     const with_ext = appendLeafCertificateExtensions(&buf, msg.len, &ext);
     try testing.expectError(
@@ -715,7 +751,7 @@ test "parse: rejects forbidden CertificateEntry status_request_v2" {
 // RFC 8446 §4.2 — duplicate extensions are forbidden in extension blocks.
 test "parse: rejects duplicate CertificateEntry status_request" {
     var buf: [2048]u8 = undefined;
-    const msg = buildCertMsg(&buf, fixture_cert_der);
+    const msg = buildCertMsg(&buf, fixtureCertDer());
     const ext = [_]u8{
         0x00, 0x05, 0x00, 0x00,
         0x00, 0x05, 0x00, 0x00,
@@ -730,7 +766,7 @@ test "parse: rejects duplicate CertificateEntry status_request" {
 // RFC 8446 §4.2 — extension blocks must be well-formed vectors.
 test "parse: rejects malformed CertificateEntry extension length" {
     var buf: [2048]u8 = undefined;
-    const msg = buildCertMsg(&buf, fixture_cert_der);
+    const msg = buildCertMsg(&buf, fixtureCertDer());
     const ext = [_]u8{ 0xbe, 0xef, 0x00, 0x02, 0xaa };
     const with_ext = appendLeafCertificateExtensions(&buf, msg.len, &ext);
     try testing.expectError(
@@ -743,7 +779,7 @@ test "parse: rejects malformed CertificateEntry extension length" {
 // well-formed.
 test "parse: ignores unknown CertificateEntry extension" {
     var buf: [2048]u8 = undefined;
-    const msg = buildCertMsg(&buf, fixture_cert_der);
+    const msg = buildCertMsg(&buf, fixtureCertDer());
     const ext = [_]u8{ 0xbe, 0xef, 0x00, 0x01, 0xaa };
     const with_ext = appendLeafCertificateExtensions(&buf, msg.len, &ext);
     const pub_key = try parse(with_ext, .{ .insecure_no_chain_anchor = true });
@@ -752,7 +788,7 @@ test "parse: ignores unknown CertificateEntry extension" {
 
 test "parse: validates hostname" {
     var buf: [1024]u8 = undefined;
-    const pub_key = try parse(buildCertMsg(&buf, fixture_cert_der), .{
+    const pub_key = try parse(buildCertMsg(&buf, fixtureCertDer()), .{
         .host_name = "test.local",
         .insecure_no_chain_anchor = true,
     });
@@ -763,7 +799,7 @@ test "parse: rejects hostname mismatch" {
     var buf: [1024]u8 = undefined;
     try testing.expectError(
         error.CertificateHostMismatch,
-        parse(buildCertMsg(&buf, fixture_cert_der), .{ .host_name = "wrong.local" }),
+        parse(buildCertMsg(&buf, fixtureCertDer()), .{ .host_name = "wrong.local" }),
     );
 }
 
@@ -771,7 +807,7 @@ test "parse: rejects missing trust anchor by default" {
     var buf: [1024]u8 = undefined;
     try testing.expectError(
         error.MissingTrustAnchor,
-        parse(buildCertMsg(&buf, fixture_cert_der), .{ .host_name = "test.local" }),
+        parse(buildCertMsg(&buf, fixtureCertDer()), .{ .host_name = "test.local" }),
     );
 }
 
@@ -796,7 +832,7 @@ test "parse: validates leaf against trust bundle" {
     try addCertsFromFixturePath(&bundle, "tests/fixtures/server.crt");
 
     var buf: [1024]u8 = undefined;
-    const pub_key = try parse(buildCertMsg(&buf, fixture_cert_der), .{
+    const pub_key = try parse(buildCertMsg(&buf, fixtureCertDer()), .{
         .bundle = &bundle,
         .now_sec = 1_780_300_000,
         .host_name = "test.local",
@@ -811,7 +847,7 @@ test "parse: validates leaf-intermediate-root chain" {
 
     var buf: [4096]u8 = undefined;
     const pub_key = try parse(
-        buildCertChainMsg(&buf, &.{ chain_leaf_der, chain_intermediate_der }),
+        buildCertChainMsg(&buf, &.{ chainLeafDer(), chainIntermediateDer() }),
         .{ .bundle = &bundle, .now_sec = 1_780_300_000, .host_name = "chain.test" },
     );
     try testing.expect(pub_key.len > 0);
@@ -827,7 +863,7 @@ test "parse: rejects chain with intermediate before leaf" {
     try testing.expectError(
         error.CertificateKeyUsageRejected,
         parse(
-            buildCertChainMsg(&buf, &.{ chain_intermediate_der, chain_leaf_der }),
+            buildCertChainMsg(&buf, &.{ chainIntermediateDer(), chainLeafDer() }),
             .{ .bundle = &bundle, .now_sec = 1_780_300_000, .host_name = "chain.test" },
         ),
     );
@@ -842,7 +878,7 @@ test "parse: rejects chain with missing intermediate" {
     try testing.expectError(
         error.CertificateIssuerNotFound,
         parse(
-            buildCertChainMsg(&buf, &.{chain_leaf_der}),
+            buildCertChainMsg(&buf, &.{chainLeafDer()}),
             .{ .bundle = &bundle, .now_sec = 1_780_300_000, .host_name = "chain.test" },
         ),
     );
@@ -857,7 +893,7 @@ test "parse: rejects chain hostname mismatch" {
     try testing.expectError(
         error.CertificateHostMismatch,
         parse(
-            buildCertChainMsg(&buf, &.{ chain_leaf_der, chain_intermediate_der }),
+            buildCertChainMsg(&buf, &.{ chainLeafDer(), chainIntermediateDer() }),
             .{ .bundle = &bundle, .now_sec = 1_780_300_000, .host_name = "wrong.chain.test" },
         ),
     );
@@ -868,7 +904,7 @@ test "parse: rejects untrusted leaf when bundle misses issuer" {
     var buf: [1024]u8 = undefined;
     try testing.expectError(
         error.CertificateIssuerNotFound,
-        parse(buildCertMsg(&buf, fixture_cert_der), .{
+        parse(buildCertMsg(&buf, fixtureCertDer()), .{
             .bundle = &bundle,
             .now_sec = 1_780_300_000,
         }),
@@ -889,7 +925,7 @@ test "parse: accepts chain with matching DNS name constraints" {
 
     var buf: [4096]u8 = undefined;
     const pub_key = try parse(
-        buildCertChainMsg(&buf, &.{ nc_leaf_allowed_der, nc_intermediate_der }),
+        buildCertChainMsg(&buf, &.{ ncLeafAllowedDer(), ncIntermediateDer() }),
         .{ .bundle = &bundle, .now_sec = 1_782_864_000, .host_name = "ok.example.com" },
     );
     try testing.expect(pub_key.len > 0);
@@ -904,7 +940,7 @@ test "parse: rejects chain with excluded DNS name constraints" {
     try testing.expectError(
         error.CertificateNameConstraintViolation,
         parse(
-            buildCertChainMsg(&buf, &.{ nc_leaf_excluded_der, nc_intermediate_der }),
+            buildCertChainMsg(&buf, &.{ ncLeafExcludedDer(), ncIntermediateDer() }),
             .{ .bundle = &bundle, .now_sec = 1_782_864_000, .host_name = "bad.example.com" },
         ),
     );
@@ -920,7 +956,7 @@ test "parse: rejects chain outside permitted DNS name constraints" {
     try testing.expectError(
         error.CertificateNameConstraintViolation,
         parse(
-            buildCertChainMsg(&buf, &.{ nc_leaf_outside_der, nc_intermediate_der }),
+            buildCertChainMsg(&buf, &.{ ncLeafOutsideDer(), ncIntermediateDer() }),
             .{ .bundle = &bundle, .now_sec = 1_782_864_000, .host_name = "other.test" },
         ),
     );
@@ -933,7 +969,7 @@ test "parse: insecure no-anchor path still enforces name constraints" {
     try testing.expectError(
         error.CertificateNameConstraintViolation,
         parse(
-            buildCertChainMsg(&buf, &.{ nc_leaf_excluded_der, nc_intermediate_der }),
+            buildCertChainMsg(&buf, &.{ ncLeafExcludedDer(), ncIntermediateDer() }),
             .{
                 .insecure_no_chain_anchor = true,
                 .now_sec = 1_782_864_000,
@@ -1143,33 +1179,33 @@ test "certificate_policy.verifyServerAuth: unrestricted supported leaf is accept
 
 test "encodeCertificateVerify: wraps signature" {
     var buf: [512]u8 = undefined;
-    const msg = try encodeCertificateVerify(&buf, .ecdsa_secp256r1_sha256, fixture_cv_sig);
+    const msg = try encodeCertificateVerify(&buf, .ecdsa_secp256r1_sha256, fixtureCvSig());
     try testing.expectEqual(@as(u8, 0x0f), msg[0]);
-    try testing.expectEqual(certificateVerifyEncodedLen(fixture_cv_sig), msg.len);
-    try testing.expectEqualSlices(u8, fixture_cv_sig, msg[8..]);
+    try testing.expectEqual(certificateVerifyEncodedLen(fixtureCvSig()), msg.len);
+    try testing.expectEqualSlices(u8, fixtureCvSig(), msg[8..]);
 }
 
 test "verifySignature: valid ECDSA P-256 signature" {
     var cert_buf: [1024]u8 = undefined;
-    const pub_key = try parse(buildCertMsg(&cert_buf, fixture_cert_der), .{
+    const pub_key = try parse(buildCertMsg(&cert_buf, fixtureCertDer()), .{
         .insecure_no_chain_anchor = true,
     });
     var cv_buf: [512]u8 = undefined;
-    try verifyServerSignature(buildCvMsg(&cv_buf, fixture_cv_sig), pub_key, &test_transcript_hash);
+    try verifyServerSignature(buildCvMsg(&cv_buf, fixtureCvSig()), pub_key, &test_transcript_hash);
 }
 
 // RFC 8446 §4.2.3 — rsa_pss_rsae_sha256 uses RSASSA-PSS with SHA-256,
 // MGF1(SHA-256), and salt length equal to the digest length.
 test "verifySignature: valid RSA-PSS SHA-256 signature" {
     var cert_buf: [2048]u8 = undefined;
-    const pub_key = try parse(buildCertMsg(&cert_buf, fixture_rsa_pss_cert_der), .{
+    const pub_key = try parse(buildCertMsg(&cert_buf, fixtureRsaPssCertDer()), .{
         .insecure_no_chain_anchor = true,
     });
     var cv_buf: [512]u8 = undefined;
     const cv = try encodeCertificateVerify(
         &cv_buf,
         .rsa_pss_rsae_sha256,
-        fixture_rsa_pss_cv_sig,
+        fixtureRsaPssCvSig(),
     );
     try verifyServerSignature(cv, pub_key, &test_transcript_hash);
 }
@@ -1178,14 +1214,14 @@ test "verifySignature: valid RSA-PSS SHA-256 signature" {
 // length, not an arbitrary PSS salt length accepted by generic RSA-PSS.
 test "verifySignature: rejects RSA-PSS signature with wrong salt length" {
     var cert_buf: [2048]u8 = undefined;
-    const pub_key = try parse(buildCertMsg(&cert_buf, fixture_rsa_pss_cert_der), .{
+    const pub_key = try parse(buildCertMsg(&cert_buf, fixtureRsaPssCertDer()), .{
         .insecure_no_chain_anchor = true,
     });
     var cv_buf: [512]u8 = undefined;
     const cv = try encodeCertificateVerify(
         &cv_buf,
         .rsa_pss_rsae_sha256,
-        fixture_rsa_pss_cv_salt20_sig,
+        fixtureRsaPssCvSalt20Sig(),
     );
     try testing.expectError(
         error.SignatureVerificationFailed,
@@ -1195,14 +1231,14 @@ test "verifySignature: rejects RSA-PSS signature with wrong salt length" {
 
 test "verifySignature: wrong transcript hash" {
     var cert_buf: [1024]u8 = undefined;
-    const pub_key = try parse(buildCertMsg(&cert_buf, fixture_cert_der), .{
+    const pub_key = try parse(buildCertMsg(&cert_buf, fixtureCertDer()), .{
         .insecure_no_chain_anchor = true,
     });
     var cv_buf: [512]u8 = undefined;
     const bad_hash: [32]u8 = @splat(0);
     try testing.expectError(
         error.SignatureVerificationFailed,
-        verifyServerSignature(buildCvMsg(&cv_buf, fixture_cv_sig), pub_key, &bad_hash),
+        verifyServerSignature(buildCvMsg(&cv_buf, fixtureCvSig()), pub_key, &bad_hash),
     );
 }
 
@@ -1210,7 +1246,7 @@ test "verifySignature: wrong transcript hash" {
 // signature_algorithms extension, not just any scheme ztls globally supports.
 test "verifySignature: rejects scheme absent from offered list" {
     var cert_buf: [1024]u8 = undefined;
-    const pub_key = try parse(buildCertMsg(&cert_buf, fixture_cert_der), .{
+    const pub_key = try parse(buildCertMsg(&cert_buf, fixtureCertDer()), .{
         .insecure_no_chain_anchor = true,
     });
     var cv_buf: [512]u8 = undefined;
@@ -1218,7 +1254,7 @@ test "verifySignature: rejects scheme absent from offered list" {
     try testing.expectError(
         error.UnsupportedSignatureScheme,
         verifyServerSignatureWithSchemes(
-            buildCvMsg(&cv_buf, fixture_cv_sig),
+            buildCvMsg(&cv_buf, fixtureCvSig()),
             pub_key,
             &test_transcript_hash,
             &offered,
@@ -1230,11 +1266,11 @@ test "verifySignature: rejects scheme absent from offered list" {
 // in TLS 1.3 and must not be accepted for CertificateVerify.
 test "verifySignature: rejects RSA PKCS1 CertificateVerify scheme" {
     var cert_buf: [1024]u8 = undefined;
-    const pub_key = try parse(buildCertMsg(&cert_buf, fixture_cert_der), .{
+    const pub_key = try parse(buildCertMsg(&cert_buf, fixtureCertDer()), .{
         .insecure_no_chain_anchor = true,
     });
     var cv_buf: [512]u8 = undefined;
-    const cv = try encodeCertificateVerify(&cv_buf, .rsa_pkcs1_sha256, fixture_cv_sig);
+    const cv = try encodeCertificateVerify(&cv_buf, .rsa_pkcs1_sha256, fixtureCvSig());
     try testing.expectError(
         error.UnsupportedSignatureScheme,
         verifyServerSignature(cv, pub_key, &test_transcript_hash),
@@ -1245,11 +1281,11 @@ test "verifySignature: rejects RSA PKCS1 CertificateVerify scheme" {
 // with the certificate public key parameters.
 test "verifySignature: rejects certificate key and scheme mismatch" {
     var cert_buf: [1024]u8 = undefined;
-    const pub_key = try parse(buildCertMsg(&cert_buf, fixture_cert_der), .{
+    const pub_key = try parse(buildCertMsg(&cert_buf, fixtureCertDer()), .{
         .insecure_no_chain_anchor = true,
     });
     var cv_buf: [512]u8 = undefined;
-    const cv = try encodeCertificateVerify(&cv_buf, .ecdsa_secp384r1_sha384, fixture_cv_sig);
+    const cv = try encodeCertificateVerify(&cv_buf, .ecdsa_secp384r1_sha384, fixtureCvSig());
     try testing.expectError(
         error.InvalidEncoding,
         verifyServerSignature(cv, pub_key, &test_transcript_hash),
@@ -1259,23 +1295,23 @@ test "verifySignature: rejects certificate key and scheme mismatch" {
 // RFC 8446 §4.4.3 — CertificateVerify context string binds the endpoint role.
 test "verifySignature: server signature is not valid for client context" {
     var cert_buf: [1024]u8 = undefined;
-    const pub_key = try parse(buildCertMsg(&cert_buf, fixture_cert_der), .{
+    const pub_key = try parse(buildCertMsg(&cert_buf, fixtureCertDer()), .{
         .insecure_no_chain_anchor = true,
     });
     var cv_buf: [512]u8 = undefined;
     try testing.expectError(
         error.SignatureVerificationFailed,
-        verifyClientSignature(buildCvMsg(&cv_buf, fixture_cv_sig), pub_key, &test_transcript_hash),
+        verifyClientSignature(buildCvMsg(&cv_buf, fixtureCvSig()), pub_key, &test_transcript_hash),
     );
 }
 
 test "verifySignature: wrong handshake type" {
     var cert_buf: [1024]u8 = undefined;
-    const pub_key = try parse(buildCertMsg(&cert_buf, fixture_cert_der), .{
+    const pub_key = try parse(buildCertMsg(&cert_buf, fixtureCertDer()), .{
         .insecure_no_chain_anchor = true,
     });
     var cv_buf: [512]u8 = undefined;
-    _ = buildCvMsg(&cv_buf, fixture_cv_sig);
+    _ = buildCvMsg(&cv_buf, fixtureCvSig());
     cv_buf[0] = 0x01;
     try testing.expectError(
         error.InvalidHandshakeType,
@@ -1288,13 +1324,13 @@ test "verifySignature: wrong handshake type" {
 // enforcement is not yet implemented.
 test "parse: extracts critical name constraints" {
     var buf: [1024]u8 = undefined;
-    const pub_key = try parse(buildCertMsg(&buf, name_constraints_der), .{
+    const pub_key = try parse(buildCertMsg(&buf, nameConstraintsDer()), .{
         .insecure_no_chain_anchor = true,
     });
     try testing.expect(pub_key.len > 0);
 
     // Verify the extension was extracted by parsing the leaf directly.
-    const cert: Certificate = .{ .buffer = name_constraints_der, .index = 0 };
+    const cert: Certificate = .{ .buffer = nameConstraintsDer(), .index = 0 };
     const parsed = try cert.parse();
     const nc = parsed.nameConstraints();
     try testing.expect(nc.len > 0);
@@ -1305,12 +1341,12 @@ test "parse: extracts critical name constraints" {
 // RFC 5280 §4.2.1.10 — non-critical Name Constraints are also parsed.
 test "parse: extracts non-critical name constraints" {
     var buf: [1024]u8 = undefined;
-    const pub_key = try parse(buildCertMsg(&buf, name_constraints_noncritical_der), .{
+    const pub_key = try parse(buildCertMsg(&buf, nameConstraintsNoncriticalDer()), .{
         .insecure_no_chain_anchor = true,
     });
     try testing.expect(pub_key.len > 0);
 
-    const cert: Certificate = .{ .buffer = name_constraints_noncritical_der, .index = 0 };
+    const cert: Certificate = .{ .buffer = nameConstraintsNoncriticalDer(), .index = 0 };
     const parsed = try cert.parse();
     const nc = parsed.nameConstraints();
     try testing.expect(nc.len > 0);
@@ -1327,6 +1363,6 @@ fn fuzzParse(_: void, input: []const u8) anyerror!void {
 test "fuzz: parse handles arbitrary input" {
     var buf: [1024]u8 = undefined;
     try fuzz_compat.fuzzBytes(fuzzParse, {}, .{
-        .corpus = &.{buildCertMsg(&buf, fixture_cert_der)},
+        .corpus = &.{buildCertMsg(&buf, fixtureCertDer())},
     });
 }
