@@ -729,6 +729,8 @@ fn processClientHelloMessage(
             } else return error.IllegalParameter,
             else => return error.IllegalParameter,
         }
+    else if (ch.kem_key_share != null and backend.supportsServerX25519Mlkem768())
+        .{ .kem = ch.kem_key_share.? }
     else if (ch.public_key != null and backend.supportsServerX25519())
         .{ .x25519 = ch.public_key.? }
     else if (ch.public_key_p256 != null and backend.supportsServerP256())
@@ -736,10 +738,6 @@ fn processClientHelloMessage(
     else if (ch.public_key_p384 != null and
         (backend.supportsServerP384() and self.keypairs.p384 != null))
         .{ .secp384r1 = ch.public_key_p384.? }
-        // KEM hybrid: prefer X25519MLKEM768 if the client offered it and the
-        // backend supports it. draft-ietf-tls-ecdhe-mlkem-05 §4.
-    else if (ch.kem_key_share != null and backend.supportsServerX25519Mlkem768())
-        .{ .kem = ch.kem_key_share.? }
     else if (ch.groups.contains(.x25519) and backend.supportsServerX25519()) {
         const hrr = try self.encodeHelloRetryRequest(
             ch_msg,
@@ -4170,6 +4168,70 @@ test "in-memory 0-RTT early data is decrypted by the server" {
         "ping",
         try server.receiveApplicationData(client_out[0..client_app.len]),
     );
+}
+
+// draft-ietf-tls-ecdhe-mlkem-05 §4 — in-memory X25519MLKEM768 hybrid KEM
+// handshake: the client offers a KEM key_share, the server encapsulates, and
+// the handshake completes with the hybrid shared secret.
+test "in-memory X25519MLKEM768 KEM handshake reaches app data" {
+    if (!backend.supportsServerX25519Mlkem768()) return error.SkipZigTest;
+
+    const client_keypair: x25519.KeyPair = .generate();
+    const server_keypair: x25519.KeyPair = .generate();
+
+    var client: ClientHandshake = .init(.{
+        .keypairs = .init(client_keypair),
+        .host_name = null,
+        .now_sec = 0,
+        .random = .zero,
+    });
+    client.policy.insecure_no_chain_anchor = true;
+
+    var client_out: [4096]u8 = undefined;
+    const ch_record = try client.start(&client_out);
+    client.completeWrite();
+    try testing.expect(client.kem_key != null);
+
+    var server: ServerHandshake = .init(testConfig(server_keypair));
+    var server_out: [4096]u8 = undefined;
+    const sh_record = try server.acceptClientHello(ch_record, &server_out);
+    try testing.expectEqual(NamedGroup.x25519_mlkem768, server.negotiated_group);
+
+    const sh_ev = try client.handleRecord(server_out[0..sh_record.len], &client_out);
+    _ = sh_ev;
+
+    var signer = try signature.PrivateKey.fromP256Scalar(server_ecdsa_scalar[0..32]);
+    defer signer.deinit();
+    var plaintext: [4096]u8 = undefined;
+    const flight_record = try server.sendAuthenticatedFlight(
+        &.{server_ecdsa_cert_der},
+        signer.signer(),
+        &plaintext,
+        &server_out,
+    );
+    const flight_ev = try client.handleRecord(server_out[0..flight_record.len], &client_out);
+    const client_finished = switch (flight_ev) {
+        .write => |w| w,
+        else => return error.UnexpectedEvent,
+    };
+    client.completeWrite();
+    try testing.expect(client.isConnected());
+
+    try server.processClientFinished(client_out[0..client_finished.len]);
+    try testing.expect(server.isConnected());
+
+    // Application-data round trip under the KEM-derived keys.
+    const client_app = try client.sendApplicationData("ping", &client_out);
+    client.completeWrite();
+    try testing.expectEqualStrings(
+        "ping",
+        try server.receiveApplicationData(client_out[0..client_app.len]),
+    );
+    const server_app = try server.sendApplicationData("pong", &server_out);
+    var server_app_mut: [128]u8 = undefined;
+    @memcpy(server_app_mut[0..server_app.len], server_app);
+    const app_ev = try client.handleRecord(server_app_mut[0..server_app.len], &client_out);
+    try testing.expectEqualStrings("pong", app_ev.application_data);
 }
 
 // RFC 8446 §4.1.4 — full HelloRetryRequest round trip in memory: the client
