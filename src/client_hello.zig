@@ -558,6 +558,9 @@ pub const Parsed = struct {
     /// psk_key_exchange_modes (RFC 8446 §4.2.9), if present. Slice into the
     /// ClientHello buffer (the modes list, after the list-length byte).
     psk_key_exchange_modes: ?[]const u8 = null,
+    /// Whether the client offered the early_data extension (0-RTT).
+    /// RFC 8446 §4.2.10.
+    offered_early_data: bool = false,
 
     pub fn offersSuite(self: Parsed, suite: CipherSuite) bool {
         var i: usize = 0;
@@ -848,6 +851,12 @@ pub fn parse(msg: []const u8) ParseError!Parsed {
                 // an acknowledged record_size_limit in EncryptedExtensions.
                 if (ext.len != 2) return error.InvalidExtensionLength;
                 parsed.offered_extensions.insert(.record_size_limit);
+            },
+            .early_data => {
+                // RFC 8446 §4.2.10 — early_data in ClientHello has empty
+                // ext_data. Only valid with pre_shared_key.
+                if (ext.len != 0) return error.InvalidExtensionLength;
+                parsed.offered_early_data = true;
             },
             .psk_key_exchange_modes => {
                 // RFC 8446 §4.2.9. ext_data = 1-byte list length + modes.
