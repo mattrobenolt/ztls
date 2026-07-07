@@ -10,7 +10,6 @@ const Sha256 = std.crypto.hash.sha2.Sha256;
 const Sha384 = std.crypto.hash.sha2.Sha384;
 const mem = std.mem;
 const testing = std.testing;
-const builtin = @import("builtin");
 
 const aead = @import("aead.zig");
 const alert = @import("alert.zig");
@@ -736,9 +735,7 @@ fn processClientHelloMessage(
             } else return error.IllegalParameter,
             else => return error.IllegalParameter,
         }
-    else if (ch.kem_key_share != null and backend.supportsServerX25519Mlkem768() and
-        builtin.cpu.arch == .aarch64)
-    blk: {
+    else if (ch.kem_key_share != null and backend.supportsServerX25519Mlkem768()) blk: {
         // Try KEM encapsulation; if it fails (e.g. the libcrypto build
         // doesn't support the algorithm at runtime), fall back to ECDHE.
         // draft-ietf-tls-ecdhe-mlkem-05 §4.
@@ -813,25 +810,9 @@ fn processClientHelloMessage(
         .secp384r1 => .secp384r1,
         .kem => |k| k.group,
     };
-    // For KEM groups, encapsulate BEFORE encoding the ServerHello so the
-    // ciphertext can be included in the server key_share.
-    // draft-ietf-tls-ecdhe-mlkem-05 §4.2. For ECDHE, the server key_share is
-    // the server's ephemeral public key (known before encoding).
-    // KEM variables were declared earlier (before the key_share selection).
-    if (client_key_share == .kem) {
-        const k = client_key_share.kem;
-        const peer = try mlkem_mod.loadPeerPublic(k.data.constSlice());
-        defer mlkem_mod.freeKey(peer);
-        var enc: [server_hello.max_kem_share_len]u8 = undefined;
-        var sec: [80]u8 = undefined;
-        const result = try mlkem_mod.encapsulate(peer, &enc, &sec);
-        var enc_buf: ArrayBuffer(u8, server_hello.max_kem_share_len) = .empty;
-        enc_buf.appendSliceAssumeCapacity(result.enc);
-        kem_enc = enc_buf;
-        var sec_buf: ArrayBuffer(u8, 80) = .empty;
-        sec_buf.appendSliceAssumeCapacity(result.sec);
-        kem_sec = sec_buf;
-    }
+    // KEM encapsulation was already done during key_share selection above.
+    // The `kem_enc` and `kem_sec` ArrayBuffers contain the ciphertext and
+    // shared secret from that single encapsulation.
 
     const server_key_share: server_hello.KeyShare = switch (client_key_share) {
         .x25519 => .{ .x25519 = self.keypairs.x25519.public_key },

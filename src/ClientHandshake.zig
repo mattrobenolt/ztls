@@ -608,10 +608,10 @@ pub fn start(self: *ClientHandshake, out: []u8) StartError![]const u8 {
     if (out.len < frame.header_len) return error.BufferTooShort;
 
     // Generate a KEM keypair if the backend supports X25519MLKEM768 AND the
-    // caller provided a large enough buffer (>=2048). This is opt-in by buffer
-    // size: callers who want KEM must provide a large buffer; callers with a
-    // small buffer get a plain ECDHE ClientHello.
+    // caller opted in via Config. The public key is extracted into a buffer
+    // that lives until encodeWithKem copies it into the ClientHello.
     // draft-ietf-tls-ecdhe-mlkem-05 §4.1.
+    var kem_pub_buf: [mlkem.x25519_mlkem768_public_length]u8 = undefined;
     var kem_share: ?client_hello.KemShare = null;
     if (self.offer_pq_key_share and
         backend.capabilities.client_x25519_mlkem768 and
@@ -620,8 +620,7 @@ pub fn start(self: *ClientHandshake, out: []u8) StartError![]const u8 {
         const kem_key = mlkem.generateX25519Mlkem768() catch null;
         if (kem_key) |k| {
             self.kem_key = k;
-            var pub_buf: [mlkem.x25519_mlkem768_public_length]u8 = undefined;
-            const pub_key = mlkem.publicKey(k, &pub_buf) catch null;
+            const pub_key = mlkem.publicKey(k, &kem_pub_buf) catch null;
             if (pub_key) |pk| {
                 kem_share = .{ .group = .x25519_mlkem768, .data = pk };
             }
