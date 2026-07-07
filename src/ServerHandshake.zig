@@ -75,6 +75,7 @@ pub const PskLookup = struct {
 const shared_fixtures = @import("test_fixtures/shared_fixtures.zig");
 const transcript_util = @import("transcript.zig");
 const x25519 = @import("x25519.zig");
+const mlkem_mod = @import("mlkem.zig");
 
 const HandshakeBuffer = SliceBuffer(u8);
 // Bounds a reassembled client-flight plaintext (Certificate [+ CertificateVerify]
@@ -137,6 +138,13 @@ const ClientKeyShare = union(enum) {
     x25519: x25519.PublicKey,
     secp256r1: p256.PublicKey,
     secp384r1: p384.PublicKey,
+    /// KEM hybrid key_share (client side: the raw key_exchange bytes from
+    /// the ClientHello key_share entry). draft-ietf-tls-ecdhe-mlkem-05 §4.1.
+    kem: struct {
+        group: NamedGroup,
+        data: [server_hello.max_kem_share_len]u8,
+        len: u16,
+    },
 };
 
 const compatibility_ccs_len = frame.header_len + 1;
@@ -770,11 +778,16 @@ fn processClientHelloMessage(
         .x25519 => .x25519,
         .secp256r1 => .secp256r1,
         .secp384r1 => .secp384r1,
+        .kem => |k| k.group,
     };
     const server_key_share: server_hello.KeyShare = switch (client_key_share) {
         .x25519 => .{ .x25519 = self.keypairs.x25519.public_key },
         .secp256r1 => .{ .secp256r1 = self.keypairs.p256.public_key },
         .secp384r1 => .{ .secp384r1 = (self.keypairs.p384 orelse unreachable).public_key },
+        // KEM: the server key_share is set during installHandshakeKeys after
+        // encapsulation (the ciphertext is the server key_share). Use a
+        // placeholder here; it will be overwritten.
+        .kem => |k| .{ .kem = .{ .group = k.group, .data = @splat(0), .len = 0 } },
     };
 
     const sh = if (self.selected_psk != null)
@@ -874,7 +887,7 @@ fn installHandshakeKeys(
     sh_msg: []const u8,
     client_key_share: ClientKeyShare,
 ) (error{ IdentityElement, LibcryptoFailed } || aead.Error)!void {
-    var dhe: [48]u8 = undefined;
+    var dhe: [80]u8 = undefined;
     const dhe_len: usize = switch (client_key_share) {
         .x25519 => |public_key| blk: {
             const secret = try x25519.sharedSecret(self.keypairs.x25519.secret_key, public_key);
@@ -891,6 +904,24 @@ fn installHandshakeKeys(
             const secret = try p384.sharedSecret(keypair.secret_key, public_key);
             @memcpy(dhe[0..48], &secret);
             break :blk @as(usize, 48);
+        },
+        // KEM hybrid: encapsulate using the client's public key.
+        // draft-ietf-tls-ecdhe-mlkem-05 §4.2. The shared secret is the
+        // concatenation of the ML-KEM and ECDHE shared secrets.
+        .kem => |k| blk: {
+            const peer = try mlkem_mod.loadPeerPublic(k.data[0..k.len]);
+            defer mlkem_mod.freeKey(peer);
+            var enc: [server_hello.max_kem_share_len]u8 = undefined;
+            var sec: [80]u8 = undefined;
+            const result = try mlkem_mod.encapsulate(peer, &enc, &sec);
+            @memcpy(dhe[0..result.sec.len], result.sec);
+            // Store the ciphertext as the server key_share for the ServerHello.
+            // This will be patched into the sh_msg by the caller.
+            // TODO: the current architecture encodes the ServerHello before
+            // installHandshakeKeys; for KEM, the ciphertext isn't known until
+            // encapsulation. This needs restructuring: either encapsulate
+            // before encoding the ServerHello, or use a two-pass approach.
+            break :blk result.sec.len;
         },
     };
     defer std.crypto.secureZero(u8, dhe[0..dhe_len]);

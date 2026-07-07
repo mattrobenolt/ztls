@@ -63,6 +63,7 @@ const suite_state = @import("suite_state.zig");
 const HashArm = suite_state.HashArm;
 const transcript_util = @import("transcript.zig");
 const x25519 = @import("x25519.zig");
+const mlkem = @import("mlkem.zig");
 const NamedGroup = @import("kex.zig").NamedGroup;
 
 /// Caller-owned resumption ticket material derived from a NewSessionTicket.
@@ -482,6 +483,12 @@ offered_psk_cipher_suite: CipherSuite = .aes_128_gcm_sha256,
 /// Finished, derived from the PSK early secret + the ClientHello transcript.
 /// null when 0-RTT is not offered. RFC 8446 §4.2.10, §7.1.
 early_tx: ?RecordLayer = null,
+/// KEM hybrid key handle (X25519MLKEM768 etc.) for PQ key exchange.
+/// Set by start() when the backend supports the group; the client sends the
+/// KEM public key as part of its key_share and decapsulates the server's
+/// ciphertext. Backend-owned allocation (EVP_PKEY*); must be freed via
+/// deinit. draft-ietf-tls-ecdhe-mlkem-05 §4.
+kem_key: ?mlkem.KeyHandle = null,
 /// The cipher suite field is needed to pick the right HKDF hash for the early
 /// secret; it must match the negotiated suite for resumption.
 /// Transcript hash through the server Finished. Client-auth messages are sent
@@ -1070,11 +1077,14 @@ fn processHandshakeRecord(
     }
 }
 
-pub const ServerHelloError = server_hello.ParseError || aead.Error || error{
-    UnsupportedCipherSuite,
-    IdentityElement,
-    LibcryptoFailed,
-};
+pub const ServerHelloError = server_hello.ParseError || aead.Error ||
+    mlkem.Error ||
+    error{
+        UnsupportedCipherSuite,
+        IdentityElement,
+        LibcryptoFailed,
+        UnexpectedMessage,
+    };
 
 /// Errors from HelloRetryRequest processing and ClientHello2 generation.
 pub const HelloRetryRequestError = server_hello.HrrParseError ||
@@ -1231,7 +1241,7 @@ pub fn processServerHello(self: *ClientHandshake, msg: []const u8) ServerHelloEr
     }
 
     self.suite.update(msg); // transcript now covers ... || ServerHello
-    var dhe: [48]u8 = undefined;
+    var dhe: [80]u8 = undefined;
     const dhe_len: usize = switch (sh.key_share) {
         .x25519 => |key| blk: {
             const secret = try x25519.sharedSecret(self.keypairs.x25519.secret_key, key);
@@ -1248,6 +1258,19 @@ pub fn processServerHello(self: *ClientHandshake, msg: []const u8) ServerHelloEr
             const secret = try p384.sharedSecret(keypair.secret_key, key);
             @memcpy(dhe[0..48], &secret);
             break :blk @as(usize, 48);
+        },
+        // KEM hybrid: decapsulate using our private key + the server's
+        // ciphertext. draft-ietf-tls-ecdhe-mlkem-05 §4.2.
+        .kem => |k| blk: {
+            if (self.kem_key == null) return error.UnexpectedMessage;
+            var sec: [80]u8 = undefined;
+            const shared = try mlkem.decapsulate(
+                self.kem_key.?,
+                k.data[0..k.len],
+                &sec,
+            );
+            @memcpy(dhe[0..shared.len], shared);
+            break :blk shared.len;
         },
     };
     defer crypto.secureZero(u8, dhe[0..dhe_len]);

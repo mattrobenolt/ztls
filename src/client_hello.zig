@@ -34,6 +34,7 @@ const CipherSuite = root.CipherSuite;
 const Random = root.Random;
 const SignatureScheme = @import("signature_scheme.zig").SignatureScheme;
 const wire = @import("wire.zig");
+const server_hello = @import("server_hello.zig");
 const x25519 = @import("x25519.zig");
 
 /// RFC 8446 §4.1.2 — legacy_version is frozen at TLS 1.2.
@@ -546,6 +547,9 @@ pub const Parsed = struct {
     public_key: ?x25519.PublicKey = null,
     public_key_p256: ?p256.PublicKey = null,
     public_key_p384: ?p384.PublicKey = null,
+    /// KEM hybrid key_share from the client (raw bytes). Variable-length.
+    /// draft-ietf-tls-ecdhe-mlkem-05 §4.1.
+    kem_key_share: ?ParsedKemKeyShare = null,
     /// Offered ClientHello extensions tracked for validating server responses.
     offered_extensions: OfferedExtensions = .initEmpty(),
     /// pre_shared_key extension (RFC 8446 §4.2.11), if present. `psk_ext`
@@ -843,6 +847,7 @@ pub fn parse(msg: []const u8) ParseError!Parsed {
                 parsed.public_key = shares.x25519;
                 parsed.public_key_p256 = shares.p256;
                 parsed.public_key_p384 = shares.p384;
+                parsed.kem_key_share = shares.kem;
                 got_key_share = true;
             },
             .record_size_limit => {
@@ -1022,6 +1027,16 @@ const ParsedKeyShares = struct {
     x25519: ?x25519.PublicKey = null,
     p256: ?p256.PublicKey = null,
     p384: ?p384.PublicKey = null,
+    /// KEM hybrid key_share (raw bytes, group + data). Variable-length.
+    /// draft-ietf-tls-ecdhe-mlkem-05 §4.1.
+    kem: ?ParsedKemKeyShare = null,
+};
+
+/// KEM key_share stored in both ParsedKeyShares and Parsed.
+pub const ParsedKemKeyShare = struct {
+    group: NamedGroup,
+    data: [server_hello.max_kem_share_len]u8,
+    len: u16,
 };
 
 fn parseKeyShare(ext: []const u8) ParseError!ParsedKeyShares {
@@ -1053,6 +1068,20 @@ fn parseKeyShare(ext: []const u8) ParseError!ParsedKeyShares {
                 if (key.len != p384.public_length) return error.MalformedKeyShare;
                 if (key[0] != 0x04) return error.MalformedKeyShare;
                 shares.p384 = .init(key[0..p384.public_length].*);
+            },
+            // KEM hybrid groups — store raw key_share bytes.
+            // draft-ietf-tls-ecdhe-mlkem-05 §4.1.
+            .x25519_mlkem768, .secp256r1_mlkem768, .secp384r1_mlkem1024 => {
+                if (shares.kem != null) return error.DuplicateKeyShare;
+                if (key.len > server_hello.max_kem_share_len)
+                    return error.MalformedKeyShare;
+                var kem: ParsedKemKeyShare = .{
+                    .group = group,
+                    .data = undefined,
+                    .len = @intCast(key.len),
+                };
+                @memcpy(kem.data[0..key.len], key);
+                shares.kem = kem;
             },
             else => {},
         }

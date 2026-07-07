@@ -261,22 +261,38 @@ pub fn parseHelloRetryRequestWithSessionIdEcho(
 
 pub const encoded_len = 4 + 2 + 32 + 1 + 2 + 1 + 2 + (4 + 2 + 2 + 32) + (4 + 2);
 
+/// Maximum KEM key_share size (client or server) across all hybrid groups.
+/// SecP384r1MLKEM1024 client share = 1665, server share = 1665.
+/// draft-ietf-tls-ecdhe-mlkem-05 §4.
+pub const max_kem_share_len = 1665;
+
 pub const KeyShare = union(enum) {
     x25519: x25519.PublicKey,
     secp256r1: p256.PublicKey,
     secp384r1: p384.PublicKey,
+    /// KEM hybrid key_share (server side: the ciphertext from encapsulate).
+    /// draft-ietf-tls-ecdhe-mlkem-05 §4.2. The bytes are the concatenation
+    /// of the ML-KEM ciphertext and the server's ECDHE share, in the order
+    /// specified by the group.
+    kem: struct {
+        group: NamedGroup,
+        data: [max_kem_share_len]u8,
+        len: u16,
+    },
 
     pub fn group(self: KeyShare) NamedGroup {
         return switch (self) {
             .x25519 => .x25519,
             .secp256r1 => .secp256r1,
             .secp384r1 => .secp384r1,
+            .kem => |k| k.group,
         };
     }
 
     fn bytes(self: *const KeyShare) []const u8 {
         return switch (self.*) {
-            inline else => |*key| &key.data,
+            inline .x25519, .secp256r1, .secp384r1 => |*key| &key.data,
+            .kem => |k| k.data[0..k.len],
         };
     }
 };
