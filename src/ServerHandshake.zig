@@ -4009,6 +4009,107 @@ test "in-memory PSK resumption reaches app data" {
     try testing.expectEqualStrings("pong", app_ev.application_data);
 }
 
+// RFC 8446 §4.2.10, §7.1 — in-memory 0-RTT: the client offers early_data
+// with a PSK and sends 0-RTT data encrypted under the client_early_traffic_
+// secret; the server decrypts it with the early traffic key, then the handshake
+// completes normally. Exercises the early traffic key derivation + record flow.
+test "in-memory 0-RTT early data is decrypted by the server" {
+    const resumption_master: hkdf.HkdfSha256.Prk = .init(.{
+        0x7d, 0xf2, 0x35, 0xf2, 0x03, 0x1d, 0x2a, 0x05,
+        0x12, 0x87, 0xd0, 0x2b, 0x02, 0x41, 0xb0, 0xbf,
+        0xda, 0xf8, 0x6c, 0xc8, 0x56, 0x23, 0x1f, 0x2d,
+        0x5a, 0xba, 0x46, 0xc4, 0x34, 0xec, 0x19, 0x6c,
+    });
+    const psk = hkdf.HkdfSha256.resumptionPsk(resumption_master, &.{ 0x00, 0x00 });
+    const identity = [_]u8{ 0x2c, 0x03, 0x5d, 0x82, 0x93, 0x59 };
+
+    var client: ClientHandshake = .init(.{
+        .keypairs = .init(.generate()),
+        .host_name = null,
+        .now_sec = 0,
+        .random = .zero,
+    });
+    client.policy.insecure_no_chain_anchor = true;
+    var ticket: ClientHandshake.SessionTicket = .{
+        .ticket_age_add = 0x262a6494,
+        .cipher_suite = .aes_128_gcm_sha256,
+        .max_early_data_size = 16384,
+    };
+    ticket.identity.appendSliceAssumeCapacity(&identity);
+    ticket.psk.appendSliceAssumeCapacity(&psk.data);
+
+    var client_out: [4096]u8 = undefined;
+    const ch_record = try client.startWithPsk(&ticket, &client_out, true);
+    client.completeWrite();
+
+    // Send 0-RTT data encrypted under the early traffic key.
+    var early_buf: [256]u8 = undefined;
+    const early_record = try client.sendEarlyData("hello 0-rtt", &early_buf);
+
+    const Lookup = struct {
+        const Self = @This();
+        psk: []const u8,
+        identity: []const u8,
+        fn l(ctx: *anyopaque, id: []const u8) ?PskEntry {
+            const self: *Self = @ptrCast(@alignCast(ctx));
+            if (std.mem.eql(u8, id, self.identity))
+                return .{ .psk = self.psk, .cipher_suite = .aes_128_gcm_sha256 };
+            return null;
+        }
+    };
+    var lookup_ctx: Lookup = .{ .psk = &psk.data, .identity = &identity };
+
+    var server: ServerHandshake = .init(.{
+        .keypairs = .init(.generate()),
+        .random = .zero,
+        .psk_lookup = .{ .context = &lookup_ctx, .lookup = Lookup.l },
+    });
+    var server_out: [4096]u8 = undefined;
+    const sh_record = try server.acceptClientHello(ch_record, &server_out);
+    try testing.expect(server.selected_psk != null);
+    try testing.expect(server.early_rx != null);
+
+    // The server decrypts the 0-RTT data with the early traffic key.
+    var early_rx_buf: [256]u8 = undefined;
+    @memcpy(early_rx_buf[0..early_record.len], early_record);
+    const early_ev = try server.handleRecord(early_rx_buf[0..early_record.len], &server_out);
+    try testing.expectEqualStrings("hello 0-rtt", early_ev.application_data);
+
+    // The server sends its flight (EE + Finished for PSK resumption).
+    // Process the ServerHello via handleRecord (plaintext handshake record).
+    const sh_ev = try client.handleRecord(server_out[0..sh_record.len], &client_out);
+    _ = sh_ev; // ServerHello is processed, handshake keys installed.
+
+    // Send the authenticated flight.
+    var signer = try signature.PrivateKey.fromP256Scalar(server_ecdsa_scalar[0..32]);
+    defer signer.deinit();
+    var plaintext: [4096]u8 = undefined;
+    const flight_record = try server.sendAuthenticatedFlight(
+        &.{server_ecdsa_cert_der},
+        signer.signer(),
+        &plaintext,
+        &server_out,
+    );
+    const client_flight_ev = try client.handleRecord(server_out[0..flight_record.len], &client_out);
+    const client_finished = switch (client_flight_ev) {
+        .write => |w| w,
+        else => return error.UnexpectedEvent,
+    };
+    client.completeWrite();
+    try testing.expect(client.isConnected());
+
+    try server.processClientFinished(client_out[0..client_finished.len]);
+    try testing.expect(server.isConnected());
+
+    // Post-handshake app data round-trip.
+    const client_app = try client.sendApplicationData("ping", &client_out);
+    client.completeWrite();
+    try testing.expectEqualStrings(
+        "ping",
+        try server.receiveApplicationData(client_out[0..client_app.len]),
+    );
+}
+
 // RFC 8446 §4.1.4 — full HelloRetryRequest round trip in memory: the client
 // advertises secp256r1 in supported_groups but sends only an X25519 key_share,
 // the server emits an HRR selecting secp256r1, the client sends ClientHello2
