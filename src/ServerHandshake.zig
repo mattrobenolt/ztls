@@ -244,6 +244,13 @@ retry_selected_group: ?NamedGroup = null,
 /// PskLookup outlives the handshake).
 selected_psk: ?PskEntry = null,
 selected_psk_index: u16 = 0,
+/// Early traffic (0-RTT) receive RecordLayer, installed when the client
+/// offers early_data and a PSK is selected. RFC 8446 §4.2.10, §7.1.
+early_rx: ?RecordLayer = null,
+/// max_early_data_size from the selected PSK's ticket policy. The server
+/// rejects early data exceeding this limit.
+early_data_limit: ?u32 = null,
+early_data_received: u32 = 0,
 /// Caller-configured PSK lookup (from Config.psk_lookup). Carried on state
 /// so processClientHelloMessage can use it.
 psk_lookup: ?PskLookup = null,
@@ -651,6 +658,31 @@ fn processClientHelloMessage(
             if (try selectPsk(ch, ch_msg, lookup)) |sel| {
                 self.selected_psk = sel.entry;
                 self.selected_psk_index = @intCast(sel.identity_index);
+                // 0-RTT (RFC 8446 §4.2.10): if the client offered early_data,
+                // install the early traffic RX key for decrypting 0-RTT records.
+                // The early traffic secret uses Hash(ClientHello) as the
+                // transcript hash (the full CH, including the binder).
+                if (ch.offered_early_data) {
+                    self.early_data_limit = null; // set from ticket policy if available
+                    switch (sel.entry.cipher_suite) {
+                        .aes_128_gcm_sha256, .chacha20_poly1305_sha256 => {
+                            const H = hkdf.HkdfSha256;
+                            const early = H.pskEarlySecret(sel.entry.psk);
+                            var th: H.TranscriptHash = undefined;
+                            Sha256.hash(ch_msg, &th.data, .{});
+                            const early_traffic = H.clientEarlyTrafficSecret(early, &th);
+                            self.early_rx = try H.makeRecordLayer(sel.entry.cipher_suite, early_traffic);
+                        },
+                        .aes_256_gcm_sha384 => {
+                            const H = hkdf.HkdfSha384;
+                            const early = H.pskEarlySecret(sel.entry.psk);
+                            var th: H.TranscriptHash = undefined;
+                            Sha384.hash(ch_msg, &th.data, .{});
+                            const early_traffic = H.clientEarlyTrafficSecret(early, &th);
+                            self.early_rx = try H.makeRecordLayer(sel.entry.cipher_suite, early_traffic);
+                        },
+                    }
+                }
             }
         }
     }
@@ -1427,6 +1459,19 @@ fn handleWaitClientFinished(self: *ServerHandshake, record: []u8) HandleError!Ev
         .application_data => {},
         .handshake => return error.UnexpectedMessage,
         else => return error.UnexpectedRecord,
+    }
+
+    // 0-RTT early data (RFC 8446 §4.2.10): if the client offered early_data
+    // and a PSK was selected, try decrypting with the early traffic key first.
+    // If that succeeds and the inner type is application_data, surface it as
+    // 0-RTT. If it fails, fall through to the handshake key (normal flight).
+    if (self.early_rx) |*early_rx| {
+        if (handshake.decryptProtected(early_rx, record)) |early_dec| {
+            if (early_dec.content_type == .application_data) {
+                self.post_handshake_count = 0;
+                return .{ .application_data = early_dec.content };
+            }
+        } else |_| {}
     }
 
     const dec = handshake.decryptProtected(&self.rx, record) catch |err| {
@@ -3792,7 +3837,7 @@ test "selectPsk: verifies the binder for a matching PSK identity" {
     ticket.psk.appendSliceAssumeCapacity(&psk.data);
 
     var out: [1024]u8 = undefined;
-    const record = try client.startWithPsk(&ticket, &out);
+    const record = try client.startWithPsk(&ticket, &out, false);
     const ch_msg = record[frame.header_len..];
     const parsed = try client_hello.parse(ch_msg);
 
@@ -3832,7 +3877,7 @@ test "selectPsk: returns null when the PSK binder does not verify" {
     ticket.identity.appendSliceAssumeCapacity(&identity);
     ticket.psk.appendSliceAssumeCapacity(&wrong_psk);
     var out: [1024]u8 = undefined;
-    const record = try client.startWithPsk(&ticket, &out);
+    const record = try client.startWithPsk(&ticket, &out, false);
     const ch_msg = record[frame.header_len..];
     const parsed = try client_hello.parse(ch_msg);
 
@@ -3891,7 +3936,7 @@ test "in-memory PSK resumption reaches app data" {
     ticket.identity.appendSliceAssumeCapacity(&identity);
     ticket.psk.appendSliceAssumeCapacity(&psk.data);
     var client_out: [4096]u8 = undefined;
-    const ch_record = try client.startWithPsk(&ticket, &client_out);
+    const ch_record = try client.startWithPsk(&ticket, &client_out, false);
     client.completeWrite();
 
     const Lookup = struct {
