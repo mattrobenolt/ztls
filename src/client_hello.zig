@@ -366,6 +366,7 @@ pub fn encodeWithPsk(
     identity: []const u8,
     obfuscated_ticket_age: u32,
     binder_len: u8,
+    offer_early_data: bool,
 ) (error{ BufferTooShort, ServerNameTooLong, IdentityTooLong } || AlpnError)!PskEncodeResult {
     if (server_name) |name| if (name.len > 253) return error.ServerNameTooLong;
     if (identity.len > 256) return error.IdentityTooLong;
@@ -384,7 +385,9 @@ pub fn encodeWithPsk(
 
     const base_ext_len = try extensionsLen(server_name, alpn_protocols, include_p256, include_p384);
     // base_ext_len already includes psk_key_exchange_modes (added in slice E).
-    const ext_len = base_ext_len + psk_ext_len;
+    // early_data ext (if offered): 4 bytes (ext header + 0-length ext_data).
+    const early_data_ext_len: usize = if (offer_early_data) 4 else 0;
+    const ext_len = base_ext_len + early_data_ext_len + psk_ext_len;
     const encoded_len = handshake_header_len + body_fixed_len + ext_len;
     if (out.len < encoded_len) return error.BufferTooShort;
 
@@ -475,6 +478,13 @@ pub fn encodeWithPsk(
     w.append(u16, 2); // ext_data len
     w.append(u8, 1); // list len
     w.append(PskKeyExchangeMode, psk_mode);
+
+    // early_data (RFC 8446 §4.2.10) — empty ext_data, offered when the
+    // caller opts in to 0-RTT. Must precede pre_shared_key (which is last).
+    if (offer_early_data) {
+        w.append(ExtensionType, .early_data);
+        w.append(u16, 0);
+    }
 
     // pre_shared_key (RFC 8446 §4.2.11) — MUST be the last extension.
     w.append(ExtensionType, .pre_shared_key);
@@ -1065,6 +1075,7 @@ test "encodeWithPsk: pre_shared_key is last, binder prefix and offset are correc
         &identity,
         0x11223344,
         32,
+        false,
     );
     try testing.expect(r.msg.len > 0);
 
@@ -1119,6 +1130,7 @@ test "parse: ClientHello with pre_shared_key round-trips" {
         &identity,
         0x11223344,
         32,
+        false,
     );
     const parsed = try parse(r.msg);
     try testing.expect(parsed.psk_ext != null);

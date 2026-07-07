@@ -478,6 +478,10 @@ client_credentials: ?ClientCredentials = null,
 /// caller passed to startWithPsk, which must outlive the handshake.
 offered_psk: ?[]const u8 = null,
 offered_psk_cipher_suite: CipherSuite = .aes_128_gcm_sha256,
+/// Early traffic (0-RTT) RecordLayer for sending data before the server
+/// Finished, derived from the PSK early secret + the ClientHello transcript.
+/// null when 0-RTT is not offered. RFC 8446 §4.2.10, §7.1.
+early_tx: ?RecordLayer = null,
 /// The cipher suite field is needed to pick the right HKDF hash for the early
 /// secret; it must match the negotiated suite for resumption.
 /// Transcript hash through the server Finished. Client-auth messages are sent
@@ -537,7 +541,9 @@ pub fn completeWrite(self: *ClientHandshake) void {
     self.pending_write.clear();
 }
 
-pub const StartError = error{ BufferTooShort, ServerNameTooLong, IdentityTooLong } || AlpnError;
+// ziglint-ignore: Z024, Z015
+pub const StartError = error{ BufferTooShort, ServerNameTooLong, IdentityTooLong } ||
+    AlpnError || aead.Error;
 
 /// Provide caller-owned storage for reassembling handshake messages that span
 /// encrypted records (large certificate chains, fragmented flights). Without
@@ -613,6 +619,7 @@ pub fn startWithPsk(
     self: *ClientHandshake,
     ticket: *const SessionTicket,
     out: []u8,
+    offer_early_data: bool,
 ) StartError![]const u8 {
     assert(self.state == .start);
     if (out.len < frame.header_len) return error.BufferTooShort;
@@ -637,6 +644,7 @@ pub fn startWithPsk(
         // just ticket_age_add.
         ticket.ticket_age_add,
         binder_len,
+        offer_early_data,
     );
     const ch = r.msg;
 
@@ -674,6 +682,34 @@ pub fn startWithPsk(
     // SessionTicket, which must outlive the handshake.
     self.offered_psk = psk;
     self.offered_psk_cipher_suite = ticket.cipher_suite;
+
+    // 0-RTT (RFC 8446 §4.2.10, §7.1): if the caller opted in and the ticket
+    // permits early data, derive the client_early_traffic_secret over the
+    // FULL ClientHello transcript and install an early-traffic RecordLayer.
+    // The caller uses sendEarlyData() to send 0-RTT data before the server
+    // Finished. Replay risk: 0-RTT data is replayable; the caller is
+    // responsible for replay-safe policy (disabled by default).
+    if (offer_early_data and ticket.max_early_data_size != null) {
+        switch (ticket.cipher_suite) {
+            .aes_128_gcm_sha256, .chacha20_poly1305_sha256 => {
+                const H = hkdf.HkdfSha256;
+                const early = H.pskEarlySecret(psk);
+                var th: H.TranscriptHash = undefined;
+                Sha256.hash(ch, &th.data, .{});
+                const early_traffic = H.clientEarlyTrafficSecret(early, &th);
+                self.early_tx = try H.makeRecordLayer(ticket.cipher_suite, early_traffic);
+            },
+            .aes_256_gcm_sha384 => {
+                const H = hkdf.HkdfSha384;
+                const early = H.pskEarlySecret(psk);
+                var th: H.TranscriptHash = undefined;
+                Sha384.hash(ch, &th.data, .{});
+                const early_traffic = H.clientEarlyTrafficSecret(early, &th);
+                self.early_tx = try H.makeRecordLayer(ticket.cipher_suite, early_traffic);
+            },
+        }
+    }
+
     self.injectClientHello(ch);
     self.pending_write.mark();
     return out[0 .. frame.header_len + ch.len];
@@ -905,6 +941,20 @@ pub fn sendApplicationData(
     out: []u8,
 ) SendError![]const u8 {
     return handshake.sendApplicationData(self, plaintext, out);
+}
+
+/// Send 0-RTT early data, encrypted under the client_early_traffic_secret.
+/// Only valid after startWithPsk(..., offer_early_data=true) and before the
+/// server Finished is verified. The caller MUST ensure 0-RTT is replay-safe;
+/// 0-RTT data is not forward-secret and can be replayed by a network attacker.
+/// RFC 8446 §4.2.10, §7.1. Returns the encrypted record (then completeWrite).
+pub fn sendEarlyData(
+    self: *ClientHandshake,
+    plaintext: []const u8,
+    out: []u8,
+) RecordLayer.EncryptError![]const u8 {
+    if (self.early_tx == null) return error.BufferTooShort; // no early data offered
+    return self.early_tx.?.encrypt(.application_data, plaintext, out);
 }
 
 // ziglint-ignore: Z015 -- SendError is a public error-set alias.
@@ -3186,7 +3236,7 @@ test "startWithPsk: binder matches an independent HMAC over the prefix" {
     ticket.psk.appendSliceAssumeCapacity(&psk.data);
 
     var out: [1024]u8 = undefined;
-    const record = try hs.startWithPsk(&ticket, &out);
+    const record = try hs.startWithPsk(&ticket, &out, false);
     const ch = record[frame.header_len..];
 
     // Re-derive the binder independently over the prefix (everything before
