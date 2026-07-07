@@ -14,62 +14,52 @@ const SignatureScheme = @import("../signature_scheme.zig").SignatureScheme;
 const backend_aws_lc = @import("backend_aws_lc.zig");
 const backend_openssl = @import("backend_openssl.zig");
 
-pub const Backend = enum {
-    openssl,
-    aws_lc,
-    boringssl,
+// Backend kind enum is emitted into `build_options` by build.zig (see
+// `build.Backend`). Field names are the wire strings, so @tagName round-trips
+// to the CLI/metadata value. `boringssl` is a placeholder for a backend that is
+// not yet implemented; build.zig rejects selecting it.
 
-    pub fn isLibcryptoFamily(comptime self: Backend) bool {
-        return switch (self) {
-            .openssl, .aws_lc, .boringssl => true,
-        };
-    }
-
-    pub fn name(comptime self: Backend) []const u8 {
-        return switch (self) {
-            .openssl => "openssl",
-            .aws_lc => "aws-lc",
-            .boringssl => "boringssl",
-        };
-    }
-};
-
-pub const active: Backend = parse(build_options.crypto_backend) orelse
-    @compileError("unsupported crypto backend: " ++ build_options.crypto_backend);
+pub const active = build_options.crypto_backend;
 
 const x25519_impl = switch (active) {
     .openssl => backend_openssl,
-    .aws_lc => backend_aws_lc,
+    .@"aws-lc" => backend_aws_lc,
     .boringssl => @compileError("BoringSSL backend not yet implemented"),
 };
 
 const p256_impl = switch (active) {
     .openssl => backend_openssl,
-    .aws_lc => backend_aws_lc,
+    .@"aws-lc" => backend_aws_lc,
     .boringssl => @compileError("BoringSSL backend not yet implemented"),
 };
 
 const p384_impl = switch (active) {
     .openssl => backend_openssl,
-    .aws_lc => backend_aws_lc,
+    .@"aws-lc" => backend_aws_lc,
     .boringssl => @compileError("BoringSSL backend not yet implemented"),
 };
 
 const aead_impl = switch (active) {
     .openssl => backend_openssl,
-    .aws_lc => backend_aws_lc,
+    .@"aws-lc" => backend_aws_lc,
     .boringssl => @compileError("BoringSSL backend not yet implemented"),
 };
 
 const sign_impl = switch (active) {
     .openssl => backend_openssl,
-    .aws_lc => backend_aws_lc,
+    .@"aws-lc" => backend_aws_lc,
+    .boringssl => @compileError("BoringSSL backend not yet implemented"),
+};
+
+const kem_impl = switch (active) {
+    .openssl => backend_openssl,
+    .@"aws-lc" => backend_aws_lc,
     .boringssl => @compileError("BoringSSL backend not yet implemented"),
 };
 
 pub const capabilities = switch (active) {
     .openssl => backend_openssl.capabilities,
-    .aws_lc => backend_aws_lc.capabilities,
+    .@"aws-lc" => backend_aws_lc.capabilities,
     .boringssl => @compileError("BoringSSL backend not yet implemented"),
 };
 
@@ -281,28 +271,16 @@ pub const sign = struct {
     }
 };
 
-fn parse(comptime name_: []const u8) ?Backend {
-    if (std.mem.eql(u8, name_, "openssl")) return .openssl;
-    if (std.mem.eql(u8, name_, "aws-lc")) return .aws_lc;
-    if (std.mem.eql(u8, name_, "boringssl")) return .boringssl;
-    return null;
-}
-
 // docs/research/PROVIDER_INTERFACE.md §1 — current production backend is
 // OpenSSL/libcrypto; AWS-LC and BoringSSL remain named libcrypto-family targets,
-// not runtime claims.
-test "backend family is explicit" {
-    try testing.expectEqualStrings(build_options.crypto_backend, active.name());
-    try testing.expect(active.isLibcryptoFamily());
-    inline for (@typeInfo(Backend).@"enum".fields) |field| {
-        const backend: Backend = @enumFromInt(field.value);
-        try testing.expectEqual(backend, parse(backend.name()).?);
-    }
-    try testing.expect(Backend.openssl.isLibcryptoFamily());
-    try testing.expect(Backend.aws_lc.isLibcryptoFamily());
-    try testing.expect(Backend.boringssl.isLibcryptoFamily());
-    try testing.expectEqualStrings("openssl", Backend.openssl.name());
-    try testing.expectEqualStrings("aws-lc", Backend.aws_lc.name());
+// not runtime claims. The backend kind is chosen in build.zig and emitted as a
+// typed build_option, so `active` is already a typed enum value here — no
+// string parse to validate. BoringSSL is a non-implemented placeholder field.
+test "active backend is a buildable libcrypto-family member" {
+    try testing.expect(active == .openssl or active == .@"aws-lc");
+    // field names are the wire strings, so @tagName round-trips to the CLI value
+    try testing.expectEqualStrings("openssl", @tagName(@as(@TypeOf(active), .openssl)));
+    try testing.expectEqualStrings("aws-lc", @tagName(@as(@TypeOf(active), .@"aws-lc")));
 }
 
 // RFC 8446 §9.1 — TLS 1.3 endpoints need at least one mutually supported
@@ -321,7 +299,7 @@ test "x25519 handle shape matches active backend" {
     const evp_pointer_size = @sizeOf(*backend_openssl.pkey);
     switch (active) {
         .openssl => try testing.expectEqual(evp_pointer_size, @sizeOf(x25519.pkey)),
-        .aws_lc => try testing.expect(@sizeOf(x25519.pkey) > evp_pointer_size),
+        .@"aws-lc" => try testing.expect(@sizeOf(x25519.pkey) > evp_pointer_size),
         .boringssl => unreachable,
     }
 }
@@ -338,7 +316,7 @@ test "aead context shape matches active backend" {
             @sizeOf(backend_openssl.AeadContext),
             @sizeOf(aead.Context),
         ),
-        .aws_lc => try testing.expect(
+        .@"aws-lc" => try testing.expect(
             @sizeOf(aead.Context) != @sizeOf(backend_openssl.AeadContext),
         ),
         .boringssl => unreachable,
@@ -346,7 +324,7 @@ test "aead context shape matches active backend" {
 }
 
 test "aws-lc aead deinit clears inline context" {
-    if (active != .aws_lc) return error.SkipZigTest;
+    if (active != .@"aws-lc") return error.SkipZigTest;
 
     const key: [16]u8 = @splat(0xab);
     var ctx = try backend_aws_lc.aeadInit(.aes_128_gcm_sha256, &key);

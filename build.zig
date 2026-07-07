@@ -2,10 +2,21 @@ const std = @import("std");
 const Build = std.Build;
 const Target = std.Target;
 const builtin = @import("builtin");
+const panic = std.debug.panic;
 
 const bench_mod = @import("src/build/bench.zig");
 const examples_mod = @import("src/build/examples.zig");
 const tests = @import("src/build/tests.zig");
+
+/// libcrypto-family backend kind. Field names are the wire strings used on the
+/// CLI and in metadata, so @tagName round-trips to -Dcrypto-backend=... values.
+/// `boringssl` exists only for exhaustive switch arms; build() rejects selecting
+/// it until the backend is implemented.
+pub const Backend = enum {
+    openssl,
+    @"aws-lc",
+    boringssl,
+};
 
 fn nativeTarget() Target.Query {
     var query: Target.Query = .{ .cpu_model = .native };
@@ -28,21 +39,24 @@ pub fn build(b: *Build) void {
     else
         b.graph.env_map;
     const env_crypto_backend = env_map.get("ZTLS_CRYPTO_BACKEND") orelse "";
-    const crypto_backend = b.option(
+    const crypto_backend_str = b.option(
         []const u8,
         "crypto-backend",
         "libcrypto-family backend to compile: openssl, aws-lc",
     ) orelse if (env_crypto_backend.len > 0) env_crypto_backend else "openssl";
-    if (!std.mem.eql(u8, crypto_backend, "openssl") and
-        !std.mem.eql(u8, crypto_backend, "aws-lc"))
-    {
-        std.debug.panic(
+    const crypto_backend: Backend = std.meta.stringToEnum(Backend, crypto_backend_str) orelse
+        panic(
             "unsupported -Dcrypto-backend={s}; supported: openssl, aws-lc",
-            .{crypto_backend},
+            .{crypto_backend_str},
+        );
+    if (crypto_backend == .boringssl) {
+        panic(
+            "BoringSSL backend not yet implemented; use openssl or aws-lc",
+            .{},
         );
     }
     const build_options = b.addOptions();
-    build_options.addOption([]const u8, "crypto_backend", crypto_backend);
+    build_options.addOption(Backend, "crypto_backend", crypto_backend);
 
     const mod = b.addModule("ztls", .{
         .root_source_file = b.path("src/root.zig"),

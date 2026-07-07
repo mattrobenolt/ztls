@@ -486,7 +486,7 @@ test "decrypt: failed auth exposes backend failure buffer behavior" {
                 inner[plaintext.len],
             );
         },
-        .aws_lc => {
+        .@"aws-lc" => {
             // AWS-LC EVP_AEAD promises to zero output on authentication failure.
             for (inner) |byte| try testing.expectEqual(@as(u8, 0), byte);
         },
