@@ -63,6 +63,10 @@ pub const Signer = signature.Signer;
 pub const PskEntry = struct {
     psk: []const u8,
     cipher_suite: CipherSuite,
+    /// max_early_data_size from the ticket's early_data extension, or null if
+    /// the ticket does not permit 0-RTT. The server rejects early data
+    /// exceeding this limit. RFC 8446 §4.2.10, §4.6.1.
+    max_early_data_size: ?u32 = null,
 };
 pub const PskLookup = struct {
     context: *anyopaque,
@@ -663,7 +667,7 @@ fn processClientHelloMessage(
                 // The early traffic secret uses Hash(ClientHello) as the
                 // transcript hash (the full CH, including the binder).
                 if (ch.offered_early_data) {
-                    self.early_data_limit = null; // set from ticket policy if available
+                    self.early_data_limit = sel.entry.max_early_data_size;
                     switch (sel.entry.cipher_suite) {
                         .aes_128_gcm_sha256, .chacha20_poly1305_sha256 => {
                             const H = hkdf.HkdfSha256;
@@ -1474,6 +1478,13 @@ fn handleWaitClientFinished(self: *ServerHandshake, record: []u8) HandleError!Ev
     if (self.early_rx) |*early_rx| {
         if (handshake.decryptProtected(early_rx, record)) |early_dec| {
             if (early_dec.content_type == .application_data) {
+                // RFC 8446 §4.2.10: reject early data exceeding the ticket's
+                // max_early_data_size.
+                if (self.early_data_limit) |limit| {
+                    self.early_data_received +|= @intCast(early_dec.content.len);
+                    if (self.early_data_received > limit)
+                        return error.UnexpectedMessage;
+                }
                 self.post_handshake_count = 0;
                 return .{ .application_data = early_dec.content };
             }
