@@ -79,7 +79,7 @@ X25519 and P-256 ECDHE, three mandatory cipher suites, certificate-authenticated
 server flight with client verification gates, application data, alerts,
 `close_notify`,
 post-handshake KeyUpdate (both directions, flood-bounded, record-boundary
-enforced). PSK/session resumption is implemented through slice D: the client
+enforced). PSK/session resumption is implemented: the client
 derives the resumption_master_secret over the live transcript (RFC 8448 §4
 vector-proven), surfaces NewSessionTicket events, and produces a caller-storable
 SessionTicket (identity + PSK + age/lifetime via ArrayBuffer); the client emits
@@ -87,8 +87,11 @@ a PSK ClientHello (pre_shared_key + psk_key_exchange_modes + binder over the
 truncated transcript prefix); the server verifies the binder via a caller-owned
 PskLookup and selects an identity; both sides use the PSK as the early secret
 in the key schedule (psk_dhe_ke, PSK + ECDHE). An in-memory PSK resumption
-handshake completes to connected with an application-data round trip. OpenSSL
-resumption interop is not yet wired (slice E). 0-RTT early data is #3.
+handshake completes to connected with an application-data round trip, and
+OpenSSL resumption interop is CI-gated: a ztls client captures an NST from
+openssl s_server on connection 1 and resumes with it on connection 2. The
+client state machine handles the PSK resumption flight (EE + Finished, no
+server Certificate/CertificateVerify). 0-RTT early data is #3.
 
 **Current evidence (real, and good):**
 
