@@ -29,6 +29,7 @@ Rules:
 - If evidence changed, say exactly which readiness/provenance docs need updates.
 - Fuzz crashes are evidence of a bug, not closure proof. A crash promoted to a regression test with an RFC/invariant citation advances the issue; closure still requires the full evidence picture. `fuzz-engineer` owns the infra, not the closure call.
 - Do not invent status. Point to file paths, tests, commands, issue numbers, and runner summary counts.
+- For any "feature X is implemented" claim, verify against the RFC's COMPLETE required message/flight set for that feature, not just the implemented subset. A feature whose core path exists but is missing a required RFC message (e.g. EndOfEarlyData for 0-RTT per RFC 8446 §4.5, even in psk_dhe_ke mode) is PARTIAL, not PROVEN. Do not infer a mode-specific exception ("psk_dhe_ke has no EndOfEarlyData") without citing the RFC text that grants it — read the RFC and confirm.
 
 Output:
 - Concise findings grouped by severity: blocker, required fix, optional cleanup.
