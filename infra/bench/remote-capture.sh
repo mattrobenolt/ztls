@@ -58,9 +58,9 @@ while [[ $# -gt 0 ]]; do
 done
 
 case "${crypto_backend}" in
-  openssl|aws-lc) ;;
+  openssl|aws-lc|boringssl) ;;
   *)
-    echo "unsupported --crypto-backend=${crypto_backend}; expected openssl or aws-lc" >&2
+    echo "unsupported --crypto-backend=${crypto_backend}; expected openssl, aws-lc, or boringssl" >&2
     exit 2
     ;;
 esac

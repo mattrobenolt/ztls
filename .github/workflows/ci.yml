@@ -17,3 +17,15 @@ jobs:
       - uses: DeterminateSystems/determinate-nix-action@4eea0b33e3d1f02ecfe37cf16e7204c424009606 # v3.21.0
       - name: Run checks
         run: nix develop --command just ci
+
+  test-boringssl:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - uses: DeterminateSystems/determinate-nix-action@4eea0b33e3d1f02ecfe37cf16e7204c424009606 # v3.21.0
+      - name: Run BoringSSL backend checks
+        run: nix develop .#boringssl --command just check-backend-boringssl

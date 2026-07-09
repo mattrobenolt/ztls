@@ -73,18 +73,30 @@ if [[ -z "${openssl_pkg_config_path}" ]]; then
 fi
 
 build_ztls() {
-  if [[ "${crypto_backend}" == "aws-lc" ]]; then
-    aws_lc_pkg_config_path="${ZTLS_AWS_LC_PKG_CONFIG_PATH:-}"
-    if [[ -z "${aws_lc_pkg_config_path}" ]]; then
-      aws_lc_dev=$(nix build --no-link --print-out-paths nixpkgs#aws-lc.dev)
-      aws_lc_pkg_config_path="${aws_lc_dev}/lib/pkgconfig"
-    fi
-    PKG_CONFIG_PATH="${aws_lc_pkg_config_path}${PKG_CONFIG_PATH:+:${PKG_CONFIG_PATH}}" \
-      zig build -Dcrypto-backend=aws-lc bench-bin >/dev/null
-  else
-    PKG_CONFIG_PATH="${openssl_pkg_config_path}${PKG_CONFIG_PATH:+:${PKG_CONFIG_PATH}}" \
-      zig build -Dcrypto-backend=openssl bench-bin >/dev/null
-  fi
+  case "${crypto_backend}" in
+    aws-lc)
+      aws_lc_pkg_config_path="${ZTLS_AWS_LC_PKG_CONFIG_PATH:-}"
+      if [[ -z "${aws_lc_pkg_config_path}" ]]; then
+        aws_lc_dev=$(nix build --no-link --print-out-paths nixpkgs#aws-lc.dev)
+        aws_lc_pkg_config_path="${aws_lc_dev}/lib/pkgconfig"
+      fi
+      PKG_CONFIG_PATH="${aws_lc_pkg_config_path}${PKG_CONFIG_PATH:+:${PKG_CONFIG_PATH}}" \
+        zig build -Dcrypto-backend=aws-lc bench-bin >/dev/null
+      ;;
+    boringssl)
+      boringssl_pkg_config_path="${ZTLS_BORINGSSL_PKG_CONFIG_PATH:-}"
+      if [[ -z "${boringssl_pkg_config_path}" ]]; then
+        echo "ZTLS_BORINGSSL_PKG_CONFIG_PATH is not set; run inside 'nix develop .#boringssl'" >&2
+        exit 1
+      fi
+      PKG_CONFIG_PATH="${boringssl_pkg_config_path}${PKG_CONFIG_PATH:+:${PKG_CONFIG_PATH}}" \
+        zig build -Dcrypto-backend=boringssl bench-bin >/dev/null
+      ;;
+    *)
+      PKG_CONFIG_PATH="${openssl_pkg_config_path}${PKG_CONFIG_PATH:+:${PKG_CONFIG_PATH}}" \
+        zig build -Dcrypto-backend=openssl bench-bin >/dev/null
+      ;;
+  esac
 }
 
 build_openssl() {

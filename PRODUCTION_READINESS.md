@@ -558,17 +558,33 @@ each passing the same correctness and interop gates.
   signature paths still delegate through OpenSSL-compatible wrappers while
   linking AWS-LC libcrypto. This is a per-primitive smoke contract, not a
   Wycheproof matrix or divergent capability proof.
-- BoringSSL is a compile + primitive-test lane: `nix develop .#boringssl` +
-  `zig build test -Dcrypto-backend=boringssl` compiles and all 597 non-FIPS
-  tests pass (8 FIPS tests skip — BoringSSL has no FIPS variant). The BoringSSL
-  backend (`src/crypto/backend_boringssl.zig`) mirrors the AWS-LC backend:
-  X25519 via flat `curve25519.h`, AEAD via `EVP_AEAD` one-shot, EC/RSA/signature
-  via legacy EVP (BoringSSL has no provider API), KEM stubs (BoringSSL has
-  `NID_X25519MLKEM768` but no `EVP_PKEY_Q_keygen`). The same
-  `backend_primitive_tests.zig` vectors run under the BoringSSL lane.
-  Partial: no CI lane, no `just check-backend-boringssl` recipe, no
-  benchmark lane, no conformance runners, no tlsfuzzer smoke — these are
-  follow-up #63 slices. *(#63)*
+- BoringSSL is a compile + primitive-test + CI-gated lane: `nix develop
+  .#boringssl` + `zig build test -Dcrypto-backend=boringssl` compiles and all
+  597 non-FIPS tests pass (8 FIPS tests skip — BoringSSL has no FIPS variant).
+  `just check-backend-boringssl` builds, tests, produces the benchmark binary,
+  executes a one-row benchmark smoke, runs the in-memory example, builds the
+  conformance shims, and runs the TLS 1.3 tlsfuzzer smoke with BoringSSL
+  libcrypto linked; the recipe pins `PKG_CONFIG_PATH` to the BoringSSL
+  derivation and checks the resolved include and library paths in the build
+  log. A CI workflow lane (`.github/workflows/ci.yml` `test-boringssl` job)
+  runs `just check-backend-boringssl` under `nix develop .#boringssl` on
+  pushes/PRs. Benchmark scripts (`bench-capture.sh`, `bench-perf-row.sh`,
+  `bench-disasm-row.sh`, `remote-capture.sh`, `remote-perf-rows.sh`) accept
+  `boringssl` as a `--crypto-backend` value; BoringSSL ztls benchmark rows
+  are ztls-linked-only with OpenSSL libssl baselines kept explicit (no mixed
+  geomeans). The BoringSSL backend (`src/crypto/backend_boringssl.zig`)
+  mirrors the AWS-LC backend: X25519 via flat `curve25519.h`, AEAD via
+  `EVP_AEAD` one-shot, EC/RSA/signature via legacy EVP (BoringSSL has no
+  provider API), KEM stubs (BoringSSL has `NID_X25519MLKEM768` but no
+  `EVP_PKEY_Q_keygen`). The same `backend_primitive_tests.zig` vectors run
+  under the BoringSSL lane. The flake synthesizes both `libcrypto.pc` and
+  `libssl.pc` for BoringSSL (nixpkgs ships neither) and exports
+  `ZTLS_BORINGSSL_PKG_CONFIG_PATH` / `ZTLS_BORINGSSL_LIB_DIR` env vars in
+  `commonHook`. TLS-Anvil workflow matrices include `boringssl` alongside
+  `openssl` and `aws-lc` for both client and server scheduled/dispatch runs.
+  Partial: no completed BoringSSL TLS-Anvil capture yet — the workflow is
+  wired but unexecuted; BoringSSL benchmark captures are local smoke only
+  (no committed EC2 row-perf evidence). *(#63)*
 
 **Status:** `PARTIAL`
 
@@ -592,8 +608,9 @@ each passing the same correctness and interop gates.
   API in AWS-LC 5.0.0 headers). Honest residual: capability-layer evidence is
   the floor; external-runner FIPS conformance lane and full Wycheproof JSON-
   harness breadth are still absent. BoringSSL backend now compiles and passes
-  primitive tests (#63 foundational slice); CI lane, conformance runners, and
-  benchmarks are follow-up #63 slices. *(#60, #63)*
+  primitive tests with a CI-gated lane and tlsfuzzer smoke (#63 CI/follow-up
+  slice); no completed BoringSSL TLS-Anvil capture yet — the workflow is
+  wired but unexecuted. *(#60, #63)*
 - **aws-lc has a real test lane but not a full backend matrix.** The
   `-Dcrypto-backend=aws-lc` build links AWS-LC libcrypto and runs the unit suite;
   X25519 uses AWS-LC's flat `curve25519.h` API, and AEAD uses AWS-LC's
@@ -708,8 +725,9 @@ each passing the same correctness and interop gates.
   asserts + divergence tests under the default backend); the certificate-
   chain ownership decision is recorded as keep ztls/std (see the cert-chain
   ownership gap above). BoringSSL backend now compiles and passes primitive
-  tests (#63 foundational slice); CI lane, conformance runners, benchmarks,
-  and a `just check-backend-boringssl` recipe are follow-up #63 slices. *(#60, #63)*
+  tests with a CI-gated lane, `just check-backend-boringssl` recipe,
+  benchmark lane, and tlsfuzzer smoke (#63 CI/follow-up slice); no completed
+  BoringSSL TLS-Anvil capture yet — the workflow is wired but unexecuted. *(#60, #63)*
 
 ---
 

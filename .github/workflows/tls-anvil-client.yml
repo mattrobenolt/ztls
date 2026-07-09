@@ -9,6 +9,7 @@ on:
         options:
           - openssl
           - aws-lc
+          - boringssl
         default: openssl
   schedule:
     # Weekly Thursday 06:43 UTC. This is real suite evidence, not PR smoke.
@@ -29,7 +30,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        crypto_backend: ${{ fromJSON(github.event_name == 'workflow_dispatch' && format('["{0}"]', github.event.inputs.crypto_backend) || '["openssl","aws-lc"]') }}
+        crypto_backend: ${{ fromJSON(github.event_name == 'workflow_dispatch' && format('["{0}"]', github.event.inputs.crypto_backend) || '["openssl","aws-lc","boringssl"]') }}
     env:
       CRYPTO_BACKEND: ${{ matrix.crypto_backend }}
       RUN_DIR: zig-out/anvil/client/ci-${{ github.run_id }}
@@ -47,6 +48,8 @@ jobs:
             export ZTLS_CRYPTO_BACKEND="$CRYPTO_BACKEND"
             if [ "$CRYPTO_BACKEND" = aws-lc ]; then
               export PKG_CONFIG_PATH="$ZTLS_AWS_LC_PKG_CONFIG_PATH${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+            elif [ "$CRYPTO_BACKEND" = boringssl ]; then
+              export PKG_CONFIG_PATH="$ZTLS_BORINGSSL_PKG_CONFIG_PATH${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
             fi
             cd conformance
             zig build -Dcrypto-backend="$CRYPTO_BACKEND"
@@ -62,6 +65,8 @@ jobs:
             export ZTLS_CRYPTO_BACKEND="$CRYPTO_BACKEND"
             if [ "$CRYPTO_BACKEND" = aws-lc ]; then
               export PKG_CONFIG_PATH="$ZTLS_AWS_LC_PKG_CONFIG_PATH${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+            elif [ "$CRYPTO_BACKEND" = boringssl ]; then
+              export PKG_CONFIG_PATH="$ZTLS_BORINGSSL_PKG_CONFIG_PATH${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
             fi
             just conformance/ci
           '
@@ -74,6 +79,8 @@ jobs:
             export ZTLS_CRYPTO_BACKEND="$CRYPTO_BACKEND"
             if [ "$CRYPTO_BACKEND" = aws-lc ]; then
               export PKG_CONFIG_PATH="$ZTLS_AWS_LC_PKG_CONFIG_PATH${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+            elif [ "$CRYPTO_BACKEND" = boringssl ]; then
+              export PKG_CONFIG_PATH="$ZTLS_BORINGSSL_PKG_CONFIG_PATH${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
             fi
             cd conformance
             just anvil-ci-client "$RUN_DIR" 5400
