@@ -344,12 +344,13 @@ pub fn encode(
     cipher_suite: CipherSuite,
     public_key: x25519.PublicKey,
 ) EncodeError![]const u8 {
+    const ks: KeyShare = .{ .x25519 = public_key };
     return encodeWithKeyShare(
         out,
         random,
         session_id_echo,
         cipher_suite,
-        .{ .x25519 = public_key },
+        &ks,
     );
 }
 
@@ -358,7 +359,7 @@ pub fn encodeWithKeyShare(
     random: [32]u8,
     session_id_echo: []const u8,
     cipher_suite: CipherSuite,
-    key_share: KeyShare,
+    key_share: *const KeyShare,
 ) EncodeError![]const u8 {
     if (session_id_echo.len > 32) return error.BufferTooShort;
     const key = key_share.bytes();
@@ -399,7 +400,7 @@ pub fn encodeWithKeyShareAndPsk(
     random: [32]u8,
     session_id_echo: []const u8,
     cipher_suite: CipherSuite,
-    key_share: KeyShare,
+    key_share: *const KeyShare,
     selected_identity: u16,
 ) EncodeError![]const u8 {
     if (session_id_echo.len > 32) return error.BufferTooShort;
@@ -443,13 +444,16 @@ pub fn encodeWithKeyShareAndPsk(
 ///
 /// RFC 8446 §4.1.3
 pub fn parse(msg: []const u8) ParseError!ServerHello {
-    return parseWithSessionIdEcho(msg, null);
+    var result: ServerHello = undefined;
+    try parseWithSessionIdEcho(msg, null, &result);
+    return result;
 }
 
 pub fn parseWithSessionIdEcho(
     msg: []const u8,
     expected_session_id: ?[]const u8,
-) ParseError!ServerHello {
+    out: *ServerHello,
+) ParseError!void {
     if (msg.len < 4) return error.UnexpectedEof;
     var r: wire.Reader = .init(msg);
 
@@ -613,7 +617,7 @@ pub fn parseWithSessionIdEcho(
     if (hasDowngradeSentinel(random)) return error.IllegalParameter;
     if (!got_key_share) return error.MissingExtension;
 
-    return .{
+    out.* = .{
         .cipher_suite = cipher_suite,
         .key_share = key_share,
         .selected_identity = selected_identity,
@@ -653,12 +657,13 @@ test "parse: accepts secp256r1 key_share" {
     var key: p256.PublicKey = .init(@splat(0x11));
     key.data[0] = 0x04;
     var out: [192]u8 = undefined;
+    const ks: KeyShare = .{ .secp256r1 = key };
     const msg = try encodeWithKeyShare(
         &out,
         @splat(0xab),
         &.{},
         .aes_128_gcm_sha256,
-        .{ .secp256r1 = key },
+        &ks,
     );
     const parsed = try parse(msg);
     try testing.expectEqual(.secp256r1, parsed.key_share.group());
@@ -670,12 +675,13 @@ test "parse: rejects compressed secp256r1 key_share" {
     var key: p256.PublicKey = .init(@splat(0x11));
     key.data[0] = 0x02;
     var out: [192]u8 = undefined;
+    const ks: KeyShare = .{ .secp256r1 = key };
     const msg = try encodeWithKeyShare(
         &out,
         @splat(0xab),
         &.{},
         .aes_128_gcm_sha256,
-        .{ .secp256r1 = key },
+        &ks,
     );
     try testing.expectError(error.UnsupportedKeyShareGroup, parse(msg));
 }
@@ -685,12 +691,13 @@ test "parse: accepts secp384r1 key_share" {
     var key: p384.PublicKey = .init(@splat(0x11));
     key.data[0] = 0x04;
     var out: [256]u8 = undefined;
+    const ks: KeyShare = .{ .secp384r1 = key };
     const msg = try encodeWithKeyShare(
         &out,
         @splat(0xab),
         &.{},
         .aes_128_gcm_sha256,
-        .{ .secp384r1 = key },
+        &ks,
     );
     const parsed = try parse(msg);
     try testing.expectEqual(.secp384r1, parsed.key_share.group());
@@ -702,12 +709,13 @@ test "parse: rejects compressed secp384r1 key_share" {
     var key: p384.PublicKey = .init(@splat(0x11));
     key.data[0] = 0x02;
     var out: [256]u8 = undefined;
+    const ks: KeyShare = .{ .secp384r1 = key };
     const msg = try encodeWithKeyShare(
         &out,
         @splat(0xab),
         &.{},
         .aes_128_gcm_sha256,
-        .{ .secp384r1 = key },
+        &ks,
     );
     try testing.expectError(error.UnsupportedKeyShareGroup, parse(msg));
 }
@@ -962,7 +970,8 @@ test "parse: rejects SSLv3-or-lower legacy version" {
 test "parse: rejects mismatched session id echo" {
     var out: [128]u8 = undefined;
     const msg = try encode(&out, @splat(0xab), &.{ 1, 2 }, .aes_128_gcm_sha256, .zero);
-    try testing.expectError(error.InvalidSessionIdEcho, parseWithSessionIdEcho(msg, &.{ 1, 3 }));
+    var result: ServerHello = undefined;
+    try testing.expectError(error.InvalidSessionIdEcho, parseWithSessionIdEcho(msg, &.{ 1, 3 }, &result));
 }
 
 // RFC 8446 §4.1.3 — TLS 1.3 ServerHello legacy_compression_method is zero.
@@ -1210,7 +1219,7 @@ test "KEM key_share round-trip: ServerHello encode → parse preserves 1120-byte
         @splat(0xab),
         &.{},
         .aes_128_gcm_sha256,
-        ks,
+        &ks,
     );
     // Verify the encoded key_share bytes match the original before parsing.
     // The key_share extension starts after the fixed ServerHello fields:

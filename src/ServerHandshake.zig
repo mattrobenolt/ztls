@@ -858,7 +858,7 @@ fn processClientHelloMessage(
             self.random.data,
             ch.legacy_session_id,
             suite,
-            server_key_share,
+            &server_key_share,
             self.selected_psk_index,
         )
     else
@@ -867,7 +867,7 @@ fn processClientHelloMessage(
             self.random.data,
             ch.legacy_session_id,
             suite,
-            server_key_share,
+            &server_key_share,
         );
     const header: frame.Header = .init(.handshake, @intCast(sh.len));
     header.write(out[0..frame.header_len]);
@@ -2604,9 +2604,11 @@ test "acceptClientHello: emits compatibility ChangeCipherSpec for non-empty lega
     try testing.expectEqual(.handshake, sh_hdr.content_type);
     const ccs_offset = frame.header_len + @as(usize, sh_hdr.length());
     try testing.expectEqual(ccs_offset + compatibility_ccs_len, written.len);
+    var sh_result: server_hello.ServerHello = undefined;
     _ = try server_hello.parseWithSessionIdEcho(
         written[frame.header_len..][0..sh_hdr.length()],
         &session_id,
+        &sh_result,
     );
 
     const ccs = written[ccs_offset..];

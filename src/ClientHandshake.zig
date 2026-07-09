@@ -1249,7 +1249,8 @@ pub fn processHelloRetryRequest(
 // ziglint-ignore: Z015 -- ServerHelloError is a public error-set alias.
 pub fn processServerHello(self: *ClientHandshake, msg: []const u8) ServerHelloError!void {
     assert(self.state == .wait_sh);
-    const sh = try server_hello.parseWithSessionIdEcho(msg, self.legacy_session_id.constSlice());
+    var sh: server_hello.ServerHello = undefined;
+    try server_hello.parseWithSessionIdEcho(msg, self.legacy_session_id.constSlice(), &sh);
     if (!self.offeredSuite(sh.cipher_suite)) return error.UnsupportedCipherSuite;
     if (!self.offered_groups.contains(sh.key_share.group())) return error.UnsupportedKeyShareGroup;
 
@@ -1969,12 +1970,13 @@ test "processServerHello: accepts secp256r1 key_share" {
     hs.injectClientHello(ch);
 
     var sh_buf: [192]u8 = undefined;
+    const server_ks: server_hello.KeyShare = .{ .secp256r1 = server_p256.public_key };
     const sh = try server_hello.encodeWithKeyShare(
         &sh_buf,
         @splat(0xab),
         &.{},
         .aes_128_gcm_sha256,
-        .{ .secp256r1 = server_p256.public_key },
+        &server_ks,
     );
     try hs.processServerHello(sh);
     try testing.expectEqual(.wait_ee, hs.state);
@@ -2003,12 +2005,13 @@ test "processServerHello: rejects invalid secp256r1 point" {
     hs.injectClientHello(ch);
 
     var sh_buf: [192]u8 = undefined;
+    const bad_ks: server_hello.KeyShare = .{ .secp256r1 = bad_p256 };
     const sh = try server_hello.encodeWithKeyShare(
         &sh_buf,
         @splat(0xab),
         &.{},
         .aes_128_gcm_sha256,
-        .{ .secp256r1 = bad_p256 },
+        &bad_ks,
     );
     try testing.expectError(error.IdentityElement, hs.processServerHello(sh));
     try testing.expectEqual(.illegal_parameter, alertForError(error.IdentityElement));
@@ -2023,12 +2026,13 @@ test "processServerHello: rejects unoffered secp256r1 key_share" {
     hs.injectClientHello(ch);
 
     var sh_buf: [192]u8 = undefined;
+    const server_ks: server_hello.KeyShare = .{ .secp256r1 = server_p256.public_key };
     const sh = try server_hello.encodeWithKeyShare(
         &sh_buf,
         @splat(0xab),
         &.{},
         .aes_128_gcm_sha256,
-        .{ .secp256r1 = server_p256.public_key },
+        &server_ks,
     );
     try testing.expectError(error.UnsupportedKeyShareGroup, hs.processServerHello(sh));
 }
@@ -3950,12 +3954,13 @@ test "processServerHello: post-HRR accepts matching ServerHello" {
 
     // Real ServerHello with secp256r1 key_share and the same cipher suite.
     var sh_buf: [192]u8 = undefined;
+    const server_ks: server_hello.KeyShare = .{ .secp256r1 = server_p256.public_key };
     const sh = try server_hello.encodeWithKeyShare(
         &sh_buf,
         @splat(0xab),
         &.{},
         .aes_128_gcm_sha256,
-        .{ .secp256r1 = server_p256.public_key },
+        &server_ks,
     );
     try hs.processServerHello(sh);
     try testing.expectEqual(.wait_ee, hs.state);
