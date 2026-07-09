@@ -199,6 +199,13 @@ provenance, or unclear ownership of generated files.
 - Keep functions short. If a function doesn't fit on a screen, it probably does
   too much.
 - Format with `zig fmt`. Non-negotiable.
+- `zig fmt` is necessary but NOT sufficient: it does not enforce line length
+  (`ziglint` Z024) or the `std-alias` ast-grep rules, and `just lint-fixtures`
+  rejects tracked binary fixtures (`.der`/`.bin`/`.sig` — embed DER via
+  `decode()` in `tests/fixtures/certificate_fixtures.zig` instead, as
+  `rsa_pss` does). Run `just lint` (full lint, not just `zig fmt --check`)
+  before committing, and `just ci` before pushing — a green `zig build test` +
+  `zig fmt --check` alone can still leave `just ci` red.
 
 ---
 
