@@ -78,15 +78,24 @@ test "ztls client resumes with OpenSSL s_server (PSK resumption)" {
     try runResumptionInterop(arena, cert_path, key_path, 19433);
 }
 
-// RFC 8446 §4.2.10 — ztls client sends 0-RTT early data to openssl s_server.
-// RFC 8446 §4.2.10, §7.1 — ztls client sends 0-RTT early data to openssl s_server.
-// The in-memory 0-RTT test passes; the OpenSSL interop fails with a decryption
-// error on the server side when reading early data. The early traffic secret
-// transcript hash (Hash(full ClientHello with binder)) is proven correct by
-// RFC 8448 §4 vectors and the in-memory test. The interop failure is likely
-// an obfuscated_ticket_age or PSK selection issue, not the transcript hash.
+// RFC 8446 §4.2.10, §4.5, §7.1 — ztls client sends 0-RTT early data to
+// openssl s_server. Connection 1 captures an NST with early_data; connection
+// 2 offers the ticket with early_data, sends 0-RTT data, then completes the
+// handshake (EndOfEarlyData + Finished). The server accepts the 0-RTT data
+// and responds to the GET request. See PRODUCTION_READINESS.md for status.
 test "ztls client sends 0-RTT early data to OpenSSL s_server" {
-    return error.SkipZigTest;
+    var arena_allocator: heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_allocator.deinit();
+    const arena = arena_allocator.allocator();
+
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const dir = try tmpDirPath(arena, &tmp);
+    const cert_path = try fs.path.join(arena, &.{ dir, "cert.pem" });
+    const key_path = try fs.path.join(arena, &.{ dir, "key.pem" });
+    try genCert(arena, cert_path, key_path);
+
+    try runEarlyDataInterop(arena, cert_path, key_path, 19434);
 }
 
 test "OpenSSL s_client interoperates with ztls server" {

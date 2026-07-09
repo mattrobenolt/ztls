@@ -69,21 +69,27 @@ exercised by the resumption flow below.
 
 ## 0-RTT / early data — #3
 
-**Prerequisites:** PSK/resumption (#2) complete; `early_data`
-extension; early traffic secret derivation; `end_of_early_data` message;
-anti-replay policy (single-use tickets and/or a bounded replay window). This is
-a **policy** decision as much as a protocol one — Sans-I/O ztls cannot own a
-global replay cache, so the anti-replay contract must be pushed to the caller
-and documented.
+**Status:** Partial. The 0-RTT accept-path is implemented: the client offers
+early_data + derives the client_early_traffic_secret + sends 0-RTT data
+(`sendEarlyData`); the server derives the early traffic key from the selected
+PSK + ClientHello transcript, decrypts 0-RTT records, and enforces
+max_early_data_size. The server emits the early_data extension in
+EncryptedExtensions when accepting (RFC 8446 §4.2.10). The client sends
+EndOfEarlyData under the early traffic key after the server Finished and before
+its own Finished when the server accepted, and does not send it when the server
+declined (RFC 8446 §4.5). The server expects and decrypts the client's
+EndOfEarlyData with early_rx before the client Finished. Reject-path tests cover
+max_early_data_size exceeded, no-PSK early data, server-declined 0-RTT, and
+client rejection of server-sent EndOfEarlyData. OpenSSL 0-RTT interop is
+CI-gated (ztls client → openssl s_server with `-early_data`).
 
-**Acceptance criteria:**
-- Documented anti-replay contract: what ztls enforces vs. what the embedder must
-  enforce. No "0-RTT is safe" claim without that boundary written down.
-- Accept/reject early data both interop-tested against OpenSSL.
-- Replay of early data is rejected per the documented policy and tested.
-
-This feature must not ship before its replay-safety boundary is written and
-reviewed.
+**Residual:**
+- Anti-replay is the caller's job: ztls does not own a global replay cache
+  (Sans-I/O cannot). The caller must implement replay-safe policy (single-use
+  tickets and/or a bounded replay window). No replay-of-early-data test exists
+  because ztls does not own a replay cache.
+- 0-RTT is disabled by default (`offer_early_data=false`).
+- TLS-Anvil/tlsfuzzer 0-RTT coverage is not yet CI-gated.
 
 ---
 

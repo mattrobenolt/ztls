@@ -104,6 +104,7 @@ pub fn sendKeyUpdate(
 pub const Type = enum(u8) {
     client_hello = 0x01,
     server_hello = 0x02,
+    end_of_early_data = 0x05,
     new_session_ticket = 0x04,
     encrypted_extensions = 0x08,
     certificate_request = 0x0d,

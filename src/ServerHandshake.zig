@@ -259,6 +259,10 @@ early_rx: ?RecordLayer = null,
 /// rejects early data exceeding this limit.
 early_data_limit: ?u32 = null,
 early_data_received: u32 = 0,
+/// RFC 8446 §4.5 — set when the client's EndOfEarlyData has been received
+/// and verified under the early traffic key. The server expects this before
+/// the client Finished when it accepted 0-RTT (early_rx != null).
+end_of_early_data_received: bool = false,
 /// Caller-configured PSK lookup (from Config.psk_lookup). Carried on state
 /// so processClientHelloMessage can use it.
 psk_lookup: ?PskLookup = null,
@@ -314,6 +318,7 @@ pub fn deinit(self: *ServerHandshake) void {
         .wait_client_finished, .connected => {
             self.rx.deinit();
             self.tx.deinit();
+            if (self.early_rx) |*early_rx| early_rx.deinit();
         },
         .wait_ch => {},
     }
@@ -640,6 +645,24 @@ pub fn acceptClientHello(
 /// Parse and process a complete ClientHello handshake message (4-byte header +
 /// body). Called by acceptClientHello (fast path from a single record) and by
 /// handleClientHelloRecord (after fragment reassembly).
+/// Clear 0-RTT/PSK selection state installed while inspecting a ClientHello.
+/// RFC 8446 §4.2.10/§4.6.1 — 0-RTT and PSK negotiation do not survive a
+/// HelloRetryRequest: the server sends HRR instead of a ServerHello, so any
+/// PSK selection and early-traffic key installed while examining ClientHello1
+/// MUST be discarded before waiting for ClientHello2. Without this, a
+/// ClientHello2 that offers no acceptable PSK could inherit a stale early_rx
+/// from ClientHello1. HRR + 0-RTT is out of scope (#1), but the reset is cheap
+/// and prevents a latent cross-flight state-pollution hazard.
+fn clearEarlyDataStateForRetry(self: *ServerHandshake) void {
+    if (self.early_rx) |*early_rx| early_rx.deinit();
+    self.early_rx = null;
+    self.early_data_limit = null;
+    self.early_data_received = 0;
+    self.end_of_early_data_received = false;
+    self.selected_psk = null;
+    self.selected_psk_index = 0;
+}
+
 fn processClientHelloMessage(
     self: *ServerHandshake,
     ch_msg: []const u8,
@@ -670,7 +693,7 @@ fn processClientHelloMessage(
                 // install the early traffic RX key for decrypting 0-RTT records.
                 // The early traffic secret uses Hash(ClientHello) as the
                 // transcript hash (the full CH, including the binder).
-                if (ch.offered_early_data) {
+                if (ch.offered_early_data and sel.entry.max_early_data_size != null) {
                     self.early_data_limit = sel.entry.max_early_data_size;
                     switch (sel.entry.cipher_suite) {
                         .aes_128_gcm_sha256, .chacha20_poly1305_sha256 => {
@@ -780,6 +803,7 @@ fn processClientHelloMessage(
             .x25519,
             out,
         );
+        self.clearEarlyDataStateForRetry();
         self.state = .wait_ch;
         return hrr;
     } else if (ch.groups.contains(.secp256r1) and backend.supportsServerP256()) {
@@ -790,6 +814,7 @@ fn processClientHelloMessage(
             .secp256r1,
             out,
         );
+        self.clearEarlyDataStateForRetry();
         self.state = .wait_ch;
         return hrr;
     } else if (ch.groups.contains(.secp384r1) and
@@ -802,6 +827,7 @@ fn processClientHelloMessage(
             .secp384r1,
             out,
         );
+        self.clearEarlyDataStateForRetry();
         self.state = .wait_ch;
         return hrr;
     } else return error.UnsupportedKeyShare;
@@ -1051,7 +1077,11 @@ fn sendAnonymousFlightForTest(self: *ServerHandshake, out: []u8) FlightError![]c
     assert(self.state == .wait_client_finished);
     var plaintext: [256]u8 = undefined;
     var pos: usize = 0;
-    const ee = try encrypted_extensions.encode(plaintext[pos..], self.selected_alpn);
+    const ee = try encrypted_extensions.encode(
+        plaintext[pos..],
+        self.selected_alpn,
+        self.early_rx != null,
+    );
     self.suite_state.update(ee);
     pos += ee.len;
 
@@ -1179,7 +1209,11 @@ fn encodeAuthenticatedFlight(
     assert(self.state == .wait_client_finished);
     var pos: usize = 0;
 
-    const ee = try encrypted_extensions.encode(plaintext[pos..], self.selected_alpn);
+    const ee = try encrypted_extensions.encode(
+        plaintext[pos..],
+        self.selected_alpn,
+        self.early_rx != null,
+    );
     self.suite_state.update(ee);
     pos += ee.len;
 
@@ -1244,6 +1278,13 @@ fn encodeAuthenticatedFlight(
 // ziglint-ignore: Z015 -- ClientFinishedError is a public error-set alias.
 pub fn processClientFinished(self: *ServerHandshake, record: []u8) ClientFinishedError!void {
     assert(self.state == .wait_client_finished);
+    // RFC 8446 §4.5 — if the server accepted 0-RTT, the client MUST send
+    // EndOfEarlyData (decrypted with early_rx) before the Finished. The
+    // handleRecord path enforces this in handleWaitClientFinished; this
+    // direct entry point must enforce the same gate so a caller using the
+    // public API cannot accept a Finished that skips EndOfEarlyData.
+    if (self.early_rx != null and !self.end_of_early_data_received)
+        return error.UnexpectedMessage;
     const dec = try handshake.decryptProtected(&self.rx, record);
     if (dec.content_type != .handshake) return error.UnexpectedRecord;
     return self.processClientFinishedPlaintext(dec.content);
@@ -1535,24 +1576,55 @@ fn handleWaitClientFinished(self: *ServerHandshake, record: []u8) HandleError!Ev
         else => return error.UnexpectedRecord,
     }
 
-    // 0-RTT early data (RFC 8446 §4.2.10): if the client offered early_data
-    // and a PSK was selected, try decrypting with the early traffic key first.
-    // If that succeeds and the inner type is application_data, surface it as
-    // 0-RTT. If it fails, fall through to the handshake key (normal flight).
+    // 0-RTT early data (RFC 8446 §4.2.10, §4.5): if the server accepted
+    // 0-RTT (early_rx installed) and has not yet received EndOfEarlyData,
+    // records MUST be under the early traffic key. Once EndOfEarlyData is
+    // received, all subsequent records are under the handshake key.
+    // We do NOT fall through to the handshake key on early_rx failure: that
+    // would corrupt the record buffer (decrypt is in-place) and the client
+    // is required to send EndOfEarlyData before any handshake-key record.
     if (self.early_rx) |*early_rx| {
-        if (handshake.decryptProtected(early_rx, record)) |early_dec| {
-            if (early_dec.content_type == .application_data) {
-                // RFC 8446 §4.2.10: reject early data exceeding the ticket's
-                // max_early_data_size.
-                if (self.early_data_limit) |limit| {
-                    self.early_data_received +|= @intCast(early_dec.content.len);
-                    if (self.early_data_received > limit)
+        if (!self.end_of_early_data_received) {
+            const early_dec = handshake.decryptProtected(early_rx, record) catch
+                return error.UnexpectedMessage;
+            switch (early_dec.content_type) {
+                .application_data => {
+                    // RFC 8446 §4.2.10: reject early data exceeding the
+                    // ticket's max_early_data_size.
+                    if (self.early_data_limit) |limit| {
+                        self.early_data_received +|= @intCast(early_dec.content.len);
+                        if (self.early_data_received > limit)
+                            return error.UnexpectedMessage;
+                    }
+                    self.post_handshake_count = 0;
+                    return .{ .application_data = early_dec.content };
+                },
+                // RFC 8446 §4.5 — EndOfEarlyData is a handshake message
+                // encrypted under the client_early_traffic_secret. The
+                // server MUST receive it before the client Finished when it
+                // accepted 0-RTT. Servers MUST NOT send this message.
+                .handshake => {
+                    if (early_dec.content.len != 4) return error.UnexpectedMessage;
+                    if (early_dec.content[0] != @intFromEnum(HandshakeType.end_of_early_data))
                         return error.UnexpectedMessage;
-                }
-                self.post_handshake_count = 0;
-                return .{ .application_data = early_dec.content };
+                    // Body is empty: the 3-byte length field MUST be zero.
+                    if (early_dec.content[1] != 0 or
+                        early_dec.content[2] != 0 or
+                        early_dec.content[3] != 0) return error.UnexpectedMessage;
+                    // Absorb EndOfEarlyData into the transcript (§4.5).
+                    self.suite_state.update(early_dec.content);
+                    self.end_of_early_data_received = true;
+                    // RFC 8446 §7.1 — the client_early_traffic_secret is
+                    // only valid until EndOfEarlyData is received. Zero and
+                    // drop the early receive key at the key-change boundary
+                    // so the cryptographically-dead key does not linger.
+                    early_rx.deinit();
+                    self.early_rx = null;
+                    return .none;
+                },
+                else => return error.UnexpectedMessage,
             }
-        } else |_| {}
+        }
     }
 
     const dec = handshake.decryptProtected(&self.rx, record) catch |err| {
@@ -4144,7 +4216,11 @@ test "in-memory 0-RTT early data is decrypted by the server" {
         fn l(ctx: *anyopaque, id: []const u8) ?PskEntry {
             const self: *Self = @ptrCast(@alignCast(ctx));
             if (std.mem.eql(u8, id, self.identity))
-                return .{ .psk = self.psk, .cipher_suite = .aes_128_gcm_sha256 };
+                return .{
+                    .psk = self.psk,
+                    .cipher_suite = .aes_128_gcm_sha256,
+                    .max_early_data_size = 16384,
+                };
             return null;
         }
     };
@@ -4189,8 +4265,42 @@ test "in-memory 0-RTT early data is decrypted by the server" {
     client.completeWrite();
     try testing.expect(client.isConnected());
 
-    try server.processClientFinished(client_out[0..client_finished.len]);
+    // RFC 8446 §4.5 — the client sends EndOfEarlyData (under early_tx) then
+    // Finished (under handshake tx) as two coalesced records. Feed them to
+    // the server one at a time via handleRecord so the server routes the
+    // EndOfEarlyData through early_rx and the Finished through the handshake
+    // key.
+    var client_out_mut: [4096]u8 = undefined;
+    @memcpy(client_out_mut[0..client_finished.len], client_out[0..client_finished.len]);
+    var feed_pos: usize = 0;
+    // First record: EndOfEarlyData (encrypted under early traffic key).
+    {
+        const hdr = try frame.parseHeader(client_out_mut[feed_pos..]);
+        const rec_len = frame.header_len + hdr.length();
+        const eoe_ev = try server.handleRecord(
+            client_out_mut[feed_pos..][0..rec_len],
+            &server_out,
+        );
+        try testing.expectEqual(ServerHandshake.Event.none, eoe_ev);
+        feed_pos += rec_len;
+    }
+    // Second record: client Finished (encrypted under handshake traffic key).
+    {
+        const hdr = try frame.parseHeader(client_out_mut[feed_pos..]);
+        const rec_len = frame.header_len + hdr.length();
+        const fin_ev = try server.handleRecord(
+            client_out_mut[feed_pos..][0..rec_len],
+            &server_out,
+        );
+        try testing.expectEqual(ServerHandshake.Event.none, fin_ev);
+        feed_pos += rec_len;
+    }
+    try testing.expect(feed_pos == client_finished.len);
     try testing.expect(server.isConnected());
+    try testing.expect(server.end_of_early_data_received);
+    // RFC 8446 §7.1 — the early receive key is cryptographically dead after
+    // EndOfEarlyData; it must be dropped at the key-change boundary.
+    try testing.expect(server.early_rx == null);
 
     // Post-handshake app data round-trip.
     const client_app = try client.sendApplicationData("ping", &client_out);
@@ -4199,6 +4309,355 @@ test "in-memory 0-RTT early data is decrypted by the server" {
         "ping",
         try server.receiveApplicationData(client_out[0..client_app.len]),
     );
+}
+
+// RFC 8446 §4.2.10 — server rejects 0-RTT early data exceeding
+// max_early_data_size with unexpected_message.
+test "0-RTT: server rejects early data exceeding max_early_data_size" {
+    const resumption_master: hkdf.HkdfSha256.Prk = .init(.{
+        0x7d, 0xf2, 0x35, 0xf2, 0x03, 0x1d, 0x2a, 0x05,
+        0x12, 0x87, 0xd0, 0x2b, 0x02, 0x41, 0xb0, 0xbf,
+        0xda, 0xf8, 0x6c, 0xc8, 0x56, 0x23, 0x1f, 0x2d,
+        0x5a, 0xba, 0x46, 0xc4, 0x34, 0xec, 0x19, 0x6c,
+    });
+    const psk = hkdf.HkdfSha256.resumptionPsk(resumption_master, &.{ 0x00, 0x00 });
+    const identity = [_]u8{ 0x2c, 0x03, 0x5d, 0x82, 0x93, 0x59 };
+
+    var client: ClientHandshake = .init(.{
+        .keypairs = .init(.generate()),
+        .host_name = null,
+        .now_sec = 0,
+        .random = .zero,
+    });
+    client.policy.insecure_no_chain_anchor = true;
+    var ticket: ClientHandshake.SessionTicket = .{
+        .ticket_age_add = 0x262a6494,
+        .cipher_suite = .aes_128_gcm_sha256,
+        .max_early_data_size = 10,
+    };
+    ticket.identity.appendSliceAssumeCapacity(&identity);
+    ticket.psk.appendSliceAssumeCapacity(&psk.data);
+
+    var client_out: [4096]u8 = undefined;
+    const ch_record = try client.startWithPsk(&ticket, &client_out, true);
+    client.completeWrite();
+
+    const Lookup = struct {
+        const Self = @This();
+        psk: []const u8,
+        identity: []const u8,
+        fn l(ctx: *anyopaque, id: []const u8) ?PskEntry {
+            const self: *Self = @ptrCast(@alignCast(ctx));
+            if (std.mem.eql(u8, id, self.identity))
+                return .{
+                    .psk = self.psk,
+                    .cipher_suite = .aes_128_gcm_sha256,
+                    .max_early_data_size = 10,
+                };
+            return null;
+        }
+    };
+    var lookup_ctx: Lookup = .{ .psk = &psk.data, .identity = &identity };
+
+    var server: ServerHandshake = .init(.{
+        .keypairs = .init(.generate()),
+        .random = .zero,
+        .psk_lookup = .{ .context = &lookup_ctx, .lookup = Lookup.l },
+    });
+    var server_out: [4096]u8 = undefined;
+    _ = try server.acceptClientHello(ch_record, &server_out);
+    try testing.expect(server.early_rx != null);
+
+    // Send 20 bytes of early data, exceeding the 10-byte limit.
+    var early_buf: [256]u8 = undefined;
+    const early_record = try client.sendEarlyData("01234567890123456789", &early_buf);
+
+    var early_rx_buf: [256]u8 = undefined;
+    @memcpy(early_rx_buf[0..early_record.len], early_record);
+    try testing.expectError(
+        error.UnexpectedMessage,
+        server.handleRecord(early_rx_buf[0..early_record.len], &early_rx_buf),
+    );
+}
+
+// RFC 8446 §4.2.10 — when no PSK is selected (psk_lookup returns null),
+// early_rx is not installed. 0-RTT records cannot be decrypted and the
+// server treats them as handshake-key records that fail authentication.
+test "0-RTT: no PSK selected means early data is rejected" {
+    const resumption_master: hkdf.HkdfSha256.Prk = .init(.{
+        0x7d, 0xf2, 0x35, 0xf2, 0x03, 0x1d, 0x2a, 0x05,
+        0x12, 0x87, 0xd0, 0x2b, 0x02, 0x41, 0xb0, 0xbf,
+        0xda, 0xf8, 0x6c, 0xc8, 0x56, 0x23, 0x1f, 0x2d,
+        0x5a, 0xba, 0x46, 0xc4, 0x34, 0xec, 0x19, 0x6c,
+    });
+    const psk = hkdf.HkdfSha256.resumptionPsk(resumption_master, &.{ 0x00, 0x00 });
+    const identity = [_]u8{ 0x2c, 0x03, 0x5d, 0x82, 0x93, 0x59 };
+
+    var client: ClientHandshake = .init(.{
+        .keypairs = .init(.generate()),
+        .host_name = null,
+        .now_sec = 0,
+        .random = .zero,
+    });
+    client.policy.insecure_no_chain_anchor = true;
+    var ticket: ClientHandshake.SessionTicket = .{
+        .ticket_age_add = 0x262a6494,
+        .cipher_suite = .aes_128_gcm_sha256,
+        .max_early_data_size = 16384,
+    };
+    ticket.identity.appendSliceAssumeCapacity(&identity);
+    ticket.psk.appendSliceAssumeCapacity(&psk.data);
+
+    var client_out: [4096]u8 = undefined;
+    const ch_record = try client.startWithPsk(&ticket, &client_out, true);
+    client.completeWrite();
+
+    // Server with a PSK lookup that never matches — no PSK selected.
+    const NoMatch = struct {
+        fn l(_: *anyopaque, _: []const u8) ?PskEntry {
+            return null;
+        }
+    };
+    var no_match: NoMatch = .{};
+    var server: ServerHandshake = .init(.{
+        .keypairs = .init(.generate()),
+        .random = .zero,
+        .psk_lookup = .{ .context = &no_match, .lookup = NoMatch.l },
+    });
+    var server_out: [4096]u8 = undefined;
+    _ = try server.acceptClientHello(ch_record, &server_out);
+    try testing.expect(server.early_rx == null);
+    try testing.expect(server.selected_psk == null);
+
+    // Send 0-RTT data — server has no early_rx, so the record falls through
+    // to the handshake key decrypt, which fails (wrong key).
+    var early_buf: [256]u8 = undefined;
+    const early_record = try client.sendEarlyData("hello 0-rtt", &early_buf);
+    var early_rx_buf: [256]u8 = undefined;
+    @memcpy(early_rx_buf[0..early_record.len], early_record);
+    try testing.expectError(
+        error.AuthenticationFailed,
+        server.handleRecord(early_rx_buf[0..early_record.len], &early_rx_buf),
+    );
+}
+
+// RFC 8446 §4.2.10, §4.5 — server declines 0-RTT (PSK selected but
+// max_early_data_size=null so early_rx not installed). EE omits early_data.
+// The client detects the absence, clears early_tx, and sends no EndOfEarlyData.
+test "0-RTT: server declines, client sends no EndOfEarlyData" {
+    const resumption_master: hkdf.HkdfSha256.Prk = .init(.{
+        0x7d, 0xf2, 0x35, 0xf2, 0x03, 0x1d, 0x2a, 0x05,
+        0x12, 0x87, 0xd0, 0x2b, 0x02, 0x41, 0xb0, 0xbf,
+        0xda, 0xf8, 0x6c, 0xc8, 0x56, 0x23, 0x1f, 0x2d,
+        0x5a, 0xba, 0x46, 0xc4, 0x34, 0xec, 0x19, 0x6c,
+    });
+    const psk = hkdf.HkdfSha256.resumptionPsk(resumption_master, &.{ 0x00, 0x00 });
+    const identity = [_]u8{ 0x2c, 0x03, 0x5d, 0x82, 0x93, 0x59 };
+
+    var client: ClientHandshake = .init(.{
+        .keypairs = .init(.generate()),
+        .host_name = null,
+        .now_sec = 0,
+        .random = .zero,
+    });
+    client.policy.insecure_no_chain_anchor = true;
+    // Ticket has max_early_data_size so the client installs early_tx and
+    // offers early_data. The server's PSK lookup will return
+    // max_early_data_size=null, declining 0-RTT.
+    var ticket: ClientHandshake.SessionTicket = .{
+        .ticket_age_add = 0x262a6494,
+        .cipher_suite = .aes_128_gcm_sha256,
+        .max_early_data_size = 16384,
+    };
+    ticket.identity.appendSliceAssumeCapacity(&identity);
+    ticket.psk.appendSliceAssumeCapacity(&psk.data);
+
+    var client_out: [4096]u8 = undefined;
+    const ch_record = try client.startWithPsk(&ticket, &client_out, true);
+    client.completeWrite();
+    try testing.expect(client.early_tx != null);
+
+    const Lookup = struct {
+        const Self = @This();
+        psk: []const u8,
+        identity: []const u8,
+        fn l(ctx: *anyopaque, id: []const u8) ?PskEntry {
+            const self: *Self = @ptrCast(@alignCast(ctx));
+            if (std.mem.eql(u8, id, self.identity))
+                return .{ .psk = self.psk, .cipher_suite = .aes_128_gcm_sha256 };
+            return null;
+        }
+    };
+    var lookup_ctx: Lookup = .{ .psk = &psk.data, .identity = &identity };
+
+    var server: ServerHandshake = .init(.{
+        .keypairs = .init(.generate()),
+        .random = .zero,
+        .psk_lookup = .{ .context = &lookup_ctx, .lookup = Lookup.l },
+    });
+    var server_out: [4096]u8 = undefined;
+    const sh_record = try server.acceptClientHello(ch_record, &server_out);
+    try testing.expect(server.selected_psk != null);
+    try testing.expect(server.early_rx == null);
+
+    // Process ServerHello on the client.
+    _ = try client.handleRecord(server_out[0..sh_record.len], &client_out);
+
+    // Send the authenticated flight (EE without early_data + cert + CV + Fin).
+    var signer = try signature.PrivateKey.fromP256Scalar(serverEcdsaScalar()[0..32]);
+    defer signer.deinit();
+    var plaintext: [4096]u8 = undefined;
+    const flight_record = try server.sendAuthenticatedFlight(
+        &.{serverEcdsaCertDer()},
+        signer.signer(),
+        &plaintext,
+        &server_out,
+    );
+    const client_flight_ev = try client.handleRecord(
+        server_out[0..flight_record.len],
+        &client_out,
+    );
+    const client_finished = switch (client_flight_ev) {
+        .write => |w| w,
+        else => return error.UnexpectedEvent,
+    };
+    client.completeWrite();
+    try testing.expect(client.isConnected());
+
+    // The client should have cleared early_tx (server declined 0-RTT).
+    try testing.expect(client.early_tx == null);
+    try testing.expect(!client.server_accepted_early_data);
+
+    // The server should NOT expect EndOfEarlyData (early_rx was never
+    // installed). Feed the client Finished directly — no EndOfEarlyData.
+    var client_out_mut: [4096]u8 = undefined;
+    @memcpy(client_out_mut[0..client_finished.len], client_out[0..client_finished.len]);
+    try server.processClientFinished(client_out_mut[0..client_finished.len]);
+    try testing.expect(server.isConnected());
+    try testing.expect(!server.end_of_early_data_received);
+}
+
+// RFC 8446 §4.5 — servers MUST NOT send EndOfEarlyData. The client rejects
+// a server-sent EndOfEarlyData with unexpected_message.
+test "0-RTT: client rejects server-sent EndOfEarlyData" {
+    // Construct a fake EE flight with an end_of_early_data message appended.
+    // After EE is processed the client advances to wait_cert_or_cr, which
+    // rejects any handshake type other than certificate/certificate_request/
+    // finished (RFC 8446 §4.5: servers MUST NOT send EndOfEarlyData).
+    var ee_buf: [256]u8 = undefined;
+    const ee_msg = try encrypted_extensions.encode(&ee_buf, null, false);
+
+    var flight_buf: [512]u8 = undefined;
+    @memcpy(flight_buf[0..ee_msg.len], ee_msg);
+    flight_buf[ee_msg.len] = @intFromEnum(HandshakeType.end_of_early_data);
+    flight_buf[ee_msg.len + 1] = 0;
+    flight_buf[ee_msg.len + 2] = 0;
+    flight_buf[ee_msg.len + 3] = 0;
+    const flight = flight_buf[0 .. ee_msg.len + 4];
+
+    // Set up a client in wait_ee state via processFlight.
+    var client: ClientHandshake = .init(.{
+        .keypairs = .init(.generate()),
+        .host_name = null,
+        .now_sec = 0,
+        .random = .zero,
+    });
+    client.policy.insecure_no_chain_anchor = true;
+    var out: [4096]u8 = undefined;
+    _ = try client.start(&out);
+    client.completeWrite();
+
+    // The client state machine rejects end_of_early_data in the server flight
+    // because, after EE, the wait_cert_or_cr state does not accept it.
+    try testing.expectError(
+        error.UnexpectedMessage,
+        client.processFlight(flight, client.policy),
+    );
+}
+
+// RFC 8446 §4.5 — if the server accepted 0-RTT, the public processClientFinished
+// entry point MUST reject a Finished that arrives before EndOfEarlyData, the
+// same gate handleWaitClientFinished enforces. A caller using the direct API
+// must not be able to accept a non-compliant 0-RTT client flight.
+test "0-RTT: processClientFinished rejects Finished before EndOfEarlyData" {
+    const resumption_master: hkdf.HkdfSha256.Prk = .init(.{
+        0x7d, 0xf2, 0x35, 0xf2, 0x03, 0x1d, 0x2a, 0x05,
+        0x12, 0x87, 0xd0, 0x2b, 0x02, 0x41, 0xb0, 0xbf,
+        0xda, 0xf8, 0x6c, 0xc8, 0x56, 0x23, 0x1f, 0x2d,
+        0x5a, 0xba, 0x46, 0xc4, 0x34, 0xec, 0x19, 0x6c,
+    });
+    const psk = hkdf.HkdfSha256.resumptionPsk(resumption_master, &.{ 0x00, 0x00 });
+    const identity = [_]u8{ 0x2c, 0x03, 0x5d, 0x82, 0x93, 0x59 };
+
+    var client: ClientHandshake = .init(.{
+        .keypairs = .init(.generate()),
+        .host_name = null,
+        .now_sec = 0,
+        .random = .zero,
+    });
+    client.policy.insecure_no_chain_anchor = true;
+    var ticket: ClientHandshake.SessionTicket = .{
+        .ticket_age_add = 0x262a6494,
+        .cipher_suite = .aes_128_gcm_sha256,
+        .max_early_data_size = 16384,
+    };
+    ticket.identity.appendSliceAssumeCapacity(&identity);
+    ticket.psk.appendSliceAssumeCapacity(&psk.data);
+
+    var client_out: [4096]u8 = undefined;
+    const ch_record = try client.startWithPsk(&ticket, &client_out, true);
+    client.completeWrite();
+
+    const Lookup = struct {
+        const Self = @This();
+        psk: []const u8,
+        identity: []const u8,
+        fn l(ctx: *anyopaque, id: []const u8) ?PskEntry {
+            const self: *Self = @ptrCast(@alignCast(ctx));
+            if (std.mem.eql(u8, id, self.identity))
+                return .{
+                    .psk = self.psk,
+                    .cipher_suite = .aes_128_gcm_sha256,
+                    .max_early_data_size = 16384,
+                };
+            return null;
+        }
+    };
+    var lookup_ctx: Lookup = .{ .psk = &psk.data, .identity = &identity };
+
+    var server: ServerHandshake = .init(.{
+        .keypairs = .init(.generate()),
+        .random = .zero,
+        .psk_lookup = .{ .context = &lookup_ctx, .lookup = Lookup.l },
+    });
+    var server_out: [4096]u8 = undefined;
+    _ = try server.acceptClientHello(ch_record, &server_out);
+    try testing.expect(server.early_rx != null);
+    try testing.expect(!server.end_of_early_data_received);
+
+    // Send the server flight to reach wait_client_finished with early_rx still
+    // installed (EndOfEarlyData not yet received).
+    var signer = try signature.PrivateKey.fromP256Scalar(serverEcdsaScalar()[0..32]);
+    defer signer.deinit();
+    var plaintext: [4096]u8 = undefined;
+    _ = try server.sendAuthenticatedFlight(
+        &.{serverEcdsaCertDer()},
+        signer.signer(),
+        &plaintext,
+        &server_out,
+    );
+    try testing.expect(server.early_rx != null);
+    try testing.expect(!server.end_of_early_data_received);
+
+    // A direct Finished via the public API is rejected before decryption:
+    // EndOfEarlyData was not received. The record bytes are irrelevant
+    // because the guard fires before decryptProtected.
+    var dummy: [64]u8 = undefined;
+    try testing.expectError(
+        error.UnexpectedMessage,
+        server.processClientFinished(&dummy),
+    );
+    try testing.expect(!server.isConnected());
 }
 
 // draft-ietf-tls-ecdhe-mlkem-05 §4 — in-memory X25519MLKEM768 hybrid KEM

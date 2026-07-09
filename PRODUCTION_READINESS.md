@@ -95,10 +95,24 @@ server Certificate/CertificateVerify). 0-RTT early data is implemented: the
 client can offer early_data + derive the client_early_traffic_secret and send
 0-RTT data (sendEarlyData); the server derives the early traffic key from the
 selected PSK + ClientHello transcript and decrypts 0-RTT records, enforcing
-max_early_data_size. 0-RTT is disabled by default (offer_early_data=false) and
-the caller is responsible for replay-safe policy — 0-RTT data is not
-forward-secret and can be replayed by a network attacker. An in-memory 0-RTT
-test proves the early traffic key derivation + record flow end-to-end.
+max_early_data_size. The server emits the early_data extension in
+EncryptedExtensions when it accepts 0-RTT (RFC 8446 §4.2.10). The client sends
+EndOfEarlyData under the client_early_traffic_secret after the server Finished
+and before its own Finished when the server accepted 0-RTT, and does not send
+it when the server declined (RFC 8446 §4.5). The server expects and decrypts
+the client's EndOfEarlyData with early_rx before the client Finished, and
+rejects its absence with unexpected_message. The server declines 0-RTT when
+the selected PSK's max_early_data_size is null, omitting early_data from EE;
+the client detects this, clears early_tx, and proceeds without EndOfEarlyData.
+Reject-path tests cover max_early_data_size exceeded, no-PSK-selected early
+data, server-declined 0-RTT, and client rejection of server-sent EndOfEarlyData.
+0-RTT is disabled by default (offer_early_data=false) and the caller is
+responsible for replay-safe policy — 0-RTT data is not forward-secret and can
+be replayed by a network attacker; no anti-replay cache exists in ztls (the
+Sans-I/O library cannot own a global replay cache). An in-memory 0-RTT test
+proves the early traffic key derivation + EndOfEarlyData + record flow
+end-to-end, and OpenSSL 0-RTT interop is CI-gated: a ztls client sends 0-RTT
+data to openssl s_server and receives the HTTP response.
 
 **Current evidence (real, and good):**
 

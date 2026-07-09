@@ -487,6 +487,12 @@ offered_psk_cipher_suite: CipherSuite = .aes_128_gcm_sha256,
 /// Finished, derived from the PSK early secret + the ClientHello transcript.
 /// null when 0-RTT is not offered. RFC 8446 §4.2.10, §7.1.
 early_tx: ?RecordLayer = null,
+/// RFC 8446 §4.2.10, §4.5 — set from the EncryptedExtensions early_data
+/// extension. When true, the client MUST send EndOfEarlyData (under the
+/// early traffic key) after the server Finished and before its own Finished.
+/// When false (server declined), the client MUST NOT send EndOfEarlyData and
+/// clears early_tx.
+server_accepted_early_data: bool = false,
 /// Whether to offer an X25519MLKEM768 PQ hybrid key_share. From Config.
 offer_pq_key_share: bool = false,
 /// KEM hybrid key handle (X25519MLKEM768 etc.) for PQ key exchange.
@@ -540,6 +546,7 @@ pub fn deinit(self: *ClientHandshake) void {
         => {
             self.rx.deinit();
             self.tx.deinit();
+            if (self.early_tx) |*early_tx| early_tx.deinit();
         },
         .start, .wait_sh => {},
     }
@@ -1430,6 +1437,15 @@ fn processFlightMessage(
                 self.selected_alpn.clear();
                 self.selected_alpn.appendSliceAssumeCapacity(protocol);
             }
+            // RFC 8446 §4.2.10, §4.5 — record whether the server accepted
+            // 0-RTT from the EE early_data extension. If the client offered
+            // early data but the server declined (EE omitted early_data),
+            // clear early_tx and proceed without EndOfEarlyData.
+            self.server_accepted_early_data = ee.early_data_accepted;
+            if (!ee.early_data_accepted and self.early_tx != null) {
+                self.early_tx.?.deinit();
+                self.early_tx = null;
+            }
             self.suite.update(msg.raw);
             self.state = .wait_cert_or_cr;
         },
@@ -1539,6 +1555,41 @@ pub fn clientFinished(self: *ClientHandshake, out: []u8) ClientFinishedError![]c
     if (self.server_flight_progress != .finished_verified) return error.UnexpectedMessage;
     if (self.server_finished_hash_len == 0) return error.UnexpectedMessage;
 
+    // RFC 8446 §4.5 — if the server accepted 0-RTT (EE included early_data),
+    // the client MUST send EndOfEarlyData after the server Finished and before
+    // its own Finished. EndOfEarlyData is encrypted under the
+    // client_early_traffic_secret (early_tx) and is the last record under the
+    // early traffic key. The Finished is then encrypted under the handshake
+    // traffic key. Both records are coalesced in the output buffer.
+    var out_pos: usize = 0;
+    if (self.server_accepted_early_data) {
+        if (self.early_tx) |*early_tx| {
+            // EndOfEarlyData: handshake type 0x05, empty body (4 bytes total).
+            const eoe_msg: [4]u8 = .{
+                @intFromEnum(HandshakeType.end_of_early_data),
+                0,
+                0,
+                0,
+            };
+            // Absorb EndOfEarlyData into the transcript before the Finished
+            // is computed (RFC 8446 §4.5).
+            self.suite.update(&eoe_msg);
+            const eoe_record = early_tx.encrypt(
+                .handshake,
+                &eoe_msg,
+                out[out_pos..],
+            ) catch return error.BufferTooShort;
+            out_pos += eoe_record.len;
+            early_tx.deinit();
+            self.early_tx = null;
+        }
+    } else if (self.early_tx != null) {
+        // Server declined 0-RTT: early_tx was already cleared in wait_ee, but
+        // clean up defensively if it's still set.
+        self.early_tx.?.deinit();
+        self.early_tx = null;
+    }
+
     // The whole client flight (Certificate [+ CertificateVerify] + Finished)
     // is encrypted into one record, so the plaintext is bounded by the record
     // plaintext limit. RFC 8446 §5.2.
@@ -1619,14 +1670,14 @@ pub fn clientFinished(self: *ClientHandshake, out: []u8) ClientFinishedError![]c
     const record = self.tx.encrypt(
         .handshake,
         plain_buf[0..plain_len],
-        out,
+        out[out_pos..],
     ) catch return error.BufferTooShort;
     self.tx.deinit();
     self.rx.deinit();
     self.tx = keys.tx;
     self.rx = keys.rx;
     self.state = .connected;
-    return record;
+    return out[0 .. out_pos + record.len];
 }
 
 pub const ReceiveError = RecordLayer.DecryptError || SendError || alert.ParseError ||

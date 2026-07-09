@@ -32,23 +32,34 @@ pub const ParseError = error{
 
 pub const Parsed = struct {
     alpn_protocol: ?[]const u8 = null,
+    /// RFC 8446 §4.2.10 — true when the server included early_data in EE,
+    /// signaling 0-RTT acceptance. The client uses this to decide whether
+    /// to send EndOfEarlyData (§4.5).
+    early_data_accepted: bool = false,
 };
 
 pub const EncodeError = error{ BufferTooShort, EmptyAlpnProtocol, AlpnProtocolTooLong };
 
-pub fn encodedLen(alpn_protocol: ?[]const u8) usize {
+/// RFC 8446 §4.3.1, §4.2.10 — `early_data_accepted` emits the empty
+/// early_data extension when the server accepted 0-RTT.
+pub fn encodedLen(alpn_protocol: ?[]const u8, early_data_accepted: bool) usize {
     const alpn_len: usize = if (alpn_protocol) |p| 4 + 2 + 1 + p.len else 0;
-    return 4 + 2 + alpn_len;
+    const early_len: usize = if (early_data_accepted) 4 else 0;
+    return 4 + 2 + alpn_len + early_len;
 }
 
-/// Encode EncryptedExtensions. Currently only ALPN is supported as server
-/// output. RFC 8446 §4.3.1, RFC 7301 §3.2.
-pub fn encode(out: []u8, alpn_protocol: ?[]const u8) EncodeError![]const u8 {
+/// Encode EncryptedExtensions. Currently only ALPN and early_data are
+/// supported as server output. RFC 8446 §4.3.1, §4.2.10, RFC 7301 §3.2.
+pub fn encode(
+    out: []u8,
+    alpn_protocol: ?[]const u8,
+    early_data_accepted: bool,
+) EncodeError![]const u8 {
     if (alpn_protocol) |p| {
         if (p.len == 0) return error.EmptyAlpnProtocol;
         if (p.len > 255) return error.AlpnProtocolTooLong;
     }
-    const len = encodedLen(alpn_protocol);
+    const len = encodedLen(alpn_protocol, early_data_accepted);
     if (out.len < len) return error.BufferTooShort;
 
     var w: wire.Writer = .init(out);
@@ -61,6 +72,11 @@ pub fn encode(out: []u8, alpn_protocol: ?[]const u8) EncodeError![]const u8 {
         w.append(u16, @intCast(1 + p.len));
         w.append(u8, @intCast(p.len));
         w.appendSlice(p);
+    }
+    // RFC 8446 §4.2.10 — empty early_data extension signals 0-RTT acceptance.
+    if (early_data_accepted) {
+        w.append(ExtensionType, .early_data);
+        w.append(u16, 0);
     }
     return w.written();
 }
@@ -136,6 +152,7 @@ pub fn parse(msg: []const u8, offered_alpn: []const []const u8, opts: Options) P
                 if (!opts.offered_extensions.contains(.early_data))
                     return error.UnsupportedExtension;
                 if (ext.len != 0) return error.InvalidExtensionLength;
+                result.early_data_accepted = true;
             },
             // RFC 8446 §4.2 — recognized extensions sent in a message where
             // they are not specified are semantic errors, not ignorable grease.
@@ -183,16 +200,37 @@ fn parseAlpn(ext: []const u8, offered: []const []const u8) ParseError![]const u8
 
 test "encode: empty EncryptedExtensions" {
     var out: [32]u8 = undefined;
-    const msg = try encode(&out, null);
+    const msg = try encode(&out, null, false);
     try testing.expectEqualSlices(u8, &.{ 0x08, 0x00, 0x00, 0x02, 0x00, 0x00 }, msg);
     _ = try parse(msg, &.{}, .{});
 }
 
 test "encode: ALPN EncryptedExtensions" {
     var out: [32]u8 = undefined;
-    const msg = try encode(&out, "h2");
+    const msg = try encode(&out, "h2", false);
     const result = try parse(msg, &.{ "h2", "http/1.1" }, .{});
     try testing.expectEqualStrings("h2", result.alpn_protocol.?);
+}
+
+// RFC 8446 §4.2.10 — server emits empty early_data extension in EE when
+// accepting 0-RTT; the client reads early_data_accepted from the parsed EE.
+test "encode: early_data accepted in EncryptedExtensions" {
+    var out: [32]u8 = undefined;
+    const msg = try encode(&out, null, true);
+    // type(1) + length(3) + extensions_len(2) + early_data ext(4) = 10
+    try testing.expectEqualSlices(u8, &.{
+        0x08, 0x00, 0x00, 0x06, 0x00, 0x04, 0x00, 0x2a, 0x00, 0x00,
+    }, msg);
+    const result = try parse(msg, &.{}, .{ .offered_extensions = .initOne(.early_data) });
+    try testing.expect(result.early_data_accepted);
+}
+
+// RFC 8446 §4.2.10 — early_data NOT included when the server declines 0-RTT.
+test "encode: early_data omitted when not accepted" {
+    var out: [32]u8 = undefined;
+    const msg = try encode(&out, null, false);
+    const result = try parse(msg, &.{}, .{ .offered_extensions = .initOne(.early_data) });
+    try testing.expect(!result.early_data_accepted);
 }
 
 test "parse: valid EncryptedExtensions" {

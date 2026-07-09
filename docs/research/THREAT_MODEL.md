@@ -228,15 +228,19 @@ key and suite-state copies on teardown, but backend-internal scratch, provider
 contexts, allocator freelists, and primitive work buffers are governed by the
 backend's lifecycle guarantees.
 
-### Replay safety for future 0-RTT
+### Replay safety for 0-RTT
 
-0-RTT is not implemented. If added, replay protection must be a documented
-contract between ztls and the caller, because a Sans-I/O library cannot own a
-global replay cache.
+0-RTT early data is implemented but disabled by default (`offer_early_data=false`).
+Replay protection is a documented contract between ztls and the caller: a
+Sans-I/O library cannot own a global replay cache, so the caller is responsible
+for replay-safe policy (single-use tickets and/or a bounded replay window).
+0-RTT data is not forward-secret and can be replayed by a network attacker.
+RFC 8446 §8.1 idempotency guidance applies: the caller must ensure 0-RTT
+requests are replay-safe or reject 0-RTT.
 
 ### Unsupported TLS features
 
-HelloRetryRequest, PSK/resumption, client certificates, 0-RTT, P-384/PQ key
+HelloRetryRequest, PSK/resumption, client certificates, P-384/PQ key
 exchange, and broader extension negotiation are not defended as implemented
 features until their tracking issues land.
 

@@ -157,8 +157,12 @@ These are deliberately not closed by writing the inventory:
   fixture set; if it becomes a supported lane, give it its own issue.
 - BoGo remains deferred per `BOGO_DEFERRED.md`; TLS-Anvil server/client evidence
   lives in the dedicated workflows.
-- HRR, PSK/resumption, 0-RTT, client certificates, and PQ / P-384+ groups are
+- HRR, PSK/resumption, client certificates, and PQ / P-384+ groups are
   out of the current supported surface and tracked by their feature issues.
+  (0-RTT early data is now in the supported surface: EndOfEarlyData absence,
+  server-sent EndOfEarlyData, max_early_data_size exceeded, no-PSK-but-
+  early-data-offered, and server-declined-0-RTT negative paths are tested in
+  `src/ServerHandshake.zig`; anti-replay remains a caller-owned contract.)
 - Legacy session id length caps on parse paths need dedicated enforcement/tests.
 - Server Certificate `request_context` non-empty rejection needs a targeted test.
 - Some server-side client-Finished negative paths exist structurally but lack
