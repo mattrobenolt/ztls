@@ -588,8 +588,21 @@ each passing the same correctness and interop gates.
   default suite selection and X25519/P-256 HRR/key-share selection consult the
   same facade. The current OpenSSL and AWS-LC capability sets are intentionally
   identical but backend-owned rather than aliases, the ztls client has local
-  X25519/P-256 first-flight key-share plumbing, and no FIPS/provider-version
-  divergent capability matrix exists yet.
+  X25519/P-256 first-flight key-share plumbing, and compile-time FIPS-narrowed
+  capability tables (`openssl-fips`, `aws-lc-fips` backend identities) now
+  exist: each FIPS table drops ChaCha20-Poly1305 (not FIPS 140-3 approved),
+  RSA PKCS#1 v1.5 certificate signatures (only PSS approved for TLS 1.3),
+  Ed25519, and ML-KEM, keeping AES-GCM, P-256/P-384, X25519, RSA-PSS, and
+  ECDSA. Comptime assertions prove each FIPS table is a strict subset of its
+  non-FIPS counterpart, and divergence tests (running under the default
+  backend) verify the FIPS tables exclude the non-approved algorithms. The FIPS
+  build option declares intent; the caller/linker is responsible for ensuring
+  the linked libcrypto is actually in FIPS mode (no runtime FIPS provider-load
+  verification is performed by ztls). Residual: the full runtime test suite is
+  not FIPS-lane-gated — the suite uses non-FIPS algorithms (RFC 8448 §3
+  fixtures with RSA PKCS1 cert signatures, ChaCha20-Poly1305 tests), so FIPS
+  correctness is proven by comptime capability assertions and divergence tests,
+  not by running the suite under a FIPS backend.
   The strict-complete `b6aee2c` client TLS-Anvil capture (`ci-28722850517`)
   closes the remote P-256 evidence gap with `ComplianceRequirements: passed=2`
   and `KeyShare: passed=5`. *(#60)*

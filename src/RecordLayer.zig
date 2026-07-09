@@ -477,7 +477,7 @@ test "decrypt: failed auth exposes backend failure buffer behavior" {
 
     const inner = tampered[frame.header_len..][0..inner_len];
     switch (backend.active) {
-        .openssl => {
+        .openssl, .@"openssl-fips" => {
             // OpenSSL EVP decrypt-before-verify writes real plaintext into the
             // caller buffer before the tag check fails.
             try testing.expectEqualSlices(u8, plaintext, inner[0..plaintext.len]);
@@ -486,7 +486,7 @@ test "decrypt: failed auth exposes backend failure buffer behavior" {
                 inner[plaintext.len],
             );
         },
-        .@"aws-lc" => {
+        .@"aws-lc", .@"aws-lc-fips" => {
             // AWS-LC EVP_AEAD promises to zero output on authentication failure.
             for (inner) |byte| try testing.expectEqual(@as(u8, 0), byte);
         },

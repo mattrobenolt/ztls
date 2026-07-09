@@ -21,45 +21,56 @@ const backend_openssl = @import("backend_openssl.zig");
 
 pub const active = build_options.crypto_backend;
 
+/// True when the active backend is a FIPS-narrowed capability identity.
+/// The FIPS tables drop non-approved algorithms (ChaCha20-Poly1305, RSA PKCS1
+/// v1.5 certificate signatures, Ed25519, ML-KEM) at compile time. The caller
+/// is responsible for ensuring the linked libcrypto is actually in FIPS mode.
+pub const is_fips: bool = switch (active) {
+    .openssl, .@"aws-lc", .boringssl => false,
+    .@"openssl-fips", .@"aws-lc-fips" => true,
+};
+
 const x25519_impl = switch (active) {
-    .openssl => backend_openssl,
-    .@"aws-lc" => backend_aws_lc,
+    .openssl, .@"openssl-fips" => backend_openssl,
+    .@"aws-lc", .@"aws-lc-fips" => backend_aws_lc,
     .boringssl => @compileError("BoringSSL backend not yet implemented"),
 };
 
 const p256_impl = switch (active) {
-    .openssl => backend_openssl,
-    .@"aws-lc" => backend_aws_lc,
+    .openssl, .@"openssl-fips" => backend_openssl,
+    .@"aws-lc", .@"aws-lc-fips" => backend_aws_lc,
     .boringssl => @compileError("BoringSSL backend not yet implemented"),
 };
 
 const p384_impl = switch (active) {
-    .openssl => backend_openssl,
-    .@"aws-lc" => backend_aws_lc,
+    .openssl, .@"openssl-fips" => backend_openssl,
+    .@"aws-lc", .@"aws-lc-fips" => backend_aws_lc,
     .boringssl => @compileError("BoringSSL backend not yet implemented"),
 };
 
 const aead_impl = switch (active) {
-    .openssl => backend_openssl,
-    .@"aws-lc" => backend_aws_lc,
+    .openssl, .@"openssl-fips" => backend_openssl,
+    .@"aws-lc", .@"aws-lc-fips" => backend_aws_lc,
     .boringssl => @compileError("BoringSSL backend not yet implemented"),
 };
 
 const sign_impl = switch (active) {
-    .openssl => backend_openssl,
-    .@"aws-lc" => backend_aws_lc,
+    .openssl, .@"openssl-fips" => backend_openssl,
+    .@"aws-lc", .@"aws-lc-fips" => backend_aws_lc,
     .boringssl => @compileError("BoringSSL backend not yet implemented"),
 };
 
 pub const kem_impl = switch (active) {
-    .openssl => backend_openssl,
-    .@"aws-lc" => backend_aws_lc,
+    .openssl, .@"openssl-fips" => backend_openssl,
+    .@"aws-lc", .@"aws-lc-fips" => backend_aws_lc,
     .boringssl => @compileError("BoringSSL backend not yet implemented"),
 };
 
 pub const capabilities = switch (active) {
     .openssl => backend_openssl.capabilities,
+    .@"openssl-fips" => backend_openssl.capabilities_fips,
     .@"aws-lc" => backend_aws_lc.capabilities,
+    .@"aws-lc-fips" => backend_aws_lc.capabilities_fips,
     .boringssl => @compileError("BoringSSL backend not yet implemented"),
 };
 
@@ -73,6 +84,31 @@ comptime {
     assert(
         capabilities.client_x25519_mlkem768 == capabilities.server_x25519_mlkem768,
     );
+
+    // FIPS capability tables must be a strict subset of their non-FIPS
+    // counterparts: every cipher suite and signature scheme advertised under
+    // FIPS must also appear in the non-FIPS table. This is checked at compile
+    // time for both backends so a FIPS table drift is caught even when the
+    // active build is non-FIPS.
+    assertSubset(backend_openssl.capabilities_fips.cipher_suites, backend_openssl.capabilities.cipher_suites);
+    assertSubset(backend_openssl.capabilities_fips.certificate_verify_schemes, backend_openssl.capabilities.certificate_verify_schemes);
+    assertSubset(backend_openssl.capabilities_fips.certificate_signature_schemes, backend_openssl.capabilities.certificate_signature_schemes);
+    assertSubset(backend_aws_lc.capabilities_fips.cipher_suites, backend_aws_lc.capabilities.cipher_suites);
+    assertSubset(backend_aws_lc.capabilities_fips.certificate_verify_schemes, backend_aws_lc.capabilities.certificate_verify_schemes);
+    assertSubset(backend_aws_lc.capabilities_fips.certificate_signature_schemes, backend_aws_lc.capabilities.certificate_signature_schemes);
+}
+
+fn assertSubset(comptime fips: anytype, comptime base: anytype) void {
+    for (fips) |item| {
+        var found = false;
+        for (base) |b| {
+            if (item == b) {
+                found = true;
+                break;
+            }
+        }
+        assert(found);
+    }
 }
 
 pub fn supportsCipherSuite(suite: CipherSuite) bool {
@@ -276,11 +312,16 @@ pub const sign = struct {
 // not runtime claims. The backend kind is chosen in build.zig and emitted as a
 // typed build_option, so `active` is already a typed enum value here — no
 // string parse to validate. BoringSSL is a non-implemented placeholder field.
+// `openssl-fips` and `aws-lc-fips` are FIPS-narrowed capability identities that
+// link the same libcrypto as their non-FIPS counterparts.
 test "active backend is a buildable libcrypto-family member" {
-    try testing.expect(active == .openssl or active == .@"aws-lc");
+    try testing.expect(active == .openssl or active == .@"aws-lc" or
+        active == .@"openssl-fips" or active == .@"aws-lc-fips");
     // field names are the wire strings, so @tagName round-trips to the CLI value
     try testing.expectEqualStrings("openssl", @tagName(@as(@TypeOf(active), .openssl)));
     try testing.expectEqualStrings("aws-lc", @tagName(@as(@TypeOf(active), .@"aws-lc")));
+    try testing.expectEqualStrings("openssl-fips", @tagName(@as(@TypeOf(active), .@"openssl-fips")));
+    try testing.expectEqualStrings("aws-lc-fips", @tagName(@as(@TypeOf(active), .@"aws-lc-fips")));
 }
 
 // RFC 8446 §9.1 — TLS 1.3 endpoints need at least one mutually supported
@@ -298,8 +339,8 @@ test "capabilities are non-empty for the active backend" {
 test "x25519 handle shape matches active backend" {
     const evp_pointer_size = @sizeOf(*backend_openssl.pkey);
     switch (active) {
-        .openssl => try testing.expectEqual(evp_pointer_size, @sizeOf(x25519.pkey)),
-        .@"aws-lc" => try testing.expect(@sizeOf(x25519.pkey) > evp_pointer_size),
+        .openssl, .@"openssl-fips" => try testing.expectEqual(evp_pointer_size, @sizeOf(x25519.pkey)),
+        .@"aws-lc", .@"aws-lc-fips" => try testing.expect(@sizeOf(x25519.pkey) > evp_pointer_size),
         .boringssl => unreachable,
     }
 }
@@ -312,11 +353,11 @@ test "client group capabilities match implemented client key-share plumbing" {
 
 test "aead context shape matches active backend" {
     switch (active) {
-        .openssl => try testing.expectEqual(
+        .openssl, .@"openssl-fips" => try testing.expectEqual(
             @sizeOf(backend_openssl.AeadContext),
             @sizeOf(aead.Context),
         ),
-        .@"aws-lc" => try testing.expect(
+        .@"aws-lc", .@"aws-lc-fips" => try testing.expect(
             @sizeOf(aead.Context) != @sizeOf(backend_openssl.AeadContext),
         ),
         .boringssl => unreachable,
@@ -324,7 +365,7 @@ test "aead context shape matches active backend" {
 }
 
 test "aws-lc aead deinit clears inline context" {
-    if (active != .@"aws-lc") return error.SkipZigTest;
+    if (active != .@"aws-lc" and active != .@"aws-lc-fips") return error.SkipZigTest;
 
     const key: [16]u8 = @splat(0xab);
     var ctx = try backend_aws_lc.aeadInit(.aes_128_gcm_sha256, &key);
@@ -338,4 +379,110 @@ test "capability helpers recognize advertised algorithms" {
     for (capabilities.certificate_verify_schemes) |scheme| {
         try testing.expect(supportsCertificateVerifyScheme(scheme));
     }
+}
+
+// FIPS capability divergence — the FIPS table narrows the non-FIPS set by
+// dropping non-approved algorithms. These tests verify the narrowing under the
+// active backend identity, and are comptime-correct regardless of which
+// libcrypto is actually linked.
+
+// FIPS 140-3 does not approve ChaCha20-Poly1305 for TLS 1.3; the FIPS table
+// must not advertise it as a cipher suite.
+test "fips: chacha20_poly1305_sha256 excluded from FIPS cipher_suites" {
+    const fips_suites = switch (active) {
+        .openssl, .@"openssl-fips" => backend_openssl.capabilities_fips.cipher_suites,
+        .@"aws-lc", .@"aws-lc-fips" => backend_aws_lc.capabilities_fips.cipher_suites,
+        .boringssl => unreachable,
+    };
+    for (fips_suites) |suite| {
+        try testing.expect(suite != .chacha20_poly1305_sha256);
+    }
+}
+
+// FIPS 140-3 does not approve RSA PKCS#1 v1.5 for TLS 1.3 certificate
+// signatures; the FIPS table must keep only PSS-compatible schemes.
+test "fips: rsa_pkcs1_sha* excluded from FIPS certificate_signature_schemes" {
+    const fips_schemes = switch (active) {
+        .openssl, .@"openssl-fips" => backend_openssl.capabilities_fips.certificate_signature_schemes,
+        .@"aws-lc", .@"aws-lc-fips" => backend_aws_lc.capabilities_fips.certificate_signature_schemes,
+        .boringssl => unreachable,
+    };
+    for (fips_schemes) |scheme| {
+        try testing.expect(scheme != .rsa_pkcs1_sha256);
+        try testing.expect(scheme != .rsa_pkcs1_sha384);
+        try testing.expect(scheme != .rsa_pkcs1_sha512);
+    }
+}
+
+// FIPS 140-3 does not approve Ed25519; the FIPS certificate-signature table
+// must not advertise it.
+test "fips: ed25519 excluded from FIPS certificate_signature_schemes" {
+    const fips_schemes = switch (active) {
+        .openssl, .@"openssl-fips" => backend_openssl.capabilities_fips.certificate_signature_schemes,
+        .@"aws-lc", .@"aws-lc-fips" => backend_aws_lc.capabilities_fips.certificate_signature_schemes,
+        .boringssl => unreachable,
+    };
+    for (fips_schemes) |scheme| {
+        try testing.expect(scheme != .ed25519);
+    }
+}
+
+// FIPS 140-3 does not approve ML-KEM; the FIPS table must disable it.
+test "fips: ML-KEM disabled in FIPS capability table" {
+    const fips_caps = switch (active) {
+        .openssl, .@"openssl-fips" => backend_openssl.capabilities_fips,
+        .@"aws-lc", .@"aws-lc-fips" => backend_aws_lc.capabilities_fips,
+        .boringssl => unreachable,
+    };
+    try testing.expect(!fips_caps.client_x25519_mlkem768);
+    try testing.expect(!fips_caps.server_x25519_mlkem768);
+}
+
+// The FIPS table must be a strict subset of the non-FIPS table. The comptime
+// assertion in the comptime block above proves this at build time; this test
+// also verifies it at runtime for the active backend pair.
+test "fips: FIPS capabilities are a subset of non-FIPS capabilities" {
+    const fips_caps = switch (active) {
+        .openssl, .@"openssl-fips" => backend_openssl.capabilities_fips,
+        .@"aws-lc", .@"aws-lc-fips" => backend_aws_lc.capabilities_fips,
+        .boringssl => unreachable,
+    };
+    const base_caps = switch (active) {
+        .openssl, .@"openssl-fips" => backend_openssl.capabilities,
+        .@"aws-lc", .@"aws-lc-fips" => backend_aws_lc.capabilities,
+        .boringssl => unreachable,
+    };
+    for (fips_caps.cipher_suites) |suite| {
+        try testing.expect(suiteInList(suite, base_caps.cipher_suites));
+    }
+    for (fips_caps.certificate_verify_schemes) |scheme| {
+        try testing.expect(schemeInList(scheme, base_caps.certificate_verify_schemes));
+    }
+    for (fips_caps.certificate_signature_schemes) |scheme| {
+        try testing.expect(schemeInList(scheme, base_caps.certificate_signature_schemes));
+    }
+}
+
+// Under a FIPS backend identity, the active capability table must not advertise
+// ChaCha20-Poly1305. Under a non-FIPS backend, it must.
+test "fips: active capabilities follow FIPS identity" {
+    if (is_fips) {
+        try testing.expect(!supportsCipherSuite(.chacha20_poly1305_sha256));
+    } else {
+        try testing.expect(supportsCipherSuite(.chacha20_poly1305_sha256));
+    }
+}
+
+fn suiteInList(suite: CipherSuite, list: []const CipherSuite) bool {
+    for (list) |s| {
+        if (s == suite) return true;
+    }
+    return false;
+}
+
+fn schemeInList(scheme: SignatureScheme, list: []const SignatureScheme) bool {
+    for (list) |s| {
+        if (s == scheme) return true;
+    }
+    return false;
 }

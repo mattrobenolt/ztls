@@ -11,7 +11,7 @@ pub fn build(b: *std.Build) void {
     const crypto_backend = b.option(
         []const u8,
         "crypto-backend",
-        "libcrypto-family backend to compile: openssl, aws-lc",
+        "libcrypto-family backend to compile: openssl, aws-lc, openssl-fips, aws-lc-fips",
     ) orelse if (env_crypto_backend.len > 0) env_crypto_backend else "openssl";
 
     const ztls_dep = b.dependency("ztls", .{

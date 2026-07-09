@@ -40,6 +40,43 @@ pub const capabilities = struct {
     };
 };
 
+/// FIPS 140-3 narrowed capability table. The build option `openssl-fips`
+/// selects this table at compile time. The caller is responsible for ensuring
+/// the linked libcrypto is actually in FIPS mode (e.g. FIPS provider loaded).
+/// No runtime provider probing is performed by ztls.
+pub const capabilities_fips = struct {
+    // FIPS 140-3 does not approve ChaCha20-Poly1305 for TLS 1.3.
+    pub const cipher_suites: []const CipherSuite = &.{
+        .aes_128_gcm_sha256,
+        .aes_256_gcm_sha384,
+    };
+
+    pub const client_x25519 = true;
+    pub const client_p256 = true;
+    pub const client_p384 = true;
+    // FIPS 140-3 does not approve ML-KEM (NIST FIPS 203 is not yet in the
+    // 140-3 validated algorithms list as of 2026-07).
+    pub const client_x25519_mlkem768 = false;
+    pub const server_x25519 = true;
+    pub const server_p256 = true;
+    pub const server_p384 = true;
+    pub const server_x25519_mlkem768 = false;
+
+    pub const certificate_verify_schemes: []const SignatureScheme = &.{
+        .ecdsa_secp256r1_sha256,
+        .ecdsa_secp384r1_sha384,
+        .rsa_pss_rsae_sha256,
+        .rsa_pss_rsae_sha384,
+    };
+
+    // FIPS 140-3 does not approve RSA PKCS#1 v1.5 for TLS 1.3 certificate
+    // signatures (only RSASSA-PSS is approved) and does not approve Ed25519.
+    pub const certificate_signature_schemes: []const SignatureScheme = &.{
+        .ecdsa_secp256r1_sha256,
+        .ecdsa_secp384r1_sha384,
+    };
+};
+
 pub const Error = error{ LibcryptoFailed, IdentityElement };
 
 /// ML-KEM hybrid KEX types (RFC 9180 + draft-ietf-tls-ecdhe-mlkem).
