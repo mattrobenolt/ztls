@@ -1,6 +1,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const testing = std.testing;
+const assert = std.debug.assert;
 const ztls = @import("root.zig");
 
 pub fn hex(comptime len: usize, comptime encoded: []const u8) [len]u8 {
@@ -8,7 +9,7 @@ pub fn hex(comptime len: usize, comptime encoded: []const u8) [len]u8 {
     // silently zero-fill `out` when `encoded` is shorter than `2*len`,
     // corrupting vectors with trailing zeros (this bit a Wycheproof P-384
     // ECDSA signature during #60-A). Require an exact match.
-    comptime std.debug.assert(encoded.len == 2 * len);
+    comptime assert(encoded.len == 2 * len);
     var out: [len]u8 = @splat(0);
     _ = std.fmt.hexToBytes(&out, encoded) catch unreachable;
     return out;

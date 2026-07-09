@@ -90,12 +90,30 @@ comptime {
     // FIPS must also appear in the non-FIPS table. This is checked at compile
     // time for both backends so a FIPS table drift is caught even when the
     // active build is non-FIPS.
-    assertSubset(backend_openssl.capabilities_fips.cipher_suites, backend_openssl.capabilities.cipher_suites);
-    assertSubset(backend_openssl.capabilities_fips.certificate_verify_schemes, backend_openssl.capabilities.certificate_verify_schemes);
-    assertSubset(backend_openssl.capabilities_fips.certificate_signature_schemes, backend_openssl.capabilities.certificate_signature_schemes);
-    assertSubset(backend_aws_lc.capabilities_fips.cipher_suites, backend_aws_lc.capabilities.cipher_suites);
-    assertSubset(backend_aws_lc.capabilities_fips.certificate_verify_schemes, backend_aws_lc.capabilities.certificate_verify_schemes);
-    assertSubset(backend_aws_lc.capabilities_fips.certificate_signature_schemes, backend_aws_lc.capabilities.certificate_signature_schemes);
+    assertSubset(
+        backend_openssl.capabilities_fips.cipher_suites,
+        backend_openssl.capabilities.cipher_suites,
+    );
+    assertSubset(
+        backend_openssl.capabilities_fips.certificate_verify_schemes,
+        backend_openssl.capabilities.certificate_verify_schemes,
+    );
+    assertSubset(
+        backend_openssl.capabilities_fips.certificate_signature_schemes,
+        backend_openssl.capabilities.certificate_signature_schemes,
+    );
+    assertSubset(
+        backend_aws_lc.capabilities_fips.cipher_suites,
+        backend_aws_lc.capabilities.cipher_suites,
+    );
+    assertSubset(
+        backend_aws_lc.capabilities_fips.certificate_verify_schemes,
+        backend_aws_lc.capabilities.certificate_verify_schemes,
+    );
+    assertSubset(
+        backend_aws_lc.capabilities_fips.certificate_signature_schemes,
+        backend_aws_lc.capabilities.certificate_signature_schemes,
+    );
 }
 
 fn assertSubset(comptime fips: anytype, comptime base: anytype) void {
@@ -322,8 +340,14 @@ test "active backend is a buildable libcrypto-family member" {
     try testing.expectEqualStrings("openssl", @tagName(@as(@TypeOf(active), .openssl)));
     try testing.expectEqualStrings("aws-lc", @tagName(@as(@TypeOf(active), .@"aws-lc")));
     try testing.expectEqualStrings("boringssl", @tagName(@as(@TypeOf(active), .boringssl)));
-    try testing.expectEqualStrings("openssl-fips", @tagName(@as(@TypeOf(active), .@"openssl-fips")));
-    try testing.expectEqualStrings("aws-lc-fips", @tagName(@as(@TypeOf(active), .@"aws-lc-fips")));
+    try testing.expectEqualStrings(
+        "openssl-fips",
+        @tagName(@as(@TypeOf(active), .@"openssl-fips")),
+    );
+    try testing.expectEqualStrings(
+        "aws-lc-fips",
+        @tagName(@as(@TypeOf(active), .@"aws-lc-fips")),
+    );
 }
 
 // RFC 8446 §9.1 — TLS 1.3 endpoints need at least one mutually supported
@@ -342,8 +366,13 @@ test "capabilities are non-empty for the active backend" {
 test "x25519 handle shape matches active backend" {
     const evp_pointer_size = @sizeOf(*backend_openssl.pkey);
     switch (active) {
-        .openssl, .@"openssl-fips" => try testing.expectEqual(evp_pointer_size, @sizeOf(x25519.pkey)),
-        .@"aws-lc", .@"aws-lc-fips", .boringssl => try testing.expect(@sizeOf(x25519.pkey) > evp_pointer_size),
+        .openssl, .@"openssl-fips" => try testing.expectEqual(
+            evp_pointer_size,
+            @sizeOf(x25519.pkey),
+        ),
+        .@"aws-lc", .@"aws-lc-fips", .boringssl => try testing.expect(
+            @sizeOf(x25519.pkey) > evp_pointer_size,
+        ),
     }
 }
 
@@ -404,8 +433,10 @@ test "fips: chacha20_poly1305_sha256 excluded from FIPS cipher_suites" {
 // signatures; the FIPS table must keep only PSS-compatible schemes.
 test "fips: rsa_pkcs1_sha* excluded from FIPS certificate_signature_schemes" {
     const fips_schemes = switch (active) {
-        .openssl, .@"openssl-fips" => backend_openssl.capabilities_fips.certificate_signature_schemes,
-        .@"aws-lc", .@"aws-lc-fips" => backend_aws_lc.capabilities_fips.certificate_signature_schemes,
+        .openssl, .@"openssl-fips" => backend_openssl
+            .capabilities_fips.certificate_signature_schemes,
+        .@"aws-lc", .@"aws-lc-fips" => backend_aws_lc
+            .capabilities_fips.certificate_signature_schemes,
         .boringssl => return error.SkipZigTest,
     };
     for (fips_schemes) |scheme| {
@@ -419,8 +450,10 @@ test "fips: rsa_pkcs1_sha* excluded from FIPS certificate_signature_schemes" {
 // must not advertise it.
 test "fips: ed25519 excluded from FIPS certificate_signature_schemes" {
     const fips_schemes = switch (active) {
-        .openssl, .@"openssl-fips" => backend_openssl.capabilities_fips.certificate_signature_schemes,
-        .@"aws-lc", .@"aws-lc-fips" => backend_aws_lc.capabilities_fips.certificate_signature_schemes,
+        .openssl, .@"openssl-fips" => backend_openssl
+            .capabilities_fips.certificate_signature_schemes,
+        .@"aws-lc", .@"aws-lc-fips" => backend_aws_lc
+            .capabilities_fips.certificate_signature_schemes,
         .boringssl => return error.SkipZigTest,
     };
     for (fips_schemes) |scheme| {

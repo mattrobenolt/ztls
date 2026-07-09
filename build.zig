@@ -48,11 +48,13 @@ pub fn build(b: *Build) void {
     const crypto_backend_str = b.option(
         []const u8,
         "crypto-backend",
-        "libcrypto-family backend to compile: openssl, aws-lc, boringssl, openssl-fips, aws-lc-fips",
+        "libcrypto-family backend to compile: openssl, aws-lc, boringssl, " ++
+            "openssl-fips, aws-lc-fips",
     ) orelse if (env_crypto_backend.len > 0) env_crypto_backend else "openssl";
     const crypto_backend: Backend = std.meta.stringToEnum(Backend, crypto_backend_str) orelse
         panic(
-            "unsupported -Dcrypto-backend={s}; supported: openssl, aws-lc, boringssl, openssl-fips, aws-lc-fips",
+            "unsupported -Dcrypto-backend={s}; supported: openssl, aws-lc, boringssl, " ++
+                "openssl-fips, aws-lc-fips",
             .{crypto_backend_str},
         );
     const build_options = b.addOptions();
