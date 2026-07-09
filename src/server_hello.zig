@@ -971,7 +971,10 @@ test "parse: rejects mismatched session id echo" {
     var out: [128]u8 = undefined;
     const msg = try encode(&out, @splat(0xab), &.{ 1, 2 }, .aes_128_gcm_sha256, .zero);
     var result: ServerHello = undefined;
-    try testing.expectError(error.InvalidSessionIdEcho, parseWithSessionIdEcho(msg, &.{ 1, 3 }, &result));
+    try testing.expectError(
+        error.InvalidSessionIdEcho,
+        parseWithSessionIdEcho(msg, &.{ 1, 3 }, &result),
+    );
 }
 
 // RFC 8446 §4.1.3 — TLS 1.3 ServerHello legacy_compression_method is zero.
