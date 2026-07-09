@@ -550,6 +550,9 @@ pub fn deinit(self: *ClientHandshake) void {
         },
         .start, .wait_sh => {},
     }
+    // Free the backend-owned KEM private key handle if one was allocated
+    // during start(). draft-ietf-tls-ecdhe-mlkem-05 §4.1.
+    if (self.kem_key) |k| mlkem.freeKey(k);
     self.suite.secureZero();
     self.keypairs.secureZero();
     self.* = undefined;

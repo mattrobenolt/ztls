@@ -1190,6 +1190,35 @@ test "parseHelloRetryRequest: rejects record_size_limit" {
     try testing.expectError(error.UnexpectedExtension, parseHelloRetryRequest(&with_rsl));
 }
 
+// draft-ietf-tls-ecdhe-mlkem-05 §4.2 — KEM ciphertext (1120 bytes for
+// X25519MLKEM768) round-trips through encode → parse without corruption.
+// This test is pure-Zig (no OpenSSL) and isolates the wire path from the
+// backend. It runs on all architectures to catch any struct-return / ArrayBuffer
+// issues with large KEM key shares. See issue #65.
+test "KEM key_share round-trip: ServerHello encode → parse preserves 1120-byte ciphertext" {
+    // Fill with a recognizable pattern so any byte corruption is visible.
+    var original: [1120]u8 = undefined;
+    for (&original, 0..) |*b, i| b.* = @intCast(i % 256);
+
+    var kem_data: ArrayBuffer(u8, max_kem_share_len) = .empty;
+    kem_data.appendSliceAssumeCapacity(&original);
+    const ks: KeyShare = .{ .kem = .{ .group = .x25519_mlkem768, .data = kem_data } };
+
+    var out: [2048]u8 = undefined;
+    const msg = try encodeWithKeyShare(
+        &out,
+        @splat(0xab),
+        &.{},
+        .aes_128_gcm_sha256,
+        ks,
+    );
+    const sh = try parse(msg);
+    try testing.expectEqual(.x25519_mlkem768, sh.key_share.group());
+    const parsed_data = sh.key_share.kem.data.constSlice();
+    try testing.expectEqual(@as(usize, 1120), parsed_data.len);
+    try testing.expectEqualSlices(u8, &original, parsed_data);
+}
+
 fn fuzzParseHrr(_: void, input: []const u8) anyerror!void {
     _ = parseHelloRetryRequest(input) catch return;
 }

@@ -4681,6 +4681,7 @@ test "in-memory X25519MLKEM768 KEM handshake reaches app data" {
         .offer_pq_key_share = true,
     });
     client.policy.insecure_no_chain_anchor = true;
+    defer client.deinit();
 
     var client_out: [4096]u8 = undefined;
     const ch_record = try client.start(&client_out);
