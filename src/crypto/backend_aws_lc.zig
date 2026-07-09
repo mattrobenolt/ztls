@@ -35,15 +35,21 @@ pub const capabilities = struct {
         .rsa_pss_rsae_sha384,
     };
 
-    // Match the current AWS-LC-linked signature facade. These are declared here,
-    // not reexported from OpenSSL, so AWS-LC can diverge when provider/FIPS
-    // version probing says it must.
+    // RFC 8446 §4.4.2.2 — signature_algorithms_cert constrains the
+    // certificate-chain signature algorithm (cert-to-cert), which is
+    // independent of the CertificateVerify scheme (§4.4.3). Ed25519 chain
+    // signatures are verified via std.crypto.sign.Ed25519 in
+    // certificate_parser.zig, not the backend seam, so they are advertised
+    // here even though certificate_verify_schemes omits ed25519. These are
+    // declared here, not reexported from OpenSSL, so AWS-LC can diverge when
+    // provider/FIPS version probing says it must.
     pub const certificate_signature_schemes: []const SignatureScheme = &.{
         .rsa_pkcs1_sha256,
         .rsa_pkcs1_sha384,
         .rsa_pkcs1_sha512,
         .ecdsa_secp256r1_sha256,
         .ecdsa_secp384r1_sha384,
+        .ed25519,
     };
 };
 

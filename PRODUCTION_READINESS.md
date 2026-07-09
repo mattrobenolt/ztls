@@ -520,6 +520,13 @@ each passing the same correctness and interop gates.
 - `src/certificate.zig` routes CertificateVerify public-key construction and
   signature verification through `src/crypto/backend.zig`; certificate parsing,
   chain signature verification, and path policy remain ztls/std-derived code.
+  Ed25519 certificate-chain signatures are verified via
+  `std.crypto.sign.Ed25519` in `src/certificate_parser.zig` and are advertised
+  in the non-FIPS `certificate_signature_schemes` tables of both backends. The
+  certificate-chain signature algorithm (RFC 8446 §4.4.2.2) is independent of
+  the CertificateVerify scheme (§4.4.3); `certificate_verify_schemes` omits
+  `ed25519` because Ed25519 CertificateVerify signing/verification is not yet
+  backed by the backend seam.
 - `just check-backend-aws-lc` builds, tests, produces the benchmark binary,
   executes a one-row benchmark smoke, runs the in-memory example, builds the
   conformance shims, and runs the TLS 1.3 tlsfuzzer smoke with AWS-LC libcrypto
@@ -593,7 +600,12 @@ each passing the same correctness and interop gates.
   exist: each FIPS table drops ChaCha20-Poly1305 (not FIPS 140-3 approved),
   RSA PKCS#1 v1.5 certificate signatures (only PSS approved for TLS 1.3),
   Ed25519, and ML-KEM, keeping AES-GCM, P-256/P-384, X25519, RSA-PSS, and
-  ECDSA. Comptime assertions prove each FIPS table is a strict subset of its
+  ECDSA. The non-FIPS `certificate_signature_schemes` tables now advertise
+  `.ed25519` because Ed25519 chain signatures are verified via
+  `std.crypto.sign.Ed25519` in `certificate_parser.zig`, independent of the
+  CertificateVerify backend seam (RFC 8446 §4.4.2.2 vs §4.4.3);
+  `certificate_verify_schemes` still omits `ed25519` because Ed25519
+  CertificateVerify signing/verification is not backend-backed. Comptime assertions prove each FIPS table is a strict subset of its
   non-FIPS counterpart, and divergence tests (running under the default
   backend) verify the FIPS tables exclude the non-approved algorithms. The FIPS
   build option declares intent; the caller/linker is responsible for ensuring

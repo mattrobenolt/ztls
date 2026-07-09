@@ -28,15 +28,19 @@ pub const capabilities = struct {
         .rsa_pss_rsae_sha384,
     };
 
-    // Keep signature_algorithms_cert aligned with the current CertificateVerify
-    // public-key path. Ed25519 chain signatures are not advertised until ztls can
-    // also complete an Ed25519 leaf CertificateVerify under the backend seam.
+    // RFC 8446 §4.4.2.2 — signature_algorithms_cert constrains the
+    // certificate-chain signature algorithm (cert-to-cert), which is
+    // independent of the CertificateVerify scheme (§4.4.3). Ed25519 chain
+    // signatures are verified via std.crypto.sign.Ed25519 in
+    // certificate_parser.zig, not the backend seam, so they are advertised
+    // here even though certificate_verify_schemes omits ed25519.
     pub const certificate_signature_schemes: []const SignatureScheme = &.{
         .rsa_pkcs1_sha256,
         .rsa_pkcs1_sha384,
         .rsa_pkcs1_sha512,
         .ecdsa_secp256r1_sha256,
         .ecdsa_secp384r1_sha384,
+        .ed25519,
     };
 };
 

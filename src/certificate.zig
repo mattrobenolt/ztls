@@ -539,6 +539,9 @@ const chain_root_pem = "tests/fixtures/chain/root.crt";
 fn chainLeafDer() []const u8 {
     return &FixturesCert().chain_leaf_der;
 }
+fn ed25519CertDer() []const u8 {
+    return &FixturesCert().ed25519_cert_der;
+}
 fn chainIntermediateDer() []const u8 {
     return &FixturesCert().chain_intermediate_der;
 }
@@ -1112,6 +1115,41 @@ test "certificate_policy.verifyServerAuth: legacy certificate signatures are rej
 test "certificate_policy.verifyServerAuth: RSA PKCS1 SHA-256 certificate signature is accepted" {
     const leaf = policyLeaf("", .empty, .empty, .sha256WithRSAEncryption);
     try certificate_policy.verifyServerAuth(leaf);
+}
+
+// RFC 8446 §4.4.2.2 vs §4.4.3 — the certificate-chain signature algorithm
+// (signature_algorithms_cert) is independent of the CertificateVerify scheme.
+// Ed25519 chain signatures are verified via std.crypto.sign.Ed25519 in
+// certificate_parser.zig, so .ed25519 is advertised in the backend's
+// certificate_signature_schemes even though certificate_verify_schemes omits it.
+test "certificate_policy: Ed25519 chain signature algorithm accepted when advertised" {
+    const schemes = [_]SignatureScheme{.ed25519};
+    try certificate_policy.verifyCertificateSignatureAlgorithm(.curveEd25519, &schemes);
+}
+
+// RFC 8446 §4.4.2.2 — Ed25519 must be absent from the advertised schemes to be
+// rejected; the chain signature algorithm is policy-gated, not hardcoded.
+test "certificate_policy: Ed25519 chain signature algorithm rejected when not advertised" {
+    const schemes = [_]SignatureScheme{.ecdsa_secp256r1_sha256};
+    try testing.expectError(
+        error.CertificateSignatureAlgorithmRejected,
+        certificate_policy.verifyCertificateSignatureAlgorithm(.curveEd25519, &schemes),
+    );
+}
+
+// RFC 8446 §4.4.2.2 — a real Ed25519-signed self-signed certificate fixture is
+// parsed and its chain signature is verified via std.crypto.sign.Ed25519. The
+// leaf passes server-auth policy because .ed25519 is now in the backend's
+// certificate_signature_schemes. The insecure_no_chain_anchor escape hatch is
+// used because this is a self-signed fixture without a trust bundle.
+test "parse: Ed25519 self-signed certificate verified via std.crypto" {
+    var buf: [1024]u8 = undefined;
+    const pub_key = try parse(buildCertMsg(&buf, ed25519CertDer()), .{
+        .insecure_no_chain_anchor = true,
+        .now_sec = 1_790_000_000,
+        .host_name = "ed25519.server.test",
+    });
+    try testing.expect(pub_key.len > 0);
 }
 
 // RFC 8446 §4.2.3 — signature_algorithms_cert constrains certificate
