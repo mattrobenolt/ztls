@@ -1,21 +1,20 @@
-//! X.509 certificate parser derived from Zig 0.15.2 std.crypto.Certificate.
+//! X.509 certificate parser — ztls-owned fork of Zig 0.15.2 std.crypto.Certificate.
 //!
 //! SPDX-License-Identifier: MIT
 //! Copyright (c) Zig contributors
 //! Source: https://github.com/ziglang/zig/blob/0.15.2/lib/std/crypto/Certificate.zig
 //!
-//! Local changes:
+//! Local changes from upstream:
 //! - Import std as a package module (`@import("std")`) instead of std-internal path.
-//! - Alias Bundle to std.crypto.Certificate.Bundle instead of vendoring OS trust-store code.
 //! - Bounds-check DER element parsing so malformed certificate lengths return
 //!   CertificateFieldHasInvalidLength instead of panicking on out-of-bounds access.
+//! - Name-constraints parsing and enforcement (RFC 5280 §4.2.1.10).
+//! - DNS-fallback-to-CN for hostname and name-constraint checking (RFC 5280 §4.2.1.10).
 
 const std = @import("std");
 const crypto = std.crypto;
 const mem = std.mem;
-/// Vendored parser from Zig 0.15.2 std.crypto.Certificate.
-/// Bundle remains std-owned; ztls vendors only the parser/verification code to
-/// patch malformed-DER bounds checks before upstream Zig ships the fix.
+/// OS trust-store loading stays std-owned; ztls owns X.509 parse-and-verify.
 pub const Bundle = std.crypto.Certificate.Bundle;
 
 buffer: []const u8,
@@ -65,7 +64,7 @@ pub const Algorithm = enum {
     }
 };
 
-pub const AlgorithmCategory = enum {
+const AlgorithmCategory = enum {
     rsaEncryption,
     rsassa_pss,
     X9_62_id_ecPublicKey,
@@ -79,7 +78,7 @@ pub const AlgorithmCategory = enum {
     });
 };
 
-pub const Attribute = enum {
+const Attribute = enum {
     commonName,
     serialNumber,
     countryName,
@@ -109,7 +108,7 @@ pub const Attribute = enum {
     });
 };
 
-pub const NamedCurve = enum {
+const NamedCurve = enum {
     secp384r1,
     secp521r1,
     X9_62_prime256v1,
@@ -129,7 +128,7 @@ pub const NamedCurve = enum {
     }
 };
 
-pub const ExtensionId = enum {
+const ExtensionId = enum {
     subject_key_identifier,
     key_usage,
     private_key_usage_period,
@@ -178,7 +177,7 @@ pub const ExtensionId = enum {
     });
 };
 
-pub const GeneralNameTag = enum(u5) {
+const GeneralNameTag = enum(u5) {
     otherName = 0,
     rfc822Name = 1,
     dNSName = 2,
@@ -223,7 +222,7 @@ pub const Parsed = struct {
 
     pub const Slice = der.Element.Slice;
 
-    pub fn slice(p: Parsed, s: Slice) []const u8 {
+    fn slice(p: Parsed, s: Slice) []const u8 {
         return p.certificate.buffer[s.start..s.end];
     }
 
@@ -235,11 +234,11 @@ pub const Parsed = struct {
         return p.slice(p.subject_slice);
     }
 
-    pub fn commonName(p: Parsed) []const u8 {
+    fn commonName(p: Parsed) []const u8 {
         return p.slice(p.common_name_slice);
     }
 
-    pub fn signature(p: Parsed) []const u8 {
+    fn signature(p: Parsed) []const u8 {
         return p.slice(p.signature_slice);
     }
 
@@ -247,19 +246,19 @@ pub const Parsed = struct {
         return p.slice(p.pub_key_slice);
     }
 
-    pub fn message(p: Parsed) []const u8 {
+    fn message(p: Parsed) []const u8 {
         return p.slice(p.message_slice);
     }
 
-    pub fn subjectAltName(p: Parsed) []const u8 {
+    fn subjectAltName(p: Parsed) []const u8 {
         return p.slice(p.subject_alt_name_slice);
     }
 
-    pub fn keyUsage(p: Parsed) []const u8 {
+    fn keyUsage(p: Parsed) []const u8 {
         return p.slice(p.key_usage_slice);
     }
 
-    pub fn extKeyUsage(p: Parsed) []const u8 {
+    fn extKeyUsage(p: Parsed) []const u8 {
         return p.slice(p.ext_key_usage_slice);
     }
 
@@ -1318,19 +1317,19 @@ pub fn parse(cert: Certificate) ParseError!Parsed {
     };
 }
 
-pub fn verify(subject: Certificate, issuer: Certificate, now_sec: i64) !void {
+fn verify(subject: Certificate, issuer: Certificate, now_sec: i64) !void {
     const parsed_subject = try subject.parse();
     const parsed_issuer = try issuer.parse();
     return parsed_subject.verify(parsed_issuer, now_sec);
 }
 
-pub fn contents(cert: Certificate, elem: der.Element) []const u8 {
+fn contents(cert: Certificate, elem: der.Element) []const u8 {
     return cert.buffer[elem.slice.start..elem.slice.end];
 }
 
-pub const ParseBitStringError = error{ CertificateFieldHasWrongDataType, CertificateHasInvalidBitString };
+const ParseBitStringError = error{ CertificateFieldHasWrongDataType, CertificateHasInvalidBitString };
 
-pub fn parseBitString(cert: Certificate, elem: der.Element) !der.Element.Slice {
+fn parseBitString(cert: Certificate, elem: der.Element) !der.Element.Slice {
     if (elem.identifier.tag != .bitstring) return error.CertificateFieldHasWrongDataType;
     if (elem.slice.end - elem.slice.start < 1) return error.CertificateHasInvalidBitString;
     if (cert.buffer[elem.slice.start] != 0) return error.CertificateHasInvalidBitString;
@@ -1345,10 +1344,10 @@ test "parseBitString rejects empty bit string content" {
     try std.testing.expectError(error.CertificateHasInvalidBitString, parseBitString(cert, elem));
 }
 
-pub const ParseTimeError = error{ CertificateTimeInvalid, CertificateFieldHasWrongDataType };
+const ParseTimeError = error{ CertificateTimeInvalid, CertificateFieldHasWrongDataType };
 
 /// Returns number of seconds since epoch.
-pub fn parseTime(cert: Certificate, elem: der.Element) ParseTimeError!u64 {
+fn parseTime(cert: Certificate, elem: der.Element) ParseTimeError!u64 {
     const bytes = cert.contents(elem);
     switch (elem.identifier.tag) {
         .utc_time => {
@@ -1433,7 +1432,7 @@ const Date = struct {
     }
 };
 
-pub fn parseTimeDigits(text: *const [2]u8, min: u8, max: u8) !u8 {
+fn parseTimeDigits(text: *const [2]u8, min: u8, max: u8) !u8 {
     const nn: @Vector(2, u16) = .{ text[0], text[1] };
     const zero: @Vector(2, u16) = .{ '0', '0' };
     const mm: @Vector(2, u16) = .{ 10, 1 };
@@ -1455,7 +1454,7 @@ test parseTimeDigits {
     try expectError(error.CertificateTimeInvalid, parseTimeDigits("Di", 0, 99));
 }
 
-pub fn parseYear4(text: *const [4]u8) !u16 {
+fn parseYear4(text: *const [4]u8) !u16 {
     const nnnn: @Vector(4, u32) = .{ text[0], text[1], text[2], text[3] };
     const zero: @Vector(4, u32) = .{ '0', '0', '0', '0' };
     const mmmm: @Vector(4, u32) = .{ 1000, 100, 10, 1 };
@@ -1476,27 +1475,27 @@ test parseYear4 {
     try expectError(error.CertificateTimeInvalid, parseYear4("r:bQ"));
 }
 
-pub fn parseAlgorithm(bytes: []const u8, element: der.Element) ParseEnumError!Algorithm {
+fn parseAlgorithm(bytes: []const u8, element: der.Element) ParseEnumError!Algorithm {
     return parseEnum(Algorithm, bytes, element);
 }
 
-pub fn parseAlgorithmCategory(bytes: []const u8, element: der.Element) ParseEnumError!AlgorithmCategory {
+fn parseAlgorithmCategory(bytes: []const u8, element: der.Element) ParseEnumError!AlgorithmCategory {
     return parseEnum(AlgorithmCategory, bytes, element);
 }
 
-pub fn parseAttribute(bytes: []const u8, element: der.Element) ParseEnumError!Attribute {
+fn parseAttribute(bytes: []const u8, element: der.Element) ParseEnumError!Attribute {
     return parseEnum(Attribute, bytes, element);
 }
 
-pub fn parseNamedCurve(bytes: []const u8, element: der.Element) ParseEnumError!NamedCurve {
+fn parseNamedCurve(bytes: []const u8, element: der.Element) ParseEnumError!NamedCurve {
     return parseEnum(NamedCurve, bytes, element);
 }
 
-pub fn parseExtensionId(bytes: []const u8, element: der.Element) ParseEnumError!ExtensionId {
+fn parseExtensionId(bytes: []const u8, element: der.Element) ParseEnumError!ExtensionId {
     return parseEnum(ExtensionId, bytes, element);
 }
 
-pub const ParseEnumError = error{ CertificateFieldHasWrongDataType, CertificateHasUnrecognizedObjectId };
+const ParseEnumError = error{ CertificateFieldHasWrongDataType, CertificateHasUnrecognizedObjectId };
 
 fn parseEnum(comptime E: type, bytes: []const u8, element: der.Element) ParseEnumError!E {
     if (element.identifier.tag != .object_identifier)
@@ -1505,9 +1504,9 @@ fn parseEnum(comptime E: type, bytes: []const u8, element: der.Element) ParseEnu
     return E.map.get(oid_bytes) orelse return error.CertificateHasUnrecognizedObjectId;
 }
 
-pub const ParseVersionError = error{ UnsupportedCertificateVersion, CertificateFieldHasInvalidLength };
+const ParseVersionError = error{ UnsupportedCertificateVersion, CertificateFieldHasInvalidLength };
 
-pub fn parseVersion(bytes: []const u8, version_elem: der.Element) ParseVersionError!Version {
+fn parseVersion(bytes: []const u8, version_elem: der.Element) ParseVersionError!Version {
     if (@as(u8, @bitCast(version_elem.identifier)) != 0xa0)
         return .v1;
 

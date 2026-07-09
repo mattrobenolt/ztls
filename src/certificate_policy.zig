@@ -3,7 +3,7 @@
 //! RFC 8446 §4.4.2.2
 const std = @import("std");
 const backend = @import("crypto/backend.zig");
-const Certificate = @import("cryptox/Certificate.zig");
+const Certificate = @import("certificate_parser.zig");
 const SignatureScheme = @import("signature_scheme.zig").SignatureScheme;
 
 pub const PolicyError = error{

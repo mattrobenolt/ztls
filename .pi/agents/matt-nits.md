@@ -18,9 +18,11 @@ This is not a code-styling agent. Do not invent rules. Do not apply edits that a
 
 Apply exactly these patterns. They are derived from the "style nits" commits in ztls git history (`f03d58b`, `f31fb1c`, `c903f6a`, `e1fc0aa`, `5f4a0fb`) and related consistency commits.
 
-Do not apply style nits to vendored code, especially
-`src/cryptox/Certificate.zig`. Vendored files may receive targeted
-security/correctness fixes when explicitly requested, but do not churn them for
+Do not apply style nits to the upstream-derived parser in
+`src/certificate_parser.zig`. It is a ztls-owned fork of Zig
+std.crypto.Certificate (MIT/Zig attribution preserved in-file), but its
+upstream-derived structure stays intact. It may receive targeted
+security/correctness fixes when explicitly requested, but do not churn it for
 aliasing, inline accessors, splats, doc-comment style, or other checklist-only
 edits.
 

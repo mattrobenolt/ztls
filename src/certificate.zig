@@ -14,7 +14,7 @@ pub const LeafUsage = certificate_policy.LeafUsage;
 pub const Policy = certificate_policy.Policy;
 pub const PolicyError = certificate_policy.PolicyError;
 const backend = @import("crypto/backend.zig");
-const Certificate = @import("cryptox/Certificate.zig");
+const Certificate = @import("certificate_parser.zig");
 const extension_type = @import("extension_type.zig");
 const ExtensionType = extension_type.ExtensionType;
 const handshake = @import("handshake.zig");
@@ -1354,7 +1354,7 @@ test "parse: extracts non-critical name constraints" {
 }
 
 // Fuzz target: parse must reject arbitrary Certificate bytes with an error,
-// never crash. Exercises our framing plus cryptox.Certificate's X.509 parser.
+// never crash. Exercises our framing plus certificate_parser's X.509 parser.
 // Run with `zig build test --fuzz`.
 fn fuzzParse(_: void, input: []const u8) anyerror!void {
     _ = parse(input, .{}) catch return;

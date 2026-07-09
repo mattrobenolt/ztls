@@ -14,7 +14,7 @@ const std = @import("std");
 const testing = std.testing;
 
 const backend = @import("backend.zig");
-const Certificate = @import("../cryptox/Certificate.zig");
+const Certificate = @import("../certificate_parser.zig");
 const CipherSuite = @import("../cipher_suite.zig").CipherSuite;
 const cert_fixtures = @import("../test_fixtures/certificate_fixtures.zig");
 

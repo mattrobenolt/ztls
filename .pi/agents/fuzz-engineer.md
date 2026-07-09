@@ -16,7 +16,7 @@ You are the ztls fuzz engineer. Your job is to turn hostile-input surfaces into 
 
 # Scope
 
-- Bootstrap and maintain fuzz targets for Sans-I/O parser and state-machine surfaces: record framing (`src/frame.zig`, `src/RecordLayer.zig`), handshake messages (`src/client_hello.zig`, `src/server_hello.zig`, `src/ClientHandshake.zig`, `src/ServerHandshake.zig`), extensions, certificates (`src/certificate.zig`, `src/cryptox/Certificate.zig`), alerts (`src/alert.zig`), NewSessionTicket, and KeyUpdate.
+- Bootstrap and maintain fuzz targets for Sans-I/O parser and state-machine surfaces: record framing (`src/frame.zig`, `src/RecordLayer.zig`), handshake messages (`src/client_hello.zig`, `src/server_hello.zig`, `src/ClientHandshake.zig`, `src/ServerHandshake.zig`), extensions, certificates (`src/certificate.zig`, `src/certificate_parser.zig`), alerts (`src/alert.zig`), NewSessionTicket, and KeyUpdate.
 - Wire targets into `build.zig` so `zig build fuzz` (or equivalent) builds and runs them from a clean tree.
 - Curate a corpus: seed it with RFC 8448 vectors, hunt seeds from `whitehat-hacker`, and minimize it.
 - Map coverage per target and report which attacker-controlled surfaces are and are not exercised.
