@@ -281,19 +281,19 @@ pub const KeyShare = union(enum) {
         data: ArrayBuffer(u8, max_kem_share_len),
     },
 
-    pub fn group(self: KeyShare) NamedGroup {
-        return switch (self) {
+    pub fn group(self: *const KeyShare) NamedGroup {
+        return switch (self.*) {
             .x25519 => .x25519,
             .secp256r1 => .secp256r1,
             .secp384r1 => .secp384r1,
-            .kem => |k| k.group,
+            .kem => |*k| k.group,
         };
     }
 
     fn bytes(self: *const KeyShare) []const u8 {
         return switch (self.*) {
             inline .x25519, .secp256r1, .secp384r1 => |*key| &key.data,
-            .kem => |k| k.data.constSlice(),
+            .kem => |*k| k.data.constSlice(),
         };
     }
 };
@@ -1228,7 +1228,8 @@ test "KEM key_share round-trip: ServerHello encode → parse preserves 1120-byte
     const encoded_key = msg[52..][0..1120];
     try testing.expectEqualSlices(u8, &original, encoded_key);
 
-    const sh = try parse(msg);
+    var sh: ServerHello = undefined;
+    try parseWithSessionIdEcho(msg, null, &sh);
     try testing.expectEqual(.x25519_mlkem768, sh.key_share.group());
     const parsed_data = sh.key_share.kem.data.constSlice();
     try testing.expectEqual(@as(usize, 1120), parsed_data.len);

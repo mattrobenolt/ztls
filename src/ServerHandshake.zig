@@ -836,7 +836,7 @@ fn processClientHelloMessage(
         .x25519 => .x25519,
         .secp256r1 => .secp256r1,
         .secp384r1 => .secp384r1,
-        .kem => |k| k.group,
+        .kem => |*k| k.group,
     };
     // KEM encapsulation was already done during key_share selection above.
     // The `kem_enc` and `kem_sec` ArrayBuffers contain the ciphertext and
@@ -846,7 +846,7 @@ fn processClientHelloMessage(
         .x25519 => .{ .x25519 = self.keypairs.x25519.public_key },
         .secp256r1 => .{ .secp256r1 = self.keypairs.p256.public_key },
         .secp384r1 => .{ .secp384r1 = (self.keypairs.p384 orelse unreachable).public_key },
-        .kem => |k| .{ .kem = .{
+        .kem => |*k| .{ .kem = .{
             .group = k.group,
             .data = kem_enc orelse .empty,
         } },

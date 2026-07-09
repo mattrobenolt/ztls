@@ -1301,7 +1301,9 @@ pub fn processServerHello(self: *ClientHandshake, msg: []const u8) ServerHelloEr
         },
         // KEM hybrid: decapsulate using our private key + the server's
         // ciphertext. draft-ietf-tls-ecdhe-mlkem-05 §4.2.
-        .kem => |k| blk: {
+        // Capture by pointer to avoid copying the 1670-byte KEM payload,
+        // which triggers an x86_64 codegen field-offset bug (issue #65).
+        .kem => |*k| blk: {
             if (self.kem_key == null) return error.UnexpectedMessage;
             var sec: [80]u8 = undefined;
             const shared = try mlkem.decapsulate(
