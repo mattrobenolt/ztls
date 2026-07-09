@@ -56,9 +56,9 @@ while [[ $# -gt 0 ]]; do
 done
 
 case "${crypto_backend}" in
-  openssl|aws-lc) ;;
+  openssl|aws-lc|boringssl) ;;
   *)
-    echo "unsupported --crypto-backend=${crypto_backend}; expected openssl or aws-lc" >&2
+    echo "unsupported --crypto-backend=${crypto_backend}; expected openssl, aws-lc, or boringssl" >&2
     exit 2
     ;;
 esac
@@ -82,14 +82,27 @@ if [[ "${crypto_backend}" == "aws-lc" ]]; then
     aws_lc_pkg_config_path="${aws_lc_dev}/lib/pkgconfig"
   fi
   log "AWS-LC pkg-config path: ${aws_lc_pkg_config_path}"
+elif [[ "${crypto_backend}" == "boringssl" ]]; then
+  boringssl_pkg_config_path="${ZTLS_BORINGSSL_PKG_CONFIG_PATH:-}"
+  if [[ -z "${boringssl_pkg_config_path}" ]]; then
+    echo "ZTLS_BORINGSSL_PKG_CONFIG_PATH is not set; run inside 'nix develop .#boringssl'" >&2
+    exit 1
+  fi
+  log "BoringSSL pkg-config path: ${boringssl_pkg_config_path}"
 fi
 
 zig_for_backend() {
-  if [[ "${crypto_backend}" == "aws-lc" ]]; then
-    PKG_CONFIG_PATH="${aws_lc_pkg_config_path}${PKG_CONFIG_PATH:+:${PKG_CONFIG_PATH}}" zig "$@"
-  else
-    PKG_CONFIG_PATH="${openssl_pkg_config_path}${PKG_CONFIG_PATH:+:${PKG_CONFIG_PATH}}" zig "$@"
-  fi
+  case "${crypto_backend}" in
+    aws-lc)
+      PKG_CONFIG_PATH="${aws_lc_pkg_config_path}${PKG_CONFIG_PATH:+:${PKG_CONFIG_PATH}}" zig "$@"
+      ;;
+    boringssl)
+      PKG_CONFIG_PATH="${boringssl_pkg_config_path}${PKG_CONFIG_PATH:+:${PKG_CONFIG_PATH}}" zig "$@"
+      ;;
+    *)
+      PKG_CONFIG_PATH="${openssl_pkg_config_path}${PKG_CONFIG_PATH:+:${PKG_CONFIG_PATH}}" zig "$@"
+      ;;
+  esac
 }
 
 zig_for_openssl_baseline() {
@@ -222,6 +235,8 @@ assert_linked_under "OpenSSL libssl benchmark ssl" "${linked_libssl_ssl}" "${ZTL
   echo "openssl_pkg_config_path=${openssl_pkg_config_path}"
   if [[ "${crypto_backend}" == "aws-lc" ]]; then
     echo "aws_lc_pkg_config_path=${aws_lc_pkg_config_path}"
+  elif [[ "${crypto_backend}" == "boringssl" ]]; then
+    echo "boringssl_pkg_config_path=${boringssl_pkg_config_path}"
   fi
   if [[ -n "${linked_crypto}" ]]; then
     echo "linked_libcrypto=${linked_crypto}"

@@ -94,22 +94,42 @@
             export ZTLS_OPENSSL_LIB_DIR=${pkgs.openssl.out}/lib
             export ZTLS_AWS_LC_PKG_CONFIG_PATH=${pkgs.aws-lc.dev}/lib/pkgconfig
             export ZTLS_AWS_LC_LIB_DIR=${pkgs.aws-lc}/lib
+            export ZTLS_BORINGSSL_PKG_CONFIG_PATH=${boringsslPc}
+            export ZTLS_BORINGSSL_LIB_DIR=${pkgs.boringssl}/lib
           '';
-          # nixpkgs boringssl ships headers (dev) and libcrypto.so (out) but
-          # no pkg-config file. Synthesize a minimal libcrypto.pc so the
-          # existing linkSystemLibrary("crypto") path resolves BoringSSL.
-          boringsslPc = pkgs.writeTextDir "libcrypto.pc" ''
-            prefix=${pkgs.boringssl.dev}
-            exec_prefix=${pkgs.boringssl}
-            libdir=${pkgs.boringssl}/lib
-            includedir=${pkgs.boringssl.dev}/include
+          # nixpkgs boringssl ships headers (dev) and libcrypto/libssl .so
+          # (out) but no pkg-config files. Synthesize minimal libcrypto.pc
+          # and libssl.pc so the existing linkSystemLibrary paths resolve
+          # BoringSSL, and benchmark baselines can link BoringSSL libssl.
+          boringsslPc = pkgs.symlinkJoin {
+            name = "boringssl-pkgconfig";
+            paths = [
+              (pkgs.writeTextDir "libcrypto.pc" ''
+                prefix=${pkgs.boringssl.dev}
+                exec_prefix=${pkgs.boringssl}
+                libdir=${pkgs.boringssl}/lib
+                includedir=${pkgs.boringssl.dev}/include
 
-            Name: libcrypto
-            Description: BoringSSL libcrypto
-            Version: ${pkgs.boringssl.version}
-            Libs: -L''${libdir} -lcrypto
-            Cflags: -I''${includedir}
-          '';
+                Name: libcrypto
+                Description: BoringSSL libcrypto
+                Version: ${pkgs.boringssl.version}
+                Libs: -L''${libdir} -lcrypto
+                Cflags: -I''${includedir}
+              '')
+              (pkgs.writeTextDir "libssl.pc" ''
+                prefix=${pkgs.boringssl.dev}
+                exec_prefix=${pkgs.boringssl}
+                libdir=${pkgs.boringssl}/lib
+                includedir=${pkgs.boringssl.dev}/include
+
+                Name: libssl
+                Description: BoringSSL libssl
+                Version: ${pkgs.boringssl.version}
+                Libs: -L''${libdir} -lssl
+                Cflags: -I''${includedir}
+              '')
+            ];
+          };
           backendShell =
             {
               name,

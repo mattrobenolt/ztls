@@ -10,7 +10,7 @@ Read alongside `CORRECTNESS.md` (what is supported and how it is proven),
 groups/suites/PQ).
 
 
-## HelloRetryRequest — #1
+## HelloRetryRequest
 
 
 **Prerequisites:**
@@ -35,7 +35,7 @@ groups/suites/PQ).
 
 ---
 
-## NewSessionTicket consumption / storage — #2
+## NewSessionTicket consumption / storage
 
 
 **Prerequisites:** depends on PSK/resumption (#2) for the only
@@ -48,7 +48,7 @@ exercised by the resumption flow below.
 
 ---
 
-## PSK / resumption — #2
+## PSK / resumption
 
 **Prerequisites:**
 - NewSessionTicket storage (#2).
@@ -67,7 +67,7 @@ exercised by the resumption flow below.
 
 ---
 
-## 0-RTT / early data — #3
+## 0-RTT / early data
 
 **Status:** Partial. The 0-RTT accept-path is implemented: the client offers
 early_data + derives the client_early_traffic_secret + sends 0-RTT data
@@ -127,7 +127,7 @@ work item once KeyUpdate (done) and post-handshake auth are accounted for.
 
 ---
 
-## Client certificate authentication — #4
+## Client certificate authentication
 
 **Prerequisites:**
 - `CertificateRequest` parse (client) / emit (server), incl.

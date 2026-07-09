@@ -129,6 +129,19 @@ fn assertSubset(comptime fips: anytype, comptime base: anytype) void {
     }
 }
 
+/// Returns the FIPS certificate_signature_schemes for the given backend family.
+fn fipsCertSigSchemes(comptime fam: @TypeOf(active)) []const SignatureScheme {
+    const openssl_fips =
+        backend_openssl.capabilities_fips.certificate_signature_schemes;
+    const aws_lc_fips =
+        backend_aws_lc.capabilities_fips.certificate_signature_schemes;
+    return switch (fam) {
+        .openssl, .@"openssl-fips" => openssl_fips,
+        .@"aws-lc", .@"aws-lc-fips" => aws_lc_fips,
+        .boringssl => &.{},
+    };
+}
+
 pub fn supportsCipherSuite(suite: CipherSuite) bool {
     for (capabilities.cipher_suites) |supported| {
         if (supported == suite) return true;
@@ -370,9 +383,9 @@ test "x25519 handle shape matches active backend" {
             evp_pointer_size,
             @sizeOf(x25519.pkey),
         ),
-        .@"aws-lc", .@"aws-lc-fips", .boringssl => try testing.expect(
-            @sizeOf(x25519.pkey) > evp_pointer_size,
-        ),
+        .@"aws-lc", .@"aws-lc-fips", .boringssl => {
+            try testing.expect(@sizeOf(x25519.pkey) > evp_pointer_size);
+        },
     }
 }
 
@@ -433,10 +446,8 @@ test "fips: chacha20_poly1305_sha256 excluded from FIPS cipher_suites" {
 // signatures; the FIPS table must keep only PSS-compatible schemes.
 test "fips: rsa_pkcs1_sha* excluded from FIPS certificate_signature_schemes" {
     const fips_schemes = switch (active) {
-        .openssl, .@"openssl-fips" => backend_openssl
-            .capabilities_fips.certificate_signature_schemes,
-        .@"aws-lc", .@"aws-lc-fips" => backend_aws_lc
-            .capabilities_fips.certificate_signature_schemes,
+        .openssl, .@"openssl-fips" => fipsCertSigSchemes(.openssl),
+        .@"aws-lc", .@"aws-lc-fips" => fipsCertSigSchemes(.@"aws-lc"),
         .boringssl => return error.SkipZigTest,
     };
     for (fips_schemes) |scheme| {
@@ -450,10 +461,8 @@ test "fips: rsa_pkcs1_sha* excluded from FIPS certificate_signature_schemes" {
 // must not advertise it.
 test "fips: ed25519 excluded from FIPS certificate_signature_schemes" {
     const fips_schemes = switch (active) {
-        .openssl, .@"openssl-fips" => backend_openssl
-            .capabilities_fips.certificate_signature_schemes,
-        .@"aws-lc", .@"aws-lc-fips" => backend_aws_lc
-            .capabilities_fips.certificate_signature_schemes,
+        .openssl, .@"openssl-fips" => fipsCertSigSchemes(.openssl),
+        .@"aws-lc", .@"aws-lc-fips" => fipsCertSigSchemes(.@"aws-lc"),
         .boringssl => return error.SkipZigTest,
     };
     for (fips_schemes) |scheme| {

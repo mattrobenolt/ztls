@@ -11,8 +11,8 @@ const tests = @import("src/build/tests.zig");
 /// libcrypto-family backend kind. Field names are the wire strings used on the
 /// CLI and in metadata, so @tagName round-trips to -Dcrypto-backend=... values.
 /// `openssl-fips` and `aws-lc-fips` are compile-time FIPS capability identities:
-/// they link the same libcrypto as their non-FIPS counterparts and narrow the
-/// advertised capability table at compile time. The build option declares FIPS
+/// they link the same libcrypto as their non-FIPS counterparts and narrow
+/// the advertised capability table at compile time. The build option declares FIPS
 /// intent; the caller/linker is responsible for ensuring the linked libcrypto is
 /// actually in FIPS mode (e.g. loading the OpenSSL FIPS provider or linking
 /// AWS-LC FIPS). No runtime provider probing is performed by ztls.

@@ -33,6 +33,36 @@ check-backend-aws-lc:
         exit 1
     }
 
+[doc("Build, test, benchmark-smoke, and tlsfuzzer-smoke with BoringSSL libcrypto")]
+[group("check")]
+check-backend-boringssl:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    boringssl_pkg_config_path="${ZTLS_BORINGSSL_PKG_CONFIG_PATH:-}"
+    if [ -z "$boringssl_pkg_config_path" ]; then
+        echo "ZTLS_BORINGSSL_PKG_CONFIG_PATH is not set; run inside 'nix develop .#boringssl'" >&2
+        exit 1
+    fi
+    boringssl_include_dir=$(PKG_CONFIG_PATH="$boringssl_pkg_config_path" pkg-config --variable=includedir libcrypto)
+    boringssl_lib_dir=$(PKG_CONFIG_PATH="$boringssl_pkg_config_path" pkg-config --variable=libdir libcrypto)
+    cache_dir=$(mktemp -d)
+    log=$(mktemp)
+    trap 'rm -rf "$cache_dir" "$log"' EXIT
+    PKG_CONFIG_PATH="$boringssl_pkg_config_path" zig build test --summary all --verbose --cache-dir "$cache_dir" -Dcrypto-backend=boringssl 2>&1 | tee "$log"
+    PKG_CONFIG_PATH="$boringssl_pkg_config_path" zig build bench-bin --summary all --verbose --cache-dir "$cache_dir" -Dcrypto-backend=boringssl 2>&1 | tee -a "$log"
+    PKG_CONFIG_PATH="$boringssl_pkg_config_path" zig build bench --cache-dir "$cache_dir" -Dcrypto-backend=boringssl -- --filter 'BenchmarkRecordEncryptPrepared/TLS_AES_128_GCM_SHA256/1350' --count=1 --benchtime=1x --no-env
+    PKG_CONFIG_PATH="$boringssl_pkg_config_path" zig build example-in_memory_handshake --summary all --cache-dir "$cache_dir" -Dcrypto-backend=boringssl
+    (cd conformance && PKG_CONFIG_PATH="$boringssl_pkg_config_path" ZTLS_CRYPTO_BACKEND=boringssl zig build --summary all --verbose --cache-dir "$cache_dir/conformance" -Dcrypto-backend=boringssl) 2>&1 | tee -a "$log"
+    (cd conformance && PKG_CONFIG_PATH="$boringssl_pkg_config_path" ZTLS_CRYPTO_BACKEND=boringssl uv run pytest -q test_tls13.py)
+    grep -F -- "-I$boringssl_include_dir" "$log" >/dev/null || {
+        echo "BoringSSL include path was not used: $boringssl_include_dir" >&2
+        exit 1
+    }
+    grep -F -- "-L$boringssl_lib_dir" "$log" >/dev/null || {
+        echo "BoringSSL library path was not used: $boringssl_lib_dir" >&2
+        exit 1
+    }
+
 [doc("Format all code")]
 [group("check")]
 fmt: fmt-zig fmt-actions fmt-just
