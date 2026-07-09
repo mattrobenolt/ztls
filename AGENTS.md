@@ -237,6 +237,17 @@ as durable evidence. EC2 benchmark captures use `infra/bench/` and
 `just bench-capture-default`; local captures are workflow smoke tests unless the
 issue explicitly asks for local data.
 
+Historical captures under `docs/research/perf/<timestamp-host>/` (and any other
+timestamped evidence directory) are **provenance-bound and immutable**. Their
+raw outputs — symbol names, source paths, counts, disassembly — reflect the
+binary measured at the git revision recorded in their metadata. Do not
+retroactively edit those contents when a file path or symbol renames later; a
+renamed symbol in an old capture is a lie about what was measured. When a
+refactor renames or relocates a symbol, leave historical captures alone and
+exclude `docs/research/perf/` from any "no references to X" grep validation.
+If a path rename makes a historical citation ambiguous, add a forward pointer,
+do not rewrite the capture.
+
 Before claiming ztls is faster or slower, identify the comparable row in
 `docs/research/PERFORMANCE.md`, confirm what each implementation does inside the
 timed loop, and explain the delta with objective evidence. Wall-time alone is
