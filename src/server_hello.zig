@@ -1212,6 +1212,13 @@ test "KEM key_share round-trip: ServerHello encode → parse preserves 1120-byte
         .aes_128_gcm_sha256,
         ks,
     );
+    // Verify the encoded key_share bytes match the original before parsing.
+    // The key_share extension starts after the fixed ServerHello fields:
+    // 4 (hdr) + 2 (ver) + 32 (random) + 1 (sid_len) + 2 (suite) + 1 (comp) + 2 (ext_len)
+    // + 4 (ext header) + 2 (group) + 2 (key_len) = 52 bytes to key data.
+    const encoded_key = msg[52..][0..1120];
+    try testing.expectEqualSlices(u8, &original, encoded_key);
+
     const sh = try parse(msg);
     try testing.expectEqual(.x25519_mlkem768, sh.key_share.group());
     const parsed_data = sh.key_share.kem.data.constSlice();
