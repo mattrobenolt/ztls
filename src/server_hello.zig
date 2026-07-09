@@ -281,19 +281,19 @@ pub const KeyShare = union(enum) {
         data: ArrayBuffer(u8, max_kem_share_len),
     },
 
-    pub fn group(self: KeyShare) NamedGroup {
-        return switch (self) {
+    pub fn group(self: *const KeyShare) NamedGroup {
+        return switch (self.*) {
             .x25519 => .x25519,
             .secp256r1 => .secp256r1,
             .secp384r1 => .secp384r1,
-            .kem => |k| k.group,
+            .kem => |*k| k.group,
         };
     }
 
     fn bytes(self: *const KeyShare) []const u8 {
         return switch (self.*) {
             inline .x25519, .secp256r1, .secp384r1 => |*key| &key.data,
-            .kem => |k| k.data.constSlice(),
+            .kem => |*k| k.data.constSlice(),
         };
     }
 };
@@ -344,12 +344,13 @@ pub fn encode(
     cipher_suite: CipherSuite,
     public_key: x25519.PublicKey,
 ) EncodeError![]const u8 {
+    const ks: KeyShare = .{ .x25519 = public_key };
     return encodeWithKeyShare(
         out,
         random,
         session_id_echo,
         cipher_suite,
-        .{ .x25519 = public_key },
+        &ks,
     );
 }
 
@@ -358,7 +359,7 @@ pub fn encodeWithKeyShare(
     random: [32]u8,
     session_id_echo: []const u8,
     cipher_suite: CipherSuite,
-    key_share: KeyShare,
+    key_share: *const KeyShare,
 ) EncodeError![]const u8 {
     if (session_id_echo.len > 32) return error.BufferTooShort;
     const key = key_share.bytes();
@@ -399,7 +400,7 @@ pub fn encodeWithKeyShareAndPsk(
     random: [32]u8,
     session_id_echo: []const u8,
     cipher_suite: CipherSuite,
-    key_share: KeyShare,
+    key_share: *const KeyShare,
     selected_identity: u16,
 ) EncodeError![]const u8 {
     if (session_id_echo.len > 32) return error.BufferTooShort;
@@ -443,13 +444,16 @@ pub fn encodeWithKeyShareAndPsk(
 ///
 /// RFC 8446 §4.1.3
 pub fn parse(msg: []const u8) ParseError!ServerHello {
-    return parseWithSessionIdEcho(msg, null);
+    var result: ServerHello = undefined;
+    try parseWithSessionIdEcho(msg, null, &result);
+    return result;
 }
 
 pub fn parseWithSessionIdEcho(
     msg: []const u8,
     expected_session_id: ?[]const u8,
-) ParseError!ServerHello {
+    out: *ServerHello,
+) ParseError!void {
     if (msg.len < 4) return error.UnexpectedEof;
     var r: wire.Reader = .init(msg);
 
@@ -613,7 +617,7 @@ pub fn parseWithSessionIdEcho(
     if (hasDowngradeSentinel(random)) return error.IllegalParameter;
     if (!got_key_share) return error.MissingExtension;
 
-    return .{
+    out.* = .{
         .cipher_suite = cipher_suite,
         .key_share = key_share,
         .selected_identity = selected_identity,
@@ -653,12 +657,13 @@ test "parse: accepts secp256r1 key_share" {
     var key: p256.PublicKey = .init(@splat(0x11));
     key.data[0] = 0x04;
     var out: [192]u8 = undefined;
+    const ks: KeyShare = .{ .secp256r1 = key };
     const msg = try encodeWithKeyShare(
         &out,
         @splat(0xab),
         &.{},
         .aes_128_gcm_sha256,
-        .{ .secp256r1 = key },
+        &ks,
     );
     const parsed = try parse(msg);
     try testing.expectEqual(.secp256r1, parsed.key_share.group());
@@ -670,12 +675,13 @@ test "parse: rejects compressed secp256r1 key_share" {
     var key: p256.PublicKey = .init(@splat(0x11));
     key.data[0] = 0x02;
     var out: [192]u8 = undefined;
+    const ks: KeyShare = .{ .secp256r1 = key };
     const msg = try encodeWithKeyShare(
         &out,
         @splat(0xab),
         &.{},
         .aes_128_gcm_sha256,
-        .{ .secp256r1 = key },
+        &ks,
     );
     try testing.expectError(error.UnsupportedKeyShareGroup, parse(msg));
 }
@@ -685,12 +691,13 @@ test "parse: accepts secp384r1 key_share" {
     var key: p384.PublicKey = .init(@splat(0x11));
     key.data[0] = 0x04;
     var out: [256]u8 = undefined;
+    const ks: KeyShare = .{ .secp384r1 = key };
     const msg = try encodeWithKeyShare(
         &out,
         @splat(0xab),
         &.{},
         .aes_128_gcm_sha256,
-        .{ .secp384r1 = key },
+        &ks,
     );
     const parsed = try parse(msg);
     try testing.expectEqual(.secp384r1, parsed.key_share.group());
@@ -702,12 +709,13 @@ test "parse: rejects compressed secp384r1 key_share" {
     var key: p384.PublicKey = .init(@splat(0x11));
     key.data[0] = 0x02;
     var out: [256]u8 = undefined;
+    const ks: KeyShare = .{ .secp384r1 = key };
     const msg = try encodeWithKeyShare(
         &out,
         @splat(0xab),
         &.{},
         .aes_128_gcm_sha256,
-        .{ .secp384r1 = key },
+        &ks,
     );
     try testing.expectError(error.UnsupportedKeyShareGroup, parse(msg));
 }
@@ -962,7 +970,11 @@ test "parse: rejects SSLv3-or-lower legacy version" {
 test "parse: rejects mismatched session id echo" {
     var out: [128]u8 = undefined;
     const msg = try encode(&out, @splat(0xab), &.{ 1, 2 }, .aes_128_gcm_sha256, .zero);
-    try testing.expectError(error.InvalidSessionIdEcho, parseWithSessionIdEcho(msg, &.{ 1, 3 }));
+    var result: ServerHello = undefined;
+    try testing.expectError(
+        error.InvalidSessionIdEcho,
+        parseWithSessionIdEcho(msg, &.{ 1, 3 }, &result),
+    );
 }
 
 // RFC 8446 §4.1.3 — TLS 1.3 ServerHello legacy_compression_method is zero.
@@ -1188,6 +1200,43 @@ test "parseHelloRetryRequest: rejects record_size_limit" {
     with_rsl[3] += rsl.len;
     with_rsl[43] += rsl.len;
     try testing.expectError(error.UnexpectedExtension, parseHelloRetryRequest(&with_rsl));
+}
+
+// draft-ietf-tls-ecdhe-mlkem-05 §4.2 — KEM ciphertext (1120 bytes for
+// X25519MLKEM768) round-trips through encode → parse without corruption.
+// This test is pure-Zig (no OpenSSL) and isolates the wire path from the
+// backend. It runs on all architectures to catch any struct-return / ArrayBuffer
+// issues with large KEM key shares. See issue #65.
+test "KEM key_share round-trip: ServerHello encode → parse preserves 1120-byte ciphertext" {
+    // Fill with a recognizable pattern so any byte corruption is visible.
+    var original: [1120]u8 = undefined;
+    for (&original, 0..) |*b, i| b.* = @intCast(i % 256);
+
+    var kem_data: ArrayBuffer(u8, max_kem_share_len) = .empty;
+    kem_data.appendSliceAssumeCapacity(&original);
+    const ks: KeyShare = .{ .kem = .{ .group = .x25519_mlkem768, .data = kem_data } };
+
+    var out: [2048]u8 = undefined;
+    const msg = try encodeWithKeyShare(
+        &out,
+        @splat(0xab),
+        &.{},
+        .aes_128_gcm_sha256,
+        &ks,
+    );
+    // Verify the encoded key_share bytes match the original before parsing.
+    // The key_share extension starts after the fixed ServerHello fields:
+    // 4 (hdr) + 2 (ver) + 32 (random) + 1 (sid_len) + 2 (suite) + 1 (comp) + 2 (ext_len)
+    // + 4 (ext header) + 2 (group) + 2 (key_len) = 52 bytes to key data.
+    const encoded_key = msg[52..][0..1120];
+    try testing.expectEqualSlices(u8, &original, encoded_key);
+
+    var sh: ServerHello = undefined;
+    try parseWithSessionIdEcho(msg, null, &sh);
+    try testing.expectEqual(.x25519_mlkem768, sh.key_share.group());
+    const parsed_data = sh.key_share.kem.data.constSlice();
+    try testing.expectEqual(@as(usize, 1120), parsed_data.len);
+    try testing.expectEqualSlices(u8, &original, parsed_data);
 }
 
 fn fuzzParseHrr(_: void, input: []const u8) anyerror!void {

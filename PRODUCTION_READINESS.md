@@ -599,7 +599,12 @@ each passing the same correctness and interop gates.
   OpenSSL/AWS-LC primitive and unit coverage, but still lacks external
   TLS-Anvil/tlsfuzzer evidence; PQ and hybrid groups still need real backend
   math, variable-length key-share/shared-secret plumbing, and provider
-  capability tests before aws-lc differences can be claimed honestly. *(#6, #60)*
+  capability tests before aws-lc differences can be claimed honestly. The
+  X25519MLKEM768 hybrid KEM handshake now works on both aarch64 and x86_64
+  (CI-gated in-memory KEM handshake test passes on ubuntu-latest x86_64 with
+  Nix OpenSSL 3.6.2); the initial x86_64 shared-secret mismatch was an x86_64
+  codegen issue with by-value capture of the large KEM KeyShare union, fixed
+  by using pointer captures. *(#6, #60, #65)*
 - **The facade contract is partly enforced by primitive tests, not a full
   matrix.** `src/crypto/backend_primitive_tests.zig` runs the same X25519,
   P-256/P-384 ECDH, AEAD, and all currently advertised CertificateVerify

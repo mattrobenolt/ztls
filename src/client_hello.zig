@@ -2139,3 +2139,38 @@ test "encodeRetryAfterHrr: rejects unsupported group" {
         ),
     );
 }
+
+// draft-ietf-tls-ecdhe-mlkem-05 §4.1 — KEM public key (1216 bytes for
+// X25519MLKEM768) round-trips through encode → parse without corruption.
+// This test is pure-Zig (no OpenSSL) and isolates the ClientHello wire path
+// from the backend. It runs on all architectures to catch any struct-return /
+// ArrayBuffer issues with large KEM key shares. See issue #65.
+test "KEM key_share round-trip: ClientHello encode → parse preserves 1216-byte public key" {
+    var original: [1216]u8 = undefined;
+    for (&original, 0..) |*b, i| b.* = @intCast(i % 256);
+
+    // Use a valid P-256 uncompressed point (0x04 prefix) so parseKeyShare
+    // accepts the p256 share before reaching the KEM share.
+    var p256_key: p256.PublicKey = .init(@splat(0));
+    p256_key.data[0] = 0x04;
+
+    const kem_share: KemShare = .{ .group = .x25519_mlkem768, .data = &original };
+    var buf: [4096]u8 = undefined;
+    const encoded = try encodeWithKem(
+        &buf,
+        .zero,
+        .init(@splat(0)),
+        p256_key,
+        null,
+        null,
+        &.{},
+        kem_share,
+    );
+    const parsed = try parse(encoded);
+    try testing.expect(parsed.kem_key_share != null);
+    const kem = parsed.kem_key_share.?;
+    try testing.expectEqual(.x25519_mlkem768, kem.group);
+    const parsed_data = kem.data.constSlice();
+    try testing.expectEqual(@as(usize, 1216), parsed_data.len);
+    try testing.expectEqualSlices(u8, &original, parsed_data);
+}

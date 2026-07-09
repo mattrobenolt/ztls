@@ -10,7 +10,6 @@ const Sha256 = std.crypto.hash.sha2.Sha256;
 const Sha384 = std.crypto.hash.sha2.Sha384;
 const mem = std.mem;
 const testing = std.testing;
-const builtin = @import("builtin");
 
 const aead = @import("aead.zig");
 const alert = @import("alert.zig");
@@ -758,9 +757,7 @@ fn processClientHelloMessage(
             } else return error.IllegalParameter,
             else => return error.IllegalParameter,
         }
-    else if (ch.kem_key_share != null and backend.supportsServerX25519Mlkem768() and
-        builtin.cpu.arch == .aarch64)
-    blk: {
+    else if (ch.kem_key_share != null and backend.supportsServerX25519Mlkem768()) blk: {
         // Try KEM encapsulation; if it fails (e.g. the libcrypto build
         // doesn't support the algorithm at runtime), fall back to ECDHE.
         // draft-ietf-tls-ecdhe-mlkem-05 §4.
@@ -836,7 +833,7 @@ fn processClientHelloMessage(
         .x25519 => .x25519,
         .secp256r1 => .secp256r1,
         .secp384r1 => .secp384r1,
-        .kem => |k| k.group,
+        .kem => |*k| k.group,
     };
     // KEM encapsulation was already done during key_share selection above.
     // The `kem_enc` and `kem_sec` ArrayBuffers contain the ciphertext and
@@ -846,7 +843,7 @@ fn processClientHelloMessage(
         .x25519 => .{ .x25519 = self.keypairs.x25519.public_key },
         .secp256r1 => .{ .secp256r1 = self.keypairs.p256.public_key },
         .secp384r1 => .{ .secp384r1 = (self.keypairs.p384 orelse unreachable).public_key },
-        .kem => |k| .{ .kem = .{
+        .kem => |*k| .{ .kem = .{
             .group = k.group,
             .data = kem_enc orelse .empty,
         } },
@@ -858,7 +855,7 @@ fn processClientHelloMessage(
             self.random.data,
             ch.legacy_session_id,
             suite,
-            server_key_share,
+            &server_key_share,
             self.selected_psk_index,
         )
     else
@@ -867,7 +864,7 @@ fn processClientHelloMessage(
             self.random.data,
             ch.legacy_session_id,
             suite,
-            server_key_share,
+            &server_key_share,
         );
     const header: frame.Header = .init(.handshake, @intCast(sh.len));
     header.write(out[0..frame.header_len]);
@@ -2604,9 +2601,11 @@ test "acceptClientHello: emits compatibility ChangeCipherSpec for non-empty lega
     try testing.expectEqual(.handshake, sh_hdr.content_type);
     const ccs_offset = frame.header_len + @as(usize, sh_hdr.length());
     try testing.expectEqual(ccs_offset + compatibility_ccs_len, written.len);
+    var sh_result: server_hello.ServerHello = undefined;
     _ = try server_hello.parseWithSessionIdEcho(
         written[frame.header_len..][0..sh_hdr.length()],
         &session_id,
+        &sh_result,
     );
 
     const ccs = written[ccs_offset..];
@@ -4681,6 +4680,7 @@ test "in-memory X25519MLKEM768 KEM handshake reaches app data" {
         .offer_pq_key_share = true,
     });
     client.policy.insecure_no_chain_anchor = true;
+    defer client.deinit();
 
     var client_out: [4096]u8 = undefined;
     const ch_record = try client.start(&client_out);
