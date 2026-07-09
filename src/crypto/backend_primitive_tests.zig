@@ -456,6 +456,42 @@ test "backend.p256: zero scalar private key is rejected" {
     );
 }
 
+// Wycheproof v1 (google-wycheproof 0.9rc5) — P-256 ECDH tcId 1, normal case.
+// Source: ecdh_secp256r1_test.json. The public key is the SEC1 uncompressed
+// point extracted from the Wycheproof SPKI; the private scalar and shared
+// secret are taken verbatim from the test vector.
+test "backend.p256: Wycheproof tcId 1 shared secret" {
+    const scalar: [32]u8 = hex(
+        32,
+        "0612465c89a023ab17855b0a6bcebfd3febb53aef84138647b5352e02c10c346",
+    );
+    const peer_pub: [65]u8 = hex(
+        65,
+        "0462d5bd3372af75fe85a040715d0f502428e07046868b0bfdfa61d731afe44f26" ++
+            "ac333a93a9e70a81cd5a95b5bf8d13990eb741c8c38872b4a07d275a014e30cf",
+    );
+    const want: [32]u8 = hex(
+        32,
+        "53020d908b0219328b658b525f26780e3ae12bcd952bb25a93bc0895e1714285",
+    );
+
+    const priv = try backend.p256.privateKeyFromSecret(&scalar);
+    defer backend.p256.freeKey(priv);
+    const peer = try backend.p256.publicKeyFromRaw(&peer_pub);
+    defer backend.p256.freeKey(peer);
+
+    var shared: [32]u8 = undefined;
+    try backend.p256.sharedSecretDerive(priv, peer, &shared);
+    try testing.expectEqualSlices(u8, &want, &shared);
+}
+
+// The existing deterministic off-curve rejection tests ("backend.p256: off-
+// curve point is rejected", "backend.p256: non-04 SEC1 prefix is rejected")
+// already cover the boundary where OpenSSL rejects invalid P-256 public keys.
+// Wycheproof off-curve vectors (tcId 332+) use all-zero points which cause
+// OpenSSL to hang rather than return an error, so they are not usable here.
+// Source: ecdh_secp256r1_test.json (tcId 332+).
+
 // ---------------------------------------------------------------------------
 // P-384 ECDH — direct backend.p384 facade
 // ---------------------------------------------------------------------------
@@ -541,6 +577,45 @@ test "backend.p384: zero scalar private key is rejected" {
         backend.p384.privateKeyFromSecret(&scalar),
     );
 }
+
+// Wycheproof v1 (google-wycheproof 0.9rc5) — P-384 ECDH tcId 1, normal case.
+// Source: ecdh_secp384r1_test.json. The public key is the SEC1 uncompressed
+// point extracted from the Wycheproof SPKI; the private scalar and shared
+// secret are taken verbatim from the test vector.
+test "backend.p384: Wycheproof tcId 1 shared secret" {
+    const scalar: [48]u8 = hex(
+        48,
+        "766e61425b2da9f846c09fc3564b93a6f8603b7392c785165bf20da948c49fd1" ++
+            "fb1dee4edd64356b9f21c588b75dfd81",
+    );
+    const peer_pub: [97]u8 = hex(
+        97,
+        "04790a6e059ef9a5940163183d4a7809135d29791643fc43a2f17ee8bf677ab84f" ++
+            "791b64a6be15969ffa012dd9185d8796d9b954baa8a75e82df711b3b56eadff6b" ++
+            "0f668c3b26b4b1aeb308a1fcc1c680d329a6705025f1c98a0b5e5bfcb163caa",
+    );
+    const want: [48]u8 = hex(
+        48,
+        "6461defb95d996b24296f5a1832b34db05ed031114fbe7d98d098f93859866e4" ++
+            "de1e229da71fef0c77fe49b249190135",
+    );
+
+    const priv = try backend.p384.privateKeyFromSecret(&scalar);
+    defer backend.p384.freeKey(priv);
+    const peer = try backend.p384.publicKeyFromRaw(&peer_pub);
+    defer backend.p384.freeKey(peer);
+
+    var shared: [48]u8 = undefined;
+    try backend.p384.sharedSecretDerive(priv, peer, &shared);
+    try testing.expectEqualSlices(u8, &want, &shared);
+}
+
+// The existing deterministic off-curve rejection tests ("backend.p384: off-
+// curve point is rejected", "backend.p384: non-04 SEC1 prefix is rejected")
+// already cover the boundary where OpenSSL rejects invalid P-384 public keys.
+// Wycheproof off-curve vectors (tcId 773+) use all-zero points which cause
+// OpenSSL to hang rather than return an error, so they are not usable here.
+// Source: ecdh_secp384r1_test.json (tcId 773+).
 
 // ---------------------------------------------------------------------------
 // Signature — direct backend.sign facade
@@ -773,5 +848,213 @@ test "backend.sign: key/scheme mismatch is a libcrypto failure" {
     try testing.expectError(
         error.LibcryptoFailed,
         backend.sign.sign(priv, .rsa_pss_rsae_sha256, "test message", &sig_buf),
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Wycheproof signature verify vectors — direct backend.sign facade
+// ---------------------------------------------------------------------------
+//
+// These tests exercise verify-only paths with fixed public keys, messages,
+// and signatures sourced from the Wycheproof v1 test vector suite. The
+// backend.sign.verify facade hashes context || transcript_hash via
+// EVP_DigestVerifyUpdate; for raw-message Wycheproof vectors, the full message
+// is passed as context and an empty slice as transcript_hash.
+
+// Wycheproof v1 (google-wycheproof 0.9rc5) — RSA-PSS 2048 SHA-256/MGF1-SHA256
+// sLen=32, tcId 3, valid. Source: rsa_pss_2048_sha256_mgf1_32_test.json.
+// The public key is the RSAPublicKey DER extracted from the Wycheproof SPKI.
+// The backend uses RSA_PSS_SALTLEN_DIGEST (= digest length = 32), matching
+// the Wycheproof sLen=32.
+test "backend.sign: Wycheproof RSA-PSS tcId 3 verify" {
+    // RSAPublicKey DER (PKCS#1) extracted from the Wycheproof SPKI.
+    const pub_der = hex(
+        270,
+        "3082010a0282010100a2b451a07d0aa5f96e455671513550514a8a5b462ebef717" ++
+            "094fa1fee82224e637f9746d3f7cafd31878d80325b6ef5a1700f65903b469429" ++
+            "e89d6eac8845097b5ab393189db92512ed8a7711a1253facd20f79c15e8247f3" ++
+            "d3e42e46e48c98e254a2fe9765313a03eff8f17e1a029397a1fa26a8dce26f49" ++
+            "0ed81299615d9814c22da610428e09c7d9658594266f5c021d0fceca08d945a1" ++
+            "2be82de4d1ece6b4c03145b5d3495d4ed5411eb878daf05fd7afc3e09ada0f11" ++
+            "26422f590975a1969816f48698bcbba1b4d9cae79d460d8f9f85e7975005d9bc" ++
+            "22c4e5ac0f7c1a45d12569a62807d3b9a02e5a530e773066f453d1f5b4c2e9cf" ++
+            "7820283f742b9d50203010001",
+    );
+    const msg = hex(4, "54657374"); // "Test"
+    const sig = hex(
+        256,
+        "401eb03cdb47ca88033e3030f6bdecbac8f5c8fc1dd6a13d23d379ed9a2b3098" ++
+            "91d13d74fea9d21d159b9e6d8f37efa2489962e24555f56dd434ff1d31ce4f9f" ++
+            "5abd3f22cbea8b691d6a11e44efb83e2bca155e6a164325e0fde2a8865afd5c9" ++
+            "f51161a9d615f62af7ec2e31b3e5ab649c164490d31d88cfae35b84aea792569" ++
+            "0f929a144b6d2f48e8fb894a52deecd1b9a6496990c4ecf1588699a42cacd10c" ++
+            "53af350514e4291ea9a058e77f101e32c1c0cefa61d945f7bc931f8bd19e7ba3" ++
+            "169358a60e5a8b0123bc3199b9fdcafe8e519c41ba675491a27b85e44ef2d772" ++
+            "77c10fe107293c8290186913bc9a99b640d8da041b64f31eab1d35920985f4a5",
+    );
+
+    const pub_key = try backend.sign.rsaPublicKeyFromDer(&pub_der);
+    defer backend.sign.freeKey(pub_key);
+
+    try backend.sign.verify(
+        pub_key,
+        .rsa_pss_rsae_sha256,
+        &msg,
+        &.{},
+        &sig,
+    );
+}
+
+// Wycheproof v1 (google-wycheproof 0.9rc5) — RSA-PSS 2048 SHA-256/MGF1-SHA256
+// sLen=32, tcId 62, invalid (first byte of m_hash modified).
+// Source: rsa_pss_2048_sha256_mgf1_32_test.json. The signature is valid for a
+// different message hash; verification must fail for the given message.
+test "backend.sign: Wycheproof RSA-PSS tcId 62 invalid signature" {
+    const pub_der = hex(
+        270,
+        "3082010a0282010100a2b451a07d0aa5f96e455671513550514a8a5b462ebef717" ++
+            "094fa1fee82224e637f9746d3f7cafd31878d80325b6ef5a1700f65903b469429" ++
+            "e89d6eac8845097b5ab393189db92512ed8a7711a1253facd20f79c15e8247f3" ++
+            "d3e42e46e48c98e254a2fe9765313a03eff8f17e1a029397a1fa26a8dce26f49" ++
+            "0ed81299615d9814c22da610428e09c7d9658594266f5c021d0fceca08d945a1" ++
+            "2be82de4d1ece6b4c03145b5d3495d4ed5411eb878daf05fd7afc3e09ada0f11" ++
+            "26422f590975a1969816f48698bcbba1b4d9cae79d460d8f9f85e7975005d9bc" ++
+            "22c4e5ac0f7c1a45d12569a62807d3b9a02e5a530e773066f453d1f5b4c2e9cf" ++
+            "7820283f742b9d50203010001",
+    );
+    const msg = hex(6, "313233343030"); // "123400"
+    const sig = hex(
+        256,
+        "67d1d1c0a398148625317c3f5e44b738bdf461c27a59594b39ebb2aebef233c7" ++
+            "809379e54411411b82d2e7ac88f989b58373d532c758baea121878ce97594417" ++
+            "38d121881c1fa2d04421f02dd565b12770d844611ed1873a0b64d822709a6b78" ++
+            "d6d3892b294404bce6711001d6c3a54546c76a1d17819674b0be904497a233b4" ++
+            "66fe4becc832dee740f9ab79e5b9f5db0b0f9aac0084ba05cebf42303b5ca2ad" ++
+            "95e3d61b29ed6475545c02e93e7b0e118af92f5cddb1faeb2cbc23c9e69c120e" ++
+            "29df7fe31991e887b3b29e77688c60e80be65cccf3d7861a7a14c39e6a6e5645" ++
+            "568e2cc5e4a17b75db1dd415aadb45e112a9b582b2ff6e82a43d7a7347b7b56d",
+    );
+
+    const pub_key = try backend.sign.rsaPublicKeyFromDer(&pub_der);
+    defer backend.sign.freeKey(pub_key);
+
+    try testing.expectError(
+        error.SignatureVerificationFailed,
+        backend.sign.verify(pub_key, .rsa_pss_rsae_sha256, &msg, &.{}, &sig),
+    );
+}
+
+// Wycheproof v1 (google-wycheproof 0.9rc5) — ECDSA P-256 SHA-256 tcId 1,
+// valid (pseudorandom signature). Source: ecdsa_secp256r1_sha256_test.json.
+// The public key is the SEC1 uncompressed point from the Wycheproof group.
+test "backend.sign: Wycheproof ECDSA P-256 tcId 1 verify" {
+    const pub_sec1: [65]u8 = hex(
+        65,
+        "0404aaec73635726f213fb8a9e64da3b8632e41495a944d0045b522eba7240fad5" ++
+            "87d9315798aaa3a5ba01775787ced05eaaf7b4e09fc81d6d1aa546e8365d525d",
+    );
+    const sig = hex(
+        71,
+        "3045022100b292a619339f6e567a305c951c0dcbcc42d16e47f219f9e98e76e09d" ++
+            "8770b34a02200177e60492c5a8242f76f07bfe3661bde59ec2a17ce5bd2dab2a" ++
+            "bebdf89a62e2",
+    );
+
+    const pub_key = try backend.sign.ecPublicKeyFromSec1(.secp256r1, &pub_sec1);
+    defer backend.sign.freeKey(pub_key);
+
+    // tcId 1 has an empty message; the digest of "" is SHA256(eof).
+    try backend.sign.verify(
+        pub_key,
+        .ecdsa_secp256r1_sha256,
+        "",
+        &.{},
+        &sig,
+    );
+}
+
+// Wycheproof v1 (google-wycheproof 0.9rc5) — ECDSA P-256 SHA-256 tcId 6,
+// invalid (Legacy: ASN encoding of s misses leading 0).
+// Source: ecdsa_secp256r1_sha256_test.json. The signature has an s value whose
+// ASN.1 encoding is missing the required leading zero for a negative MSB,
+// making it a malformed DER encoding that must be rejected.
+test "backend.sign: Wycheproof ECDSA P-256 tcId 6 invalid signature" {
+    // Group 1 public key (different from group 0).
+    const pub_sec1: [65]u8 = hex(
+        65,
+        "042927b10512bae3eddcfe467828128bad2903269919f7086069c8c4df6c73283" ++
+            "8c7787964eaac00e5921fb1498a60f4606766b3d9685001558d1a974e7341513e",
+    );
+    const msg = hex(6, "313233343030"); // "123400"
+    const sig = hex(
+        70,
+        "304402202ba3a8be6b94d5ec80a6d9d1190a436effe50d85a1eee859b8cc6af9" ++
+            "bd5c2e180220b329f479a2bbd0a5c384ee1493b1f5186a87139cac5df4087c13" ++
+            "4b49156847db",
+    );
+
+    const pub_key = try backend.sign.ecPublicKeyFromSec1(.secp256r1, &pub_sec1);
+    defer backend.sign.freeKey(pub_key);
+
+    try testing.expectError(
+        error.SignatureVerificationFailed,
+        backend.sign.verify(pub_key, .ecdsa_secp256r1_sha256, &msg, &.{}, &sig),
+    );
+}
+
+// Wycheproof v1 (google-wycheproof 0.9rc5) — ECDSA P-384 SHA-384 tcId 1,
+// valid (pseudorandom signature). Source: ecdsa_secp384r1_sha384_test.json.
+test "backend.sign: Wycheproof ECDSA P-384 tcId 1 verify" {
+    const pub_sec1: [97]u8 = hex(
+        97,
+        "0429bdb76d5fa741bfd70233cb3a66cc7d44beb3b0663d92a8136650478bcefb61" ++
+            "ef182e155a54345a5e8e5e88f064e5bc9a525ab7f764dad3dae1468c2b419f3b6" ++
+            "2b9ba917d5e8c4fb1ec47404a3fc76474b2713081be9db4c00e043ada9fc4a3",
+    );
+    const sig = hex(
+        102,
+        "3064023032401249714e9091f05a5e109d5c1216fdc05e98614261aa0dbd9e9c" ++
+            "d4415dee29238afbd3b103c1e40ee5c9144aee0f02304326756fb2c4fd726360" ++
+            "dd6479b5849478c7a9d054a833a58c1631c33b63c3441336ddf2c7fe0ed129aa" ++
+            "e6d4ddfeb753",
+    );
+
+    const pub_key = try backend.sign.ecPublicKeyFromSec1(.secp384r1, &pub_sec1);
+    defer backend.sign.freeKey(pub_key);
+
+    try backend.sign.verify(
+        pub_key,
+        .ecdsa_secp384r1_sha384,
+        "",
+        &.{},
+        &sig,
+    );
+}
+
+// Wycheproof v1 (google-wycheproof 0.9rc5) — ECDSA P-384 SHA-384 tcId 6,
+// invalid (Legacy: ASN encoding of s misses leading 0).
+// Source: ecdsa_secp384r1_sha384_test.json.
+test "backend.sign: Wycheproof ECDSA P-384 tcId 6 invalid signature" {
+    const pub_sec1: [97]u8 = hex(
+        97,
+        "042da57dda1089276a543f9ffdac0bff0d976cad71eb7280e7d9bfd9fee4bdb2f2" ++
+            "0f47ff888274389772d98cc5752138aa4b6d054d69dcf3e25ec49df870715e34" ++
+            "883b1836197d76f8ad962e78f6571bbc7407b0d6091f9e4d88f014274406174f",
+    );
+    const msg = hex(6, "313233343030"); // "123400"
+    const sig = hex(
+        102,
+        "3064023012b30abef6b5476fe6b612ae557c0425661e26b44b1bfe19daf2ca28" ++
+            "e3113083ba8e4ae4cc45a0320abd3394f1c548d70230e7bf25603e2d07076ff" ++
+            "30b7a2abec473da8b11c572b35fc631991d5de62ddca7525aaba89325dfd04f" ++
+            "ecc47bff426f82",
+    );
+
+    const pub_key = try backend.sign.ecPublicKeyFromSec1(.secp384r1, &pub_sec1);
+    defer backend.sign.freeKey(pub_key);
+
+    try testing.expectError(
+        error.SignatureVerificationFailed,
+        backend.sign.verify(pub_key, .ecdsa_secp384r1_sha384, &msg, &.{}, &sig),
     );
 }

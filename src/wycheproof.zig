@@ -4,6 +4,26 @@ const testing = std.testing;
 const hex = @import("test.zig").hex;
 const ztls = @import("root.zig");
 
+// Wrapper-level Wycheproof coverage notes (#60 slice 60-A):
+//
+// This file covers Wycheproof vectors for the public wrapper-level API
+// exposed by ztls: x25519.sharedSecret and aead encrypt/decrypt. P-256/P-384
+// ECDH and signature verify (RSA-PSS, ECDSA) are covered facade-direct in
+// src/crypto/backend_primitive_tests.zig because:
+//   - ztls.p256.sharedSecret is a thin wrapper over backend.p256 and could
+//     be tested here, but the facade-direct tests already exercise the same
+//     code path under both OpenSSL and AWS-LC lanes. Adding wrapper-level
+//     duplicates would not increase coverage.
+//   - ztls.signature (PrivateKey) only exposes signing, not standalone
+//     verification. Signature verification is only reachable through the
+//     certificate verify path (certificate.zig), not as a standalone public
+//     API. Therefore facade-direct backend.sign.verify in
+//     backend_primitive_tests.zig is the correct test level for Wycheproof
+//     signature vectors.
+//
+// No dead/empty wrapper tests are added here. See backend_primitive_tests.zig
+// for P-256/P-384 ECDH and RSA-PSS/ECDSA Wycheproof coverage.
+
 // Wycheproof v1 (google-wycheproof 0.9rc5) — X25519 tcId 1, normal case.
 test "Wycheproof: X25519 shared secret tcId 1" {
     const private: ztls.x25519.SecretKey = .init(
