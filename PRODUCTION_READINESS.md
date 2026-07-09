@@ -561,9 +561,22 @@ each passing the same correctness and interop gates.
 - **The provider abstraction is partly real but not exercised end-to-end.**
   `src/crypto/backend.zig` exists, `-Dcrypto-backend=aws-lc` is a recognized
   value, and X25519, P-256, AEAD, and CertificateVerify signing/verification
-  dispatch through the facade. Certificate-chain signature verification and path
-  validation are still ztls/std-derived rather than backend-backed, and the
-  facade still lacks divergent-backend matrix evidence. *(#60)*
+  dispatch through the facade. Certificate-chain signature verification and
+  path validation stay ztls/std-derived rather than backend-backed — that is
+  the recorded ownership decision: the backend seam lacks PKCS#1 v1.5 /
+  Ed25519 / ECDSA-all-hashes primitives, the std path is exercised and tested,
+  and there is no FIPS/perf driver to move it. On divergent-backend evidence,
+  FIPS-narrowed capability tables (`openssl-fips`, `aws-lc-fips` backend
+  identities) provide a comptime divergence matrix — each FIPS table drops
+  ChaCha20-Poly1305, RSA PKCS#1 v1.5 certificate signatures, Ed25519, and
+  ML-KEM, with comptime `assertSubset` checks proving FIPS ⊆ non-FIPS and seven
+  divergence tests under the default backend verifying the excluded algorithms
+  are missing — and the AWS-LC EC/RSA/signature path is recorded as a
+  compatibility-justified keep-compatible decision (no OpenSSL 3.x provider
+  API in AWS-LC 5.0.0 headers). Honest residual: capability-layer evidence is
+  the floor; external-runner FIPS conformance lane, full Wycheproof JSON-
+  harness breadth, and BoringSSL backend (out of scope until a target is
+  named) are still absent. *(#60)*
 - **aws-lc has a real test lane but not a full backend matrix.** The
   `-Dcrypto-backend=aws-lc` build links AWS-LC libcrypto and runs the unit suite;
   X25519 uses AWS-LC's flat `curve25519.h` API, and AEAD uses AWS-LC's
@@ -582,8 +595,20 @@ each passing the same correctness and interop gates.
   selected TLS handshake and 1350-byte ping-pong rows with ztls linked against
   AWS-LC and OpenSSL libssl baselines linked against OpenSSL; it is measurement
   evidence, not a performance conclusion or Linux x86_64 perf/disassembly proof.
-  Wycheproof and provider/FIPS/version capability proof remain open.
-  *(#60)*
+  Wycheproof coverage is now facade-direct for X25519, all advertised AEAD
+  suites, P-256/P-384 ECDH (known-answer shared secrets), RSA-PSS SHA-256
+  (verify + tamper tcId 62), ECDSA P-256/P-384 (verify + invalid-DER tamper)
+  under both the OpenSSL and AWS-LC lanes — inline comptime hex with tcId and
+  source-JSON citations, no JSON harness. Provider/FIPS/version capability
+  proof: FIPS-narrowed capability tables (`openssl-fips`, `aws-lc-fips`)
+  declare that ChaCha20-Poly1305, RSA PKCS#1 v1.5 certificate signatures,
+  Ed25519, and ML-KEM are dropped, with comptime `assertSubset` checks
+  proving each FIPS table is a strict subset of its non-FIPS counterpart and
+  seven divergence tests under the default backend verifying the excluded
+  algorithms are missing. Honest residual: Wycheproof vectors are facade-
+  direct and JSON-harnessless (selected tcIds, not full Wycheproof breadth),
+  and there is no external-runner FIPS conformance lane for a FIPS-linked
+  libcrypto build. *(#60)*
 - **OpenSSL-compatible EC/RSA/signature path for AWS-LC is a compatibility
   decision, not a speed placeholder.**
   X25519 and AEAD have AWS-LC-specific primitive paths. EC (P-256/P-384) key
@@ -657,9 +682,16 @@ each passing the same correctness and interop gates.
   includes selected facade-direct Wycheproof vectors for X25519 and all
   advertised AEAD suites, while the
   wrapper-level Wycheproof tests still cover the public `x25519`/`aead` paths.
-  This is a narrow primitive/vector contract — it is not a full Wycheproof
-  harness, provider/FIPS divergence matrix, or certificate-chain ownership
-  decision. The full backend matrix remains open. *(#60)*
+  This is a narrow primitive/vector contract — it is not yet a full Wycheproof
+  JSON-harness breadth, a per-primitive divergent-cipher/per-primitive
+  divergent-signature evidence matrix, or an external-runner FIPS
+  conformance lane. Wycheproof is now facade-direct for X25519, AEAD,
+  P-256/P-384 ECDH, RSA-PSS, and ECDSA P-256/P-384 (selected tcIds, both
+  OpenSSL and AWS-LC lanes); the FIPS divergence matrix is comptime (subset
+  asserts + divergence tests under the default backend); the certificate-
+  chain ownership decision is recorded as keep ztls/std (see the cert-chain
+  ownership gap above). BoringSSL backend is out of scope until a target is
+  named. *(#60)*
 
 ---
 
