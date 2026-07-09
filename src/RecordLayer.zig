@@ -486,11 +486,10 @@ test "decrypt: failed auth exposes backend failure buffer behavior" {
                 inner[plaintext.len],
             );
         },
-        .@"aws-lc", .@"aws-lc-fips" => {
-            // AWS-LC EVP_AEAD promises to zero output on authentication failure.
+        .@"aws-lc", .@"aws-lc-fips", .boringssl => {
+            // AWS-LC and BoringSSL EVP_AEAD promise to zero output on authentication failure.
             for (inner) |byte| try testing.expectEqual(@as(u8, 0), byte);
         },
-        .boringssl => unreachable,
     }
 
     // Prove only the tampered record's buffer is poisoned, not context state:

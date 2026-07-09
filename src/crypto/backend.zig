@@ -12,12 +12,12 @@ const build_options = @import("build_options");
 const CipherSuite = @import("../cipher_suite.zig").CipherSuite;
 const SignatureScheme = @import("../signature_scheme.zig").SignatureScheme;
 const backend_aws_lc = @import("backend_aws_lc.zig");
+const backend_boringssl = @import("backend_boringssl.zig");
 const backend_openssl = @import("backend_openssl.zig");
 
 // Backend kind enum is emitted into `build_options` by build.zig (see
 // `build.Backend`). Field names are the wire strings, so @tagName round-trips
-// to the CLI/metadata value. `boringssl` is a placeholder for a backend that is
-// not yet implemented; build.zig rejects selecting it.
+// to the CLI/metadata value.
 
 pub const active = build_options.crypto_backend;
 
@@ -33,37 +33,37 @@ pub const is_fips: bool = switch (active) {
 const x25519_impl = switch (active) {
     .openssl, .@"openssl-fips" => backend_openssl,
     .@"aws-lc", .@"aws-lc-fips" => backend_aws_lc,
-    .boringssl => @compileError("BoringSSL backend not yet implemented"),
+    .boringssl => backend_boringssl,
 };
 
 const p256_impl = switch (active) {
     .openssl, .@"openssl-fips" => backend_openssl,
     .@"aws-lc", .@"aws-lc-fips" => backend_aws_lc,
-    .boringssl => @compileError("BoringSSL backend not yet implemented"),
+    .boringssl => backend_boringssl,
 };
 
 const p384_impl = switch (active) {
     .openssl, .@"openssl-fips" => backend_openssl,
     .@"aws-lc", .@"aws-lc-fips" => backend_aws_lc,
-    .boringssl => @compileError("BoringSSL backend not yet implemented"),
+    .boringssl => backend_boringssl,
 };
 
 const aead_impl = switch (active) {
     .openssl, .@"openssl-fips" => backend_openssl,
     .@"aws-lc", .@"aws-lc-fips" => backend_aws_lc,
-    .boringssl => @compileError("BoringSSL backend not yet implemented"),
+    .boringssl => backend_boringssl,
 };
 
 const sign_impl = switch (active) {
     .openssl, .@"openssl-fips" => backend_openssl,
     .@"aws-lc", .@"aws-lc-fips" => backend_aws_lc,
-    .boringssl => @compileError("BoringSSL backend not yet implemented"),
+    .boringssl => backend_boringssl,
 };
 
 pub const kem_impl = switch (active) {
     .openssl, .@"openssl-fips" => backend_openssl,
     .@"aws-lc", .@"aws-lc-fips" => backend_aws_lc,
-    .boringssl => @compileError("BoringSSL backend not yet implemented"),
+    .boringssl => backend_boringssl,
 };
 
 pub const capabilities = switch (active) {
@@ -71,7 +71,7 @@ pub const capabilities = switch (active) {
     .@"openssl-fips" => backend_openssl.capabilities_fips,
     .@"aws-lc" => backend_aws_lc.capabilities,
     .@"aws-lc-fips" => backend_aws_lc.capabilities_fips,
-    .boringssl => @compileError("BoringSSL backend not yet implemented"),
+    .boringssl => backend_boringssl.capabilities,
 };
 
 comptime {
@@ -308,18 +308,20 @@ pub const sign = struct {
 };
 
 // docs/research/PROVIDER_INTERFACE.md §1 — current production backend is
-// OpenSSL/libcrypto; AWS-LC and BoringSSL remain named libcrypto-family targets,
-// not runtime claims. The backend kind is chosen in build.zig and emitted as a
-// typed build_option, so `active` is already a typed enum value here — no
-// string parse to validate. BoringSSL is a non-implemented placeholder field.
+// OpenSSL/libcrypto; AWS-LC and BoringSSL are selectable libcrypto-family
+// backends behind the same seam. The backend kind is chosen in build.zig and
+// emitted as a typed build_option, so `active` is already a typed enum value
+// here — no string parse to validate.
 // `openssl-fips` and `aws-lc-fips` are FIPS-narrowed capability identities that
 // link the same libcrypto as their non-FIPS counterparts.
 test "active backend is a buildable libcrypto-family member" {
     try testing.expect(active == .openssl or active == .@"aws-lc" or
+        active == .boringssl or
         active == .@"openssl-fips" or active == .@"aws-lc-fips");
     // field names are the wire strings, so @tagName round-trips to the CLI value
     try testing.expectEqualStrings("openssl", @tagName(@as(@TypeOf(active), .openssl)));
     try testing.expectEqualStrings("aws-lc", @tagName(@as(@TypeOf(active), .@"aws-lc")));
+    try testing.expectEqualStrings("boringssl", @tagName(@as(@TypeOf(active), .boringssl)));
     try testing.expectEqualStrings("openssl-fips", @tagName(@as(@TypeOf(active), .@"openssl-fips")));
     try testing.expectEqualStrings("aws-lc-fips", @tagName(@as(@TypeOf(active), .@"aws-lc-fips")));
 }
@@ -334,14 +336,14 @@ test "capabilities are non-empty for the active backend" {
     try testing.expect(capabilities.certificate_signature_schemes.len > 0);
 }
 
-// The AWS-LC X25519 path uses its flat curve25519 API with a value handle; keep
-// it from silently regressing to the OpenSSL EVP_PKEY pointer shape.
+// The AWS-LC and BoringSSL X25519 paths use their flat curve25519 API with a
+// value handle; keep it from silently regressing to the OpenSSL EVP_PKEY
+// pointer shape.
 test "x25519 handle shape matches active backend" {
     const evp_pointer_size = @sizeOf(*backend_openssl.pkey);
     switch (active) {
         .openssl, .@"openssl-fips" => try testing.expectEqual(evp_pointer_size, @sizeOf(x25519.pkey)),
-        .@"aws-lc", .@"aws-lc-fips" => try testing.expect(@sizeOf(x25519.pkey) > evp_pointer_size),
-        .boringssl => unreachable,
+        .@"aws-lc", .@"aws-lc-fips", .boringssl => try testing.expect(@sizeOf(x25519.pkey) > evp_pointer_size),
     }
 }
 
@@ -357,10 +359,9 @@ test "aead context shape matches active backend" {
             @sizeOf(backend_openssl.AeadContext),
             @sizeOf(aead.Context),
         ),
-        .@"aws-lc", .@"aws-lc-fips" => try testing.expect(
+        .@"aws-lc", .@"aws-lc-fips", .boringssl => try testing.expect(
             @sizeOf(aead.Context) != @sizeOf(backend_openssl.AeadContext),
         ),
-        .boringssl => unreachable,
     }
 }
 
@@ -392,7 +393,7 @@ test "fips: chacha20_poly1305_sha256 excluded from FIPS cipher_suites" {
     const fips_suites = switch (active) {
         .openssl, .@"openssl-fips" => backend_openssl.capabilities_fips.cipher_suites,
         .@"aws-lc", .@"aws-lc-fips" => backend_aws_lc.capabilities_fips.cipher_suites,
-        .boringssl => unreachable,
+        .boringssl => return error.SkipZigTest,
     };
     for (fips_suites) |suite| {
         try testing.expect(suite != .chacha20_poly1305_sha256);
@@ -405,7 +406,7 @@ test "fips: rsa_pkcs1_sha* excluded from FIPS certificate_signature_schemes" {
     const fips_schemes = switch (active) {
         .openssl, .@"openssl-fips" => backend_openssl.capabilities_fips.certificate_signature_schemes,
         .@"aws-lc", .@"aws-lc-fips" => backend_aws_lc.capabilities_fips.certificate_signature_schemes,
-        .boringssl => unreachable,
+        .boringssl => return error.SkipZigTest,
     };
     for (fips_schemes) |scheme| {
         try testing.expect(scheme != .rsa_pkcs1_sha256);
@@ -420,7 +421,7 @@ test "fips: ed25519 excluded from FIPS certificate_signature_schemes" {
     const fips_schemes = switch (active) {
         .openssl, .@"openssl-fips" => backend_openssl.capabilities_fips.certificate_signature_schemes,
         .@"aws-lc", .@"aws-lc-fips" => backend_aws_lc.capabilities_fips.certificate_signature_schemes,
-        .boringssl => unreachable,
+        .boringssl => return error.SkipZigTest,
     };
     for (fips_schemes) |scheme| {
         try testing.expect(scheme != .ed25519);
@@ -432,7 +433,7 @@ test "fips: ML-KEM disabled in FIPS capability table" {
     const fips_caps = switch (active) {
         .openssl, .@"openssl-fips" => backend_openssl.capabilities_fips,
         .@"aws-lc", .@"aws-lc-fips" => backend_aws_lc.capabilities_fips,
-        .boringssl => unreachable,
+        .boringssl => return error.SkipZigTest,
     };
     try testing.expect(!fips_caps.client_x25519_mlkem768);
     try testing.expect(!fips_caps.server_x25519_mlkem768);
@@ -445,12 +446,12 @@ test "fips: FIPS capabilities are a subset of non-FIPS capabilities" {
     const fips_caps = switch (active) {
         .openssl, .@"openssl-fips" => backend_openssl.capabilities_fips,
         .@"aws-lc", .@"aws-lc-fips" => backend_aws_lc.capabilities_fips,
-        .boringssl => unreachable,
+        .boringssl => return error.SkipZigTest,
     };
     const base_caps = switch (active) {
         .openssl, .@"openssl-fips" => backend_openssl.capabilities,
         .@"aws-lc", .@"aws-lc-fips" => backend_aws_lc.capabilities,
-        .boringssl => unreachable,
+        .boringssl => return error.SkipZigTest,
     };
     for (fips_caps.cipher_suites) |suite| {
         try testing.expect(suiteInList(suite, base_caps.cipher_suites));

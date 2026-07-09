@@ -95,6 +95,21 @@
             export ZTLS_AWS_LC_PKG_CONFIG_PATH=${pkgs.aws-lc.dev}/lib/pkgconfig
             export ZTLS_AWS_LC_LIB_DIR=${pkgs.aws-lc}/lib
           '';
+          # nixpkgs boringssl ships headers (dev) and libcrypto.so (out) but
+          # no pkg-config file. Synthesize a minimal libcrypto.pc so the
+          # existing linkSystemLibrary("crypto") path resolves BoringSSL.
+          boringsslPc = pkgs.writeTextDir "libcrypto.pc" ''
+            prefix=${pkgs.boringssl.dev}
+            exec_prefix=${pkgs.boringssl}
+            libdir=${pkgs.boringssl}/lib
+            includedir=${pkgs.boringssl.dev}/include
+
+            Name: libcrypto
+            Description: BoringSSL libcrypto
+            Version: ${pkgs.boringssl.version}
+            Libs: -L''${libdir} -lcrypto
+            Cflags: -I''${includedir}
+          '';
           backendShell =
             {
               name,
@@ -144,6 +159,17 @@
               packages = [
                 pkgs.aws-lc.dev
                 pkgs.aws-lc
+              ];
+            };
+
+            boringssl = backendShell {
+              name = "ztls-boringssl";
+              backend = "boringssl";
+              pkgConfigPath = "${boringsslPc}";
+              libDir = "${pkgs.boringssl}/lib";
+              packages = [
+                pkgs.boringssl.dev
+                pkgs.boringssl
               ];
             };
 

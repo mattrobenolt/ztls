@@ -10,8 +10,6 @@ const tests = @import("src/build/tests.zig");
 
 /// libcrypto-family backend kind. Field names are the wire strings used on the
 /// CLI and in metadata, so @tagName round-trips to -Dcrypto-backend=... values.
-/// `boringssl` exists only for exhaustive switch arms; build() rejects selecting
-/// it until the backend is implemented.
 /// `openssl-fips` and `aws-lc-fips` are compile-time FIPS capability identities:
 /// they link the same libcrypto as their non-FIPS counterparts and narrow the
 /// advertised capability table at compile time. The build option declares FIPS
@@ -50,19 +48,13 @@ pub fn build(b: *Build) void {
     const crypto_backend_str = b.option(
         []const u8,
         "crypto-backend",
-        "libcrypto-family backend to compile: openssl, aws-lc, openssl-fips, aws-lc-fips",
+        "libcrypto-family backend to compile: openssl, aws-lc, boringssl, openssl-fips, aws-lc-fips",
     ) orelse if (env_crypto_backend.len > 0) env_crypto_backend else "openssl";
     const crypto_backend: Backend = std.meta.stringToEnum(Backend, crypto_backend_str) orelse
         panic(
-            "unsupported -Dcrypto-backend={s}; supported: openssl, aws-lc, openssl-fips, aws-lc-fips",
+            "unsupported -Dcrypto-backend={s}; supported: openssl, aws-lc, boringssl, openssl-fips, aws-lc-fips",
             .{crypto_backend_str},
         );
-    if (crypto_backend == .boringssl) {
-        panic(
-            "BoringSSL backend not yet implemented; use openssl or aws-lc",
-            .{},
-        );
-    }
     const build_options = b.addOptions();
     build_options.addOption(Backend, "crypto_backend", crypto_backend);
 
