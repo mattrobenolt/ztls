@@ -567,9 +567,11 @@ each passing the same correctness and interop gates.
 - **aws-lc has a real test lane but not a full backend matrix.** The
   `-Dcrypto-backend=aws-lc` build links AWS-LC libcrypto and runs the unit suite;
   X25519 uses AWS-LC's flat `curve25519.h` API, and AEAD uses AWS-LC's
-  BoringSSL-style `EVP_AEAD` one-shot API. P-256 ECDH and signature paths
-  intentionally remain proven OpenSSL-compatible wrappers until measured
-  backend-specific implementations exist. CI-gated strict-complete TLS-Anvil
+  BoringSSL-style `EVP_AEAD` one-shot API. P-256/P-384 ECDH and signature
+  paths delegate to OpenSSL-compatible wrappers using the legacy
+  `EC_KEY_*` / `EVP_DigestSign*` API — the only API AWS-LC 5.0.0 exposes for
+  these primitives (see the compatibility-decision gap below). CI-gated
+  strict-complete TLS-Anvil
   AWS-LC captures on `ca53590` completed cleanly for both endpoints: server run
   `28746130104` had `437/437` finished, `passed=105`, `failed=0`,
   `expected_failed=0`, `expected_skipped=175`, `unexpected_skipped=0`,
@@ -582,13 +584,30 @@ each passing the same correctness and interop gates.
   evidence, not a performance conclusion or Linux x86_64 perf/disassembly proof.
   Wycheproof and provider/FIPS/version capability proof remain open.
   *(#60)*
-- **OpenSSL-compatible API choices still need measured backend-specific paths.**
-  X25519 and AEAD now have AWS-LC-specific primitive paths; EC/RSA key
-  construction and signatures still delegate to the OpenSSL-compatible
-  implementation. A scratch measurement on OpenSSL 3.6.2 showed the current EC/RSA construction
-  path is faster than naive `EVP_PKEY_fromdata`/decoder replacements, so
-  portability must come through backend-specific fast paths, not an unmeasured
-  lowest-common API. *(#60)*
+- **OpenSSL-compatible EC/RSA/signature path for AWS-LC is a compatibility
+  decision, not a speed placeholder.**
+  X25519 and AEAD have AWS-LC-specific primitive paths. EC (P-256/P-384) key
+  construction, ECDH, and signatures (RSA-PSS/ECDSA sign+verify) delegate to the
+  OpenSSL-compatible implementation in `backend_openssl.zig`, which uses the
+  legacy `EC_KEY_*` / `EVP_PKEY_assign_*` / `d2i_*` / `EVP_DigestSign*` API
+  family. An API survey of AWS-LC 5.0.0 headers (Nix `aws-lc.dev`,
+  `nixpkgs#aws-lc.dev`, include path `…/aws-lc-5.0.0-dev/include/openssl/`)
+  confirms AWS-LC does not expose the OpenSSL 3.x provider API at all:
+  `EVP_PKEY_fromdata`, `OSSL_PARAM`, `OSSL_PROVIDER`, `OSSL_DECODER`, and
+  `EVP_PKEY_CTX_new_from_name` are absent from `openssl/evp.h`, `openssl/ec_key.h`,
+  and all other headers; `provider.h`, `core.h`, and `param_build.h` do not exist.
+  The legacy `EC_KEY_*` / `EVP_PKEY_assign_*` / `d2i_*` / `EVP_DigestSign*` API
+  is the only key-construction/signature path AWS-LC provides, so there is no
+  alternative API to measure against — a measurement with nothing to compare
+  against is not informative. `c_openssl.zig` already conditionally excludes
+  `core.h`, `core_names.h`, and `params.h` from the AWS-LC `@cImport`. The
+  `backend_aws_lc.zig` header doc cites this as a compatibility decision (#60
+  slice C). A prior scratch measurement on OpenSSL 3.6.2 showed the legacy
+  EC/RSA construction path is faster than naive `EVP_PKEY_fromdata`/decoder
+  replacements on that backend, reinforcing that the legacy path is not a
+  compromise — but the AWS-LC decision rests on the API survey (no alternative
+  exists), not on a speed claim. *(#60, slice C done — compatibility-justified,
+  no AWS-LC alternative API to measure)*
 - **Capability gating exists but is shallow.** ClientHello cipher-suite,
   supported-group, `signature_algorithms`, and `signature_algorithms_cert`
   advertisement now comes from the active backend capability declaration; server

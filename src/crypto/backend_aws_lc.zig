@@ -1,10 +1,18 @@
 //! AWS-LC backend primitive wrappers.
 //!
 //! X25519 uses AWS-LC's BoringSSL-style flat API. AEAD uses AWS-LC's
-//! BoringSSL-style EVP_AEAD one-shot API. The remaining primitives delegate to
-//! the OpenSSL-compatible implementation while the build recipe links AWS-LC's
-//! libcrypto; those modules should diverge when a backend-specific fast path or
-//! API difference warrants it.
+//! BoringSSL-style EVP_AEAD one-shot API. The remaining primitives (EC
+//! P-256/P-384 key construction, ECDH, RSA-PSS/ECDSA sign+verify) delegate to
+//! the OpenSSL-compatible implementation in `backend_openssl.zig`, which uses
+//! the legacy `EC_KEY_*` / `EVP_PKEY_assign_*` / `d2i_*` / `EVP_DigestSign*`
+//! API family. This is a measured compatibility decision (#60 slice C), not a
+//! speed placeholder: AWS-LC 5.0.0 (a BoringSSL fork) does not expose the
+//! OpenSSL 3.x provider API at all — `EVP_PKEY_fromdata`, `OSSL_PARAM`,
+//! `OSSL_PROVIDER`, `OSSL_DECODER`, and `EVP_PKEY_CTX_new_from_name` are absent
+//! from the AWS-LC headers (`openssl/evp.h`, `openssl/ec_key.h`, etc.). The
+//! legacy API is the only key-construction/signature path AWS-LC provides, so
+//! there is no alternative to measure against. `c_openssl.zig` already excludes
+//! `core.h`, `core_names.h`, and `params.h` from the AWS-LC `@cImport`.
 const std = @import("std");
 const assert = std.debug.assert;
 const c = @import("c_openssl.zig").openssl;
