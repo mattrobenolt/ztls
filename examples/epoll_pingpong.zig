@@ -313,8 +313,12 @@ fn parsePemCerts(arena: Allocator, pem: []const u8) !std.ArrayList([]const u8) {
     var list: std.ArrayList([]const u8) = .empty;
 
     var pos: usize = 0;
+    // mem.indexOfPos is deprecated in 0.16 in favor of mem.findPos, which
+    // does not exist in 0.15. Suppress until 0.15 support is dropped (#61).
+    // ziglint-ignore: Z011
     while (mem.indexOfPos(u8, pem, pos, begin)) |start| {
         const body_start = start + begin.len;
+        // ziglint-ignore: Z011
         const body_end = mem.indexOfPos(u8, pem, body_start, end) orelse
             return error.MissingPemEndMarker;
 

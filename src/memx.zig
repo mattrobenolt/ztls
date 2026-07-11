@@ -44,7 +44,10 @@ pub fn hex(comptime len: usize, comptime encoded: []const u8) [len]u8 {
     return out;
 }
 
+// std.meta.Int is deprecated in 0.16 in favor of the @Int builtin, which
+// does not exist in 0.15. Suppress until 0.15 support is dropped (#61).
 const vector_chunk_len = @min(std.simd.suggestVectorLength(u8) orelse 16, 32);
+// ziglint-ignore: Z011
 const VectorMask = std.meta.Int(.unsigned, vector_chunk_len);
 
 /// Return the index of the last non-zero byte in `buf`, or null if all zeros.

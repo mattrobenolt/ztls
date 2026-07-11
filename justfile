@@ -20,7 +20,7 @@ example example *args:
 ci: test check-backend-aws-lc lint examples-ci
     just conformance/ci
 
-[doc("Run core library checks under Zig 0.16 (test + examples + conformance; lint stays on 0.15 due to 0.16 deprecation noise)")]
+[doc("Run all CI gates under Zig 0.16 (lint via inline Z011 suppressions for dual-version deprecations)")]
 [group("check")]
-ci-0_16: test examples-ci
+ci-0_16: test lint examples-ci
     just conformance/ci

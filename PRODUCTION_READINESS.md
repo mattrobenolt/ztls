@@ -122,9 +122,9 @@ data to openssl s_server and receives the HTTP response.
 - tlsfuzzer conformance, CI-gated (`just conformance/tlsfuzzer`).
 - The TLS-Anvil/tlsfuzzer Zig shims build under both Zig 0.15.2 and Zig
   0.16; `just ci-0_16` (CI-gated via the `test-zig-0_16` job in
-  `.github/workflows/ci.yml`) runs the conformance shims under 0.16, so the
-  external conformance harness is no longer tied to the removed `std.net`
-  APIs. *(#58, #61)*
+  `.github/workflows/ci.yml`) runs the full core gate (test + lint + examples +
+  conformance) under 0.16, so the external conformance harness is no longer
+  tied to the removed `std.net` APIs. *(#58, #61)*
 - TLS-Anvil wrapper/report helper tests are CI-gated under `just conformance/ci`:
   synthetic skip-list normalization, synthetic real-output adapter coverage,
   per-run metadata/provenance capture, and per-run tool-log capture helpers.
@@ -326,7 +326,10 @@ Sans-I/O API is pleasant across every I/O model ztls claims to support.
   deterministic examples plus `example-ktls_server` also run under Zig 0.16
   via `just ci-0_16` (CI-gated), covering the `std.Io.net` transport
   boundary for TCP loopback plus the raw-fd epoll and io_uring examples.
-  *(#58, #61)*
+  The 0.16 lane runs the full core gate (test + lint + examples +
+  conformance); two `ziglint-ignore: Z011` inline suppressions bridge
+  `mem.indexOfPos`/`std.meta.Int` deprecations that are inherent to
+  dual-version support until 0.15 is dropped. *(#58, #61)*
 - CI still does not execute manual peer-dependent demos such as `https_client`,
   `https_server`, or `iouring_client`; those demos now compile on both Zig
   0.15.2 and Zig 0.16 and exit non-zero when the peer or io_uring support is
