@@ -3979,7 +3979,91 @@ fn expectInMemoryAuthenticatedHandshake(suite: CipherSuite) !void {
     try testing.expectEqualStrings("pong", ev.application_data);
 }
 
-// RFC 8446 §9.1 — TLS 1.3 implementations must support all three mandatory suites.
+// RFC 8446 §4.6.3, §7.2 — full KeyUpdate round trip over an in-memory
+// connection. The server initiates KeyUpdate(update_requested); the client
+// responds with KeyUpdate(update_not_requested); both sides ratchet both
+// traffic keys; application data flows under the new keys.
+fn expectInMemoryKeyUpdateRoundTrip(suite: CipherSuite) !void {
+    const client_keypair: x25519.KeyPair = .generate();
+    const server_keypair: x25519.KeyPair = .generate();
+
+    var client: ClientHandshake = .init(.{
+        .keypairs = .init(client_keypair),
+        .host_name = "ztls.server.test",
+        .now_sec = 0,
+        .random = .zero,
+    });
+    client.policy.insecure_no_chain_anchor = true;
+    var client_out: [4096]u8 = undefined;
+    const ch_record = try client.start(&client_out);
+    client.completeWrite();
+
+    var server: ServerHandshake = .init(testConfig(server_keypair));
+    const suites = [_]CipherSuite{suite};
+    server.supportSuites(&suites);
+    var server_out: [4096]u8 = undefined;
+    const sh_record = try server.acceptClientHello(ch_record, &server_out);
+    try client.processServerHello(sh_record[frame.header_len..]);
+
+    var signer = try signature.PrivateKey.fromP256Scalar(serverEcdsaScalar()[0..32]);
+    defer signer.deinit();
+    var plaintext: [4096]u8 = undefined;
+    const flight_record = try server.sendAuthenticatedFlight(
+        &.{serverEcdsaCertDer()},
+        signer.signer(),
+        &plaintext,
+        &server_out,
+    );
+    const client_event = try client.handleRecord(server_out[0..flight_record.len], &client_out);
+    const client_finished_record = switch (client_event) {
+        .write => |w| w,
+        else => return error.UnexpectedEvent,
+    };
+    client.completeWrite();
+    try server.processClientFinished(client_out[0..client_finished_record.len]);
+    try testing.expect(client.isConnected());
+    try testing.expect(server.isConnected());
+
+    // Server initiates KeyUpdate(update_requested) — encrypted under the
+    // current server TX key, then server TX ratchets.
+    const ku_record = try server.sendKeyUpdate(&server_out, .update_requested);
+    server.completeWrite();
+
+    // Client receives the KeyUpdate, ratchets RX, responds with its own
+    // KeyUpdate(update_not_requested) under the old client TX key, then
+    // client TX ratchets.
+    var ku_mut: [128]u8 = undefined;
+    @memcpy(ku_mut[0..ku_record.len], ku_record);
+    const ku_ev = try client.handleRecord(ku_mut[0..ku_record.len], &client_out);
+    try testing.expect(ku_ev == .key_update);
+    try testing.expectEqual(true, ku_ev.key_update.rx);
+    try testing.expectEqual(true, ku_ev.key_update.tx);
+    const ku_resp = ku_ev.key_update.response.?;
+    client.completeWrite();
+
+    // Server receives the client's KeyUpdate response — ratchets RX.
+    var ku_resp_mut: [128]u8 = undefined;
+    @memcpy(ku_resp_mut[0..ku_resp.len], ku_resp);
+    const ku_resp_ev = try server.handleRecord(ku_resp_mut[0..ku_resp.len], &server_out);
+    try testing.expect(ku_resp_ev == .key_update);
+    try testing.expectEqual(true, ku_resp_ev.key_update.rx);
+    try testing.expectEqual(false, ku_resp_ev.key_update.tx);
+
+    // Application data under the new keys: client → server.
+    const app1 = try client.sendApplicationData("after-ku", &client_out);
+    client.completeWrite();
+    try testing.expectEqualStrings(
+        "after-ku",
+        try server.receiveApplicationData(client_out[0..app1.len]),
+    );
+
+    // Application data under the new keys: server → client.
+    const app2 = try server.sendApplicationData("pong-ku", &server_out);
+    var app2_mut: [128]u8 = undefined;
+    @memcpy(app2_mut[0..app2.len], app2);
+    const app2_ev = try client.handleRecord(app2_mut[0..app2.len], &client_out);
+    try testing.expectEqualStrings("pong-ku", app2_ev.application_data);
+}
 test "in-memory authenticated client-server handshake reaches app data" {
     try expectInMemoryAuthenticatedHandshake(.aes_128_gcm_sha256);
 }
@@ -3989,6 +4073,20 @@ test "in-memory authenticated client-server handshake suite matrix" {
     try expectInMemoryAuthenticatedHandshake(.aes_128_gcm_sha256);
     try expectInMemoryAuthenticatedHandshake(.aes_256_gcm_sha384);
     try expectInMemoryAuthenticatedHandshake(.chacha20_poly1305_sha256);
+}
+
+// RFC 8446 §4.6.3, §7.2 — server-initiated KeyUpdate(update_requested) over a
+// real in-memory connection: the client must respond with its own
+// KeyUpdate(update_not_requested), both sides ratchet TX and RX keys, and
+// application data flows under the new keys. Tested across all three
+// mandatory cipher suites — the ChaCha20-Poly1305 case is specifically
+// included because TLS-Anvil's respondsWithValidKeyUpdate found a
+// BoringSSL-specific failure under ChaCha20 that the AES-only unit tests
+// missed (#71).
+test "in-memory KeyUpdate round trip across all cipher suites" {
+    try expectInMemoryKeyUpdateRoundTrip(.aes_128_gcm_sha256);
+    try expectInMemoryKeyUpdateRoundTrip(.aes_256_gcm_sha384);
+    try expectInMemoryKeyUpdateRoundTrip(.chacha20_poly1305_sha256);
 }
 
 // RFC 8446 §4.2.11 — selectPsk parses a PSK ClientHello, looks up the PSK,
