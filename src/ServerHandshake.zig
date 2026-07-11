@@ -1874,32 +1874,32 @@ fn chooseSuite(self: *const ServerHandshake, ch: client_hello.Parsed) ?CipherSui
 }
 
 // Test fixture accessors. Wrapped in functions so the @import of
-// test_fixtures is never analyzed unless a test actually calls these —
-// the published tarball doesn't include test_fixtures (it's a symlink
-// outside src/). Issue #66.
+// fixtures is never analyzed unless a test actually calls these —
+// the published tarball doesn't include the fixtures module.
+// Issue #66.
 fn testCertDer() []const u8 {
     // ziglint-ignore: Z028, Z007
-    const f = @import("test_fixtures/shared_fixtures.zig");
+    const f = @import("fixtures").shared;
     return &f.server_cert_der;
 }
 fn serverEcdsaCertDer() []const u8 {
     // ziglint-ignore: Z028, Z007
-    const f = @import("test_fixtures/shared_fixtures.zig");
+    const f = @import("fixtures").shared;
     return &f.server_ecdsa_cert_der;
 }
 fn serverEcdsaScalar() []const u8 {
     // ziglint-ignore: Z028, Z007
-    const f = @import("test_fixtures/shared_fixtures.zig");
+    const f = @import("fixtures").shared;
     return &f.server_ecdsa_scalar;
 }
 fn clientEcdsaCertDer() []const u8 {
     // ziglint-ignore: Z028, Z007
-    const f = @import("test_fixtures/shared_fixtures.zig");
+    const f = @import("fixtures").shared;
     return &f.client_ecdsa_cert_der;
 }
 fn clientEcdsaScalar() []const u8 {
     // ziglint-ignore: Z028, Z007
-    const f = @import("test_fixtures/shared_fixtures.zig");
+    const f = @import("fixtures").shared;
     return &f.client_ecdsa_scalar;
 }
 const test_p256_seed_a = memx.hex(32, "000102030405060708090a0b0c0d0e0f" ++

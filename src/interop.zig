@@ -20,7 +20,7 @@ const host = "127.0.0.1";
 const alpn_protocol = "http/1.1";
 const response = "HTTP/1.0 200 OK\r\nContent-Length: 5\r\n\r\nhello";
 
-const shared_fixtures = @import("test_fixtures/shared_fixtures.zig");
+const shared_fixtures = @import("fixtures").shared;
 const server_cert_der: []const u8 = &shared_fixtures.server_ecdsa_cert_der;
 const server_scalar: []const u8 = &shared_fixtures.server_ecdsa_scalar;
 

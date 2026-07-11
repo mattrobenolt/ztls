@@ -513,20 +513,20 @@ fn verifySignature(
 }
 
 // Fixtures generated with: scripts/gen-fixtures.sh
-// Wrapped in functions so the @import of test_fixtures is never analyzed
+// Wrapped in functions so the @import of fixtures is never analyzed
 // unless a test calls these — the published tarball doesn't include
-// test_fixtures (symlink outside src/). Issue #66.
+// the fixtures module. Issue #66.
 fn FixturesShared() type {
     // ziglint-ignore: Z028
-    return @import("test_fixtures/shared_fixtures.zig");
+    return @import("fixtures").shared;
 }
 fn FixturesCert() type {
     // ziglint-ignore: Z028
-    return @import("test_fixtures/certificate_fixtures.zig");
+    return @import("fixtures").cert;
 }
 fn FixturesSig() type {
     // ziglint-ignore: Z028
-    return @import("test_fixtures/sig_fixtures.zig");
+    return @import("fixtures").sig;
 }
 fn fixtureCertDer() []const u8 {
     return &FixturesShared().server_cert_der;

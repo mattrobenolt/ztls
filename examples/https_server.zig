@@ -18,7 +18,7 @@ const Address = net.Address;
 
 const ztls = @import("ztls");
 
-const shared_fixtures = @import("test_fixtures/shared_fixtures.zig");
+const shared_fixtures = @import("fixtures").shared;
 
 const host = "127.0.0.1";
 const port: u16 = 8443;

@@ -14,7 +14,7 @@ const builtin = @import("builtin");
 
 const ztls = @import("ztls");
 
-const shared_fixtures = @import("test_fixtures/shared_fixtures.zig");
+const shared_fixtures = @import("fixtures").shared;
 
 comptime {
     if (builtin.os.tag != .linux) @compileError("iouring_pingpong is Linux-only");

@@ -54,7 +54,7 @@ pub const PrivateKey = struct {
 // RFC 8446 §4.2.3 — RSA-PSS CertificateVerify uses the scheme hash for both
 // the signature digest and MGF1, with salt length equal to the digest length.
 test "PrivateKey.sign: RSA-PSS SHA-256 uses TLS parameters" {
-    const rsa_pss_key_pem = @embedFile("test_fixtures/rsa_pss/server.key");
+    const rsa_pss_key_pem = @import("fixtures").rsa_pss_key_pem;
     var key: PrivateKey = try .fromPem(.rsa_pss_rsae_sha256, rsa_pss_key_pem);
     defer key.deinit();
 
@@ -66,7 +66,7 @@ test "PrivateKey.sign: RSA-PSS SHA-256 uses TLS parameters" {
 // RFC 8446 §4.2.3 — RSA-PSS CertificateVerify signatures must fit the
 // caller-provided output buffer or fail without truncation.
 test "PrivateKey.sign: short RSA-PSS output buffer is rejected" {
-    const rsa_pss_key_pem = @embedFile("test_fixtures/rsa_pss/server.key");
+    const rsa_pss_key_pem = @import("fixtures").rsa_pss_key_pem;
     var key: PrivateKey = try .fromPem(.rsa_pss_rsae_sha256, rsa_pss_key_pem);
     defer key.deinit();
 

@@ -83,6 +83,14 @@ pub fn build(b: *Build) void {
     })) |dep| dep.module("txtar") else null;
     if (txtar_mod) |tm| test_mod.addImport("txtar", tm);
 
+    // Test fixtures module — replaces the old test_fixtures symlinks.
+    const fixtures_mod = b.createModule(.{
+        .root_source_file = b.path("tests/fixtures/fixtures.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    test_mod.addImport("fixtures", fixtures_mod);
+
     const c_mod = b.createModule(.{
         .root_source_file = b.path("bench/c.zig"),
         .target = target,
@@ -124,6 +132,7 @@ pub fn build(b: *Build) void {
         .optimize = optimize,
         .ztls_mod = mod,
         .txtar_mod = txtar_mod,
+        .fixtures_mod = fixtures_mod,
     });
 
     // Zig autodoc for the public API. `zig build docs -p docs/site` installs the

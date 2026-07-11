@@ -10,7 +10,7 @@ const Address = net.Address;
 
 const ztls = @import("ztls");
 
-const shared_fixtures = @import("test_fixtures/shared_fixtures.zig");
+const shared_fixtures = @import("fixtures").shared;
 
 // Test fixtures: ECDSA P-256 server certificate and signing scalar.
 const cert_der: []const u8 = &shared_fixtures.server_ecdsa_cert_der;

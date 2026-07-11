@@ -35,7 +35,7 @@ const Address = net.Address;
 
 const ztls = @import("ztls");
 
-const shared_fixtures = @import("test_fixtures/shared_fixtures.zig");
+const shared_fixtures = @import("fixtures").shared;
 
 comptime {
     if (builtin.os.tag != .linux) @compileError("ktls_server is Linux-only");

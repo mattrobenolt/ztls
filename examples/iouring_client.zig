@@ -16,7 +16,7 @@ const builtin = @import("builtin");
 
 const ztls = @import("ztls");
 
-const shared_fixtures = @import("test_fixtures/shared_fixtures.zig");
+const shared_fixtures = @import("fixtures").shared;
 
 const trust_anchor_der: []const u8 = &shared_fixtures.server_ecdsa_cert_der;
 

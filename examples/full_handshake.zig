@@ -84,7 +84,7 @@ const server_hello_record = [_]u8{ 0x16, 0x03, 0x03, 0x00, 0x5a } ++ [_]u8{
 const ccs_record = [_]u8{ 0x14, 0x03, 0x03, 0x00, 0x01, 0x01 };
 
 // RFC 8448 §3 fixtures, base64 inside a txtar archive (decoded at startup).
-const rfc8448_archive = @embedFile("test_fixtures/rfc8448.txtar");
+const rfc8448_archive = @import("fixtures").rfc8448_txtar;
 
 // Decode a base64 archive entry into `out`, returning the decoded slice.
 fn fixture(alloc: Allocator, name: []const u8, out: []u8) ![]u8 {

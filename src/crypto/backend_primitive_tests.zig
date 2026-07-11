@@ -16,7 +16,7 @@ const testing = std.testing;
 const backend = @import("backend.zig");
 const Certificate = @import("../certificate_parser.zig");
 const CipherSuite = @import("../cipher_suite.zig").CipherSuite;
-const cert_fixtures = @import("../test_fixtures/certificate_fixtures.zig");
+const cert_fixtures = @import("fixtures").cert;
 
 const hex = @import("../memx.zig").hex;
 
@@ -621,7 +621,7 @@ test "backend.p384: Wycheproof tcId 1 shared secret" {
 // Signature — direct backend.sign facade
 // ---------------------------------------------------------------------------
 
-const rsa_pss_key_pem = @embedFile("../test_fixtures/rsa_pss/server.key");
+const rsa_pss_key_pem = @import("fixtures").rsa_pss_key_pem;
 
 fn rsaPssPublicKey() !*backend.sign.pkey {
     const parsed = try Certificate.parse(.{

@@ -13,7 +13,7 @@ const Iv = ztls.aead.Iv;
 const RecordBuffer = ztls.RecordBuffer;
 const RecordLayer = ztls.RecordLayer;
 const frame = ztls.frame;
-const shared_fixtures = @import("../test_fixtures/shared_fixtures.zig");
+const shared_fixtures = @import("fixtures").shared;
 const rfc8448 = @import("rfc8448.zig");
 
 const all_suites = [_]Suite{
@@ -22,7 +22,7 @@ const all_suites = [_]Suite{
     .chacha20_poly1305_sha256,
 };
 const sizes = [_]usize{ 16, 128, 1350, 8192, frame.max_plaintext_len };
-const openssl_replay_archive = @embedFile("../test_fixtures/openssl_replay.txtar");
+const openssl_replay_archive = @import("fixtures").openssl_replay_txtar;
 const server_cert_der: []const u8 = &shared_fixtures.server_ecdsa_cert_der;
 const server_scalar: []const u8 = &shared_fixtures.server_ecdsa_scalar;
 

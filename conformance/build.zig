@@ -29,6 +29,13 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
+    // Test fixtures module — same module as the root build.
+    const fixtures_mod = b.createModule(.{
+        .root_source_file = b.path("../tests/fixtures/fixtures.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
     {
         const dep = b.dependency("tlsanvil", .{});
         const jar = dep.path("TLS-Anvil.jar");
@@ -56,6 +63,7 @@ pub fn build(b: *std.Build) void {
             .imports = &.{.{ .name = "ztls", .module = ztls_mod }},
         });
         exe_mod.addImport("net_compat", net_compat_mod);
+        exe_mod.addImport("fixtures", fixtures_mod);
         exe_mod.link_libc = true;
         const exe = b.addExecutable(.{
             .name = entry.name,
