@@ -526,6 +526,160 @@ produced on the wrong architecture (e.g. aarch64 when the committed capture is
 x86_64) is not useful for explaining that capture. Use the row tooling on the
 same host class as the wall-time capture you want to explain.
 
-No committed perf/disassembly artifacts exist yet. Producing durable Linux
-x86_64 perf evidence requires the EC2 workflow (#11) or equivalent bare-metal
-access. The tooling is methodology progress, not committed evidence.
+Committed row-level perf/disassembly evidence lives under
+`docs/research/perf/20260705-215953-ec2-c7i-2xlarge-row-perf/` for selected
+AES-GCM and ChaCha20 application-data rows, produced by `just
+bench-remote-perf-rows` on a clean pinned `c7i.2xlarge` host. The non-equivalent
+full-handshake row has separate transparency evidence under
+`docs/research/perf/20260706-000535-ec2-c7i-2xlarge-handshake-row-perf/`.
+Producing fresh durable Linux x86_64 perf evidence requires the EC2 workflow
+(#11) or equivalent bare-metal access.
+
+## Results and conclusions
+
+This section states what the committed evidence shows. It is the performance
+claim, not the methodology. The methodology above defines the boundary; the
+captures under `docs/research/perf/` are the raw evidence; the row-perf
+explanations tie wall-time deltas to counters and symbols. This section folds
+those into the claim ztls can make.
+
+### Evidence basis
+
+The primary wall-time capture is
+`docs/research/perf/20260705-194022-ec2-c7i-2xlarge/benchstat.txt`: a clean
+`c7i.2xlarge` (Intel Xeon Platinum 8488C, x86_64) EC2 host, OpenSSL 3.6.2,
+rustls 0.23.40, Zig 0.15.2 ReleaseFast, git revision
+`89c869eb2a22c6c0f2ffe077c8f13204a92f4074`, `--count 5 --benchtime 500ms`.
+A second committed capture on `c7i.large`
+(`docs/research/perf/20260705-183821-ec2-c7i-large/`) confirms the same
+ordering on a smaller instance shape. Row-level perf/disassembly evidence for
+the headline AES-GCM row and the small-record ChaCha20 row is under
+`docs/research/perf/20260705-215953-ec2-c7i-2xlarge-row-perf/explanations/`.
+
+**Statistical caveat:** the committed captures use `--count 5`. benchstat
+reports `need >= 6 samples for confidence interval at level 0.95` for every
+row, so the `sec/op` columns carry `± ∞` and no formal confidence interval.
+The p-values are 0.008 across all rows, and the deltas are large (the smallest
+ztls win on a comparable AES-GCM row is +66%; the largest is +254%), so the
+directional result is not in doubt — but a formal CI requires a re-run at
+`--count >= 10`. The repetition policy below defines that re-run as the gate
+for upgrading Pillar 3 from `PARTIAL` to `PROVEN`.
+
+### The claim
+
+Across the 45 comparable TLS application-data rows (3 directions × 5 payload
+sizes × 3 cipher suites) on x86_64 `c7i.2xlarge`:
+
+1. **ztls is faster than OpenSSL libssl on every comparable app-data row.**
+   The delta ranges from +22% (ChaCha20, 16384B ping-pong) to +254%
+   (AES-128-GCM, 16B client→server). ztls reaches the OpenSSL AEAD primitive
+   with substantially less TLS wrapper work than libssl's memory-BIO path.
+
+2. **ztls is faster than rustls on all AES-GCM rows** (30 rows: AES-128-GCM
+   and AES-256-GCM, all three directions, all five sizes). The delta ranges
+   from +74% to +151%. ztls executes fewer cycles, fewer instructions, and
+   fewer branches than rustls on the AES-GCM ping-pong row (see the row-perf
+   explanation: ztls ~54.8% of rustls cycles/op, ~53.6% of rustls
+   instructions/op).
+
+3. **ztls is faster than rustls on large ChaCha20 records** (8192B and
+   16384B: +64% to +85%) and approximately ties at 1350B (-6%).
+
+4. **ztls is slower than rustls on small ChaCha20 records** (16B and 128B:
+   -49% to -55%). This is a real, measured loss, not noise. The row-perf
+   evidence attributes it to the primitive path: rustls uses ring's direct
+   ChaCha20-Poly1305 implementation, while ztls goes through OpenSSL EVP
+   ChaCha20-Poly1305, which has small-record overhead that ring avoids. The
+   ztls samples are overwhelmingly in OpenSSL's ChaCha20 symbols, not in ztls
+   record framing — so the fix is a backend-specific faster ChaCha path, not
+   record-path work. This loss is documented, not hidden.
+
+### Headline rows
+
+The rows that matter most for the positioning story (real-world TLS payloads
+are typically AES-GCM, with 1350B near the common MTU boundary):
+
+| Row | ztls | OpenSSL libssl | rustls | ztls vs libssl | ztls vs rustls |
+|---|---:|---:|---:|---:|---:|
+| AppPingPong AES-128-GCM 1350 | 785.7 ns | 1845.0 ns | 1383.6 ns | 2.35× faster | 1.76× faster |
+| AppPingPong AES-128-GCM 16384 | 3.829 µs | 7.266 µs | 9.510 µs | 1.90× faster | 2.48× faster |
+| AppClientToServer AES-128-GCM 1350 | 388.3 ns | 925.2 ns | 692.5 ns | 2.38× faster | 1.78× faster |
+| AppPingPong ChaCha20 16384 | 17.03 µs | 20.82 µs | 31.52 µs | 1.22× faster | 1.85× faster |
+| AppPingPong ChaCha20 16 | 2.253 µs | 3.975 µs | 1.012 µs | 1.76× faster | 0.45× (loss) |
+
+### Why ztls wins (mechanism, not assertion)
+
+The row-perf explanations tie the wall-time deltas to objective counter and
+symbol evidence, so the claim is not just adjacent benchstat columns:
+
+- **vs OpenSSL libssl:** ztls's caller-owned record path calls the OpenSSL
+  AEAD primitive directly. libssl's memory-BIO path adds `WPACKET`,
+  `EVP_CIPHER_CTX_ctrl`, `EVP_CipherInit_ex`, and `tls13_cipher` wrapper work
+  on top of the same primitive. On `AppPingPong/AES-128-GCM/1350`, ztls
+  executes 42.7% of libssl's cycles/op and 41.5% of its instructions/op.
+
+- **vs rustls (AES-GCM):** ztls reaches OpenSSL's VAES-AVX512 AES-GCM path
+  with less buffer/copy/allocator work than rustls's in-memory `Vec` transfer
+  shim. On the same row, ztls executes 54.8% of rustls's cycles/op and 53.6%
+  of its instructions/op. rustls shows `ChunkVecBuffer::write_to`,
+  `__memmove_avx512_unaligned_erms`, and `__libc_malloc2` in its hot symbols.
+
+- **vs rustls (ChaCha20, small records):** rustls's ring ChaCha20-Poly1305
+  path is cheaper for tiny records than ztls's OpenSSL EVP ChaCha20-Poly1305
+  path. On `AppClientToServer/ChaCha20/16`, rustls executes 45.0% of ztls's
+  cycles/op. The ztls samples are dominated by OpenSSL's
+  `chacha20_poly1305_aead_cipher` / `ChaCha20_avx512` symbols, not ztls
+  framing code. The cycle gap exceeds the instruction gap, so the primitive
+  implementation efficiency matters more than wrapper code volume here.
+
+### What this is not
+
+- Not a handshake performance claim. The `Handshake` row is non-equivalent
+  (ztls does real CertificateVerify verification; rustls `NoVerifier` does
+  none; libssl `SSL_VERIFY_NONE` is opaque). No cross-implementation handshake
+  performance claim is allowed from the current evidence.
+- Not a macOS or aarch64 claim. The committed evidence is x86_64 Linux EC2.
+  aarch64 and macOS performance are unproven (see #62).
+- Not a crypto-primitive claim. EVP rows are a crypto floor, not a TLS
+  comparison. ztls-only diagnostic rows are not cross-implementation.
+- Not a claim that ignores the ChaCha20 small-record loss. That loss is real,
+  explained, and documented above.
+
+## Acceptance thresholds and regression gate
+
+### Repetition policy
+
+Benchmark evidence is not CI-gated — EC2 benchmark runs are too expensive and
+too noisy for PR-level CI. Instead, the gate is a committed baseline plus a
+manual re-run policy:
+
+1. **Baseline.** A committed capture under `docs/research/perf/` is the
+   reference baseline for regression detection. The current provisional baseline
+   is the n=5 `20260705-194022-ec2-c7i-2xlarge` capture; the n=10 re-run
+   defined below supersedes it as the canonical baseline once it lands. The
+   baseline's `benchstat.txt` is the comparator.
+
+2. **When to re-run.** Re-run `just bench-remote-capture --instance-types
+   c7i.2xlarge --count 10 --benchtime 500ms` before any release, after any
+   change to the record protection path (`src/aead.zig`, `src/record.zig`,
+   `src/crypto/backend*.zig`), or after any change to the benchmark harness
+   (`src/bench/`, `bench/`). A re-run that does not regress the headline rows
+   beyond their thresholds supersedes the old baseline.
+
+3. **What passes.** A re-run passes if, on every comparable AES-GCM row, ztls
+   `sec/op` does not regress by more than 15% versus the baseline, and ztls
+   remains faster than libssl on every comparable row. The 15% threshold is
+   generous because the current deltas are 66–253%: a 15% ztls regression
+   would not change the claim. The threshold exists to catch silent
+   regressions, not to chase 1% noise.
+
+4. **What fails.** A ztls regression beyond 15% on any headline AES-GCM row,
+   or ztls losing to libssl on any comparable AES-GCM row, fails the gate. The
+   change must either be fixed or the conclusion and baseline must be updated
+   with an honest explanation in the same change.
+
+### Regression check recipe
+
+`just bench-regression-check` runs a fresh capture on EC2 and compares the
+comparable TLS rows against the committed baseline with benchstat. It requires
+the same AWS access as `bench-remote-capture`. See the recipe in `just/bench.just`.

@@ -23,6 +23,12 @@ bench-remote-capture *args:
 bench-remote-perf-rows *args:
     @infra/bench/run-perf-rows.sh {{ args }}
 
+[doc("Re-run EC2 capture at n=10 and check comparable AES-GCM rows against the committed baseline (manual Pillar 3 regression gate)")]
+[group("bench")]
+bench-regression-check:
+    @infra/bench/run-capture.sh --instance-types c7i.2xlarge --count 10 --benchtime 500ms
+    @scripts/bench-regression.sh
+
 [doc("Validate benchmark capture/analyze plumbing quickly; not benchmark evidence")]
 [group("bench")]
 bench-smoke:
