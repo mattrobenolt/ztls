@@ -40,7 +40,8 @@ pub const Policy = struct {
     /// Enforce TLS 1.3 certificate residual policy for the leaf's intended use.
     /// `.server_auth` requires KeyUsage.digitalSignature when KeyUsage is present,
     /// EKU serverAuth when EKU is present, and a TLS 1.3-compatible certificate
-    /// signature algorithm.
+    /// signature algorithm. `.client_auth` mirrors that with EKU clientAuth.
+    /// `.none` skips all leaf policy checks.
     leaf_usage: LeafUsage = .server_auth,
     /// Algorithms accepted for signatures appearing in certificates. This is the
     /// `signature_algorithms_cert` policy; when that extension is omitted, RFC
