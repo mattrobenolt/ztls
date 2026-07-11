@@ -152,6 +152,204 @@ test "ztls client with credentials interoperates with OpenSSL s_server -Verify" 
     try runClientAuthClientSuite(arena, server_cert_path, server_key_path, client_ca_path, 18433);
 }
 
+// RFC 8446 §4.6.3, §7.2 — ztls-to-ztls TCP loopback KeyUpdate round trip.
+// The server initiates KeyUpdate(update_requested) over a real TCP connection;
+// the client responds; both sides ratchet keys; application data flows under
+// the new keys. Tested with ChaCha20-Poly1305 to reproduce the TLS-Anvil
+// #71 scenario (BoringSSL + ChaCha20 + X25519 + CCS). Unlike the in-memory
+// test, this exercises the real socket drive loop including record
+// reassembly and partial reads.
+test "ztls-to-ztls TCP KeyUpdate round trip with ChaCha20-Poly1305" {
+    const KuCtx = struct {
+        port: std.atomic.Value(u16) = .init(0),
+        server_keypair: ztls.x25519.KeyPair,
+    };
+    const server_keypair: ztls.x25519.KeyPair = .generate();
+    var ctx: KuCtx = .{ .server_keypair = server_keypair };
+
+    const ServerThread = struct {
+        fn run(c: *KuCtx) !void {
+            const addr = try parseAddress(host, 0);
+            var listener = try listen(addr);
+            defer deinitServer(&listener);
+            c.port.store(serverPort(&listener), .release);
+
+            const stream = try accept(&listener);
+            defer closeStream(stream);
+
+            var random: ztls.Random = undefined;
+            entropy.fill(&random.data);
+            var hs: ztls.ServerHandshake = .init(.{
+                .keypairs = .init(c.server_keypair),
+                .random = random,
+            });
+            defer hs.deinit();
+            const suites = [_]ztls.CipherSuite{.chacha20_poly1305_sha256};
+            hs.supportSuites(&suites);
+            var signer = try ztls.signature.PrivateKey.fromP256Scalar(server_scalar[0..32]);
+            defer signer.deinit();
+            hs.setCredentials(&.{server_cert_der}, signer.signer());
+
+            var storage: ztls.RecordBuffer.Storage = .empty;
+            var rb: ztls.RecordBuffer = .init(&storage.buffer);
+            var out: ztls.ServerHandshake.OutBuffer = .empty;
+            var flight: ztls.ServerHandshake.FlightBuffer = .empty;
+
+            // Drive handshake.
+            while (!hs.isConnected()) {
+                const n = try read(stream, rb.writable());
+                if (n == 0) return error.ClientClosed;
+                rb.advance(n);
+                while (try rb.next()) |record| {
+                    const ev = try hs.handleRecord(record, &out.buffer);
+                    switch (ev) {
+                        .write => |w| {
+                            try writeAll(stream, w);
+                            hs.completeWrite();
+                            if (try hs.sendServerFlightBuffered(&flight)) |fb| {
+                                try writeAll(stream, fb);
+                                hs.completeWrite();
+                            }
+                        },
+                        .none => {},
+                        else => return error.UnexpectedDuringHandshake,
+                    }
+                }
+            }
+
+            // Server sends KeyUpdate(update_requested).
+            const ku = try hs.sendKeyUpdate(&out.buffer, .update_requested);
+            try writeAll(stream, ku);
+            hs.completeWrite();
+
+            // Echo loop: expect client's KeyUpdate response, then app data.
+            while (true) {
+                const n = try read(stream, rb.writable());
+                if (n == 0) return error.ClientClosed;
+                rb.advance(n);
+                while (try rb.next()) |record| {
+                    const ev = try hs.handleRecord(record, &out.buffer);
+                    switch (ev) {
+                        .key_update => |ku_ev| {
+                            if (ku_ev.response) |w| {
+                                try writeAll(stream, w);
+                                hs.completeWrite();
+                            }
+                        },
+                        .application_data => |data| {
+                            if (!mem.eql(u8, data, "after-ku")) return error.UnexpectedAppData;
+                            const resp = try hs.sendApplicationData("pong-ku", &out.buffer);
+                            try writeAll(stream, resp);
+                            hs.completeWrite();
+                            const close = try hs.sendAlert(.close_notify, &out.buffer);
+                            try writeAll(stream, close);
+                            hs.completeWrite();
+                            return;
+                        },
+                        .write => |w| {
+                            try writeAll(stream, w);
+                            hs.completeWrite();
+                        },
+                        .closed => return,
+                        .none => {},
+                    }
+                }
+            }
+        }
+    };
+
+    const server_thread = try std.Thread.spawn(.{}, ServerThread.run, .{&ctx});
+    defer server_thread.join();
+
+    // Wait for the server to bind and publish its port.
+    var server_port: u16 = 0;
+    while (server_port == 0) {
+        server_port = ctx.port.load(.acquire);
+        if (server_port == 0) {
+            std.Thread.yield() catch return error.ServerBindFailed;
+        }
+    }
+
+    // Client side.
+    const client_keypair: ztls.x25519.KeyPair = .generate();
+    const addr = try parseAddress(host, server_port);
+    const stream = try connect(addr);
+    defer closeStream(stream);
+
+    var random: ztls.Random = undefined;
+    entropy.fill(&random.data);
+    var hs: ztls.ClientHandshake = .init(.{
+        .keypairs = .init(client_keypair),
+        .host_name = "ztls.server.test",
+        .now_sec = 0,
+        .random = random,
+        .insecure_no_chain_anchor = true,
+    });
+    defer hs.deinit();
+
+    var out: ztls.ClientHandshake.OutBuffer = .empty;
+    var storage: ztls.RecordBuffer.Storage = .empty;
+    var rb: ztls.RecordBuffer = .init(&storage.buffer);
+
+    try writeAll(stream, try hs.start(&out.buffer));
+    hs.completeWrite();
+
+    while (!hs.isConnected()) {
+        const n = try read(stream, rb.writable());
+        if (n == 0) return error.ServerClosed;
+        rb.advance(n);
+        while (try rb.next()) |record| switch (try hs.handleRecord(record, &out.buffer)) {
+            .write => |w| {
+                try writeAll(stream, w);
+                hs.completeWrite();
+            },
+            .application_data,
+            .closed,
+            .key_update,
+            .new_session_ticket,
+            => return error.UnexpectedDuringHandshake,
+            .none => {},
+        };
+    }
+
+    // Drive: expect server's KeyUpdate, then send app data under new keys.
+    var saw_key_update = false;
+    var got_pong = false;
+    while (!got_pong) {
+        const n = try read(stream, rb.writable());
+        if (n == 0) break;
+        rb.advance(n);
+        while (try rb.next()) |record| switch (try hs.handleRecord(record, &out.buffer)) {
+            .key_update => |ku| {
+                if (ku.response) |w| {
+                    try writeAll(stream, w);
+                    hs.completeWrite();
+                }
+                // Send app data under the new keys after the KeyUpdate.
+                if (!saw_key_update) {
+                    saw_key_update = true;
+                    const app = try hs.sendApplicationData("after-ku", &out.buffer);
+                    try writeAll(stream, app);
+                    hs.completeWrite();
+                }
+            },
+            .application_data => |data| {
+                if (!mem.eql(u8, data, "pong-ku")) return error.UnexpectedPong;
+                got_pong = true;
+            },
+            .write => |w| {
+                try writeAll(stream, w);
+                hs.completeWrite();
+            },
+            .closed => return,
+            .new_session_ticket => {},
+            .none => {},
+        };
+    }
+    try testing.expect(saw_key_update);
+    try testing.expect(got_pong);
+}
+
 fn runClientSuite(
     arena: Allocator,
     cert_path: []const u8,
@@ -1113,6 +1311,11 @@ fn listen(addr: Address) !Server {
 
 fn deinitServer(server: *Server) void {
     if (comptime is_zig_16) server.deinit(testing.io) else server.deinit();
+}
+
+fn serverPort(server: *const Server) u16 {
+    if (comptime is_zig_16) return server.socket.address.getPort();
+    return server.listen_address.in.getPort();
 }
 
 fn accept(server: *Server) !Stream {
