@@ -595,18 +595,21 @@ each passing the same correctness and interop gates.
   `ZTLS_BORINGSSL_PKG_CONFIG_PATH` / `ZTLS_BORINGSSL_LIB_DIR` env vars in
   `commonHook`. TLS-Anvil workflow matrices include `boringssl` alongside
   `openssl` and `aws-lc` for both client and server scheduled/dispatch runs.
-  The first BoringSSL TLS-Anvil client capture is complete (run
-  `ci-29157500023` on `fd571eb`, strict-complete `437/437`): `passed=91`,
-  `failed=7` (`expected_failed=6` DSA-root per #52, `unexpected_fail=1`
-  KeyUpdate ChaCha20-Poly1305 case), `expected_skipped=134`,
+  The first BoringSSL TLS-Anvil captures are complete. Server run
+  `ci-29157499150` on `fd571eb` is strict-complete `437/437`: `passed=105`,
+  `failed=0`, `expected_skipped=175`, `unexpected_skipped=0`,
+  `not_attempted=157` — clean, matching the OpenSSL and AWS-LC server
+  captures. Client run `ci-29157500023` on `fd571eb` is strict-complete
+  `437/437`: `passed=91`, `failed=7` (`expected_failed=6` DSA-root per #52,
+  `unexpected_fail=1` KeyUpdate ChaCha20-Poly1305 case), `expected_skipped=134`,
   `unexpected_skipped=0`, `not_attempted=205`. The unexpected KeyUpdate
   failure is `respondsWithValidKeyUpdate` with
   `TLS_CHACHA20_POLY1305_SHA256` + `INCLUDE_CHANGE_CIPHER_SPEC=true` —
-  a BoringSSL-specific issue not seen under OpenSSL (where KeyUpdate passes
-  4/4); needs investigation. The BoringSSL TLS-Anvil server capture is
-  pending. BoringSSL benchmark captures are local smoke only (no committed
-  EC2 row-perf evidence). *(#63, #70 — client capture done with 1
-  unexpected KeyUpdate finding; server capture pending)*
+  a BoringSSL-specific client-side issue not seen under OpenSSL or AWS-LC
+  (where KeyUpdate passes 4/4); filed #71 for investigation.
+  BoringSSL benchmark captures are local smoke only (no committed EC2
+  row-perf evidence). *(#63, #70, #71 — server capture clean; client
+  capture has 1 unexpected KeyUpdate finding)*
 
 **Status:** `PARTIAL`
 
@@ -631,9 +634,9 @@ each passing the same correctness and interop gates.
   the floor; external-runner FIPS conformance lane and full Wycheproof JSON-
   harness breadth are still absent. BoringSSL backend now compiles and passes
   primitive tests with a CI-gated lane and tlsfuzzer smoke (#63 CI/follow-up
-  slice); the first BoringSSL TLS-Anvil client capture is complete with 1
-  unexpected KeyUpdate/ChaCha20 finding (see above), and the server capture
-  is pending. *(#60, #63, #70)*
+  slice); the BoringSSL TLS-Anvil server capture is clean (105/105, matching
+  OpenSSL/AWS-LC) and the client capture has 1 unexpected KeyUpdate/ChaCha20
+  finding (#71). *(#60, #63, #70, #71)*
 - **aws-lc has a real test lane but not a full backend matrix.** The
   `-Dcrypto-backend=aws-lc` build links AWS-LC libcrypto and runs the unit suite;
   X25519 uses AWS-LC's flat `curve25519.h` API, and AEAD uses AWS-LC's
@@ -749,10 +752,10 @@ each passing the same correctness and interop gates.
   chain ownership decision is recorded as keep ztls/std (see the cert-chain
   ownership gap above). BoringSSL backend now compiles and passes primitive
   tests with a CI-gated lane, `just check-backend-boringssl` recipe,
-  benchmark lane, and tlsfuzzer smoke (#63 CI/follow-up slice); the first
-  BoringSSL TLS-Anvil client capture is complete with 1 unexpected
-  KeyUpdate/ChaCha20 finding (see the BoringSSL bullet above), and the
-  server capture is pending. *(#60, #63, #70)*
+  benchmark lane, and tlsfuzzer smoke (#63 CI/follow-up slice); the
+  BoringSSL TLS-Anvil server capture is clean (105/105, matching
+  OpenSSL/AWS-LC) and the client capture has 1 unexpected
+  KeyUpdate/ChaCha20 finding (#71). *(#60, #63, #70, #71)*
 
 ---
 
