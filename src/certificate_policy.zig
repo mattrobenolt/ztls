@@ -56,6 +56,7 @@ const eku_client_auth_oid = [_]u8{ 0x2b, 0x06, 0x01, 0x05, 0x05, 0x07, 0x03, 0x0
 const key_usage_digital_signature: u4 = 0;
 
 pub const VerifyServerAuthError = PolicyError || Certificate.ParseError;
+pub const VerifyClientAuthError = PolicyError || Certificate.ParseError;
 
 // ziglint-ignore: Z015 -- VerifyServerAuthError is a public error-set alias.
 pub fn verifyServerAuth(parsed: Certificate.Parsed) VerifyServerAuthError!void {
@@ -74,7 +75,7 @@ pub fn verifyServerAuthWithSignatureSchemes(
 }
 
 // ziglint-ignore: Z015 -- VerifyClientAuthError is a public error-set alias.
-pub fn verifyClientAuth(parsed: Certificate.Parsed) VerifyServerAuthError!void {
+pub fn verifyClientAuth(parsed: Certificate.Parsed) VerifyClientAuthError!void {
     return verifyClientAuthWithSignatureSchemes(
         parsed,
         backend.capabilities.certificate_signature_schemes,
@@ -85,7 +86,7 @@ pub fn verifyClientAuth(parsed: Certificate.Parsed) VerifyServerAuthError!void {
 pub fn verifyClientAuthWithSignatureSchemes(
     parsed: Certificate.Parsed,
     certificate_signature_schemes: []const SignatureScheme,
-) VerifyServerAuthError!void {
+) VerifyClientAuthError!void {
     return verifyLeafAuth(parsed, certificate_signature_schemes, &eku_client_auth_oid);
 }
 
@@ -96,7 +97,7 @@ fn verifyLeafAuth(
     parsed: Certificate.Parsed,
     certificate_signature_schemes: []const SignatureScheme,
     eku_oid: []const u8,
-) VerifyServerAuthError!void {
+) VerifyClientAuthError!void {
     // RFC 8446 §4.4.2.2 — unless another certificate type is negotiated, the
     // leaf certificate must be X.509v3.
     if (parsed.version != .v3) return error.UnsupportedCertificateVersion;
