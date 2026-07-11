@@ -610,10 +610,12 @@ each passing the same correctness and interop gates.
   before opening its server socket), not a BoringSSL AEAD or KeyUpdate bug.
   Commit `03e136e` adds a connection retry; local TLS-Anvil verification
   confirms `respondsWithValidKeyUpdate` passes under BoringSSL with the
-  fix. A re-run of the CI workflow is needed to confirm the fix at scale.
+  fix. CI re-run `ci-29169246626` on `9415920` confirms: `passed=92`,
+  `failed=6` (all expected_failed DSA-root #52), `unexpected_fail=0`,
+  workflow conclusion `success`.
   BoringSSL benchmark captures are local smoke only (no committed EC2
   row-perf evidence). *(#63, #70, #71 — server capture clean; client
-  capture KeyUpdate failure root-caused and fixed locally)*
+  capture KeyUpdate failure root-caused and fixed, CI-confirmed)*
 
 **Status:** `PARTIAL`
 
