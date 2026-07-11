@@ -21,6 +21,7 @@ concurrency:
 
 permissions:
   contents: read
+  id-token: write
 
 jobs:
   anvil-client:
@@ -40,6 +41,7 @@ jobs:
           persist-credentials: false
 
       - uses: DeterminateSystems/determinate-nix-action@c70cb8ae92d68c66953db28a26a63db1665bc837 # v3.21.5
+      - uses: DeterminateSystems/magic-nix-cache-action@908b263ff629f4cc17666315b7fd3ec127c6244d # v14
 
       - name: Build harness and TLS-Anvil tools
         run: |
