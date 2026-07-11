@@ -97,21 +97,46 @@ default devshell and the default `-Dcrypto-backend`.
 
 ## Supported surface
 
-The supported path is server-authenticated TLS 1.3 1-RTT over caller-owned
-buffers. ztls owns protocol state, record framing, encryption, transcript
-hashing, alerts, and key updates. You own transport I/O, the buffers, and the
-drive loop.
+ztls owns protocol state, record framing, encryption, transcript hashing,
+alerts, and key updates over caller-owned buffers. You own transport I/O, the
+buffers, and the drive loop. Both client and server roles are implemented.
 
-- TLS 1.3 only. TLS 1.2, DTLS, and Windows are out of scope.
-- Cipher suites: `TLS_AES_128_GCM_SHA256`, `TLS_AES_256_GCM_SHA384`, and
-  `TLS_CHACHA20_POLY1305_SHA256`.
-- Examples use X25519. Server-side P-256 ECDHE exists for conformance work.
-  Broader named-group and provider work is tracked by [#6](https://github.com/mattrobenolt/ztls/issues/6).
-- Server certificate authentication works. Client certificate auth is tracked
-  by [#4](https://github.com/mattrobenolt/ztls/issues/4).
-- PSK/session resumption is [#2](https://github.com/mattrobenolt/ztls/issues/2),
-  0-RTT is [#3](https://github.com/mattrobenolt/ztls/issues/3),
-  HelloRetryRequest retry is [#1](https://github.com/mattrobenolt/ztls/issues/1).
+**Supported** means it's exercised in CI. **Partial** means the code exists and
+passes local tests but isn't validated against an external conformance peer yet.
+**Out of scope** means it isn't coming — a scope decision, not a gap.
+
+| Feature | Status | Notes |
+|---|---|---|
+| TLS 1.3 handshake, 1-RTT | Supported | Client and server roles |
+| TLS 1.2 fallback | Out of scope | No downgrade target, by design |
+| DTLS | Out of scope | |
+| Cipher suites | Supported | AES-128-GCM, AES-256-GCM, ChaCha20-Poly1305 |
+| Key exchange: X25519, P-256 | Supported | ECDHE |
+| Key exchange: P-384 | Partial | Local primitive tests; no external conformance yet ([#6](https://github.com/mattrobenolt/ztls/issues/6)) |
+| Post-quantum: X25519MLKEM768 | Partial | Hybrid KEM, OpenSSL 3.6+ only, in-memory tested ([#6](https://github.com/mattrobenolt/ztls/issues/6)) |
+| Server certificate auth | Supported | Hostname verification, chain validation, leaf policy |
+| Client certificate auth | Supported | Both roles, EKU/KU enforcement, OpenSSL interop |
+| Session resumption (PSK) | Supported | NewSessionTicket + PSK ClientHello; OpenSSL interop gated |
+| 0-RTT early data | Supported | Offer/accept/reject; caller owns replay-safety policy |
+| HelloRetryRequest | Supported | Both roles; forced-HRR OpenSSL interop not gated |
+| KeyUpdate | Supported | Both directions, both roles |
+| Application data, alerts, `close_notify` | Supported | |
+| kTLS offload | Supported | Linux only; key export + kernel data plane |
+| Windows | Out of scope | Linux and macOS only |
+
+Crypto primitives come from a libcrypto backend, selected at build time:
+
+| Backend | Status |
+|---|---|
+| OpenSSL | Supported (default) |
+| AWS-LC | Supported (`-Dcrypto-backend=aws-lc`) |
+| BoringSSL | Supported (`-Dcrypto-backend=boringssl`) |
+
+Beyond the current surface: broader named groups and the other PQ/hybrid
+combinations (P-384+ML-KEM-1024, SecP256r1+ML-KEM-768) wait on backend library
+support, tracked by [#6](https://github.com/mattrobenolt/ztls/issues/6). A BoGo
+conformance runner is deferred, and FIPS mode has compile-time capability tables
+but no runtime FIPS-provider verification.
 
 ## Fresh project
 
