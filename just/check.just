@@ -180,7 +180,7 @@ lint-zig:
 [doc("Lint shell scripts")]
 [group("check")]
 lint-shell:
-    shellcheck --severity=warning scripts/*.sh infra/bench/*.sh
+    shellcheck --severity=warning scripts/*.sh infra/bench/*.sh infra/iam/*.sh
 
 [doc("Format Justfiles")]
 [group("check")]

@@ -4,9 +4,13 @@
 zig-pkg/
 zig-out/
 infra/bench/.terraform/
+infra/iam/.terraform/
+infra/iam/.terraform/providers/
 infra/bench/bench.pem
 infra/bench/terraform.tfstate
 infra/bench/terraform.tfstate.backup
+infra/iam/terraform.tfstate
+infra/iam/terraform.tfstate.backup
 *.o
 *.asm
 .DS_Store
