@@ -81,10 +81,29 @@ pub fn accept(server: *Server) !Stream {
 
 pub fn connectToHost(_: std.mem.Allocator, host: []const u8, port: u16) !Stream {
     const addr = try parseIp(host, port);
-    return if (comptime is_zig_16)
-        addr.connect(io(), .{ .mode = .stream })
-    else
-        std.net.tcpConnectToAddress(addr);
+    // TLS-Anvil starts the trigger script (this client) before opening its
+    // server socket. Retry briefly to avoid a ConnectionRefused race.
+    var attempts: u8 = 0;
+    while (attempts < 50) : (attempts += 1) {
+        if (is_zig_16) {
+            return addr.connect(io(), .{ .mode = .stream }) catch |err| switch (err) {
+                error.ConnectionRefused => {
+                    sleep20ms();
+                    continue;
+                },
+                else => return err,
+            };
+        } else {
+            return std.net.tcpConnectToAddress(addr) catch |err| switch (err) {
+                error.ConnectionRefused => {
+                    sleep20ms();
+                    continue;
+                },
+                else => return err,
+            };
+        }
+    }
+    return error.ConnectionRefused;
 }
 
 pub fn close(stream: Stream) void {
