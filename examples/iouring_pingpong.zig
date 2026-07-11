@@ -14,15 +14,15 @@ const builtin = @import("builtin");
 
 const ztls = @import("ztls");
 
-const shared_fixtures = @import("fixtures").shared;
+const fixtures = @import("fixtures");
 
 comptime {
     if (builtin.os.tag != .linux) @compileError("iouring_pingpong is Linux-only");
 }
 
 // Test fixtures: ECDSA P-256 server certificate and signing scalar.
-const cert_der: []const u8 = &shared_fixtures.server_ecdsa_cert_der;
-const scalar: []const u8 = &shared_fixtures.server_ecdsa_scalar;
+const cert_der: []const u8 = &fixtures.server_ecdsa_cert_der;
+const scalar: []const u8 = &fixtures.server_ecdsa_scalar;
 
 const host = "127.0.0.1";
 const server_name = "ztls.server.test";

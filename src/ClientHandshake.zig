@@ -2932,13 +2932,13 @@ test "clientFinished: empty CertificateRequest with no credentials still finishe
 
 // Isolate: fromP256Scalar + setCredentials alone (no clientFinished sign path).
 test "client auth: setCredentials stores client credentials" {
-    const shared_fixtures = @import("fixtures").shared;
+    const fixtures = @import("fixtures");
     var hs: ClientHandshake = .init(testConfig(rfc8448_client_keypair));
     var signer: signature.PrivateKey = try .fromP256Scalar(
-        shared_fixtures.client_ecdsa_scalar[0..32],
+        fixtures.client_ecdsa_scalar[0..32],
     );
     defer signer.deinit();
-    hs.setCredentials(&.{&shared_fixtures.client_ecdsa_cert_der}, signer.signer());
+    hs.setCredentials(&.{&fixtures.client_ecdsa_cert_der}, signer.signer());
     try testing.expect(hs.client_credentials != null);
 }
 

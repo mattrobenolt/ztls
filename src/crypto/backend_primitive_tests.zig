@@ -16,7 +16,7 @@ const testing = std.testing;
 const backend = @import("backend.zig");
 const Certificate = @import("../certificate_parser.zig");
 const CipherSuite = @import("../cipher_suite.zig").CipherSuite;
-const cert_fixtures = @import("fixtures").cert;
+const fixtures = @import("fixtures");
 
 const hex = @import("../memx.zig").hex;
 
@@ -625,7 +625,7 @@ const rsa_pss_key_pem = @import("fixtures").rsa_pss_key_pem;
 
 fn rsaPssPublicKey() !*backend.sign.pkey {
     const parsed = try Certificate.parse(.{
-        .buffer = &cert_fixtures.rsa_pss_cert_der,
+        .buffer = &fixtures.rsa_pss_cert_der,
         .index = 0,
     });
     return backend.sign.rsaPublicKeyFromDer(parsed.pubKey());

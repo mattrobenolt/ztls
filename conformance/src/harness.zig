@@ -4,9 +4,9 @@ const Address = net.Address;
 
 const ztls = @import("ztls");
 
-const shared_fixtures = @import("fixtures").shared;
-const cert_der: []const u8 = &shared_fixtures.server_ecdsa_cert_der;
-const scalar: []const u8 = &shared_fixtures.server_ecdsa_scalar;
+const fixtures = @import("fixtures");
+const cert_der: []const u8 = &fixtures.server_ecdsa_cert_der;
+const scalar: []const u8 = &fixtures.server_ecdsa_scalar;
 
 pub const max_wire_record_len = ztls.frame.header_len +
     ztls.frame.max_plaintext_len +

@@ -16,9 +16,9 @@ const builtin = @import("builtin");
 
 const ztls = @import("ztls");
 
-const shared_fixtures = @import("fixtures").shared;
+const fixtures = @import("fixtures");
 
-const trust_anchor_der: []const u8 = &shared_fixtures.server_ecdsa_cert_der;
+const trust_anchor_der: []const u8 = &fixtures.server_ecdsa_cert_der;
 
 comptime {
     if (builtin.os.tag != .linux) @compileError("iouring_client is Linux-only");

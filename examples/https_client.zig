@@ -17,9 +17,9 @@ const Address = net.Address;
 
 const ztls = @import("ztls");
 
-const shared_fixtures = @import("fixtures").shared;
+const fixtures = @import("fixtures");
 
-const trust_anchor_der: []const u8 = &shared_fixtures.server_ecdsa_cert_der;
+const trust_anchor_der: []const u8 = &fixtures.server_ecdsa_cert_der;
 const CertificateBundle = std.crypto.Certificate.Bundle;
 
 const connect_host = "127.0.0.1";

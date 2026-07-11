@@ -516,61 +516,63 @@ fn verifySignature(
 // Wrapped in functions so the @import of fixtures is never analyzed
 // unless a test calls these — the published tarball doesn't include
 // the fixtures module. Issue #66.
-fn FixturesShared() type {
-    // ziglint-ignore: Z028
-    return @import("fixtures").shared;
-}
-fn FixturesCert() type {
-    // ziglint-ignore: Z028
-    return @import("fixtures").cert;
-}
-fn FixturesSig() type {
-    // ziglint-ignore: Z028
-    return @import("fixtures").sig;
-}
 fn fixtureCertDer() []const u8 {
-    return &FixturesShared().server_cert_der;
+    // ziglint-ignore: Z028
+    return &@import("fixtures").server_cert_der;
 }
 fn fixtureCvSig() []const u8 {
-    return &FixturesSig().cv_sig;
+    // ziglint-ignore: Z028
+    return &@import("fixtures").cv_sig;
 }
 fn fixtureRsaPssCertDer() []const u8 {
-    return &FixturesCert().rsa_pss_cert_der;
+    // ziglint-ignore: Z028
+    return &@import("fixtures").rsa_pss_cert_der;
 }
 fn fixtureRsaPssCvSig() []const u8 {
-    return &FixturesSig().rsa_pss_cv_sig;
+    // ziglint-ignore: Z028
+    return &@import("fixtures").rsa_pss_cv_sig;
 }
 fn fixtureRsaPssCvSalt20Sig() []const u8 {
-    return &FixturesSig().rsa_pss_cv_salt20_sig;
+    // ziglint-ignore: Z028
+    return &@import("fixtures").rsa_pss_cv_salt20_sig;
 }
 const chain_root_pem = "tests/fixtures/chain/root.crt";
 fn chainLeafDer() []const u8 {
-    return &FixturesCert().chain_leaf_der;
+    // ziglint-ignore: Z028
+    return &@import("fixtures").chain_leaf_der;
 }
 fn ed25519CertDer() []const u8 {
-    return &FixturesCert().ed25519_cert_der;
+    // ziglint-ignore: Z028
+    return &@import("fixtures").ed25519_cert_der;
 }
 fn chainIntermediateDer() []const u8 {
-    return &FixturesCert().chain_intermediate_der;
+    // ziglint-ignore: Z028
+    return &@import("fixtures").chain_intermediate_der;
 }
 fn nameConstraintsDer() []const u8 {
-    return &FixturesCert().name_constraints_der;
+    // ziglint-ignore: Z028
+    return &@import("fixtures").name_constraints_der;
 }
 fn nameConstraintsNoncriticalDer() []const u8 {
-    return &FixturesCert().name_constraints_noncritical_der;
+    // ziglint-ignore: Z028
+    return &@import("fixtures").name_constraints_noncritical_der;
 }
 const nc_root_pem = "tests/fixtures/nameconstraints/root.crt";
 fn ncIntermediateDer() []const u8 {
-    return &FixturesCert().nc_intermediate_der;
+    // ziglint-ignore: Z028
+    return &@import("fixtures").nc_intermediate_der;
 }
 fn ncLeafAllowedDer() []const u8 {
-    return &FixturesCert().nc_leaf_allowed_der;
+    // ziglint-ignore: Z028
+    return &@import("fixtures").nc_leaf_allowed_der;
 }
 fn ncLeafExcludedDer() []const u8 {
-    return &FixturesCert().nc_leaf_excluded_der;
+    // ziglint-ignore: Z028
+    return &@import("fixtures").nc_leaf_excluded_der;
 }
 fn ncLeafOutsideDer() []const u8 {
-    return &FixturesCert().nc_leaf_outside_der;
+    // ziglint-ignore: Z028
+    return &@import("fixtures").nc_leaf_outside_der;
 }
 
 fn buildCertMsg(buf: []u8, cert_der: []const u8) []const u8 {

@@ -20,9 +20,9 @@ const host = "127.0.0.1";
 const alpn_protocol = "http/1.1";
 const response = "HTTP/1.0 200 OK\r\nContent-Length: 5\r\n\r\nhello";
 
-const shared_fixtures = @import("fixtures").shared;
-const server_cert_der: []const u8 = &shared_fixtures.server_ecdsa_cert_der;
-const server_scalar: []const u8 = &shared_fixtures.server_ecdsa_scalar;
+const fixtures = @import("fixtures");
+const server_cert_der: []const u8 = &fixtures.server_ecdsa_cert_der;
+const server_scalar: []const u8 = &fixtures.server_ecdsa_scalar;
 
 const client_suites = [_][]const u8{
     "TLS_AES_128_GCM_SHA256",
@@ -1240,7 +1240,7 @@ fn clientInteropWithCreds(stream: Stream) !void {
     return error.NoHttpResponse;
 }
 
-/// Write the self-signed ECDSA fixture certificate (shared_fixtures.server_ecdsa_cert_der)
+/// Write the self-signed ECDSA fixture certificate (fixtures.server_ecdsa_cert_der)
 /// as a PEM file so `openssl s_server -Verify -CAfile` trusts the ztls client's
 /// client certificate (the fixture is self-signed, so it is its own CA).
 fn writeFixtureCertPem(arena: Allocator, pem_path: []const u8) !void {
