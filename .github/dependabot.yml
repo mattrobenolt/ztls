@@ -1,0 +1,22 @@
+version: 2
+updates:
+  # GitHub Actions SHA pins (ci.yml, tls-anvil-*.yml, update-flake-lock.yml).
+  # pinact enforces pinning; Dependabot keeps the pins current.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - automated
+    commit-message:
+      prefix: "ci"
+      include: scope
+    groups:
+      # One PR for all action bumps so the queue stays quiet.
+      actions:
+        patterns:
+          - "*"

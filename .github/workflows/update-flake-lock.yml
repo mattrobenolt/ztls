@@ -1,0 +1,35 @@
+name: update-flake-lock
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Weekly Monday 05:23 UTC. Real lockfile evidence, not PR smoke.
+    - cron: "23 5 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  lockfile:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      issues: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: DeterminateSystems/determinate-nix-action@c70cb8ae92d68c66953db28a26a63db1665bc837 # v3.21.5
+      - uses: DeterminateSystems/magic-nix-cache-action@908b263ff629f4cc17666315b7fd3ec127c6244d # v14
+      - uses: DeterminateSystems/update-flake-lock@834c491b2ece4de0bbd00d85214bb5e83b4da5c6 # v28
+        with:
+          pr-title: "flake.lock: update nix inputs"
+          pr-labels: |
+            dependencies
+            automated
+          # GITHUB_TOKEN opens the PR but does not trigger CI on it. A PAT
+          # (repo scope, or fine-grained Contents + Pull-Requests read/write)
+          # stored as GH_TOKEN_FOR_UPDATES makes the PR run CI like a human's.
+          token: ${{ secrets.GH_TOKEN_FOR_UPDATES }}
