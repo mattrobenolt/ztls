@@ -236,6 +236,12 @@ fn serverRun(ctx: *ServerCtx) !void {
 
 const linux = std.os.linux;
 
+/// `linux.E.init` was renamed to `linux.errno` in Zig 0.16.
+fn linuxErrno(r: usize) linux.E {
+    if (@hasDecl(linux, "errno")) return linux.errno(r);
+    return linux.E.init(r);
+}
+
 /// Result of a kTLS setsockopt that may fail because the kernel lacks TLS
 /// support (ENOENT/NOPROTOOPT/OPNOTSUPP/PROTONOSUPPORT) or for another reason.
 const KtlsSetsockoptResult = union(enum) {
@@ -256,7 +262,7 @@ fn ktlsSetsockopt(
     opt: []const u8,
 ) KtlsSetsockoptResult {
     const rc = linux.setsockopt(sockfd, @intCast(level), optname, opt.ptr, @intCast(opt.len));
-    const e = linux.E.init(rc);
+    const e = linuxErrno(rc);
     return switch (e) {
         .SUCCESS => .ok,
         // Kernel has no tls ULP / cipher module registered.
@@ -280,10 +286,13 @@ fn installKtlsAesGcm128(
 fn recvExact(sockfd: posix.socket_t, buf: []u8) !usize {
     var total: usize = 0;
     while (total < buf.len) {
-        const n = posix.recv(sockfd, buf[total..], 0) catch |err| switch (err) {
-            error.WouldBlock => continue,
-            else => return err,
-        };
+        const rc = linux.read(sockfd, buf[total..].ptr, buf[total..].len);
+        switch (linuxErrno(rc)) {
+            .SUCCESS => {},
+            .AGAIN, .INTR => continue,
+            else => return error.Unexpected,
+        }
+        const n: usize = @intCast(@as(isize, @bitCast(rc)));
         if (n == 0) return error.PeerClosed;
         total += n;
     }
@@ -293,11 +302,13 @@ fn recvExact(sockfd: posix.socket_t, buf: []u8) !usize {
 fn sendAll(sockfd: posix.socket_t, bytes: []const u8) !usize {
     var sent: usize = 0;
     while (sent < bytes.len) {
-        const n = posix.send(sockfd, bytes[sent..], 0) catch |err| switch (err) {
-            error.WouldBlock => continue,
-            else => return err,
-        };
-        sent += n;
+        const rc = linux.write(sockfd, bytes[sent..].ptr, bytes[sent..].len);
+        switch (linuxErrno(rc)) {
+            .SUCCESS => {},
+            .AGAIN, .INTR => continue,
+            else => return error.Unexpected,
+        }
+        sent += @intCast(@as(isize, @bitCast(rc)));
     }
     return sent;
 }
@@ -406,12 +417,17 @@ fn clientRun(client_keypair: ztls.x25519.KeyPair, actual_port: u16) !void {
     //    than a hard error so this example never breaks CI on a kernel without
     //    kTLS.
     while (true) {
-        const n = net.read(stream, rb.writable()) catch |err| switch (err) {
-            error.ConnectionResetByPeer, error.BrokenPipe => {
+        const n = net.read(stream, rb.writable()) catch |err| {
+            // The server may close/reset without pong when kTLS is unavailable
+            // (kernel without tls.ko). Treat connection-reset errors as a
+            // graceful skip so this example never breaks CI on such kernels.
+            if (std.mem.eql(u8, @errorName(err), "ConnectionResetByPeer") or
+                std.mem.eql(u8, @errorName(err), "BrokenPipe"))
+            {
                 print("[client] server closed without pong (kTLS unavailable), skipping\n", .{});
                 return;
-            },
-            else => return err,
+            }
+            return err;
         };
         if (n == 0) {
             print("[client] server closed without pong (kTLS unavailable), skipping\n", .{});

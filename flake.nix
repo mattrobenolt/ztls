@@ -49,7 +49,9 @@
           wrangler = pkgs.writeShellScriptBin "wrangler" ''
             exec ${pkgs.nodejs}/bin/npx wrangler@4.107.0 "$@"
           '';
-          commonPackages =
+          # commonPackages takes the Zig toolchain pair so the same package
+          # list can target either Zig 0.15 (default) or Zig 0.16 (#61).
+          commonPackages = zig-tools:
             (with pkgs; [
               ast-grep
               benchstat
@@ -70,11 +72,11 @@
               opentofu
               rsync
               txtar
-              zig_0_15
+              zig-tools.zig
               zigdoc
               zizmor
               ziglint
-              zls_0_15
+              zig-tools.zls
             ])
             ++ lib.optionals stdenv.isLinux (
               with pkgs;
@@ -83,6 +85,8 @@
                 valgrind
               ]
             );
+          zig0_15 = { zig = pkgs.zig_0_15; zls = pkgs.zls_0_15; };
+          zig0_16 = { zig = pkgs.zig_0_16; zls = pkgs.zls_0_16; };
           commonHook = ''
             unset NIX_CFLAGS_COMPILE
             unset PKG_CONFIG_PATH
@@ -137,10 +141,11 @@
               pkgConfigPath,
               libDir,
               packages,
+              zig-tools ? zig0_15,
             }:
             pkgs.mkShell {
               inherit name;
-              packages = commonPackages ++ packages;
+              packages = commonPackages zig-tools ++ packages;
               shellHook = ''
                 ${commonHook}
                 export ZTLS_CRYPTO_BACKEND=${backend}
@@ -156,7 +161,7 @@
           devShells = rec {
             base = pkgs.mkShell {
               name = "ztls-base";
-              packages = commonPackages;
+              packages = commonPackages zig0_15;
               shellHook = commonHook;
             };
 
@@ -169,6 +174,21 @@
                 pkgs.openssl.dev
                 pkgs.openssl.out
               ];
+            };
+
+            # Zig 0.16 lane: same OpenSSL backend as the default shell but
+            # with the 0.16 toolchain. CI uses this to prove 0.16 support is
+            # real, not a local spot-check (#61).
+            zig-0_16 = backendShell {
+              name = "ztls-zig-0_16";
+              backend = "openssl";
+              pkgConfigPath = "${pkgs.openssl.dev}/lib/pkgconfig";
+              libDir = "${pkgs.openssl.out}/lib";
+              packages = [
+                pkgs.openssl.dev
+                pkgs.openssl.out
+              ];
+              zig-tools = zig0_16;
             };
 
             aws-lc = backendShell {

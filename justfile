@@ -19,3 +19,8 @@ example example *args:
 [doc("Run all CI gates")]
 ci: test check-backend-aws-lc lint examples-ci
     just conformance/ci
+
+[doc("Run core library checks under Zig 0.16 (test + examples + conformance; lint stays on 0.15 due to 0.16 deprecation noise)")]
+[group("check")]
+ci-0_16: test examples-ci
+    just conformance/ci

@@ -1059,7 +1059,11 @@ fn writeFixtureCertPem(arena: Allocator, pem_path: []const u8) !void {
         "-----BEGIN CERTIFICATE-----\n{s}\n-----END CERTIFICATE-----\n",
         .{encoded},
     );
-    try fs.cwd().writeFile(.{ .sub_path = pem_path, .data = pem });
+    if (is_zig_16) {
+        try std.Io.Dir.cwd().writeFile(testing.io, .{ .sub_path = pem_path, .data = pem });
+    } else {
+        try fs.cwd().writeFile(.{ .sub_path = pem_path, .data = pem });
+    }
 }
 
 fn sendBestEffortAlert(
