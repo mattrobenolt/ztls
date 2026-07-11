@@ -2,6 +2,10 @@
 default:
     @just --list
 
+[doc("Remove generated runtime artifacts (cache, logs, Results, zig-out)")]
+clean:
+    rm -rf cache logs Results_* zig-out zig-pkg keyfile.log
+
 [doc("Format conformance code")]
 fmt: fmt-python fmt-zig fmt-just
 

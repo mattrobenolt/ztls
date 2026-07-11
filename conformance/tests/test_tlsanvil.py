@@ -1,8 +1,9 @@
 import json
 import re
 import subprocess
+from pathlib import Path
 
-from conftest import CONF_DIR
+CONF_DIR = Path(__file__).resolve().parents[1]
 
 
 def test_tls_anvil_cli_dependencies_are_installed():

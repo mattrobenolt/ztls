@@ -5,7 +5,7 @@
 //! API composes with actual sockets: no OpenSSL, no external processes.
 const std = @import("std");
 const print = std.debug.print;
-const net = @import("net_compat.zig");
+const net = @import("net_compat");
 const Address = net.Address;
 
 const ztls = @import("ztls");

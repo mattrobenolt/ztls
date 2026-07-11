@@ -23,7 +23,7 @@ check-backend-aws-lc:
     PKG_CONFIG_PATH="$aws_lc_pkg_config_path" zig build bench --cache-dir "$cache_dir" -Dcrypto-backend=aws-lc -- --filter 'BenchmarkRecordEncryptPrepared/TLS_AES_128_GCM_SHA256/1350' --count=1 --benchtime=1x --no-env
     PKG_CONFIG_PATH="$aws_lc_pkg_config_path" zig build example-in_memory_handshake --summary all --cache-dir "$cache_dir" -Dcrypto-backend=aws-lc
     (cd conformance && PKG_CONFIG_PATH="$aws_lc_pkg_config_path" ZTLS_CRYPTO_BACKEND=aws-lc zig build --summary all --verbose --cache-dir "$cache_dir/conformance" -Dcrypto-backend=aws-lc) 2>&1 | tee -a "$log"
-    (cd conformance && PKG_CONFIG_PATH="$aws_lc_pkg_config_path" ZTLS_CRYPTO_BACKEND=aws-lc uv run pytest -q test_tls13.py)
+    (cd conformance && PKG_CONFIG_PATH="$aws_lc_pkg_config_path" ZTLS_CRYPTO_BACKEND=aws-lc uv run pytest -q tests/test_tls13.py)
     grep -F -- "-I$aws_lc_include_dir" "$log" >/dev/null || {
         echo "AWS-LC include path was not used: $aws_lc_include_dir" >&2
         exit 1
@@ -53,7 +53,7 @@ check-backend-boringssl:
     PKG_CONFIG_PATH="$boringssl_pkg_config_path" zig build bench --cache-dir "$cache_dir" -Dcrypto-backend=boringssl -- --filter 'BenchmarkRecordEncryptPrepared/TLS_AES_128_GCM_SHA256/1350' --count=1 --benchtime=1x --no-env
     PKG_CONFIG_PATH="$boringssl_pkg_config_path" zig build example-in_memory_handshake --summary all --cache-dir "$cache_dir" -Dcrypto-backend=boringssl
     (cd conformance && PKG_CONFIG_PATH="$boringssl_pkg_config_path" ZTLS_CRYPTO_BACKEND=boringssl zig build --summary all --verbose --cache-dir "$cache_dir/conformance" -Dcrypto-backend=boringssl) 2>&1 | tee -a "$log"
-    (cd conformance && PKG_CONFIG_PATH="$boringssl_pkg_config_path" ZTLS_CRYPTO_BACKEND=boringssl uv run pytest -q test_tls13.py)
+    (cd conformance && PKG_CONFIG_PATH="$boringssl_pkg_config_path" ZTLS_CRYPTO_BACKEND=boringssl uv run pytest -q tests/test_tls13.py)
     grep -F -- "-I$boringssl_include_dir" "$log" >/dev/null || {
         echo "BoringSSL include path was not used: $boringssl_include_dir" >&2
         exit 1
@@ -164,18 +164,18 @@ lint-readme-index:
 [doc("Format Zig code")]
 [group("check")]
 fmt-zig:
-    zig fmt src/ examples/ bench/ build.zig
+    zig fmt src/ examples/ bench/ shared/ build.zig
 
 [group("check")]
 lint-zig:
-    zig fmt --check src/ examples/ bench/ build.zig
-    ziglint build.zig examples bench $(fd --extension zig --exclude certificate_parser.zig . src)
+    zig fmt --check src/ examples/ bench/ shared/ build.zig
+    ziglint build.zig examples bench shared $(fd --extension zig --exclude certificate_parser.zig . src)
     ast-grep scan --rule rules/no-ztls-owned-allocations.yml src --globs '*.zig' --globs '!src/test/**' --globs '!src/bench/**' --globs '!src/interop.zig' --report-style short
     ast-grep scan --rule rules/no-c-pointer-types.yml src --globs '*.zig' --report-style short
     # std-alias rules: enforce the aliases we always want. certificate_parser.zig
     # is an upstream-derived std fork kept close to upstream, so it is excluded
     # like ziglint does.
-    rc=0; for rule in rules/std-alias-*.yml; do ast-grep scan --rule "$rule" src examples bench --globs '*.zig' --globs '!src/certificate_parser.zig' --report-style short || rc=1; done; exit $rc
+    rc=0; for rule in rules/std-alias-*.yml; do ast-grep scan --rule "$rule" src examples bench shared --globs '*.zig' --globs '!src/certificate_parser.zig' --report-style short || rc=1; done; exit $rc
 
 [doc("Lint shell scripts")]
 [group("check")]

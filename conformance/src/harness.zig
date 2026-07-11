@@ -1,5 +1,5 @@
 const std = @import("std");
-const net = @import("net_compat.zig");
+const net = @import("net_compat");
 const Address = net.Address;
 
 const ztls = @import("ztls");

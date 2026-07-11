@@ -6,7 +6,7 @@
 //!
 //! This is test harness code; allocators and I/O are acceptable here.
 const std = @import("std");
-const net = @import("net_compat.zig");
+const net = @import("net_compat");
 const mem = std.mem;
 const ascii = std.ascii;
 const heap = std.heap;

@@ -1,10 +1,11 @@
 const std = @import("std");
-const net = @import("net_compat.zig");
-const Address = net.Address;
+const print = std.debug.print;
 
 const ztls = @import("ztls");
 
 const harness = @import("harness.zig");
+const net = @import("net_compat");
+const Address = net.Address;
 
 pub fn main() !void {
     const port = try readPort();
@@ -12,7 +13,7 @@ pub fn main() !void {
     var server = try net.listen(address, .{ .reuse_address = true });
     defer net.deinitServer(&server);
 
-    std.debug.print("ztls tlsfuzzer server listening on 127.0.0.1:{d}\n", .{port});
+    print("ztls tlsfuzzer server listening on 127.0.0.1:{d}\n", .{port});
 
     while (true) {
         const stream = net.accept(&server) catch |err| switch (err) {

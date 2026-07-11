@@ -13,7 +13,7 @@
 //! idle timeout exits non-zero so CI cannot mistake "no client" for TLS proof.
 const std = @import("std");
 const print = std.debug.print;
-const net = @import("net_compat.zig");
+const net = @import("net_compat");
 const Address = net.Address;
 
 const ztls = @import("ztls");

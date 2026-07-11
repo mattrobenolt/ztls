@@ -22,6 +22,13 @@ pub fn build(b: *std.Build) void {
     });
     const ztls_mod = ztls_dep.module("ztls");
 
+    // Shared 0.15/0.16 networking compat shim — same module as the examples.
+    const net_compat_mod = b.createModule(.{
+        .root_source_file = b.path("../shared/net_compat.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
     {
         const dep = b.dependency("tlsanvil", .{});
         const jar = dep.path("TLS-Anvil.jar");
@@ -48,6 +55,7 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
             .imports = &.{.{ .name = "ztls", .module = ztls_mod }},
         });
+        exe_mod.addImport("net_compat", net_compat_mod);
         exe_mod.link_libc = true;
         const exe = b.addExecutable(.{
             .name = entry.name,

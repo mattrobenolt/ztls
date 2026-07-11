@@ -1,5 +1,12 @@
+//! 0.15/0.16 networking compatibility shim for examples and conformance harnesses.
+//!
+//! Both the examples and the conformance TCP shims need the same type aliases,
+//! I/O wrappers, and dual-version std.net / std.Io.net bridging. This is the
+//! single source — examples and conformance each import it as a module from
+//! their build files so neither carries a divergent copy.
 const std = @import("std");
 const builtin = @import("builtin");
+const Allocator = std.mem.Allocator;
 
 const is_zig_16 = builtin.zig_version.major == 0 and builtin.zig_version.minor >= 16;
 const Net = if (is_zig_16) std.Io.net else std.net;
@@ -15,6 +22,13 @@ fn io() std.Io {
 pub fn env(comptime name: [:0]const u8) ?[]const u8 {
     if (std.c.getenv(name)) |value| return std.mem.span(value);
     return null;
+}
+
+pub fn readFileAlloc(allocator: Allocator, path: []const u8, limit: usize) ![]u8 {
+    return if (comptime is_zig_16)
+        std.Io.Dir.cwd().readFileAlloc(io(), path, allocator, .limited(limit))
+    else
+        std.fs.cwd().readFileAlloc(allocator, path, limit);
 }
 
 pub fn timestamp() i64 {
@@ -46,13 +60,13 @@ pub fn fillRandom(buf: []u8) void {
                 }
                 const errno: usize = @intCast(-signed_rc);
                 switch (errno) {
-                    4, 11 => continue,
+                    4, 11 => continue, // EINTR, EAGAIN
                     else => @panic("getrandom failed"),
                 }
             }
         },
         .macos => std.c.arc4random_buf(buf.ptr, buf.len),
-        else => @compileError("ztls conformance shims support only Linux and macOS"),
+        else => @compileError("ztls examples and conformance shims support only Linux and macOS"),
     }
 }
 
@@ -70,6 +84,20 @@ pub fn listen(addr: Address, options: anytype) !Server {
         addr.listen(Net.Address.ListenOptions{ .reuse_address = options.reuse_address });
 }
 
+pub fn serverPort(server: Server) u16 {
+    return if (comptime is_zig_16)
+        server.socket.address.getPort()
+    else
+        server.listen_address.in.getPort();
+}
+
+pub fn serverFd(server: Server) std.posix.fd_t {
+    return if (comptime is_zig_16)
+        server.socket.handle
+    else
+        server.stream.handle;
+}
+
 pub fn deinitServer(server: *Server) void {
     if (comptime is_zig_16) server.deinit(io()) else server.deinit();
 }
@@ -79,10 +107,20 @@ pub fn accept(server: *Server) !Stream {
     return (try server.accept()).stream;
 }
 
-pub fn connectToHost(_: std.mem.Allocator, host: []const u8, port: u16) !Stream {
+/// Connect to a resolved address. No retry — for server-side examples that
+/// control the listening socket.
+pub fn connect(addr: Address) !Stream {
+    return if (comptime is_zig_16)
+        addr.connect(io(), .{ .mode = .stream })
+    else
+        std.net.tcpConnectToAddress(addr);
+}
+
+/// Connect to a host:port with retry. TLS-Anvil starts the trigger script
+/// (the client) before opening its server socket, so the first connect attempt
+/// may get ConnectionRefused. Retry briefly to avoid the race.
+pub fn connectToHost(_: Allocator, host: []const u8, port: u16) !Stream {
     const addr = try parseIp(host, port);
-    // TLS-Anvil starts the trigger script (this client) before opening its
-    // server socket. Retry briefly to avoid a ConnectionRefused race.
     var attempts: u8 = 0;
     while (attempts < 50) : (attempts += 1) {
         if (is_zig_16) {
@@ -108,6 +146,10 @@ pub fn connectToHost(_: std.mem.Allocator, host: []const u8, port: u16) !Stream 
 
 pub fn close(stream: Stream) void {
     if (comptime is_zig_16) stream.close(io()) else stream.close();
+}
+
+pub fn fd(stream: Stream) std.posix.fd_t {
+    return if (comptime is_zig_16) stream.socket.handle else stream.handle;
 }
 
 pub fn read(stream: Stream, buf: []u8) !usize {

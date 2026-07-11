@@ -48,7 +48,7 @@ const SpinEvent = struct {
     }
 };
 const ResetEvent = if (is_zig_16) SpinEvent else Thread.ResetEvent;
-const net = @import("net_compat.zig");
+const net = @import("net_compat");
 const Address = net.Address;
 const Base64Decoder = std.base64.standard.Decoder;
 const Io = std.Io;

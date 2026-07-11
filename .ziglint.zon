@@ -4,6 +4,7 @@
         "src",
         "examples",
         "bench",
+        "shared",
     },
 
     .rules = .{

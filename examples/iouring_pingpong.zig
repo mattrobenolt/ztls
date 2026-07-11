@@ -8,7 +8,7 @@
 const std = @import("std");
 const IoUring = std.os.linux.IoUring;
 const print = std.debug.print;
-const net = @import("net_compat.zig");
+const net = @import("net_compat");
 const Address = net.Address;
 const builtin = @import("builtin");
 

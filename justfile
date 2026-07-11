@@ -24,3 +24,8 @@ ci: test check-backend-aws-lc lint examples-ci
 [group("check")]
 ci-0_16: test lint examples-ci
     just conformance/ci
+
+[doc("Remove local scratch directories (.tmp/, book/, zig-out/)")]
+clean:
+    rm -rf .tmp book zig-out
+    just conformance/clean

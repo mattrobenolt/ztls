@@ -11,7 +11,7 @@ const testing = std.testing;
 const assert = std.debug.assert;
 
 const ztls = @import("ztls");
-const net = @import("net_compat.zig");
+const net = @import("net_compat");
 
 const shared_fixtures = @import("test_fixtures/shared_fixtures.zig");
 const cert_der: []const u8 = &shared_fixtures.server_ecdsa_cert_der;

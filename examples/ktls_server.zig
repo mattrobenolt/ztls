@@ -30,7 +30,7 @@ const builtin = @import("builtin");
 const print = std.debug.print;
 const posix = std.posix;
 
-const net = @import("net_compat.zig");
+const net = @import("net_compat");
 const Address = net.Address;
 
 const ztls = @import("ztls");

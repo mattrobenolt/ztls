@@ -16,3 +16,8 @@ docs-serve: docs
 [group("docs")]
 docs-publish:
     wrangler deploy
+
+[doc("Remove generated docs site output (book/, docs/site/zig-docs/)")]
+[group("docs")]
+docs-clean:
+    rm -rf book docs/site/zig-docs .wrangler
