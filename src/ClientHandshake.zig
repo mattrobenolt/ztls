@@ -2934,10 +2934,10 @@ test "client auth: setCredentials stores client credentials" {
     const shared_fixtures = @import("test_fixtures/shared_fixtures.zig");
     var hs: ClientHandshake = .init(testConfig(rfc8448_client_keypair));
     var signer: signature.PrivateKey = try .fromP256Scalar(
-        shared_fixtures.server_ecdsa_scalar[0..32],
+        shared_fixtures.client_ecdsa_scalar[0..32],
     );
     defer signer.deinit();
-    hs.setCredentials(&.{&shared_fixtures.server_ecdsa_cert_der}, signer.signer());
+    hs.setCredentials(&.{&shared_fixtures.client_ecdsa_cert_der}, signer.signer());
     try testing.expect(hs.client_credentials != null);
 }
 
