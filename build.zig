@@ -125,6 +125,7 @@ pub fn build(b: *Build) void {
         .build_options = build_options,
         .benchmark_dep = benchmark_dep,
         .txtar_mod = txtar_mod,
+        .fixtures_mod = fixtures_mod,
     });
 
     examples_mod.addSteps(b, .{

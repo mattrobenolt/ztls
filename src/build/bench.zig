@@ -11,6 +11,7 @@ pub const Options = struct {
     build_options: *Build.Step.Options,
     benchmark_dep: *Build.Dependency,
     txtar_mod: ?*Build.Module,
+    fixtures_mod: *Build.Module,
 };
 
 pub fn addSteps(b: *Build, opts: Options) void {
@@ -34,6 +35,7 @@ fn addZtlsBenchmarks(b: *Build, opts: Options) void {
     });
     mod.addOptions("build_options", opts.build_options);
     mod.linkSystemLibrary("crypto", .{});
+    mod.addImport("fixtures", opts.fixtures_mod);
 
     const exe = benchmark.addTest(b, .{
         .dependency = opts.benchmark_dep,
