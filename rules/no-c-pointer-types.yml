@@ -9,5 +9,5 @@ message: |
     "This type is to be avoided whenever possible. The only valid reason
      for using a C pointer is in auto-generated code from translating C code."
 rule:
-  kind: PrefixTypeOp
+  kind: pointer_type
   regex: '\[\*c\]'

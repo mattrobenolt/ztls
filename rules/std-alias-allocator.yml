@@ -8,6 +8,6 @@ rule:
   pattern: std.mem.Allocator
   not:
     inside:
-      kind: VarDecl
+      kind: variable_declaration
       regex: '=\s*std\.mem\.Allocator\s*;'
       stopBy: end

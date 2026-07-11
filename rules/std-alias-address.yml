@@ -8,6 +8,6 @@ rule:
   pattern: std.net.Address
   not:
     inside:
-      kind: VarDecl
+      kind: variable_declaration
       regex: '=\s*std\.net\.Address\s*;'
       stopBy: end
