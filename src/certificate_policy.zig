@@ -16,8 +16,8 @@ pub const PolicyError = error{
 pub const LeafUsage = enum {
     none,
     server_auth,
-    /// Client-auth leaf policy: no EKU/KU enforcement yet (honest partial —
-    /// client EKU/key-usage policy can be tightened in a follow-up).
+    /// Client-auth leaf policy: EKU clientAuth and KeyUsage.digitalSignature
+    /// enforced when present, plus X.509v3 and signature-algorithm checks.
     client_auth,
 };
 
@@ -49,7 +49,10 @@ pub const Policy = struct {
         backend.capabilities.certificate_signature_schemes,
 };
 
+// RFC 5280 §4.2.1.12 — id-kp-serverAuth (1.3.6.1.5.5.7.3.1).
 const eku_server_auth_oid = [_]u8{ 0x2b, 0x06, 0x01, 0x05, 0x05, 0x07, 0x03, 0x01 };
+// RFC 5280 §4.2.1.12 — id-kp-clientAuth (1.3.6.1.5.5.7.3.2).
+const eku_client_auth_oid = [_]u8{ 0x2b, 0x06, 0x01, 0x05, 0x05, 0x07, 0x03, 0x02 };
 const key_usage_digital_signature: u4 = 0;
 
 pub const VerifyServerAuthError = PolicyError || Certificate.ParseError;
@@ -67,18 +70,45 @@ pub fn verifyServerAuthWithSignatureSchemes(
     parsed: Certificate.Parsed,
     certificate_signature_schemes: []const SignatureScheme,
 ) VerifyServerAuthError!void {
+    return verifyLeafAuth(parsed, certificate_signature_schemes, &eku_server_auth_oid);
+}
+
+// ziglint-ignore: Z015 -- VerifyClientAuthError is a public error-set alias.
+pub fn verifyClientAuth(parsed: Certificate.Parsed) VerifyServerAuthError!void {
+    return verifyClientAuthWithSignatureSchemes(
+        parsed,
+        backend.capabilities.certificate_signature_schemes,
+    );
+}
+
+// ziglint-ignore: Z015 -- VerifyClientAuthError is a public error-set alias.
+pub fn verifyClientAuthWithSignatureSchemes(
+    parsed: Certificate.Parsed,
+    certificate_signature_schemes: []const SignatureScheme,
+) VerifyServerAuthError!void {
+    return verifyLeafAuth(parsed, certificate_signature_schemes, &eku_client_auth_oid);
+}
+
+/// Shared leaf-auth policy for both server-auth and client-auth: X.509v3,
+/// KeyUsage.digitalSignature when KU is present, the role-specific EKU when
+/// EKU is present, and a TLS 1.3-compatible certificate signature algorithm.
+fn verifyLeafAuth(
+    parsed: Certificate.Parsed,
+    certificate_signature_schemes: []const SignatureScheme,
+    eku_oid: []const u8,
+) VerifyServerAuthError!void {
     // RFC 8446 §4.4.2.2 — unless another certificate type is negotiated, the
-    // server certificate must be X.509v3.
+    // leaf certificate must be X.509v3.
     if (parsed.version != .v3) return error.UnsupportedCertificateVersion;
 
-    // RFC 8446 §4.4.2.2 — server certificates must permit CertificateVerify
+    // RFC 8446 §4.4.2.2 — leaf certificates must permit CertificateVerify
     // signing via KeyUsage.digitalSignature when KeyUsage is present.
     if (!try parsed.allowsKeyUsage(key_usage_digital_signature))
         return error.CertificateKeyUsageRejected;
 
     // RFC 5280 §4.2.1.12 — when EKU is present it restricts certificate use;
-    // id-kp-serverAuth is required for TLS server authentication.
-    if (!try parsed.allowsExtKeyUsage(&eku_server_auth_oid))
+    // the role-specific id-kp-{server,client}Auth OID is required.
+    if (!try parsed.allowsExtKeyUsage(eku_oid))
         return error.CertificateExtendedKeyUsageRejected;
 
     try verifyCertificateSignatureAlgorithm(

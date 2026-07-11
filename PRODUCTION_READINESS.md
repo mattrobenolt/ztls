@@ -189,10 +189,17 @@ data to openssl s_server and receives the HTTP response.
   OpenSSL interop both directions is CI-gated in `src/interop.zig`: a ztls
   server requiring auth accepts an `openssl s_client -cert -key` peer, and a
   ztls client with credentials completes against `openssl s_server -Verify
-  -CAfile`. Residual: client-auth leaf EKU/KU enforcement is a no-op
-  (`LeafUsage.client_auth` skips it — honest partial); the offered-scheme
-  rejection of a malicious client CV has no dedicated test (defensive guard).
-  *(#4, done — interop proven; EKU/KU and the malicious-scheme test remain)*
+  -CAfile`. Client-auth leaf EKU/KU enforcement is now live: the
+  `LeafUsage.client_auth` path calls `verifyClientAuthWithSignatureSchemes`,
+  which checks X.509v3, `KeyUsage.digitalSignature` when KU is present, EKU
+  `clientAuth` when EKU is present, and a TLS 1.3-compatible certificate
+  signature algorithm — mirroring the server-auth path. A new
+  `client_ecdsa_cert_der` fixture with `clientAuth` EKU exercises the success
+  path, and policy tests cover EKU-without-clientAuth rejection,
+  KeyUsage-without-digitalSignature rejection, and clientAuth-EKU acceptance.
+  Residual: the offered-scheme rejection of a malicious client CV has no
+  dedicated test (defensive guard). *(#4, done — interop proven; EKU/KU
+  enforcement live; the malicious-scheme test remains)*
   All six
   remaining unexpected failures align with TLS-Anvil `DSA_WITH_SHA256`
   certificate parameter combinations that ztls correctly rejects during server

@@ -185,8 +185,12 @@ pub fn parseClientChain(
         if (cert_index == 0) {
             leaf_pub_key = parsed.pubKey();
             switch (policy.leaf_usage) {
-                .none, .client_auth => {},
+                .none => {},
                 .server_auth => try certificate_policy.verifyServerAuthWithSignatureSchemes(
+                    parsed,
+                    policy.certificate_signature_schemes,
+                ),
+                .client_auth => try certificate_policy.verifyClientAuthWithSignatureSchemes(
                     parsed,
                     policy.certificate_signature_schemes,
                 ),
@@ -265,8 +269,12 @@ pub fn parse(msg: []const u8, policy: Policy) ParseError![]const u8 {
         if (cert_index == 0) {
             leaf_pub_key = parsed.pubKey();
             switch (policy.leaf_usage) {
-                .none, .client_auth => {},
+                .none => {},
                 .server_auth => try certificate_policy.verifyServerAuthWithSignatureSchemes(
+                    parsed,
+                    policy.certificate_signature_schemes,
+                ),
+                .client_auth => try certificate_policy.verifyClientAuthWithSignatureSchemes(
                     parsed,
                     policy.certificate_signature_schemes,
                 ),
@@ -1090,6 +1098,43 @@ test "certificate_policy.verifyServerAuth: EKU without serverAuth is rejected" {
         error.CertificateExtendedKeyUsageRejected,
         certificate_policy.verifyServerAuth(leaf),
     );
+}
+
+// RFC 5280 §4.2.1.12 — a client certificate whose EKU is present but omits
+// id-kp-clientAuth must not be accepted for TLS client auth.
+test "certificate_policy.verifyClientAuth: EKU without clientAuth is rejected" {
+    // SEQUENCE { OID id-kp-serverAuth (1.3.6.1.5.5.7.3.1) }
+    const eku = "\x30\x0a\x06\x08\x2b\x06\x01\x05\x05\x07\x03\x01";
+    const leaf = policyLeaf(eku, .empty, .{ .start = 0, .end = eku.len }, .ecdsa_with_SHA256);
+    try testing.expectError(
+        error.CertificateExtendedKeyUsageRejected,
+        certificate_policy.verifyClientAuth(leaf),
+    );
+}
+
+// RFC 8446 §4.4.2.2 — a client certificate whose KeyUsage is present but omits
+// digitalSignature cannot sign CertificateVerify and must be rejected.
+test "certificate_policy.verifyClientAuth: KeyUsage without digitalSignature is rejected" {
+    const key_usage = "\x03\x02\x06\x40";
+    const leaf = policyLeaf(
+        key_usage,
+        .{ .start = 0, .end = key_usage.len },
+        .empty,
+        .ecdsa_with_SHA256,
+    );
+    try testing.expectError(
+        error.CertificateKeyUsageRejected,
+        certificate_policy.verifyClientAuth(leaf),
+    );
+}
+
+// RFC 8446 §4.4.2.2 — a client certificate with clientAuth EKU and no KeyUsage
+// restriction is accepted for TLS client auth.
+test "certificate_policy.verifyClientAuth: clientAuth EKU is accepted" {
+    // SEQUENCE { OID id-kp-clientAuth (1.3.6.1.5.5.7.3.2) }
+    const eku = "\x30\x0a\x06\x08\x2b\x06\x01\x05\x05\x07\x03\x02";
+    const leaf = policyLeaf(eku, .empty, .{ .start = 0, .end = eku.len }, .ecdsa_with_SHA256);
+    try certificate_policy.verifyClientAuth(leaf);
 }
 
 // RFC 8446 §4.2.3 — legacy certificate signature algorithms are rejected by

@@ -31,3 +31,18 @@ pub const server_ecdsa_cert_der = decode("MIIByzCCAXKgAwIBAgIUbmarzBd+vWR/mRLY6O
     "X6ssYxwWog==");
 
 pub const server_ecdsa_scalar = decode("139HGdxmRe2N5F69cAY4IgK8B4ybwx0hgPE0siIOaeY=");
+
+/// Self-signed P-256 client certificate with clientAuth EKU (id-kp-clientAuth,
+/// 1.3.6.1.5.5.7.3.2) and no KeyUsage extension. Used by client-auth tests
+/// that verify the server-side leaf EKU/KU enforcement path.
+pub const client_ecdsa_cert_der = decode(
+    "MIIBoDCCAUagAwIBAgIUYJ+n1IjnjZ7PHTHCpLz3XeqTU5YwCgYIKoZIzj0EAwIwGzEZMBcGA1UE" ++
+    "AwwQenRscy5jbGllbnQudGVzdDAeFw0yNjA3MTExNTA1MTVaFw0zNjA3MDgxNTA1MTVaMBsxGTAX" ++
+    "BgNVBAMMEHp0bHMuY2xpZW50LnRlc3QwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAATYMm6LDL2b" ++
+    "8tGtvX5DrFq4fbiWO4bwopljbwH87eebCTc5q3YeEX/gDGmCnGlzDld25TjIs9OMLaC7NKCbF32n" ++
+    "o2gwZjAdBgNVHQ4EFgQUHPueY9LBR8BkkstOkkNU1JlCUyEwHwYDVR0jBBgwFoAUHPueY9LBR8Bk" ++
+    "kstOkkNU1JlCUyEwDwYDVR0TAQH/BAUwAwEB/zATBgNVHSUEDDAKBggrBgEFBQcDAjAKBggqhkjO" ++
+    "PQQDAgNIADBFAiAkegZJks7EPmXv1iqxBCEWVF2SGAEOIHHNXdy2Hd1GFgIhAP/jR9ANR5z4YFiM" ++
+    "r0ByO6UyiFotpHNzZBR3me2GRN1r");
+
+pub const client_ecdsa_scalar = decode("MXuPFyShxL1HxjMti58IyiT22mcYldAQ1BBpkdSafJM=");

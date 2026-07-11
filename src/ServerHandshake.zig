@@ -1892,6 +1892,16 @@ fn serverEcdsaScalar() []const u8 {
     const f = @import("test_fixtures/shared_fixtures.zig");
     return &f.server_ecdsa_scalar;
 }
+fn clientEcdsaCertDer() []const u8 {
+    // ziglint-ignore: Z028, Z007
+    const f = @import("test_fixtures/shared_fixtures.zig");
+    return &f.client_ecdsa_cert_der;
+}
+fn clientEcdsaScalar() []const u8 {
+    // ziglint-ignore: Z028, Z007
+    const f = @import("test_fixtures/shared_fixtures.zig");
+    return &f.client_ecdsa_scalar;
+}
 const test_p256_seed_a = memx.hex(32, "000102030405060708090a0b0c0d0e0f" ++
     "101112131415161718191a1b1c1d1e1f");
 const test_p256_seed_b = memx.hex(32, "202122232425262728292a2b2c2d2e2f" ++
@@ -3068,10 +3078,11 @@ test "processClientFinished: required client auth verifies real client Certifica
         .random = .zero,
     });
     client.policy.insecure_no_chain_anchor = true;
-    // Client credentials (reuse the self-signed ECDSA fixture as client creds).
-    var client_signer = try signature.PrivateKey.fromP256Scalar(serverEcdsaScalar()[0..32]);
+    // Client credentials: the client fixture has clientAuth EKU so the
+    // server's leaf EKU/KU enforcement (leaf_usage=.client_auth) accepts it.
+    var client_signer = try signature.PrivateKey.fromP256Scalar(clientEcdsaScalar()[0..32]);
     defer client_signer.deinit();
-    client.setCredentials(&.{serverEcdsaCertDer()}, client_signer.signer());
+    client.setCredentials(&.{clientEcdsaCertDer()}, client_signer.signer());
     var client_out: [4096]u8 = undefined;
     const ch_record = try client.start(&client_out);
     client.completeWrite();
@@ -3138,12 +3149,13 @@ test "processClientFinished: required client auth rejects forged CertificateVeri
         .random = .zero,
     });
     client.policy.insecure_no_chain_anchor = true;
-    // Present the fixture cert but sign with a DISTINCT private key (all-zeros
-    // scalar is invalid for P-256; use a deterministic non-fixture scalar).
+    // Present the client fixture cert (clientAuth EKU) but sign with a DISTINCT
+    // private key (all-zeros scalar is invalid for P-256; use a deterministic
+    // non-fixture scalar).
     const wrong_scalar = [_]u8{0x42} ** 32;
     var client_signer = try signature.PrivateKey.fromP256Scalar(&wrong_scalar);
     defer client_signer.deinit();
-    client.setCredentials(&.{serverEcdsaCertDer()}, client_signer.signer());
+    client.setCredentials(&.{clientEcdsaCertDer()}, client_signer.signer());
     var client_out: [4096]u8 = undefined;
     const ch_record = try client.start(&client_out);
     client.completeWrite();
