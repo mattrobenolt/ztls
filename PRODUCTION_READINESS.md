@@ -197,9 +197,10 @@ data to openssl s_server and receives the HTTP response.
   `client_ecdsa_cert_der` fixture with `clientAuth` EKU exercises the success
   path, and policy tests cover EKU-without-clientAuth rejection,
   KeyUsage-without-digitalSignature rejection, and clientAuth-EKU acceptance.
-  Residual: the offered-scheme rejection of a malicious client CV has no
-  dedicated test (defensive guard). *(#4, done — interop proven; EKU/KU
-  enforcement live; the malicious-scheme test remains)*
+  The offered-scheme rejection of a malicious client CV is covered by a
+  dedicated test (verifyClientSignatureWithSchemes rejects a scheme absent
+  from the offered list). *(#4, done — interop proven; EKU/KU enforcement
+  live; malicious-scheme test covers the defensive guard)*
   All six
   remaining unexpected failures align with TLS-Anvil `DSA_WITH_SHA256`
   certificate parameter combinations that ztls correctly rejects during server

@@ -1345,6 +1345,28 @@ test "verifySignature: rejects scheme absent from offered list" {
     );
 }
 
+// RFC 8446 §4.4.3 — a client CertificateVerify whose scheme is not in the
+// server's CertificateRequest signature_algorithms is rejected with
+// UnsupportedSignatureScheme (maps to illegal_parameter). This is the
+// defensive guard the server uses against malicious client CVs.
+test "verifySignature: client CV rejects scheme absent from offered list" {
+    var cert_buf: [1024]u8 = undefined;
+    const pub_key = try parse(buildCertMsg(&cert_buf, fixtureCertDer()), .{
+        .insecure_no_chain_anchor = true,
+    });
+    var cv_buf: [512]u8 = undefined;
+    const offered = [_]SignatureScheme{.rsa_pss_rsae_sha256};
+    try testing.expectError(
+        error.UnsupportedSignatureScheme,
+        verifyClientSignatureWithSchemes(
+            buildCvMsg(&cv_buf, fixtureCvSig()),
+            pub_key,
+            &test_transcript_hash,
+            &offered,
+        ),
+    );
+}
+
 // RFC 8446 §4.4.3 — RSASSA-PKCS1-v1_5 schemes are certificate-signature-only
 // in TLS 1.3 and must not be accepted for CertificateVerify.
 test "verifySignature: rejects RSA PKCS1 CertificateVerify scheme" {
