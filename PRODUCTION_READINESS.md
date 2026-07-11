@@ -603,13 +603,17 @@ each passing the same correctness and interop gates.
   `437/437`: `passed=91`, `failed=7` (`expected_failed=6` DSA-root per #52,
   `unexpected_fail=1` KeyUpdate ChaCha20-Poly1305 case), `expected_skipped=134`,
   `unexpected_skipped=0`, `not_attempted=205`. The unexpected KeyUpdate
-  failure is `respondsWithValidKeyUpdate` with
-  `TLS_CHACHA20_POLY1305_SHA256` + `INCLUDE_CHANGE_CIPHER_SPEC=true` —
-  a BoringSSL-specific client-side issue not seen under OpenSSL or AWS-LC
-  (where KeyUpdate passes 4/4); filed #71 for investigation.
+  failure was `respondsWithValidKeyUpdate` with
+  `TLS_CHACHA20_POLY1305_SHA256` + `INCLUDE_CHANGE_CIPHER_SPEC=true`;
+  #71 identified the root cause as a `ConnectionRefused` race in the
+  `anvil_client`'s `connectToHost` (TLS-Anvil starts the trigger script
+  before opening its server socket), not a BoringSSL AEAD or KeyUpdate bug.
+  Commit `03e136e` adds a connection retry; local TLS-Anvil verification
+  confirms `respondsWithValidKeyUpdate` passes under BoringSSL with the
+  fix. A re-run of the CI workflow is needed to confirm the fix at scale.
   BoringSSL benchmark captures are local smoke only (no committed EC2
   row-perf evidence). *(#63, #70, #71 — server capture clean; client
-  capture has 1 unexpected KeyUpdate finding)*
+  capture KeyUpdate failure root-caused and fixed locally)*
 
 **Status:** `PARTIAL`
 
@@ -636,7 +640,8 @@ each passing the same correctness and interop gates.
   primitive tests with a CI-gated lane and tlsfuzzer smoke (#63 CI/follow-up
   slice); the BoringSSL TLS-Anvil server capture is clean (105/105, matching
   OpenSSL/AWS-LC) and the client capture has 1 unexpected KeyUpdate/ChaCha20
-  finding (#71). *(#60, #63, #70, #71)*
+  finding (#71, root-caused and fixed locally — ConnectionRefused race in
+  anvil_client). *(#60, #63, #70, #71)*
 - **aws-lc has a real test lane but not a full backend matrix.** The
   `-Dcrypto-backend=aws-lc` build links AWS-LC libcrypto and runs the unit suite;
   X25519 uses AWS-LC's flat `curve25519.h` API, and AEAD uses AWS-LC's
@@ -755,7 +760,8 @@ each passing the same correctness and interop gates.
   benchmark lane, and tlsfuzzer smoke (#63 CI/follow-up slice); the
   BoringSSL TLS-Anvil server capture is clean (105/105, matching
   OpenSSL/AWS-LC) and the client capture has 1 unexpected
-  KeyUpdate/ChaCha20 finding (#71). *(#60, #63, #70, #71)*
+  KeyUpdate/ChaCha20 finding (#71, root-caused and fixed — ConnectionRefused
+  race in anvil_client). *(#60, #63, #70, #71)*
 
 ---
 
