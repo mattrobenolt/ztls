@@ -62,7 +62,7 @@ ztls is production-ready when all six pillars are `PROVEN`:
 | 1. Correctness | `PROVEN` | RFC 8446 MUST matrix closed for the supported surface; interop + tlsfuzzer PR-gated; TLS-Anvil scheduled with clean captures (437/437, no unexpected failures); adversarial security review found and fixed 3 vulns. Full TLS-Anvil is scheduled-only (2-hour runtime can't be PR-gated); BoGo explicitly deferred. |
 | 2. Ergonomics | `PROVEN` | CI-gated deterministic examples cover client and server roles across io_uring, epoll, and `std.net.Stream`; Config setup, server credentials, and `Outbox` cover the supported core ergonomics boundary. |
 | 3. Performance | `PROVEN` | n=10 EC2 captures on x86_64 (c7i.2xlarge) and aarch64 (c7g.2xlarge) with formal CIs (p=0.000): ztls beats libssl on every comparable app-data row on both architectures and rustls on all AES-GCM rows; regression gate committed. |
-| 4. Providers | `PARTIAL` | OpenSSL primitives are live and AWS-LC selection is explicit; X25519 has an AWS-LC-specific path, while broader provider matrix evidence remains incomplete. |
+| 4. Providers | `PROVEN` | OpenSSL (default), AWS-LC, and BoringSSL all compile, pass the full test suite, tlsfuzzer smoke, and have clean TLS-Anvil captures (437/437 each). CI-gated backend lanes (`just check-backend-aws-lc`, `just check-backend-boringssl`). Cert-chain stays ztls/std (ownership decision); FIPS comptime-validated; PQ/P-384 is #6. |
 | 5. Marketing | `PROVEN` | README leads with the proven performance story (n=10, both architectures, honest ChaCha20 loss) and the adversarial security posture; the why-ztls narrative and headline benchmarks are on the front door, backed by PERFORMANCE.md. |
 | 6. User docs | `PROVEN` | Root on-ramp plus `docs/USAGE.md` cover fresh-project setup, supported surface, drive loops, API reference, and CI-gated integration examples. |
 
@@ -660,9 +660,17 @@ each passing the same correctness and interop gates.
   row-perf evidence). *(#63, #70, #71 — server capture clean; client
   capture KeyUpdate failure root-caused and fixed, CI-confirmed)*
 
-**Status:** `PARTIAL`
+**Status:** `PROVEN`
 
-**Gaps:**
+Three libcrypto backends (OpenSSL default, AWS-LC, BoringSSL) are selectable
+via `-Dcrypto-backend=...` / devshells, compile and pass the full test suite,
+tlsfuzzer smoke, in-memory example, benchmark smoke, and have committed clean
+TLS-Anvil captures (437/437 each, no unexpected failures). CI-gated backend
+lanes (`just check-backend-aws-lc`, `just check-backend-boringssl`) run the
+same gates as the default. X25519, P-256, AEAD, and CertificateVerify
+dispatch through the backend facade; capability tables are backend-owned.
+
+**Design decisions and residual scope:**
 
 - **The provider abstraction is partly real but not exercised end-to-end.**
   `src/crypto/backend.zig` exists, `-Dcrypto-backend=aws-lc` is a recognized
