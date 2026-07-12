@@ -45,7 +45,7 @@
               extensions = [ "zig" ];
             };
           };
-          rustToolchain = pkgs.rust-bin.stable.latest.default;
+          rustToolchain = pkgs.rust-bin.fromRustupToolchainFile ./bench/rustls/rust-toolchain.toml;
           wrangler = pkgs.writeShellScriptBin "wrangler" ''
             exec ${pkgs.nodejs}/bin/npx wrangler@4.107.0 "$@"
           '';
