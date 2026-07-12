@@ -21,15 +21,20 @@ The current threat model covers the implemented TLS 1.3 surface:
 - The three mandatory TLS 1.3 AEAD suites:
   `TLS_AES_128_GCM_SHA256`, `TLS_AES_256_GCM_SHA384`, and
   `TLS_CHACHA20_POLY1305_SHA256`.
-- Server-authenticated 1-RTT handshake. Client certificate authentication is not
-  implemented yet (#4).
+- Server-authenticated 1-RTT handshake and client certificate authentication
+  both directions (formerly #4).
+- HelloRetryRequest in-memory and TLS-Anvil; OpenSSL forced-HRR interop is a
+  remaining gap (formerly #1).
+- PSK/session resumption, ticket storage, and binder verification, with
+  OpenSSL interop CI-gated (formerly #2).
+- 0-RTT early data with EndOfEarlyData both directions and OpenSSL interop
+  CI-gated; anti-replay is caller-owned (formerly #3).
 - Application data, alerts, `close_notify`, and KeyUpdate in both directions.
-- NewSessionTicket is parsed for structural validity and discarded until PSK /
-  resumption exists (#2).
-- HelloRetryRequest (#1), PSK/resumption (#2), 0-RTT (#3), client auth (#4),
-  and P-384 / PQ groups (#6) are explicitly outside the current implemented
-  surface. Extension behavior beyond the current surface is tracked
-  by the feature issue that introduces that extension.
+- NewSessionTicket is parsed, surfaces an `early_data` `max_early_data_size`,
+  and feeds the resumption-decision surface (formerly #2).
+- P-384/P-521/PQ named groups remain outside the current supported surface (#6).
+  Extension behavior beyond the supported surface is tracked by the feature
+  issue that introduces that extension.
 
 ## In-scope adversary capabilities
 
@@ -240,9 +245,10 @@ requests are replay-safe or reject 0-RTT.
 
 ### Unsupported TLS features
 
-HelloRetryRequest, PSK/resumption, client certificates, P-384/PQ key
-exchange, and broader extension negotiation are not defended as implemented
-features until their tracking issues land.
+P-384/PQ key exchange, exporters, and broader extension negotiation beyond
+the implemented surface are not defended as implemented features. P-384/PQ
+key exchange waits on #6; exporters and unscheduled extensions are not on the
+timeline.
 
 ## Open threat-relevant gaps
 
@@ -254,7 +260,7 @@ features until their tracking issues land.
 | Server Certificate non-empty `request_context` needs rejection evidence | Parser/state-machine hardening | `NEGATIVE_SPACE.md` gap |
 | Server-side bad client-Finished negative unit tests are partial | Server state-machine evidence | `NEGATIVE_SPACE.md` gap |
 | Certificate and EncryptedExtensions standalone fuzz targets are absent | Parser fuzz breadth | `NEGATIVE_SPACE.md` gap |
-| Provider matrix still lacks FIPS/version divergence and full facade-direct Wycheproof coverage | Backend diversity | #60 |
+| Provider matrix still lacks FIPS/version divergence and full facade-direct Wycheproof coverage | Backend diversity | #60 (closed for OpenSSL/AWS-LC; FIPS divergence rows remain) |
 
 ## Boundary diagram
 

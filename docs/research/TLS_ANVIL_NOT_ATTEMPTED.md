@@ -74,7 +74,7 @@ Total: `82 + 2 + 2 + 3 + 60 + 5 + 2 + 1 = 157`.
 |---|---:|---|---|
 | `tests.server.tls13.*` | 82 | In-scope TLS 1.3 server-role rows | Exercised by the strict server capture; server attempted surface is clean |
 | `tests.both.lengthfield.extensions.*TLS13` plus TLS 1.3 `Hello.*` | 14 | In-scope TLS 1.3 both-endpoint rows | Covered by the strict server capture |
-| `tests.both.lengthfield.extensions.PreSharedKeyExtension.*` and `PSKKeyExchangeModesExtension.*ListLength` | 4 | Deferred TLS 1.3 PSK/resumption rows | PSK/session resumption tracked by #2 |
+| `tests.both.lengthfield.extensions.PreSharedKeyExtension.*` and `PSKKeyExchangeModesExtension.*ListLength` | 4 | Deferred TLS 1.3 PSK/resumption rows | Resumption (formerly #2) is implemented; the four rows remain unexercised in the strict client capture because the client capture does not drive a resumption ClientHello at the rows' specific extension-length boundaries. Re-run or extend the client capture when those extension-length permutations become part of a locked-down conversation. |
 | `tests.server.tls12.*` | 89 | Out of scope | TLS 1.2 is outside ztls scope |
 | `tests.server.dtls12.*` | 5 | Out of scope | DTLS is outside ztls scope |
 | `tests.both.*TLS12` plus `ClientKeyExchange.*` | 11 | Out of scope | TLS 1.2 length fields and ClientKeyExchange are outside ztls scope |
@@ -116,7 +116,7 @@ mismatches classify as:
 | Bucket | Count | Rows |
 |---|---:|---|
 | Covered by opposite endpoint capture | 21 | 14 client-capture TLS 1.3 extension/Hello length-field rows listed above, plus the seven server-capture TLS 1.3 `EncryptedExtensions`/`CertificateVerify`/`Certificate` rows that pass in the strict client capture |
-| Feature-deferred | 4 | client-capture PSK extension rows tracked by #2 |
+| Feature-deferred | 4 | client-capture PSK extension rows (formerly #2) — see above |
 | Out of scope | 18 | TLS 1.2/DTLS `ServerKeyExchange`, `Certificate.*TLS12`, `ClientKeyExchange`, and TLS 1.2 extension/Hello rows |
 
 The seven server-capture endpoint mismatches that pass in the strict client
@@ -139,15 +139,15 @@ skip list, and they are not #49 runner debt.
 The attempted server-side TLS-Anvil surface remains clean (`105/105` attempted
 passed). The attempted client-side surface improved after P-256 support but is
 not accepted: the strict client capture still has `6` unexpected failures, all
-currently attributed to TLS-Anvil `DSA_WITH_SHA256` certificate parameter
-combinations classified under #52. The `anvil_report.py` normalizer now classifies
+attributed to TLS-Anvil `DSA_WITH_SHA256` certificate parameter
+combinations classified under #52. The `anvil_report.py` normalizer classifies
 the six #52 rows as `expected_failed` (visible, distinct from
 `expected_skipped`) when per-case `failure_combinations` evidence proves every
 failed case is a DSA-root RSA-leaf combination. This is a visibility mechanism,
 not a conformance pass; it has been locally replayed by re-adapting the raw
 per-test `_testRun.json` files from the `ci-28722850517` artifact and confirmed
 by strict client workflow `ci-28725543965` on `6ba72b3` with `expected_failed: 6`
-and zero unexpected results. The `not_attempted` buckets are now accounted for
+and zero unexpected results. The `not_attempted` buckets are accounted for
 at the role and both-endpoint level, and the former seven #49 rows
 are covered by the strict client capture.
 

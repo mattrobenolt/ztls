@@ -104,9 +104,14 @@ The application-data rows use the shared payload sizes `16`, `128`, `1350`,
 `8192`, and `16384` bytes across ztls, libssl, and rustls. The suite names are
 normalized as TLS 1.3 suite names in every harness: `TLS_AES_128_GCM_SHA256`,
 `TLS_AES_256_GCM_SHA384`, and `TLS_CHACHA20_POLY1305_SHA256`. Session tickets
-and resumption are disabled for comparison rows: ztls does not implement
-resumption yet, libssl calls `SSL_CTX_set_num_tickets(server_ctx, 0)`, and
-rustls sets `server.send_tls13_tickets = 0`.
+and resumption are disabled across all three harnesses so the comparable row
+isolates fresh full-handshake work: libssl calls
+`SSL_CTX_set_num_tickets(server_ctx, 0)`, rustls sets
+`server.send_tls13_tickets = 0`, and the ztls bench builds a fresh client and
+server per iteration with no resumption handshake in the timed loop. The
+`Handshake` row measures the path that ends at `client.completeWrite()` after
+`server.processClientFinished` — no `NewSessionTicket` issuance is in the
+timed loop.
 
 ## Per-row timed-work inventories
 

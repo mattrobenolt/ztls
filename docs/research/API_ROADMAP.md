@@ -29,12 +29,15 @@ Do not fake this with a non-io_uring example. If it cannot be built and tested o
 
 ## Client-auth policy shape
 
-Client certificate authentication is not part of the current advertised API. When implemented, it needs:
+Client certificate authentication (formerly #4) is in the supported surface. The
+policy shape that landed is:
 
-- server `CertificateRequest` policy;
-- client certificate-chain and signer callback mirroring the server signer pattern;
+- server `CertificateRequest` policy — required or optional, with EKU/KU checks;
+- client certificate-chain and signer callback mirroring the server signer
+  pattern;
 - server verification policy for client EKU/key-usage semantics;
 - explicit alert mapping for missing or invalid certificates;
 - OpenSSL interop both directions.
 
-This shape is tracked with the protocol gates in `docs/research/CONFORMANCE_ROADMAP.md`.
+This shape is documented with the protocol gates in
+`docs/research/CONFORMANCE_ROADMAP.md`.

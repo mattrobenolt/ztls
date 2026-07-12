@@ -7,6 +7,14 @@ src = "docs/site"
 [build]
 build-dir = "book"
 
+[output.html]
+# mdBook has no `favicon` key; it picks up favicon.svg/png from the theme
+# directory below. Ours is the ztls mark (docs/site/theme/favicon.svg), a
+# color-scheme-adaptive copy of images/logo/logo.svg.
+theme = "docs/site/theme"
+default-theme = "light"
+preferred-dark-theme = "navy"
+
 [preprocessor.ztls-links]
 command = "node scripts/docs/mdbook-links.js"
 after = ["links"]

@@ -199,7 +199,7 @@ data to openssl s_server and receives the HTTP response.
   KeyUsage-without-digitalSignature rejection, and clientAuth-EKU acceptance.
   The offered-scheme rejection of a malicious client CV is covered by a
   dedicated test (verifyClientSignatureWithSchemes rejects a scheme absent
-  from the offered list). *(#4, done — interop proven; EKU/KU enforcement
+  from the offered list). *(formerly #4 — interop proven; EKU/KU enforcement
   live; malicious-scheme test covers the defensive guard)*
   All six
   remaining unexpected failures align with TLS-Anvil `DSA_WITH_SHA256`
@@ -221,13 +221,15 @@ data to openssl s_server and receives the HTTP response.
   conclusion `success`. The `expected_failed` count is the #52 visibility
   mechanism, not a conformance pass. The #48 client-runner scope is now
   strict-clean under that visible #52 classification; remaining external
-  conformance breadth is feature-specific (#1/#2/#3/#4/#6) plus the BoGo
+  conformance breadth is feature-specific — HRR, resumption, 0-RTT, client
+  auth (formerly #1–#4) plus P-384/PQ groups (#6) — and the BoGo
   re-entry path in #50. A skip-list narrowing landed during #48
   surfaces the strict-complete f50fcd8
   client capture's `sendEndOfEarlyDataAsServer` STRICTLY_SUCCEEDED row rather
   than the broader `*EarlyData*` skip pattern masking it as `unexpected_pass`;
-  server EarlyData disabled rows remain expected-skipped under #3, and this is
-  evidence visibility from #48 rather than accepted client execution. BoGo is
+  server EarlyData disabled rows remain expected-skipped under the 0-RTT
+  feature (formerly #3), and this is evidence visibility from #48 rather than
+  accepted client execution. BoGo is
   explicitly deferred in
   `docs/research/BOGO_DEFERRED.md` with re-entry criteria tracked by #50.
 - Wycheproof boundary vectors at the libcrypto seam.
@@ -281,7 +283,7 @@ data to openssl s_server and receives the HTTP response.
   state machines compose with the §4.4.1 transcript collapse. OpenSSL forced-
   HRR interop remains ungated (it needs a client/server config knob to limit
   offered key_share groups so a real peer can be forced to retry; the in-memory
-  e2e + TLS-Anvil HRR + unit tests cover the mechanism). *(#1, partial — e2e +
+  e2e + TLS-Anvil HRR + unit tests cover the mechanism). *(formerly #1, partial — e2e +
   TLS-Anvil done; OpenSSL forced-HRR interop remains)*. Record-fragmentation
   capability is probe-positive and locally covered for fragmented ClientHello,
   Finished, and KeyUpdate; TLS-Anvil's `RecordLayer.interleaveRecords` remains a

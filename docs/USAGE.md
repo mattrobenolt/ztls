@@ -88,9 +88,9 @@ ztls is TLS 1.3 only. The supported user-facing path is server-authenticated 1-R
 | TLS versions | TLS 1.3 | TLS 1.2 and DTLS are out of scope. |
 | Cipher suites | `TLS_AES_128_GCM_SHA256`, `TLS_AES_256_GCM_SHA384`, `TLS_CHACHA20_POLY1305_SHA256` | Suite expansion is provider work. |
 | Key exchange | X25519 or P-256 ECDHE on both client and server; examples use X25519 | P-384 and PQ/hybrid groups are tracked by #6. |
-| Authentication | Server certificate authentication | Client certificate auth is tracked by #4. |
-| Resumption | None | PSK/session resumption is tracked by #2; 0-RTT is tracked by #3. |
-| HRR | Not in the adoption path | HelloRetryRequest retry support is tracked by #1. |
+| Authentication | Server certificate authentication and client certificate authentication (formerly #4) | |
+| Resumption | PSK/session resumption (formerly #2) and 0-RTT with caller-owned anti-replay (formerly #3) | |
+| HRR | In-memory and TLS-Anvil; OpenSSL forced-HRR interop is ungated (formerly #1) | |
 
 ## Buffer ownership
 
@@ -523,12 +523,13 @@ The generic drive loop above is the protocol boundary. These notes call out what
 
 ## What is not shown here
 
-ztls focuses on TLS 1.3 server-auth 1-RTT. These features are intentionally out of scope for the examples above:
+ztls covers PSK/session resumption, 0-RTT, client certificate authentication,
+and HRR in the supported surface. These features are intentionally out of scope
+for the examples above:
 
-- Client certificate authentication (#4)
-- 0-RTT / early data (#3)
-- PSK / session resumption (#2)
-- HelloRetryRequest retry support (#1)
-- P-384 and PQ/hybrid key shares (#6)
-
-The `RecordBuffer` + `handleRecord` pattern is the same for every supported flow; higher-level wrappers (async runtimes, `std.net.Stream` adapters) belong in separate packages.
+- P-384 and PQ/hybrid key shares (#6, open)
+- Exporters — not implemented; not on the timeline until a feature request earns it.
+- Distributable wrappers around the engine (io_uring submissions, async runtimes,
+  `std.net.Stream` adapters, kTLS integration). The `RecordBuffer` +
+  `handleRecord` pattern is the same for every supported flow; wrapper packages
+  belong in separate repositories.

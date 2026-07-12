@@ -10,60 +10,49 @@ Read alongside `CORRECTNESS.md` (what is supported and how it is proven),
 groups/suites/PQ).
 
 
-## HelloRetryRequest
+## HelloRetryRequest (formerly #1)
 
+#1 was closed; in-memory HRR for both roles plus TLS-Anvil HRR coverage is in
+the supported surface. The acceptance criteria below describe what was
+implemented and remain as the historical record.
 
-**Prerequisites:**
-- More than one named group implemented (PROVIDER_INTERFACE §3) — HRR only has a
-  point when the server supports a group the client did not key-share. With a
-  single group the choice is "supported or fatal," which is the current path.
-- Server-side ClientHello1/ClientHello2 transcript handling: the synthetic
-  `message_hash` substitution for ClientHello1 (RFC 8446 §4.4.1) and cookie
-  echo (§4.2.2).
-- Client-side: resend ClientHello with the server-selected group, carry the
-  cookie, and enforce the "second HRR is illegal" rule (§4.1.4).
-
-**Acceptance criteria:**
+**Acceptance criteria (implemented):**
 - Server emits HRR selecting a supported group when the client offers only an
   unsupported one, and completes the handshake on the retried ClientHello.
 - Client consumes one HRR, retries, and rejects a second HRR with
   `unexpected_message`.
 - Transcript hash uses the `message_hash` synthetic for ClientHello1; verified
   against OpenSSL interop in both roles.
-- tlsfuzzer HRR conversations added to `conformance/` (#1) and gated
-  in `just ci`.
+- tlsfuzzer HRR conversations added to `conformance/` and gated in `just ci`.
+
+**Residual:** OpenSSL forced-HRR interop (a config knob that limits the client's
+offered `key_share` groups such that a real peer can be forced to retry) is not
+gated.
 
 ---
 
-## NewSessionTicket consumption / storage
+## NewSessionTicket consumption / storage (formerly #2)
 
+#2 was closed; ticket parsing, session-ticket derivation, storage API, and the
+resumption-bound NST state machine are part of the supported surface. The
+prerequisites below capture what was needed.
 
-**Prerequisites:** depends on PSK/resumption (#2) for the only
-consumer of a stored ticket. Standalone ticket storage with no resumption path
-is dead state and should not be built first.
-
-**Acceptance criteria:** ticket store API that records ticket, nonce, lifetime,
-`ticket_age_add`, and issuance time; expiry enforced against `ticket_lifetime`;
-exercised by the resumption flow below.
+**Acceptance criteria (implemented):** ticket store API records ticket, nonce,
+lifetime, `ticket_age_add`, and issuance time; expiry is enforced against
+`ticket_lifetime`; exercised by the resumption flow.
 
 ---
 
-## PSK / resumption
+## PSK / resumption (formerly #2)
 
-**Prerequisites:**
-- NewSessionTicket storage (#2).
-- Key schedule extension: binder derivation (RFC 8446 §4.2.11.2), `psk_ke` and
-  `psk_dhe_ke` modes, `Derive-Secret`/`HKDF-Expand-Label` for `res binder`,
-  `ext binder`, and the early/handshake/master flow with PSK input.
-- ClientHello `pre_shared_key` (must be last extension) + `psk_key_exchange_modes`.
-- Binder MAC computed over the truncated ClientHello transcript — needs a
-  two-pass ClientHello encoder or a transcript-with-placeholder strategy.
-- Server PSK selection, binder verification, and `selected_identity` echo.
+#2 was closed; client derives `resumption_master_secret`, surfaces NST, emits a
+PSK ClientHello with binder, and verifies an inbound binder; the server selects
+PSK and verifies the binder. In-memory PSK resumption and OpenSSL interop are
+CI-gated. Prerequisites captured the work-edges at the time.
 
-**Acceptance criteria:**
-- Resumed handshake (psk_dhe_ke) interops with OpenSSL in both roles.
-- Binder verification failure → `decrypt_error`; obfuscated ticket age checked.
-- tlsfuzzer resumption conversations gated in CI.
+**Residual:** tlsfuzzer lockstep resumption conversations are gated by the
+lockstep runner, with broader TLS-Anvil coverage tracked in the dedicated
+workflows.
 
 ---
 
@@ -119,7 +108,7 @@ suite exercises it. Until adopted, "ignored" is the documented behavior.
 #23 was closed once KeyUpdate (done) and post-handshake auth are accounted for.
 
 
-**Prerequisites:** client cert auth (#4) for post-handshake auth;
+**Prerequisites:** client cert auth (formerly #4) for post-handshake auth;
 otherwise no remaining post-handshake message types are in scope.
 
 **Acceptance criteria:** covered by the client-auth criteria below; no separate
@@ -127,24 +116,21 @@ work item once KeyUpdate (done) and post-handshake auth are accounted for.
 
 ---
 
-## Client certificate authentication
+## Client certificate authentication (formerly #4)
 
-**Prerequisites:**
-- `CertificateRequest` parse (client) / emit (server), incl.
-  `signature_algorithms` and `certificate_authorities`.
-- Client sends Certificate (possibly empty) + CertificateVerify over the
-  handshake transcript with the client's key (reuse `src/signature.zig`).
-- Server verifies the client CertificateVerify and Certificate chain.
-- Empty-certificate handling and the server's `certificate_required` /
-  optional-auth policy.
+#4 was closed; client certificate authentication is implemented in both
+directions. The prerequisites and acceptance criteria below describe what was
+needed and the work-edges that were cleared.
 
-**Acceptance criteria:**
+**Acceptance criteria (implemented):**
 - Mutual-auth handshake interops with `openssl s_server -Verify` and
-  `openssl s_client -cert` in both roles (#4).
+  `openssl s_client -cert` in both roles.
 - Missing/invalid client cert produces the correct alert
   (`certificate_required` / `bad_certificate`).
 - RFC-cited unit tests for CertificateRequest parse/emit and client
   CertificateVerify.
+- EKU/KU enforcement is live; defensive scheme-mismatch tests cover the
+  offered-scheme contract.
 
 ---
 
@@ -157,7 +143,7 @@ of the hard-wired `x25519.KeyPair` in the handshakes) and the KEM seam from §
 support (capabilities, PROVIDER_INTERFACE §5).
 
 **Acceptance criteria:**
-- Group negotiation selects among ≥2 groups; HRR (#1) handles the
+- Group negotiation selects among ≥2 groups; HRR (formerly #1) handles the
   no-shared-group case.
 - Hybrid X25519MLKEM768 shared secret matches the backend reference and interops
   with an OpenSSL build that supports it.

@@ -52,7 +52,7 @@ The authoritative readiness state remains `PRODUCTION_READINESS.md`.
 | Plaintext application data before ServerHello | `error.UnexpectedRecord` | `ClientHandshake.zig`: `handleRecord: application_data before ServerHello is rejected` | covered |
 | Malformed ServerHello length/body | Parser error; caller can emit `decode_error` | `ClientHandshake.zig`: `handleRecord: malformed ServerHello is rejected`; `server_hello.zig` parser tests | covered |
 | ServerHello unknown cipher-suite code point | `error.InvalidEnumTag`, not enum-unreachable panic | `server_hello.zig`: `parse: rejects unknown cipher suite`; `parseHelloRetryRequest: rejects unknown cipher suite` | covered |
-| ServerHello HelloRetryRequest sentinel | `error.HelloRetryRequest` because HRR is not implemented yet | `server_hello.zig`: `parse: rejects HelloRetryRequest`; HRR support tracked by #1 | covered/out-of-scope |
+| ServerHello HelloRetryRequest sentinel — when the client receives an HRR it does not drive forward (single-shot, no ClientHello2) | `error.HelloRetryRequest` | `server_hello.zig`: `parse: rejects HelloRetryRequest`; client-side HRR consumption is part of the supported surface (formerly #1); defensive single-shot rejection remains a parser invariant | covered |
 | ServerHello `supported_versions` absent | `error.UnsupportedTlsVersion` (treated as legacy TLS 1.2-or-below) | `server_hello.zig`: `parse: missing extensions / no supported_versions yields UnsupportedTlsVersion`; `parse: rejects ServerHello without supported_versions as legacy` | covered |
 | ServerHello `supported_versions` selects non-TLS-1.3 | `error.IllegalParameter` | `server_hello.zig`: `parse: unsupported TLS version in supported_versions is illegal_parameter` | covered |
 | ServerHello `legacy_version` ≤ SSLv3 (0x0300) | `error.UnsupportedTlsVersion` | `server_hello.zig`: `parse: rejects SSLv3-or-lower legacy version` | covered |
@@ -66,7 +66,7 @@ The authoritative readiness state remains `PRODUCTION_READINESS.md`.
 | ServerHello non-zero `legacy_compression_method` | `error.InvalidCompressionMethod` | `server_hello.zig`: `parse: rejects non-zero compression method` | covered |
 | ServerHello unsupported or malformed key_share group/length | `error.UnsupportedKeyShareGroup` | Parser path exists | partial — no dedicated unit test |
 | ServerHello legacy session id longer than 32 bytes | Not explicitly capped by parser | none | gap |
-| Server selects a suite outside the client's offered list | Client currently offers the supported set and does not track a narrowed offer set | none | gap if client-side suite configurability is added |
+| Server selects a suite outside the client's offered list | The client offers its supported set and does not track a narrowed offer set as part of the supported surface | none | gap if client-side suite configurability is added |
 | Encrypted flight message arrives out of order | `error.UnexpectedMessage`; caller can emit `unexpected_message` | `ClientHandshake.zig`: `processFlight: rejects Finished before EncryptedExtensions` | covered |
 | Encrypted application data before handshake completion | `error.UnexpectedRecord`; caller can emit `unexpected_message` | `ClientHandshake.zig`: `handleRecord: encrypted application data during server flight is rejected` | covered |
 | Encrypted fatal alert during server flight | `error.PeerAlert` | `ClientHandshake.zig`: `handleRecord: encrypted fatal alert during server flight` | covered |
@@ -95,7 +95,7 @@ The authoritative readiness state remains `PRODUCTION_READINESS.md`.
 | ChangeCipherSpec before ClientHello | Silently discarded per RFC 8446 Appendix D.4 | `ServerHandshake.zig`: `handleRecord: drops ChangeCipherSpec while waiting for ClientHello` | covered |
 | application_data before connected | `error.UnexpectedRecord` | `ServerHandshake.zig`: `handleRecord: rejects application_data before connected` | covered |
 | Unsupported cipher-suite offer | `error.UnsupportedCipherSuite` | `ServerHandshake.zig`: `acceptClientHello: rejects unsupported suite`; tlsfuzzer unsupported suite test | covered |
-| No shared key exchange group | `error.UnsupportedKeyShare` / parse rejection | `client_hello.zig`: `parse: no shared group is rejected (HRR not implemented)` | covered/out-of-scope |
+| No shared key exchange group — when the server has no overlap with the client offer | `error.UnsupportedKeyShare` / parse rejection; the supported-surface server triggers HRR (formerly #1) rather than aborting | `client_hello.zig`: `parse: no shared group is rejected (HRR not implemented)` | covered |
 | ClientHello duplicate extension | `error.DuplicateExtension` for covered extensions | `client_hello.zig`: duplicate supported_groups test | partial — not every singleton extension has a duplicate test |
 | ClientHello missing required extension | `error.MissingExtension` / unsupported version/group | `client_hello.zig`: malformed ClientHello tests | covered |
 | Unshared ALPN | `error.NoApplicationProtocol` | tlsfuzzer unshared ALPN test | partial — no local unit test |
@@ -135,13 +135,13 @@ The authoritative readiness state remains `PRODUCTION_READINESS.md`.
 
 ## External conformance coverage
 
-The gated external negative runner today is tlsfuzzer, and it exercises the ztls
+The gated external negative runner is tlsfuzzer, and it exercises the ztls
 server. Its negative conversations include corrupted application data, truncated
 KeyUpdate, invalid KeyUpdate request, oversized records, close_notify before
 handshake, garbage pre-handshake, Finished before handshake, truncated/empty
 ClientHello, malformed key_share, unshared ALPN, and unsupported cipher suite.
 
-TLS-Anvil client/server workflows now provide broad external coverage outside PR
+TLS-Anvil client/server workflows provide broad external coverage outside PR
 `just ci`, and BoGo is durably deferred in `BOGO_DEFERRED.md`. The local
 `ClientHandshake` bad-server tests still carry the highest-risk supported-surface
 paths directly and remain the fastest regression signal.
@@ -151,18 +151,21 @@ paths directly and remain the fastest regression signal.
 These are deliberately not closed by writing the inventory:
 
 - RFC MUST matrix is `PROVEN` for every supported-surface row; #25 closed
-  the matrix-build slice. Any future supported-surface expansion must reopen
+  the matrix-build slice. Any future supported-surface expansion reopens
   the matrix in the same change.
 - Full bettertls harness execution remains outside the local name-constraints
   fixture set; if it becomes a supported lane, give it its own issue.
 - BoGo remains deferred per `BOGO_DEFERRED.md`; TLS-Anvil server/client evidence
   lives in the dedicated workflows.
-- HRR, PSK/resumption, client certificates, and PQ / P-384+ groups are
-  out of the current supported surface and tracked by their feature issues.
-  (0-RTT early data is now in the supported surface: EndOfEarlyData absence,
-  server-sent EndOfEarlyData, max_early_data_size exceeded, no-PSK-but-
-  early-data-offered, and server-declined-0-RTT negative paths are tested in
-  `src/ServerHandshake.zig`; anti-replay remains a caller-owned contract.)
+- PQ / P-384+ groups, exporters, and unscheduled extensions remain outside
+  the current supported surface. P-384/PQ waits on #6.
+- The following negative-side families are covered for the supported surface:
+  HRR (in-memory end-to-end + TLS-Anvil; formerly #1), PSK/binder verification
+  (formerly #2), 0-RTT rejection paths (EndOfEarlyData absence, server-sent
+  EndOfEarlyData, `max_early_data_size` exceeded, no-PSK-but-early-data-offered,
+  server-declined-0-RTT — formerly #3), and client certificate authentication
+  (rejects offered-scheme violations, EKU/KU violations, missing chain — formerly
+  #4). Anti-replay for 0-RTT remains a caller-owned contract.
 - Legacy session id length caps on parse paths need dedicated enforcement/tests.
 - Server Certificate `request_context` non-empty rejection needs a targeted test.
 - Some server-side client-Finished negative paths exist structurally but lack

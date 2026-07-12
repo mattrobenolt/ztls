@@ -124,13 +124,29 @@ cd hello-ztls
 zig init
 ```
 
-Add ztls to the generated `build.zig.zon`. Keep the fingerprint `zig init`
-generated; the dependency path is relative to your project root.
+Add ztls as a dependency. Fetching it pins the content hash for you:
+
+```sh
+zig fetch --save https://github.com/mattrobenolt/ztls/archive/main.tar.gz
+```
+
+That writes a `.ztls` entry into the generated `build.zig.zon` (keep the
+fingerprint `zig init` generated):
 
 ```zig
 .dependencies = .{
-    .ztls = .{ .path = "../ztls" },
+    .ztls = .{
+        .url = "https://github.com/mattrobenolt/ztls/archive/main.tar.gz",
+        .hash = "...", // filled in by `zig fetch --save`
+    },
 },
+```
+
+If you've checked out the ztls repo alongside your project, point at it
+directly instead — the path is relative to your project root:
+
+```zig
+.ztls = .{ .path = "../ztls" },
 ```
 
 Wire the module into your executable in `build.zig`:
