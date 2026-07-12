@@ -13,6 +13,9 @@ pub fn addSteps(b: *Build, opts: struct {
     //   zig build install
     //   valgrind --leak-check=no --error-exitcode=1 ./zig-out/bin/test
     const install_tests = b.addInstallArtifact(mod_tests, .{});
-    const valgrind_step = b.step("test-bin", "Install the test binary for external tooling (valgrind, etc.)");
+    const valgrind_step = b.step(
+        "test-bin",
+        "Install the test binary for external tooling (valgrind, etc.)",
+    );
     valgrind_step.dependOn(&install_tests.step);
 }
