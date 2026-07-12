@@ -57,33 +57,40 @@ resource "aws_iam_user_policy" "ztls_bench_ec2" {
     Version = "2012-10-17"
     Statement = [
       {
+        Sid    = "BenchEc2Describe"
+        Effect = "Allow"
+        # All read-only EC2 Describe/Get actions. The AWS provider calls many
+        # of these (DescribeVpcAttribute, DescribeSubnetAttribute,
+        # DescribeSecurityGroupRules, etc.) during resource management. Granting
+        # them broadly avoids whack-a-mole; they are read-only and cannot modify
+        # resources.
+        Action = [
+          "ec2:Describe*",
+          "ec2:Get*",
+        ]
+        Resource = "*"
+      },
+      {
         Sid    = "BenchEc2Manage"
         Effect = "Allow"
         Action = [
           # VPC + networking
-          "ec2:CreateVpc", "ec2:DeleteVpc", "ec2:DescribeVpcs",
-          "ec2:CreateSubnet", "ec2:DeleteSubnet", "ec2:DescribeSubnets",
-          "ec2:ModifySubnetAttribute",
+          "ec2:CreateVpc", "ec2:DeleteVpc",
+          "ec2:CreateSubnet", "ec2:DeleteSubnet", "ec2:ModifySubnetAttribute",
           "ec2:CreateInternetGateway", "ec2:DeleteInternetGateway",
           "ec2:AttachInternetGateway", "ec2:DetachInternetGateway",
-          "ec2:DescribeInternetGateways",
           "ec2:CreateRouteTable", "ec2:DeleteRouteTable",
           "ec2:AssociateRouteTable", "ec2:DisassociateRouteTable",
-          "ec2:DescribeRouteTables", "ec2:CreateRoute", "ec2:DeleteRoute",
+          "ec2:CreateRoute", "ec2:DeleteRoute",
           # Security groups
           "ec2:CreateSecurityGroup", "ec2:DeleteSecurityGroup",
-          "ec2:DescribeSecurityGroups",
           "ec2:AuthorizeSecurityGroupIngress", "ec2:RevokeSecurityGroupIngress",
+          "ec2:AuthorizeSecurityGroupEgress", "ec2:RevokeSecurityGroupEgress",
           # Key pairs
-          "ec2:CreateKeyPair", "ec2:DeleteKeyPair", "ec2:DescribeKeyPairs",
-          "ec2:ImportKeyPair",
+          "ec2:CreateKeyPair", "ec2:DeleteKeyPair", "ec2:ImportKeyPair",
           # Instances
           "ec2:RunInstances", "ec2:TerminateInstances",
           "ec2:StartInstances", "ec2:StopInstances",
-          "ec2:DescribeInstances", "ec2:DescribeInstanceStatus",
-          "ec2:DescribeInstanceTypes",
-          # AMI + AZ data sources
-          "ec2:DescribeImages", "ec2:DescribeAvailabilityZones",
           # Tags
           "ec2:CreateTags", "ec2:DeleteTags",
         ]
