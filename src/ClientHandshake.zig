@@ -3654,7 +3654,17 @@ fn fuzzProcessFlight(_: void, input: []const u8) anyerror!void {
 }
 
 test "fuzz: processFlight handles arbitrary decrypted bytes" {
-    try fuzz_compat.fuzzBytes(fuzzProcessFlight, {}, .{});
+    // Structured seeds exercise the state-machine paths the empty corpus
+    // never reaches in the deterministic test build. The EE seed drives
+    // wait_ee -> wait_cert_or_cr (the surface where the H4 PSK fast-path
+    // auth bypass was found); the bare-Finished seed exercises the fast-path
+    // guard; the Cert seed exercises the wait_cert_or_cr certificate arm.
+    const empty_ee = [_]u8{ 0x08, 0x00, 0x00, 0x02, 0x00, 0x00 };
+    const bare_finished = [_]u8{ 0x14, 0x00, 0x00, 0x20 } ++ [_]u8{0} ** 32;
+    const empty_cert = [_]u8{ 0x0b, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00 };
+    try fuzz_compat.fuzzBytes(fuzzProcessFlight, {}, .{
+        .corpus = &.{ &empty_ee, &bare_finished, &empty_cert },
+    });
 }
 
 // ----------------------------------------------------------------------------
