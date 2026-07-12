@@ -22,17 +22,20 @@ reads, epoll, io_uring, or an in-memory pipe. The examples do all four.
 The state machine also never calls an allocator. You hand it buffers, it uses
 those buffers, and that's the whole memory story. Nothing hides on the heap. One
 caveat, said plainly: the primitive crypto is delegated to a libcrypto backend
-(OpenSSL today, AWS-LC next), and OpenSSL allocates during setup and inside its
-own routines. We don't pretend otherwise. But ztls's own code — parsing,
-framing, the transcript, record sequencing — allocates nothing.
+— OpenSSL, AWS-LC, or BoringSSL, all three live and CI-gated — and those
+backends allocate during setup and inside their own routines. We don't pretend
+otherwise. But ztls's own code — parsing, framing, the transcript, record
+sequencing — allocates nothing.
 
 Scope is deliberately narrow. TLS 1.3 only, on Linux and macOS. No 1.2 fallback
 to get downgraded into, no DTLS, no Windows portability layer. That's less code
 and a smaller thing to attack.
 
 It's written in Zig, so there's no allocator in the hot path and no C in our own
-source. AEAD, key exchange, and signatures come from libcrypto; ztls handles the
-protocol wrapped around them.
+source. AEAD, X25519/P-256 ECDHE, and CertificateVerify sign/verify come from the
+libcrypto backend; the key schedule (HKDF/HMAC/SHA transcript hash) and Ed25519
+certificate-chain signature verification stay on `std.crypto`. ztls handles the
+protocol wrapped around all of it.
 
 ## Performance
 
@@ -62,16 +65,18 @@ so it isn't a wall-clock fluke.
 
 Now the caveats, because honest and dishonest benchmarks part ways right here:
 
-- Two x86_64 EC2 instances. That's not a hardware matrix, and there's no
-  repetition or threshold policy yet. Treat these as measurements, not a
-  marketing number.
+- Two x86_64 EC2 instances. That's not a hardware matrix — two x86_64 points
+  isn't one — but there is a regression gate: a 15% threshold on comparable
+  AES-GCM rows, checked by `just bench-regression-check` against a committed
+  baseline. Treat these as measurements, not a marketing number.
 - rustls's harness times batches; ztls's and libssl's time single iterations.
   The measurement shapes aren't identical.
   [`docs/research/PERFORMANCE.md`](docs/research/PERFORMANCE.md) has the
   row-by-row equivalence methodology.
 - The full-handshake row isn't a fair fight. ztls verifies the server's
-  CertificateVerify signature; the rustls and libssl harness peers don't. We
-  report it on its own and never quote it as a head-to-head.
+  CertificateVerify signature; rustls's harness uses a `NoVerifier` that skips
+  it, and libssl's behavior without a trust store is opaque. We report it on its
+  own and never quote it as a head-to-head.
 
 New results replace these as they land.
 
@@ -84,6 +89,7 @@ code, start with the examples that run in CI:
 - [`examples/tcp_loopback.zig`](examples/tcp_loopback.zig) — client and server over `std.net.Stream` loopback.
 - [`examples/epoll_pingpong.zig`](examples/epoll_pingpong.zig) — non-blocking Linux epoll ping-pong.
 - [`examples/iouring_pingpong.zig`](examples/iouring_pingpong.zig) — Linux io_uring ping-pong.
+- [`examples/ktls_server.zig`](examples/ktls_server.zig) — Linux kTLS offload: userspace handshake, kernel data plane.
 
 Run them from the devshell:
 
@@ -196,7 +202,8 @@ Now `@import("ztls")` works from `src/main.zig`. The longer setup is in
 
 ## Project state
 
-[`PRODUCTION_READINESS.md`](PRODUCTION_READINESS.md) tracks what's actually done
-and what "done" means. This README tells you what ztls is; it doesn't make status
-claims. Design notes, the threat model, and the performance evidence live under
-[`docs/research/`](docs/research/).
+[`PRODUCTION_READINESS.md`](PRODUCTION_READINESS.md) is the single source of truth
+for what's actually done and what "done" means. This README tells you what ztls
+is and surfaces the supported-surface table above, but the spine is the
+authority behind every status claim in it. Design notes, the threat model, and
+the performance evidence live under [`docs/research/`](docs/research/).
