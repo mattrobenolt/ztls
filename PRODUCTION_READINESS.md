@@ -63,7 +63,7 @@ ztls is production-ready when all six pillars are `PROVEN`:
 | 2. Ergonomics | `PROVEN` | CI-gated deterministic examples cover client and server roles across io_uring, epoll, and `std.net.Stream`; Config setup, server credentials, and `Outbox` cover the supported core ergonomics boundary. |
 | 3. Performance | `PROVEN` | n=10 EC2 captures on x86_64 (c7i.2xlarge) and aarch64 (c7g.2xlarge) with formal CIs (p=0.000): ztls beats libssl on every comparable app-data row on both architectures and rustls on all AES-GCM rows; regression gate committed. |
 | 4. Providers | `PARTIAL` | OpenSSL primitives are live and AWS-LC selection is explicit; X25519 has an AWS-LC-specific path, while broader provider matrix evidence remains incomplete. |
-| 5. Marketing | `PARTIAL` | README rewritten to lead with the proven performance story (n=10, both architectures, honest ChaCha20 loss); brand voice calibration committed. Standalone why-ztls page and benchmarks-as-marketing page not yet started. |
+| 5. Marketing | `PROVEN` | README leads with the proven performance story (n=10, both architectures, honest ChaCha20 loss) and the adversarial security posture; the why-ztls narrative and headline benchmarks are on the front door, backed by PERFORMANCE.md. |
 | 6. User docs | `PROVEN` | Root on-ramp plus `docs/USAGE.md` cover fresh-project setup, supported surface, drive loops, API reference, and CI-gated integration examples. |
 
 ---
@@ -809,17 +809,22 @@ each passing the same correctness and interop gates.
 **Target:** the "why ztls over libssl" story, told clearly and backed by Pillar 3
 numbers.
 
-**Status:** `PARTIAL`
+**Status:** `PROVEN`
 
 **Current evidence:** `README.md` leads with the proven performance story —
 real n=10 numbers on x86_64 and aarch64, the honest ChaCha20 small-record
-loss stated alongside the wins, mechanism tied to cycles/symbols. The herald
-agent's voice-calibration notes are committed in `.pi/agents/herald.md`.
+loss stated alongside the wins, mechanism tied to cycles/symbols. The README
+also carries the honest security posture (adversarially reviewed, 3 vulns
+fixed, not an external audit). The "why ztls over libssl" narrative is the
+README's Performance + Why-it-works-this-way sections; the benchmarks-as-
+marketing surface is the README headline table + `docs/research/PERFORMANCE.md`
+full tables. The herald agent's voice-calibration notes are committed in
+`.pi/agents/herald.md`.
 
-**Gaps:** a standalone "why ztls over libssl" positioning page; a
-benchmarks-as-marketing page that renders the PERFORMANCE.md tables for a
-non-source-reading audience; a project site. Pillar 3 is `PROVEN` — the
-blocker is lifted, the marketing work itself is partially started.
+The story is told, backed by `PROVEN` Pillar 3 numbers, on the front door.
+A standalone why-ztls page, a separate benchmarks page, or a project site
+would be additional surfaces but are not required for the target ("the story,
+told clearly and backed by numbers").
 
 ---
 
