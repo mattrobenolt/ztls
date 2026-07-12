@@ -84,8 +84,49 @@ the S1 crash above.
 **Fix:** the S1 fix (widening) prevents the crash. A dedicated `> 32` cap is a
 follow-up hardening item, tracked below.
 
+## Finding S3 — server authentication bypass via PSK fast-path (CRITICAL, fixed)
+
+**Severity:** critical — full active-MITM / server-impersonation bypass whenever
+the client offers a session ticket.
+
+**Root cause:** the `wait_cert_or_cr` `.finished` arm in `ClientHandshake.zig`
+gated the "bare Finished after EncryptedExtensions, no
+Certificate/CertificateVerify" fast path on `self.offered_psk == null` — which
+records whether the *client offered* a PSK, not whether the *server selected*
+it. `processServerHello` uses the PSK only when `sh.selected_identity != null`
+and otherwise derives keys from ephemeral DHE alone, but recorded no selection
+outcome. `offered_psk` stays set regardless.
+
+**Consequence:** a client that offered a resumption ticket accepted a bare
+server Finished with zero Certificate/CertificateVerify even when the server
+did NOT select the PSK and the keys were pure ephemeral DHE. An active MITM
+who completes the ECDHE (it chooses the ServerHello `key_share`) can forge a
+Finished and the client believes it is authenticated — no certificate or
+signature was ever checked. Exploitable whenever the client offers a
+resumption ticket (every resumed connection).
+
+**Fix:** added `server_selected_psk: bool` to `ClientHandshake`, set in
+`processServerHello` when `sh.selected_identity != null`. The fast-path guard
+now checks `!self.server_selected_psk` instead of `self.offered_psk == null`.
+Regression test in `ServerHandshake.zig` drives a PSK-offering client whose
+server declined the PSK and asserts a bare Finished is rejected with
+`UnexpectedMessage`.
+
+**Why existing tests missed it:** the PSK tests only exercise the case where
+the server DOES select the PSK and sends a full authenticated flight. No test
+drove offered-PSK + server-declined + bare-Finished. The `processFlight:
+rejects Finished before EncryptedExtensions` test uses a non-PSK client, so it
+hits the `offered_psk == null` reject and never reaches the fast path.
+
 ## Verified-handled (no bug)
 
+- **H1 (EncryptedExtensions offered-vs-unoffered gate):** verified handled
+  with an 18-test PoC suite. The gate is fail-closed — `offered_extensions`
+  defaults to empty, rejecting all gated extensions. ALPN cross-check,
+  duplicate rejection, and forbidden-extension rejection all work. One
+  hardening note: `supported_groups` is accepted unconditionally but is safe
+  today (mandatory, client ignores the value mid-handshake per RFC 8446
+  §4.2.7).
 - **H3 gap 2 (key_share group/length):** the key_share switch is properly
   bounded — `ext_len` validated against remaining, each group checks
   `key_len` against fixed lengths, unknown groups fall through to
@@ -93,36 +134,49 @@ follow-up hardening item, tracked below.
 - **H3 gap 3 (missing key_share after supported_versions):**
   `server_hello.zig` rejects with `MissingExtension` when `supported_versions`
   selected TLS 1.3 but no `key_share` was received. No bug.
+- **H6 (Certificate request_context non-empty rejection):** already handled —
+  `certificate.parse` (server cert path) rejects `ctx_len != 0` with
+  `UnexpectedCertificateRequestContext` at line 241. The NEGATIVE_SPACE gap
+  row was stale.
+- **H7 (legacy session-id ≤32 cap):** already handled — `client_hello.parse`
+  rejects `session_id_len > 32` with `InvalidVectorLength` at line 831. The
+  server uses the same parser.
 - **DER walker (`certificate_parser.zig`):** `der.Element.parse` length
   arithmetic is done in `usize`, bounds-checked against `bytes.len` and
-  `maxInt(u32)` on every element. Known malformed-DER shapes (indefinite
-  length, zero-length BIT STRING, constructed-on-primitive, bad INTEGER,
-  NULL-mismatch) all return typed errors, not crashes. Cleared.
+  `maxInt(u32)` on every element. Known malformed-DER shapes all return typed
+  errors, not crashes. Cleared.
+- **H4 out-of-order/duplicate transitions (full-handshake path):** the
+  state+progress double-gating correctly rejects duplicate Certificate,
+  out-of-order CertificateVerify, and Finished-before-CV. The auth-bypass bug
+  was a *missing precondition* (offered vs selected), not a flag desync.
 
 ## Residual scope (not covered by this pass)
 
-- **H1 (EncryptedExtensions offered-vs-unoffered gate), H4 (processFlight
-  state-machine confusion), H8 (bad-ClientFinished tests):** P1 hunts not yet
-  run. The recon queue in `RECON.md` has the scoped tasks.
 - **H5 (PSK binder + 0-RTT state transitions):** P0, marked Fable-worthy
   (multi-section RFC reasoning). Not yet run; reserved for `siege` or a
-  dedicated opus pass.
-- **H6 (Certificate request_context gap), H7 (legacy session-id cap):** P2,
-  not yet run.
+  dedicated opus pass. This is the highest-value remaining hunt.
+- **S2 (missing ≤32 cap on legacy_session_id_echo):** FIXED — added
+  `if (session_id_len > 32) return error.IllegalParameter` in both
+  `server_hello.zig` parse paths.
+- **H8 (bad-ClientFinished negative tests):** FIXED — added a bad-verify_data
+  rejection test in `ServerHandshake.zig`.
 - **ReleaseFast behavior of the S1 class:** the overflow is UB under
   ReleaseFast. The fix prevents the panic in safety builds; under ReleaseFast
   the widened arithmetic prevents the UB. Confirming no residual OOB read
   under ReleaseFast is a follow-up.
 - **Full ASan/MSan sweep of the backend seam:** recommended as a parallel
   effort by `fuzz-engineer`.
+- **EE fuzz target:** the H1 PoC suite is corpus material for a future
+  `test "fuzz: encrypted_extensions"` target (fuzz-engineer scope).
 
 ## Files changed
 
-- `src/server_hello.zig` — 2 overflow fixes + regression test
-- `src/certificate.zig` — 5 overflow fixes + 2 regression tests
-- `src/certificate_request.zig` — 1 overflow fix
-- `src/client_hello.zig` — 3 overflow fixes
-- `src/NewSessionTicket.zig` — 2 overflow fixes
-- `src/ServerHandshake.zig` — 1 overflow fix
+- `src/server_hello.zig` — 2 S1 overflow fixes + ≤32 session_id cap (S2) + regression test
+- `src/certificate.zig` — 5 S1 overflow fixes + 2 regression tests
+- `src/certificate_request.zig` — 1 S1 overflow fix
+- `src/client_hello.zig` — 3 S1 overflow fixes
+- `src/NewSessionTicket.zig` — 2 S1 overflow fixes
+- `src/ServerHandshake.zig` — 1 S1 overflow fix + bad-ClientFinished test (H8) + PSK auth-bypass regression test (S3)
+- `src/ClientHandshake.zig` — S3 fix: `server_selected_psk` field + guard fix
 - `docs/research/security/RECON.md` — recon document (new)
 - `docs/research/security/FINDINGS.md` — this file (new)

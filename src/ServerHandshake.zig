@@ -3285,6 +3285,53 @@ test "processClientFinished: verifies Finished and installs app keys" {
     try testing.expectEqual(@as(u64, 0), server.tx.seq);
 }
 
+// RFC 8446 §4.4.4 — the server must reject a client Finished with a bad
+// verify_data MAC. Regression for the NEGATIVE_SPACE gap: bad-ClientFinished
+// negative tests were partial.
+test "processClientFinished: rejects bad verify_data" {
+    const client_keypair: x25519.KeyPair = .generate();
+    const server_keypair: x25519.KeyPair = .generate();
+    var ch_buf: [512]u8 = undefined;
+    const ch = try client_hello.encode(&ch_buf, .zero, client_keypair.public_key, null, &.{});
+    var ch_record: [1024]u8 = undefined;
+    const header: frame.Header = .init(.handshake, @intCast(ch.len));
+    header.write(ch_record[0..frame.header_len]);
+    @memcpy(ch_record[frame.header_len..][0..ch.len], ch);
+
+    var server: ServerHandshake = .init(testConfig(server_keypair));
+    var sh_out: [256]u8 = undefined;
+    _ = try server.acceptClientHello(ch_record[0 .. frame.header_len + ch.len], &sh_out);
+    var flight_out: [512]u8 = undefined;
+    _ = try server.sendAnonymousFlightForTest(&flight_out);
+
+    var fin_plain: [64]u8 = undefined;
+    const fin = switch (server.suite_state) {
+        inline .sha256, .sha384 => |*s| blk: {
+            const th = s.transcript.peek();
+            break :blk try finished.encode(
+                @TypeOf(s.transcript),
+                &fin_plain,
+                &s.client_finished_key.data,
+                &th,
+            );
+        },
+    };
+    // Tamper one byte of the verify_data (after the 4-byte handshake header).
+    var tampered: [64]u8 = undefined;
+    @memcpy(tampered[0..fin.len], fin);
+    tampered[5] ^= 0xff;
+
+    var client_tx = try server.rx.clone();
+    defer client_tx.deinit();
+    var fin_wire: [128]u8 = undefined;
+    const fin_record = try client_tx.encrypt(.handshake, tampered[0..fin.len], &fin_wire);
+    try testing.expectError(
+        error.InvalidVerifyData,
+        server.processClientFinished(fin_wire[0..fin_record.len]),
+    );
+    try testing.expectEqual(.wait_client_finished, server.state);
+}
+
 // RFC 8446 §4.1.2 — TLS 1.3 has no renegotiation; a second ClientHello is an
 // unexpected_message after the first ClientHello.
 test "handleRecord: rejects second plaintext ClientHello before Finished" {
@@ -4280,6 +4327,70 @@ test "in-memory PSK resumption reaches app data" {
     @memcpy(server_app_mut[0..server_app.len], server_app);
     const app_ev = try client.handleRecord(server_app_mut[0..server_app.len], &client_out);
     try testing.expectEqualStrings("pong", app_ev.application_data);
+}
+
+// RFC 8446 §4.1.3, §2.2 — PSK fast-path authentication gate. A client that
+// offered a resumption ticket but whose server did NOT select it gets pure-
+// DHE handshake keys and must receive a full authenticated flight
+// (Certificate + CertificateVerify + Finished). The bare-Finished fast path
+// (no cert) is only legal when the server actually selected the PSK.
+// Regression for the server-authentication-bypass found by the Glasswing H4
+// hunt: the old guard checked `offered_psk` (client offered) instead of
+// `server_selected_psk` (server selected), letting an active MITM forge a
+// bare Finished and skip server authentication entirely.
+test "PSK fast-path rejects bare Finished when server did NOT select PSK" {
+    const psk_bytes: [32]u8 = @splat(0x42);
+    const identity_bytes = [_]u8{ 0x2c, 0x03, 0x5d, 0x82, 0x93, 0x59 };
+
+    var client: ClientHandshake = .init(.{
+        .keypairs = .init(.generate()),
+        .host_name = null,
+        .now_sec = 0,
+        .random = .zero,
+    });
+    client.policy.insecure_no_chain_anchor = true;
+    defer client.deinit();
+    var ticket: ClientHandshake.SessionTicket = .{
+        .ticket_age_add = 0x262a6494,
+        .cipher_suite = .aes_128_gcm_sha256,
+    };
+    ticket.identity.appendSliceAssumeCapacity(&identity_bytes);
+    ticket.psk.appendSliceAssumeCapacity(&psk_bytes);
+
+    var client_out: [4096]u8 = undefined;
+    const ch_record = try client.startWithPsk(&ticket, &client_out, false);
+    client.completeWrite();
+
+    // Server with NO psk_lookup: it ignores the PSK offer, selects no identity,
+    // and does a full ephemeral (EC)DHE handshake. This models both a benign
+    // server that declined resumption and an active MITM without the PSK.
+    var server: ServerHandshake = .init(.{
+        .keypairs = .init(.generate()),
+        .random = .zero,
+    });
+    var server_out: [4096]u8 = undefined;
+    const sh_record = try server.acceptClientHello(ch_record, &server_out);
+    try client.processServerHello(sh_record[frame.header_len..]);
+
+    // The server did NOT select the PSK.
+    try testing.expect(!client.server_selected_psk);
+    try testing.expect(client.offered_psk != null); // client offered, but...
+
+    // Empty EncryptedExtensions handshake plaintext (as processHandshakeRecord
+    // would feed after record decryption).
+    const empty_ee = [_]u8{ 0x08, 0x00, 0x00, 0x02, 0x00, 0x00 };
+    try client.processFlight(&empty_ee, client.policy);
+    try testing.expectEqual(ClientHandshake.State.wait_cert_or_cr, client.state);
+
+    // A bare Finished must be rejected — the server must send a full
+    // authenticated flight since it declined the PSK.
+    const bad_finished: [4 + 32]u8 = .{ 0x14, 0x00, 0x00, 0x20 } ++ @as([32]u8, @splat(0xaa));
+    try testing.expectError(
+        error.UnexpectedMessage,
+        client.processFlight(&bad_finished, client.policy),
+    );
+    try testing.expectEqual(ClientHandshake.State.wait_cert_or_cr, client.state);
+    try testing.expectEqual(@as(usize, 0), client.leaf_pub_key.len);
 }
 
 // RFC 8446 §4.2.10, §7.1 — in-memory 0-RTT: the client offers early_data

@@ -24,6 +24,7 @@ Reach for you when: reviewing a PR/diff, a single module, a protocol-area change
 - TLS 1.3 state-machine correctness, downgrade/extension semantics, alert behavior, transcript/key schedule use, certificate policy, parser abuse, record-layer edge cases, and secret lifetime.
 - RFC 8446/RFC 5280 interpretation where it affects observable behavior.
 - Attack paths from malicious peers and malformed inputs.
+- **Zig 0.15 narrow-type arithmetic in bounds checks** (recurring class bug, #72): `if (remaining < len + N)` where `len` is `u8`/`u16`/`u24` evaluates `len + N` in the narrow type before widening, overflowing when `len` is near its max. Remote DoS on any parser reading attacker-controlled lengths. `ziglint` does not catch this. Check every `narrow_var + comptime_int` bounds check in any parser diff you review.
 
 Rules:
 - Do not edit files. Do not write PoCs, fuzz seeds, or scratch harnesses — that is `whitehat-hacker`'s job.

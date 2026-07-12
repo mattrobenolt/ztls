@@ -483,6 +483,14 @@ client_credentials: ?ClientCredentials = null,
 /// caller passed to startWithPsk, which must outlive the handshake.
 offered_psk: ?[]const u8 = null,
 offered_psk_cipher_suite: CipherSuite = .aes_128_gcm_sha256,
+/// Whether the server selected our offered PSK (RFC 8446 §4.2.11). Set in
+/// processServerHello from ServerHello `pre_shared_key.selected_identity`.
+/// The PSK fast-path (bare Finished after EncryptedExtensions, no
+/// Certificate/CertificateVerify) is only legal when the server actually
+/// selected the PSK — gating on `offered_psk` alone is an authentication
+/// bypass, since a client that offered a ticket but the server declined it
+/// gets pure-DHE keys and must receive a full authenticated flight.
+server_selected_psk: bool = false,
 /// Early traffic (0-RTT) RecordLayer for sending data before the server
 /// Finished, derived from the PSK early secret + the ClientHello transcript.
 /// null when 0-RTT is not offered. RFC 8446 §4.2.10, §7.1.
@@ -1322,6 +1330,7 @@ pub fn processServerHello(self: *ClientHandshake, msg: []const u8) ServerHelloEr
     const psk: ?[]const u8 = if (sh.selected_identity) |idx| blk: {
         if (idx != 0) return error.IllegalParameter;
         if (self.offered_psk == null) return error.UnexpectedExtension;
+        self.server_selected_psk = true;
         break :blk self.offered_psk;
     } else null;
     const keys = try self.suite.deriveHandshakeKeys(dhe[0..dhe_len], psk);
@@ -1477,9 +1486,11 @@ fn processFlightMessage(
             .certificate => try self.processServerCertificate(msg, policy),
             // PSK resumption (psk_dhe_ke without server Certificate): the
             // server sends Finished directly after EncryptedExtensions.
-            // RFC 8446 §4.1.3, §2.2.
+            // RFC 8446 §4.1.3, §2.2. Only legal when the server selected our
+            // offered PSK — a declined-PSK client gets pure-DHE keys and must
+            // receive a full authenticated flight (Certificate + CV).
             .finished => {
-                if (self.offered_psk == null) return error.UnexpectedMessage;
+                if (!self.server_selected_psk) return error.UnexpectedMessage;
                 self.suite.verifyServerFinished(msg.raw) catch return error.InvalidVerifyData;
                 self.server_flight_progress = .finished_verified;
                 self.suite.update(msg.raw);

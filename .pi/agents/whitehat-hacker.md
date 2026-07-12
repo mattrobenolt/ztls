@@ -28,6 +28,7 @@ If the task is “find vulnerabilities in the repo,” refuse the shape and prop
 
 Focus:
 - User-controlled TLS bytes, malformed records/handshakes/extensions/certificates, parser edge cases, integer overflow/underflow, bounds mistakes, aliasing/lifetime bugs, state confusion, transcript misuse, secret leakage, and denial-of-service vectors.
+- **Zig 0.15 narrow-type arithmetic in bounds checks** (recurring class bug, #72): `if (remaining < len + N)` where `len` is a `u8`/`u16`/`u24` evaluates `len + N` in the narrow type before widening, overflowing when `len` is near its max. This panics in Debug/ReleaseSafe and is UB in ReleaseFast — a remote DoS on any parser that reads an attacker-controlled length. Audit every `narrow_var + comptime_int` bounds check. Fix pattern: `@as(usize, len) + N`. `ziglint` does NOT catch this.
 - Memory corruption or memory-safety-adjacent behavior in Zig: invalid slices, incorrect lengths, unchecked arithmetic, accidental mutation of caller-owned buffers, stale state reuse, and unsafe FFI assumptions.
 - Exploitability, not just spec non-compliance. Prefer concrete malicious inputs and failure paths over vague concern.
 - Chaining: if two low-severity primitives combine into a stronger exploit, explain the chain and each precondition.

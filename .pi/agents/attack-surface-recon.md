@@ -25,6 +25,7 @@ Rules:
 - Prefer attack-class + target-surface pairs over generic subsystems: e.g. “zero-length DER BIT STRING in certificate parser” beats “audit certificates.”
 - Include the trust boundary for every task: which bytes/state are attacker-controlled and how they reach the code.
 - Check existing tests/fuzz targets enough to explain why the task may still be fruitful.
+- **Always queue a narrow-type arithmetic overflow hunt** for any parser that reads attacker-controlled `u8`/`u16`/`u24` length fields into bounds checks. Zig 0.15 evaluates `narrow_type + comptime_int` in the narrow type before widening, so `if (remaining < len + N)` overflows when `len` is near its max (#72 — a recurring class bug that found 14 sites). This is a remote DoS class that `ziglint` does not catch and fuzz seeds miss.
 - Collapse duplicate tasks that share the same suspected root cause.
 - Mark Fable-worthy tasks explicitly. Reserve the `siege` escalation tier (Claude Fable 5, ~2x opus output cost) for hunts where reasoning depth is the bottleneck: subtle multi-function aliasing/lifetime bugs, multi-step exploit chains requiring a full handshake trace in working memory, or RFC 8446 section-interaction confusions. Do not mark routine parser audits or single-function bounds checks as Fable-worthy — those stay on `whitehat-hacker`. When in doubt, leave it on opus.
 

@@ -167,6 +167,7 @@ pub fn parseHelloRetryRequestWithSessionIdEcho(
 
     const session_id_len = r.assumeRead(u8);
     if (r.remaining().len < @as(usize, session_id_len) + 2 + 1 + 2) return error.UnexpectedEof;
+    if (session_id_len > 32) return error.IllegalParameter;
     const session_id_echo = r.assumeReadSlice(session_id_len);
     if (expected_session_id) |expected| {
         if (!mem.eql(u8, session_id_echo, expected)) return error.InvalidSessionIdEcho;
@@ -475,6 +476,7 @@ pub fn parseWithSessionIdEcho(
 
     const session_id_len = r.assumeRead(u8);
     if (r.remaining().len < @as(usize, session_id_len) + 2 + 1 + 2) return error.UnexpectedEof;
+    if (session_id_len > 32) return error.IllegalParameter;
     const session_id_echo = r.assumeReadSlice(session_id_len);
     if (expected_session_id) |expected| {
         if (!mem.eql(u8, session_id_echo, expected)) return error.InvalidSessionIdEcho;

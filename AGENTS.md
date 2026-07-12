@@ -352,6 +352,17 @@ For the same reason, pass large unions/structs by `*const` into functions and
 write parsed large structs into a caller-provided out-param instead of
 returning them by value.
 
+**Widen narrow-type arithmetic in parser bounds checks.** Zig 0.15 evaluates
+`narrow_type + comptime_int` in the narrow type before widening for the
+comparison. A bounds check like `if (remaining < len + N)` where `len` is a
+`u8`/`u16`/`u24` overflows the narrow type when `len` is near its max, causing
+a panic (Debug/ReleaseSafe) or UB (ReleaseFast) before the comparison rejects
+the oversized input. This is a remote DoS class on any parser that reads an
+attacker-controlled length field — #72 found 14 sites. Always write the
+addition in `usize`: `if (remaining < @as(usize, len) + N)`. `ziglint` does
+not catch this; the security agents (`whitehat-hacker`, `attack-surface-recon`,
+`security-reviewer`) have it in their checklists.
+
 ---
 
 ## What Not To Do
