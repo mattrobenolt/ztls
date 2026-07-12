@@ -162,7 +162,7 @@
               '';
             };
         in
-        rec {
+        {
           formatter = pkgs.nixfmt;
 
           devShells = rec {
