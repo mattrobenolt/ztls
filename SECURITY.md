@@ -3,7 +3,7 @@
 ztls is a TLS 1.3 library. Security is the whole job. Read this before you rely
 on it for anything.
 
-## Status: pre-alpha, unaudited
+## Status: pre-alpha, internally adversarially reviewed
 
 ztls has not had an external security audit. The API is not stable. It has not
 been deployed anywhere that matters. Do not put it in front of real traffic or
@@ -20,7 +20,16 @@ interop in both directions, tlsfuzzer and TLS-Anvil conformance runs, Wycheproof
 boundary vectors at the crypto seam, fuzzing on the parser and record-decrypt
 surfaces, and a documented threat model at
 [`docs/research/THREAT_MODEL.md`](https://github.com/mattrobenolt/ztls/blob/main/docs/research/THREAT_MODEL.md).
-That is real evidence. It is not a substitute for an audit.
+
+An internal adversarial security review (Project Glasswing harness: recon →
+hunt → validate) ran against the supported parser and state-machine surface in
+July 2026. It found three vulnerabilities — an integer-overflow DoS class
+across 14 parser bounds-check sites (#72), a server authentication bypass via
+the PSK fast-path (#73), and a selectPsk binders-length overflow — all fixed
+with regression tests. The recon, findings, and verified-handled results are
+at
+[`docs/research/security/FINDINGS.md`](https://github.com/mattrobenolt/ztls/blob/main/docs/research/security/FINDINGS.md).
+That is real evidence. It is not a substitute for an external audit.
 
 ## Reporting a vulnerability
 
@@ -50,8 +59,10 @@ Out of scope:
   provisioning, the drive loop.
   [`docs/research/THREAT_MODEL.md`](https://github.com/mattrobenolt/ztls/blob/main/docs/research/THREAT_MODEL.md)
   draws the line between ztls's responsibilities and the caller's.
-- Features that don't exist yet (client cert auth, PSK/resumption, 0-RTT). Those
-  are tracked as open issues, not vulnerabilities.
+- Features that don't exist yet. PSK resumption, 0-RTT, and client cert auth
+  are implemented and were covered by the adversarial review; features outside
+  the current supported surface (PQ key exchange, TLS 1.2) are tracked as open
+  issues, not vulnerabilities.
 
 ## Expectations
 

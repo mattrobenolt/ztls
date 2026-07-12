@@ -235,6 +235,14 @@ data to openssl s_server and receives the HTTP response.
 - Wycheproof boundary vectors at the libcrypto seam.
 - Fuzzing on the major parsers plus record decrypt and server `handleRecord`
   pre-auth/post-auth dispatch.
+- Internal adversarial security review (Project Glasswing harness: recon → hunt
+  → validate) covering the supported parser and state-machine surface. Found
+  and fixed three vulnerabilities: an integer-overflow DoS class across 14
+  parser bounds-check sites (#72), a server authentication bypass via the PSK
+  fast-path (#73), and a selectPsk binders-length overflow. Seven additional
+  surfaces verified handled. Recon and findings at
+  `docs/research/security/FINDINGS.md`; the narrow-type arithmetic lesson is
+  encoded in `AGENTS.md` and the security agent prompts.
 - Targeted client-side bad-server tests for malformed ServerHello, unexpected
   flight messages, bad CertificateVerify and Finished checks, corrupted
   encrypted records, client-emitted alert descriptions, peer fatal alerts,
