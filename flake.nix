@@ -51,7 +51,8 @@
           '';
           # commonPackages takes the Zig toolchain pair so the same package
           # list can target either Zig 0.15 (default) or Zig 0.16 (#61).
-          commonPackages = zig-tools:
+          commonPackages =
+            zig-tools:
             (with pkgs; [
               ast-grep
               benchstat
@@ -85,8 +86,14 @@
                 valgrind
               ]
             );
-          zig0_15 = { zig = pkgs.zig_0_15; zls = pkgs.zls_0_15; };
-          zig0_16 = { zig = pkgs.zig_0_16; zls = pkgs.zls_0_16; };
+          zig0_15 = {
+            zig = pkgs.zig_0_15;
+            zls = pkgs.zls_0_15;
+          };
+          zig0_16 = {
+            zig = pkgs.zig_0_16;
+            zls = pkgs.zls_0_16;
+          };
           commonHook = ''
             unset NIX_CFLAGS_COMPILE
             unset PKG_CONFIG_PATH
