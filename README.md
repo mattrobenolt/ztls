@@ -221,3 +221,10 @@ for what's actually done and what "done" means. This README tells you what ztls
 is and surfaces the supported-surface table above, but the spine is the
 authority behind every status claim in it. Design notes, the threat model, and
 the performance evidence live under [`docs/research/`](docs/research/).
+
+ztls is pre-alpha. The API will move. An internal adversarial security review
+(Project Glasswing: recon → hunt → validate) found three vulnerabilities — all
+fixed with regression tests. It is not an external audit. Read
+[`SECURITY.md`](SECURITY.md) for the full posture and
+[`docs/research/security/FINDINGS.md`](docs/research/security/FINDINGS.md) for
+the evidence. Do not put it in front of real traffic yet.
