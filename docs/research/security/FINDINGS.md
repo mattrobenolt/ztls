@@ -150,17 +150,50 @@ hits the `offered_psk == null` reject and never reaches the fast path.
   out-of-order CertificateVerify, and Finished-before-CV. The auth-bypass bug
   was a *missing precondition* (offered vs selected), not a flag desync.
 
-## Residual scope (not covered by this pass)
+## Finding S4 — integer-overflow DoS in selectPsk binders length check (#72 class, fixed)
 
-- **H5 (PSK binder + 0-RTT state transitions):** P0, marked Fable-worthy
-  (multi-section RFC reasoning). Not yet run; reserved for `siege` or a
-  dedicated opus pass. This is the highest-value remaining hunt.
-- **S2 (missing ≤32 cap on legacy_session_id_echo):** FIXED — added
-  `if (session_id_len > 32) return error.IllegalParameter` in both
-  `server_hello.zig` parse paths.
-- **H8 (bad-ClientFinished negative tests):** FIXED — added a bad-verify_data
-  rejection test in `ServerHandshake.zig`.
-- **ReleaseFast behavior of the S1 class:** the overflow is UB under
+**Severity:** remote, unauthenticated-content denial of service on any
+resumption-enabled (PSK/0-RTT) ztls server.
+
+**Root cause:** `ServerHandshake.zig:369` evaluated `2 + identities_len + 2 +
+binders_len` in u16 before widening for the comparison. Both `identities_len`
+and `binders_len` are `u16`; the sum overflows u16 before the comparison can
+reject the oversized input. This is the same #72 class — a site the original
+sweep missed because it predates the sweep and sits in a function
+(`selectPsk`) that the sweep's grep pattern didn't cover.
+
+**Reproduction:** a ClientHello with a `pre_shared_key` extension whose
+`binders_len` field is `0xFFFF` panics with `integer overflow` at
+`ServerHandshake.zig:369` in `selectPsk`, before any binder verification.
+Reachable on any server with `psk_lookup` configured (resumption/0-RTT).
+
+**Fix:** widened to `@as(usize, 2) + identities_len + 2 + binders_len`. Also
+widened the adjacent line 364 (`2 + identities_len + 2 > psk_ext.len`)
+defensively, even though it was non-exploitable (parse pre-bounds
+`identities_len ≤ 65531`). Regression test asserts the hostile input returns
+`error.InvalidExtensionLength`, not a panic.
+
+## H5 verified-handled (no bug)
+
+- **Binder-input bypass (Q1):** the binder is verified over `prefix =
+  msg[0..binders_offset]`, which spans the entire ClientHello up to the
+  binders list — including the identity and obfuscated ticket age. Any
+  alteration of those inputs changes `Hash(prefix)` and breaks the HMAC. No
+  trivial input-alteration bypass.
+- **early_rx fall-through (Q2):** `handleWaitClientFinished` does
+  `handshake.decryptProtected(early_rx, record) catch return error.UnexpectedMessage`
+  — a failed early-data decrypt aborts immediately and never retries under the
+  handshake key. The in-place mutation of `record` doesn't matter because the
+  handshake terminates; there's no second decrypt on the corrupted buffer.
+  Correctly handled.
+
+- **H5 (PSK binder + 0-RTT):** RUN. Found S4 (selectPsk overflow, fixed).
+  Binder-input bypass and early_rx fall-through verified handled. Two areas
+  unproven and re-queued: (a) the full EndOfEarlyData accept/decline ×
+  present/absent state matrix, (b) PSK-offer-surviving-HRR (binder transcript
+  must include CH1 + HRR for resumption after HelloRetryRequest — whether ztls
+  supports or correctly rejects this is untraced).
+- **ReleaseFast behavior of the S1/S4 class:** the overflow is UB under
   ReleaseFast. The fix prevents the panic in safety builds; under ReleaseFast
   the widened arithmetic prevents the UB. Confirming no residual OOB read
   under ReleaseFast is a follow-up.

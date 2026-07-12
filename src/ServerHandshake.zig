@@ -361,12 +361,13 @@ pub fn selectPsk(
     // 4-byte obfuscated_ticket_age). binders list follows.
     var idr: wiremod.Reader = .init(psk_ext);
     const identities_len = idr.read(u16) catch return error.UnexpectedEof;
-    if (2 + identities_len + 2 > psk_ext.len) return error.InvalidExtensionLength;
+    if (@as(usize, 2) + identities_len + 2 > psk_ext.len) return error.InvalidExtensionLength;
     const identities_end = idr.pos + identities_len;
     // binders list starts after the identities.
     var br: wiremod.Reader = .{ .buf = psk_ext, .pos = identities_end };
     const binders_len = br.read(u16) catch return error.UnexpectedEof;
-    if (2 + identities_len + 2 + binders_len != psk_ext.len) return error.InvalidExtensionLength;
+    if (@as(usize, 2) + identities_len + 2 + binders_len != psk_ext.len)
+        return error.InvalidExtensionLength;
 
     const prefix = msg[0..parsed.binders_offset];
     var idx: usize = 0;
@@ -4232,6 +4233,64 @@ test "selectPsk: returns null when the PSK binder does not verify" {
 
     const sel = try selectPsk(parsed, ch_msg, lookup);
     try testing.expectEqual(@as(?@TypeOf(sel.?), null), sel);
+}
+
+// RFC 8446 §4.2.11 — the binders list-length field is attacker-controlled.
+// A binders_len near u16 max must not overflow the bounds-check arithmetic
+// in selectPsk. Regression for the #72 class bug found by the H5 hunt: line
+// 369 evaluated `2 + identities_len + 2 + binders_len` in u16 before widening.
+test "selectPsk: oversized binders_len does not overflow" {
+    const resumption_master: hkdf.HkdfSha256.Prk = .init(.{
+        0x7d, 0xf2, 0x35, 0xf2, 0x03, 0x1d, 0x2a, 0x05,
+        0x12, 0x87, 0xd0, 0x2b, 0x02, 0x41, 0xb0, 0xbf,
+        0xda, 0xf8, 0x6c, 0xc8, 0x56, 0x23, 0x1f, 0x2d,
+        0x5a, 0xba, 0x46, 0xc4, 0x34, 0xec, 0x19, 0x6c,
+    });
+    const psk = hkdf.HkdfSha256.resumptionPsk(resumption_master, &.{ 0x00, 0x00 });
+    const identity = [_]u8{ 0x2c, 0x03, 0x5d, 0x82, 0x93, 0x59 };
+
+    var client: ClientHandshake = .init(.{
+        .keypairs = .init(.generate()),
+        .host_name = null,
+        .now_sec = 0,
+        .random = .zero,
+    });
+    var ticket: ClientHandshake.SessionTicket = .{
+        .ticket_age_add = 0x262a6494,
+        .cipher_suite = .aes_128_gcm_sha256,
+    };
+    ticket.identity.appendSliceAssumeCapacity(&identity);
+    ticket.psk.appendSliceAssumeCapacity(&psk.data);
+
+    var out: [1024]u8 = undefined;
+    const record = try client.startWithPsk(&ticket, &out, false);
+    // Work on a mutable copy of the ClientHello body (skip the record header).
+    var ch_msg: [1024]u8 = undefined;
+    @memcpy(ch_msg[0 .. record.len - frame.header_len], record[frame.header_len..]);
+    const ch_body = ch_msg[0 .. record.len - frame.header_len];
+    const parsed = try client_hello.parse(ch_body);
+
+    // Overwrite the binders_len field (2 bytes at binders_offset) with 0xFFFF.
+    ch_body[parsed.binders_offset] = 0xff;
+    ch_body[parsed.binders_offset + 1] = 0xff;
+
+    const Lookup = struct {
+        const Self = @This();
+        psk: []const u8,
+        identity: []const u8,
+        fn l(ctx: *anyopaque, id: []const u8) ?PskEntry {
+            const self: *Self = @ptrCast(@alignCast(ctx));
+            if (std.mem.eql(u8, id, self.identity))
+                return .{ .psk = self.psk, .cipher_suite = .aes_128_gcm_sha256 };
+            return null;
+        }
+    };
+    var lookup_ctx: Lookup = .{ .psk = &psk.data, .identity = &identity };
+    const lookup: PskLookup = .{ .context = &lookup_ctx, .lookup = Lookup.l };
+
+    // Must return an error, not panic.
+    _ = selectPsk(parsed, ch_body, lookup) catch return;
+    return error.TestExpectedError;
 }
 
 // RFC 8446 §4.2.11, §7.1 — in-memory PSK resumption (psk_dhe_ke): the client
