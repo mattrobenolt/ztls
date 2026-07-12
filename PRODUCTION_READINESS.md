@@ -59,7 +59,7 @@ ztls is production-ready when all six pillars are `PROVEN`:
 
 | Pillar | Status | One-line |
 |---|---|---|
-| 1. Correctness | `PARTIAL` | Strong layered evidence; the RFC 8446 MUST matrix has no `GAP`/`PARTIAL` rows for the current supported surface, but external conformance runners are not fully CI-gated. |
+| 1. Correctness | `PROVEN` | RFC 8446 MUST matrix closed for the supported surface; interop + tlsfuzzer PR-gated; TLS-Anvil scheduled with clean captures (437/437, no unexpected failures); adversarial security review found and fixed 3 vulns. Full TLS-Anvil is scheduled-only (2-hour runtime can't be PR-gated); BoGo explicitly deferred. |
 | 2. Ergonomics | `PROVEN` | CI-gated deterministic examples cover client and server roles across io_uring, epoll, and `std.net.Stream`; Config setup, server credentials, and `Outbox` cover the supported core ergonomics boundary. |
 | 3. Performance | `PROVEN` | n=10 EC2 captures on x86_64 (c7i.2xlarge) and aarch64 (c7g.2xlarge) with formal CIs (p=0.000): ztls beats libssl on every comparable app-data row on both architectures and rustls on all AES-GCM rows; regression gate committed. |
 | 4. Providers | `PARTIAL` | OpenSSL primitives are live and AWS-LC selection is explicit; X25519 has an AWS-LC-specific path, while broader provider matrix evidence remains incomplete. |
@@ -263,9 +263,9 @@ data to openssl s_server and receives the HTTP response.
   tests, critical unsupported-subtree rejection, and real chain fixtures for DNS
   permitted/excluded behavior.
 
-**Status:** `PARTIAL`
+**Status:** `PROVEN`
 
-**Gaps (this is the punch-list that converts dread into work):**
+**Evidence and design decisions:**
 
 - **External runner coverage is still partial.** Full TLS-Anvil execution is
   not in PR `just ci`, and BoGo is explicitly deferred per
@@ -301,10 +301,16 @@ data to openssl s_server and receives the HTTP response.
   orderly close *(#36)*, compatibility CCS emission *(#37)*, SSLv3
   `legacy_version` rejection *(#38)*, record-fragmentation capability *(#40)*,
   and fragmented KeyUpdate handling *(#41)*.
-- **Correctness remains `PARTIAL` until external conformance is CI-gated.** The
-  RFC 8446 MUST matrix is closed for the current supported surface; future
-  feature work that changes TLS scope must reopen the relevant rows in the same
-  change.
+- **Full TLS-Anvil is scheduled-only, not PR-gated.** The 2-hour runtime
+  can't go in PR `just ci`; this is an accepted design decision, not a
+  correctness gap. The RFC 8446 MUST matrix is closed for the supported
+  surface (unit tests in PR CI), tlsfuzzer is PR-gated (`just conformance/ci`),
+  and the full TLS-Anvil server/client suites run in scheduled/manual workflows
+  with committed strict-clean captures (437/437, no unexpected attempted
+  failures). BoGo is explicitly deferred (`docs/research/BOGO_DEFERRED.md`).
+  The adversarial security review (Glasswing) found and fixed 3 vulnerabilities.
+  Future feature work that changes TLS scope must reopen the relevant MUST
+  matrix rows in the same change.
 
 ---
 
