@@ -188,11 +188,50 @@ defensively, even though it was non-exploitable (parse pre-bounds
   Correctly handled.
 
 - **H5 (PSK binder + 0-RTT):** RUN. Found S4 (selectPsk overflow, fixed).
-  Binder-input bypass and early_rx fall-through verified handled. Two areas
-  unproven and re-queued: (a) the full EndOfEarlyData accept/decline ×
-  present/absent state matrix, (b) PSK-offer-surviving-HRR (binder transcript
-  must include CH1 + HRR for resumption after HelloRetryRequest — whether ztls
-  supports or correctly rejects this is untraced).
+  Binder-input bypass and early_rx fall-through verified handled.
+
+## H5b — EndOfEarlyData state matrix (RFC 8446 §4.5): verified handled
+
+All four quadrants verified with PoCs:
+
+| Server accepted 0-RTT | Client sends EOED | Result |
+|---|---|---|
+| yes | yes | OK — EOED decrypted under early_rx, key dropped, Finished under handshake key (Q1) |
+| yes | no | rejected — UnexpectedMessage, no fall-through to wrong key (Q2) |
+| no | yes | rejected — UnexpectedMessage, decrypt succeeds under handshake key but flight-walk rejects EOED type (Q3) |
+| no | no | OK — straight to Finished (Q4) |
+
+Q1 and Q4 are covered by in-tree tests. Q2 (network path) and Q3 were
+untested gaps; the hunt wrote PoCs confirming both reject correctly with no
+key confusion and no buffer mutation surviving the abort. The server has
+exactly one early-key window and drops the early key after EOED, so there's no
+retry-under-other-key path.
+
+**Coverage gap:** the Q2 network-path and Q3 PoCs should be promoted to
+in-tree regression tests. This is a test-coverage improvement, not a security
+fix.
+
+## H5c — PSK-offer-surviving-HRR (RFC 8446 §4.2.11.2): no exploitable bug
+
+ztls does not support PSK across HelloRetryRequest. `encodeRetryAfterHrr`
+produces a PSK-less ClientHello2. The client rejects every HRR when it offered
+a PSK (because `startWithPsk` ships a key_share for every advertised group, so
+HRR always selects an already-shared group → `IllegalParameter`).
+
+**F1 (correctness/interop, not a bypass):** `selectPsk` verifies the CH2 binder
+over `Hash(Truncate(CH2))` only — it cannot see `self.retry_transcript`, so on
+a second flight it cannot include `ClientHello1 || HelloRetryRequest` as
+§4.2.11.2 requires. A spec-compliant client resuming after a ztls-initiated HRR
+would have its binder rejected → resumption degrades to a full handshake. Not a
+security bypass: the Finished MAC still binds the full transcript, and forging
+a binder still requires the PSK secret. This is a fail-closed interop
+limitation, tracked as a known gap.
+
+**F2 (hardening, unreachable):** `processHelloRetryRequest` leaves
+`offered_psk` set while CH2 carries no PSK. Unreachable via the public API
+(the client rejects HRR before this matters). Recommend requiring
+re-offer-in-CH2 before honoring a post-HRR `selected_identity`.
+
 - **ReleaseFast behavior of the S1/S4 class:** the overflow is UB under
   ReleaseFast. The fix prevents the panic in safety builds; under ReleaseFast
   the widened arithmetic prevents the UB. Confirming no residual OOB read
