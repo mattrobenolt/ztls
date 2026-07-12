@@ -23,8 +23,12 @@ baseline="${1:-}"
 fresh="${2:-}"
 
 if [[ -z "${baseline}" ]]; then
+  # Latest committed wall-time capture with a ztls.txt file. Row-perf and
+  # handshake-row-perf dirs don't have ztls.txt and are not valid baselines.
   baseline="$(find docs/research/perf -mindepth 1 -maxdepth 1 -type d \
-    -path '*ec2-c7i*' 2>/dev/null | sort | tail -n 1)"
+    -path '*ec2-c7i*' 2>/dev/null | sort | while IFS= read -r d; do
+      [[ -f "$d/ztls.txt" ]] && echo "$d"
+    done | tail -n 1)"
 fi
 if [[ -z "${fresh}" ]]; then
   fresh="$(find zig-out/perf -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort | tail -n 1)"

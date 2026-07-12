@@ -61,7 +61,7 @@ ztls is production-ready when all six pillars are `PROVEN`:
 |---|---|---|
 | 1. Correctness | `PARTIAL` | Strong layered evidence; the RFC 8446 MUST matrix has no `GAP`/`PARTIAL` rows for the current supported surface, but external conformance runners are not fully CI-gated. |
 | 2. Ergonomics | `PROVEN` | CI-gated deterministic examples cover client and server roles across io_uring, epoll, and `std.net.Stream`; Config setup, server credentials, and `Outbox` cover the supported core ergonomics boundary. |
-| 3. Performance | `PARTIAL` | Written performance conclusion + regression gate landed; ztls beats libssl and rustls on all AES-GCM app-data rows (n=5, no formal CI). Remaining gap: n=10 EC2 re-run for formal confidence intervals. |
+| 3. Performance | `PROVEN` | n=10 EC2 capture with formal CIs (p=0.000): ztls beats libssl on every comparable app-data row (+21% to +261%) and rustls on all AES-GCM rows (+65% to +131%); regression gate committed. |
 | 4. Providers | `PARTIAL` | OpenSSL primitives are live and AWS-LC selection is explicit; X25519 has an AWS-LC-specific path, while broader provider matrix evidence remains incomplete. |
 | 5. Marketing | `NONE` | Not started. |
 | 6. User docs | `PROVEN` | Root on-ramp plus `docs/USAGE.md` cover fresh-project setup, supported surface, drive loops, API reference, and CI-gated integration examples. |
@@ -435,41 +435,42 @@ comparisons measure equivalent work*. This is the project's justification.
   optimization mode, and git revision. AGENTS.md separately requires committed
   benchmark numbers to include machine + flags + date.
 - `docs/research/PERFORMANCE.md` now carries a **Results and conclusions**
-  section stating the performance claim: across the 45 comparable TLS
-  application-data rows on x86_64 `c7i.2xlarge`, ztls is faster than OpenSSL
-  libssl on every row (+22% to +254%) and faster than rustls on all 30 AES-GCM
-  rows (+74% to +151%) and on large ChaCha20 records; ztls is slower than
-  rustls on small ChaCha20 records (16B/128B: -49% to -55%), a real measured
-  loss attributed to OpenSSL EVP ChaCha20 small-record overhead versus ring's
-  direct path. The claim is backed by the committed `c7i.2xlarge` benchstat
-  capture and the row-perf explanations that tie wall-time deltas to normalized
-  cycles/instructions/branches and hot-symbol evidence. An **Acceptance
-  thresholds and regression gate** section defines the repetition policy, the
-  15% regression threshold on comparable AES-GCM rows, and the `just
-  bench-regression-check` recipe (`scripts/bench-regression.sh`) that runs a
-  fresh EC2 n=10 capture and compares against the committed baseline with
-  benchstat A/B, exiting nonzero on regression beyond threshold.
+  section stating the performance claim, backed by the n=10 EC2 capture
+  (`docs/research/perf/20260712-102422-ec2-c7i-2xlarge/`, formal CIs, p=0.000):
+  across the 45 comparable TLS application-data rows on x86_64 `c7i.2xlarge`,
+  ztls is faster than OpenSSL libssl on every row (+21% to +261%) and faster
+  than rustls on all 30 AES-GCM rows (+65% to +131%) and on large ChaCha20
+  records; ztls is slower than rustls on small ChaCha20 records (16B/128B:
+  -50% to -56%), a real measured loss attributed to OpenSSL EVP ChaCha20
+  small-record overhead versus ring's direct path. The claim is backed by the
+  committed benchstat capture and the row-perf explanations that tie wall-time
+  deltas to normalized cycles/instructions/branches and hot-symbol evidence.
+  An **Acceptance thresholds and regression gate** section defines the
+  repetition policy, the 15% regression threshold on comparable AES-GCM rows,
+  and the `just bench-regression-check` recipe (`scripts/bench-regression.sh`)
+  that runs a fresh EC2 n=10 capture and compares against the committed
+  baseline with benchstat A/B, exiting nonzero on regression beyond threshold.
 
-**Status:** `PARTIAL`
+**Status:** `PROVEN`
+
+The n=10 EC2 capture (`docs/research/perf/20260712-102422-ec2-c7i-2xlarge/`)
+produces formal confidence intervals (`± 0%` to `± 5%`) and p=0.000 for every
+comparable row. ztls beats OpenSSL libssl on every comparable app-data row
+(+21% to +261%) and rustls on all 30 AES-GCM rows (+65% to +131%); the
+ChaCha20 small-record loss to rustls is documented and explained by the
+row-perf evidence. The regression gate (`just bench-regression-check`) is
+committed and tested. The claim is reproducible and backed by counter/symbol
+evidence.
 
 **Gaps:**
 
-- **Formal confidence intervals require an n=10 EC2 re-run.** The committed
-  captures use `--count 5`; benchstat reports `need >= 6 samples for confidence
-  interval at level 0.95` for every row, so the `sec/op` columns carry `± ∞`.
-  The p-values are 0.008 across all rows and the deltas are large (ztls wins
-  AES-GCM by 66–254%), so the directional result is not in doubt — but a formal
-  CI requires `--count >= 10`. The repetition policy in `PERFORMANCE.md`
-  defines `just bench-regression-check` (which runs `--count 10`) as the gate
-  for upgrading Pillar 3 from `PARTIAL` to `PROVEN`. This needs the
-  `playground-ops` AWS profile (EC2 provision); the command is prepared.
 - **Hardware matrix has two committed x86_64 points, not a final matrix policy.**
   `infra/bench/` defaults to `c7i.large` and accepts `--instance-types` for
-  broader serial matrix captures. The committed same-day `c7i.large` and
-  `c7i.2xlarge` captures prove the path across two EC2 shapes and confirm the
-  same ordering on both. Instance-family breadth and a final matrix policy
-  remain open for marketing-grade evidence, but the core claim (ztls faster
-  than libssl and rustls on AES-GCM app data) is established on both shapes.
+  broader serial matrix captures. The committed `c7i.large` and `c7i.2xlarge`
+  captures prove the path across two EC2 shapes and confirm the same ordering
+  on both. Instance-family breadth and a final matrix policy remain open for
+  marketing-grade evidence, but the core claim (ztls faster than libssl and
+  rustls on AES-GCM app data) is established on both shapes with formal CIs.
 - **Selected app-data rows and the non-equivalent handshake row now have
   committed perf/disassembly evidence.**
   `docs/research/perf/20260705-215953-ec2-c7i-2xlarge-row-perf/` records pinned
@@ -796,8 +797,9 @@ numbers.
 **Status:** `NONE`
 
 **Gaps:** positioning narrative; a README that leads with the perf story; a
-benchmarks-as-marketing page. Blocked on Pillar 3 producing trustworthy numbers
-— do not market numbers you cannot reproduce.
+benchmarks-as-marketing page. Pillar 3 is now `PROVEN` with reproducible
+n=10 numbers — the blocker is lifted. The marketing work itself is still
+not started.
 
 ---
 

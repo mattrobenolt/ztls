@@ -546,24 +546,23 @@ those into the claim ztls can make.
 ### Evidence basis
 
 The primary wall-time capture is
-`docs/research/perf/20260705-194022-ec2-c7i-2xlarge/benchstat.txt`: a clean
-`c7i.2xlarge` (Intel Xeon Platinum 8488C, x86_64) EC2 host, OpenSSL 3.6.2,
+`docs/research/perf/20260712-102422-ec2-c7i-2xlarge/benchstat.txt`: a clean
+`c7i.2xlarge` (Intel Xeon Platinum 8488C, x86_64) EC2 host, OpenSSL 3.6.3,
 rustls 0.23.40, Zig 0.15.2 ReleaseFast, git revision
-`89c869eb2a22c6c0f2ffe077c8f13204a92f4074`, `--count 5 --benchtime 500ms`.
-A second committed capture on `c7i.large`
+`2c102a50995f56fad50adf4afb8ec092757480cd`, `--count 10 --benchtime 500ms`.
+This n=10 capture supersedes the provisional n=5 capture
+(`docs/research/perf/20260705-194022-ec2-c7i-2xlarge/`) as the canonical
+baseline; the n=5 capture confirms the same ordering. A second committed
+capture on `c7i.large`
 (`docs/research/perf/20260705-183821-ec2-c7i-large/`) confirms the same
 ordering on a smaller instance shape. Row-level perf/disassembly evidence for
 the headline AES-GCM row and the small-record ChaCha20 row is under
 `docs/research/perf/20260705-215953-ec2-c7i-2xlarge-row-perf/explanations/`.
 
-**Statistical caveat:** the committed captures use `--count 5`. benchstat
-reports `need >= 6 samples for confidence interval at level 0.95` for every
-row, so the `sec/op` columns carry `± ∞` and no formal confidence interval.
-The p-values are 0.008 across all rows, and the deltas are large (the smallest
-ztls win on a comparable AES-GCM row is +66%; the largest is +254%), so the
-directional result is not in doubt — but a formal CI requires a re-run at
-`--count >= 10`. The repetition policy below defines that re-run as the gate
-for upgrading Pillar 3 from `PARTIAL` to `PROVEN`.
+The n=10 capture produces formal confidence intervals (`± 0%` to `± 5%`
+across rows) and p=0.000 for every comparable row. The deltas are large
+(the smallest ztls win on a comparable AES-GCM row is +65%; the largest is
++261%), so the result is decisive, not marginal.
 
 ### The claim
 
@@ -571,22 +570,22 @@ Across the 45 comparable TLS application-data rows (3 directions × 5 payload
 sizes × 3 cipher suites) on x86_64 `c7i.2xlarge`:
 
 1. **ztls is faster than OpenSSL libssl on every comparable app-data row.**
-   The delta ranges from +22% (ChaCha20, 16384B ping-pong) to +254%
+   The delta ranges from +21% (ChaCha20, 16384B ping-pong) to +261%
    (AES-128-GCM, 16B client→server). ztls reaches the OpenSSL AEAD primitive
    with substantially less TLS wrapper work than libssl's memory-BIO path.
 
 2. **ztls is faster than rustls on all AES-GCM rows** (30 rows: AES-128-GCM
    and AES-256-GCM, all three directions, all five sizes). The delta ranges
-   from +74% to +151%. ztls executes fewer cycles, fewer instructions, and
+   from +65% to +131%. ztls executes fewer cycles, fewer instructions, and
    fewer branches than rustls on the AES-GCM ping-pong row (see the row-perf
    explanation: ztls ~54.8% of rustls cycles/op, ~53.6% of rustls
    instructions/op).
 
 3. **ztls is faster than rustls on large ChaCha20 records** (8192B and
-   16384B: +64% to +85%) and approximately ties at 1350B (-6%).
+   16384B: +66% to +87%) and approximately ties at 1350B (-6%).
 
 4. **ztls is slower than rustls on small ChaCha20 records** (16B and 128B:
-   -49% to -55%). This is a real, measured loss, not noise. The row-perf
+   -50% to -56%). This is a real, measured loss, not noise. The row-perf
    evidence attributes it to the primitive path: rustls uses ring's direct
    ChaCha20-Poly1305 implementation, while ztls goes through OpenSSL EVP
    ChaCha20-Poly1305, which has small-record overhead that ring avoids. The
@@ -601,11 +600,11 @@ are typically AES-GCM, with 1350B near the common MTU boundary):
 
 | Row | ztls | OpenSSL libssl | rustls | ztls vs libssl | ztls vs rustls |
 |---|---:|---:|---:|---:|---:|
-| AppPingPong AES-128-GCM 1350 | 785.7 ns | 1845.0 ns | 1383.6 ns | 2.35× faster | 1.76× faster |
-| AppPingPong AES-128-GCM 16384 | 3.829 µs | 7.266 µs | 9.510 µs | 1.90× faster | 2.48× faster |
-| AppClientToServer AES-128-GCM 1350 | 388.3 ns | 925.2 ns | 692.5 ns | 2.38× faster | 1.78× faster |
-| AppPingPong ChaCha20 16384 | 17.03 µs | 20.82 µs | 31.52 µs | 1.22× faster | 1.85× faster |
-| AppPingPong ChaCha20 16 | 2.253 µs | 3.975 µs | 1.012 µs | 1.76× faster | 0.45× (loss) |
+| AppPingPong AES-128-GCM 1350 | 790.7 ns | 1820.5 ns | 1447.5 ns | 2.30× faster | 1.83× faster |
+| AppPingPong AES-128-GCM 16384 | 4.183 µs | 7.422 µs | 9.654 µs | 1.77× faster | 2.31× faster |
+| AppClientToServer AES-128-GCM 1350 | 392.0 ns | 932.1 ns | 720.9 ns | 2.38× faster | 1.84× faster |
+| AppPingPong ChaCha20 16384 | 17.16 µs | 20.77 µs | 32.08 µs | 1.21× faster | 1.87× faster |
+| AppPingPong ChaCha20 16 | 2.267 µs | 3.947 µs | 1.018 µs | 1.74× faster | 0.45× (loss) |
 
 ### Why ztls wins (mechanism, not assertion)
 
@@ -654,10 +653,9 @@ too noisy for PR-level CI. Instead, the gate is a committed baseline plus a
 manual re-run policy:
 
 1. **Baseline.** A committed capture under `docs/research/perf/` is the
-   reference baseline for regression detection. The current provisional baseline
-   is the n=5 `20260705-194022-ec2-c7i-2xlarge` capture; the n=10 re-run
-   defined below supersedes it as the canonical baseline once it lands. The
-   baseline's `benchstat.txt` is the comparator.
+   reference baseline for regression detection. The canonical baseline is the
+   n=10 `20260712-102422-ec2-c7i-2xlarge` capture (formal CIs, p=0.000).
+   The baseline's `benchstat.txt` is the comparator.
 
 2. **When to re-run.** Re-run `just bench-remote-capture --instance-types
    c7i.2xlarge --count 10 --benchtime 500ms` before any release, after any
