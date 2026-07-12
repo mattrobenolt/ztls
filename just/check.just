@@ -65,7 +65,7 @@ check-backend-boringssl:
 
 [doc("Format all code")]
 [group("check")]
-fmt: fmt-zig fmt-actions fmt-just
+fmt: fmt-zig fmt-actions fmt-just fmt-rust
     just conformance/fmt
 
 [doc("Run deterministic examples as TLS smoke tests")]
@@ -79,7 +79,7 @@ examples-ci:
 
 [doc("Check formatting and lint (for CI)")]
 [group("check")]
-lint: lint-zig lint-shell lint-actions lint-just lint-markdown lint-issues lint-readme-index lint-fixtures
+lint: lint-zig lint-shell lint-actions lint-just lint-markdown lint-issues lint-readme-index lint-fixtures lint-rust
     just conformance/lint
 
 [doc("Lint markdown research docs for status-language drift")]
@@ -166,6 +166,11 @@ lint-readme-index:
 fmt-zig:
     zig fmt src/ examples/ bench/ shared/ build.zig
 
+[doc("Format Rust benchmark code (bench/rustls)")]
+[group("check")]
+fmt-rust:
+    cargo fmt --manifest-path bench/rustls/Cargo.toml
+
 [group("check")]
 lint-zig:
     zig fmt --check src/ examples/ bench/ shared/ build.zig
@@ -181,6 +186,12 @@ lint-zig:
 [group("check")]
 lint-shell:
     shellcheck --severity=warning scripts/*.sh infra/bench/*.sh infra/iam/*.sh
+
+[doc("Lint Rust benchmark code (rustfmt --check + clippy -D warnings)")]
+[group("check")]
+lint-rust:
+    cargo fmt --check --manifest-path bench/rustls/Cargo.toml
+    cargo clippy --all-targets --release --manifest-path bench/rustls/Cargo.toml -- -D warnings
 
 [doc("Format Justfiles")]
 [group("check")]

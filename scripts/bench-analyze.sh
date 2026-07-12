@@ -82,56 +82,6 @@ normalize_go() {
   fi
 }
 
-normalize_rustls() {
-  local input="$1"
-  local output="$2"
-  awk -F, '
-    function row_name(name) {
-      if (name == "rustls_handshake") return "Handshake";
-      if (name == "rustls_handshake_client_start") return "HandshakeClientStart";
-      if (name == "rustls_handshake_server_accept") return "HandshakeServerAccept";
-      if (name == "rustls_handshake_server_flight") return "HandshakeServerFlight";
-      if (name == "rustls_handshake_client_flight") return "HandshakeClientFlight";
-      if (name == "rustls_handshake_server_finished") return "HandshakeServerFinished";
-      if (name == "rustls_app_client_to_server") return "AppClientToServer";
-      if (name == "rustls_app_server_to_client") return "AppServerToClient";
-      if (name == "rustls_app_ping_pong") return "AppPingPong";
-      return "";
-    }
-    /^#/ || /^benchmark,/ || NF == 0 { next }
-    {
-      row = row_name($1);
-      if (row == "") {
-        print "warning: skipping unknown rustls benchmark " $1 > "/dev/stderr";
-        next;
-      }
-      key = row "/" $2 "/" $3;
-      ns_per_op = $6 / $4;
-      line = sprintf("Benchmark%s/impl=rustls/suite=%s/size=%s\t%d\t%.3f\tns/op", row, $2, $3, $4, ns_per_op);
-      if ($3 != 1) line = line sprintf("\t%.2f\tMB/s", ($5 * 1000.0) / $6);
-      lines[++line_count] = line;
-      line_keys[line_count] = key;
-      counts[key]++;
-    }
-    END {
-      for (i = 1; i <= line_count; i++) {
-        key = line_keys[i];
-        if (counts[key] < 2) {
-          if (!excluded[key]++) excluded_count++;
-          continue;
-        }
-        print lines[i];
-      }
-      if (excluded_count > 0) {
-        print "warning: excluding " excluded_count " rustls benchmark group(s) from benchstat: fewer than 2 samples" > "/dev/stderr";
-      }
-    }
-  ' "${input}" > "${output}"
-  if [[ ! -s "${output}" ]]; then
-    echo "warning: no comparable rustls benchmark rows in ${input}" >&2
-  fi
-}
-
 ztls_norm="${tmp_dir}/ztls.txt"
 evp_norm="${tmp_dir}/evp.txt"
 libssl_norm="${tmp_dir}/libssl.txt"
@@ -140,7 +90,11 @@ rustls_norm="${tmp_dir}/rustls.txt"
 normalize_go ztls "${run}/ztls.txt" "${ztls_norm}"
 normalize_go evp "${run}/evp.txt" "${evp_norm}"
 normalize_go openssl "${run}/libssl.txt" "${libssl_norm}"
-normalize_rustls "${run}/rustls.txt" "${rustls_norm}"
+# rustls now emits Go-testing-style output directly
+# (BenchmarkName/impl=rustls/suite=.../size=...), so it rides the same
+# normalizer as the Zig-side benchmarks. The previous CSV-specific
+# normalize_rustls was removed when the Rust bench moved off CSV.
+normalize_go rustls "${run}/rustls.txt" "${rustls_norm}"
 
 all_norm="${tmp_dir}/all.txt"
 tls_norm="${tmp_dir}/tls-comparable.txt"

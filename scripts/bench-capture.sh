@@ -164,42 +164,12 @@ assert_linked_under() {
   esac
 }
 
+# rustls now accepts the same flags as the Zig benchmark package
+# (--count, --benchtime, --filter, --bench, --suite, --size, --list) and
+# no-ops --no-env/--parallelism/--benchmem so a shared arg string works across
+# all four benchmarks. No arg translation needed — straight pass-through.
 run_rustls() {
-  local rustls_args=()
-  while [[ $# -gt 0 ]]; do
-    case "$1" in
-      --list)
-        rustls_args+=("$1")
-        shift
-        ;;
-      --filter|--bench|--suite|--size|--samples)
-        rustls_args+=("$1" "$2")
-        shift 2
-        ;;
-      --filter=*|--bench=*|--suite=*|--size=*|--samples=*)
-        rustls_args+=("$1")
-        shift
-        ;;
-      --count)
-        rustls_args+=("--samples" "$2")
-        shift 2
-        ;;
-      --count=*)
-        rustls_args+=("--samples" "${1#*=}")
-        shift
-        ;;
-      --benchtime)
-        shift 2
-        ;;
-      --benchtime=*)
-        shift
-        ;;
-      *)
-        shift
-        ;;
-    esac
-  done
-  cargo run --release --manifest-path bench/rustls/Cargo.toml -- "${rustls_args[@]}" \
+  cargo run --release --manifest-path bench/rustls/Cargo.toml -- "$@" \
     > "${run_dir}/rustls.txt"
 }
 

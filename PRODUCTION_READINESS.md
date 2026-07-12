@@ -404,11 +404,16 @@ comparisons measure equivalent work*. This is the project's justification.
   captures; `just bench-analyze <capture>` compares those captures with
   `benchstat`. Capture metadata records the ztls-linked `libcrypto` and the
   OpenSSL EVP/libssl baseline library paths so backend-specific ztls captures
-  cannot silently poison the baseline rows. The rustls harness emits outer
-  samples matching `--count`, and the analyzer splits comparable TLS,
-  crypto-floor, and ztls-only diagnostic rows while excluding rustls groups with
-  too few samples. The analyzer now warns when a comparable TLS row group has a
-  missing implementation or mismatched sample counts across implementations.
+  cannot silently poison the baseline rows. The four benchmarks (ztls, EVP,
+  libssl, rustls) all emit Go-testing-style output and flow through one shared
+  `normalize_go` path; the rustls harness auto-calibrates iteration counts to
+  `--benchtime` (matching the `benchmark` package's `predictN` loop) and
+  disables session tickets (`send_tls13_tickets = 0`, matching libssl's
+  `SSL_CTX_set_num_tickets(0)`) so the handshake row measures a clean full
+  1-RTT without NewSessionTicket issuance cost. The analyzer splits comparable
+  TLS, crypto-floor, and ztls-only diagnostic rows and warns when a comparable
+  TLS row group has a missing implementation or mismatched sample counts across
+  implementations.
 - `infra/bench/` is an OpenTofu/NixOS EC2 host recipe with a pinned-ish shape:
   region `us-west-2`, default `c7i.large`, generated ED25519 SSH key,
   public VPC/subnet/security group, Nix flakes enabled, ASLR disabled, a larger
