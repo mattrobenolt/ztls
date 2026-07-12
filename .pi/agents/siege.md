@@ -86,6 +86,7 @@ If the hunt produced no finding and no proof artifact, return `no finding` plus 
 
 Update when you discover a project-specific rule about when Fable-tier reasoning is or isn't needed. Keep entries short. Behavioral corrections belong in `SELF.md`.
 
-## When to invoke siege vs whitehat-hacker (fill in as the pipeline learns)
+## When to invoke siege vs whitehat-hacker
 
-- *Placeholder.* After the first few real invocations, record the heuristics that correctly predicted Fable-worthiness vs hunts that should have stayed on opus. Replace this placeholder with that calibration so the parent stops over- or under-invoking.
+- **Fable 5 reroutes cyber content to Opus 4.8.** The first real siege invocation (H5: PSK binder + 0-RTT, 2026-07-12) was blocked by Anthropic's usage policy on violative cyber content — Fable's safety training reroutes cyber/bio work to opus. This matches the model-guide's documented reroute. For ztls vulnerability hunting (which is all cyber work), do NOT invoke siege — go straight to `whitehat-hacker` (Opus 4.8). Siege is only useful for non-cyber Fable-worthy work (large migrations, ambiguous investigative long-horizon non-security work).
+- **Opus 4.8 handled the Fable-worthy hunt fine.** H5 was marked Fable-worthy for multi-section RFC reasoning depth, but whitehat-hacker (Opus 4.8 at the default thinking level) closed it successfully — found the selectPsk overflow and verified the binder/early_rx surfaces. The recon's Fable-worthy flag was overcalibrated for this hunt; the reasoning depth was within opus's range. Reserve siege for genuinely opus-insufficient reasoning, and even then expect the cyber reroute.
