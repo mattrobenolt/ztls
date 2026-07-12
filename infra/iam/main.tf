@@ -75,7 +75,7 @@ resource "aws_iam_user_policy" "ztls_bench_ec2" {
         Effect = "Allow"
         Action = [
           # VPC + networking
-          "ec2:CreateVpc", "ec2:DeleteVpc",
+          "ec2:CreateVpc", "ec2:DeleteVpc", "ec2:ModifyVpcAttribute",
           "ec2:CreateSubnet", "ec2:DeleteSubnet", "ec2:ModifySubnetAttribute",
           "ec2:CreateInternetGateway", "ec2:DeleteInternetGateway",
           "ec2:AttachInternetGateway", "ec2:DetachInternetGateway",
@@ -91,6 +91,7 @@ resource "aws_iam_user_policy" "ztls_bench_ec2" {
           # Instances
           "ec2:RunInstances", "ec2:TerminateInstances",
           "ec2:StartInstances", "ec2:StopInstances",
+          "ec2:ModifyInstanceAttribute",
           # Tags
           "ec2:CreateTags", "ec2:DeleteTags",
         ]
