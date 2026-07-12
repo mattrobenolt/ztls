@@ -103,6 +103,13 @@ If the run was an audit-only pass (no edits), output findings and the claim audi
 
 Update when you discover a voice rule, a recurring overclaim pattern, or a positioning decision that future runs should not relitigate. Keep entries short. Behavioral corrections belong in `SELF.md`.
 
-## Voice calibration (fill in after the first real pieces)
+## Voice calibration (from the first README perf-lead pass, 2026-07-12)
 
-- *Placeholder.* After the first README/positioning pass, record the concrete voice decisions Matt ratified (what to admit publicly, how blunt, how much of the in-flight work to surface) so later runs stay on-brand instead of re-deriving it.
+- **Lead with the loss, not just the win.** The README's performance section ends on the honest parts (the x86_64 small-ChaCha20 loss, batch-vs-single measurement shapes, the non-head-to-head handshake row) as a bullet block titled "the honest parts, because that's the whole brand." Admitting the loss in the same breath as the win IS the pitch for a crypto library. Never bury the loss in a footnote.
+- **Numbers, not adjectives.** State deltas as multipliers and cite the specific capture directory + libs + git-adjacent metadata inline (n=10, `c7i.2xlarge`/`c7g.2xlarge`, OpenSSL/rustls/Zig versions, formal CIs, p=0.000). "faster" without the row and the counter evidence is slop. The headline row is a 3-row table (ztls / rustls / libssl), not prose.
+- **Explain the win by mechanism.** Don't assert speed — tie it to cycles/op percentages and hot symbols (`WPACKET`, `tls13_cipher`, `ChunkVecBuffer::write_to`, memmove, malloc). A perf claim a skeptic can't trace is worthless.
+- **Bound the claim to what's measured.** Say "both x86_64 and aarch64" (the two instance families measured), not "on all hardware." Explicitly flag AMD/older-Graviton and macOS as not-yet-measured. The spine says PROVEN; that does not license "fastest TLS library" — it licenses "faster than libssl and rustls on AES-GCM app data on these two architectures."
+- **Perf goes near the top, but after the one-line identity.** The reader gets "TLS 1.3 state machine that does no I/O, pre-alpha, API moves" first, then the numbers, then the design that produces them. Hook, then substance, then mechanism.
+- **Keep the libcrypto-allocates caveat visible.** The "no ztls-owned allocations" claim always ships with the plain statement that libcrypto backends allocate during setup and in their own routines. We don't hide it behind a clean no-allocation headline.
+- **The supported-surface table uses Supported/Partial/Out-of-scope with a legend that defines each against CI**, not a vibe. "Supported" = exercised in CI; "Partial" = local tests, no external conformance peer yet; "Out of scope" = a scope decision, not a gap. In-flight work points at GitHub issue numbers (#6, etc.), never hidden.
+- **When the spine flips a status, the README's hedging is stale and must be rewritten, not softened.** This pass replaced the old n=5 "treat these as measurements, not a marketing number" hedge because Pillar 3 went PARTIAL→PROVEN. Watch for the reverse: never let README voice outrun the spine.

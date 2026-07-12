@@ -12,6 +12,63 @@ your buffers. ztls just does the protocol.
 It's pre-alpha. The API will change out from under you. Read
 [`docs/USAGE.md`](docs/USAGE.md) before you build on it.
 
+## Performance
+
+Speed is why ztls exists, so it goes first. The claim, stated plainly: ztls is
+faster than OpenSSL's libssl on every comparable application-data row we measure,
+on both x86_64 and aarch64. Against rustls it wins on AES-GCM everywhere and
+loses on exactly one thing — small ChaCha20-Poly1305 records on x86_64 — which
+is in the repo with the disassembly that explains it.
+
+The evidence is two n=10 captures: a `c7i.2xlarge` (Intel Xeon, x86_64) and a
+`c7g.2xlarge` (Graviton4, aarch64), OpenSSL 3.6.3, rustls 0.23.4x, Zig 0.15.2
+ReleaseFast. Both produce formal confidence intervals (±0% to ±5% across rows)
+and p=0.000 on every comparable row. The smallest ztls win over rustls on a
+comparable AES-GCM row is +65%; the deltas are large enough that noise doesn't
+change the answer.
+
+Headline row — AES-128-GCM ping-pong at 1350-byte records, near the common MTU
+boundary, from the x86_64 n=10 capture
+([`docs/research/perf/20260712-102422-ec2-c7i-2xlarge/`](docs/research/perf/20260712-102422-ec2-c7i-2xlarge/)):
+
+| impl | ns/op | vs ztls |
+|---|---:|---:|
+| ztls | 790.7 | — |
+| rustls | 1447.5 | 1.83× slower |
+| OpenSSL libssl | 1820.5 | 2.30× slower |
+
+That isn't a wall-clock fluke. On this row ztls executes 42.7% of libssl's
+cycles per op and 54.8% of rustls's, and the perf counters and hot symbols are
+captured next to the timings. libssl spends the difference in `WPACKET` and
+`tls13_cipher` wrapper work layered over the same OpenSSL primitive; rustls
+spends it in `ChunkVecBuffer::write_to`, an AVX-512 memmove, and malloc. ztls's
+caller-owned record path reaches the AEAD primitive with less standing between
+it and the bytes.
+
+Now the honest parts, because that's the whole brand:
+
+- **The one loss.** On x86_64, ztls is slower than rustls on small ChaCha20
+  records (16B and 128B: -50% to -56%). rustls's ring ChaCha20 path is cheaper
+  for tiny records than OpenSSL's EVP ChaCha path — the ztls samples sit in
+  OpenSSL's ChaCha symbols, not in ztls framing, so it's a backend-primitive
+  gap, not a record-path one. On aarch64 it mostly disappears: a tie at 16B,
+  rustls ~20% ahead at 128B, ztls winning from 1350B up.
+- **Measurement shapes differ.** rustls's harness times batches; ztls's and
+  libssl's time single iterations. The row-by-row equivalence accounting is in
+  [`docs/research/PERFORMANCE.md`](docs/research/PERFORMANCE.md).
+- **Handshake is not a head-to-head.** ztls verifies the server's
+  CertificateVerify signature; rustls's harness uses a `NoVerifier` that skips
+  it, and libssl's behavior without a trust store is opaque. That row is
+  reported on its own and never quoted as a comparison.
+
+Two instance families is not the whole hardware world — AMD and older Graviton
+aren't measured yet — but the core claim (faster than libssl and rustls on
+AES-GCM app data, both architectures) holds with formal CIs. macOS isn't
+measured. Full row tables, methodology, and the mechanism writeups are in
+[`docs/research/PERFORMANCE.md`](docs/research/PERFORMANCE.md); a 15% regression
+gate on comparable AES-GCM rows runs against the committed n=10 baseline. New
+results replace these as they land.
+
 ## Why it works this way
 
 Most TLS libraries own their sockets, which means they own your I/O model too —
@@ -36,49 +93,6 @@ source. AEAD, X25519/P-256 ECDHE, and CertificateVerify sign/verify come from th
 libcrypto backend; the key schedule (HKDF/HMAC/SHA transcript hash) and Ed25519
 certificate-chain signature verification stay on `std.crypto`. ztls handles the
 protocol wrapped around all of it.
-
-## Performance
-
-Speed is the reason ztls exists, so here's where it actually stands.
-
-On the in-memory application-data benchmarks, ztls beats OpenSSL's libssl on
-every suite and size we've measured. Against rustls it's a split decision. ztls
-wins on AES-GCM. It loses on small ChaCha20-Poly1305 records, where rustls's
-ring backend is simply faster than OpenSSL's EVP ChaCha path. That losing row is
-in the repo too, with the disassembly that explains it.
-
-Here's the AES-128-GCM ping-pong row at 1350-byte records, from the
-`c7i.2xlarge` capture under
-[`docs/research/perf/20260705-194022-ec2-c7i-2xlarge/`](docs/research/perf/20260705-194022-ec2-c7i-2xlarge/)
-(git rev `89c869e`, Zig 0.15.2 ReleaseFast, native CPU, `--count 5`):
-
-| impl | ns/op | vs ztls |
-|---|---:|---:|
-| ztls | 786 | — |
-| rustls | 1384 | +76% |
-| OpenSSL libssl | 1845 | +135% |
-
-The perf counters back this up. On that row ztls burns fewer cycles,
-instructions, and branches per op than either competitor
-([`docs/research/perf/20260705-215953-ec2-c7i-2xlarge-row-perf/`](docs/research/perf/20260705-215953-ec2-c7i-2xlarge-row-perf/)),
-so it isn't a wall-clock fluke.
-
-Now the caveats, because honest and dishonest benchmarks part ways right here:
-
-- Two x86_64 EC2 instances. That's not a hardware matrix — two x86_64 points
-  isn't one — but there is a regression gate: a 15% threshold on comparable
-  AES-GCM rows, checked by `just bench-regression-check` against a committed
-  baseline. Treat these as measurements, not a marketing number.
-- rustls's harness times batches; ztls's and libssl's time single iterations.
-  The measurement shapes aren't identical.
-  [`docs/research/PERFORMANCE.md`](docs/research/PERFORMANCE.md) has the
-  row-by-row equivalence methodology.
-- The full-handshake row isn't a fair fight. ztls verifies the server's
-  CertificateVerify signature; rustls's harness uses a `NoVerifier` that skips
-  it, and libssl's behavior without a trust store is opaque. We report it on its
-  own and never quote it as a head-to-head.
-
-New results replace these as they land.
 
 ## Start here
 
