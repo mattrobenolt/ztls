@@ -3333,6 +3333,41 @@ test "processClientFinished: rejects bad verify_data" {
     try testing.expectEqual(.wait_client_finished, server.state);
 }
 
+// RFC 8446 §4.5 — if the server declined 0-RTT (or no 0-RTT was offered),
+// the client MUST NOT send EndOfEarlyData. The server must reject an
+// unexpected EOED. Regression for the H5b Q3 coverage gap: the server's
+// flight-walk rejects any non-Finished handshake type when no client auth is
+// configured.
+test "processClientFinished: rejects EndOfEarlyData when 0-RTT was not accepted" {
+    const client_keypair: x25519.KeyPair = .generate();
+    const server_keypair: x25519.KeyPair = .generate();
+    var ch_buf: [512]u8 = undefined;
+    const ch = try client_hello.encode(&ch_buf, .zero, client_keypair.public_key, null, &.{});
+    var ch_record: [1024]u8 = undefined;
+    const header: frame.Header = .init(.handshake, @intCast(ch.len));
+    header.write(ch_record[0..frame.header_len]);
+    @memcpy(ch_record[frame.header_len..][0..ch.len], ch);
+
+    var server: ServerHandshake = .init(testConfig(server_keypair));
+    var sh_out: [256]u8 = undefined;
+    _ = try server.acceptClientHello(ch_record[0 .. frame.header_len + ch.len], &sh_out);
+    var flight_out: [512]u8 = undefined;
+    _ = try server.sendAnonymousFlightForTest(&flight_out);
+    try testing.expect(server.early_rx == null);
+
+    // Craft an EndOfEarlyData handshake message (type 0x05, 3-byte zero length).
+    const eoed = [_]u8{ 0x05, 0x00, 0x00, 0x00 };
+    var client_tx = try server.rx.clone();
+    defer client_tx.deinit();
+    var eoed_wire: [128]u8 = undefined;
+    const eoed_record = try client_tx.encrypt(.handshake, &eoed, &eoed_wire);
+    try testing.expectError(
+        error.UnexpectedMessage,
+        server.processClientFinished(eoed_wire[0..eoed_record.len]),
+    );
+    try testing.expectEqual(.wait_client_finished, server.state);
+}
+
 // RFC 8446 §4.1.2 — TLS 1.3 has no renegotiation; a second ClientHello is an
 // unexpected_message after the first ClientHello.
 test "handleRecord: rejects second plaintext ClientHello before Finished" {
