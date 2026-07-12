@@ -545,53 +545,69 @@ those into the claim ztls can make.
 
 ### Evidence basis
 
-The primary wall-time capture is
-`docs/research/perf/20260712-102422-ec2-c7i-2xlarge/benchstat.txt`: a clean
-`c7i.2xlarge` (Intel Xeon Platinum 8488C, x86_64) EC2 host, OpenSSL 3.6.3,
-rustls 0.23.40, Zig 0.15.2 ReleaseFast, git revision
-`2c102a50995f56fad50adf4afb8ec092757480cd`, `--count 10 --benchtime 500ms`.
-This n=10 capture supersedes the provisional n=5 capture
-(`docs/research/perf/20260705-194022-ec2-c7i-2xlarge/`) as the canonical
-baseline; the n=5 capture confirms the same ordering. A second committed
-capture on `c7i.large`
-(`docs/research/perf/20260705-183821-ec2-c7i-large/`) confirms the same
-ordering on a smaller instance shape. Row-level perf/disassembly evidence for
-the headline AES-GCM row and the small-record ChaCha20 row is under
+Two n=10 wall-time captures cover both architectures:
+
+- **x86_64:**
+  `docs/research/perf/20260712-102422-ec2-c7i-2xlarge/benchstat.txt` — a clean
+  `c7i.2xlarge` (Intel Xeon Platinum 8488C, x86_64) EC2 host, OpenSSL 3.6.3,
+  rustls 0.23.40, Zig 0.15.2 ReleaseFast, git revision
+  `2c102a50995f56fad50adf4afb8ec092757480cd`, `--count 10 --benchtime 500ms`.
+  This n=10 capture supersedes the provisional n=5 capture
+  (`docs/research/perf/20260705-194022-ec2-c7i-2xlarge/`) as the canonical
+  x86_64 baseline. A second committed capture on `c7i.large`
+  (`docs/research/perf/20260705-183821-ec2-c7i-large/`) confirms the same
+  ordering on a smaller instance shape.
+
+- **aarch64:**
+  `docs/research/perf/20260712-201912-ec2-c7g-2xlarge/benchstat.txt` — a clean
+  `c7g.2xlarge` (AWS Graviton4, aarch64) EC2 host, OpenSSL 3.6.3, rustls 0.23.41,
+  Zig 0.15.2 ReleaseFast, git revision `e39f5a6dd38bbad644a4a2187d51e7370df6caaf`,
+  `--count 10 --benchtime 500ms`.
+
+Row-level perf/disassembly evidence for the x86_64 headline AES-GCM row and
+the small-record ChaCha20 row is under
 `docs/research/perf/20260705-215953-ec2-c7i-2xlarge-row-perf/explanations/`.
 
-The n=10 capture produces formal confidence intervals (`± 0%` to `± 5%`
+Both n=10 captures produce formal confidence intervals (`± 0%` to `± 5%`
 across rows) and p=0.000 for every comparable row. The deltas are large
-(the smallest ztls win on a comparable AES-GCM row is +65%; the largest is
-+261%), so the result is decisive, not marginal.
+(the smallest ztls win on a comparable AES-GCM row is +65% on x86_64; the
+largest is +261%), so the result is decisive, not marginal.
 
 ### The claim
 
 Across the 45 comparable TLS application-data rows (3 directions × 5 payload
-sizes × 3 cipher suites) on x86_64 `c7i.2xlarge`:
+sizes × 3 cipher suites), on both x86_64 `c7i.2xlarge` and aarch64
+`c7g.2xlarge`:
 
-1. **ztls is faster than OpenSSL libssl on every comparable app-data row.**
-   The delta ranges from +21% (ChaCha20, 16384B ping-pong) to +261%
-   (AES-128-GCM, 16B client→server). ztls reaches the OpenSSL AEAD primitive
-   with substantially less TLS wrapper work than libssl's memory-BIO path.
+1. **ztls is faster than OpenSSL libssl on every comparable app-data row, on
+   both architectures.** The delta ranges from +4% (ChaCha20, 16384B
+   ping-pong, aarch64) to +261% (AES-128-GCM, 16B client→server, x86_64).
+   ztls reaches the OpenSSL AEAD primitive with substantially less TLS
+   wrapper work than libssl's memory-BIO path.
 
-2. **ztls is faster than rustls on all AES-GCM rows** (30 rows: AES-128-GCM
-   and AES-256-GCM, all three directions, all five sizes). The delta ranges
-   from +65% to +131%. ztls executes fewer cycles, fewer instructions, and
-   fewer branches than rustls on the AES-GCM ping-pong row (see the row-perf
+2. **ztls is faster than rustls on all AES-GCM rows on both architectures**
+   (30 rows each: AES-128-GCM and AES-256-GCM, all three directions, all five
+   sizes). On x86_64 the delta ranges from +65% to +131%; on aarch64 from
+   +25% to +213%. ztls executes fewer cycles, fewer instructions, and fewer
+   branches than rustls on the x86_64 AES-GCM ping-pong row (see the row-perf
    explanation: ztls ~54.8% of rustls cycles/op, ~53.6% of rustls
    instructions/op).
 
-3. **ztls is faster than rustls on large ChaCha20 records** (8192B and
-   16384B: +66% to +87%) and approximately ties at 1350B (-6%).
+3. **ztls is faster than rustls on large ChaCha20 records on both
+   architectures** (8192B and 16384B: x86_64 +66% to +87%, aarch64 +4% to
+   +8%) and approximately ties at 1350B.
 
-4. **ztls is slower than rustls on small ChaCha20 records** (16B and 128B:
-   -50% to -56%). This is a real, measured loss, not noise. The row-perf
-   evidence attributes it to the primitive path: rustls uses ring's direct
-   ChaCha20-Poly1305 implementation, while ztls goes through OpenSSL EVP
-   ChaCha20-Poly1305, which has small-record overhead that ring avoids. The
+4. **The ChaCha20 small-record comparison with rustls is architecture-dependent.**
+   On x86_64, ztls is slower than rustls on small ChaCha20 records (16B and
+   128B: -50% to -56%) — rustls's ring ChaCha20-Poly1305 path is cheaper for
+   tiny records than ztls's OpenSSL EVP path. The row-perf evidence shows the
    ztls samples are overwhelmingly in OpenSSL's ChaCha20 symbols, not in ztls
    record framing — so the fix is a backend-specific faster ChaCha path, not
-   record-path work. This loss is documented, not hidden.
+   record-path work. On aarch64, this loss largely disappears: ztls and
+   rustls are within 2% on 16B records, rustls is ~20% faster on 128B, and
+   ztls wins from 1350B upward. OpenSSL's aarch64 NEON ChaCha20 is more
+   competitive with ring's ARM path than the x86_64 EVP path is with ring's
+   AVX path. The x86_64 small-record loss is documented, not hidden.
 
 ### Headline rows
 
@@ -600,11 +616,17 @@ are typically AES-GCM, with 1350B near the common MTU boundary):
 
 | Row | ztls | OpenSSL libssl | rustls | ztls vs libssl | ztls vs rustls |
 |---|---:|---:|---:|---:|---:|
+| **x86_64 (c7i.2xlarge)** ||||||
 | AppPingPong AES-128-GCM 1350 | 790.7 ns | 1820.5 ns | 1447.5 ns | 2.30× faster | 1.83× faster |
 | AppPingPong AES-128-GCM 16384 | 4.183 µs | 7.422 µs | 9.654 µs | 1.77× faster | 2.31× faster |
 | AppClientToServer AES-128-GCM 1350 | 392.0 ns | 932.1 ns | 720.9 ns | 2.38× faster | 1.84× faster |
 | AppPingPong ChaCha20 16384 | 17.16 µs | 20.77 µs | 32.08 µs | 1.21× faster | 1.87× faster |
 | AppPingPong ChaCha20 16 | 2.267 µs | 3.947 µs | 1.018 µs | 1.74× faster | 0.45× (loss) |
+| **aarch64 (c7g.2xlarge)** ||||||
+| AppPingPong AES-128-GCM 1350 | 1.929 µs | 3.602 µs | 2.714 µs | 1.87× faster | 1.41× faster |
+| AppPingPong AES-128-GCM 16384 | 11.08 µs | 14.21 µs | 19.74 µs | 1.28× faster | 1.78× faster |
+| AppPingPong ChaCha20 16384 | 54.91 µs | 57.09 µs | 59.56 µs | 1.04× faster | 1.08× faster |
+| AppPingPong ChaCha20 16 | 1.868 µs | 3.408 µs | 1.897 µs | 1.82× faster | 1.02× (tie) |
 
 ### Why ztls wins (mechanism, not assertion)
 
@@ -637,8 +659,8 @@ symbol evidence, so the claim is not just adjacent benchstat columns:
   (ztls does real CertificateVerify verification; rustls `NoVerifier` does
   none; libssl `SSL_VERIFY_NONE` is opaque). No cross-implementation handshake
   performance claim is allowed from the current evidence.
-- Not a macOS or aarch64 claim. The committed evidence is x86_64 Linux EC2.
-  aarch64 and macOS performance are unproven (see #62).
+- Not a macOS claim. The committed evidence is Linux EC2 (x86_64 and
+  aarch64). macOS performance is unproven (see #62).
 - Not a crypto-primitive claim. EVP rows are a crypto floor, not a TLS
   comparison. ztls-only diagnostic rows are not cross-implementation.
 - Not a claim that ignores the ChaCha20 small-record loss. That loss is real,

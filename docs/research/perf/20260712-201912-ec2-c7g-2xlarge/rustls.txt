@@ -1,0 +1,631 @@
+# rustls in-memory benchmark
+BenchmarkHandshake/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1	    3252	    182559 ns/op
+BenchmarkHandshake/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1	    3285	    182422 ns/op
+BenchmarkHandshake/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1	    3288	    182512 ns/op
+BenchmarkHandshake/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1	    3290	    182282 ns/op
+BenchmarkHandshake/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1	    3291	    182392 ns/op
+BenchmarkHandshake/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1	    3288	    182389 ns/op
+BenchmarkHandshake/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1	    3291	    182282 ns/op
+BenchmarkHandshake/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1	    3290	    182382 ns/op
+BenchmarkHandshake/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1	    3289	    182303 ns/op
+BenchmarkHandshake/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1	    3292	    182239 ns/op
+BenchmarkHandshakeClientStart/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1	    3285	       104.1 ns/op
+BenchmarkHandshakeServerAccept/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1	    3285	    101282 ns/op
+BenchmarkHandshakeServerFlight/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1	    3285	       150.7 ns/op
+BenchmarkHandshakeClientFlight/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1	    3285	     57879 ns/op
+BenchmarkHandshakeServerFinished/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1	    3285	      2844 ns/op
+BenchmarkHandshakeClientStart/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1	    3283	       103.6 ns/op
+BenchmarkHandshakeServerAccept/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1	    3283	    101342 ns/op
+BenchmarkHandshakeServerFlight/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1	    3283	       150.8 ns/op
+BenchmarkHandshakeClientFlight/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1	    3283	     57876 ns/op
+BenchmarkHandshakeServerFinished/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1	    3283	      2842 ns/op
+BenchmarkHandshakeClientStart/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1	    3283	       103.9 ns/op
+BenchmarkHandshakeServerAccept/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1	    3283	    101346 ns/op
+BenchmarkHandshakeServerFlight/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1	    3283	       151.1 ns/op
+BenchmarkHandshakeClientFlight/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1	    3283	     57883 ns/op
+BenchmarkHandshakeServerFinished/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1	    3283	      2841 ns/op
+BenchmarkHandshakeClientStart/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1	    3285	       105.5 ns/op
+BenchmarkHandshakeServerAccept/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1	    3285	    101358 ns/op
+BenchmarkHandshakeServerFlight/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1	    3285	       151.0 ns/op
+BenchmarkHandshakeClientFlight/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1	    3285	     57897 ns/op
+BenchmarkHandshakeServerFinished/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1	    3285	      2846 ns/op
+BenchmarkHandshakeClientStart/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1	    3283	       103.9 ns/op
+BenchmarkHandshakeServerAccept/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1	    3283	    101322 ns/op
+BenchmarkHandshakeServerFlight/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1	    3283	       151.1 ns/op
+BenchmarkHandshakeClientFlight/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1	    3283	     57864 ns/op
+BenchmarkHandshakeServerFinished/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1	    3283	      2850 ns/op
+BenchmarkHandshakeClientStart/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1	    3284	       103.6 ns/op
+BenchmarkHandshakeServerAccept/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1	    3284	    101333 ns/op
+BenchmarkHandshakeServerFlight/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1	    3284	       151.4 ns/op
+BenchmarkHandshakeClientFlight/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1	    3284	     57882 ns/op
+BenchmarkHandshakeServerFinished/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1	    3284	      2859 ns/op
+BenchmarkHandshakeClientStart/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1	    3284	       103.5 ns/op
+BenchmarkHandshakeServerAccept/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1	    3284	    101310 ns/op
+BenchmarkHandshakeServerFlight/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1	    3284	       152.7 ns/op
+BenchmarkHandshakeClientFlight/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1	    3284	     57887 ns/op
+BenchmarkHandshakeServerFinished/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1	    3284	      2849 ns/op
+BenchmarkHandshakeClientStart/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1	    3285	       103.5 ns/op
+BenchmarkHandshakeServerAccept/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1	    3285	    101332 ns/op
+BenchmarkHandshakeServerFlight/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1	    3285	       151.1 ns/op
+BenchmarkHandshakeClientFlight/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1	    3285	     57866 ns/op
+BenchmarkHandshakeServerFinished/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1	    3285	      2842 ns/op
+BenchmarkHandshakeClientStart/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1	    3283	       103.6 ns/op
+BenchmarkHandshakeServerAccept/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1	    3283	    101347 ns/op
+BenchmarkHandshakeServerFlight/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1	    3283	       151.0 ns/op
+BenchmarkHandshakeClientFlight/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1	    3283	     57880 ns/op
+BenchmarkHandshakeServerFinished/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1	    3283	      2855 ns/op
+BenchmarkHandshakeClientStart/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1	    3283	       103.7 ns/op
+BenchmarkHandshakeServerAccept/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1	    3283	    101319 ns/op
+BenchmarkHandshakeServerFlight/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1	    3283	       150.8 ns/op
+BenchmarkHandshakeClientFlight/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1	    3283	     57889 ns/op
+BenchmarkHandshakeServerFinished/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1	    3283	      2847 ns/op
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=16	 1000000	       593.8 ns/op	  26.94 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=16	 1000000	       592.5 ns/op	  27.00 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=16	 1000000	       593.3 ns/op	  26.97 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=16	 1000000	       593.4 ns/op	  26.96 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=16	 1000000	       593.4 ns/op	  26.96 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=16	 1000000	       592.9 ns/op	  26.99 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=16	 1000000	       593.5 ns/op	  26.96 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=16	 1000000	       595.1 ns/op	  26.89 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=16	 1000000	       592.7 ns/op	  27.00 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=16	 1000000	       593.6 ns/op	  26.95 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=16	 1000000	       599.2 ns/op	  26.70 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=16	 1000000	       596.4 ns/op	  26.83 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=16	 1000000	       598.9 ns/op	  26.72 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=16	 1000000	       599.4 ns/op	  26.69 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=16	  998524	       599.9 ns/op	  26.67 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=16	 1000000	       599.5 ns/op	  26.69 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=16	 1000000	       599.9 ns/op	  26.67 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=16	 1000000	       599.4 ns/op	  26.69 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=16	 1000000	       599.6 ns/op	  26.69 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=16	 1000000	       599.7 ns/op	  26.68 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=16	  503065	      1191 ns/op	  26.86 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=16	  504250	      1191 ns/op	  26.87 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=16	  504439	      1190 ns/op	  26.89 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=16	  504375	      1191 ns/op	  26.87 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=16	  502898	      1191 ns/op	  26.86 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=16	  502521	      1190 ns/op	  26.88 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=16	  503672	      1190 ns/op	  26.88 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=16	  502284	      1193 ns/op	  26.83 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=16	  503104	      1191 ns/op	  26.87 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=16	  503210	      1190 ns/op	  26.88 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=128	  927129	       645.1 ns/op	 198.42 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=128	  929094	       644.9 ns/op	 198.48 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=128	  930464	       645.1 ns/op	 198.43 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=128	  929042	       645.5 ns/op	 198.30 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=128	  927782	       645.2 ns/op	 198.39 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=128	  927826	       645.4 ns/op	 198.33 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=128	  929384	       645.3 ns/op	 198.35 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=128	  929307	       645.1 ns/op	 198.43 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=128	  931021	       645.0 ns/op	 198.44 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=128	  930249	       645.4 ns/op	 198.34 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=128	  919213	       652.5 ns/op	 196.18 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=128	  921087	       652.0 ns/op	 196.32 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=128	  919201	       652.7 ns/op	 196.12 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=128	  918678	       651.3 ns/op	 196.54 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=128	  920289	       651.9 ns/op	 196.36 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=128	  921531	       652.7 ns/op	 196.11 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=128	  920870	       651.8 ns/op	 196.39 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=128	  921310	       651.7 ns/op	 196.40 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=128	  919296	       651.9 ns/op	 196.35 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=128	  917786	       651.8 ns/op	 196.38 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=128	  460340	      1304 ns/op	 196.33 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=128	  460093	      1303 ns/op	 196.43 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=128	  459577	      1304 ns/op	 196.36 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=128	  460762	      1304 ns/op	 196.30 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=128	  458971	      1303 ns/op	 196.40 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=128	  458944	      1305 ns/op	 196.23 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=128	  460714	      1304 ns/op	 196.34 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=128	  460407	      1304 ns/op	 196.29 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=128	  460195	      1304 ns/op	 196.37 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=128	  460519	      1304 ns/op	 196.28 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1350	  442262	      1355 ns/op	 996.45 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1350	  442191	      1355 ns/op	 996.64 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1350	  442153	      1354 ns/op	 996.78 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1350	  442212	      1355 ns/op	 996.48 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1350	  442515	      1355 ns/op	 996.18 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1350	  442272	      1355 ns/op	 996.63 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1350	  442615	      1355 ns/op	 996.27 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1350	  442251	      1356 ns/op	 995.76 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1350	  443916	      1352 ns/op	 998.36 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1350	  443091	      1354 ns/op	 997.40 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1350	  442574	      1354 ns/op	 997.36 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1350	  443652	      1354 ns/op	 997.34 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1350	  443364	      1354 ns/op	 997.08 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1350	  442292	      1356 ns/op	 995.74 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1350	  442029	      1356 ns/op	 995.36 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1350	  442767	      1356 ns/op	 995.73 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1350	  442986	      1355 ns/op	 995.99 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1350	  441902	      1357 ns/op	 994.86 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1350	  442471	      1356 ns/op	 995.87 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1350	  441835	      1355 ns/op	 996.07 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1350	  221090	      2715 ns/op	 994.46 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1350	  220882	      2716 ns/op	 994.28 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1350	  220707	      2716 ns/op	 994.09 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1350	  220783	      2714 ns/op	 994.81 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1350	  221422	      2711 ns/op	 995.89 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1350	  221053	      2712 ns/op	 995.52 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1350	  221175	      2709 ns/op	 996.54 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1350	  221035	      2713 ns/op	 995.07 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1350	  220860	      2713 ns/op	 995.18 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=1350	  221017	      2714 ns/op	 994.95 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=8192	  117489	      5103 ns/op	1605.41 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=8192	  118278	      5067 ns/op	1616.78 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=8192	  117566	      5108 ns/op	1603.79 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=8192	  117736	      5098 ns/op	1606.93 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=8192	  117778	      5097 ns/op	1607.24 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=8192	  117459	      5109 ns/op	1603.51 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=8192	  117726	      5098 ns/op	1606.90 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=8192	  117688	      5098 ns/op	1606.83 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=8192	  117523	      5105 ns/op	1604.82 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=8192	  117711	      5099 ns/op	1606.63 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=8192	  117796	      5091 ns/op	1609.06 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=8192	  117846	      5094 ns/op	1608.27 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=8192	  117546	      5103 ns/op	1605.29 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=8192	  117793	      5092 ns/op	1608.87 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=8192	  117866	      5092 ns/op	1608.91 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=8192	  117753	      5101 ns/op	1606.09 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=8192	  117878	      5090 ns/op	1609.34 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=8192	  117818	      5089 ns/op	1609.65 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=8192	  117729	      5098 ns/op	1606.87 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=8192	  117919	      5089 ns/op	1609.73 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=8192	   57745	     10387 ns/op	1577.41 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=8192	   57856	     10376 ns/op	1579.10 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=8192	   57808	     10377 ns/op	1578.91 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=8192	   57841	     10365 ns/op	1580.70 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=8192	   57733	     10395 ns/op	1576.13 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=8192	   57848	     10375 ns/op	1579.21 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=8192	   57745	     10385 ns/op	1577.59 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=8192	   57824	     10374 ns/op	1579.33 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=8192	   57836	     10382 ns/op	1578.07 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=8192	   57898	     10376 ns/op	1579.00 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=16384	   62179	      9648 ns/op	1698.16 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=16384	   62442	      9605 ns/op	1705.76 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=16384	   62479	      9604 ns/op	1705.96 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=16384	   62178	      9647 ns/op	1698.42 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=16384	   62479	      9602 ns/op	1706.27 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=16384	   62478	      9596 ns/op	1707.41 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=16384	   62193	      9645 ns/op	1698.62 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=16384	   62469	      9604 ns/op	1705.97 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=16384	   62521	      9601 ns/op	1706.45 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=16384	   62242	      9644 ns/op	1698.88 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=16384	   62187	      9640 ns/op	1699.51 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=16384	   62419	      9613 ns/op	1704.29 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=16384	   62368	      9614 ns/op	1704.12 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=16384	   62194	      9651 ns/op	1697.73 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=16384	   62560	      9595 ns/op	1707.56 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=16384	   62292	      9629 ns/op	1701.51 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=16384	   62224	      9643 ns/op	1699.09 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=16384	   62403	      9616 ns/op	1703.85 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=16384	   62408	      9614 ns/op	1704.12 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=16384	   62145	      9649 ns/op	1697.93 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=16384	   30397	     19744 ns/op	1659.66 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=16384	   30375	     19745 ns/op	1659.55 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=16384	   30394	     19766 ns/op	1657.82 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=16384	   30390	     19738 ns/op	1660.13 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=16384	   30386	     19741 ns/op	1659.87 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=16384	   30355	     19765 ns/op	1657.90 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=16384	   30394	     19738 ns/op	1660.11 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=16384	   30372	     19740 ns/op	1660.01 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=16384	   30358	     19750 ns/op	1659.12 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_128_GCM_SHA256/size=16384	   30170	     19901 ns/op	1646.53 MB/s
+BenchmarkHandshake/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1	    2998	    199675 ns/op
+BenchmarkHandshake/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1	    3004	    199570 ns/op
+BenchmarkHandshake/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1	    3006	    199506 ns/op
+BenchmarkHandshake/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1	    3006	    199514 ns/op
+BenchmarkHandshake/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1	    3007	    199466 ns/op
+BenchmarkHandshake/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1	    3004	    199500 ns/op
+BenchmarkHandshake/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1	    3006	    199495 ns/op
+BenchmarkHandshake/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1	    3006	    199475 ns/op
+BenchmarkHandshake/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1	    3008	    199516 ns/op
+BenchmarkHandshake/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1	    3006	    199476 ns/op
+BenchmarkHandshakeClientStart/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1	    2998	       106.4 ns/op
+BenchmarkHandshakeServerAccept/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1	    2998	    108797 ns/op
+BenchmarkHandshakeServerFlight/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1	    2998	       152.7 ns/op
+BenchmarkHandshakeClientFlight/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1	    2998	     66650 ns/op
+BenchmarkHandshakeServerFinished/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1	    2998	      4851 ns/op
+BenchmarkHandshakeClientStart/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1	    2998	       104.5 ns/op
+BenchmarkHandshakeServerAccept/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1	    2998	    108929 ns/op
+BenchmarkHandshakeServerFlight/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1	    2998	       152.6 ns/op
+BenchmarkHandshakeClientFlight/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1	    2998	     66550 ns/op
+BenchmarkHandshakeServerFinished/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1	    2998	      4851 ns/op
+BenchmarkHandshakeClientStart/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1	    3000	       104.5 ns/op
+BenchmarkHandshakeServerAccept/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1	    3000	    108870 ns/op
+BenchmarkHandshakeServerFlight/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1	    3000	       152.5 ns/op
+BenchmarkHandshakeClientFlight/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1	    3000	     66634 ns/op
+BenchmarkHandshakeServerFinished/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1	    3000	      4838 ns/op
+BenchmarkHandshakeClientStart/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1	    2998	       104.5 ns/op
+BenchmarkHandshakeServerAccept/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1	    2998	    108712 ns/op
+BenchmarkHandshakeServerFlight/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1	    2998	       152.5 ns/op
+BenchmarkHandshakeClientFlight/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1	    2998	     66847 ns/op
+BenchmarkHandshakeServerFinished/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1	    2998	      4844 ns/op
+BenchmarkHandshakeClientStart/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1	    3000	       104.6 ns/op
+BenchmarkHandshakeServerAccept/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1	    3000	    108780 ns/op
+BenchmarkHandshakeServerFlight/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1	    3000	       154.7 ns/op
+BenchmarkHandshakeClientFlight/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1	    3000	     66640 ns/op
+BenchmarkHandshakeServerFinished/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1	    3000	      4892 ns/op
+BenchmarkHandshakeClientStart/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1	    3000	       104.7 ns/op
+BenchmarkHandshakeServerAccept/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1	    3000	    108656 ns/op
+BenchmarkHandshakeServerFlight/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1	    3000	       152.4 ns/op
+BenchmarkHandshakeClientFlight/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1	    3000	     66751 ns/op
+BenchmarkHandshakeServerFinished/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1	    3000	      4857 ns/op
+BenchmarkHandshakeClientStart/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1	    2997	       106.0 ns/op
+BenchmarkHandshakeServerAccept/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1	    2997	    108572 ns/op
+BenchmarkHandshakeServerFlight/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1	    2997	       152.5 ns/op
+BenchmarkHandshakeClientFlight/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1	    2997	     66728 ns/op
+BenchmarkHandshakeServerFinished/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1	    2997	      4861 ns/op
+BenchmarkHandshakeClientStart/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1	    3000	       106.4 ns/op
+BenchmarkHandshakeServerAccept/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1	    3000	    108685 ns/op
+BenchmarkHandshakeServerFlight/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1	    3000	       152.3 ns/op
+BenchmarkHandshakeClientFlight/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1	    3000	     66706 ns/op
+BenchmarkHandshakeServerFinished/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1	    3000	      4864 ns/op
+BenchmarkHandshakeClientStart/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1	    3000	       106.4 ns/op
+BenchmarkHandshakeServerAccept/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1	    3000	    108659 ns/op
+BenchmarkHandshakeServerFlight/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1	    3000	       152.9 ns/op
+BenchmarkHandshakeClientFlight/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1	    3000	     66690 ns/op
+BenchmarkHandshakeServerFinished/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1	    3000	      4861 ns/op
+BenchmarkHandshakeClientStart/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1	    2998	       106.4 ns/op
+BenchmarkHandshakeServerAccept/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1	    2998	    108629 ns/op
+BenchmarkHandshakeServerFlight/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1	    2998	       154.3 ns/op
+BenchmarkHandshakeClientFlight/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1	    2998	     66715 ns/op
+BenchmarkHandshakeServerFinished/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1	    2998	      4865 ns/op
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=16	 1000000	       594.3 ns/op	  26.92 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=16	 1000000	       594.8 ns/op	  26.90 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=16	 1000000	       595.2 ns/op	  26.88 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=16	 1000000	       594.4 ns/op	  26.92 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=16	 1000000	       595.2 ns/op	  26.88 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=16	 1000000	       594.8 ns/op	  26.90 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=16	 1000000	       594.4 ns/op	  26.92 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=16	 1000000	       597.1 ns/op	  26.80 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=16	 1000000	       596.5 ns/op	  26.82 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=16	 1000000	       597.3 ns/op	  26.79 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=16	  997071	       600.6 ns/op	  26.64 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=16	 1000000	       600.6 ns/op	  26.64 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=16	  996253	       601.2 ns/op	  26.61 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=16	  990312	       601.9 ns/op	  26.58 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=16	  994581	       602.8 ns/op	  26.54 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=16	  991396	       602.8 ns/op	  26.54 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=16	  996076	       601.6 ns/op	  26.60 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=16	  994570	       602.5 ns/op	  26.56 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=16	  996231	       600.8 ns/op	  26.63 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=16	  998538	       600.9 ns/op	  26.63 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=16	  503878	      1191 ns/op	  26.88 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=16	  503792	      1192 ns/op	  26.84 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=16	  503571	      1191 ns/op	  26.86 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=16	  501496	      1190 ns/op	  26.88 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=16	  504013	      1192 ns/op	  26.85 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=16	  502338	      1193 ns/op	  26.82 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=16	  503539	      1192 ns/op	  26.84 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=16	  503132	      1192 ns/op	  26.84 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=16	  503679	      1191 ns/op	  26.86 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=16	  504165	      1192 ns/op	  26.85 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=128	  916681	       654.6 ns/op	 195.53 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=128	  913407	       656.0 ns/op	 195.14 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=128	  914880	       655.3 ns/op	 195.34 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=128	  915534	       655.3 ns/op	 195.33 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=128	  912922	       655.3 ns/op	 195.32 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=128	  916954	       655.2 ns/op	 195.37 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=128	  914481	       655.2 ns/op	 195.37 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=128	  914320	       655.0 ns/op	 195.42 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=128	  914612	       655.7 ns/op	 195.20 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=128	  915847	       655.2 ns/op	 195.37 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=128	  905292	       661.6 ns/op	 193.48 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=128	  907846	       662.1 ns/op	 193.32 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=128	  907502	       662.3 ns/op	 193.26 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=128	  905865	       661.9 ns/op	 193.38 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=128	  905166	       661.4 ns/op	 193.52 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=128	  904686	       661.7 ns/op	 193.43 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=128	  907605	       661.8 ns/op	 193.41 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=128	  905536	       662.0 ns/op	 193.36 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=128	  905838	       661.8 ns/op	 193.42 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=128	  906970	       661.4 ns/op	 193.54 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=128	  453655	      1324 ns/op	 193.42 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=128	  453187	      1324 ns/op	 193.33 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=128	  453234	      1324 ns/op	 193.35 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=128	  452712	      1325 ns/op	 193.24 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=128	  452944	      1324 ns/op	 193.34 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=128	  452768	      1324 ns/op	 193.35 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=128	  452577	      1324 ns/op	 193.40 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=128	  453037	      1324 ns/op	 193.42 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=128	  452793	      1324 ns/op	 193.34 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=128	  452989	      1325 ns/op	 193.26 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1350	  415851	      1442 ns/op	 936.09 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1350	  415725	      1443 ns/op	 935.82 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1350	  415458	      1443 ns/op	 935.60 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1350	  415562	      1443 ns/op	 935.79 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1350	  415652	      1443 ns/op	 935.60 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1350	  416028	      1442 ns/op	 935.97 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1350	  415902	      1443 ns/op	 935.72 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1350	  416062	      1443 ns/op	 935.68 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1350	  416269	      1442 ns/op	 936.03 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1350	  415694	      1442 ns/op	 935.96 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1350	  416326	      1442 ns/op	 935.99 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1350	  416084	      1442 ns/op	 936.51 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1350	  415930	      1442 ns/op	 936.35 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1350	  416164	      1440 ns/op	 937.35 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1350	  415345	      1441 ns/op	 936.76 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1350	  416126	      1442 ns/op	 936.40 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1350	  415922	      1442 ns/op	 936.08 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1350	  416498	      1442 ns/op	 936.21 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1350	  415945	      1442 ns/op	 936.18 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1350	  415920	      1441 ns/op	 936.64 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1350	  207643	      2887 ns/op	 935.16 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1350	  207874	      2889 ns/op	 934.65 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1350	  207543	      2890 ns/op	 934.19 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1350	  207633	      2889 ns/op	 934.71 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1350	  207784	      2889 ns/op	 934.53 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1350	  207682	      2888 ns/op	 934.93 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1350	  207550	      2890 ns/op	 934.29 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1350	  207643	      2891 ns/op	 933.99 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1350	  207427	      2892 ns/op	 933.64 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=1350	  207884	      2888 ns/op	 934.75 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=8192	  107703	      5568 ns/op	1471.20 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=8192	  107670	      5568 ns/op	1471.23 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=8192	  107733	      5570 ns/op	1470.79 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=8192	  107682	      5568 ns/op	1471.16 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=8192	  107730	      5570 ns/op	1470.73 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=8192	  107701	      5568 ns/op	1471.23 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=8192	  107733	      5565 ns/op	1471.97 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=8192	  107828	      5567 ns/op	1471.47 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=8192	  107271	      5597 ns/op	1463.69 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=8192	  107160	      5596 ns/op	1463.99 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=8192	  107536	      5578 ns/op	1468.67 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=8192	  107608	      5579 ns/op	1468.48 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=8192	  107755	      5572 ns/op	1470.17 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=8192	  107485	      5578 ns/op	1468.66 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=8192	  107498	      5580 ns/op	1468.19 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=8192	  107587	      5571 ns/op	1470.41 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=8192	  107607	      5575 ns/op	1469.38 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=8192	  107656	      5574 ns/op	1469.74 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=8192	  107778	      5570 ns/op	1470.84 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=8192	  107491	      5577 ns/op	1468.89 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=8192	   53330	     11256 ns/op	1455.59 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=8192	   53179	     11282 ns/op	1452.23 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=8192	   53134	     11291 ns/op	1451.09 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=8192	   53200	     11280 ns/op	1452.48 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=8192	   53194	     11281 ns/op	1452.41 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=8192	   53143	     11286 ns/op	1451.71 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=8192	   53168	     11281 ns/op	1452.34 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=8192	   53134	     11284 ns/op	1451.93 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=8192	   53131	     11290 ns/op	1451.23 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=8192	   53227	     11281 ns/op	1452.37 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=16384	   56559	     10627 ns/op	1541.73 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=16384	   56616	     10605 ns/op	1544.88 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=16384	   56569	     10603 ns/op	1545.27 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=16384	   56574	     10605 ns/op	1544.86 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=16384	   56684	     10581 ns/op	1548.44 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=16384	   56745	     10577 ns/op	1549.05 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=16384	   56678	     10581 ns/op	1548.44 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=16384	   56692	     10580 ns/op	1548.59 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=16384	   56697	     10574 ns/op	1549.45 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=16384	   56743	     10578 ns/op	1548.83 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=16384	   56782	     10560 ns/op	1551.54 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=16384	   56839	     10560 ns/op	1551.54 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=16384	   56786	     10559 ns/op	1551.65 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=16384	   56794	     10565 ns/op	1550.75 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=16384	   56786	     10566 ns/op	1550.70 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=16384	   56781	     10563 ns/op	1551.01 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=16384	   56839	     10563 ns/op	1551.04 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=16384	   56793	     10563 ns/op	1551.12 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=16384	   56782	     10562 ns/op	1551.16 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=16384	   56880	     10566 ns/op	1550.68 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=16384	   27830	     21556 ns/op	1520.16 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=16384	   27882	     21544 ns/op	1520.95 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=16384	   27884	     21513 ns/op	1523.15 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=16384	   27823	     21551 ns/op	1520.47 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=16384	   27840	     21551 ns/op	1520.48 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=16384	   27892	     21523 ns/op	1522.49 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=16384	   27807	     21530 ns/op	1521.94 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=16384	   27831	     21535 ns/op	1521.64 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=16384	   27872	     21524 ns/op	1522.42 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_AES_256_GCM_SHA384/size=16384	   27858	     21536 ns/op	1521.52 MB/s
+BenchmarkHandshake/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1	    3271	    182929 ns/op
+BenchmarkHandshake/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1	    3278	    182831 ns/op
+BenchmarkHandshake/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1	    3280	    182816 ns/op
+BenchmarkHandshake/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1	    3279	    182808 ns/op
+BenchmarkHandshake/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1	    3282	    182795 ns/op
+BenchmarkHandshake/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1	    3279	    182796 ns/op
+BenchmarkHandshake/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1	    3280	    182823 ns/op
+BenchmarkHandshake/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1	    3279	    182857 ns/op
+BenchmarkHandshake/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1	    3279	    182792 ns/op
+BenchmarkHandshake/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1	    3280	    182804 ns/op
+BenchmarkHandshakeClientStart/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1	    3274	       107.2 ns/op
+BenchmarkHandshakeServerAccept/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1	    3274	    101448 ns/op
+BenchmarkHandshakeServerFlight/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1	    3274	       145.5 ns/op
+BenchmarkHandshakeClientFlight/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1	    3274	     58103 ns/op
+BenchmarkHandshakeServerFinished/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1	    3274	      2925 ns/op
+BenchmarkHandshakeClientStart/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1	    3277	       104.1 ns/op
+BenchmarkHandshakeServerAccept/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1	    3277	    101353 ns/op
+BenchmarkHandshakeServerFlight/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1	    3277	       150.4 ns/op
+BenchmarkHandshakeClientFlight/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1	    3277	     58102 ns/op
+BenchmarkHandshakeServerFinished/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1	    3277	      2897 ns/op
+BenchmarkHandshakeClientStart/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1	    3278	       104.1 ns/op
+BenchmarkHandshakeServerAccept/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1	    3278	    101327 ns/op
+BenchmarkHandshakeServerFlight/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1	    3278	       149.9 ns/op
+BenchmarkHandshakeClientFlight/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1	    3278	     58100 ns/op
+BenchmarkHandshakeServerFinished/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1	    3278	      2895 ns/op
+BenchmarkHandshakeClientStart/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1	    3277	       104.2 ns/op
+BenchmarkHandshakeServerAccept/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1	    3277	    101349 ns/op
+BenchmarkHandshakeServerFlight/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1	    3277	       149.8 ns/op
+BenchmarkHandshakeClientFlight/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1	    3277	     58098 ns/op
+BenchmarkHandshakeServerFinished/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1	    3277	      2895 ns/op
+BenchmarkHandshakeClientStart/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1	    3278	       104.1 ns/op
+BenchmarkHandshakeServerAccept/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1	    3278	    101370 ns/op
+BenchmarkHandshakeServerFlight/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1	    3278	       150.1 ns/op
+BenchmarkHandshakeClientFlight/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1	    3278	     58112 ns/op
+BenchmarkHandshakeServerFinished/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1	    3278	      2895 ns/op
+BenchmarkHandshakeClientStart/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1	    3277	       104.1 ns/op
+BenchmarkHandshakeServerAccept/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1	    3277	    101359 ns/op
+BenchmarkHandshakeServerFlight/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1	    3277	       150.1 ns/op
+BenchmarkHandshakeClientFlight/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1	    3277	     58120 ns/op
+BenchmarkHandshakeServerFinished/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1	    3277	      2889 ns/op
+BenchmarkHandshakeClientStart/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1	    3277	       104.1 ns/op
+BenchmarkHandshakeServerAccept/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1	    3277	    101364 ns/op
+BenchmarkHandshakeServerFlight/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1	    3277	       151.7 ns/op
+BenchmarkHandshakeClientFlight/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1	    3277	     58118 ns/op
+BenchmarkHandshakeServerFinished/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1	    3277	      2893 ns/op
+BenchmarkHandshakeClientStart/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1	    3277	       104.1 ns/op
+BenchmarkHandshakeServerAccept/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1	    3277	    101339 ns/op
+BenchmarkHandshakeServerFlight/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1	    3277	       149.9 ns/op
+BenchmarkHandshakeClientFlight/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1	    3277	     58119 ns/op
+BenchmarkHandshakeServerFinished/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1	    3277	      2892 ns/op
+BenchmarkHandshakeClientStart/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1	    3276	       104.1 ns/op
+BenchmarkHandshakeServerAccept/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1	    3276	    101332 ns/op
+BenchmarkHandshakeServerFlight/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1	    3276	       151.2 ns/op
+BenchmarkHandshakeClientFlight/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1	    3276	     58109 ns/op
+BenchmarkHandshakeServerFinished/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1	    3276	      2899 ns/op
+BenchmarkHandshakeClientStart/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1	    3278	       104.1 ns/op
+BenchmarkHandshakeServerAccept/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1	    3278	    101342 ns/op
+BenchmarkHandshakeServerFlight/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1	    3278	       149.8 ns/op
+BenchmarkHandshakeClientFlight/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1	    3278	     58103 ns/op
+BenchmarkHandshakeServerFinished/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1	    3278	      2903 ns/op
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16	  638751	       938.6 ns/op	  17.05 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16	  638419	       940.4 ns/op	  17.01 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16	  637580	       940.3 ns/op	  17.02 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16	  639102	       939.3 ns/op	  17.03 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16	  638834	       939.7 ns/op	  17.03 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16	  637669	       940.1 ns/op	  17.02 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16	  637209	       939.1 ns/op	  17.04 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16	  638876	       938.6 ns/op	  17.05 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16	  636795	       940.4 ns/op	  17.01 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16	  639434	       938.7 ns/op	  17.04 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16	  635456	       945.2 ns/op	  16.93 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16	  633907	       946.1 ns/op	  16.91 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16	  633073	       947.3 ns/op	  16.89 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16	  632379	       946.7 ns/op	  16.90 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16	  633758	       948.0 ns/op	  16.88 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16	  632668	       946.6 ns/op	  16.90 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16	  634014	       945.1 ns/op	  16.93 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16	  633307	       946.4 ns/op	  16.91 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16	  633236	       946.6 ns/op	  16.90 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16	  633345	       946.3 ns/op	  16.91 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16	  315750	      1898 ns/op	  16.86 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16	  316696	      1894 ns/op	  16.90 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16	  316162	      1898 ns/op	  16.86 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16	  316366	      1897 ns/op	  16.87 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16	  316636	      1898 ns/op	  16.86 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16	  316497	      1897 ns/op	  16.86 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16	  315656	      1896 ns/op	  16.88 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16	  315950	      1897 ns/op	  16.87 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16	  316279	      1897 ns/op	  16.87 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16	  316809	      1895 ns/op	  16.89 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=128	  491262	      1221 ns/op	 104.81 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=128	  490040	      1221 ns/op	 104.83 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=128	  490519	      1222 ns/op	 104.74 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=128	  490585	      1221 ns/op	 104.81 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=128	  490822	      1222 ns/op	 104.72 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=128	  491180	      1222 ns/op	 104.77 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=128	  490742	      1221 ns/op	 104.81 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=128	  490497	      1221 ns/op	 104.80 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=128	  491354	      1222 ns/op	 104.78 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=128	  491133	      1222 ns/op	 104.78 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=128	  490831	      1226 ns/op	 104.41 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=128	  489523	      1224 ns/op	 104.53 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=128	  489537	      1226 ns/op	 104.36 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=128	  489776	      1226 ns/op	 104.42 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=128	  488961	      1226 ns/op	 104.40 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=128	  488660	      1226 ns/op	 104.37 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=128	  490009	      1224 ns/op	 104.54 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=128	  489189	      1226 ns/op	 104.42 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=128	  488481	      1227 ns/op	 104.34 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=128	  490101	      1226 ns/op	 104.41 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=128	  243972	      2457 ns/op	 104.19 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=128	  244290	      2456 ns/op	 104.22 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=128	  244287	      2456 ns/op	 104.23 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=128	  244190	      2457 ns/op	 104.20 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=128	  244183	      2458 ns/op	 104.13 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=128	  243855	      2458 ns/op	 104.16 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=128	  244279	      2459 ns/op	 104.12 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=128	  243975	      2457 ns/op	 104.21 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=128	  243907	      2458 ns/op	 104.14 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=128	  243878	      2458 ns/op	 104.16 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1350	  167179	      3588 ns/op	 376.30 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1350	  167122	      3590 ns/op	 376.09 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1350	  167120	      3589 ns/op	 376.12 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1350	  167208	      3589 ns/op	 376.17 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1350	  167196	      3589 ns/op	 376.14 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1350	  167036	      3588 ns/op	 376.20 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1350	  167209	      3589 ns/op	 376.20 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1350	  167202	      3590 ns/op	 376.08 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1350	  167215	      3589 ns/op	 376.17 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1350	  167244	      3589 ns/op	 376.16 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1350	  167221	      3587 ns/op	 376.32 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1350	  167113	      3589 ns/op	 376.18 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1350	  167216	      3589 ns/op	 376.15 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1350	  167174	      3588 ns/op	 376.22 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1350	  167164	      3589 ns/op	 376.19 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1350	  167139	      3589 ns/op	 376.15 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1350	  167096	      3589 ns/op	 376.14 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1350	  167137	      3589 ns/op	 376.13 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1350	  167186	      3588 ns/op	 376.22 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1350	  167074	      3589 ns/op	 376.12 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1350	   83541	      7183 ns/op	 375.89 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1350	   83512	      7184 ns/op	 375.85 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1350	   83530	      7183 ns/op	 375.91 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1350	   83526	      7184 ns/op	 375.82 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1350	   83532	      7181 ns/op	 375.98 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1350	   83497	      7181 ns/op	 375.99 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1350	   83536	      7183 ns/op	 375.86 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1350	   83545	      7182 ns/op	 375.96 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1350	   83517	      7184 ns/op	 375.84 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=1350	   83516	      7185 ns/op	 375.77 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=8192	   39193	     15303 ns/op	 535.32 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=8192	   39195	     15307 ns/op	 535.19 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=8192	   39206	     15304 ns/op	 535.27 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=8192	   39213	     15299 ns/op	 535.46 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=8192	   39201	     15307 ns/op	 535.18 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=8192	   39199	     15305 ns/op	 535.24 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=8192	   39213	     15300 ns/op	 535.43 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=8192	   39154	     15309 ns/op	 535.12 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=8192	   39198	     15309 ns/op	 535.11 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=8192	   39208	     15300 ns/op	 535.44 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=8192	   39182	     15309 ns/op	 535.09 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=8192	   39194	     15303 ns/op	 535.32 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=8192	   39204	     15305 ns/op	 535.25 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=8192	   39200	     15306 ns/op	 535.21 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=8192	   39198	     15306 ns/op	 535.23 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=8192	   39211	     15304 ns/op	 535.29 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=8192	   39198	     15305 ns/op	 535.26 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=8192	   39213	     15305 ns/op	 535.25 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=8192	   39200	     15305 ns/op	 535.25 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=8192	   39208	     15299 ns/op	 535.46 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=8192	   19472	     30804 ns/op	 531.88 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=8192	   19478	     30812 ns/op	 531.74 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=8192	   19476	     30809 ns/op	 531.79 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=8192	   19476	     30803 ns/op	 531.90 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=8192	   19479	     30800 ns/op	 531.95 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=8192	   19476	     30803 ns/op	 531.90 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=8192	   19474	     30805 ns/op	 531.86 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=8192	   19476	     30807 ns/op	 531.82 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=8192	   19476	     30804 ns/op	 531.88 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=8192	   19477	     30801 ns/op	 531.93 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16384	   20163	     29751 ns/op	 550.70 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16384	   20161	     29758 ns/op	 550.57 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16384	   20161	     29760 ns/op	 550.54 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16384	   20163	     29753 ns/op	 550.66 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16384	   20163	     29767 ns/op	 550.41 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16384	   20161	     29759 ns/op	 550.56 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16384	   20166	     29760 ns/op	 550.54 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16384	   20160	     29757 ns/op	 550.60 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16384	   20160	     29760 ns/op	 550.53 MB/s
+BenchmarkAppClientToServer/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16384	   20162	     29754 ns/op	 550.65 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16384	   20167	     29748 ns/op	 550.75 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16384	   20163	     29756 ns/op	 550.61 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16384	   20162	     29757 ns/op	 550.59 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16384	   20166	     29754 ns/op	 550.64 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16384	   20166	     29753 ns/op	 550.67 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16384	   20157	     29764 ns/op	 550.47 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16384	   20167	     29746 ns/op	 550.80 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16384	   20161	     29759 ns/op	 550.56 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16384	   20161	     29756 ns/op	 550.61 MB/s
+BenchmarkAppServerToClient/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16384	   20164	     29756 ns/op	 550.62 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16384	   10000	     59552 ns/op	 550.25 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16384	   10000	     59569 ns/op	 550.08 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16384	   10000	     59549 ns/op	 550.27 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16384	   10000	     59561 ns/op	 550.15 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16384	   10000	     59561 ns/op	 550.16 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16384	   10000	     59557 ns/op	 550.20 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16384	   10000	     59550 ns/op	 550.26 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16384	   10000	     59576 ns/op	 550.02 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16384	   10000	     59547 ns/op	 550.29 MB/s
+BenchmarkAppPingPong/impl=rustls/suite=TLS_CHACHA20_POLY1305_SHA256/size=16384	   10000	     59562 ns/op	 550.15 MB/s

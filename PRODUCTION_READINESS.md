@@ -61,7 +61,7 @@ ztls is production-ready when all six pillars are `PROVEN`:
 |---|---|---|
 | 1. Correctness | `PARTIAL` | Strong layered evidence; the RFC 8446 MUST matrix has no `GAP`/`PARTIAL` rows for the current supported surface, but external conformance runners are not fully CI-gated. |
 | 2. Ergonomics | `PROVEN` | CI-gated deterministic examples cover client and server roles across io_uring, epoll, and `std.net.Stream`; Config setup, server credentials, and `Outbox` cover the supported core ergonomics boundary. |
-| 3. Performance | `PROVEN` | n=10 EC2 capture with formal CIs (p=0.000): ztls beats libssl on every comparable app-data row (+21% to +261%) and rustls on all AES-GCM rows (+65% to +131%); regression gate committed. |
+| 3. Performance | `PROVEN` | n=10 EC2 captures on x86_64 (c7i.2xlarge) and aarch64 (c7g.2xlarge) with formal CIs (p=0.000): ztls beats libssl on every comparable app-data row on both architectures and rustls on all AES-GCM rows; regression gate committed. |
 | 4. Providers | `PARTIAL` | OpenSSL primitives are live and AWS-LC selection is explicit; X25519 has an AWS-LC-specific path, while broader provider matrix evidence remains incomplete. |
 | 5. Marketing | `NONE` | Not started. |
 | 6. User docs | `PROVEN` | Root on-ramp plus `docs/USAGE.md` cover fresh-project setup, supported surface, drive loops, API reference, and CI-gated integration examples. |
@@ -458,24 +458,26 @@ comparisons measure equivalent work*. This is the project's justification.
 
 **Status:** `PROVEN`
 
-The n=10 EC2 capture (`docs/research/perf/20260712-102422-ec2-c7i-2xlarge/`)
-produces formal confidence intervals (`± 0%` to `± 5%`) and p=0.000 for every
-comparable row. ztls beats OpenSSL libssl on every comparable app-data row
-(+21% to +261%) and rustls on all 30 AES-GCM rows (+65% to +131%); the
-ChaCha20 small-record loss to rustls is documented and explained by the
-row-perf evidence. The regression gate (`just bench-regression-check`) is
-committed and tested. The claim is reproducible and backed by counter/symbol
-evidence.
+Two n=10 EC2 captures — x86_64 (`docs/research/perf/20260712-102422-ec2-c7i-2xlarge/`)
+and aarch64 (`docs/research/perf/20260712-201912-ec2-c7g-2xlarge/`) — produce
+formal confidence intervals (`± 0%` to `± 5%`) and p=0.000 for every
+comparable row. ztls beats OpenSSL libssl on every comparable app-data row on
+both architectures and rustls on all 30 AES-GCM rows on both architectures;
+the ChaCha20 small-record loss to rustls on x86_64 largely disappears on
+aarch64 (where OpenSSL's NEON ChaCha20 is more competitive with ring). The
+regression gate (`just bench-regression-check`) is committed and tested. The
+claim is reproducible and backed by counter/symbol evidence.
 
 **Gaps:**
 
-- **Hardware matrix has two committed x86_64 points, not a final matrix policy.**
-  `infra/bench/` defaults to `c7i.large` and accepts `--instance-types` for
-  broader serial matrix captures. The committed `c7i.large` and `c7i.2xlarge`
-  captures prove the path across two EC2 shapes and confirm the same ordering
-  on both. Instance-family breadth and a final matrix policy remain open for
+- **Hardware matrix covers both x86_64 and aarch64.** Committed n=10 captures
+  on `c7i.2xlarge` (Intel x86_64) and `c7g.2xlarge` (AWS Graviton4 aarch64)
+  prove the claim on both architectures with formal CIs. The `c7i.large`
+  capture confirms the x86_64 ordering on a smaller shape. Instance-family
+  breadth (e.g. AMD, Graviton3) and a final matrix policy remain open for
   marketing-grade evidence, but the core claim (ztls faster than libssl and
-  rustls on AES-GCM app data) is established on both shapes with formal CIs.
+  rustls on AES-GCM app data on both x86_64 and aarch64) is established with
+  formal CIs. macOS performance remains unproven (#62).
 - **Selected app-data rows and the non-equivalent handshake row now have
   committed perf/disassembly evidence.**
   `docs/research/perf/20260705-215953-ec2-c7i-2xlarge-row-perf/` records pinned
