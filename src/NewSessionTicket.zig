@@ -46,11 +46,11 @@ pub fn parse(msg: []const u8) ParseError!NewSessionTicket {
     const ticket_lifetime = r.assumeRead(u32);
     const ticket_age_add = r.assumeRead(u32);
     const nonce_len = r.assumeRead(u8);
-    if (r.remaining().len < nonce_len + 2) return error.UnexpectedEof;
+    if (r.remaining().len < @as(usize, nonce_len) + 2) return error.UnexpectedEof;
     const nonce = r.assumeReadSlice(nonce_len);
     const ticket_len = r.assumeRead(u16);
     if (ticket_len == 0) return error.EmptyTicket;
-    if (r.remaining().len < ticket_len + 2) return error.UnexpectedEof;
+    if (r.remaining().len < @as(usize, ticket_len) + 2) return error.UnexpectedEof;
     const ticket = r.assumeReadSlice(ticket_len);
     const extensions_len = r.assumeRead(u16);
     if (extensions_len != r.remaining().len) return error.InvalidExtensionLength;

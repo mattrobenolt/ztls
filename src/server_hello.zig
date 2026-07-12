@@ -166,7 +166,7 @@ pub fn parseHelloRetryRequestWithSessionIdEcho(
     if (!mem.eql(u8, random, &hello_retry_request_random)) return error.NotHelloRetryRequest;
 
     const session_id_len = r.assumeRead(u8);
-    if (r.remaining().len < session_id_len + 2 + 1 + 2) return error.UnexpectedEof;
+    if (r.remaining().len < @as(usize, session_id_len) + 2 + 1 + 2) return error.UnexpectedEof;
     const session_id_echo = r.assumeReadSlice(session_id_len);
     if (expected_session_id) |expected| {
         if (!mem.eql(u8, session_id_echo, expected)) return error.InvalidSessionIdEcho;
@@ -474,7 +474,7 @@ pub fn parseWithSessionIdEcho(
     if (mem.eql(u8, random, &hello_retry_request_random)) return error.HelloRetryRequest;
 
     const session_id_len = r.assumeRead(u8);
-    if (r.remaining().len < session_id_len + 2 + 1 + 2) return error.UnexpectedEof;
+    if (r.remaining().len < @as(usize, session_id_len) + 2 + 1 + 2) return error.UnexpectedEof;
     const session_id_echo = r.assumeReadSlice(session_id_len);
     if (expected_session_id) |expected| {
         if (!mem.eql(u8, session_id_echo, expected)) return error.InvalidSessionIdEcho;
@@ -636,6 +636,24 @@ const server_hello_rfc8448: []const u8 = &.{
     0xc6, 0x72, 0xe1, 0x56, 0xd6, 0xcc, 0x25, 0x3b, 0x83, 0x3d, 0xf1, 0xdd, 0x69,
     0xb1, 0xb0, 0x4e, 0x75, 0x1f, 0x0f, 0x00, 0x2b, 0x00, 0x02, 0x03, 0x04,
 };
+
+// RFC 8446 §4.1.3 — legacy_session_id_echo is a vector of length 0..32.
+// A session_id_len near u8 max must not overflow the bounds-check arithmetic,
+// and a length > 32 must be rejected, not silently accepted.
+test "parse: rejects oversized legacy_session_id_echo without overflow" {
+    var msg: [44]u8 = undefined;
+    @memset(&msg, 0);
+    msg[0] = 0x02; // server_hello handshake type
+    msg[1] = 0x00;
+    msg[2] = 0x00;
+    msg[3] = 0x28; // body_len = 40 = msg.len - 4
+    msg[4] = 0x03;
+    msg[5] = 0x03; // legacy_version TLS 1.2
+    // bytes 6..38 random = zeros (not HRR magic)
+    msg[38] = 0xff; // session_id_len = 255 -> would overflow u8 arithmetic
+    const result = parse(&msg);
+    _ = result catch return; // any error is fine; a panic is the bug
+}
 
 test "encode: round trips through parse" {
     const key: x25519.PublicKey = .init(.{

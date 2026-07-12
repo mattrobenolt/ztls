@@ -80,7 +80,7 @@ pub fn parse(msg: []const u8) ParseError!Parsed {
     if (body_len != msg.len - 4) return error.InvalidHandshakeLength;
 
     const ctx_len = r.assumeRead(u8);
-    if (r.remaining().len < ctx_len + 2) return error.UnexpectedEof;
+    if (r.remaining().len < @as(usize, ctx_len) + 2) return error.UnexpectedEof;
     const request_context = r.assumeReadSlice(ctx_len);
     const exts_total_len = r.assumeRead(u16);
     if (exts_total_len != r.remaining().len) return error.InvalidExtensionLength;

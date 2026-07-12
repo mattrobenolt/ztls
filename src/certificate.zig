@@ -111,7 +111,7 @@ pub fn parseClientCertificate(
     if (body_len != msg.len - 4) return error.InvalidHandshakeLength;
 
     const ctx_len = r.assumeRead(u8);
-    if (r.remaining().len < ctx_len + 3) return error.UnexpectedEof;
+    if (r.remaining().len < @as(usize, ctx_len) + 3) return error.UnexpectedEof;
     const request_context = r.assumeReadSlice(ctx_len);
     if (!std.mem.eql(u8, request_context, expected_request_context))
         return error.UnexpectedCertificateRequestContext;
@@ -124,7 +124,7 @@ pub fn parseClientCertificate(
     while (r.pos < list_end) {
         if (list_end - r.pos < 3) return error.UnexpectedEof;
         const cert_len = r.assumeRead(u24);
-        if (list_end - r.pos < cert_len + 2) return error.UnexpectedEof;
+        if (list_end - r.pos < @as(usize, cert_len) + 2) return error.UnexpectedEof;
         r.assumeSkip(cert_len);
         const ext_len = r.assumeRead(u16);
         if (list_end - r.pos < ext_len) return error.UnexpectedEof;
@@ -154,7 +154,7 @@ pub fn parseClientChain(
     r.assumeSkip(3); // body length
 
     const ctx_len = r.assumeRead(u8);
-    if (r.remaining().len < ctx_len + 3) return error.UnexpectedEof;
+    if (r.remaining().len < @as(usize, ctx_len) + 3) return error.UnexpectedEof;
     const request_context = r.assumeReadSlice(ctx_len);
     if (!std.mem.eql(u8, request_context, expected_request_context))
         return error.UnexpectedCertificateRequestContext;
@@ -172,7 +172,7 @@ pub fn parseClientChain(
     while (r.pos < list_end) {
         if (list_end - r.pos < 3) return error.UnexpectedEof;
         const cert_len = r.assumeRead(u24);
-        if (list_end - r.pos < cert_len + 2) return error.UnexpectedEof;
+        if (list_end - r.pos < @as(usize, cert_len) + 2) return error.UnexpectedEof;
         const cert_der = r.assumeReadSlice(cert_len);
         const ext_len = r.assumeRead(u16);
         if (list_end - r.pos < ext_len) return error.UnexpectedEof;
@@ -256,7 +256,7 @@ pub fn parse(msg: []const u8, policy: Policy) ParseError![]const u8 {
     while (r.pos < list_end) {
         if (list_end - r.pos < 3) return error.UnexpectedEof;
         const cert_len = r.assumeRead(u24);
-        if (list_end - r.pos < cert_len + 2) return error.UnexpectedEof;
+        if (list_end - r.pos < @as(usize, cert_len) + 2) return error.UnexpectedEof;
         const cert_der = r.assumeReadSlice(cert_len);
         const ext_len = r.assumeRead(u16);
         if (list_end - r.pos < ext_len) return error.UnexpectedEof;
@@ -613,6 +613,24 @@ const test_transcript_hash = blk: {
     Sha256.hash("test transcript", &out, .{});
     break :blk out;
 };
+
+// RFC 8446 §4.4.2 — Certificate message framing. A cert_len near u24 max
+// must not overflow the bounds-check arithmetic in the certificate-list loop.
+test "parse: oversized cert_len does not overflow bounds check" {
+    // 11-byte Certificate: type=0x0b, body_len=7, list_len=3, cert_len=0xFFFFFF
+    const msg = [_]u8{ 0x0b, 0x00, 0x00, 0x07, 0x00, 0x00, 0x00, 0x03, 0xff, 0xff, 0xff };
+    const result = parse(&msg, .{});
+    _ = result catch return; // any error is fine; a panic is the bug
+}
+
+// RFC 8446 §4.4.2 — client Certificate request_context. A ctx_len near u8 max
+// must not overflow the bounds-check arithmetic.
+test "parseClientCertificate: oversized ctx_len does not overflow" {
+    // 8-byte client Certificate: type=0x0b, body_len=4, ctx_len=0xFF
+    const msg = [_]u8{ 0x0b, 0x00, 0x00, 0x04, 0xff, 0x00, 0x00, 0x00 };
+    const result = parseClientCertificate(&msg, &.{});
+    _ = result catch return; // any error is fine; a panic is the bug
+}
 
 test "parse: extracts public key from ECDSA P-256 certificate" {
     var buf: [1024]u8 = undefined;

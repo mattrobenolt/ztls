@@ -829,17 +829,17 @@ pub fn parse(msg: []const u8) ParseError!Parsed {
     r.assumeSkip(32); // random
     const session_id_len = r.assumeRead(u8);
     if (session_id_len > 32) return error.InvalidVectorLength;
-    if (r.remaining().len < session_id_len + 2) return error.UnexpectedEof;
+    if (r.remaining().len < @as(usize, session_id_len) + 2) return error.UnexpectedEof;
     const legacy_session_id = r.assumeReadSlice(session_id_len);
 
     const cipher_suites_len = r.assumeRead(u16);
     if (cipher_suites_len == 0 or cipher_suites_len % 2 != 0) return error.InvalidVectorLength;
-    if (r.remaining().len < cipher_suites_len + 1) return error.UnexpectedEof;
+    if (r.remaining().len < @as(usize, cipher_suites_len) + 1) return error.UnexpectedEof;
     const cipher_suites = r.assumeReadSlice(cipher_suites_len);
 
     const compression_len = r.assumeRead(u8);
     if (compression_len != 1) return error.InvalidCompressionMethod;
-    if (r.remaining().len < compression_len + 2) return error.UnexpectedEof;
+    if (r.remaining().len < @as(usize, compression_len) + 2) return error.UnexpectedEof;
     const compression_method = r.assumeRead(CompressionMethod);
     if (compression_method != .no_compression) return error.InvalidCompressionMethod;
 
