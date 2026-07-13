@@ -558,11 +558,17 @@ Two n=10 wall-time captures cover both architectures:
   (`docs/research/perf/20260705-183821-ec2-c7i-large/`) confirms the same
   ordering on a smaller instance shape.
 
-- **aarch64:**
+- **aarch64 Linux:**
   `docs/research/perf/20260712-201912-ec2-c7g-2xlarge/benchstat.txt` — a clean
   `c7g.2xlarge` (AWS Graviton4, aarch64) EC2 host, OpenSSL 3.6.3, rustls 0.23.41,
   Zig 0.15.2 ReleaseFast, git revision `e39f5a6dd38bbad644a4a2187d51e7370df6caaf`,
   `--count 10 --benchtime 500ms`.
+
+- **macOS (Apple Silicon):**
+  `docs/research/perf/20260713-003534-macos-m1max/benchstat.txt` — an Apple M1 Max
+  (arm64, Darwin 24.6), OpenSSL 3.6.3, rustls 0.23.41, Zig 0.15.2 ReleaseFast,
+  git revision `80083f50505d46bbbea6e6a4cee688925667a9a5`, `--count 10 --benchtime
+  500ms`.
 
 Row-level perf/disassembly evidence for the x86_64 headline AES-GCM row and
 the small-record ChaCha20 row is under
@@ -576,38 +582,40 @@ largest is +261%), so the result is decisive, not marginal.
 ### The claim
 
 Across the 45 comparable TLS application-data rows (3 directions × 5 payload
-sizes × 3 cipher suites), on both x86_64 `c7i.2xlarge` and aarch64
-`c7g.2xlarge`:
+sizes × 3 cipher suites), on all three platforms (x86_64 `c7i.2xlarge`,
+aarch64 `c7g.2xlarge`, and macOS Apple M1 Max):
 
 1. **ztls is faster than OpenSSL libssl on every comparable app-data row, on
-   both architectures.** The delta ranges from +4% (ChaCha20, 16384B
+   all three platforms.** The delta ranges from +4% (ChaCha20, 16384B
    ping-pong, aarch64) to +261% (AES-128-GCM, 16B client→server, x86_64).
    ztls reaches the OpenSSL AEAD primitive with substantially less TLS
    wrapper work than libssl's memory-BIO path.
 
-2. **ztls is faster than rustls on all AES-GCM rows on both architectures**
+2. **ztls is faster than rustls on all AES-GCM rows on all three platforms**
    (30 rows each: AES-128-GCM and AES-256-GCM, all three directions, all five
    sizes). On x86_64 the delta ranges from +65% to +131%; on aarch64 from
-   +25% to +213%. ztls executes fewer cycles, fewer instructions, and fewer
-   branches than rustls on the x86_64 AES-GCM ping-pong row (see the row-perf
-   explanation: ztls ~54.8% of rustls cycles/op, ~53.6% of rustls
-   instructions/op).
+   +25% to +213%; on macOS from +35% to +244%. ztls executes fewer cycles,
+   fewer instructions, and fewer branches than rustls on the x86_64 AES-GCM
+   ping-pong row (see the row-perf explanation: ztls ~54.8% of rustls
+   cycles/op, ~53.6% of rustls instructions/op).
 
-3. **ztls is faster than rustls on large ChaCha20 records on both
-   architectures** (8192B and 16384B: x86_64 +66% to +87%, aarch64 +4% to
-   +8%) and approximately ties at 1350B.
+3. **ztls is faster than rustls on large ChaCha20 records on all three
+   platforms** (8192B and 16384B: x86_64 +66% to +87%, aarch64 +4% to +8%,
+   macOS +20% to +21%) and approximately ties at 1350B.
 
-4. **The ChaCha20 small-record comparison with rustls is architecture-dependent.**
+4. **The ChaCha20 small-record comparison with rustls is platform-dependent.**
    On x86_64, ztls is slower than rustls on small ChaCha20 records (16B and
    128B: -50% to -56%) — rustls's ring ChaCha20-Poly1305 path is cheaper for
    tiny records than ztls's OpenSSL EVP path. The row-perf evidence shows the
    ztls samples are overwhelmingly in OpenSSL's ChaCha20 symbols, not in ztls
    record framing — so the fix is a backend-specific faster ChaCha path, not
-   record-path work. On aarch64, this loss largely disappears: ztls and
-   rustls are within 2% on 16B records, rustls is ~20% faster on 128B, and
-   ztls wins from 1350B upward. OpenSSL's aarch64 NEON ChaCha20 is more
-   competitive with ring's ARM path than the x86_64 EVP path is with ring's
-   AVX path. The x86_64 small-record loss is documented, not hidden.
+   record-path work. On aarch64 (Graviton), this loss largely disappears: 16B
+   is a tie, rustls is ~20% faster at 128B, ztls wins from 1350B upward. On
+   macOS (Apple Silicon), ztls actually WINS at 16B (+8% to +12%), loses only
+   at 128B (-19% to -24%), and wins from 1350B upward. OpenSSL's ARM NEON
+   ChaCha20 is more competitive with ring's ARM path than the x86_64 EVP path
+   is with ring's AVX path. The x86_64 small-record loss is documented, not
+   hidden.
 
 ### Headline rows
 
@@ -622,11 +630,16 @@ are typically AES-GCM, with 1350B near the common MTU boundary):
 | AppClientToServer AES-128-GCM 1350 | 392.0 ns | 932.1 ns | 720.9 ns | 2.38× faster | 1.84× faster |
 | AppPingPong ChaCha20 16384 | 17.16 µs | 20.77 µs | 32.08 µs | 1.21× faster | 1.87× faster |
 | AppPingPong ChaCha20 16 | 2.267 µs | 3.947 µs | 1.018 µs | 1.74× faster | 0.45× (loss) |
-| **aarch64 (c7g.2xlarge)** ||||||
+| **aarch64 (c7g.2xlarge, Graviton4)** ||||||
 | AppPingPong AES-128-GCM 1350 | 1.929 µs | 3.602 µs | 2.714 µs | 1.87× faster | 1.41× faster |
 | AppPingPong AES-128-GCM 16384 | 11.08 µs | 14.21 µs | 19.74 µs | 1.28× faster | 1.78× faster |
 | AppPingPong ChaCha20 16384 | 54.91 µs | 57.09 µs | 59.56 µs | 1.04× faster | 1.08× faster |
 | AppPingPong ChaCha20 16 | 1.868 µs | 3.408 µs | 1.897 µs | 1.82× faster | 1.02× (tie) |
+| **macOS (Apple M1 Max)** ||||||
+| AppPingPong AES-128-GCM 1350 | 1.040 µs | 2.087 µs | 1.883 µs | 2.01× faster | 1.81× faster |
+| AppPingPong AES-128-GCM 16384 | 8.221 µs | 11.593 µs | 14.497 µs | 1.41× faster | 1.76× faster |
+| AppPingPong ChaCha20 16384 | 37.23 µs | 42.30 µs | 45.23 µs | 1.14× faster | 1.21× faster |
+| AppPingPong ChaCha20 16 | 1.226 µs | 2.153 µs | 1.372 µs | 1.76× faster | 1.12× faster |
 
 ### Why ztls wins (mechanism, not assertion)
 
@@ -659,12 +672,14 @@ symbol evidence, so the claim is not just adjacent benchstat columns:
   (ztls does real CertificateVerify verification; rustls `NoVerifier` does
   none; libssl `SSL_VERIFY_NONE` is opaque). No cross-implementation handshake
   performance claim is allowed from the current evidence.
-- Not a macOS claim. The committed evidence is Linux EC2 (x86_64 and
-  aarch64). macOS performance is unproven (see #62).
+- The committed evidence covers x86_64 Linux, aarch64 Linux, and macOS
+  (Apple Silicon). Other macOS hosts (Intel Macs) and other Linux distros are
+  not measured. The claim is platform-bounded to what was captured.
 - Not a crypto-primitive claim. EVP rows are a crypto floor, not a TLS
   comparison. ztls-only diagnostic rows are not cross-implementation.
 - Not a claim that ignores the ChaCha20 small-record loss. That loss is real,
-  explained, and documented above.
+  explained, and documented above. It is x86_64-specific and shrinks or reverses
+  on ARM/MacOS.
 
 ## Acceptance thresholds and regression gate
 

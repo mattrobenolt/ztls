@@ -1,0 +1,39 @@
+timestamp_utc=20260713-003534
+git_revision=80083f50505d46bbbea6e6a4cee688925667a9a5
+git_dirty=false
+zig_version=0.15.2
+zig_optimization_mode=ReleaseFast
+crypto_backend=openssl
+openssl_pkg_config_path=/nix/store/2ya34x8wxcvk59317dwnwgkj78m9fn70-openssl-3.6.3-dev/lib/pkgconfig
+linked_libcrypto=/nix/store/19igb66zdd99ky5if9fwbg166zm74anw-openssl-3.6.3/lib/libcrypto.3.dylib
+ztls_linked_libcrypto=/nix/store/19igb66zdd99ky5if9fwbg166zm74anw-openssl-3.6.3/lib/libcrypto.3.dylib
+evp_linked_libcrypto=/nix/store/19igb66zdd99ky5if9fwbg166zm74anw-openssl-3.6.3/lib/libcrypto.3.dylib
+libssl_linked_libcrypto=/nix/store/19igb66zdd99ky5if9fwbg166zm74anw-openssl-3.6.3/lib/libcrypto.3.dylib
+libssl_linked_libssl=/nix/store/19igb66zdd99ky5if9fwbg166zm74anw-openssl-3.6.3/lib/libssl.3.dylib
+openssl_cli_version=OpenSSL 3.6.3 9 Jun 2026 (Library: OpenSSL 3.6.3 9 Jun 2026)
+rustls_profile=release
+rustls_version=0.23.41
+rustc_version=rustc 1.97.0 (2d8144b78 2026-07-07)
+benchstat_path=/nix/store/sppwbx9qwqqin8lcgsm0valblgkbvibn-benchstat-unstable-2026-07-09/bin/benchstat
+go_version=go version go1.26.4 darwin/arm64
+
+[benchstat]
+/nix/store/sppwbx9qwqqin8lcgsm0valblgkbvibn-benchstat-unstable-2026-07-09/bin/benchstat: go1.26.4
+	path	golang.org/x/perf/cmd/benchstat
+	mod	golang.org/x/perf	(devel)	
+	dep	github.com/aclements/go-moremath	v0.0.0-20210112150236-f10218a38794	
+	build	-buildmode=exe
+	build	-compiler=gc
+	build	-trimpath=true
+	build	DefaultGODEBUG=cryptocustomrand=1,tlssecpmlkem=0,urlstrictcolons=0
+	build	CGO_ENABLED=1
+	build	GOARCH=arm64
+	build	GOOS=darwin
+	build	GOARM64=v8.0
+uname=Darwin Matts-MacBook-Pro 24.6.0 Darwin Kernel Version 24.6.0: Tue Apr 21 20:19:01 PDT 2026; root:xnu-11417.140.69.710.16~1/RELEASE_ARM64_T6000 arm64 arm Darwin
+
+[sysctl]
+Apple M1 Max
+10
+
+args=--count 10 --benchtime 500ms 

@@ -61,10 +61,10 @@ Now the honest parts, because that's the whole brand:
   it, and libssl's behavior without a trust store is opaque. That row is
   reported on its own and never quoted as a comparison.
 
-Two instance families is not the whole hardware world — AMD and older Graviton
+Three platforms is not the whole hardware world — AMD and older Graviton
 aren't measured yet — but the core claim (faster than libssl and rustls on
-AES-GCM app data, both architectures) holds with formal CIs. macOS isn't
-measured. Full row tables, methodology, and the mechanism writeups are in
+AES-GCM app data across x86_64, aarch64, and macOS Apple Silicon) holds with
+formal CIs. Full row tables, methodology, and the mechanism writeups are in
 [`docs/research/PERFORMANCE.md`](docs/research/PERFORMANCE.md); a 15% regression
 gate on comparable AES-GCM rows runs against the committed n=10 baseline. New
 results replace these as they land.
