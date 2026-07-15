@@ -150,4 +150,37 @@ pub fn build(b: *Build) void {
     });
     const docs_step = b.step("docs", "Generate Zig API docs");
     docs_step.dependOn(&docs_install.step);
+
+    // C ABI library (-Dcapi)
+    // Produces libztls.a (static) from src/capi.zig, linking libc and
+    // libcrypto. Installs include/ztls.h alongside. Behind the option so
+    // default builds are unaffected. #30.
+    const capi = b.option(bool, "capi", "Build the C ABI library (libztls.a)") orelse false;
+    if (capi) {
+        const capi_mod = b.createModule(.{
+            .root_source_file = b.path("src/capi.zig"),
+            .target = target,
+            .optimize = optimize,
+        });
+        capi_mod.addOptions("build_options", build_options);
+        capi_mod.link_libc = true;
+        capi_mod.linkSystemLibrary("crypto", .{});
+
+        const libztls = b.addLibrary(.{
+            .name = "ztls",
+            .root_module = capi_mod,
+            .linkage = .static,
+        });
+        const install_lib = b.addInstallArtifact(libztls, .{});
+        const install_header = b.addInstallFile(b.path("include/ztls.h"), "include/ztls.h");
+
+        const capi_step = b.step("capi", "Build the C ABI library (libztls.a)");
+        capi_step.dependOn(&install_lib.step);
+        capi_step.dependOn(&install_header.step);
+
+        // Also wire into the default install step so `zig build -Dcapi` alone
+        // produces the artifacts without needing a named step.
+        b.getInstallStep().dependOn(&install_lib.step);
+        b.getInstallStep().dependOn(&install_header.step);
+    }
 }

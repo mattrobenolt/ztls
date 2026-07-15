@@ -373,6 +373,43 @@ a shared driver would either own transport I/O or add callback/framework glue. T
 reusable core boundary is the handshake types plus `RecordBuffer` and `ztls.Outbox`;
 CI-gated examples remain canonical for transport drive-loop glue.
 
+### C ABI (#30) — PARTIAL
+
+The C ABI surface for the ztls TLS 1.3 client lifecycle is partially
+landed. `src/capi.zig` exports C-callable shims (`callconv(.c)`) for the
+client lifecycle: `ztls_client_init`, `ztls_client_deinit`,
+`ztls_client_start`, `ztls_client_handle_record`,
+`ztls_client_complete_write`, `ztls_client_send_application_data`,
+`ztls_client_is_connected`, `ztls_client_selected_alpn`, plus
+`ztls_version`, `ztls_client_size`, and `ztls_client_align`. The
+opaque-sized approach is used: the C consumer allocates
+`ztls_client_size()` bytes with alignment `ztls_client_align()` and
+passes the pointer to `ztls_client_init`; the internal layout is
+unstable and not directly accessible. `include/ztls.h` is the C ABI
+contract. `zig build -Dcapi` produces `libztls.a` (static) and installs
+the header. `examples/c_client.c` compiles against the header + lib
+with `zig cc` and runs exit 0. `just capi-ci` is wired into `just ci`.
+Zig test blocks in `src/capi.zig` drive a full client handshake (init
+→ start → handle_record through connected → send_application_data)
+against an in-memory `ServerHandshake` through the C ABI shims.
+
+The security review
+(`docs/research/security/C_ABI_SECURITY_REVIEW.md`) drove the
+opaque-sized design: transparent C structs leak secrets and backend
+pointers across C struct copies, so the internal state is hidden behind
+runtime size/align queries. NULL parameter checks map to
+`ZTLS_ERR_NULL_PARAMETER` before entering the Zig engine. KeyUpdate and
+NewSessionTicket events map to `ZTLS_EVENT_NONE` with a documented
+deferred note (honest partial). Certificate verification is deferred:
+`ztls_client_init` sets `insecure_no_chain_anchor = true`.
+
+**Deferred (tracked under #30):** server-side C ABI shims, RecordBuffer
+C ABI, certificate verification, KeyUpdate initiation from C, PSK /
+session resumption from C, ALPN offering from C (query is implemented,
+offer is not), dynamic linking (`libztls.so` / `libztls.dylib`), and C
+conformance harness integration (TLS-Anvil through the C ABI per
+`docs/research/C_ABI_CONFORMANCE.md`). The C ABI is not claimed done.
+
 ---
 
 ## Pillar 3 — Performance

@@ -17,7 +17,7 @@ example example *args:
     zig build example-{{ example }} -- {{ args }}
 
 [doc("Run all CI gates")]
-ci: test check-backend-aws-lc lint examples-ci
+ci: test check-backend-aws-lc lint examples-ci capi-ci
     just conformance/ci
 
 [doc("Run all CI gates under Zig 0.16 (lint via inline Z011 suppressions for dual-version deprecations)")]

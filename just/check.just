@@ -68,6 +68,21 @@ check-backend-boringssl:
 fmt: fmt-zig fmt-actions fmt-just fmt-rust
     just conformance/fmt
 
+[doc("Build and run the C ABI example (libztls.a + c_client.c)")]
+[group("check")]
+capi-ci:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    zig build -Dcapi --summary all
+    lib=$(find zig-out -name 'libztls.a' -print -quit)
+    if [ -z "$lib" ]; then
+        echo "libztls.a not found in zig-out" >&2
+        exit 1
+    fi
+    libdir=$(dirname "$lib")
+    zig cc -o zig-out/c_client examples/c_client.c -I include -L "$libdir" -lztls -lcrypto -lm
+    zig-out/c_client
+
 [doc("Run deterministic examples as TLS smoke tests")]
 [group("examples")]
 examples-ci:
