@@ -213,12 +213,11 @@ than papered over.
 - Ticket/resumption: disabled (`server.send_tls13_tickets = 0`).
 - ALPN/SNI: `ServerName::try_from("test.local")` is set; no ALPN in the
   benchmark.
-- Measurement shape: **fundamentally different.** rustls times
-  `HANDSHAKE_ITERATIONS` (256) handshakes as one aggregate wall-clock sample
-  and emits the per-op average. This produces one sample with no
-  per-iteration variance. The Go-bench approach (ztls/libssl) produces
-  per-iteration variance. With `--samples N`, rustls emits N independent
-  aggregate samples, but each sample still covers 256 internal handshakes.
+- Measurement shape: Go-bench-style per-handshake samples. The rustls
+  harness auto-calibrates iteration counts to `--benchtime` and emits
+  `--count` (a.k.a. `--samples`) independent samples, each a calibrated
+  per-handshake timing, matching the ztls/libssl Go-bench approach. All
+  three harnesses produce real per-sample variance for benchstat.
 
 **Why the `Handshake` row is not a comparable TLS row:**
 
@@ -232,9 +231,10 @@ than papered over.
    connection objects per iteration; ztls uses stack-resident state machines but
    does secure-zero AEAD contexts, transcript state, and key material during
    `deinit`. The row measures different amounts of allocator and cleanup work.
-4. **Measurement shape:** ztls/libssl use per-iteration Go-bench timing;
-   rustls uses aggregate 256-handshake batches. The statistics are not directly
-   comparable until rustls `--samples` is high enough for benchstat.
+4. **Measurement shape:** all three harnesses now use calibrated Go-bench
+   per-handshake samples with `--count`/`--samples` controlling sample count,
+   so the statistics are directly comparable. The residual non-equivalence is
+   the auth-work asymmetry above, not the measurement method.
 5. **Cert loading:** ztls loads cert DER at comptime; libssl/rustls load PEM
    files at runtime in setup (outside the loop). This does not affect the
    timed region but affects startup cost.
@@ -282,9 +282,9 @@ than papered over.
 - Connection reuse: one connected pair for all iterations.
 - Allocation: no per-iteration allocation; `Conn` and its `Vec` buffers are
   reused.
-- Measurement shape: aggregate — one wall-clock sample covering `iters`
-  iterations, emitted as per-op average. With `--samples N`, N independent
-  samples.
+- Measurement shape: Go-bench-style calibrated per-iteration samples.
+  The rustls harness auto-calibrates iteration counts to `--benchtime` and
+  emits `--count` independent samples, matching the ztls/libssl approach.
 
 **Key asymmetries for app-data rows:**
 
@@ -297,10 +297,9 @@ than papered over.
   `reader().read` + `process_new_packets` is a different wrapper shape. These
   wrappers are part of what the row measures; the delta is explainable only
   with perf/disassembly evidence.
-3. **Measurement shape:** ztls/libssl use per-iteration Go-bench timing;
-  rustls uses aggregate batches. The inner iteration count for rustls is
-  `max(TARGET_BYTES / size, 256)`, which is large for small sizes and 256 for
-  large sizes.
+3. **Measurement shape:** all three harnesses now use calibrated Go-bench
+  per-iteration samples with `--count`/`--samples` controlling sample count.
+  The inner iteration count is auto-calibrated to `--benchtime` in all three.
 
 ### `AppServerToClient` — one record encrypt (server) + one record decrypt (client)
 
@@ -309,8 +308,8 @@ Same structure as `AppClientToServer` with direction reversed. ztls uses
 uses `handleRecord` rather than `receiveApplicationData` because the client
 dispatches through the event union). libssl uses `sslWriteAll(conn.server, ...)` +
 `sslReadExact(conn.client, ...)`. rustls uses `conn.server.writer().write_all` +
-`transfer` + `read_exact_app(conn.client.reader(), ...)`. The same warm-up,
-transport, and measurement-shape asymmetries apply.
+`transfer` + `read_exact_app(conn.client.reader(), ...)`. The same warm-up
+and transport asymmetries apply.
 
 ### `AppPingPong` — one client→server + one server→client per iteration
 
@@ -328,9 +327,8 @@ warm-up round before the timed loop. `b.setBytes(size * 2)`.
 `transfer` + `client.reader().read_exact`. No explicit warm-up.
 `b.setBytes(size * 2)` equivalent (bytes column = `iters * size`).
 
-The same transport and measurement-shape asymmetries apply. The `bytes/op` is
-doubled for all three, so throughput columns are directly comparable if the
-measurement shape caveat is accepted.
+The same transport asymmetries apply. The `bytes/op` is doubled for all three,
+so throughput columns are directly comparable.
 
 EVP rows are deliberately not TLS-to-TLS rows. `RecordEncrypt` /
 `RecordDecrypt` in ztls include TLS record framing, the inner content-type byte,

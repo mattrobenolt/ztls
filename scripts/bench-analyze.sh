@@ -82,6 +82,73 @@ normalize_go() {
   fi
 }
 
+# Detect and normalize CSV-format rustls captures (pre-Go-bench-format
+# captures where rustls.txt has columns
+# benchmark,suite,size,iterations,bytes,elapsed_ns,mib_per_sec).
+# Returns 0 (true) if the input is CSV-format, 1 (false) if Go-bench-format.
+is_csv_format() {
+  local input="$1"
+  # Check the first non-comment, non-blank line for CSV header or rustls_ prefix.
+  local first_line
+  first_line="$(grep -vE '^(#|$)' "${input}" 2>/dev/null | head -n 1)"
+  [[ -z "${first_line}" ]] && return 1
+  [[ "${first_line}" == benchmark,suite,* || "${first_line}" == rustls_* ]]
+}
+
+# Normalize CSV-format rustls output into Go-bench rows. Each CSV data row
+# becomes one Go-bench sample line:
+#   Benchmark<Name>/impl=rustls/suite=<suite>/size=<size>	<iters>	<ns_per_op> ns/op[  <mb_s> MB/s]
+# Groups with fewer than 2 samples are excluded (benchstat needs n>=2).
+normalize_rustls_csv() {
+  local input="$1"
+  local output="$2"
+  awk -F, '
+    function row_name(name) {
+      if (name == "rustls_handshake") return "Handshake";
+      if (name == "rustls_handshake_client_start") return "HandshakeClientStart";
+      if (name == "rustls_handshake_server_accept") return "HandshakeServerAccept";
+      if (name == "rustls_handshake_server_flight") return "HandshakeServerFlight";
+      if (name == "rustls_handshake_client_flight") return "HandshakeClientFlight";
+      if (name == "rustls_handshake_server_finished") return "HandshakeServerFinished";
+      if (name == "rustls_app_client_to_server") return "AppClientToServer";
+      if (name == "rustls_app_server_to_client") return "AppServerToClient";
+      if (name == "rustls_app_ping_pong") return "AppPingPong";
+      return "";
+    }
+    /^#/ || /^benchmark,/ || NF == 0 { next }
+    {
+      row = row_name($1);
+      if (row == "") {
+        print "warning: skipping unknown rustls benchmark " $1 > "/dev/stderr";
+        next;
+      }
+      key = row "/" $2 "/" $3;
+      ns_per_op = $6 / $4;
+      line = sprintf("Benchmark%s/impl=rustls/suite=%s/size=%s\t%d\t%.3f ns/op", row, $2, $3, $4, ns_per_op);
+      if ($3 != 1) line = line sprintf("\t%.2f MB/s", ($5 * 1000.0) / $6);
+      lines[++line_count] = line;
+      line_keys[line_count] = key;
+      counts[key]++;
+    }
+    END {
+      for (i = 1; i <= line_count; i++) {
+        key = line_keys[i];
+        if (counts[key] < 2) {
+          if (!excluded[key]++) excluded_count++;
+          continue;
+        }
+        print lines[i];
+      }
+      if (excluded_count > 0) {
+        print "warning: excluding " excluded_count " rustls benchmark group(s) from benchstat: fewer than 2 samples" > "/dev/stderr";
+      }
+    }
+  ' "${input}" > "${output}"
+  if [[ ! -s "${output}" ]]; then
+    echo "warning: no comparable rustls benchmark rows in ${input}" >&2
+  fi
+}
+
 ztls_norm="${tmp_dir}/ztls.txt"
 evp_norm="${tmp_dir}/evp.txt"
 libssl_norm="${tmp_dir}/libssl.txt"
@@ -90,11 +157,15 @@ rustls_norm="${tmp_dir}/rustls.txt"
 normalize_go ztls "${run}/ztls.txt" "${ztls_norm}"
 normalize_go evp "${run}/evp.txt" "${evp_norm}"
 normalize_go openssl "${run}/libssl.txt" "${libssl_norm}"
-# rustls now emits Go-testing-style output directly
-# (BenchmarkName/impl=rustls/suite=.../size=...), so it rides the same
-# normalizer as the Zig-side benchmarks. The previous CSV-specific
-# normalize_rustls was removed when the Rust bench moved off CSV.
-normalize_go rustls "${run}/rustls.txt" "${rustls_norm}"
+# rustls captures may be in the old CSV format (pre-Go-bench captures) or
+# the current Go-testing format. Detection is format-based: if the first
+# non-comment line is a CSV header or starts with rustls_, route through
+# the CSV normalizer; otherwise use the shared Go-bench normalizer.
+if is_csv_format "${run}/rustls.txt"; then
+  normalize_rustls_csv "${run}/rustls.txt" "${rustls_norm}"
+else
+  normalize_go rustls "${run}/rustls.txt" "${rustls_norm}"
+fi
 
 all_norm="${tmp_dir}/all.txt"
 tls_norm="${tmp_dir}/tls-comparable.txt"

@@ -480,7 +480,11 @@ both architectures and rustls on all 30 AES-GCM rows on both architectures;
 the ChaCha20 small-record loss to rustls on x86_64 largely disappears on
 aarch64 (where OpenSSL's NEON ChaCha20 is more competitive with ring). The
 regression gate (`just bench-regression-check`) is committed and tested. The
-claim is reproducible and backed by counter/symbol evidence.
+claim is reproducible and backed by counter/symbol evidence. The canonical
+x86_64 capture's rustls.txt is in the pre-Go-bench CSV format;
+`bench-analyze.sh` detects this and routes it through a CSV fallback
+normalizer, so the committed `benchstat.txt` and a regenerated analysis stay
+in sync without re-running the capture.
 
 **Gaps:**
 
