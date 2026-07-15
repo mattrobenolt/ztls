@@ -228,3 +228,26 @@ fixed with regression tests. It is not an external audit. Read
 [`SECURITY.md`](SECURITY.md) for the full posture and
 [`docs/research/security/FINDINGS.md`](docs/research/security/FINDINGS.md) for
 the evidence. Do not put it in front of real traffic yet.
+
+### Roadmap to v0.1.0
+
+There is no release tag, and that's on purpose. `main` is the only artifact
+today — when the README tells you to `zig fetch` from `main`, that's not a
+placeholder for a version you should be waiting for; it's the whole distribution.
+There is no stable tag yet because two things have to land before a first tagged
+release means anything:
+
+- **A frozen public API.** Right now signatures, type names, and module layout
+  change whenever the design gets better. A `v0.1.0` is a promise not to do that
+  casually, and that promise can't exist until the surface is committed and
+  frozen. Until then, pinning a tag would be pinning a lie.
+- **A C ABI ([#30](https://github.com/mattrobenolt/ztls/issues/30)).** ztls is
+  Zig-only today, so the entire addressable audience is Zig callers. A
+  C-callable surface is what makes non-Zig callers exist at all. A first release
+  without it would ship to almost nobody.
+
+Broader named groups and post-quantum key exchange
+([#6](https://github.com/mattrobenolt/ztls/issues/6)) are on the way but are not
+gates — they can land before or after `v0.1.0`. The changelog
+([`CHANGELOG.md`](CHANGELOG.md)) tracks what's on `main` in the meantime.
+Depend on `main` if you want; just know the ground moves.
