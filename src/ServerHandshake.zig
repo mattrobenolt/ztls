@@ -551,80 +551,6 @@ pub const HandleError =
     ReceiveError || alert.ParseError || error{PendingWrite};
 pub const AlertError = RecordLayer.EncryptError || error{ BufferTooShort, PendingWrite };
 
-pub fn alertForError(err: anyerror) alert.Description {
-    return switch (err) {
-        error.AuthenticationFailed => .bad_record_mac,
-        error.SignatureVerificationFailed,
-        error.InvalidVerifyData,
-        => .decrypt_error,
-        error.EmptyCertificateList,
-        error.InvalidAlertLength,
-        error.InvalidEncoding,
-        error.InvalidEnumTag,
-        error.InvalidExtensionLength,
-        error.InvalidHandshakeLength,
-        error.InvalidVectorLength,
-        error.UnexpectedEof,
-        error.IncompleteRecord,
-        error.RecordTooShort,
-        error.InvalidInnerPlaintext,
-        => .decode_error,
-        error.MissingExtension,
-        error.MissingSignatureAlgorithmsExtension,
-        => .missing_extension,
-        error.UnsupportedExtension => .unsupported_extension,
-        error.UnsupportedTlsVersion => .protocol_version,
-        error.UnsupportedCipherSuite,
-        error.UnsupportedKeyShare,
-        => .handshake_failure,
-        error.NoApplicationProtocol => .no_application_protocol,
-        error.ClientCertificateRequired => .certificate_required,
-        error.UnsupportedClientCertificate => .unsupported_certificate,
-        // Client certificate chain validation errors (RFC 8446 §6.2).
-        error.MissingTrustAnchor,
-        error.CertificateIssuerNotFound,
-        => .unknown_ca,
-        error.CertificateExpired,
-        error.CertificateNotYetValid,
-        => .certificate_expired,
-        error.CertificateKeyUsageRejected,
-        error.CertificateExtendedKeyUsageRejected,
-        error.CertificateSignatureAlgorithmRejected,
-        error.CertificateSignatureAlgorithmUnsupported,
-        error.UnsupportedCertificateVersion,
-        error.CertificateKeyTooLarge,
-        => .unsupported_certificate,
-        error.CertificateFieldHasInvalidLength,
-        error.CertificateFieldHasWrongDataType,
-        error.CertificateHasInvalidBitString,
-        error.CertificateTimeInvalid,
-        error.CertificateHasUnrecognizedObjectId,
-        error.CertificateIssuerMismatch,
-        error.CertificatePublicKeyInvalid,
-        error.CertificateSignatureAlgorithmMismatch,
-        error.CertificateSignatureInvalidLength,
-        error.CertificateNameConstraintViolation,
-        error.CertificateNameConstraintUnsupported,
-        => .bad_certificate,
-        error.DuplicateExtension,
-        error.DuplicateKeyShare,
-        error.InvalidCompressionMethod,
-        error.UnexpectedCertificateRequestContext,
-        error.UnexpectedExtension,
-        error.IllegalParameter,
-        error.IdentityElement,
-        error.MalformedKeyShare,
-        error.UnofferedAlpnProtocol,
-        error.UnsupportedSignatureScheme,
-        => .illegal_parameter,
-        error.InvalidHandshakeType,
-        error.UnexpectedRecord,
-        error.UnexpectedMessage,
-        => .unexpected_message,
-        else => .internal_error,
-    };
-}
-
 /// Consume a plaintext ClientHello record and emit a plaintext ServerHello
 /// record. The returned bytes must be written before continuing the handshake.
 /// Installs handshake traffic keys for the encrypted server flight.
@@ -2134,36 +2060,6 @@ fn compatibilityClientHello(
     return out[0..compat_len];
 }
 
-// RFC 8446 §6.2 — server-side ClientHello parser and negotiation failures map
-// to the alert descriptions callers should send through the Sans-I/O API.
-test "alertForError: parser and negotiation failures map to protocol alerts" {
-    const cases = [_]struct {
-        err: anyerror,
-        description: alert.Description,
-    }{
-        .{ .err = error.UnexpectedEof, .description = .decode_error },
-        .{ .err = error.InvalidHandshakeLength, .description = .decode_error },
-        .{ .err = error.InvalidVectorLength, .description = .decode_error },
-        .{ .err = error.InvalidEnumTag, .description = .decode_error },
-        .{ .err = error.InvalidHandshakeType, .description = .unexpected_message },
-        .{ .err = error.UnexpectedRecord, .description = .unexpected_message },
-        .{ .err = error.MissingExtension, .description = .missing_extension },
-        .{ .err = error.UnsupportedTlsVersion, .description = .protocol_version },
-        .{ .err = error.UnsupportedCipherSuite, .description = .handshake_failure },
-        .{ .err = error.UnsupportedKeyShare, .description = .handshake_failure },
-        .{ .err = error.UnsupportedSignatureScheme, .description = .illegal_parameter },
-        .{ .err = error.NoApplicationProtocol, .description = .no_application_protocol },
-        .{ .err = error.ClientCertificateRequired, .description = .certificate_required },
-        .{ .err = error.UnsupportedClientCertificate, .description = .unsupported_certificate },
-        .{ .err = error.DuplicateExtension, .description = .illegal_parameter },
-        .{ .err = error.DuplicateKeyShare, .description = .illegal_parameter },
-        .{ .err = error.InvalidCompressionMethod, .description = .illegal_parameter },
-        .{ .err = error.UnexpectedExtension, .description = .illegal_parameter },
-        .{ .err = error.UnofferedAlpnProtocol, .description = .illegal_parameter },
-    };
-    for (cases) |case| try testing.expectEqual(case.description, alertForError(case.err));
-}
-
 fn testConfig(keypair: x25519.KeyPair) Config {
     return .{
         .keypairs = .init(keypair),
@@ -2425,19 +2321,6 @@ test "acceptClientHello: negotiates secp384r1 key share" {
     try client_hs.processServerHello(sh_record[frame.header_len..][0..hdr.length()]);
     try testing.expectEqualSlices(u8, &client_hs.rx.iv.data, &hs.tx.iv.data);
     try testing.expectEqualSlices(u8, &client_hs.tx.iv.data, &hs.rx.iv.data);
-}
-
-// RFC 8446 §6, §7.4 — malformed peer key-share material is peer input, not an
-// internal server failure.
-test "alertForError: invalid key share maps to illegal_parameter" {
-    try testing.expectEqual(
-        alert.Description.illegal_parameter,
-        alertForError(error.IdentityElement),
-    );
-    try testing.expectEqual(
-        alert.Description.illegal_parameter,
-        alertForError(error.MalformedKeyShare),
-    );
 }
 
 // RFC 8446 §4.1.4 — if the server selects P-256 and the ClientHello omitted a

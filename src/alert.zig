@@ -87,6 +87,89 @@ pub fn plaintextRecord(msg: *const [2]u8, out: []u8) error{BufferTooShort}![]u8 
     return out[0..total];
 }
 
+/// Map a TLS engine error to the appropriate alert description.
+/// RFC 8446 §6.2 — error alerts should be as specific as the protocol defines;
+/// unknown errors fall through to `internal_error`.
+pub fn alertForError(err: anyerror) Description {
+    return switch (err) {
+        error.AuthenticationFailed => .bad_record_mac,
+        error.SignatureVerificationFailed,
+        error.InvalidVerifyData,
+        => .decrypt_error,
+        error.EmptyCertificateList,
+        error.EmptyTicket,
+        error.InvalidAlertLength,
+        error.InvalidEncoding,
+        error.InvalidEnumTag,
+        error.InvalidExtensionLength,
+        error.InvalidHandshakeLength,
+        error.InvalidVectorLength,
+        error.UnexpectedEof,
+        error.IncompleteRecord,
+        error.RecordTooShort,
+        error.InvalidInnerPlaintext,
+        => .decode_error,
+        error.MissingTrustAnchor,
+        error.CertificateIssuerNotFound,
+        => .unknown_ca,
+        error.CertificateExpired,
+        error.CertificateNotYetValid,
+        => .certificate_expired,
+        error.CertificateKeyUsageRejected,
+        error.CertificateExtendedKeyUsageRejected,
+        error.CertificateSignatureAlgorithmRejected,
+        error.CertificateSignatureAlgorithmUnsupported,
+        error.UnsupportedCertificateVersion,
+        error.UnsupportedClientCertificate,
+        error.CertificateKeyTooLarge,
+        => .unsupported_certificate,
+        error.CertificateHostMismatch,
+        error.CertificateNameConstraintViolation,
+        error.CertificateNameConstraintUnsupported,
+        => .certificate_unknown,
+        error.CertificateFieldHasInvalidLength,
+        error.CertificateFieldHasWrongDataType,
+        error.CertificateHasInvalidBitString,
+        error.CertificateTimeInvalid,
+        error.CertificateHasUnrecognizedObjectId,
+        error.CertificateIssuerMismatch,
+        error.CertificatePublicKeyInvalid,
+        error.CertificateSignatureAlgorithmMismatch,
+        error.CertificateSignatureInvalidLength,
+        error.InvalidSignature,
+        => .bad_certificate,
+        error.MissingExtension,
+        error.MissingSignatureAlgorithmsExtension,
+        => .missing_extension,
+        error.UnsupportedExtension => .unsupported_extension,
+        error.UnsupportedTlsVersion => .protocol_version,
+        error.UnsupportedCipherSuite,
+        error.UnsupportedKeyShare,
+        => .handshake_failure,
+        error.NoApplicationProtocol => .no_application_protocol,
+        error.ClientCertificateRequired => .certificate_required,
+        error.DuplicateExtension,
+        error.DuplicateKeyShare,
+        error.InvalidCompressionMethod,
+        error.InvalidSessionIdEcho,
+        error.UnexpectedCertificateRequestContext,
+        error.UnexpectedExtension,
+        error.IllegalParameter,
+        error.IdentityElement,
+        error.MalformedKeyShare,
+        error.UnofferedAlpnProtocol,
+        error.UnsupportedKeyShareGroup,
+        error.UnsupportedSignatureScheme,
+        error.SignatureSchemeNotOffered,
+        => .illegal_parameter,
+        error.InvalidHandshakeType,
+        error.UnexpectedRecord,
+        error.UnexpectedMessage,
+        => .unexpected_message,
+        else => .internal_error,
+    };
+}
+
 // RFC 8446 §6.1 — closure alerts
 test "parse: close_notify" {
     const a = try parse(&.{ 1, 0 });
@@ -141,4 +224,107 @@ fn fuzzParse(_: void, input: []const u8) anyerror!void {
 
 test "fuzz: parse handles arbitrary input" {
     try fuzz_compat.fuzzBytes(fuzzParse, {}, .{ .corpus = &.{ &.{ 1, 0 }, &.{ 2, 10 } } });
+}
+
+// RFC 8446 §6.2 — certificate-processing failures are mapped to
+// certificate-related alerts for callers to send through the Sans-I/O API.
+test "alertForError: certificate failures map to certificate alerts" {
+    const cases = [_]struct {
+        err: anyerror,
+        description: Description,
+    }{
+        .{ .err = error.MissingTrustAnchor, .description = .unknown_ca },
+        .{ .err = error.CertificateIssuerNotFound, .description = .unknown_ca },
+        .{ .err = error.CertificateExpired, .description = .certificate_expired },
+        .{ .err = error.CertificateNotYetValid, .description = .certificate_expired },
+        .{
+            .err = error.CertificateKeyUsageRejected,
+            .description = .unsupported_certificate,
+        },
+        .{
+            .err = error.CertificateExtendedKeyUsageRejected,
+            .description = .unsupported_certificate,
+        },
+        .{
+            .err = error.CertificateSignatureAlgorithmRejected,
+            .description = .unsupported_certificate,
+        },
+        .{
+            .err = error.CertificateSignatureAlgorithmUnsupported,
+            .description = .unsupported_certificate,
+        },
+        .{ .err = error.UnsupportedCertificateVersion, .description = .unsupported_certificate },
+        .{ .err = error.UnsupportedClientCertificate, .description = .unsupported_certificate },
+        .{ .err = error.CertificateKeyTooLarge, .description = .unsupported_certificate },
+        .{ .err = error.CertificateHostMismatch, .description = .certificate_unknown },
+        .{ .err = error.CertificateNameConstraintViolation, .description = .certificate_unknown },
+        .{ .err = error.CertificateNameConstraintUnsupported, .description = .certificate_unknown },
+        .{ .err = error.CertificateFieldHasInvalidLength, .description = .bad_certificate },
+        .{ .err = error.CertificateFieldHasWrongDataType, .description = .bad_certificate },
+        .{ .err = error.CertificateHasInvalidBitString, .description = .bad_certificate },
+        .{ .err = error.CertificateTimeInvalid, .description = .bad_certificate },
+        .{ .err = error.CertificateHasUnrecognizedObjectId, .description = .bad_certificate },
+        .{ .err = error.CertificateIssuerMismatch, .description = .bad_certificate },
+        .{ .err = error.CertificatePublicKeyInvalid, .description = .bad_certificate },
+        .{ .err = error.CertificateSignatureAlgorithmMismatch, .description = .bad_certificate },
+        .{ .err = error.CertificateSignatureInvalidLength, .description = .bad_certificate },
+        .{ .err = error.InvalidSignature, .description = .bad_certificate },
+        .{ .err = error.ClientCertificateRequired, .description = .certificate_required },
+    };
+    for (cases) |case| try testing.expectEqual(case.description, alertForError(case.err));
+}
+
+// RFC 8446 §6.2 — decode failures use decode_error, malformed handshake
+// sequencing uses unexpected_message, and semantic protocol violations use the
+// more specific alert when TLS 1.3 defines one.
+test "alertForError: parser and semantic failures map to protocol alerts" {
+    const cases = [_]struct {
+        err: anyerror,
+        description: Description,
+    }{
+        .{ .err = error.AuthenticationFailed, .description = .bad_record_mac },
+        .{ .err = error.SignatureVerificationFailed, .description = .decrypt_error },
+        .{ .err = error.InvalidVerifyData, .description = .decrypt_error },
+        .{ .err = error.UnexpectedEof, .description = .decode_error },
+        .{ .err = error.EmptyCertificateList, .description = .decode_error },
+        .{ .err = error.EmptyTicket, .description = .decode_error },
+        .{ .err = error.InvalidAlertLength, .description = .decode_error },
+        .{ .err = error.InvalidEncoding, .description = .decode_error },
+        .{ .err = error.InvalidEnumTag, .description = .decode_error },
+        .{ .err = error.InvalidExtensionLength, .description = .decode_error },
+        .{ .err = error.InvalidHandshakeLength, .description = .decode_error },
+        .{ .err = error.InvalidVectorLength, .description = .decode_error },
+        .{ .err = error.IncompleteRecord, .description = .decode_error },
+        .{ .err = error.RecordTooShort, .description = .decode_error },
+        .{ .err = error.InvalidInnerPlaintext, .description = .decode_error },
+        .{ .err = error.InvalidHandshakeType, .description = .unexpected_message },
+        .{ .err = error.UnexpectedRecord, .description = .unexpected_message },
+        .{ .err = error.UnexpectedMessage, .description = .unexpected_message },
+        .{ .err = error.MissingExtension, .description = .missing_extension },
+        .{ .err = error.MissingSignatureAlgorithmsExtension, .description = .missing_extension },
+        .{ .err = error.UnsupportedExtension, .description = .unsupported_extension },
+        .{ .err = error.UnsupportedTlsVersion, .description = .protocol_version },
+        .{ .err = error.UnsupportedCipherSuite, .description = .handshake_failure },
+        .{ .err = error.UnsupportedKeyShare, .description = .handshake_failure },
+        .{ .err = error.NoApplicationProtocol, .description = .no_application_protocol },
+        .{ .err = error.DuplicateExtension, .description = .illegal_parameter },
+        .{ .err = error.DuplicateKeyShare, .description = .illegal_parameter },
+        .{ .err = error.InvalidCompressionMethod, .description = .illegal_parameter },
+        .{ .err = error.InvalidSessionIdEcho, .description = .illegal_parameter },
+        .{ .err = error.UnexpectedCertificateRequestContext, .description = .illegal_parameter },
+        .{ .err = error.UnexpectedExtension, .description = .illegal_parameter },
+        .{ .err = error.IllegalParameter, .description = .illegal_parameter },
+        .{ .err = error.IdentityElement, .description = .illegal_parameter },
+        .{ .err = error.MalformedKeyShare, .description = .illegal_parameter },
+        .{ .err = error.UnofferedAlpnProtocol, .description = .illegal_parameter },
+        .{ .err = error.UnsupportedKeyShareGroup, .description = .illegal_parameter },
+        .{ .err = error.UnsupportedSignatureScheme, .description = .illegal_parameter },
+        .{ .err = error.SignatureSchemeNotOffered, .description = .illegal_parameter },
+    };
+    for (cases) |case| try testing.expectEqual(case.description, alertForError(case.err));
+}
+
+// RFC 8446 §6 — unknown errors fall through to internal_error.
+test "alertForError: unknown error maps to internal_error" {
+    try testing.expectEqual(.internal_error, alertForError(error.SomeUnmappedError));
 }

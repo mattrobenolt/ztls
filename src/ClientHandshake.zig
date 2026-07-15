@@ -890,80 +890,6 @@ pub fn handleRecord(self: *ClientHandshake, record: []u8, out: []u8) HandleError
 
 pub const AlertError = RecordLayer.EncryptError || error{PendingWrite};
 
-pub fn alertForError(err: anyerror) alert.Description {
-    return switch (err) {
-        error.AuthenticationFailed => .bad_record_mac,
-        error.SignatureVerificationFailed,
-        error.InvalidVerifyData,
-        => .decrypt_error,
-        error.EmptyCertificateList,
-        error.EmptyTicket,
-        error.InvalidAlertLength,
-        error.InvalidEncoding,
-        error.InvalidEnumTag,
-        error.InvalidExtensionLength,
-        error.InvalidHandshakeLength,
-        error.InvalidVectorLength,
-        error.UnexpectedEof,
-        error.IncompleteRecord,
-        error.RecordTooShort,
-        error.InvalidInnerPlaintext,
-        => .decode_error,
-        error.MissingTrustAnchor,
-        error.CertificateIssuerNotFound,
-        => .unknown_ca,
-        error.CertificateExpired,
-        error.CertificateNotYetValid,
-        => .certificate_expired,
-        error.CertificateKeyUsageRejected,
-        error.CertificateExtendedKeyUsageRejected,
-        error.CertificateSignatureAlgorithmRejected,
-        error.CertificateSignatureAlgorithmUnsupported,
-        error.UnsupportedCertificateVersion,
-        => .unsupported_certificate,
-        error.CertificateHostMismatch,
-        error.CertificateNameConstraintViolation,
-        error.CertificateNameConstraintUnsupported,
-        => .certificate_unknown,
-        error.CertificateFieldHasInvalidLength,
-        error.CertificateFieldHasWrongDataType,
-        error.CertificateHasInvalidBitString,
-        error.CertificateTimeInvalid,
-        error.CertificateHasUnrecognizedObjectId,
-        error.CertificateIssuerMismatch,
-        error.CertificatePublicKeyInvalid,
-        error.CertificateSignatureAlgorithmMismatch,
-        error.CertificateSignatureInvalidLength,
-        error.InvalidSignature,
-        => .bad_certificate,
-        error.MissingExtension,
-        error.MissingSignatureAlgorithmsExtension,
-        => .missing_extension,
-        error.UnsupportedExtension => .unsupported_extension,
-        error.UnsupportedTlsVersion => .protocol_version,
-        error.UnsupportedCipherSuite => .handshake_failure,
-        error.NoApplicationProtocol => .no_application_protocol,
-        error.DuplicateExtension,
-        error.DuplicateKeyShare,
-        error.InvalidCompressionMethod,
-        error.InvalidSessionIdEcho,
-        error.UnexpectedCertificateRequestContext,
-        error.UnexpectedExtension,
-        error.IllegalParameter,
-        error.IdentityElement,
-        error.UnofferedAlpnProtocol,
-        error.UnsupportedKeyShareGroup,
-        error.UnsupportedSignatureScheme,
-        error.SignatureSchemeNotOffered,
-        => .illegal_parameter,
-        error.InvalidHandshakeType,
-        error.UnexpectedRecord,
-        error.UnexpectedMessage,
-        => .unexpected_message,
-        else => .internal_error,
-    };
-}
-
 /// Encode a TLS alert record (then completeWrite() once sent). Before handshake
 /// keys exist this emits a plaintext alert record; after ServerHello it encrypts
 /// the alert under the current send traffic key. RFC 8446 §6.
@@ -2027,7 +1953,7 @@ test "processServerHello: rejects invalid secp256r1 point" {
         &bad_ks,
     );
     try testing.expectError(error.IdentityElement, hs.processServerHello(sh));
-    try testing.expectEqual(.illegal_parameter, alertForError(error.IdentityElement));
+    try testing.expectEqual(.illegal_parameter, alert.alertForError(error.IdentityElement));
 }
 
 // RFC 8446 §4.1.3 — ServerHello key_share must select an offered group.
@@ -2228,72 +2154,8 @@ test "processFlight: rejects unanchored Certificate by default" {
     var peer = try hs.tx.clone();
     defer peer.deinit();
     var out: [64]u8 = undefined;
-    const rec = try hs.sendAlert(alertForError(error.MissingTrustAnchor), &out);
+    const rec = try hs.sendAlert(alert.alertForError(error.MissingTrustAnchor), &out);
     try expectEncryptedAlert(&peer, rec, .unknown_ca);
-}
-
-// RFC 8446 §4.4.2.2, §6.2 — certificate-processing failures are mapped to
-// certificate-related alerts for callers to send through the Sans-I/O API.
-test "alertForError: certificate failures map to certificate alerts" {
-    const cases = [_]struct {
-        err: anyerror,
-        description: alert.Description,
-    }{
-        .{ .err = error.MissingTrustAnchor, .description = .unknown_ca },
-        .{ .err = error.CertificateIssuerNotFound, .description = .unknown_ca },
-        .{ .err = error.CertificateExpired, .description = .certificate_expired },
-        .{ .err = error.CertificateNotYetValid, .description = .certificate_expired },
-        .{
-            .err = error.CertificateKeyUsageRejected,
-            .description = .unsupported_certificate,
-        },
-        .{
-            .err = error.CertificateExtendedKeyUsageRejected,
-            .description = .unsupported_certificate,
-        },
-        .{
-            .err = error.CertificateSignatureAlgorithmRejected,
-            .description = .unsupported_certificate,
-        },
-        .{ .err = error.CertificateHostMismatch, .description = .certificate_unknown },
-        .{ .err = error.CertificateNameConstraintViolation, .description = .certificate_unknown },
-        .{ .err = error.CertificateFieldHasInvalidLength, .description = .bad_certificate },
-        .{ .err = error.InvalidSignature, .description = .bad_certificate },
-        .{ .err = error.UnsupportedSignatureScheme, .description = .illegal_parameter },
-    };
-    for (cases) |case| try testing.expectEqual(case.description, alertForError(case.err));
-}
-
-// RFC 8446 §6.2 — decode failures use decode_error, malformed handshake
-// sequencing uses unexpected_message, and semantic protocol violations use the
-// more specific alert when TLS 1.3 defines one.
-test "alertForError: parser and semantic failures map to protocol alerts" {
-    const cases = [_]struct {
-        err: anyerror,
-        description: alert.Description,
-    }{
-        .{ .err = error.UnexpectedEof, .description = .decode_error },
-        .{ .err = error.EmptyTicket, .description = .decode_error },
-        .{ .err = error.InvalidAlertLength, .description = .decode_error },
-        .{ .err = error.InvalidHandshakeLength, .description = .decode_error },
-        .{ .err = error.InvalidVectorLength, .description = .decode_error },
-        .{ .err = error.InvalidEnumTag, .description = .decode_error },
-        .{ .err = error.InvalidHandshakeType, .description = .unexpected_message },
-        .{ .err = error.UnexpectedMessage, .description = .unexpected_message },
-        .{ .err = error.MissingExtension, .description = .missing_extension },
-        .{ .err = error.UnsupportedExtension, .description = .unsupported_extension },
-        .{ .err = error.UnsupportedTlsVersion, .description = .protocol_version },
-        .{ .err = error.UnsupportedCipherSuite, .description = .handshake_failure },
-        .{ .err = error.NoApplicationProtocol, .description = .no_application_protocol },
-        .{ .err = error.DuplicateExtension, .description = .illegal_parameter },
-        .{ .err = error.DuplicateKeyShare, .description = .illegal_parameter },
-        .{ .err = error.InvalidCompressionMethod, .description = .illegal_parameter },
-        .{ .err = error.InvalidSessionIdEcho, .description = .illegal_parameter },
-        .{ .err = error.IdentityElement, .description = .illegal_parameter },
-        .{ .err = error.UnexpectedExtension, .description = .illegal_parameter },
-        .{ .err = error.UnofferedAlpnProtocol, .description = .illegal_parameter },
-    };
-    for (cases) |case| try testing.expectEqual(case.description, alertForError(case.err));
 }
 
 // RFC 8446 §4.4.2 — server Certificate request_context is always empty.
@@ -2369,7 +2231,7 @@ test "processFlight: rejects unsolicited EncryptedExtensions ALPN" {
     var peer = try hs.tx.clone();
     defer peer.deinit();
     var out: [64]u8 = undefined;
-    const rec = try hs.sendAlert(alertForError(error.UnsupportedExtension), &out);
+    const rec = try hs.sendAlert(alert.alertForError(error.UnsupportedExtension), &out);
     try expectEncryptedAlert(&peer, rec, .unsupported_extension);
 }
 
@@ -2560,7 +2422,7 @@ test "processFlight: rejects unoffered CertificateVerify scheme" {
     var peer = try hs.tx.clone();
     defer peer.deinit();
     var out: [64]u8 = undefined;
-    const description = ClientHandshake.alertForError(error.UnsupportedSignatureScheme);
+    const description = alert.alertForError(error.UnsupportedSignatureScheme);
     const rec = try hs.sendAlert(description, &out);
     try expectEncryptedAlert(&peer, rec, .illegal_parameter);
 }

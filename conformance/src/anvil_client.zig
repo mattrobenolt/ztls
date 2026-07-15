@@ -151,7 +151,7 @@ fn sendAlertAndReturnError(
     // would be wrong (and would emit a spurious internal_error). Just
     // propagate the original error. RFC 8446 §6.
     if (err == error.PeerAlert) return err;
-    const rec = hs.sendAlert(ztls.ClientHandshake.alertForError(err), out) catch return err;
+    const rec = hs.sendAlert(ztls.alert.alertForError(err), out) catch return err;
     net.writeAll(stream, rec) catch return err;
     hs.completeWrite();
     return err;

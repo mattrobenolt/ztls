@@ -1270,7 +1270,7 @@ fn sendBestEffortAlert(
     err: anyerror,
     out: []u8,
 ) void {
-    const description = ztls.ServerHandshake.alertForError(err);
+    const description = ztls.alert.alertForError(err);
     const alert_record = hs.sendAlert(description, out) catch return;
     writeAll(stream, alert_record) catch return;
 }
