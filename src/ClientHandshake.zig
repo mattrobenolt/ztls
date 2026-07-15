@@ -1156,6 +1156,14 @@ pub fn processHelloRetryRequest(
         .buffering => unreachable,
     }
 
+    // RFC 8446 §4.1.4: 0-RTT is not compatible with HelloRetryRequest. A
+    // client that offered early data MUST NOT send 0-RTT data after an HRR,
+    // so invalidate the early-data offer before generating ClientHello2.
+    if (self.early_tx) |*early_tx| {
+        early_tx.deinit();
+        self.early_tx = null;
+    }
+
     // Generate ClientHello2 with only the selected group's key_share.
     const ch2 = try client_hello.encodeRetryAfterHrr(
         out,
@@ -3676,6 +3684,165 @@ test "fuzz: processFlight handles arbitrary decrypted bytes" {
     const empty_cert = [_]u8{ 0x0b, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00 };
     try fuzz_compat.fuzzBytes(fuzzProcessFlight, {}, .{
         .corpus = &.{ &empty_ee, &bare_finished, &empty_cert },
+    });
+}
+
+// RFC 8446 §4.2.10, §4.4, §4.5 — dedicated 0-RTT client state-machine fuzz
+// target. The client offers a PSK ticket that permits early data and only
+// advertises X25519 in the key_share, leaving secp256r1 available for a valid
+// HelloRetryRequest. The input is treated as a sequence of inbound TLS records
+// fed to handleRecord; the target asserts the 0-RTT invariants without panicking.
+fn setupZeroRttClientForFuzz(ticket: *const SessionTicket) !ClientHandshake {
+    var hs: ClientHandshake = .init(.{
+        .keypairs = .initWithP256(
+            rfc8448_client_keypair,
+            try p256.KeyPair.generateDeterministic(p256_client_seed),
+        ),
+        .host_name = null,
+        .now_sec = 0,
+        .random = .zero,
+    });
+
+    // Build a ClientHello with PSK + early_data but no P-256 key_share entry,
+    // so a HelloRetryRequest selecting secp256r1 is valid (RFC 8446 §4.2.8).
+    var ch_buf: [2048]u8 = undefined;
+    const r = try client_hello.encodeWithPsk(
+        &ch_buf,
+        hs.random,
+        hs.keypairs.x25519.public_key,
+        null, // no P-256 key_share
+        null, // no P-384 key_share
+        hs.policy.host_name,
+        hs.alpn_protocols,
+        .psk_dhe_ke,
+        ticket.identity.constSlice(),
+        ticket.ticket_age_add,
+        32, // binder length for SHA-256 suites
+        true, // offer early_data
+    );
+    const ch = r.msg;
+
+    // Compute the PSK binder over the truncated prefix and patch it in.
+    // RFC 8446 §4.2.11.2.
+    const H = hkdf.HkdfSha256;
+    const early = H.pskEarlySecret(ticket.psk.constSlice());
+    const binder_key = H.resumptionBinderKey(early);
+    const fin_key = H.finishedKey(.{ .data = binder_key.data });
+    var th: H.TranscriptHash = undefined;
+    Sha256.hash(ch[0..r.prefix_len], &th.data, .{});
+    const binder = H.binder(fin_key, &th);
+    @memcpy(ch[r.binder_offset..][0..32], &binder);
+
+    // Record the offered PSK so processServerHello can use it.
+    hs.offered_psk = ticket.psk.constSlice();
+    hs.offered_psk_cipher_suite = ticket.cipher_suite;
+    hs.injectClientHello(ch);
+
+    // Derive the client_early_traffic_secret over the full ClientHello and
+    // install the early-data RecordLayer. RFC 8446 §4.2.10, §7.1.
+    var full_th: H.TranscriptHash = undefined;
+    Sha256.hash(ch, &full_th.data, .{});
+    const early_traffic = H.clientEarlyTrafficSecret(early, &full_th);
+    hs.early_tx = try H.makeRecordLayer(ticket.cipher_suite, early_traffic);
+
+    return hs;
+}
+
+fn fuzzZeroRttClient(_: void, input: []const u8) anyerror!void {
+    const psk_bytes: [32]u8 = @splat(0x42);
+    const identity_bytes = [_]u8{ 0x2c, 0x03, 0x5d, 0x82, 0x93, 0x59 };
+    var ticket: SessionTicket = .{
+        .ticket_age_add = 0x262a6494,
+        .cipher_suite = .aes_128_gcm_sha256,
+        .max_early_data_size = 0x4000,
+    };
+    ticket.identity.appendSliceAssumeCapacity(&identity_bytes);
+    ticket.psk.appendSliceAssumeCapacity(&psk_bytes);
+
+    var hs: ClientHandshake = try setupZeroRttClientForFuzz(&ticket);
+    defer hs.deinit();
+
+    var out: [4096]u8 = undefined;
+    var pos: usize = 0;
+    while (pos + frame.header_len <= input.len) {
+        const hdr = frame.parseHeader(input[pos..]) catch {
+            pos += 1;
+            continue;
+        };
+        const body_len = hdr.length();
+        const end = pos + frame.header_len + body_len;
+        if (end > input.len or end - pos > frame.max_wire_record_len) {
+            pos += 1;
+            continue;
+        }
+
+        var rec: [frame.max_wire_record_len]u8 = undefined;
+        @memcpy(rec[0 .. end - pos], input[pos..end]);
+
+        const ev = hs.handleRecord(rec[0 .. end - pos], &out) catch |err| {
+            if (err == error.PendingWrite) hs.completeWrite();
+            pos = end;
+            continue;
+        };
+        switch (ev) {
+            .write => hs.completeWrite(),
+            .key_update => |ku| if (ku.response != null) hs.completeWrite(),
+            else => {},
+        }
+        pos = end;
+    }
+
+    // Invariant: HRR invalidates the early-data offer (RFC 8446 §4.1.4).
+    if (hs.retry_selected_group != null) {
+        try testing.expect(hs.early_tx == null);
+    }
+    // Invariant: early data is rejected unless the server signals acceptance
+    // in EncryptedExtensions. Once the flight advances past EE, a declined
+    // offer must have cleared early_tx. RFC 8446 §4.2.10, §4.5.
+    if (!hs.server_accepted_early_data and
+        hs.state != .start and hs.state != .wait_sh and hs.state != .wait_ee)
+    {
+        try testing.expect(hs.early_tx == null);
+    }
+    // Invariant: a rejected early-data offer must not leave early_tx active
+    // once the handshake completes (app-traffic keys are derived from the
+    // handshake secret, not the early secret). RFC 8446 §4.2.10, §4.5.
+    if (hs.state == .connected and !hs.server_accepted_early_data) {
+        try testing.expect(hs.early_tx == null);
+    }
+    // Invariant: accepted 0-RTT is not counted as handshake data. After the
+    // handshake completes, the early-data RecordLayer must have been closed
+    // by sending EndOfEarlyData (which is the only 0-RTT-related message that
+    // enters the handshake transcript). The actual early-data bytes are not
+    // handshake data and must not be promoted to application traffic.
+    // RFC 8446 §4.2.10, §4.5.
+    if (hs.server_accepted_early_data and hs.state == .connected) {
+        try testing.expect(hs.early_tx == null);
+    }
+}
+
+test "fuzz: 0-RTT client state machine handles arbitrary inbound records" {
+    // Valid HRR seed: selects secp256r1, which the ClientHello offered in
+    // supported_groups but omitted from key_share. This exercises the HRR
+    // path where the early-data offer must be invalidated (RFC 8446 §4.1.4).
+    var hrr_msg_buf: [128]u8 = undefined;
+    const hrr_msg = try server_hello.encodeHelloRetryRequest(
+        &hrr_msg_buf,
+        &.{},
+        .aes_128_gcm_sha256,
+        .secp256r1,
+    );
+    var hrr_record: [128]u8 = undefined;
+    const hrr_hdr: frame.Header = .init(.handshake, @intCast(hrr_msg.len));
+    hrr_hdr.write(hrr_record[0..frame.header_len]);
+    @memcpy(hrr_record[frame.header_len..][0..hrr_msg.len], hrr_msg);
+    const hrr_seed = hrr_record[0 .. frame.header_len + hrr_msg.len];
+
+    try fuzz_compat.fuzzBytes(fuzzZeroRttClient, {}, .{
+        .corpus = &.{
+            &.{},
+            hrr_seed,
+        },
     });
 }
 
