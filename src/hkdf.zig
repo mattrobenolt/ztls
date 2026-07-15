@@ -1,7 +1,7 @@
-/// TLS 1.3 HKDF key derivation.
-///
-/// Wraps std.crypto.kdf.hkdf with TLS 1.3-specific label expansion per
-/// RFC 8446 §7.1 and §7.3.
+//! TLS 1.3 HKDF key derivation.
+//!
+//! Wraps std.crypto.kdf.hkdf with TLS 1.3-specific label expansion per
+//! RFC 8446 §7.1 and §7.3.
 const std = @import("std");
 const assert = std.debug.assert;
 const crypto = std.crypto;

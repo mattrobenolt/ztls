@@ -1,6 +1,6 @@
-/// TLS 1.3 Certificate and CertificateVerify handshake message handling.
-///
-/// RFC 8446 §4.4.2, §4.4.3
+//! TLS 1.3 Certificate and CertificateVerify handshake message handling.
+//!
+//! RFC 8446 §4.4.2, §4.4.3
 const std = @import("std");
 const builtin = @import("builtin");
 const Sha256 = std.crypto.hash.sha2.Sha256;

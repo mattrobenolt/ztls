@@ -1,6 +1,6 @@
-/// Extensions to std.mem for ztls.
-///
-/// TLS is entirely big-endian, so readInt/writeInt drop the endian argument.
+//! Extensions to std.mem for ztls.
+//!
+//! TLS is entirely big-endian, so readInt/writeInt drop the endian argument.
 const std = @import("std");
 const mem = std.mem;
 const assert = std.debug.assert;

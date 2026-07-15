@@ -1,6 +1,6 @@
-/// TLS 1.3 Finished handshake message — verify and encode.
-///
-/// RFC 8446 §4.4.4
+//! TLS 1.3 Finished handshake message — verify and encode.
+//!
+//! RFC 8446 §4.4.4
 const std = @import("std");
 const crypto = std.crypto;
 const Sha256 = crypto.hash.sha2.Sha256;

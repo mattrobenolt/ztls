@@ -1,8 +1,8 @@
-/// TLS 1.3 client handshake state machine.
-///
-/// Owns the running transcript hash and drives the handshake message sequence.
-/// Does no I/O: the caller feeds in decrypted record bytes and receives bytes
-/// to send. RFC 8446 §4, Appendix A.
+//! TLS 1.3 client handshake state machine.
+//!
+//! Owns the running transcript hash and drives the handshake message sequence.
+//! Does no I/O: the caller feeds in decrypted record bytes and receives bytes
+//! to send. RFC 8446 §4, Appendix A.
 const std = @import("std");
 const assert = std.debug.assert;
 const crypto = std.crypto;

@@ -1,6 +1,6 @@
-/// TLS 1.3 EncryptedExtensions handshake message parsing.
-///
-/// RFC 8446 §4.3.1
+//! TLS 1.3 EncryptedExtensions handshake message parsing.
+//!
+//! RFC 8446 §4.3.1
 const std = @import("std");
 const mem = std.mem;
 const testing = std.testing;

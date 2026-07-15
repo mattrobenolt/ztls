@@ -1,6 +1,6 @@
-/// TLS 1.3 CertificateRequest handshake message handling.
-///
-/// RFC 8446 §4.3.2
+//! TLS 1.3 CertificateRequest handshake message handling.
+//!
+//! RFC 8446 §4.3.2
 const std = @import("std");
 const testing = std.testing;
 

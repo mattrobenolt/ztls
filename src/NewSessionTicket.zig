@@ -1,9 +1,9 @@
-/// TLS 1.3 NewSessionTicket parsing.
-///
-/// ztls does not implement PSK resumption yet, but post-handshake tickets are
-/// still handshake messages on the encrypted stream. Parse enough structure to
-/// reject malformed tickets instead of accepting arbitrary bytes.
-/// RFC 8446 §4.6.1.
+//! TLS 1.3 NewSessionTicket parsing.
+//!
+//! ztls does not implement PSK resumption yet, but post-handshake tickets are
+//! still handshake messages on the encrypted stream. Parse enough structure to
+//! reject malformed tickets instead of accepting arbitrary bytes.
+//! RFC 8446 §4.6.1.
 const std = @import("std");
 const testing = std.testing;
 const fuzz_compat = @import("fuzz_compat.zig");
