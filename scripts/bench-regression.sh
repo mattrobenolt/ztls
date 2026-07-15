@@ -22,16 +22,49 @@ cd "$(dirname "$0")/.."
 baseline="${1:-}"
 fresh="${2:-}"
 
+# Extract the EC2 instance type from a capture's metadata.txt. Returns empty
+# string if metadata.txt is missing or the field is absent.
+instance_type_from_metadata() {
+  local dir="$1"
+  local meta="${dir}/metadata.txt"
+  [[ -f "${meta}" ]] || return 0
+  local val
+  val="$(grep -m1 '^ec2_instance_type=' "${meta}" 2>/dev/null | cut -d= -f2-)"
+  echo "${val}"
+}
+
+# Convert an instance type (e.g. c7i.2xlarge) to the committed-dir path pattern
+# used under docs/research/perf/ (e.g. *ec2-c7i-2xlarge*). Dots become dashes.
+instance_path_pattern() {
+  local itype="$1"
+  local dashed="${itype//./-}"
+  echo "*ec2-${dashed}*"
+}
+
+if [[ -z "${fresh}" ]]; then
+  fresh="$(find zig-out/perf -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort | tail -n 1)"
+fi
+
 if [[ -z "${baseline}" ]]; then
+  # Determine the instance type of the fresh capture so the baseline filter
+  # matches the same instance family. Without this, '*ec2-c7i*' would match
+  # both c7i.large and c7i.2xlarge, silently selecting a smaller-instance
+  # baseline while measuring on the bigger one.
+  fresh_itype="$(instance_type_from_metadata "${fresh}")"
+  if [[ -n "${fresh_itype}" ]]; then
+    path_pattern="$(instance_path_pattern "${fresh_itype}")"
+  else
+    # No metadata.txt (e.g. local smoke capture). Fall back to the instance
+    # type hardcoded by `just bench-regression-check`.
+    path_pattern='*ec2-c7i-2xlarge*'
+  fi
+
   # Latest committed wall-time capture with a ztls.txt file. Row-perf and
   # handshake-row-perf dirs don't have ztls.txt and are not valid baselines.
   baseline="$(find docs/research/perf -mindepth 1 -maxdepth 1 -type d \
-    -path '*ec2-c7i*' 2>/dev/null | sort | while IFS= read -r d; do
+    -path "${path_pattern}" 2>/dev/null | sort | while IFS= read -r d; do
       [[ -f "$d/ztls.txt" ]] && echo "$d"
     done | tail -n 1)"
-fi
-if [[ -z "${fresh}" ]]; then
-  fresh="$(find zig-out/perf -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort | tail -n 1)"
 fi
 
 if [[ -z "${baseline}" ]]; then
@@ -50,6 +83,17 @@ fi
 if [[ ! -f "${fresh}/ztls.txt" ]]; then
   echo "fresh ${fresh}/ztls.txt missing" >&2
   exit 1
+fi
+
+# Resolve instance types for the comparison header so a human running the gate
+# can see what is being compared.
+baseline_itype="$(instance_type_from_metadata "${baseline}")"
+if [[ -z "${baseline_itype}" ]]; then
+  baseline_itype="unknown"
+fi
+fresh_itype="$(instance_type_from_metadata "${fresh}")"
+if [[ -z "${fresh_itype}" ]]; then
+  fresh_itype="unknown"
 fi
 
 tmp_dir=""
@@ -95,8 +139,8 @@ grep -E '^Benchmark(AppClientToServer|AppServerToClient|AppPingPong)/.*TLS_AES_1
   "${tmp_dir}/fresh.txt" > "${tmp_dir}/fresh-aes.txt" || true
 
 echo "# regression check"
-echo "# baseline: ${baseline}"
-echo "# fresh:    ${fresh}"
+echo "# baseline: ${baseline} (instance: ${baseline_itype})"
+echo "# fresh:    ${fresh} (instance: ${fresh_itype})"
 echo "# threshold: 15% regression on any comparable AES-GCM row fails the gate"
 echo
 echo "## Comparable AES-GCM rows (ztls baseline vs fresh)"
