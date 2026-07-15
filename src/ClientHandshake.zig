@@ -3247,6 +3247,156 @@ test "startWithPsk: binder matches an independent HMAC over the prefix" {
     try testing.expect(std.mem.indexOf(u8, ch, &identity) != null);
 }
 
+// RFC 8446 §4.2.11, §4.4.4 — PSK-offering client rejects a bare Finished when the
+// server did not select a PSK (declined-PSK client gets pure-DHE keys and must
+// see a full authenticated flight), and still accepts the legitimate PSK
+// fast-path when the server does select it. Regression for #73.
+test "handleRecord: PSK-offering client rejects bare Finished unless server selected PSK" {
+    const psk_bytes: [32]u8 = @splat(0x42);
+    const identity_bytes = [_]u8{ 0x2c, 0x03, 0x5d, 0x82, 0x93, 0x59 };
+
+    // Common setup: client offers a PSK, server has its own ephemeral keypair.
+    const client_kp = x25519.KeyPair.generate();
+    const server_kp = x25519.KeyPair.generate();
+    var server_ks: server_hello.KeyShare = .{ .x25519 = server_kp.public_key };
+
+    var ticket: SessionTicket = .{
+        .ticket_age_add = 0x262a6494,
+        .cipher_suite = .aes_128_gcm_sha256,
+    };
+    ticket.identity.appendSliceAssumeCapacity(&identity_bytes);
+    ticket.psk.appendSliceAssumeCapacity(&psk_bytes);
+
+    const empty_ee = [_]u8{ 0x08, 0x00, 0x00, 0x02, 0x00, 0x00 };
+    const fake_finished: [4 + 32]u8 = .{ 0x14, 0x00, 0x00, 0x20 } ++ @as([32]u8, @splat(0xaa));
+
+    // ---- Adversarial case: server declines the PSK but tries a bare Finished. ----
+    var client: ClientHandshake = .init(.{
+        .keypairs = .init(client_kp),
+        .host_name = null,
+        .now_sec = 0,
+        .random = .zero,
+    });
+    client.policy.insecure_no_chain_anchor = true;
+    defer client.deinit();
+
+    var client_out: [4096]u8 = undefined;
+    const ch_record = try client.startWithPsk(&ticket, &client_out, false);
+    client.completeWrite();
+    _ = ch_record;
+
+    var sh_buf: [256]u8 = undefined;
+    const sh = try server_hello.encodeWithKeyShare(
+        &sh_buf,
+        @splat(0xab),
+        &.{},
+        .aes_128_gcm_sha256,
+        &server_ks,
+    );
+    try client.processServerHello(sh);
+
+    // The server did not select the PSK, but the client offered one.
+    try testing.expect(!client.server_selected_psk);
+    try testing.expect(client.offered_psk != null);
+
+    // Encrypt EE + bare Finished under the pure DHE handshake key (the server's
+    // write key equals the client's rx key when no PSK was selected).
+    var server_tx = try client.rx.clone();
+    defer server_tx.deinit();
+    var no_psk_flight: [64]u8 = undefined;
+    @memcpy(no_psk_flight[0..empty_ee.len], &empty_ee);
+    @memcpy(no_psk_flight[empty_ee.len .. empty_ee.len + fake_finished.len], &fake_finished);
+    var no_psk_record_buf: [1024]u8 = undefined;
+    const no_psk_record = try server_tx.encrypt(
+        .handshake,
+        no_psk_flight[0 .. empty_ee.len + fake_finished.len],
+        &no_psk_record_buf,
+    );
+
+    var no_psk_mutable: [1024]u8 = undefined;
+    @memcpy(no_psk_mutable[0..no_psk_record.len], no_psk_record);
+    try testing.expectError(
+        error.UnexpectedMessage,
+        client.handleRecord(no_psk_mutable[0..no_psk_record.len], &client_out),
+    );
+    try testing.expect(!client.isConnected());
+    try testing.expect(client.state != .connected);
+
+    // ---- Legitimate case: server selects the PSK and sends a valid bare Finished. ----
+    var client2: ClientHandshake = .init(.{
+        .keypairs = .init(client_kp),
+        .host_name = null,
+        .now_sec = 0,
+        .random = .zero,
+    });
+    client2.policy.insecure_no_chain_anchor = true;
+    defer client2.deinit();
+
+    var client2_out: [4096]u8 = undefined;
+    const ch2_record = try client2.startWithPsk(&ticket, &client2_out, false);
+    client2.completeWrite();
+    const ch2 = ch2_record[frame.header_len..];
+
+    var sh2_buf: [256]u8 = undefined;
+    const sh2 = try server_hello.encodeWithKeyShareAndPsk(
+        &sh2_buf,
+        @splat(0xcd),
+        &.{},
+        .aes_128_gcm_sha256,
+        &server_ks,
+        0,
+    );
+    try client2.processServerHello(sh2);
+
+    try testing.expect(client2.server_selected_psk);
+    try testing.expect(client2.offered_psk != null);
+
+    // Compute the valid server Finished for the PSK fast path independently.
+    const dhe = try x25519.sharedSecret(client_kp.secret_key, server_kp.public_key);
+    const early = hkdf.HkdfSha256.pskEarlySecret(&psk_bytes);
+    const hs_secret = hkdf.HkdfSha256.handshakeSecret(early, &dhe);
+
+    var sha_sh: Sha256 = .init(.{});
+    sha_sh.update(ch2);
+    sha_sh.update(sh2);
+    var th_sh: [32]u8 = undefined;
+    sha_sh.final(&th_sh);
+    const server_secret = hkdf.HkdfSha256.serverHandshakeTrafficSecret(
+        hs_secret,
+        &hkdf.HkdfSha256.TranscriptHash.init(th_sh),
+    );
+    const server_fin_key = hkdf.HkdfSha256.finishedKey(server_secret);
+
+    var sha_ee: Sha256 = .init(.{});
+    sha_ee.update(ch2);
+    sha_ee.update(sh2);
+    sha_ee.update(&empty_ee);
+    var th_ee: [32]u8 = undefined;
+    sha_ee.final(&th_ee);
+
+    var fin_buf: [64]u8 = undefined;
+    const fin = try finished.encode(Sha256, &fin_buf, &server_fin_key.data, &th_ee);
+
+    // Encrypt EE + valid Finished under the PSK+DHE handshake key.
+    var server_tx2 = try client2.rx.clone();
+    defer server_tx2.deinit();
+    var psk_flight: [128]u8 = undefined;
+    @memcpy(psk_flight[0..empty_ee.len], &empty_ee);
+    @memcpy(psk_flight[empty_ee.len .. empty_ee.len + fin.len], fin);
+    var psk_record_buf: [1024]u8 = undefined;
+    const psk_record = try server_tx2.encrypt(
+        .handshake,
+        psk_flight[0 .. empty_ee.len + fin.len],
+        &psk_record_buf,
+    );
+
+    var psk_mutable: [1024]u8 = undefined;
+    @memcpy(psk_mutable[0..psk_record.len], psk_record);
+    const ev = try client2.handleRecord(psk_mutable[0..psk_record.len], &client2_out);
+    try testing.expect(ev == .write);
+    try testing.expect(client2.isConnected());
+}
+
 test "handleRecord: malformed NewSessionTicket is rejected" {
     var hs = try connectedTestClient();
     const next_rx = try hs.suite.ratchetServerKey();
