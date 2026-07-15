@@ -87,8 +87,16 @@ lint: lint-zig lint-shell lint-actions lint-just lint-markdown lint-issues lint-
 lint-markdown:
     #!/usr/bin/env bash
     matches=$(grep -rnE --include='*.md' --exclude-dir=rfcs -e '[Nn]ow (uses|enforces|defaults|requires|provides|supports|accepts|rejects|returns|fails|emits|includes|features|serves|offers|builds|depends|targets|relies|will|becomes)' -e '(is|are) (currently|presently|today)' -e 'this commit (has|now|will)' docs/research/) || true
-    if [[ -n "$matches" ]]; then
-        printf 'status-language drift found in research docs:\n%s\n' "$matches" >&2
+    # Reject bold status-heading forms (e.g. `**Status:**`, `**State:**`,
+    # `**Done:**`, `**Progress:**`, or the same without trailing colon): a
+    # verdict label outside the spine. Status lives only in
+    # PRODUCTION_READINESS.md; the search scope `docs/research/` already
+    # excludes the spine, but `grep -v` makes the exclusion explicit and
+    # future-proof if the scope widens.
+    heading_matches=$(grep -rniE --include='*.md' --exclude-dir=rfcs -e '^\*\*(status|state|done|progress):?\*\*( |$)' docs/research/ | grep -v 'PRODUCTION_READINESS.md' || true)
+    if [[ -n "$matches" || -n "$heading_matches" ]]; then
+        [[ -n "$matches" ]] && printf 'status-language drift found in research docs:\n%s\n' "$matches" >&2
+        [[ -n "$heading_matches" ]] && printf 'status-heading drift found in research docs (PRODUCTION_READINESS.md is the spine and is the only doc allowed to carry status):\n%s\n' "$heading_matches" >&2
         exit 1
     fi
     echo "no status-language drift"

@@ -58,19 +58,19 @@ workflows.
 
 ## 0-RTT / early data
 
-**Status:** Partial. The 0-RTT accept-path is implemented: the client offers
-early_data + derives the client_early_traffic_secret + sends 0-RTT data
-(`sendEarlyData`); the server derives the early traffic key from the selected
-PSK + ClientHello transcript, decrypts 0-RTT records, and enforces
-max_early_data_size. The server emits the early_data extension in
-EncryptedExtensions when accepting (RFC 8446 §4.2.10). The client sends
-EndOfEarlyData under the early traffic key after the server Finished and before
-its own Finished when the server accepted, and does not send it when the server
-declined (RFC 8446 §4.5). The server expects and decrypts the client's
-EndOfEarlyData with early_rx before the client Finished. Reject-path tests cover
-max_early_data_size exceeded, no-PSK early data, server-declined 0-RTT, and
-client rejection of server-sent EndOfEarlyData. OpenSSL 0-RTT interop is
-CI-gated (ztls client → openssl s_server with `-early_data`).
+The 0-RTT accept-path is implemented: the client offers early_data + derives
+the client_early_traffic_secret + sends 0-RTT data (`sendEarlyData`); the
+server derives the early traffic key from the selected PSK + ClientHello
+transcript, decrypts 0-RTT records, and enforces max_early_data_size. The
+server emits the early_data extension in EncryptedExtensions when accepting
+(RFC 8446 §4.2.10). The client sends EndOfEarlyData under the early traffic
+key after the server Finished and before its own Finished when the server
+accepted, and does not send it when the server declined (RFC 8446 §4.5). The
+server expects and decrypts the client's EndOfEarlyData with early_rx before
+the client Finished. Reject-path tests cover max_early_data_size exceeded,
+no-PSK early data, server-declined 0-RTT, and client rejection of server-sent
+EndOfEarlyData. OpenSSL 0-RTT interop is CI-gated (ztls client → openssl
+s_server with `-early_data`).
 
 **Residual:**
 - Anti-replay is the caller's job: ztls does not own a global replay cache
