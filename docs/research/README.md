@@ -54,6 +54,7 @@ status claim.
 - [`bettertls.md`](bettertls.md) — what `bettertls` validates, how ztls
   covers the local slice without vendoring the Go harness, and the future
   harness path.
+- [`C_ABI_CONFORMANCE.md`](C_ABI_CONFORMANCE.md) — gate shape for #30, including the C harness under TLS-Anvil, skip-list inheritance from the #52 DSA-root classifier, new surface (handshake/alerts/KeyUpdate), and the FFI-residual gap that the C harness does not cover.
 
 ## performance
 
