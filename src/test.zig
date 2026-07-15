@@ -37,4 +37,5 @@ test {
     _ = @import("wycheproof.zig");
     _ = @import("interop.zig");
     _ = @import("crypto/backend_primitive_tests.zig");
+    _ = @import("certificate_name_constraints_differential_test.zig");
 }
