@@ -55,11 +55,12 @@ load-bearing facts are verified against the released Zig 0.16.0 stdlib
 5. **Verification on by default.** A plain `connect` just works against a real
    server: cert verification defaults to the OS trust bundle. `.insecure` is
    the explicit opt-out.
-6. **Out-param init.** `Stream` is large (~50 KB: `RecordBuffer.Storage` ~33 KB
-   + `OutBuffer` ~16 KB + a `Reader`/`Writer`). `connect`/`accept` take
-   `out: *Stream` and return `!void` — no ~50 KB struct returned by value (the
-   large-union-variant codegen hazard, see ztls #65). The caller chooses
-   placement (stack for one connection, heap/arena for many).
+6. **Out-param init.** `Stream` is large (~130 KB client / ~100 KB server:
+   `RecordBuffer.Storage` ~33 KB + `OutBuffer` ~16 KB + `write_buffer` 16 KB
+   + reassembly ~65 KB client / ~33 KB server + the handshake engine).
+   `connect`/`accept` take `out: *Stream` and return `!void` — no large struct
+   returned by value (the large-union-variant codegen hazard, see ztls #65).
+   The caller chooses placement (stack for one connection, heap/arena for many).
 
 ## Public API
 
@@ -98,12 +99,13 @@ pub const Client = struct {
         offer_pq_key_share: bool = false,
     };
 
-    /// A ready, connected TLS 1.3 stream. Sized ~50 KB; place on the stack for
-    /// a single connection or heap/arena for many. Out-param initialized.
+    /// A ready, connected TLS 1.3 stream. Sized ~130 KB (includes inline
+    /// reassembly storage for multi-record certificate chains); place on the
+    /// stack for a single connection or heap/arena for many. Out-param initialized.
     pub const Stream = struct {
         // (fields are internal: owned net.Stream, ztls.ClientHandshake,
-        //  RecordBuffer.Storage + RecordBuffer, OutBuffer, Reader, Writer,
-        //  rx_closed/tx_closed flags.)
+        //  RecordBuffer.Storage + RecordBuffer, OutBuffer, reassembly storage,
+        //  write_buffer, Reader, Writer, rx_closed/tx_closed/closed flags.)
 
         /// Borrowed `*std.Io.Reader` — drop-in for any `*Io.Reader` consumer.
         pub fn reader(s: *Stream) *std.Io.Reader;
@@ -119,10 +121,10 @@ pub const Client = struct {
         /// until `error.EndOfStream`, then close).
         pub fn close(s: *Stream, io: std.Io) void;
 
-        /// Always-callable teardown: secure-zeros ztls secrets (delegates to
-        /// `ClientHandshake.deinit`). Use after a failed connect too. `close`
-        /// calls this internally; call `deinit` directly only if you did NOT
-        /// call `close`.
+        /// Always-callable teardown: closes the socket (no alert) and
+        /// secure-zeros all wrapper-owned buffers. Idempotent. Use after a
+        /// failed connect too — the socket may be open even if the handshake
+        /// failed. `close` sends close_notify first, then does the same cleanup.
         pub fn deinit(s: *Stream) void;
     };
 
@@ -158,7 +160,8 @@ pub const Server = struct {
 
     pub const Stream = struct {
         // (internal: owned net.Stream, ztls.ServerHandshake, RecordBuffer,
-        //  OutBuffer, FlightBuffer, Reader, Writer, flags.)
+        //  OutBuffer [also used as FlightBuffer], reassembly storage,
+        //  write_buffer, Reader, Writer, flags.)
 
         pub fn reader(s: *Stream) *std.Io.Reader;
         pub fn writer(s: *Stream) *std.Io.Writer;
@@ -213,20 +216,18 @@ pub const AcceptError = error{
     HandshakeBufferTooShort,
 } || std.Io.net.Stream.Reader.Error || std.Io.net.Stream.Writer.Error
   || std.Io.Cancelable || std.Io.UnexpectedError;
-
-pub const ReadError = error{
-    TlsBadRecord,        // decrypt/auth failure or malformed record post-handshake
-    TlsAlertReceived,    // peer sent a fatal alert
-    TlsUnexpectedEof,    // socket EOF with NO close_notify (truncation; RFC 8446 §6.1)
-} || std.Io.net.Stream.Reader.Error || std.Io.Cancelable || std.Io.UnexpectedError;
-// A clean close_notify surfaces as error.EndOfStream (from Io.Reader.Error),
-// NOT as a ReadError variant — the natural "stream ended" signal.
-
-pub const WriteError = error{
-    TlsClosed,           // write after our close_notify / peer teardown
-    TlsAlertReceived,
-} || std.Io.net.Stream.Writer.Error || std.Io.Cancelable || std.Io.UnexpectedError;
 ```
+
+Post-handshake reads and writes go through the `Io.Reader`/`Io.Writer` vtable,
+whose `Error` sets are narrow by design — `error{ReadFailed, EndOfStream}` for
+Reader and `error{WriteFailed}` for Writer. All TLS-specific failures
+(decrypt/auth errors, alert received, transport EOF without close_notify)
+collapse to `ReadFailed` on the read path and `WriteFailed` on the write path.
+A clean `close_notify` surfaces as `error.EndOfStream`. The `ReadError` and
+`WriteError` types defined in the library are retained for documentation but are
+NOT produced post-handshake through the vtable — TLS-specific errors surface at
+handshake time via `ConnectError`/`AcceptError`, and post-handshake failures are
+coarse `ReadFailed`/`WriteFailed`.
 
 ## The byte-stream buffering layer (the one piece of real new code)
 
@@ -252,7 +253,7 @@ the caller:
    - `.write` (post-handshake control) → write + `completeWrite`; loop.
    - `.none` → loop.
    - `.closed` → return `error.EndOfStream`.
-   - Transport returns 0 without `.closed` → `error.TlsUnexpectedEof`.
+   - Transport returns 0 without `.closed` → `error.ReadFailed`.
 
 The `Writer` is `BufWriter`-shaped (matching `tokio-rustls`): `interface.buffer`
 is a plaintext staging buffer sized to `ztls.frame.max_plaintext_len` (16384) so
@@ -289,17 +290,18 @@ pub fn main(init: std.process.Init) !void {
 
     // 3. Write via the Io.Writer.
     const w = conn.writer();
-    try w.writeAll(io, "GET / HTTP/1.0\r\nHost: example.com\r\n\r\n");
+    try w.writeAll("GET / HTTP/1.0\r\nHost: example.com\r\n\r\n");
     try w.flush();
 
     // 4. Read via the Io.Reader.
     const r = conn.reader();
     var buf: [4096]u8 = undefined;
     while (true) {
-        const n = r.read(&buf) catch |err| switch (err) {
-            error.EndOfStream => break, // clean close_notify
+        const n = r.readSliceShort(&buf) catch |err| switch (err) {
+            error.ReadFailed => break, // transport closed / TLS error
             else => return err,
         };
+        if (n == 0) break; // clean close_notify (EndOfStream mapped to 0)
         std.debug.print("{s}", .{buf[0..n]});
     }
 
@@ -332,11 +334,11 @@ pub fn serveOne(io: std.Io, listener: *std.Io.net.Server,
 
     const r = conn.reader();
     var buf: [1024]u8 = undefined;
-    const n = try r.read(&buf);
-    if (!std.mem.startsWith(u8, buf[0..n], "GET ")) return error.BadRequest;
+    const n = try r.readSliceShort(&buf);
+    if (n == 0 or !std.mem.startsWith(u8, buf[0..n], "GET ")) return error.BadRequest;
 
     const w = conn.writer();
-    try w.writeAll(io, "HTTP/1.0 200 OK\r\nContent-Length: 5\r\n\r\nhello");
+    try w.writeAll("HTTP/1.0 200 OK\r\nContent-Length: 5\r\n\r\nhello");
     try w.flush();
     conn.close(io);
 }
