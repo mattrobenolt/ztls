@@ -13,6 +13,7 @@ const std = @import("std");
 const assert = std.debug.assert;
 const Io = std.Io;
 const net = Io.net;
+const testing = std.testing;
 const ztls = @import("ztls");
 
 /// Re-export ztls so consumers of ztls-std can reach the core if needed.
@@ -21,9 +22,9 @@ pub const core = ztls;
 const frame = ztls.frame;
 const RecordBuffer = ztls.RecordBuffer;
 
-// ──────────────────────────────────────────────────────────────────────────
+// ───────────────────────────────
 // Verification policy (client)
-// ──────────────────────────────────────────────────────────────────────────
+// ───────────────────────────────
 
 /// Client certificate verification policy. See README.
 pub const Verify = union(enum) {
@@ -39,9 +40,9 @@ pub const Verify = union(enum) {
     insecure,
 };
 
-// ──────────────────────────────────────────────────────────────────────────
+// ───────────────────────────────
 // Error sets
-// ──────────────────────────────────────────────────────────────────────────
+// ───────────────────────────────
 
 pub const ConnectError = error{
     CertificateVerificationFailed,
@@ -72,9 +73,9 @@ pub const WriteError = error{
     TlsAlertReceived,
 } || net.Stream.Writer.Error || Io.Cancelable || Io.UnexpectedError;
 
-// ──────────────────────────────────────────────────────────────────────────
+// ───────────────────────────────
 // Transport helpers
-// ──────────────────────────────────────────────────────────────────────────
+// ───────────────────────────────
 
 /// Read from a net.Stream into buf. Returns 0 on transport EOF.
 fn transportRead(io: Io, handle: net.Socket.Handle, buf: []u8) net.Stream.Reader.Error!usize {
@@ -83,7 +84,11 @@ fn transportRead(io: Io, handle: net.Socket.Handle, buf: []u8) net.Stream.Reader
 }
 
 /// Write all bytes to a net.Stream, looping on partial writes.
-fn transportWriteAll(io: Io, handle: net.Socket.Handle, bytes: []const u8) net.Stream.Writer.Error!void {
+fn transportWriteAll(
+    io: Io,
+    handle: net.Socket.Handle,
+    bytes: []const u8,
+) net.Stream.Writer.Error!void {
     var rest = bytes;
     while (rest.len != 0) {
         const data: [1][]const u8 = .{rest};
@@ -92,9 +97,9 @@ fn transportWriteAll(io: Io, handle: net.Socket.Handle, bytes: []const u8) net.S
     }
 }
 
-// ──────────────────────────────────────────────────────────────────────────
+// ───────────────────────────────
 // Handshake drive loops
-// ──────────────────────────────────────────────────────────────────────────
+// ───────────────────────────────
 
 /// Map sprawling ztls client handshake errors to the coarse ConnectError set.
 fn mapClientHandshakeError(err: anyerror) ConnectError {
@@ -155,9 +160,9 @@ fn mapServerHandshakeError(err: anyerror) AcceptError {
     };
 }
 
-// ──────────────────────────────────────────────────────────────────────────
+// ───────────────────────────────
 // Generic Stream (parameterized by handshake engine type)
-// ──────────────────────────────────────────────────────────────────────────
+// ───────────────────────────────
 
 /// The Reader vtable Error maps all TLS-specific failures to ReadFailed and
 /// clean close_notify to EndOfStream, matching the Io.Reader contract.
@@ -210,8 +215,14 @@ fn StreamImpl(comptime Hs: type) type {
                 };
             }
 
-            fn streamImpl(io_r: *Io.Reader, io_w: *Io.Writer, limit: Io.Limit) Io.Reader.StreamError!usize {
-                const dest = limit.slice(io_w.writableSliceGreedy(1) catch return error.WriteFailed);
+            fn streamImpl(
+                io_r: *Io.Reader,
+                io_w: *Io.Writer,
+                limit: Io.Limit,
+            ) Io.Reader.StreamError!usize {
+                const dest = limit.slice(
+                    io_w.writableSliceGreedy(1) catch return error.WriteFailed,
+                );
                 var data: [1][]u8 = .{dest};
                 const n = readVecImpl(io_r, &data) catch |err| switch (err) {
                     error.EndOfStream => return error.EndOfStream,
@@ -250,13 +261,21 @@ fn StreamImpl(comptime Hs: type) type {
                                 .new_session_ticket => continue,
                                 .none => continue,
                                 .write => |w| {
-                                    transportWriteAll(s.io, s.sock.socket.handle, w) catch return error.ReadFailed;
+                                    transportWriteAll(
+                                        s.io,
+                                        s.sock.socket.handle,
+                                        w,
+                                    ) catch return error.ReadFailed;
                                     s.hs.completeWrite();
                                     continue;
                                 },
                                 .key_update => |ku| {
                                     if (ku.response) |resp| {
-                                        transportWriteAll(s.io, s.sock.socket.handle, resp) catch return error.ReadFailed;
+                                        transportWriteAll(
+                                            s.io,
+                                            s.sock.socket.handle,
+                                            resp,
+                                        ) catch return error.ReadFailed;
                                         s.hs.completeWrite();
                                     }
                                     continue;
@@ -276,13 +295,21 @@ fn StreamImpl(comptime Hs: type) type {
                             switch (ev) {
                                 .none => continue,
                                 .write => |w| {
-                                    transportWriteAll(s.io, s.sock.socket.handle, w) catch return error.ReadFailed;
+                                    transportWriteAll(
+                                        s.io,
+                                        s.sock.socket.handle,
+                                        w,
+                                    ) catch return error.ReadFailed;
                                     s.hs.completeWrite();
                                     continue;
                                 },
                                 .key_update => |ku| {
                                     if (ku.response) |resp| {
-                                        transportWriteAll(s.io, s.sock.socket.handle, resp) catch return error.ReadFailed;
+                                        transportWriteAll(
+                                            s.io,
+                                            s.sock.socket.handle,
+                                            resp,
+                                        ) catch return error.ReadFailed;
                                         s.hs.completeWrite();
                                     }
                                     continue;
@@ -376,7 +403,7 @@ fn StreamImpl(comptime Hs: type) type {
             std.crypto.secureZero(u8, &s.write_buffer);
         }
 
-        // ── Writer drain ───────────────────────────────────────────────
+        // ── Writer drain ──────────────
 
         fn drainImpl(io_w: *Io.Writer, data: []const []const u8, splat: usize) WriterError!usize {
             const w: *Writer = @alignCast(@fieldParentPtr("interface", io_w));
@@ -413,7 +440,10 @@ fn StreamImpl(comptime Hs: type) type {
         /// Send one plaintext chunk (must be <= max_plaintext_len) as a TLS record.
         fn sendPlaintext(s: *Self, plaintext: []const u8) WriterError!void {
             assert(plaintext.len <= frame.max_plaintext_len);
-            const record = s.hs.sendApplicationData(plaintext, &s.out.buffer) catch return error.WriteFailed;
+            const record = s.hs.sendApplicationData(
+                plaintext,
+                &s.out.buffer,
+            ) catch return error.WriteFailed;
             defer s.hs.completeWrite();
             transportWriteAll(s.io, s.sock.socket.handle, record) catch {
                 return error.WriteFailed;
@@ -431,7 +461,7 @@ fn StreamImpl(comptime Hs: type) type {
             }
         }
 
-        // ── Init helpers ───────────────────────────────────────────────
+        // ── Init helpers ──────────────
 
         fn init(io: Io, sock: net.Stream, hs: Hs) Self {
             return .{
@@ -455,9 +485,9 @@ fn StreamImpl(comptime Hs: type) type {
     };
 }
 
-// ──────────────────────────────────────────────────────────────────────────
+// ───────────────────────────────
 // Client
-// ──────────────────────────────────────────────────────────────────────────
+// ───────────────────────────────
 
 pub const Client = struct {
     pub const Options = struct {
@@ -557,15 +587,19 @@ fn clientHandshakeDrive(s: *Client.Stream) ConnectError!void {
                     s.hs.completeWrite();
                 },
                 .none => {},
-                .application_data, .closed, .key_update, .new_session_ticket => return error.HandshakeProtocolError,
+                .application_data,
+                .closed,
+                .key_update,
+                .new_session_ticket,
+                => return error.HandshakeProtocolError,
             }
         }
     }
 }
 
-// ──────────────────────────────────────────────────────────────────────────
+// ───────────────────────────────
 // Server
-// ──────────────────────────────────────────────────────────────────────────
+// ───────────────────────────────
 
 pub const Server = struct {
     pub const Options = struct {
@@ -643,9 +677,9 @@ fn serverHandshakeDrive(s: *Server.Stream) AcceptError!void {
     }
 }
 
-// ──────────────────────────────────────────────────────────────────────────
+// ───────────────────────────────
 // Tests
-// ──────────────────────────────────────────────────────────────────────────
+// ───────────────────────────────
 
 const fixtures = @import("fixtures");
 
@@ -661,22 +695,22 @@ fn testIo() Io {
 test "ztls-std: socketpair echo" {
     var fds: [2]std.posix.fd_t = undefined;
     const rc = std.c.socketpair(std.posix.AF.UNIX, std.posix.SOCK.STREAM, 0, &fds);
-    try std.testing.expectEqual(@as(c_int, 0), rc);
+    try testing.expectEqual(@as(c_int, 0), rc);
     defer _ = std.c.close(fds[0]);
     defer _ = std.c.close(fds[1]);
 
     const written = std.c.write(fds[0], "ping", 4);
-    try std.testing.expectEqual(@as(isize, 4), written);
+    try testing.expectEqual(@as(isize, 4), written);
 
     var rbuf: [16]u8 = undefined;
     const n = std.c.read(fds[1], &rbuf, rbuf.len);
-    try std.testing.expectEqual(@as(isize, 4), n);
-    try std.testing.expectEqualStrings("ping", rbuf[0..4]);
+    try testing.expectEqual(@as(isize, 4), n);
+    try testing.expectEqualStrings("ping", rbuf[0..4]);
 }
 
 test "ztls-std: thread spawn works" {
     // Basic sanity that threads work in test context.
-    try std.testing.expect(true);
+    try testing.expect(true);
 }
 
 test "ztls-std: in-memory client↔server round-trip" {
@@ -687,17 +721,25 @@ test "ztls-std: in-memory client↔server round-trip" {
     const io = testIo();
 
     var fds: [2]std.posix.fd_t = undefined;
-    try std.testing.expectEqual(@as(c_int, 0), std.c.socketpair(std.posix.AF.UNIX, std.posix.SOCK.STREAM, 0, &fds));
+    try testing.expectEqual(
+        @as(c_int, 0),
+        std.c.socketpair(std.posix.AF.UNIX, std.posix.SOCK.STREAM, 0, &fds),
+    );
 
     // Server key — must be created before fork since the child inherits it.
-    var key: ztls.signature.PrivateKey = ztls.signature.PrivateKey.fromP256Scalar(@ptrCast(test_scalar[0..32])) catch return error.TestUnexpectedResult;
+    var key: ztls.signature.PrivateKey =
+        ztls.signature.PrivateKey.fromP256Scalar(
+            @ptrCast(test_scalar[0..32]),
+        ) catch return error.TestUnexpectedResult;
     defer key.deinit();
 
     const pid = std.c.fork();
     if (pid == 0) {
         // Child: server
         _ = std.c.close(fds[0]); // close client end
-        const server_sock: net.Stream = .{ .socket = .{ .handle = fds[1], .address = .{ .ip4 = undefined } } };
+        const server_sock: net.Stream = .{
+            .socket = .{ .handle = fds[1], .address = .{ .ip4 = undefined } },
+        };
 
         var conn: Server.Stream = undefined;
         Server.accept(&conn, io, server_sock, .{
@@ -729,7 +771,9 @@ test "ztls-std: in-memory client↔server round-trip" {
     // Parent: client
     _ = std.c.close(fds[1]); // close server end
     defer _ = std.c.close(fds[0]);
-    const client_sock: net.Stream = .{ .socket = .{ .handle = fds[0], .address = .{ .ip4 = undefined } } };
+    const client_sock: net.Stream = .{
+        .socket = .{ .handle = fds[0], .address = .{ .ip4 = undefined } },
+    };
 
     var gpa_state: std.heap.DebugAllocator(.{}) = .init;
     defer _ = gpa_state.deinit();
@@ -744,7 +788,7 @@ test "ztls-std: in-memory client↔server round-trip" {
     defer conn.deinit();
 
     // Verify ALPN
-    try std.testing.expectEqualStrings("h2", conn.selectedAlpn().?);
+    try testing.expectEqualStrings("h2", conn.selectedAlpn().?);
 
     // Write to server
     const w = conn.writer();
@@ -756,7 +800,7 @@ test "ztls-std: in-memory client↔server round-trip" {
     const r = conn.reader();
     var buf: [5]u8 = undefined;
     const n = try r.readSliceShort(&buf);
-    try std.testing.expectEqualStrings("hello", buf[0..n]);
+    try testing.expectEqualStrings("hello", buf[0..n]);
 
     // Close
     conn.close(io);
@@ -764,15 +808,15 @@ test "ztls-std: in-memory client↔server round-trip" {
     // Wait for child
     var status: c_int = 0;
     _ = std.c.waitpid(pid, &status, 0);
-    try std.testing.expectEqual(@as(c_int, 0), status);
+    try testing.expectEqual(@as(c_int, 0), status);
 }
 
 test "ztls-std: Stream size is reasonable" {
     // Stream includes RecordBuffer.Storage (~33KB), OutBuffer (~16KB),
     // write_buffer (16KB), reassembly (client ~65KB / server ~33KB), plus
     // the handshake engine. Large but not absurd for an inline TLS stream.
-    try std.testing.expect(@sizeOf(Client.Stream) < 200_000);
-    try std.testing.expect(@sizeOf(Server.Stream) < 200_000);
+    try testing.expect(@sizeOf(Client.Stream) < 200_000);
+    try testing.expect(@sizeOf(Server.Stream) < 200_000);
 }
 
 // RFC 8446 §6.1 — after close_notify, reads must return EndOfStream.
@@ -780,15 +824,23 @@ test "ztls-std: read after close returns EndOfStream" {
     const io = testIo();
 
     var fds: [2]std.posix.fd_t = undefined;
-    try std.testing.expectEqual(@as(c_int, 0), std.c.socketpair(std.posix.AF.UNIX, std.posix.SOCK.STREAM, 0, &fds));
+    try testing.expectEqual(
+        @as(c_int, 0),
+        std.c.socketpair(std.posix.AF.UNIX, std.posix.SOCK.STREAM, 0, &fds),
+    );
 
-    var key: ztls.signature.PrivateKey = ztls.signature.PrivateKey.fromP256Scalar(@ptrCast(test_scalar[0..32])) catch return error.TestUnexpectedResult;
+    var key: ztls.signature.PrivateKey =
+        ztls.signature.PrivateKey.fromP256Scalar(
+            @ptrCast(test_scalar[0..32]),
+        ) catch return error.TestUnexpectedResult;
     defer key.deinit();
 
     const pid = std.c.fork();
     if (pid == 0) {
         _ = std.c.close(fds[0]);
-        const server_sock: net.Stream = .{ .socket = .{ .handle = fds[1], .address = .{ .ip4 = undefined } } };
+        const server_sock: net.Stream = .{
+            .socket = .{ .handle = fds[1], .address = .{ .ip4 = undefined } },
+        };
 
         var conn: Server.Stream = undefined;
         Server.accept(&conn, io, server_sock, .{
@@ -814,7 +866,9 @@ test "ztls-std: read after close returns EndOfStream" {
 
     _ = std.c.close(fds[1]);
     defer _ = std.c.close(fds[0]);
-    const client_sock: net.Stream = .{ .socket = .{ .handle = fds[0], .address = .{ .ip4 = undefined } } };
+    const client_sock: net.Stream = .{
+        .socket = .{ .handle = fds[0], .address = .{ .ip4 = undefined } },
+    };
 
     var gpa_state: std.heap.DebugAllocator(.{}) = .init;
     defer _ = gpa_state.deinit();
@@ -841,11 +895,11 @@ test "ztls-std: read after close returns EndOfStream" {
     // After close, reading must return 0 (end-of-stream per RFC 8446 §6.1).
     // readSliceShort maps EndOfStream from the vtable to a 0-length return.
     const n = try r.readSliceShort(&buf);
-    try std.testing.expectEqual(@as(usize, 0), n);
+    try testing.expectEqual(@as(usize, 0), n);
 
     var status: c_int = 0;
     _ = std.c.waitpid(pid, &status, 0);
-    try std.testing.expectEqual(@as(c_int, 0), status);
+    try testing.expectEqual(@as(c_int, 0), status);
 }
 
 // RFC 8446 §5.1 — plaintext exceeding max_plaintext_len (16384) is split
@@ -854,9 +908,15 @@ test "ztls-std: large write spanning multiple records" {
     const io = testIo();
 
     var fds: [2]std.posix.fd_t = undefined;
-    try std.testing.expectEqual(@as(c_int, 0), std.c.socketpair(std.posix.AF.UNIX, std.posix.SOCK.STREAM, 0, &fds));
+    try testing.expectEqual(
+        @as(c_int, 0),
+        std.c.socketpair(std.posix.AF.UNIX, std.posix.SOCK.STREAM, 0, &fds),
+    );
 
-    var key: ztls.signature.PrivateKey = ztls.signature.PrivateKey.fromP256Scalar(@ptrCast(test_scalar[0..32])) catch return error.TestUnexpectedResult;
+    var key: ztls.signature.PrivateKey =
+        ztls.signature.PrivateKey.fromP256Scalar(
+            @ptrCast(test_scalar[0..32]),
+        ) catch return error.TestUnexpectedResult;
     defer key.deinit();
 
     const payload_len = frame.max_plaintext_len * 2 + 137;
@@ -864,7 +924,9 @@ test "ztls-std: large write spanning multiple records" {
     const pid = std.c.fork();
     if (pid == 0) {
         _ = std.c.close(fds[0]);
-        const server_sock: net.Stream = .{ .socket = .{ .handle = fds[1], .address = .{ .ip4 = undefined } } };
+        const server_sock: net.Stream = .{
+            .socket = .{ .handle = fds[1], .address = .{ .ip4 = undefined } },
+        };
 
         var conn: Server.Stream = undefined;
         Server.accept(&conn, io, server_sock, .{
@@ -896,7 +958,9 @@ test "ztls-std: large write spanning multiple records" {
 
     _ = std.c.close(fds[1]);
     defer _ = std.c.close(fds[0]);
-    const client_sock: net.Stream = .{ .socket = .{ .handle = fds[0], .address = .{ .ip4 = undefined } } };
+    const client_sock: net.Stream = .{
+        .socket = .{ .handle = fds[0], .address = .{ .ip4 = undefined } },
+    };
 
     var gpa_state: std.heap.DebugAllocator(.{}) = .init;
     defer _ = gpa_state.deinit();
@@ -919,11 +983,11 @@ test "ztls-std: large write spanning multiple records" {
     const r = conn.reader();
     var buf: [4]u8 = undefined;
     const n = try r.readSliceShort(&buf);
-    try std.testing.expectEqualStrings("done", buf[0..n]);
+    try testing.expectEqualStrings("done", buf[0..n]);
 
     conn.close(io);
 
     var status: c_int = 0;
     _ = std.c.waitpid(pid, &status, 0);
-    try std.testing.expectEqual(@as(c_int, 0), status);
+    try testing.expectEqual(@as(c_int, 0), status);
 }
