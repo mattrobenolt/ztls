@@ -800,7 +800,6 @@ test "ztls-std: read after close returns EndOfStream" {
             std.c.exit(1);
         };
 
-        // Read request, respond, then close.
         const r = conn.reader();
         var buf: [4]u8 = undefined;
         _ = r.readSliceShort(&buf) catch {};
@@ -833,7 +832,6 @@ test "ztls-std: read after close returns EndOfStream" {
     try w.writeAll("ping");
     try w.flush();
 
-    // Read the response first, then close.
     const r = conn.reader();
     var buf: [2]u8 = undefined;
     _ = try r.readSliceShort(&buf);
@@ -878,7 +876,6 @@ test "ztls-std: large write spanning multiple records" {
             std.c.exit(1);
         };
 
-        // Read the large payload in chunks.
         const r = conn.reader();
         var buf: [4096]u8 = undefined;
         var total: usize = 0;
@@ -889,7 +886,6 @@ test "ztls-std: large write spanning multiple records" {
             total += n;
         }
 
-        // Echo back a marker.
         const w = conn.writer();
         w.writeAll("done") catch {};
         w.flush() catch {};
@@ -914,14 +910,12 @@ test "ztls-std: large write spanning multiple records" {
     });
     defer conn.deinit();
 
-    // Write payload larger than max_plaintext_len — exercises record splitting.
     const w = conn.writer();
     var payload: [frame.max_plaintext_len * 2 + 137]u8 = undefined;
     for (&payload, 0..) |*b, i| b.* = @intCast(i & 0xff);
     try w.writeAll(&payload);
     try w.flush();
 
-    // Read the "done" marker.
     const r = conn.reader();
     var buf: [4]u8 = undefined;
     const n = try r.readSliceShort(&buf);
