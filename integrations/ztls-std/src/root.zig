@@ -707,16 +707,112 @@ test "ztls-std: socketpair echo" {
     try testing.expectEqualStrings("ping", rbuf[0..4]);
 }
 
+const ThreadEchoCtx = struct {
+    fd: std.posix.fd_t,
+    err: ?anyerror = null,
+};
+
+fn threadEchoRun(ctx: *ThreadEchoCtx) void {
+    var buf: [4]u8 = undefined;
+    const n = std.c.read(ctx.fd, &buf, buf.len);
+    if (n != 4) {
+        ctx.err = error.UnexpectedReadSize;
+        return;
+    }
+    const written = std.c.write(ctx.fd, &buf, 4);
+    if (written != 4) {
+        ctx.err = error.UnexpectedWriteSize;
+        return;
+    }
+}
+
 test "ztls-std: thread spawn works" {
-    // Basic sanity that threads work in test context.
-    try testing.expect(true);
+    // Sanity that std.Thread.spawn works in the test context — the
+    // round-trip tests below depend on this.
+    var fds: [2]std.posix.fd_t = undefined;
+    try testing.expectEqual(
+        @as(c_int, 0),
+        std.c.socketpair(std.posix.AF.UNIX, std.posix.SOCK.STREAM, 0, &fds),
+    );
+    defer _ = std.c.close(fds[0]);
+    defer _ = std.c.close(fds[1]);
+
+    var ctx: ThreadEchoCtx = .{ .fd = fds[1] };
+    const thread = try std.Thread.spawn(.{}, threadEchoRun, .{&ctx});
+
+    _ = std.c.write(fds[0], "ping", 4);
+    var buf: [4]u8 = undefined;
+    const n = std.c.read(fds[0], &buf, buf.len);
+    try testing.expectEqual(@as(isize, 4), n);
+    try testing.expectEqualStrings("ping", buf[0..4]);
+
+    thread.join();
+    if (ctx.err) |err| return err;
+}
+
+/// Context for the server thread in the round-trip test.
+const RoundTripServerCtx = struct {
+    fd: std.posix.fd_t,
+    err: ?anyerror = null,
+};
+
+fn roundTripServerRun(ctx: *RoundTripServerCtx) void {
+    const io = testIo();
+    const server_sock: net.Stream = .{
+        .socket = .{ .handle = ctx.fd, .address = .{ .ip4 = undefined } },
+    };
+
+    var key: ztls.signature.PrivateKey = ztls.signature.PrivateKey.fromP256Scalar(
+        @ptrCast(test_scalar[0..32]),
+    ) catch {
+        ctx.err = error.TestUnexpectedResult;
+        _ = std.c.close(ctx.fd);
+        return;
+    };
+    defer key.deinit();
+
+    var conn: Server.Stream = undefined;
+    Server.accept(&conn, io, server_sock, .{
+        .cert_chain = &.{test_cert_der},
+        .signer = key.signer(),
+        .alpn = &.{"h2"},
+    }) catch |err| {
+        ctx.err = err;
+        _ = std.c.close(ctx.fd);
+        return;
+    };
+
+    // Read request — buffer matches expected request size so readSliceShort
+    // returns once the record is consumed.
+    const r = conn.reader();
+    var buf: [18]u8 = undefined;
+    _ = r.readSliceShort(&buf) catch |err| {
+        ctx.err = err;
+        conn.deinit();
+        return;
+    };
+
+    // Respond
+    const w = conn.writer();
+    w.writeAll("hello") catch |err| {
+        ctx.err = err;
+        conn.deinit();
+        return;
+    };
+    w.flush() catch |err| {
+        ctx.err = err;
+        conn.deinit();
+        return;
+    };
+
+    conn.close(io);
 }
 
 test "ztls-std: in-memory client↔server round-trip" {
-    // Use socketpair + fork for the round-trip. The child process runs the
-    // server; the parent runs the client. Both use std.c.read/write directly
-    // (the wrapper's transport functions use these, not io.vtable, to avoid
-    // Io.Threaded concurrency issues in test contexts).
+    // RFC 8446 — full TLS 1.3 handshake + application data both directions
+    // + ALPN h2 + clean close_notify. Server runs on a thread over a
+    // socketpair; client runs on the main thread. Mirrors tcp_loopback's
+    // ServerCtx + serverRun shape.
     const io = testIo();
 
     var fds: [2]std.posix.fd_t = undefined;
@@ -724,52 +820,13 @@ test "ztls-std: in-memory client↔server round-trip" {
         @as(c_int, 0),
         std.c.socketpair(std.posix.AF.UNIX, std.posix.SOCK.STREAM, 0, &fds),
     );
-
-    // Server key — must be created before fork since the child inherits it.
-    var key: ztls.signature.PrivateKey =
-        ztls.signature.PrivateKey.fromP256Scalar(
-            @ptrCast(test_scalar[0..32]),
-        ) catch return error.TestUnexpectedResult;
-    defer key.deinit();
-
-    const pid = std.c.fork();
-    if (pid == 0) {
-        // Child: server
-        _ = std.c.close(fds[0]); // close client end
-        const server_sock: net.Stream = .{
-            .socket = .{ .handle = fds[1], .address = .{ .ip4 = undefined } },
-        };
-
-        var conn: Server.Stream = undefined;
-        Server.accept(&conn, io, server_sock, .{
-            .cert_chain = &.{test_cert_der},
-            .signer = key.signer(),
-            .alpn = &.{"h2"},
-        }) catch {
-            _ = std.c.close(fds[1]);
-            std.c.exit(1);
-        };
-
-        // Read request — small buffer: readSliceShort tries to fill the full
-        // buffer, which blocks for more data. Use a buffer matching the
-        // expected request size so it returns once the record is consumed.
-        const r = conn.reader();
-        var buf: [18]u8 = undefined;
-        _ = r.readSliceShort(&buf) catch {};
-
-        // Respond
-        const w = conn.writer();
-        w.writeAll("hello") catch {};
-        w.flush() catch {};
-
-        conn.close(io);
-        _ = std.c.close(fds[1]);
-        std.c.exit(0);
-    }
-
-    // Parent: client
-    _ = std.c.close(fds[1]); // close server end
+    // Server thread owns fds[1]; parent owns fds[0]. The parent must not
+    // close fds[1] before join — the server thread reads from it.
     defer _ = std.c.close(fds[0]);
+
+    var sctx: RoundTripServerCtx = .{ .fd = fds[1] };
+    const server_thread = try std.Thread.spawn(.{}, roundTripServerRun, .{&sctx});
+
     const client_sock: net.Stream = .{
         .socket = .{ .handle = fds[0], .address = .{ .ip4 = undefined } },
     };
@@ -794,8 +851,7 @@ test "ztls-std: in-memory client↔server round-trip" {
     try w.writeAll("GET / HTTP/1.0\r\n\r\n");
     try w.flush();
 
-    // Read response — small buffer: readSliceShort tries to fill it.
-    // "hello" is 5 bytes, exactly matching the buffer.
+    // Read response — buffer exactly matches "hello".
     const r = conn.reader();
     var buf: [5]u8 = undefined;
     const n = try r.readSliceShort(&buf);
@@ -804,10 +860,8 @@ test "ztls-std: in-memory client↔server round-trip" {
     // Close
     conn.close(io);
 
-    // Wait for child
-    var status: c_int = 0;
-    _ = std.c.waitpid(pid, &status, 0);
-    try testing.expectEqual(@as(c_int, 0), status);
+    server_thread.join();
+    if (sctx.err) |err| return err;
 }
 
 test "ztls-std: Stream size is reasonable" {
@@ -816,6 +870,59 @@ test "ztls-std: Stream size is reasonable" {
     // the handshake engine. Large but not absurd for an inline TLS stream.
     try testing.expect(@sizeOf(Client.Stream) < 200_000);
     try testing.expect(@sizeOf(Server.Stream) < 200_000);
+}
+
+const ReadAfterCloseServerCtx = struct {
+    fd: std.posix.fd_t,
+    err: ?anyerror = null,
+};
+
+fn readAfterCloseServerRun(ctx: *ReadAfterCloseServerCtx) void {
+    const io = testIo();
+    const server_sock: net.Stream = .{
+        .socket = .{ .handle = ctx.fd, .address = .{ .ip4 = undefined } },
+    };
+
+    var key: ztls.signature.PrivateKey = ztls.signature.PrivateKey.fromP256Scalar(
+        @ptrCast(test_scalar[0..32]),
+    ) catch {
+        ctx.err = error.TestUnexpectedResult;
+        _ = std.c.close(ctx.fd);
+        return;
+    };
+    defer key.deinit();
+
+    var conn: Server.Stream = undefined;
+    Server.accept(&conn, io, server_sock, .{
+        .cert_chain = &.{test_cert_der},
+        .signer = key.signer(),
+        .alpn = &.{"h2"},
+    }) catch |err| {
+        ctx.err = err;
+        _ = std.c.close(ctx.fd);
+        return;
+    };
+
+    const r = conn.reader();
+    var buf: [4]u8 = undefined;
+    _ = r.readSliceShort(&buf) catch |err| {
+        ctx.err = err;
+        conn.deinit();
+        return;
+    };
+
+    const w = conn.writer();
+    w.writeAll("ok") catch |err| {
+        ctx.err = err;
+        conn.deinit();
+        return;
+    };
+    w.flush() catch |err| {
+        ctx.err = err;
+        conn.deinit();
+        return;
+    };
+    conn.close(io);
 }
 
 // RFC 8446 §6.1 — after close_notify, reads must return EndOfStream.
@@ -827,44 +934,11 @@ test "ztls-std: read after close returns EndOfStream" {
         @as(c_int, 0),
         std.c.socketpair(std.posix.AF.UNIX, std.posix.SOCK.STREAM, 0, &fds),
     );
-
-    var key: ztls.signature.PrivateKey =
-        ztls.signature.PrivateKey.fromP256Scalar(
-            @ptrCast(test_scalar[0..32]),
-        ) catch return error.TestUnexpectedResult;
-    defer key.deinit();
-
-    const pid = std.c.fork();
-    if (pid == 0) {
-        _ = std.c.close(fds[0]);
-        const server_sock: net.Stream = .{
-            .socket = .{ .handle = fds[1], .address = .{ .ip4 = undefined } },
-        };
-
-        var conn: Server.Stream = undefined;
-        Server.accept(&conn, io, server_sock, .{
-            .cert_chain = &.{test_cert_der},
-            .signer = key.signer(),
-            .alpn = &.{"h2"},
-        }) catch {
-            _ = std.c.close(fds[1]);
-            std.c.exit(1);
-        };
-
-        const r = conn.reader();
-        var buf: [4]u8 = undefined;
-        _ = r.readSliceShort(&buf) catch {};
-
-        const w = conn.writer();
-        w.writeAll("ok") catch {};
-        w.flush() catch {};
-        conn.close(io);
-        _ = std.c.close(fds[1]);
-        std.c.exit(0);
-    }
-
-    _ = std.c.close(fds[1]);
     defer _ = std.c.close(fds[0]);
+
+    var sctx: ReadAfterCloseServerCtx = .{ .fd = fds[1] };
+    const server_thread = try std.Thread.spawn(.{}, readAfterCloseServerRun, .{&sctx});
+
     const client_sock: net.Stream = .{
         .socket = .{ .handle = fds[0], .address = .{ .ip4 = undefined } },
     };
@@ -896,9 +970,68 @@ test "ztls-std: read after close returns EndOfStream" {
     const n = try r.readSliceShort(&buf);
     try testing.expectEqual(@as(usize, 0), n);
 
-    var status: c_int = 0;
-    _ = std.c.waitpid(pid, &status, 0);
-    try testing.expectEqual(@as(c_int, 0), status);
+    server_thread.join();
+    if (sctx.err) |err| return err;
+}
+
+const LargeWriteServerCtx = struct {
+    fd: std.posix.fd_t,
+    payload_len: usize,
+    total_read: usize = 0,
+    err: ?anyerror = null,
+};
+
+fn largeWriteServerRun(ctx: *LargeWriteServerCtx) void {
+    const io = testIo();
+    const server_sock: net.Stream = .{
+        .socket = .{ .handle = ctx.fd, .address = .{ .ip4 = undefined } },
+    };
+
+    var key: ztls.signature.PrivateKey = ztls.signature.PrivateKey.fromP256Scalar(
+        @ptrCast(test_scalar[0..32]),
+    ) catch {
+        ctx.err = error.TestUnexpectedResult;
+        _ = std.c.close(ctx.fd);
+        return;
+    };
+    defer key.deinit();
+
+    var conn: Server.Stream = undefined;
+    Server.accept(&conn, io, server_sock, .{
+        .cert_chain = &.{test_cert_der},
+        .signer = key.signer(),
+        .alpn = &.{"h2"},
+    }) catch |err| {
+        ctx.err = err;
+        _ = std.c.close(ctx.fd);
+        return;
+    };
+
+    const r = conn.reader();
+    var buf: [4096]u8 = undefined;
+    while (ctx.total_read < ctx.payload_len) {
+        const to_read = @min(buf.len, ctx.payload_len - ctx.total_read);
+        const n = r.readSliceShort(buf[0..to_read]) catch |err| {
+            ctx.err = err;
+            conn.deinit();
+            return;
+        };
+        if (n == 0) break;
+        ctx.total_read += n;
+    }
+
+    const w = conn.writer();
+    w.writeAll("done") catch |err| {
+        ctx.err = err;
+        conn.deinit();
+        return;
+    };
+    w.flush() catch |err| {
+        ctx.err = err;
+        conn.deinit();
+        return;
+    };
+    conn.close(io);
 }
 
 // RFC 8446 §5.1 — plaintext exceeding max_plaintext_len (16384) is split
@@ -911,52 +1044,13 @@ test "ztls-std: large write spanning multiple records" {
         @as(c_int, 0),
         std.c.socketpair(std.posix.AF.UNIX, std.posix.SOCK.STREAM, 0, &fds),
     );
-
-    var key: ztls.signature.PrivateKey =
-        ztls.signature.PrivateKey.fromP256Scalar(
-            @ptrCast(test_scalar[0..32]),
-        ) catch return error.TestUnexpectedResult;
-    defer key.deinit();
+    defer _ = std.c.close(fds[0]);
 
     const payload_len = frame.max_plaintext_len * 2 + 137;
 
-    const pid = std.c.fork();
-    if (pid == 0) {
-        _ = std.c.close(fds[0]);
-        const server_sock: net.Stream = .{
-            .socket = .{ .handle = fds[1], .address = .{ .ip4 = undefined } },
-        };
+    var sctx: LargeWriteServerCtx = .{ .fd = fds[1], .payload_len = payload_len };
+    const server_thread = try std.Thread.spawn(.{}, largeWriteServerRun, .{&sctx});
 
-        var conn: Server.Stream = undefined;
-        Server.accept(&conn, io, server_sock, .{
-            .cert_chain = &.{test_cert_der},
-            .signer = key.signer(),
-            .alpn = &.{"h2"},
-        }) catch {
-            _ = std.c.close(fds[1]);
-            std.c.exit(1);
-        };
-
-        const r = conn.reader();
-        var buf: [4096]u8 = undefined;
-        var total: usize = 0;
-        while (total < payload_len) {
-            const to_read = @min(buf.len, payload_len - total);
-            const n = r.readSliceShort(buf[0..to_read]) catch break;
-            if (n == 0) break;
-            total += n;
-        }
-
-        const w = conn.writer();
-        w.writeAll("done") catch {};
-        w.flush() catch {};
-        conn.close(io);
-        _ = std.c.close(fds[1]);
-        std.c.exit(if (total == payload_len) 0 else 1);
-    }
-
-    _ = std.c.close(fds[1]);
-    defer _ = std.c.close(fds[0]);
     const client_sock: net.Stream = .{
         .socket = .{ .handle = fds[0], .address = .{ .ip4 = undefined } },
     };
@@ -986,7 +1080,7 @@ test "ztls-std: large write spanning multiple records" {
 
     conn.close(io);
 
-    var status: c_int = 0;
-    _ = std.c.waitpid(pid, &status, 0);
-    try testing.expectEqual(@as(c_int, 0), status);
+    server_thread.join();
+    if (sctx.err) |err| return err;
+    try testing.expectEqual(payload_len, sctx.total_read);
 }
