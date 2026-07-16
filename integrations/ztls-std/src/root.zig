@@ -206,7 +206,6 @@ fn StreamImpl(comptime Hs: type) type {
                     .interface = .{
                         .vtable = &.{
                             .stream = streamImpl,
-                            .readVec = readVecImpl,
                         },
                         .buffer = &.{},
                         .seek = 0,
@@ -215,22 +214,18 @@ fn StreamImpl(comptime Hs: type) type {
                 };
             }
 
+            /// Refill the reader: drive the record loop until application_data is
+            /// available, then repoint `io_r.buffer` at the decrypted record
+            /// (zero-copy) and return 0 (data in buffer). EndOfStream = clean
+            /// close_notify. `readVec` uses the stdlib default, which delegates
+            /// here via `stream`.
             fn streamImpl(
                 io_r: *Io.Reader,
                 io_w: *Io.Writer,
                 limit: Io.Limit,
             ) Io.Reader.StreamError!usize {
-                const dest = limit.slice(
-                    io_w.writableSliceGreedy(1) catch return error.WriteFailed,
-                );
-                var data: [1][]u8 = .{dest};
-                const n = try readVecImpl(io_r, &data);
-                io_w.advance(n);
-                return n;
-            }
-
-            fn readVecImpl(io_r: *Io.Reader, data: [][]u8) ReaderError!usize {
-                _ = data;
+                _ = io_w;
+                _ = limit;
                 const r: *Reader = @alignCast(@fieldParentPtr("interface", io_r));
                 const s: *Self = @alignCast(@fieldParentPtr("reader_impl", r));
                 assert(io_r.seek == io_r.end);
