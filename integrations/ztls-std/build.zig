@@ -19,6 +19,13 @@ pub fn build(b: *std.Build) void {
     });
     const ztls_mod = ztls_dep.module("ztls");
 
+    // Fixtures module for tests (ECDSA P-256 test cert + scalar).
+    const fixtures_mod = b.addModule("fixtures", .{
+        .root_source_file = ztls_dep.path("tests/fixtures/fixtures.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
     // The ztls-std library module: exposes the opinionated std.Io.net TLS
     // stream wrapper. Consumers import this as `@import("ztls_std")`.
     const mod = b.addModule("ztls_std", .{
@@ -28,6 +35,8 @@ pub fn build(b: *std.Build) void {
             .{ .name = "ztls", .module = ztls_mod },
         },
     });
+    // Tests need fixtures for the in-memory round-trip.
+    mod.addImport("fixtures", fixtures_mod);
 
     // Smoke executable: proves the ztls-std + ztls wiring builds and runs.
     const exe = b.addExecutable(.{

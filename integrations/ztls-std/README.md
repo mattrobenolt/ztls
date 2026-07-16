@@ -8,8 +8,10 @@ the proven drive loop with sane defaults so a caller can wrap a connected
 without writing a Sans-I/O loop. Zig 0.16 only. This is the reference
 integration; `ztls-xev` and `ztls-ktls` adapt its handshake-to-completion loop.
 
-**Status: API spec only.** This document defines the public API. Implementation
-lands next, written to match this spec. Tracked by
+**Status: Implemented.** The wrapper API (Client/Server, Stream, Reader/Writer,
+Options, Verify, error sets, byte-stream buffering layer) is implemented with
+an in-memory ztls↔ztls round-trip test. OpenSSL interop is not yet tested
+through the wrapper (the core's interop already covers the engine). Tracked by
 [#77](https://github.com/mattrobenolt/ztls/issues/77).
 
 The API was shaped by a cross-family design quorum (Opus 4.8 + Kimi K2.7 + GLM
