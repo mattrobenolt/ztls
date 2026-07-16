@@ -224,27 +224,24 @@ fn StreamImpl(comptime Hs: type) type {
                     io_w.writableSliceGreedy(1) catch return error.WriteFailed,
                 );
                 var data: [1][]u8 = .{dest};
-                const n = readVecImpl(io_r, &data) catch |err| switch (err) {
-                    error.EndOfStream => return error.EndOfStream,
-                    error.ReadFailed => return error.ReadFailed,
-                };
+                const n = try readVecImpl(io_r, &data);
                 io_w.advance(n);
                 return n;
             }
 
             fn readVecImpl(io_r: *Io.Reader, data: [][]u8) ReaderError!usize {
+                _ = data;
                 const r: *Reader = @alignCast(@fieldParentPtr("interface", io_r));
                 const s: *Self = @alignCast(@fieldParentPtr("reader_impl", r));
                 assert(io_r.seek == io_r.end);
 
-                return refill(s, io_r, data);
+                return refill(s, io_r);
             }
 
             /// Drive the record loop until application_data is available, then
             /// repoint the buffer at the decrypted record (zero-copy).
             /// Returns 0 (data in buffer). EndOfStream = clean close_notify.
-            fn refill(s: *Self, io_r: *Io.Reader, data: [][]u8) ReaderError!usize {
-                _ = data;
+            fn refill(s: *Self, io_r: *Io.Reader) ReaderError!usize {
                 // RFC 8446 §6.1 — after close_notify or close(), reads return EndOfStream.
                 if (s.closed or s.rx_closed) return error.EndOfStream;
                 while (true) {
