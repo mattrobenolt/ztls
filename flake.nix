@@ -78,6 +78,18 @@
               zig-tools = zig0_16;
             };
 
+            # ztls-std integration (#77): Zig 0.16 + OpenSSL backend. The
+            # integration builds against the ztls core via an in-tree path dep
+            # (integrations/ztls-std/build.zig.zon). Reuses shared helpers.
+            ztls-std = backendShell {
+              name = "ztls-std";
+              backend = "openssl";
+              pkgConfigPath = opensslBackend.pkgConfigPath;
+              libDir = opensslBackend.libDir;
+              packages = opensslBackend.packages;
+              zig-tools = zig0_16;
+            };
+
             aws-lc = backendShell {
               name = "ztls-aws-lc";
               backend = "aws-lc";
