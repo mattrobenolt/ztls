@@ -76,32 +76,6 @@ pub const WriteError = error{
 // Transport helpers
 // ──────────────────────────────────────────────────────────────────────────
 
-/// Fill a buffer with cryptographically secure random bytes.
-/// Uses the OS CSPRNG directly (getrandom on Linux, arc4random on macOS)
-/// to avoid Io.Threaded state issues in forked test processes.
-fn fillRandom(buf: []u8) void {
-    switch (@import("builtin").os.tag) {
-        .linux => {
-            var remaining = buf;
-            while (remaining.len != 0) {
-                const rc = std.os.linux.getrandom(remaining.ptr, remaining.len, 0);
-                const signed_rc: isize = @bitCast(rc);
-                if (signed_rc >= 0) {
-                    remaining = remaining[@intCast(signed_rc)..];
-                    continue;
-                }
-                const errno: usize = @intCast(-signed_rc);
-                switch (errno) {
-                    4, 11 => continue, // EINTR, EAGAIN
-                    else => @panic("getrandom failed"),
-                }
-            }
-        },
-        .macos => std.c.arc4random_buf(buf.ptr, buf.len),
-        else => @compileError("ztls-std supports only Linux and macOS"),
-    }
-}
-
 /// Read from a net.Stream into buf. Returns 0 on transport EOF.
 fn transportRead(io: Io, handle: net.Socket.Handle, buf: []u8) net.Stream.Reader.Error!usize {
     var data: [1][]u8 = .{buf};
@@ -509,7 +483,7 @@ pub const Client = struct {
         // Fill keypairs and random — the wrapper owns these so Options don't.
         const client_keypair: ztls.x25519.KeyPair = .generate();
         var random: ztls.Random = undefined;
-        fillRandom(&random.data);
+        io.random(&random.data);
 
         // Get current time for cert validity
         // Current time for cert validity (seconds since epoch).
@@ -623,7 +597,7 @@ pub const Server = struct {
 
         const server_keypair: ztls.x25519.KeyPair = .generate();
         var random: ztls.Random = undefined;
-        fillRandom(&random.data);
+        io.random(&random.data);
 
         var hs: ztls.ServerHandshake = .init(.{
             .keypairs = .init(server_keypair),
