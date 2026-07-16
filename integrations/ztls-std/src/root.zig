@@ -224,6 +224,13 @@ fn StreamImpl(comptime Hs: type) type {
                 io_w: *Io.Writer,
                 limit: Io.Limit,
             ) Io.Reader.StreamError!usize {
+                // Zero-copy: refill repoints io_r.buffer at the decrypted record
+                // (in place in the RecordBuffer) and returns 0, instead of copying
+                // bytes into io_w. The Io.Reader.stream contract permits storing data
+                // in buffer + returning 0 ("including zero, does not indicate end of
+                // stream"); the generic reader meters data out of buffer respecting
+                // the caller's limit, so limit is unused here. io_w/limit are
+                // vestigial to the vtable signature.
                 _ = io_w;
                 _ = limit;
                 const r: *Reader = @alignCast(@fieldParentPtr("interface", io_r));
