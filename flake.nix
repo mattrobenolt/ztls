@@ -28,7 +28,7 @@
       ];
 
       perSystem =
-        { system, ... }:
+        { system, lib, ... }:
         let
           pkgs = import nixpkgs {
             inherit system;
@@ -37,130 +37,16 @@
               rust-overlay.overlays.default
             ];
           };
-          inherit (pkgs) lib stdenv;
-          ast-grep = pkgs.ast-grep {
-            ruleDirs = [ ./rules ];
-            languages.zig = {
-              grammar = pkgs.tree-sitter-grammars.tree-sitter-zig;
-              extensions = [ "zig" ];
-            };
-          };
-          rustToolchain = pkgs.rust-bin.fromRustupToolchainFile ./bench/rustls/rust-toolchain.toml;
-          wrangler = pkgs.writeShellScriptBin "wrangler" ''
-            exec ${pkgs.nodejs}/bin/npx wrangler@4.107.0 "$@"
-          '';
-          # commonPackages takes the Zig toolchain pair so the same package
-          # list can target either Zig 0.15 (default) or Zig 0.16 (#61).
-          commonPackages =
-            zig-tools:
-            (with pkgs; [
-              ast-grep
-              benchstat
-              binutils
-              curl
-              fd
-              git
-              go
-              jdk
-              just
-              llvm
-              openssl.bin
-              pinact
-              pkg-config
-              rustToolchain
-              shellcheck
-              uv
-              opentofu
-              rsync
-              txtar
-              zig-tools.zig
-              zigdoc
-              zizmor
-              ziglint
-              zig-tools.zls
-            ])
-            ++ lib.optionals stdenv.isLinux (
-              with pkgs;
-              [
-                perf
-                valgrind
-              ]
-            );
-          zig0_15 = {
-            zig = pkgs.zig_0_15;
-            zls = pkgs.zls_0_15;
-          };
-          zig0_16 = {
-            zig = pkgs.zig_0_16;
-            zls = pkgs.zls_0_16;
-          };
-          commonHook = ''
-            unset NIX_CFLAGS_COMPILE
-            unset PKG_CONFIG_PATH
-            unset ZIG_GLOBAL_CACHE_DIR
-            unset ZTLS_CRYPTO_BACKEND
-            unset ZTLS_CRYPTO_PKG_CONFIG_PATH
-            unset ZTLS_CRYPTO_LIB_DIR
-            export ZTLS_OPENSSL_PKG_CONFIG_PATH=${pkgs.openssl.dev}/lib/pkgconfig
-            export ZTLS_OPENSSL_LIB_DIR=${pkgs.openssl.out}/lib
-            export ZTLS_AWS_LC_PKG_CONFIG_PATH=${pkgs.aws-lc.dev}/lib/pkgconfig
-            export ZTLS_AWS_LC_LIB_DIR=${pkgs.aws-lc}/lib
-            export ZTLS_BORINGSSL_PKG_CONFIG_PATH=${boringsslPc}
-            export ZTLS_BORINGSSL_LIB_DIR=${pkgs.boringssl}/lib
-          '';
-          # nixpkgs boringssl ships headers (dev) and libcrypto/libssl .so
-          # (out) but no pkg-config files. Synthesize minimal libcrypto.pc
-          # and libssl.pc so the existing linkSystemLibrary paths resolve
-          # BoringSSL, and benchmark baselines can link BoringSSL libssl.
-          boringsslPc = pkgs.symlinkJoin {
-            name = "boringssl-pkgconfig";
-            paths = [
-              (pkgs.writeTextDir "libcrypto.pc" ''
-                prefix=${pkgs.boringssl.dev}
-                exec_prefix=${pkgs.boringssl}
-                libdir=${pkgs.boringssl}/lib
-                includedir=${pkgs.boringssl.dev}/include
-
-                Name: libcrypto
-                Description: BoringSSL libcrypto
-                Version: ${pkgs.boringssl.version}
-                Libs: -L''${libdir} -lcrypto
-                Cflags: -I''${includedir}
-              '')
-              (pkgs.writeTextDir "libssl.pc" ''
-                prefix=${pkgs.boringssl.dev}
-                exec_prefix=${pkgs.boringssl}
-                libdir=${pkgs.boringssl}/lib
-                includedir=${pkgs.boringssl.dev}/include
-
-                Name: libssl
-                Description: BoringSSL libssl
-                Version: ${pkgs.boringssl.version}
-                Libs: -L''${libdir} -lssl
-                Cflags: -I''${includedir}
-              '')
-            ];
-          };
-          backendShell =
-            {
-              name,
-              backend,
-              pkgConfigPath,
-              libDir,
-              packages,
-              zig-tools ? zig0_15,
-            }:
-            pkgs.mkShell {
-              inherit name;
-              packages = commonPackages zig-tools ++ packages;
-              shellHook = ''
-                ${commonHook}
-                export ZTLS_CRYPTO_BACKEND=${backend}
-                export ZTLS_CRYPTO_PKG_CONFIG_PATH=${pkgConfigPath}
-                export ZTLS_CRYPTO_LIB_DIR=${libDir}
-                export PKG_CONFIG_PATH=${pkgConfigPath}''${PKG_CONFIG_PATH:+:''${PKG_CONFIG_PATH}}
-              '';
-            };
+          shared = import ./nix/shared.nix { inherit pkgs lib; };
+          inherit (shared)
+            commonPackages
+            commonHook
+            boringsslPc
+            backendShell
+            zig0_15
+            zig0_16
+            opensslBackend
+            ;
         in
         {
           formatter = pkgs.nixfmt;
@@ -175,12 +61,9 @@
             openssl = backendShell {
               name = "ztls-openssl";
               backend = "openssl";
-              pkgConfigPath = "${pkgs.openssl.dev}/lib/pkgconfig";
-              libDir = "${pkgs.openssl.out}/lib";
-              packages = [
-                pkgs.openssl.dev
-                pkgs.openssl.out
-              ];
+              pkgConfigPath = opensslBackend.pkgConfigPath;
+              libDir = opensslBackend.libDir;
+              packages = opensslBackend.packages;
             };
 
             # Zig 0.16 lane: same OpenSSL backend as the default shell but
@@ -189,12 +72,9 @@
             zig-0_16 = backendShell {
               name = "ztls-zig-0_16";
               backend = "openssl";
-              pkgConfigPath = "${pkgs.openssl.dev}/lib/pkgconfig";
-              libDir = "${pkgs.openssl.out}/lib";
-              packages = [
-                pkgs.openssl.dev
-                pkgs.openssl.out
-              ];
+              pkgConfigPath = opensslBackend.pkgConfigPath;
+              libDir = opensslBackend.libDir;
+              packages = opensslBackend.packages;
               zig-tools = zig0_16;
             };
 
@@ -226,14 +106,12 @@
             docs = backendShell {
               name = "ztls-docs";
               backend = "openssl";
-              pkgConfigPath = "${pkgs.openssl.dev}/lib/pkgconfig";
-              libDir = "${pkgs.openssl.out}/lib";
-              packages = [
-                pkgs.openssl.dev
-                pkgs.openssl.out
+              pkgConfigPath = opensslBackend.pkgConfigPath;
+              libDir = opensslBackend.libDir;
+              packages = opensslBackend.packages ++ [
                 pkgs.mdbook
                 pkgs.nodejs
-                wrangler
+                shared.wrangler
               ];
             };
 
