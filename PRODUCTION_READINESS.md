@@ -274,7 +274,11 @@ data to openssl s_server and receives the HTTP response.
   rejects an EncryptedExtensions `early_data` acceptance unless it selected the
   PSK, installed early keys, and no HRR intervened, and only offers CH
   `early_data` when the ticket's `max_early_data_size` permits it, per RFC 8446
-  §4.2.10/§4.5). Requiring `cA` on issuers
+  §4.2.10/§4.5), and S12+S13 (the client now rejects trailing handshake bytes
+  after the server Finished instead of silently dropping them, and frames
+  ClientHello2 after HelloRetryRequest as a proper handshake record rather than
+  emitting raw unframed bytes, per RFC 8446 §4.1.4/§5.1). Requiring `cA` on
+  issuers
   is intentional and matches RFC 5280 / OpenSSL / browsers; non-conforming roots
   that omit BasicConstraints are rejected by design.
 - Targeted client-side bad-server tests for malformed ServerHello, unexpected

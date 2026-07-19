@@ -1081,9 +1081,9 @@ fn offeredSuite(self: *const ClientHandshake, suite: CipherSuite) bool {
 /// Check if `msg` is a HelloRetryRequest and, if so, process it: validate the
 /// selected group and cipher suite, perform the RFC 8446 §4.4.1 transcript
 /// collapse, generate ClientHello2 with only the selected group's key_share
-/// (and cookie if present), and absorb it into the transcript. Returns the
-/// ClientHello2 handshake message bytes (to be framed and sent by the caller)
-/// or null if `msg` is not an HRR. Stays in wait_sh for the real ServerHello.
+/// (and cookie if present), and absorb it into the transcript. Returns a framed
+/// ClientHello2 handshake record or null if `msg` is not an HRR. Stays in
+/// wait_sh for the real ServerHello.
 ///
 /// RFC 8446 §4.1.4, §4.4.1.
 // ziglint-ignore: Z015 -- HelloRetryRequestError is a public error-set alias.
@@ -1165,9 +1165,11 @@ pub fn processHelloRetryRequest(
         self.early_tx = null;
     }
 
-    // Generate ClientHello2 with only the selected group's key_share.
+    // Generate ClientHello2 with only the selected group's key_share, leaving
+    // room for the TLSPlaintext header. RFC 8446 §4.1.4, §5.1.
+    if (out.len < frame.header_len) return error.BufferTooShort;
     const ch2 = try client_hello.encodeRetryAfterHrr(
-        out,
+        out[frame.header_len..],
         self.random,
         self.keypairs.x25519.public_key,
         self.keypairs.p256.public_key,
@@ -1178,12 +1180,15 @@ pub fn processHelloRetryRequest(
         self.alpn_protocols,
     );
 
-    // Absorb ClientHello2 into the transcript. RFC 8446 §4.4.1.
+    // The transcript covers handshake bytes, not the record header.
+    // RFC 8446 §4.4.1.
     self.suite.update(ch2);
+    const header: frame.Header = .init(.handshake, @intCast(ch2.len));
+    header.write(out[0..frame.header_len]);
 
     self.retry_selected_group = group;
     // Stay in wait_sh for the real ServerHello.
-    return ch2;
+    return out[0 .. frame.header_len + ch2.len];
 }
 
 /// Process the server's ServerHello: parse it, absorb it into the transcript,
@@ -1329,7 +1334,10 @@ fn processFlightBytes(
             },
         } orelse return;
         try self.processFlightMessage(msg, policy);
-        if (self.state == .send_finished) return;
+        if (self.state == .send_finished) {
+            if (hr.r.remaining().len != 0) return error.UnexpectedMessage;
+            return;
+        }
     }
 }
 
@@ -1348,6 +1356,7 @@ fn processFlightBuffer(self: *ClientHandshake, policy: certificate.Policy) Fligh
         };
         try self.processFlightMessage(msg, policy);
         if (self.state == .send_finished) {
+            if (hr.r.remaining().len != 0) return error.UnexpectedMessage;
             self.handshake_buf.clear();
             return;
         }
@@ -2294,6 +2303,23 @@ test "processFlight: RFC 8448 §3 full server flight to connected" {
     try testing.expectEqual(.finished_verified, hs.server_flight_progress);
 }
 
+// RFC 8446 §4.4 — Finished is the final message in the server authentication
+// block; trailing handshake bytes in the same record are unexpected.
+test "processFlight: rejects handshake message after server Finished" {
+    var hs = try flightReadyClient();
+    defer hs.deinit();
+
+    var flight_buf: [1024]u8 = undefined;
+    const flight = rfc8448Fixture("server_flight.b64", &flight_buf);
+    const extra = [_]u8{ @intFromEnum(HandshakeType.finished), 0x00, 0x00, 0x00 };
+    @memcpy(flight_buf[flight.len..][0..extra.len], &extra);
+
+    try testing.expectError(
+        error.UnexpectedMessage,
+        hs.processFlight(flight_buf[0 .. flight.len + extra.len], hs.policy),
+    );
+}
+
 // openssl s_server sends each flight message in its own record, so processFlight
 // is called once per message with state persisting across calls. The leaf
 // public key extracted at Certificate must survive to CertificateVerify.
@@ -2324,6 +2350,26 @@ test "processFlight: reassembles handshake message split across records" {
     try hs.processFlight(flight[2..], hs.policy);
     try testing.expectEqual(@as(usize, 0), hs.handshake_buf.len);
     try testing.expectEqual(.send_finished, hs.state);
+}
+
+// RFC 8446 §4.4, §5.1 — reassembly must not discard a handshake message
+// coalesced after the server Finished in the completed record payload.
+test "processFlight: buffered path rejects handshake message after server Finished" {
+    var hs = try flightReadyClient();
+    defer hs.deinit();
+    var reassembly: [2048]u8 = undefined;
+    hs.useHandshakeBuffer(&reassembly);
+
+    var flight_buf: [2048]u8 = undefined;
+    const flight = rfc8448Fixture("server_flight.b64", &flight_buf);
+    const extra = [_]u8{ @intFromEnum(HandshakeType.finished), 0x00, 0x00, 0x00 };
+    @memcpy(flight_buf[flight.len..][0..extra.len], &extra);
+
+    try hs.processFlight(flight_buf[0..2], hs.policy);
+    try testing.expectError(
+        error.UnexpectedMessage,
+        hs.processFlight(flight_buf[2 .. flight.len + extra.len], hs.policy),
+    );
 }
 
 test "processFlight: RFC 8448 §3 flight split one message per record" {
@@ -4154,12 +4200,11 @@ test "processHelloRetryRequest: secp256r1 selected produces ClientHello2" {
     const hrr = try encodeHrrForTest(&hrr_buf, &.{}, .aes_128_gcm_sha256, .secp256r1);
 
     var out: [512]u8 = undefined;
-    const ch2 = try hs.processHelloRetryRequest(hrr, &out);
-    try testing.expect(ch2 != null);
+    const ch2_record = (try hs.processHelloRetryRequest(hrr, &out)).?;
     try testing.expectEqual(.wait_sh, hs.state);
     try testing.expectEqual(NamedGroup.secp256r1, hs.retry_selected_group.?);
 
-    const parsed = try client_hello.parse(ch2.?);
+    const parsed = try client_hello.parse(ch2_record[frame.header_len..]);
     try testing.expectEqual(@as(?x25519.PublicKey, null), parsed.public_key);
     try testing.expectEqualSlices(u8, &client_p256.public_key.data, &parsed.public_key_p256.?.data);
 }
@@ -4186,14 +4231,14 @@ test "processHelloRetryRequest: transcript collapse matches §4.4.1" {
     const hrr = try encodeHrrForTest(&hrr_buf, &.{}, .aes_128_gcm_sha256, .secp256r1);
 
     var out: [512]u8 = undefined;
-    const ch2 = try hs.processHelloRetryRequest(hrr, &out);
+    const ch2_record = (try hs.processHelloRetryRequest(hrr, &out)).?;
 
     // Independently compute the expected transcript: synthetic || HRR || CH2.
     var expected: Sha256 = .init(.{});
     const synthetic = transcript_util.messageHashSynthetic(32, ch1_hash);
     expected.update(&synthetic);
     expected.update(hrr);
-    expected.update(ch2.?);
+    expected.update(ch2_record[frame.header_len..]);
 
     const actual = hs.suite.sha256.transcript.peek();
     const expected_hash = expected.peek();
@@ -4368,10 +4413,21 @@ test "handleRecord: HRR returns ClientHello2 as write event" {
 
     var out: [512]u8 = undefined;
     const ev = try hs.handleRecord(hrr_record[0 .. frame.header_len + hrr.len], &out);
-    switch (ev) {
-        .write => {},
-        else => try testing.expectEqual(.write, @as(std.meta.Tag(Event), ev)),
-    }
+    const ch2_record = switch (ev) {
+        .write => |bytes| bytes,
+        else => {
+            try testing.expectEqual(.write, @as(std.meta.Tag(Event), ev));
+            unreachable;
+        },
+    };
+    try testing.expectEqual(@as(u8, 0x16), ch2_record[0]);
+    const ch2_header = try frame.parseHeader(ch2_record);
+    try testing.expectEqual(frame.ContentType.handshake, ch2_header.content_type);
+    try testing.expectEqual(ch2_record.len - frame.header_len, ch2_header.length());
+    try testing.expectEqual(
+        @intFromEnum(HandshakeType.client_hello),
+        ch2_record[frame.header_len],
+    );
     try testing.expectEqual(.wait_sh, hs.state);
     try testing.expectEqual(NamedGroup.secp256r1, hs.retry_selected_group.?);
 }
@@ -4444,21 +4500,24 @@ test "processHelloRetryRequest: HRR with cookie echoes cookie in CH2" {
     );
 
     var out: [512]u8 = undefined;
-    const ch2 = try hs.processHelloRetryRequest(hrr_with_cookie[0..new_total], &out);
-    try testing.expect(ch2 != null);
+    const ch2_record = (try hs.processHelloRetryRequest(
+        hrr_with_cookie[0..new_total],
+        &out,
+    )).?;
     try testing.expectEqual(.wait_sh, hs.state);
+    const ch2 = ch2_record[frame.header_len..];
 
     // Verify CH2 contains the cookie extension by searching for the cookie
     // extension type (0x002c) followed by the cookie bytes.
     var found_cookie = false;
     var i: usize = 0;
-    while (i + 6 < ch2.?.len) : (i += 1) {
-        if (ch2.?[i] == 0x00 and ch2.?[i + 1] == 0x2c) {
-            const ext_data_len = memx.readInt(u16, ch2.?[i + 2 ..][0..2]);
+    while (i + 6 < ch2.len) : (i += 1) {
+        if (ch2[i] == 0x00 and ch2[i + 1] == 0x2c) {
+            const ext_data_len = memx.readInt(u16, ch2[i + 2 ..][0..2]);
             if (ext_data_len == 2 + cookie.len) {
-                const cookie_len = memx.readInt(u16, ch2.?[i + 4 ..][0..2]);
+                const cookie_len = memx.readInt(u16, ch2[i + 4 ..][0..2]);
                 if (cookie_len == cookie.len and
-                    mem.eql(u8, ch2.?[i + 6 ..][0..cookie.len], &cookie))
+                    mem.eql(u8, ch2[i + 6 ..][0..cookie.len], &cookie))
                 {
                     found_cookie = true;
                     break;

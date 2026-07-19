@@ -5356,9 +5356,7 @@ test "in-memory HRR round trip reaches app data" {
     try testing.expect(hrr.selected_group != null);
     try testing.expectEqual(.wait_ch, server.state);
 
-    // Client consumes the HRR and emits ClientHello2 as a .write event (the
-    // CH2 handshake message — frame it as a plaintext handshake record for
-    // the server).
+    // Client consumes the HRR and emits ClientHello2 as a framed .write event.
     var client_out: [1024]u8 = undefined;
     var hrr_rx: [128]u8 = undefined;
     @memcpy(hrr_rx[0..hrr_record.len], hrr_record);
@@ -5371,17 +5369,14 @@ test "in-memory HRR round trip reaches app data" {
     try testing.expect(client.retry_selected_group != null);
     try testing.expectEqual(hrr.selected_group.?, client.retry_selected_group.?);
 
-    // Frame ClientHello2 as a plaintext handshake record.
     var ch2_record: [1024]u8 = undefined;
-    const ch2_header: frame.Header = .init(.handshake, @intCast(ch2_msg.len));
-    ch2_header.write(ch2_record[0..frame.header_len]);
-    @memcpy(ch2_record[frame.header_len..][0..ch2_msg.len], ch2_msg);
+    @memcpy(ch2_record[0..ch2_msg.len], ch2_msg);
+    const ch2_header = try frame.parseHeader(ch2_record[0..ch2_msg.len]);
+    try testing.expectEqual(frame.ContentType.handshake, ch2_header.content_type);
+    try testing.expectEqual(ch2_msg.len - frame.header_len, ch2_header.length());
 
     // Server accepts ClientHello2 and emits ServerHello.
-    const sh_record = try server.acceptClientHello(
-        ch2_record[0 .. frame.header_len + ch2_msg.len],
-        &server_out,
-    );
+    const sh_record = try server.acceptClientHello(ch2_record[0..ch2_msg.len], &server_out);
     try testing.expectEqual(.wait_client_finished, server.state);
     // Client processes the real ServerHello (post-HRR).
     try client.processServerHello(sh_record[frame.header_len..]);
