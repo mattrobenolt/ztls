@@ -243,6 +243,20 @@ data to openssl s_server and receives the HTTP response.
   surfaces verified handled. Recon and findings at
   `docs/research/security/FINDINGS.md`; the narrow-type arithmetic lesson is
   encoded in `AGENTS.md` and the security agent prompts.
+- A follow-up full-source audit (2026-07,
+  `docs/research/security/AUDIT-2026-07.md`) re-read every production file and is
+  under active, TDD remediation (one finding-class per slice: failing regression
+  test first, then the fix). It surfaced findings the Glasswing pass missed —
+  most importantly a CRITICAL server-authentication bypass (S5: an end-entity
+  certificate accepted as an issuing CA; no BasicConstraints `cA` / `keyCertSign`
+  enforcement on issuers), three further #72-class narrow-arithmetic panic sites
+  (S6/S7), a public-AEAD length-mismatch write hazard reachable only off the
+  public API / C ABI (S8), plus protocol/state-machine and hardening items
+  (S9–S14, H1–H24). Remediation status (this is the current parser/auth-surface
+  status, superseding the Glasswing bullet above until it completes):
+  fixed and regression-tested — none yet; open — all, including the CRITICAL S5
+  chain-validation bypass. The public-facing readiness claims below do not yet
+  account for S5 being open.
 - Targeted client-side bad-server tests for malformed ServerHello, unexpected
   flight messages, bad CertificateVerify and Finished checks, corrupted
   encrypted records, client-emitted alert descriptions, peer fatal alerts,
