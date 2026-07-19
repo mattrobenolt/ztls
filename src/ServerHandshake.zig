@@ -355,6 +355,7 @@ pub fn selectPsk(
     parsed: client_hello.Parsed,
     msg: []const u8,
     lookup: PskLookup,
+    negotiated_suite: CipherSuite,
 ) error{ InvalidExtensionLength, InvalidVectorLength, UnexpectedEof }!?struct {
     entry: PskEntry,
     identity_index: usize,
@@ -386,6 +387,10 @@ pub fn selectPsk(
         const offered_binder = br.readSlice(binder_len) catch return error.UnexpectedEof;
 
         if (lookup.lookup(lookup.context, identity)) |entry| {
+            if (entry.cipher_suite.hash() != negotiated_suite.hash()) {
+                idx += 1;
+                continue;
+            }
             const ok = switch (entry.cipher_suite) {
                 .aes_128_gcm_sha256, .chacha20_poly1305_sha256 => verifyBinderSha(
                     hkdf.HkdfSha256,
@@ -423,7 +428,8 @@ fn verifyBinderSha(
     var th: H.TranscriptHash = undefined;
     Hash.hash(prefix, &th.data, .{});
     const expected = H.binder(fin_key, &th);
-    return std.mem.eql(u8, offered_binder, &expected);
+    const Binder = [H.prk_len]u8;
+    return std.crypto.timing_safe.eql(Binder, offered_binder[0..H.prk_len].*, expected);
 }
 
 /// Store caller-owned credentials for the authenticated server flight.
@@ -627,44 +633,49 @@ fn processClientHelloMessage(
         return error.NoApplicationProtocol;
     self.client_server_name = ch.server_name;
 
-    // PSK resumption (RFC 8446 §4.2.11): if a caller-provided lookup is
-    // configured and the client offered pre_shared_key, verify a binder and
-    // select the first verifying identity. The PSK becomes the early secret;
-    // the ServerHello echoes the selected index in pre_shared_key.
-    if (self.psk_lookup) |lookup| {
-        if (ch.psk_ext != null) {
-            if (try selectPsk(ch, ch_msg, lookup)) |sel| {
-                self.selected_psk = sel.entry;
-                self.selected_psk_index = @intCast(sel.identity_index);
-                // 0-RTT (RFC 8446 §4.2.10): if the client offered early_data,
-                // install the early traffic RX key for decrypting 0-RTT records.
-                // The early traffic secret uses Hash(ClientHello) as the
-                // transcript hash (the full CH, including the binder).
-                if (ch.offered_early_data and sel.entry.max_early_data_size != null) {
-                    self.early_data_limit = sel.entry.max_early_data_size;
-                    switch (sel.entry.cipher_suite) {
-                        .aes_128_gcm_sha256, .chacha20_poly1305_sha256 => {
-                            const H = hkdf.HkdfSha256;
-                            const early = H.pskEarlySecret(sel.entry.psk);
-                            var th: H.TranscriptHash = undefined;
-                            Sha256.hash(ch_msg, &th.data, .{});
-                            const early_traffic = H.clientEarlyTrafficSecret(early, &th);
-                            self.early_rx = try H.makeRecordLayer(
-                                sel.entry.cipher_suite,
-                                early_traffic,
-                            );
-                        },
-                        .aes_256_gcm_sha384 => {
-                            const H = hkdf.HkdfSha384;
-                            const early = H.pskEarlySecret(sel.entry.psk);
-                            var th: H.TranscriptHash = undefined;
-                            Sha384.hash(ch_msg, &th.data, .{});
-                            const early_traffic = H.clientEarlyTrafficSecret(early, &th);
-                            self.early_rx = try H.makeRecordLayer(
-                                sel.entry.cipher_suite,
-                                early_traffic,
-                            );
-                        },
+    // RFC 8446 §4.2.9 — pre_shared_key requires psk_key_exchange_modes. ztls
+    // implements psk_dhe_ke only; an offer without that mode is not resumed.
+    if (ch.psk_ext != null) {
+        const modes = ch.psk_key_exchange_modes orelse return error.MissingExtension;
+        if (mem.indexOfScalar(
+            u8,
+            modes,
+            @intFromEnum(client_hello.PskKeyExchangeMode.psk_dhe_ke),
+        ) != null) {
+            if (self.psk_lookup) |lookup| {
+                if (try selectPsk(ch, ch_msg, lookup, suite)) |sel| {
+                    self.selected_psk = sel.entry;
+                    self.selected_psk_index = @intCast(sel.identity_index);
+                    // 0-RTT (RFC 8446 §4.2.10): if the client offered early_data,
+                    // install the early traffic RX key for decrypting 0-RTT records.
+                    // The early traffic secret uses Hash(ClientHello) as the
+                    // transcript hash (the full CH, including the binder).
+                    if (ch.offered_early_data and sel.entry.max_early_data_size != null) {
+                        self.early_data_limit = sel.entry.max_early_data_size;
+                        switch (sel.entry.cipher_suite) {
+                            .aes_128_gcm_sha256, .chacha20_poly1305_sha256 => {
+                                const H = hkdf.HkdfSha256;
+                                const early = H.pskEarlySecret(sel.entry.psk);
+                                var th: H.TranscriptHash = undefined;
+                                Sha256.hash(ch_msg, &th.data, .{});
+                                const early_traffic = H.clientEarlyTrafficSecret(early, &th);
+                                self.early_rx = try H.makeRecordLayer(
+                                    sel.entry.cipher_suite,
+                                    early_traffic,
+                                );
+                            },
+                            .aes_256_gcm_sha384 => {
+                                const H = hkdf.HkdfSha384;
+                                const early = H.pskEarlySecret(sel.entry.psk);
+                                var th: H.TranscriptHash = undefined;
+                                Sha384.hash(ch_msg, &th.data, .{});
+                                const early_traffic = H.clientEarlyTrafficSecret(early, &th);
+                                self.early_rx = try H.makeRecordLayer(
+                                    sel.entry.cipher_suite,
+                                    early_traffic,
+                                );
+                            },
+                        }
                     }
                 }
             }
@@ -4303,7 +4314,7 @@ test "selectPsk: verifies the binder for a matching PSK identity" {
     var lookup_ctx: Lookup = .{ .psk = &psk.data, .identity = &identity };
     const lookup: PskLookup = .{ .context = &lookup_ctx, .lookup = Lookup.l };
 
-    const sel = try selectPsk(parsed, ch_msg, lookup);
+    const sel = try selectPsk(parsed, ch_msg, lookup, .aes_128_gcm_sha256);
     try testing.expect(sel != null);
     try testing.expectEqual(@as(usize, 0), sel.?.identity_index);
 }
@@ -4352,7 +4363,7 @@ test "selectPsk: returns null when the PSK binder does not verify" {
     var lookup_ctx: Lookup = .{ .psk = &right_psk.data, .identity = &identity };
     const lookup: PskLookup = .{ .context = &lookup_ctx, .lookup = Lookup.l };
 
-    const sel = try selectPsk(parsed, ch_msg, lookup);
+    const sel = try selectPsk(parsed, ch_msg, lookup, .aes_128_gcm_sha256);
     try testing.expectEqual(@as(?@TypeOf(sel.?), null), sel);
 }
 
@@ -4410,8 +4421,164 @@ test "selectPsk: oversized binders_len does not overflow" {
     const lookup: PskLookup = .{ .context = &lookup_ctx, .lookup = Lookup.l };
 
     // Must return an error, not panic.
-    _ = selectPsk(parsed, ch_body, lookup) catch return;
+    _ = selectPsk(parsed, ch_body, lookup, .aes_128_gcm_sha256) catch return;
     return error.TestExpectedError;
+}
+
+// RFC 8446 §4.2.9 — a ClientHello with pre_shared_key but without
+// psk_key_exchange_modes is invalid, and the server MUST abort.
+test "PSK offer without psk_key_exchange_modes aborts" {
+    const psk: [32]u8 = @splat(0x42);
+    const identity = [_]u8{ 0x2c, 0x03, 0x5d, 0x82, 0x93, 0x59 };
+    var client: ClientHandshake = .init(.{
+        .keypairs = .init(.generate()),
+        .host_name = null,
+        .now_sec = 0,
+        .random = .zero,
+    });
+    var ticket: ClientHandshake.SessionTicket = .{
+        .ticket_age_add = 0,
+        .cipher_suite = .aes_128_gcm_sha256,
+    };
+    ticket.identity.appendSliceAssumeCapacity(&identity);
+    ticket.psk.appendSliceAssumeCapacity(&psk);
+
+    var client_out: [1024]u8 = undefined;
+    const record = try client.startWithPsk(&ticket, &client_out, false);
+    const mode_extension = mem.indexOf(
+        u8,
+        record,
+        &.{ 0x00, 0x2d, 0x00, 0x02, 0x01, 0x01 },
+    ) orelse return error.TestUnexpectedResult;
+    client_out[mode_extension + 1] = 0x15; // padding extension
+
+    var server: ServerHandshake = .init(.{
+        .keypairs = .init(.generate()),
+        .random = .zero,
+    });
+    var server_out: [1024]u8 = undefined;
+    try testing.expectError(
+        error.MissingExtension,
+        server.acceptClientHello(record, &server_out),
+    );
+}
+
+// RFC 8446 §4.2.9 — ztls implements psk_dhe_ke only. A valid PSK offer that
+// advertises only psk_ke must fall back to a full handshake, not resume.
+test "PSK offer with only psk_ke does not resume" {
+    const psk: [32]u8 = @splat(0x42);
+    const identity = [_]u8{ 0x2c, 0x03, 0x5d, 0x82, 0x93, 0x59 };
+    var client: ClientHandshake = .init(.{
+        .keypairs = .init(.generate()),
+        .host_name = null,
+        .now_sec = 0,
+        .random = .zero,
+    });
+    var ticket: ClientHandshake.SessionTicket = .{
+        .ticket_age_add = 0,
+        .cipher_suite = .aes_128_gcm_sha256,
+    };
+    ticket.identity.appendSliceAssumeCapacity(&identity);
+    ticket.psk.appendSliceAssumeCapacity(&psk);
+
+    var client_out: [1024]u8 = undefined;
+    const record = try client.startWithPsk(&ticket, &client_out, false);
+    const mode_extension = mem.indexOf(
+        u8,
+        record,
+        &.{ 0x00, 0x2d, 0x00, 0x02, 0x01, 0x01 },
+    ) orelse return error.TestUnexpectedResult;
+    client_out[mode_extension + 5] = @intFromEnum(client_hello.PskKeyExchangeMode.psk_ke);
+    const ch_msg = record[frame.header_len..];
+    const parsed = try client_hello.parse(ch_msg);
+    const early = hkdf.HkdfSha256.pskEarlySecret(&psk);
+    const binder_key = hkdf.HkdfSha256.resumptionBinderKey(early);
+    const fin_key = hkdf.HkdfSha256.finishedKey(.{ .data = binder_key.data });
+    var th: hkdf.HkdfSha256.TranscriptHash = undefined;
+    Sha256.hash(ch_msg[0..parsed.binders_offset], &th.data, .{});
+    const binder = hkdf.HkdfSha256.binder(fin_key, &th);
+    @memcpy(client_out[frame.header_len + parsed.binders_offset + 3 ..][0..binder.len], &binder);
+
+    const Lookup = struct {
+        const Context = struct {
+            psk: []const u8,
+            identity: []const u8,
+        };
+        fn lookup(context: *anyopaque, offered_identity: []const u8) ?PskEntry {
+            const ctx: *Context = @ptrCast(@alignCast(context));
+            if (!mem.eql(u8, offered_identity, ctx.identity)) return null;
+            return .{ .psk = ctx.psk, .cipher_suite = .aes_128_gcm_sha256 };
+        }
+    };
+    var lookup_context: Lookup.Context = .{ .psk = &psk, .identity = &identity };
+    var server: ServerHandshake = .init(.{
+        .keypairs = .init(.generate()),
+        .random = .zero,
+        .psk_lookup = .{ .context = &lookup_context, .lookup = Lookup.lookup },
+    });
+    var server_out: [1024]u8 = undefined;
+    _ = try server.acceptClientHello(record, &server_out);
+    try testing.expect(server.selected_psk == null);
+}
+
+fn expectIncompatiblePskNotSelected(
+    ticket_suite: CipherSuite,
+    negotiated_suite: CipherSuite,
+) !void {
+    const psk: [48]u8 = @splat(0x42);
+    const psk_len: usize = switch (ticket_suite) {
+        .aes_128_gcm_sha256, .chacha20_poly1305_sha256 => 32,
+        .aes_256_gcm_sha384 => 48,
+    };
+    const identity = [_]u8{ 0x2c, 0x03, 0x5d, 0x82, 0x93, 0x59 };
+    var client: ClientHandshake = .init(.{
+        .keypairs = .init(.generate()),
+        .host_name = null,
+        .now_sec = 0,
+        .random = .zero,
+    });
+    var ticket: ClientHandshake.SessionTicket = .{
+        .ticket_age_add = 0,
+        .cipher_suite = ticket_suite,
+    };
+    ticket.identity.appendSliceAssumeCapacity(&identity);
+    ticket.psk.appendSliceAssumeCapacity(psk[0..psk_len]);
+    var client_out: [1024]u8 = undefined;
+    const record = try client.startWithPsk(&ticket, &client_out, false);
+
+    const Lookup = struct {
+        const Context = struct {
+            psk: []const u8,
+            identity: []const u8,
+            suite: CipherSuite,
+        };
+        fn lookup(context: *anyopaque, offered_identity: []const u8) ?PskEntry {
+            const ctx: *Context = @ptrCast(@alignCast(context));
+            if (!mem.eql(u8, offered_identity, ctx.identity)) return null;
+            return .{ .psk = ctx.psk, .cipher_suite = ctx.suite };
+        }
+    };
+    var lookup_context: Lookup.Context = .{
+        .psk = psk[0..psk_len],
+        .identity = &identity,
+        .suite = ticket_suite,
+    };
+    var server: ServerHandshake = .init(.{
+        .keypairs = .init(.generate()),
+        .random = .zero,
+        .psk_lookup = .{ .context = &lookup_context, .lookup = Lookup.lookup },
+    });
+    server.supportSuites(&.{negotiated_suite});
+    var server_out: [1024]u8 = undefined;
+    _ = try server.acceptClientHello(record, &server_out);
+    try testing.expect(server.selected_psk == null);
+}
+
+// RFC 8446 §4.2.11.2 — the selected PSK and negotiated cipher suite MUST use
+// the same hash. Incompatible SHA-256/SHA-384 combinations are not selected.
+test "PSK selection skips cipher suites with an incompatible hash" {
+    try expectIncompatiblePskNotSelected(.aes_256_gcm_sha384, .aes_128_gcm_sha256);
+    try expectIncompatiblePskNotSelected(.aes_128_gcm_sha256, .aes_256_gcm_sha384);
 }
 
 // RFC 8446 §4.2.11, §7.1 — in-memory PSK resumption (psk_dhe_ke): the client

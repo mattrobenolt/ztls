@@ -1264,6 +1264,8 @@ pub fn processServerHello(self: *ClientHandshake, msg: []const u8) ServerHelloEr
     const psk: ?[]const u8 = if (sh.selected_identity) |idx| blk: {
         if (idx != 0) return error.IllegalParameter;
         if (self.offered_psk == null) return error.UnexpectedExtension;
+        if (self.offered_psk_cipher_suite.hash() != sh.cipher_suite.hash())
+            return error.IllegalParameter;
         self.server_selected_psk = true;
         break :blk self.offered_psk;
     } else null;
@@ -3253,6 +3255,42 @@ test "startWithPsk: binder matches an independent HMAC over the prefix" {
 
     // The offered identity appears in the pre_shared_key extension.
     try testing.expect(std.mem.indexOf(u8, ch, &identity) != null);
+}
+
+// RFC 8446 §4.2.11.2 — a server selecting the offered PSK MUST negotiate a
+// cipher suite with the same hash as the PSK's original cipher suite.
+test "processServerHello rejects selected PSK with incompatible cipher suite hash" {
+    const psk: [48]u8 = @splat(0x42);
+    const identity = [_]u8{ 0x2c, 0x03, 0x5d, 0x82, 0x93, 0x59 };
+    const client_keypair = x25519.KeyPair.generate();
+    const server_keypair = x25519.KeyPair.generate();
+    var client: ClientHandshake = .init(.{
+        .keypairs = .init(client_keypair),
+        .host_name = null,
+        .now_sec = 0,
+        .random = .zero,
+    });
+    var ticket: SessionTicket = .{
+        .ticket_age_add = 0,
+        .cipher_suite = .aes_256_gcm_sha384,
+    };
+    ticket.identity.appendSliceAssumeCapacity(&identity);
+    ticket.psk.appendSliceAssumeCapacity(&psk);
+    var client_out: [1024]u8 = undefined;
+    _ = try client.startWithPsk(&ticket, &client_out, false);
+
+    var key_share: server_hello.KeyShare = .{ .x25519 = server_keypair.public_key };
+    var server_hello_buf: [256]u8 = undefined;
+    const sh = try server_hello.encodeWithKeyShareAndPsk(
+        &server_hello_buf,
+        @splat(0xab),
+        &.{},
+        .aes_128_gcm_sha256,
+        &key_share,
+        0,
+    );
+    try testing.expectError(error.IllegalParameter, client.processServerHello(sh));
+    try testing.expect(!client.server_selected_psk);
 }
 
 // RFC 8446 §4.2.11, §4.4.4 — PSK-offering client rejects a bare Finished when the
