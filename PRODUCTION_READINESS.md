@@ -259,7 +259,11 @@ data to openssl s_server and receives the HTTP response.
   enforced on every presented-chain issuer and on the bundle trust anchor;
   pathLenConstraint is parsed but depth-enforcement is deferred, tracked as a
   `TODO(audit S5)`), and S6/S7 (three #72-class narrow-arithmetic sites, widened
-  to `usize`); open — the remainder (S8–S14, H1–H24). Requiring `cA` on issuers
+  to `usize`), and S8 (the public `Aead.encrypt`/`decrypt` now reject mismatched
+  in/out slice lengths with `SliceLengthMismatch` before the backend call,
+  closing the off-public-API / C-ABI out-of-bounds-write hazard; not
+  peer-reachable via the RecordLayer, which uses equal-length in-place slices);
+  open — the remainder (S9–S14, H1–H24). Requiring `cA` on issuers
   is intentional and matches RFC 5280 / OpenSSL / browsers; non-conforming roots
   that omit BasicConstraints are rejected by design.
 - Targeted client-side bad-server tests for malformed ServerHello, unexpected

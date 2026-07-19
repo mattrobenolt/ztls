@@ -50,7 +50,12 @@ pub const Aes128GcmKey = memx.Array(16);
 pub const Aes256GcmKey = memx.Array(32);
 pub const ChaCha20Poly1305Key = memx.Array(32);
 
-pub const Error = backend.aead.Error;
+pub const Error = error{
+    AuthenticationFailed,
+    AeadSetupFailed,
+    AeadEncryptFailed,
+    SliceLengthMismatch,
+};
 
 /// A cipher context holding the key for one direction of a TLS connection.
 pub const Aead = union(CipherSuite) {
@@ -95,6 +100,7 @@ pub const Aead = union(CipherSuite) {
         ad: []const u8,
         npub: *const Nonce,
     ) Error!void {
+        if (ciphertext.len != plaintext.len) return error.SliceLengthMismatch;
         assert(self.suite() == ctx.suite);
         try backend.aead.encrypt(&ctx.inner, ciphertext, &tag.data, plaintext, ad, &npub.data);
     }
@@ -116,6 +122,7 @@ pub const Aead = union(CipherSuite) {
         ad: []const u8,
         npub: *const Nonce,
     ) Error!void {
+        if (plaintext.len != ciphertext.len) return error.SliceLengthMismatch;
         assert(self.suite() == ctx.suite);
         try backend.aead.decrypt(&ctx.inner, plaintext, ciphertext, &tag.data, ad, &npub.data);
     }
@@ -139,6 +146,46 @@ pub const Context = struct {
 };
 
 // RFC 8446 §9.1 — mandatory cipher suites
+
+// RFC 8446 §5.2 — AEAD input and output fragments have equal lengths.
+test "encrypt: rejects mismatched plaintext and ciphertext lengths" {
+    const key: Aes128GcmKey = .init(@splat(0xab));
+    const iv: Iv = .init(@splat(0xcd));
+    const npub = construct(&iv, 0);
+    const plaintext: [16]u8 = @splat(0x42);
+
+    var backing: [64]u8 = @splat(0);
+    var tag: Tag = undefined;
+    const aead: Aead = .{ .aes_128_gcm_sha256 = key };
+    var ctx: Context = try .init(aead);
+    defer ctx.deinit();
+
+    try testing.expectError(
+        error.SliceLengthMismatch,
+        aead.encrypt(&ctx, backing[0..1], &tag, &plaintext, "", &npub),
+    );
+}
+
+// RFC 8446 §5.2 — AEAD input and output fragments have equal lengths.
+test "decrypt: rejects mismatched plaintext and ciphertext lengths" {
+    const key: Aes128GcmKey = .init(@splat(0xab));
+    const iv: Iv = .init(@splat(0xcd));
+    const npub = construct(&iv, 0);
+    const plaintext: [16]u8 = @splat(0x42);
+
+    var ciphertext: [plaintext.len]u8 = undefined;
+    var backing: [64]u8 = @splat(0);
+    var tag: Tag = undefined;
+    const aead: Aead = .{ .aes_128_gcm_sha256 = key };
+    var ctx: Context = try .init(aead);
+    defer ctx.deinit();
+    try aead.encrypt(&ctx, &ciphertext, &tag, &plaintext, "", &npub);
+
+    try testing.expectError(
+        error.SliceLengthMismatch,
+        aead.decrypt(&ctx, backing[0..1], &ciphertext, &tag, "", &npub),
+    );
+}
 
 test "Aes128Gcm: encrypt/decrypt round-trip" {
     const key: Aes128GcmKey = .init(@splat(0xab));
