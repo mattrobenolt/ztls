@@ -220,7 +220,7 @@ supported_suites: []const CipherSuite = default_supported_suites,
 alpn_protocols: root.AlpnProtocols = &.{},
 client_auth: ClientAuthPolicy = .none,
 /// Policy for verifying client certificate chains. Initialized from Config.
-client_cert_policy: certificate.Policy = .{ .leaf_usage = .server_auth },
+client_cert_policy: certificate.Policy = .{ .leaf_usage = .client_auth },
 /// Leaf public key extracted from the client Certificate, retained until
 /// CertificateVerify verification. Copied so it survives across records.
 client_leaf_pub_key: ClientLeafPubKeyBuffer = .empty,
@@ -4781,6 +4781,7 @@ test "in-memory 0-RTT early data is decrypted by the server" {
     // Send 0-RTT data encrypted under the early traffic key.
     var early_buf: [256]u8 = undefined;
     const early_record = try client.sendEarlyData("hello 0-rtt", &early_buf);
+    client.completeWrite();
 
     const Lookup = struct {
         const Self = @This();

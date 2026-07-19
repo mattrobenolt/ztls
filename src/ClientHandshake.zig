@@ -929,13 +929,17 @@ pub fn sendApplicationData(
 /// server Finished is verified. The caller MUST ensure 0-RTT is replay-safe;
 /// 0-RTT data is not forward-secret and can be replayed by a network attacker.
 /// RFC 8446 §4.2.10, §7.1. Returns the encrypted record (then completeWrite).
+// ziglint-ignore: Z015 -- SendError is a public error-set alias.
 pub fn sendEarlyData(
     self: *ClientHandshake,
     plaintext: []const u8,
     out: []u8,
-) RecordLayer.EncryptError![]const u8 {
+) SendError![]const u8 {
     if (self.early_tx == null) return error.BufferTooShort; // no early data offered
-    return self.early_tx.?.encrypt(.application_data, plaintext, out);
+    if (self.pending_write.isPending()) return error.PendingWrite;
+    const record = try self.early_tx.?.encrypt(.application_data, plaintext, out);
+    self.pending_write.mark();
+    return record;
 }
 
 // ziglint-ignore: Z015 -- SendError is a public error-set alias.
@@ -3787,6 +3791,29 @@ test "handleRecord: unacknowledged write blocks further calls" {
     try testing.expectError(error.PendingWrite, hs.sendApplicationData("two", &out));
     hs.completeWrite();
     _ = try hs.sendApplicationData("three", &out); // unblocked
+}
+
+// RFC 8446 §5.2 — an emitted early-data record consumes the write slot until
+// the caller acknowledges it, preventing record-sequence desynchronization.
+test "sendEarlyData: unacknowledged write blocks further early data" {
+    const psk: [32]u8 = @splat(0x42);
+    var ticket: SessionTicket = .{
+        .cipher_suite = .aes_128_gcm_sha256,
+        .max_early_data_size = 1024,
+    };
+    ticket.identity.appendSliceAssumeCapacity(&.{0x01});
+    ticket.psk.appendSliceAssumeCapacity(&psk);
+
+    var hs: ClientHandshake = .init(testConfig(x25519.KeyPair.generate()));
+    defer hs.deinit();
+    var out: [1024]u8 = undefined;
+    _ = try hs.startWithPsk(&ticket, &out, true);
+    hs.completeWrite();
+
+    _ = try hs.sendEarlyData("one", &out);
+    try testing.expectError(error.PendingWrite, hs.sendEarlyData("two", &out));
+    hs.completeWrite();
+    _ = try hs.sendEarlyData("three", &out);
 }
 
 // RFC 8446 §5.1 — handshake records cannot carry zero-length fragments.

@@ -300,9 +300,20 @@ data to openssl s_server and receives the HTTP response.
     application data interleaved inside a pending KeyUpdate fragment, and the
     0-RTT byte counter checks the remaining budget before adding (no saturation
     at `maxInt(u32)`).
+  - H18/H19/H24 — misc hardening: `sendEarlyData` now follows the `pending_write`
+    interlock (was a write-desync footgun); `parse`/`parseClientChain` validate
+    the handshake body-length field like `parseClientCertificate`; and the
+    `client_cert_policy` struct default is `.client_auth` (was `.server_auth`, a
+    direct-construction trap).
 
-  Open — the remainder: S14 (mTLS identity, design), H12, H15–H24, and the
-  H21 policy calls.
+  Open — the remainder: S14 (mTLS identity, design), H15–H17 (design), H20, H23,
+  and the H21 policy calls. H12 (post-handshake KeyUpdate counter) is
+  deliberately NOT taken as specified: the audit's "don't reset on app data"
+  would make the bound a lifetime cap of 16 KeyUpdates and break long-lived
+  high-throughput connections; the current reset-on-app-data burst counter
+  matches Go's `maxUselessRecords` model. A sound refinement (separate
+  NST/KeyUpdate accounting with a research-backed burst limit) is a design call,
+  flagged rather than auto-applied.
 - Targeted client-side bad-server tests for malformed ServerHello, unexpected
   flight messages, bad CertificateVerify and Finished checks, corrupted
   encrypted records, client-emitted alert descriptions, peer fatal alerts,

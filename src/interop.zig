@@ -747,7 +747,7 @@ fn clientEarlyDataInterop(
     // Send 0-RTT data immediately (before the server responds).
     const early = try hs.sendEarlyData("GET / HTTP/1.0\r\n\r\n", &out);
     try writeAll(stream, early);
-    // No completeWrite for early data (early_tx is a separate RecordLayer).
+    hs.completeWrite();
 
     // Process the server's response (ServerHello + flight).
     while (!hs.isConnected()) {
