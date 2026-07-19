@@ -205,6 +205,8 @@ pub const Parsed = struct {
     ext_key_usage_slice: Slice,
     name_constraints_slice: Slice,
     name_constraints_critical: bool,
+    is_ca: bool = false,
+    basic_constraints_path_len: ?u8 = null,
     validity: Validity,
     version: Version,
 
@@ -1251,6 +1253,8 @@ pub fn parse(cert: Certificate) ParseError!Parsed {
     var ext_key_usage_slice = der.Element.Slice.empty;
     var name_constraints_slice = der.Element.Slice.empty;
     var name_constraints_critical = false;
+    var is_ca = false;
+    var basic_constraints_path_len: ?u8 = null;
     ext: {
         if (version == .v1)
             break :ext;
@@ -1285,6 +1289,11 @@ pub fn parse(cert: Certificate) ParseError!Parsed {
                 .subject_alt_name => subject_alt_name_slice = ext_bytes_elem.slice,
                 .key_usage => key_usage_slice = ext_bytes_elem.slice,
                 .ext_key_usage => ext_key_usage_slice = ext_bytes_elem.slice,
+                .basic_constraints => {
+                    const basic_constraints = try parseBasicConstraints(cert_bytes, ext_bytes_elem.slice);
+                    is_ca = basic_constraints.is_ca;
+                    basic_constraints_path_len = basic_constraints.path_len;
+                },
                 .name_constraints => {
                     name_constraints_slice = ext_bytes_elem.slice;
                     name_constraints_critical = extension_critical and cert_bytes[critical_elem.slice.start] != 0;
@@ -1313,14 +1322,58 @@ pub fn parse(cert: Certificate) ParseError!Parsed {
         .ext_key_usage_slice = ext_key_usage_slice,
         .name_constraints_slice = name_constraints_slice,
         .name_constraints_critical = name_constraints_critical,
+        .is_ca = is_ca,
+        .basic_constraints_path_len = basic_constraints_path_len,
         .version = version,
     };
 }
 
-fn verify(subject: Certificate, issuer: Certificate, now_sec: i64) !void {
-    const parsed_subject = try subject.parse();
-    const parsed_issuer = try issuer.parse();
-    return parsed_subject.verify(parsed_issuer, now_sec);
+const BasicConstraints = struct {
+    is_ca: bool = false,
+    path_len: ?u8 = null,
+};
+
+fn parseBasicConstraints(bytes: []const u8, extension_slice: der.Element.Slice) ParseError!BasicConstraints {
+    const sequence = try der.Element.parse(bytes, extension_slice.start);
+    if (sequence.identifier.tag != .sequence) return error.CertificateFieldHasWrongDataType;
+    if (sequence.slice.end != extension_slice.end) return error.CertificateFieldHasInvalidLength;
+
+    var result: BasicConstraints = .{};
+    var field_index = sequence.slice.start;
+    if (field_index < sequence.slice.end) {
+        const ca = try der.Element.parse(bytes, field_index);
+        if (ca.identifier.tag == .boolean) {
+            if (ca.slice.end - ca.slice.start != 1) return error.CertificateFieldHasInvalidLength;
+            result.is_ca = bytes[ca.slice.start] != 0;
+            field_index = ca.slice.end;
+        }
+    }
+    if (field_index < sequence.slice.end) {
+        const path_len = try der.Element.parse(bytes, field_index);
+        if (path_len.identifier.tag != .integer) return error.CertificateFieldHasWrongDataType;
+        const encoded = bytes[path_len.slice.start..path_len.slice.end];
+        if (encoded.len == 0 or encoded.len > 2) return error.CertificateFieldHasInvalidLength;
+        if (encoded[0] & 0x80 != 0) return error.CertificateFieldHasWrongDataType;
+        var value: u16 = 0;
+        for (encoded) |byte| value = (value << 8) | byte;
+        if (value > std.math.maxInt(u8)) return error.CertificateFieldHasInvalidLength;
+        result.path_len = @intCast(value);
+        field_index = path_len.slice.end;
+    }
+    if (field_index != sequence.slice.end) return error.CertificateFieldHasInvalidLength;
+    if (result.path_len != null and result.is_ca == false) return error.CertificateFieldHasInvalidLength;
+    return result;
+}
+
+// RFC 5280 §4.2.1.9 — pathLenConstraint requires cA to be asserted.
+test "parseBasicConstraints rejects pathLenConstraint without cA" {
+    const encoded = "\x30\x03\x02\x01\x00";
+    const extension_slice: der.Element.Slice = .{ .start = 0, .end = encoded.len };
+
+    try std.testing.expectError(
+        error.CertificateFieldHasInvalidLength,
+        parseBasicConstraints(encoded, extension_slice),
+    );
 }
 
 fn contents(cert: Certificate, elem: der.Element) []const u8 {

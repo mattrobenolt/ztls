@@ -11,6 +11,7 @@ pub const PolicyError = error{
     CertificateKeyUsageRejected,
     CertificateExtendedKeyUsageRejected,
     CertificateSignatureAlgorithmRejected,
+    CertificateIssuerNotCa,
 };
 
 pub const LeafUsage = enum {
@@ -55,6 +56,7 @@ const eku_server_auth_oid = [_]u8{ 0x2b, 0x06, 0x01, 0x05, 0x05, 0x07, 0x03, 0x0
 // RFC 5280 §4.2.1.12 — id-kp-clientAuth (1.3.6.1.5.5.7.3.2).
 const eku_client_auth_oid = [_]u8{ 0x2b, 0x06, 0x01, 0x05, 0x05, 0x07, 0x03, 0x02 };
 const key_usage_digital_signature: u4 = 0;
+const key_usage_key_cert_sign: u4 = 5;
 
 pub const VerifyServerAuthError = PolicyError || Certificate.ParseError;
 pub const VerifyClientAuthError = PolicyError || Certificate.ParseError;
@@ -137,6 +139,18 @@ pub fn verifyCertificateSignatureAlgorithm(
         return error.CertificateSignatureAlgorithmRejected;
 }
 
+pub const VerifyIssuerUsageError = PolicyError || Certificate.ParseError;
+
+// RFC 5280 §4.2.1.9 and §4.2.1.3 — every certificate used to issue another
+// certificate must assert cA and permit keyCertSign when KeyUsage is present.
+// ziglint-ignore: Z015 -- VerifyIssuerUsageError is a public error-set alias.
+pub fn verifyIssuerUsage(issuer: Certificate.Parsed) VerifyIssuerUsageError!void {
+    if (!issuer.is_ca) return error.CertificateIssuerNotCa;
+    if (!try issuer.allowsKeyUsage(key_usage_key_cert_sign))
+        return error.CertificateIssuerNotCa;
+    // TODO(audit S5): pathLenConstraint parsed, not yet enforced.
+}
+
 pub const VerifyAgainstBundleError = PolicyError ||
     Certificate.ParseError ||
     Certificate.Parsed.VerifyError ||
@@ -152,6 +166,7 @@ pub fn findVerifiedIssuerInBundle(
         return error.CertificateIssuerNotFound;
     const issuer_cert: Certificate = .{ .buffer = bundle.bytes.items, .index = issuer_index };
     const issuer = try issuer_cert.parse();
+    try verifyIssuerUsage(issuer);
     try subject.verify(issuer, now_sec);
     return issuer;
 }

@@ -197,7 +197,10 @@ pub fn parseClientChain(
             }
             if (policy.host_name) |host_name| try parsed.verifyHostName(host_name);
         }
-        if (subject_to_verify) |subject| try subject.verify(parsed, policy.now_sec);
+        if (subject_to_verify) |subject| {
+            try certificate_policy.verifyIssuerUsage(parsed);
+            try subject.verify(parsed, policy.now_sec);
+        }
         subject_to_verify = parsed;
         cert_index += 1;
     }
@@ -281,7 +284,10 @@ pub fn parse(msg: []const u8, policy: Policy) ParseError![]const u8 {
             }
             if (policy.host_name) |host_name| try parsed.verifyHostName(host_name);
         }
-        if (subject_to_verify) |subject| try subject.verify(parsed, policy.now_sec);
+        if (subject_to_verify) |subject| {
+            try certificate_policy.verifyIssuerUsage(parsed);
+            try subject.verify(parsed, policy.now_sec);
+        }
         subject_to_verify = parsed;
         cert_index += 1;
     }
@@ -548,6 +554,14 @@ fn ed25519CertDer() []const u8 {
 fn chainIntermediateDer() []const u8 {
     // ziglint-ignore: Z028
     return &@import("fixtures").chain_intermediate_der;
+}
+fn auditS5LeafDer() []const u8 {
+    // ziglint-ignore: Z028
+    return &@import("fixtures").audit_s5_leaf_der;
+}
+fn auditS5IssuerDer() []const u8 {
+    // ziglint-ignore: Z028
+    return &@import("fixtures").audit_s5_issuer_der;
 }
 fn nameConstraintsDer() []const u8 {
     // ziglint-ignore: Z028
@@ -882,6 +896,23 @@ test "parse: validates leaf-intermediate-root chain" {
         .{ .bundle = &bundle, .now_sec = 1_780_300_000, .host_name = "chain.test" },
     );
     try testing.expect(pub_key.len > 0);
+}
+
+// RFC 5280 §4.2.1.9 and §4.2.1.3, RFC 8446 §4.4.2 — a certificate used as
+// an issuer must assert cA and, when KeyUsage is present, keyCertSign.
+test "parse: rejects end-entity certificate used as issuer" {
+    var bundle: Certificate.Bundle = empty_bundle;
+    defer bundle.deinit(testing.allocator);
+    try addCertsFromFixturePath(&bundle, "tests/fixtures/audit_s5/root.crt");
+
+    var buf: [4096]u8 = undefined;
+    try testing.expectError(
+        error.CertificateIssuerNotCa,
+        parse(
+            buildCertChainMsg(&buf, &.{ auditS5LeafDer(), auditS5IssuerDer() }),
+            .{ .bundle = &bundle, .now_sec = 1_800_000_000, .host_name = "victim.test" },
+        ),
+    );
 }
 
 // RFC 8446 §4.4.2 — the sender certificate is the first CertificateEntry.

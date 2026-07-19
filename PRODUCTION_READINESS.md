@@ -254,10 +254,14 @@ data to openssl s_server and receives the HTTP response.
   public API / C ABI (S8), plus protocol/state-machine and hardening items
   (S9–S14, H1–H24). Remediation status (this is the current parser/auth-surface
   status, superseding the Glasswing bullet above until it completes):
-  fixed and regression-tested — S6/S7 (three #72-class narrow-arithmetic sites,
-  widened to `usize`); open — the remainder, including the CRITICAL S5
-  chain-validation bypass. The public-facing readiness claims below do not yet
-  account for S5 being open.
+  fixed and regression-tested — S5 (the CRITICAL end-entity-as-CA bypass:
+  BasicConstraints `cA` and, when KeyUsage is present, `keyCertSign` are now
+  enforced on every presented-chain issuer and on the bundle trust anchor;
+  pathLenConstraint is parsed but depth-enforcement is deferred, tracked as a
+  `TODO(audit S5)`), and S6/S7 (three #72-class narrow-arithmetic sites, widened
+  to `usize`); open — the remainder (S8–S14, H1–H24). Requiring `cA` on issuers
+  is intentional and matches RFC 5280 / OpenSSL / browsers; non-conforming roots
+  that omit BasicConstraints are rejected by design.
 - Targeted client-side bad-server tests for malformed ServerHello, unexpected
   flight messages, bad CertificateVerify and Finished checks, corrupted
   encrypted records, client-emitted alert descriptions, peer fatal alerts,
