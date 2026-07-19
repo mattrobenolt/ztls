@@ -1593,9 +1593,10 @@ fn handleWaitClientFinished(self: *ServerHandshake, record: []u8) HandleError!Ev
                     // RFC 8446 §4.2.10: reject early data exceeding the
                     // ticket's max_early_data_size.
                     if (self.early_data_limit) |limit| {
-                        self.early_data_received +|= @intCast(early_dec.content.len);
-                        if (self.early_data_received > limit)
+                        const content_len: u32 = @intCast(early_dec.content.len);
+                        if (content_len > limit - self.early_data_received)
                             return error.UnexpectedMessage;
+                        self.early_data_received += content_len;
                     }
                     self.post_handshake_count = 0;
                     return .{ .application_data = early_dec.content };
@@ -1865,6 +1866,7 @@ pub fn rxKtlsInfo(self: *const ServerHandshake) RecordLayer.KtlsInfo {
 // ziglint-ignore: Z015 -- ReceiveError is a public error-set alias.
 pub fn receiveApplicationData(self: *ServerHandshake, record: []u8) ReceiveError![]const u8 {
     assert(self.state == .connected);
+    if (self.ku_frag.len != 0) return error.UnexpectedRecord;
     const dec = try handshake.decryptProtected(&self.rx, record);
     if (dec.content_type != .application_data) return error.UnexpectedRecord;
     return dec.content;
@@ -4951,6 +4953,32 @@ test "0-RTT: server rejects early data exceeding max_early_data_size" {
     );
 }
 
+// RFC 8446 §4.2.10 — max_early_data_size is an absolute byte limit even when
+// the configured limit is maxInt(u32); accounting must not saturate and accept
+// bytes beyond the remaining budget.
+test "0-RTT: max u32 early-data limit rejects bytes beyond remaining budget" {
+    const key: aead.Aes128GcmKey = .zero;
+    const iv: aead.Iv = .zero;
+
+    var server: ServerHandshake = .init(.{
+        .keypairs = .init(.generate()),
+        .random = .zero,
+    });
+    server.state = .wait_client_finished;
+    server.early_rx = try .init(.{ .aes_128_gcm_sha256 = key }, iv);
+    server.early_data_limit = std.math.maxInt(u32);
+    server.early_data_received = std.math.maxInt(u32) - 1;
+
+    var client_early_tx: RecordLayer = try .init(.{ .aes_128_gcm_sha256 = key }, iv);
+    defer client_early_tx.deinit();
+
+    var wire_buf: [frame.max_wire_record_len]u8 = undefined;
+    const wire = try client_early_tx.encrypt(.application_data, "xx", &wire_buf);
+    var out: [64]u8 = undefined;
+    try testing.expectError(error.UnexpectedMessage, server.handleRecord(wire, &out));
+    try testing.expectEqual(std.math.maxInt(u32) - 1, server.early_data_received);
+}
+
 // RFC 8446 §4.2.10 — when no PSK is selected (psk_lookup returns null),
 // early_rx is not installed. 0-RTT records cannot be decrypted and the
 // server treats them as handshake-key records that fail authentication.
@@ -6298,6 +6326,25 @@ test "handleRecord: app-data interleaving during KeyUpdate reassembly is rejecte
         server.handleRecord(rx_buf[0..app_wire.len], &out),
     );
     try testing.expectEqual(@as(usize, 0), server.ku_frag.len);
+}
+
+// RFC 8446 §5.1 — direct application-data receive must preserve the same
+// fragmented-KeyUpdate record interlock as handleRecord.
+test "receiveApplicationData: app-data interleaving during KeyUpdate reassembly is rejected" {
+    var server = try connectedTestServer();
+    var client_tx = try server.rx.clone();
+    defer client_tx.deinit();
+
+    const ku_type = @intFromEnum(HandshakeType.key_update);
+    var wire_buf: [64]u8 = undefined;
+    const wire = try client_tx.encrypt(.handshake, &[_]u8{ku_type}, &wire_buf);
+    var out: [256]u8 = undefined;
+    _ = try server.handleRecord(wire, &out);
+    try testing.expectEqual(@as(usize, 1), server.ku_frag.len);
+
+    const app_wire = try client_tx.encrypt(.application_data, "nope", &wire_buf);
+    try testing.expectError(error.UnexpectedRecord, server.receiveApplicationData(app_wire));
+    try testing.expectEqual(@as(usize, 1), server.ku_frag.len);
 }
 
 // RFC 8446 §5.1 — interleaving an alert during fragment reassembly is rejected

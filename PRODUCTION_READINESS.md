@@ -296,8 +296,12 @@ data to openssl s_server and receives the HTTP response.
     params (no group-echo confusion), and the ML-KEM wrapper validates
     provider-returned public/ciphertext/secret lengths against the
     X25519MLKEM768 constants (1216/1120/64) instead of trusting them.
+  - H13/H14 — ServerHandshake record hygiene: `receiveApplicationData` rejects
+    application data interleaved inside a pending KeyUpdate fragment, and the
+    0-RTT byte counter checks the remaining budget before adding (no saturation
+    at `maxInt(u32)`).
 
-  Open — the remainder: S14 (mTLS identity, design), H12–H24, and the
+  Open — the remainder: S14 (mTLS identity, design), H12, H15–H24, and the
   H21 policy calls.
 - Targeted client-side bad-server tests for malformed ServerHello, unexpected
   flight messages, bad CertificateVerify and Finished checks, corrupted
