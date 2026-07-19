@@ -716,7 +716,10 @@ fn processClientHelloMessage(
             } else return error.IllegalParameter,
             else => return error.IllegalParameter,
         }
-    else if (ch.kem_key_share != null and backend.supportsServerX25519Mlkem768()) blk: {
+    else if (ch.kem_key_share != null and
+        ch.kem_key_share.?.group == .x25519_mlkem768 and
+        backend.supportsServerX25519Mlkem768())
+    blk: {
         // Try KEM encapsulation; if it fails (e.g. the libcrypto build
         // doesn't support the algorithm at runtime), fall back to ECDHE.
         // draft-ietf-tls-ecdhe-mlkem-05 §4.
@@ -5296,6 +5299,49 @@ test "in-memory X25519MLKEM768 KEM handshake reaches app data" {
     @memcpy(server_app_mut[0..server_app.len], server_app);
     const app_ev = try client.handleRecord(server_app_mut[0..server_app.len], &client_out);
     try testing.expectEqualStrings("pong", app_ev.application_data);
+}
+
+// draft-ietf-tls-ecdhe-mlkem-05 §4 — KEM operations and the echoed
+// KeyShareEntry group must use the same named-group construction. A share for
+// an unimplemented hybrid group falls back to the offered X25519 share.
+test "KEM negotiation pins encapsulation to X25519MLKEM768" {
+    if (!backend.supportsServerX25519Mlkem768()) return error.SkipZigTest;
+
+    const kem_key = mlkem_mod.generateX25519Mlkem768() catch
+        return error.SkipZigTest;
+    defer mlkem_mod.freeKey(kem_key);
+    var kem_public_buf: [mlkem_mod.x25519_mlkem768_public_length]u8 = undefined;
+    const kem_public = try mlkem_mod.publicKey(kem_key, &kem_public_buf);
+
+    const client_x25519: x25519.KeyPair = .generate();
+    const client_p256 = try p256.KeyPair.generateDeterministic(.init(test_p256_seed_a));
+    const kem_share: client_hello.KemShare = .{
+        .group = .secp256r1_mlkem768,
+        .data = kem_public,
+    };
+    var ch_buf: [4096]u8 = undefined;
+    const ch = try client_hello.encodeWithKem(
+        &ch_buf,
+        .zero,
+        client_x25519.public_key,
+        client_p256.public_key,
+        null,
+        null,
+        &.{},
+        kem_share,
+    );
+    var ch_record: [4096]u8 = undefined;
+    const ch_header: frame.Header = .init(.handshake, @intCast(ch.len));
+    ch_header.write(ch_record[0..frame.header_len]);
+    @memcpy(ch_record[frame.header_len..][0..ch.len], ch);
+
+    var server: ServerHandshake = .init(testConfig(.generate()));
+    var server_out: [4096]u8 = undefined;
+    _ = try server.acceptClientHello(
+        ch_record[0 .. frame.header_len + ch.len],
+        &server_out,
+    );
+    try testing.expectEqual(NamedGroup.x25519, server.negotiated_group);
 }
 
 // RFC 8446 §4.1.4 — full HelloRetryRequest round trip in memory: the client

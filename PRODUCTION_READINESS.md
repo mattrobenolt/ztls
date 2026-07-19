@@ -291,8 +291,13 @@ data to openssl s_server and receives the HTTP response.
     `BN_clear_free` (were `BN_free`, leaving secret residue), and `aeadInit`
     rejects a key whose length differs from the cipher's key length before any
     EVP setup (defense-in-depth; unreachable via the typed `Aead` facade).
+  - H4/H5 — KEM hardening: the server pins `kem_key_share.group ==
+    .x25519_mlkem768` before encapsulating with the hardcoded X25519MLKEM768
+    params (no group-echo confusion), and the ML-KEM wrapper validates
+    provider-returned public/ciphertext/secret lengths against the
+    X25519MLKEM768 constants (1216/1120/64) instead of trusting them.
 
-  Open — the remainder: S14 (mTLS identity, design), H4/H5, H12–H24, and the
+  Open — the remainder: S14 (mTLS identity, design), H12–H24, and the
   H21 policy calls.
 - Targeted client-side bad-server tests for malformed ServerHello, unexpected
   flight messages, bad CertificateVerify and Finished checks, corrupted

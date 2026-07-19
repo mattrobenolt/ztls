@@ -48,11 +48,16 @@ pub fn generateX25519Mlkem768() Error!KeyHandle {
 
 /// Extract the raw public key (TLS key_share bytes) from a key handle.
 pub fn publicKey(key: KeyHandle, out: []u8) Error![]u8 {
-    return kem_impl.kemPublic(key, out);
+    const public_key = try kem_impl.kemPublic(key, out);
+    if (public_key.len != x25519_mlkem768_public_length)
+        return error.LibcryptoFailed;
+    return public_key;
 }
 
 /// Load a peer's raw public key for encapsulation. Caller must freeKey.
 pub fn loadPeerPublic(pub_key: []const u8) Error!PeerHandle {
+    if (pub_key.len != x25519_mlkem768_public_length)
+        return error.LibcryptoFailed;
     return kem_impl.kemLoadPublic("X25519MLKEM768", pub_key);
 }
 
@@ -64,6 +69,10 @@ pub fn encapsulate(
     sec_out: []u8,
 ) Error!struct { enc: []const u8, sec: []const u8 } {
     const r = try kem_impl.kemEncapsulate(peer, enc_out, sec_out);
+    if (r.enc.len != x25519_mlkem768_ciphertext_length)
+        return error.LibcryptoFailed;
+    if (r.sec.len != x25519_mlkem768_shared_secret_length)
+        return error.LibcryptoFailed;
     return .{ .enc = r.enc, .sec = r.sec };
 }
 
@@ -74,7 +83,10 @@ pub fn decapsulate(
     enc: []const u8,
     sec_out: []u8,
 ) Error![]u8 {
-    return kem_impl.kemDecapsulate(key, enc, sec_out);
+    const secret = try kem_impl.kemDecapsulate(key, enc, sec_out);
+    if (secret.len != x25519_mlkem768_shared_secret_length)
+        return error.LibcryptoFailed;
+    return secret;
 }
 
 pub fn freeKey(key: anytype) void {
@@ -101,9 +113,11 @@ test "X25519MLKEM768: encapsulate/decapsulate round-trip" {
     var enc_buf: [x25519_mlkem768_ciphertext_length + 64]u8 = undefined;
     var sec_buf: [x25519_mlkem768_shared_secret_length + 64]u8 = undefined;
     const result = try encapsulate(peer, &enc_buf, &sec_buf);
-    try testing.expect(result.sec.len == x25519_mlkem768_shared_secret_length);
+    try testing.expectEqual(x25519_mlkem768_ciphertext_length, result.enc.len);
+    try testing.expectEqual(x25519_mlkem768_shared_secret_length, result.sec.len);
 
     var dec_sec: [x25519_mlkem768_shared_secret_length + 64]u8 = undefined;
     const client_sec = try decapsulate(client_key, result.enc, &dec_sec);
+    try testing.expectEqual(x25519_mlkem768_shared_secret_length, client_sec.len);
     try testing.expectEqualSlices(u8, result.sec, client_sec);
 }
