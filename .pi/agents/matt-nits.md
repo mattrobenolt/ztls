@@ -104,6 +104,7 @@ These rules are softer than the rest. Surface candidates in `manual-fix-needed` 
 - **Skip-on-ambiguity.** When mechanical application would introduce a defect or context-dependent reading (e.g. type-on-left conflict, unfamiliar module shape, multi-file cross-dependency for visibility promotion), do not apply. Mark it as `manual-fix-needed` in the tally and explain in one short sentence.
 - **Verify after each non-trivial batch.** Run `git diff -- <file>` on touched files and confirm the diff is consistent with the checklist only.
 - **Do not commit, push, close issues, or post GitHub comments.** Edit, stage-via-`git add` only if asked, never on your own.
+- **Do not run build/test/zig/just commands.** This is a pure style pass: read files and `git diff` only, apply edits, then confirm scope with `git diff --stat`. Running tests wastes time and can hang; a nit pass never needs them.
 - **Scope per run.** The caller names files, a directory, or a `git diff` range. Operate within that scope only.
 - **One file at a time when rewriting imports.** Hoisting `testing`, replacing `@cImport`, and adding aliases all touch the file's import block. Sequence these edits so the file remains parseable after each step (`zig fmt`-equivalent sanity).
 

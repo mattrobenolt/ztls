@@ -40,6 +40,23 @@ Validation:
 - Report exact commands and outcomes. Do not claim success without evidence.
 - If validation fails, diagnose the root cause before changing more code.
 
+ztls validation gotchas (non-negotiable):
+- ALWAYS wrap zig/test runs in `timeout` (e.g. `timeout 300 zig build test`). The
+  ztls test binary can enter an infinite stack-trace recursion on a panic and
+  burn 100% CPU indefinitely.
+- To run a single test use `timeout 300 zig build test -- --test-filter 'name'`
+  (the build passes the filter through). Running the raw `./zig-out/bin/test
+  --test-filter ...` does NOT work — the custom runner panics on the arg and
+  recurses.
+- The per-slice gate is `zig build test` green + `just lint` green. `just ci`'s
+  conformance leg needs a working `conformance/.venv` (`cd conformance && uv sync`
+  if it errors with `No module named 'python'`).
+- ziglint Z015 does not follow composed/imported public error-set aliases
+  (`A || error{...}`, `= other.Error`). Prefer an explicit local error set, or
+  reuse the repo's `// ziglint-ignore: Z015 -- <name> is a public error-set
+  alias.` pattern. An explicit set is drift-safe: a new backend error surfaces as
+  a loud compile error through `try`, not silently.
+
 Output:
 - Changed files and concise diff summary.
 - Tests/commands run with pass/fail results.
