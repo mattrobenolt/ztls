@@ -262,8 +262,11 @@ data to openssl s_server and receives the HTTP response.
   to `usize`), and S8 (the public `Aead.encrypt`/`decrypt` now reject mismatched
   in/out slice lengths with `SliceLengthMismatch` before the backend call,
   closing the off-public-API / C-ABI out-of-bounds-write hazard; not
-  peer-reachable via the RecordLayer, which uses equal-length in-place slices);
-  open — the remainder (S9–S14, H1–H24). Requiring `cA` on issuers
+  peer-reachable via the RecordLayer, which uses equal-length in-place slices),
+  and S9 (after HelloRetryRequest the server now validates ClientHello2 against
+  ClientHello1 via a length-prefixed stable-field digest and rejects `early_data`
+  in CH2, per RFC 8446 §4.1.2/§4.2.10); open — the remainder (S10–S14, H1–H24).
+  Requiring `cA` on issuers
   is intentional and matches RFC 5280 / OpenSSL / browsers; non-conforming roots
   that omit BasicConstraints are rejected by design.
 - Targeted client-side bad-server tests for malformed ServerHello, unexpected

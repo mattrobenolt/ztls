@@ -99,6 +99,8 @@ pub const State = enum {
     connected,
 };
 
+const RetryClientHelloDigest = [Sha256.digest_length]u8;
+
 const RetryTranscript = union(enum) {
     sha256: Sha256,
     sha384: Sha384,
@@ -244,6 +246,7 @@ tx: RecordLayer = undefined,
 pending_write: PendingWrite = .idle,
 post_handshake_count: u8 = 0,
 retry_transcript: ?RetryTranscript = null,
+retry_ch1_digest: ?RetryClientHelloDigest = null,
 retry_selected_group: ?NamedGroup = null,
 /// PSK selected from the client's pre_shared_key offer (RFC 8446 §4.2.11),
 /// set when the server resumes. `selected_psk_index` is echoed in the
@@ -452,14 +455,22 @@ pub fn useHandshakeBuffer(self: *ServerHandshake, storage: []u8) void {
     self.ch_buf = .init(storage);
 }
 
+/// Return the selected ALPN protocol after the first ClientHello is processed.
+/// After HelloRetryRequest, the value reflects ClientHello1 until ClientHello2
+/// arrives; ClientHello2's offer is validated to match before this is updated.
+/// A caller that continues after ignoring a rejected ClientHello2 must not treat
+/// its changed offer as selected.
 pub fn selectedAlpnProtocol(self: *const ServerHandshake) ?[]const u8 {
     return self.selected_alpn;
 }
 
 /// Return the SNI hostname from the ClientHello server_name extension, or null
 /// if the client did not send one. Available after the first handleRecord/
-/// acceptClientHello call returns. Points into the caller's record buffer —
-/// copy before the next call if you need it longer.
+/// acceptClientHello call returns. After HelloRetryRequest, this reflects
+/// ClientHello1 until ClientHello2 arrives; ClientHello2's SNI is validated to
+/// match before this is updated. A caller that ignores a rejected ClientHello2
+/// must not route using its changed SNI. Points into the caller's record buffer
+/// — copy before the next call if you need it longer.
 ///
 /// RFC 6066 §3 — server_name extension.
 pub fn clientServerName(self: *const ServerHandshake) ?[]const u8 {
@@ -596,7 +607,16 @@ fn processClientHelloMessage(
     out: []u8,
 ) AcceptError![]const u8 {
     assert(self.state == .wait_ch);
+    assert((self.retry_transcript == null) == (self.retry_ch1_digest == null));
     const ch = try client_hello.parse(ch_msg);
+    if (self.retry_ch1_digest) |ch1_digest| {
+        const ch2_digest = retryClientHelloDigest(&ch);
+        if (!mem.eql(u8, &ch1_digest, &ch2_digest)) return error.IllegalParameter;
+    }
+    // RFC 8446 §4.1.2, §4.2.10 — early_data MUST be removed in ClientHello2;
+    // 0-RTT is not compatible with HelloRetryRequest.
+    if (self.retry_ch1_digest != null and ch.offered_early_data)
+        return error.IllegalParameter;
     const suite = if (self.retry_transcript == null)
         self.chooseSuite(ch) orelse return error.UnsupportedCipherSuite
     else
@@ -723,6 +743,7 @@ fn processClientHelloMessage(
     else if (ch.groups.contains(.x25519) and backend.supportsServerX25519()) {
         const hrr = try self.encodeHelloRetryRequest(
             ch_msg,
+            &ch,
             ch.legacy_session_id,
             suite,
             .x25519,
@@ -734,6 +755,7 @@ fn processClientHelloMessage(
     } else if (ch.groups.contains(.secp256r1) and backend.supportsServerP256()) {
         const hrr = try self.encodeHelloRetryRequest(
             ch_msg,
+            &ch,
             ch.legacy_session_id,
             suite,
             .secp256r1,
@@ -747,6 +769,7 @@ fn processClientHelloMessage(
     {
         const hrr = try self.encodeHelloRetryRequest(
             ch_msg,
+            &ch,
             ch.legacy_session_id,
             suite,
             .secp384r1,
@@ -824,6 +847,7 @@ fn appendCompatibilityChangeCipherSpec(out: []u8) server_hello.EncodeError!usize
 fn encodeHelloRetryRequest(
     self: *ServerHandshake,
     ch_msg: []const u8,
+    ch: *const client_hello.Parsed,
     legacy_session_id: []const u8,
     suite: CipherSuite,
     selected_group: NamedGroup,
@@ -838,12 +862,49 @@ fn encodeHelloRetryRequest(
     const header: frame.Header = .init(.handshake, @intCast(hrr.len));
     header.write(out[0..frame.header_len]);
     self.retry_transcript = makeRetryTranscript(suite, ch_msg, hrr);
+    self.retry_ch1_digest = retryClientHelloDigest(ch);
     self.retry_selected_group = selected_group;
     var out_len = frame.header_len + hrr.len;
     if (legacy_session_id.len != 0) {
         out_len += try appendCompatibilityChangeCipherSpec(out[out_len..]);
     }
     return out[0..out_len];
+}
+
+fn retryClientHelloDigest(ch: *const client_hello.Parsed) RetryClientHelloDigest {
+    var hash: Sha256 = .init(.{});
+    retryClientHelloDigestUpdateOptional(&hash, ch.server_name);
+    retryClientHelloDigestUpdate(&hash, ch.alpn_protocols);
+    retryClientHelloDigestUpdate(&hash, ch.cipher_suites);
+    retryClientHelloDigestUpdate(&hash, ch.signature_schemes);
+    retryClientHelloDigestUpdateOptional(&hash, ch.psk_key_exchange_modes);
+
+    const group_fields = std.meta.fields(NamedGroup);
+    var groups: [group_fields.len]u8 = undefined;
+    inline for (group_fields, 0..) |field, index| {
+        const group: NamedGroup = @enumFromInt(field.value);
+        groups[index] = @intFromBool(ch.groups.contains(group));
+    }
+    retryClientHelloDigestUpdate(&hash, &groups);
+    retryClientHelloDigestUpdate(&hash, ch.legacy_session_id);
+
+    var digest: RetryClientHelloDigest = undefined;
+    hash.final(&digest);
+    return digest;
+}
+
+fn retryClientHelloDigestUpdate(hash: *Sha256, bytes: []const u8) void {
+    assert(bytes.len <= std.math.maxInt(u16));
+    var length: [2]u8 = undefined;
+    memx.writeInt(u16, &length, @intCast(bytes.len));
+    hash.update(&length);
+    hash.update(bytes);
+}
+
+fn retryClientHelloDigestUpdateOptional(hash: *Sha256, bytes: ?[]const u8) void {
+    const presence: [1]u8 = .{@intFromBool(bytes != null)};
+    hash.update(&presence);
+    retryClientHelloDigestUpdate(hash, bytes orelse &.{});
 }
 
 fn makeRetryTranscript(
@@ -951,6 +1012,7 @@ fn installHandshakeKeys(
         },
     }
     self.retry_transcript = null;
+    self.retry_ch1_digest = null;
     self.retry_selected_group = null;
 
     switch (self.suite_state) {
@@ -2350,6 +2412,147 @@ test "acceptClientHello: emits HelloRetryRequest for missing secp256r1 key share
         hrr_record[frame.header_len..][0..hrr_hdr.length()],
     );
     try testing.expectEqual(NamedGroup.secp256r1, hrr.selected_group.?);
+}
+
+// RFC 8446 §4.1.2 — after HelloRetryRequest, ClientHello2 may differ from
+// ClientHello1 only in the explicitly permitted fields. SNI and ALPN are not
+// among them, so either change is rejected with illegal_parameter.
+test "acceptClientHello: rejects ClientHello2 with changed SNI or ALPN after HRR" {
+    const Case = struct {
+        ch1_sni: []const u8,
+        ch2_sni: []const u8,
+        ch1_alpn: root.AlpnProtocols,
+        ch2_alpn: root.AlpnProtocols,
+    };
+    const cases = [_]Case{
+        .{
+            .ch1_sni = "one.example",
+            .ch2_sni = "two.example",
+            .ch1_alpn = &.{"h2"},
+            .ch2_alpn = &.{"h2"},
+        },
+        .{
+            .ch1_sni = "one.example",
+            .ch2_sni = "one.example",
+            .ch1_alpn = &.{"h2"},
+            .ch2_alpn = &.{"http/1.1"},
+        },
+    };
+
+    for (cases) |case| {
+        const client_keypair: x25519.KeyPair = .generate();
+        var ch1_buf: [512]u8 = undefined;
+        const ch1 = try client_hello.encode(
+            &ch1_buf,
+            .zero,
+            client_keypair.public_key,
+            case.ch1_sni,
+            case.ch1_alpn,
+        );
+        patchClientHelloKeyShareGroup(@constCast(ch1), 0x6a6a);
+
+        var ch1_record: [1024]u8 = undefined;
+        const ch1_header: frame.Header = .init(.handshake, @intCast(ch1.len));
+        ch1_header.write(ch1_record[0..frame.header_len]);
+        @memcpy(ch1_record[frame.header_len..][0..ch1.len], ch1);
+
+        var server: ServerHandshake = .init(testConfig(.generate()));
+        server.supportAlpn(&.{ "h2", "http/1.1" });
+        var out: [512]u8 = undefined;
+        _ = try server.acceptClientHello(ch1_record[0 .. frame.header_len + ch1.len], &out);
+        try testing.expectEqualStrings("one.example", server.clientServerName().?);
+        try testing.expectEqualStrings("h2", server.selectedAlpnProtocol().?);
+
+        var ch2_buf: [512]u8 = undefined;
+        const ch2 = try client_hello.encode(
+            &ch2_buf,
+            .zero,
+            client_keypair.public_key,
+            case.ch2_sni,
+            case.ch2_alpn,
+        );
+        var ch2_record: [1024]u8 = undefined;
+        const ch2_header: frame.Header = .init(.handshake, @intCast(ch2.len));
+        ch2_header.write(ch2_record[0..frame.header_len]);
+        @memcpy(ch2_record[frame.header_len..][0..ch2.len], ch2);
+
+        try testing.expectError(
+            error.IllegalParameter,
+            server.acceptClientHello(ch2_record[0 .. frame.header_len + ch2.len], &out),
+        );
+        try testing.expectEqualStrings("one.example", server.clientServerName().?);
+        try testing.expectEqualStrings("h2", server.selectedAlpnProtocol().?);
+    }
+}
+
+// RFC 8446 §4.1.2, §4.2.10 — ClientHello2 MUST remove early_data because
+// 0-RTT is not compatible with HelloRetryRequest.
+test "acceptClientHello: rejects early_data in ClientHello2 after HRR" {
+    const psk: [32]u8 = @splat(0x5a);
+    const identity = [_]u8{ 0x2c, 0x03, 0x5d, 0x82 };
+    const Lookup = struct {
+        fn lookup(_: *anyopaque, offered_identity: []const u8) ?PskEntry {
+            if (!mem.eql(u8, offered_identity, &identity)) return null;
+            return .{
+                .psk = &psk,
+                .cipher_suite = .aes_128_gcm_sha256,
+                .max_early_data_size = 16384,
+            };
+        }
+    };
+
+    const client_keypair: x25519.KeyPair = .generate();
+    var ch1_buf: [512]u8 = undefined;
+    const ch1 = try client_hello.encode(&ch1_buf, .zero, client_keypair.public_key, null, &.{});
+    patchClientHelloKeyShareGroup(ch1, 0x6a6a);
+    var ch1_record: [1024]u8 = undefined;
+    const ch1_header: frame.Header = .init(.handshake, @intCast(ch1.len));
+    ch1_header.write(ch1_record[0..frame.header_len]);
+    @memcpy(ch1_record[frame.header_len..][0..ch1.len], ch1);
+
+    var lookup_context: u8 = 0;
+    var server: ServerHandshake = .init(.{
+        .keypairs = .init(.generate()),
+        .random = .zero,
+        .psk_lookup = .{ .context = &lookup_context, .lookup = Lookup.lookup },
+    });
+    var out: [1024]u8 = undefined;
+    _ = try server.acceptClientHello(ch1_record[0 .. frame.header_len + ch1.len], &out);
+    try testing.expect(server.early_rx == null);
+
+    var ch2_buf: [1024]u8 = undefined;
+    const ch2_result = try client_hello.encodeWithPsk(
+        &ch2_buf,
+        .zero,
+        client_keypair.public_key,
+        null,
+        null,
+        null,
+        &.{},
+        .psk_dhe_ke,
+        &identity,
+        0,
+        Sha256.digest_length,
+        true,
+    );
+    const early = hkdf.HkdfSha256.pskEarlySecret(&psk);
+    const binder_key = hkdf.HkdfSha256.resumptionBinderKey(early);
+    const finished_key = hkdf.HkdfSha256.finishedKey(binder_key);
+    var transcript_hash: hkdf.HkdfSha256.TranscriptHash = undefined;
+    Sha256.hash(ch2_result.msg[0..ch2_result.prefix_len], &transcript_hash.data, .{});
+    const binder = hkdf.HkdfSha256.binder(finished_key, &transcript_hash);
+    @memcpy(ch2_result.msg[ch2_result.binder_offset..][0..binder.len], &binder);
+
+    var ch2_record: [1536]u8 = undefined;
+    const ch2_header: frame.Header = .init(.handshake, @intCast(ch2_result.msg.len));
+    ch2_header.write(ch2_record[0..frame.header_len]);
+    @memcpy(ch2_record[frame.header_len..][0..ch2_result.msg.len], ch2_result.msg);
+    const ch2_record_slice = ch2_record[0 .. frame.header_len + ch2_result.msg.len];
+    try testing.expectError(
+        error.IllegalParameter,
+        server.acceptClientHello(ch2_record_slice, &out),
+    );
+    try testing.expect(server.early_rx == null);
 }
 
 // RFC 8446 §4.1.4 — ClientHello2 must contain a key share for the group named
@@ -4951,10 +5154,14 @@ test "in-memory HRR round trip reaches app data" {
     // server has no matching key_share and must HRR. The client still has its
     // real x25519/p256 keypairs for ClientHello2.
     var ch1_buf: [512]u8 = undefined;
-    const ch1 = try client_hello.encode(
+    const ch1 = try client_hello.encodeRetryAfterHrr(
         &ch1_buf,
         .zero,
         client.keypairs.x25519.public_key,
+        client.keypairs.p256.public_key,
+        null,
+        .x25519,
+        null,
         null,
         &.{},
     );
