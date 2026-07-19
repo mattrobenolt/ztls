@@ -305,9 +305,12 @@ data to openssl s_server and receives the HTTP response.
     the handshake body-length field like `parseClientCertificate`; and the
     `client_cert_policy` struct default is `.client_auth` (was `.server_auth`, a
     direct-construction trap).
+  - H23 — `rejectDuplicateExtensions` caps the extension block at 64 entries
+    (outer + inner count guards), bounding the previous O(n²) scan to O(64²) and
+    neutralizing the pre-auth CPU amplifier.
 
-  Open — the remainder: S14 (mTLS identity, design), H15–H17 (design), H20, H23,
-  and the H21 policy calls. H12 (post-handshake KeyUpdate counter) is
+  Open — the remainder: S14 (mTLS identity, design), H15–H17 (design), H20
+  (0.5-RTT receive, interop), and the H21 policy calls. H12 (post-handshake KeyUpdate counter) is
   deliberately NOT taken as specified: the audit's "don't reset on app data"
   would make the bound a lifetime cap of 16 KeyUpdates and break long-lived
   high-throughput connections; the current reset-on-app-data burst counter
