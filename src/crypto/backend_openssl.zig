@@ -244,7 +244,7 @@ pub fn p256PrivateKeyFromSecret(secret: *const [32]u8) Error!*pkey {
     defer c.EC_GROUP_free(group);
 
     const priv = c.BN_bin2bn(secret, secret.len, null) orelse return error.LibcryptoFailed;
-    defer c.BN_free(priv);
+    defer c.BN_clear_free(priv);
 
     const public = c.EC_POINT_new(group) orelse return error.LibcryptoFailed;
     defer c.EC_POINT_free(public);
@@ -316,7 +316,7 @@ pub fn p384PrivateKeyFromSecret(secret: *const [48]u8) Error!*pkey {
     defer c.EC_GROUP_free(group);
 
     const priv = c.BN_bin2bn(secret, secret.len, null) orelse return error.LibcryptoFailed;
-    defer c.BN_free(priv);
+    defer c.BN_clear_free(priv);
 
     const public = c.EC_POINT_new(group) orelse return error.LibcryptoFailed;
     defer c.EC_POINT_free(public);
@@ -407,19 +407,23 @@ fn aeadCipher(suite: CipherSuite) *const c.EVP_CIPHER {
 }
 
 pub fn aeadInit(suite: CipherSuite, key_bytes: []const u8) AeadError!AeadContext {
+    const cipher = aeadCipher(suite);
+    const key_len: usize = @intCast(c.EVP_CIPHER_key_length(cipher));
+    if (key_bytes.len != key_len) return error.AeadSetupFailed;
+
     const enc = c.EVP_CIPHER_CTX_new() orelse return error.AeadSetupFailed;
     errdefer c.EVP_CIPHER_CTX_free(enc);
     const dec = c.EVP_CIPHER_CTX_new() orelse return error.AeadSetupFailed;
     errdefer c.EVP_CIPHER_CTX_free(dec);
 
-    if (c.EVP_EncryptInit_ex(enc, aeadCipher(suite), null, null, null) != 1)
+    if (c.EVP_EncryptInit_ex(enc, cipher, null, null, null) != 1)
         return error.AeadSetupFailed;
     if (c.EVP_CIPHER_CTX_ctrl(enc, c.EVP_CTRL_AEAD_SET_IVLEN, aead_nonce_len, null) != 1)
         return error.AeadSetupFailed;
     if (c.EVP_EncryptInit_ex(enc, null, null, key_bytes.ptr, null) != 1)
         return error.AeadSetupFailed;
 
-    if (c.EVP_DecryptInit_ex(dec, aeadCipher(suite), null, null, null) != 1)
+    if (c.EVP_DecryptInit_ex(dec, cipher, null, null, null) != 1)
         return error.AeadSetupFailed;
     if (c.EVP_CIPHER_CTX_ctrl(dec, c.EVP_CTRL_AEAD_SET_IVLEN, aead_nonce_len, null) != 1)
         return error.AeadSetupFailed;
@@ -427,6 +431,19 @@ pub fn aeadInit(suite: CipherSuite, key_bytes: []const u8) AeadError!AeadContext
         return error.AeadSetupFailed;
 
     return .{ .enc = enc, .dec = dec };
+}
+
+// The backend boundary rejects slices that cannot satisfy the cipher's
+// implicit fixed-size key read.
+test "OpenSSL AEAD initialization rejects wrong key length" {
+    const testing = std.testing;
+    const wrong_key: [1]u8 = @splat(0);
+    var ctx = aeadInit(.aes_256_gcm_sha384, &wrong_key) catch |err| {
+        try testing.expect(err == error.AeadSetupFailed);
+        return;
+    };
+    defer aeadDeinit(&ctx);
+    return error.TestUnexpectedResult;
 }
 
 pub fn aeadDeinit(ctx: *AeadContext) void {

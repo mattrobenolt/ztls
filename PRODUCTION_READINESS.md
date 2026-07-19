@@ -287,8 +287,12 @@ data to openssl s_server and receives the HTTP response.
     50–99 → 19YY, so a long-expired 19YY cert is no longer read as 20YY),
     GeneralizedTime requires exactly `YYYYMMDDHHMMSSZ`, and impossible dates
     (e.g. Feb 31, Feb 29 on a non-leap year) are rejected.
+  - H2/H3 — OpenSSL backend hygiene: EC private scalars are freed with
+    `BN_clear_free` (were `BN_free`, leaving secret residue), and `aeadInit`
+    rejects a key whose length differs from the cipher's key length before any
+    EVP setup (defense-in-depth; unreachable via the typed `Aead` facade).
 
-  Open — the remainder: S14 (mTLS identity, design), H2–H5, H12–H24, and the
+  Open — the remainder: S14 (mTLS identity, design), H4/H5, H12–H24, and the
   H21 policy calls.
 - Targeted client-side bad-server tests for malformed ServerHello, unexpected
   flight messages, bad CertificateVerify and Finished checks, corrupted
