@@ -927,7 +927,7 @@ pub fn parse(msg: []const u8) ParseError!Parsed {
                 // RFC 8446 §4.2.9. ext_data = 1-byte list length + modes.
                 if (ext.len < 2) return error.InvalidExtensionLength;
                 const list_len = ext[0];
-                if (list_len + 1 != ext.len) return error.InvalidExtensionLength;
+                if (@as(usize, list_len) + 1 != ext.len) return error.InvalidExtensionLength;
                 parsed.psk_key_exchange_modes = ext[1..];
             },
             .pre_shared_key => {
@@ -2173,4 +2173,41 @@ test "KEM key_share round-trip: ClientHello encode → parse preserves 1216-byte
     const parsed_data = kem.data.constSlice();
     try testing.expectEqual(@as(usize, 1216), parsed_data.len);
     try testing.expectEqualSlices(u8, &original, parsed_data);
+}
+
+// RFC 8446 §4.2.9 — psk_key_exchange_modes ext_data is a 1-byte list length
+// followed by mode bytes. The list_len field is attacker-controlled; a value
+// of 0xFF must be rejected by the `list_len + 1 != ext.len` check, not
+// overflow u8 arithmetic before it. Regression for the #72 narrow-arithmetic
+// class (audit S7): line ~930 evaluated `list_len + 1` in u8.
+test "parse: psk_key_exchange_modes list_len 0xFF rejected without overflow" {
+    // Minimal ClientHello carrying only psk_key_exchange_modes (0x002d)
+    // with ext_len=2 and first byte 0xFF. The overflow triggers during the
+    // extension loop before the required-extension checks at the end.
+    var msg: [53]u8 = undefined;
+    msg[0] = 0x01; // handshake type: client_hello
+    // body length = 49 (everything after the 4-byte header)
+    msg[1] = 0x00;
+    msg[2] = 0x00;
+    msg[3] = 49;
+    msg[4] = 0x03;
+    msg[5] = 0x03; // legacy_version TLS 1.2
+    @memset(msg[6..38], 0xAA); // random (32 bytes)
+    msg[38] = 0; // session_id len
+    msg[39] = 0x00;
+    msg[40] = 0x02; // cipher_suites len
+    msg[41] = 0x13;
+    msg[42] = 0x01; // TLS_AES_128_GCM_SHA256
+    msg[43] = 1; // compression len
+    msg[44] = 0; // null compression
+    msg[45] = 0x00;
+    msg[46] = 0x06; // extensions len = 6
+    // psk_key_exchange_modes (0x002d), ext_len=2, list_len=0xFF, mode=0x01
+    msg[47] = 0x00;
+    msg[48] = 0x2d;
+    msg[49] = 0x00;
+    msg[50] = 0x02;
+    msg[51] = 0xFF; // list_len = 0xFF → overflows u8 in `list_len + 1`
+    msg[52] = 0x01;
+    try testing.expectError(error.InvalidExtensionLength, parse(&msg));
 }

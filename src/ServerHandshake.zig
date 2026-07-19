@@ -1420,7 +1420,7 @@ fn handleClientHelloRecord(
             const body_len_assembled = (@as(u24, self.ch_buf.constSlice()[1]) << 16) |
                 (@as(u24, self.ch_buf.constSlice()[2]) << 8) |
                 self.ch_buf.constSlice()[3];
-            self.ch_expected = handshake_header_len + body_len_assembled;
+            self.ch_expected = @as(usize, handshake_header_len) + @as(usize, body_len_assembled);
             if (self.ch_expected > self.ch_buf.buffer.len) return error.IncompleteRecord;
 
             // Buffer any remaining body bytes from this record.
@@ -1464,7 +1464,7 @@ fn handleClientHelloRecord(
     if (body[0] != @intFromEnum(HandshakeType.client_hello)) return error.UnexpectedMessage;
 
     const body_len = (@as(u24, body[1]) << 16) | (@as(u24, body[2]) << 8) | body[3];
-    const total = handshake_header_len + body_len;
+    const total = @as(usize, handshake_header_len) + @as(usize, body_len);
 
     if (total <= body.len) {
         // Complete in one record: fast path (common case).
@@ -5935,4 +5935,43 @@ test "handleRecord: zero-length handshake during KeyUpdate reassembly is rejecte
         server.handleRecord(rx_buf[0..empty_wire.len], &out),
     );
     try testing.expectEqual(@as(usize, 0), server.ku_frag.len);
+}
+
+// RFC 8446 §4.1.2 — the 3-byte handshake message body-length field is
+// attacker-controlled. A body_len of 0xFFFFFF must be rejected by the
+// `total > buffer.len` bounds check, not overflow u24 arithmetic before it.
+// Regression for the #72 narrow-arithmetic class (audit S6, site 1):
+// line ~1467 evaluated `handshake_header_len + body_len` in u24.
+test "handleRecord: ClientHello body_len 0xFFFFFF rejected without overflow (fast path)" {
+    var hs: ServerHandshake = .init(testConfig(.generate()));
+    var out: [64]u8 = undefined;
+    // 16 03 03 00 04 = handshake record, 4-byte body.
+    // 01 FF FF FF = ClientHello, body length 0xFFFFFF (overflows u24 when
+    // added to the 4-byte header before the bounds check).
+    var rec = [_]u8{ 0x16, 0x03, 0x03, 0x00, 0x04, 0x01, 0xFF, 0xFF, 0xFF };
+    try testing.expectError(error.IncompleteRecord, hs.handleRecord(&rec, &out));
+}
+
+// RFC 8446 §4.1.2, §5.1 — the split-header reassembly path assembles the
+// 4-byte handshake header across records, then computes the expected total
+// from the assembled body_len. A body_len of 0xFFFFFF must be rejected by
+// the `ch_expected > buffer.len` check, not overflow u24 at the addition.
+// Regression for the #72 narrow-arithmetic class (audit S6, site 2):
+// line ~1423 evaluated `handshake_header_len + body_len_assembled` in u24.
+test "handleRecord: split-header reassembly body_len 0xFFFFFF rejected without overflow" {
+    var hs: ServerHandshake = .init(testConfig(.generate()));
+    var reassembly: [1024]u8 = undefined;
+    hs.useHandshakeBuffer(&reassembly);
+    var out: [256]u8 = undefined;
+
+    // Record 1: 3 bytes of the handshake header (type + first 2 len bytes).
+    // body.len < handshake_header_len → buffered, ch_expected stays 0.
+    var rec1 = [_]u8{ 0x16, 0x03, 0x03, 0x00, 0x03, 0x01, 0xFF, 0xFF };
+    try testing.expectEqual(Event.none, try hs.handleRecord(&rec1, &out));
+    try testing.expectEqual(@as(usize, 0), hs.ch_expected);
+
+    // Record 2: final header byte 0xFF → assembled header 01 FF FF FF,
+    // body_len_assembled = 0xFFFFFF. The addition must not overflow u24.
+    var rec2 = [_]u8{ 0x16, 0x03, 0x03, 0x00, 0x01, 0xFF };
+    try testing.expectError(error.IncompleteRecord, hs.handleRecord(&rec2, &out));
 }

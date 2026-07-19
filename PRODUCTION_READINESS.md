@@ -254,7 +254,8 @@ data to openssl s_server and receives the HTTP response.
   public API / C ABI (S8), plus protocol/state-machine and hardening items
   (S9–S14, H1–H24). Remediation status (this is the current parser/auth-surface
   status, superseding the Glasswing bullet above until it completes):
-  fixed and regression-tested — none yet; open — all, including the CRITICAL S5
+  fixed and regression-tested — S6/S7 (three #72-class narrow-arithmetic sites,
+  widened to `usize`); open — the remainder, including the CRITICAL S5
   chain-validation bypass. The public-facing readiness claims below do not yet
   account for S5 being open.
 - Targeted client-side bad-server tests for malformed ServerHello, unexpected
