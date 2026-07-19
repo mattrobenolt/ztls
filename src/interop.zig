@@ -434,7 +434,7 @@ fn genCert(arena: Allocator, cert_path: []const u8, key_path: []const u8) !void 
         "ec_paramgen_curve:P-256", "-keyout", key_path,
         "-out",                    cert_path, "-days",
         "1",                       "-nodes",  "-subj",
-        "/CN=localhost",
+        "/CN=localhost",           "-addext", "subjectAltName=DNS:localhost",
     };
     if (comptime is_zig_16) {
         var child = try std.process.spawn(testing.io, .{

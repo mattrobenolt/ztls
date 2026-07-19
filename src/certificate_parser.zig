@@ -631,16 +631,10 @@ pub const Parsed = struct {
     };
 
     pub fn verifyHostName(parsed_subject: Parsed, host_name: []const u8) VerifyHostNameError!void {
-        // If the Subject Alternative Names extension is present, this is
-        // what to check. Otherwise, only the common name is checked.
+        // RFC 6125 §6.4.4 and RFC 9525 §6.1 deprecate Common Name matching;
+        // DNS-ID subjectAltName is authoritative.
         const subject_alt_name = parsed_subject.subjectAltName();
-        if (subject_alt_name.len == 0) {
-            if (checkHostName(host_name, parsed_subject.commonName())) {
-                return;
-            } else {
-                return error.CertificateHostMismatch;
-            }
-        }
+        if (subject_alt_name.len == 0) return error.CertificateHostMismatch;
 
         const general_names = try der.Element.parse(subject_alt_name, 0);
         var name_i = general_names.slice.start;
@@ -683,6 +677,9 @@ pub const Parsed = struct {
         if (dns_name.len >= 3 and mem.startsWith(u8, dns_name, "*.")) {
             const wildcard_suffix = dns_name[2..];
 
+            // This rejects top-level wildcards without embedding a full PSL.
+            if (mem.indexOfScalar(u8, wildcard_suffix, '.') == null) return false;
+
             // No additional wildcards allowed in the suffix
             if (mem.indexOf(u8, wildcard_suffix, "*") != null) return false;
 
@@ -713,6 +710,40 @@ test "Parsed.verifyHostName rejects universal tag 2 as dNSName" {
     );
 
     try std.testing.expectError(error.CertificateHostMismatch, parsed.verifyHostName("victim.com"));
+}
+
+// RFC 6125 §6.4.4 and RFC 9525 §6.1 — DNS-ID SANs, not the deprecated
+// Common Name, identify the host.
+test "Parsed.verifyHostName requires dNSName SAN" {
+    const common_name = "example.com";
+    const without_san = parsedForNameConstraintsTest(
+        common_name,
+        .empty,
+        .empty,
+        .{ .start = 0, .end = common_name.len },
+        false,
+    );
+    try std.testing.expectError(
+        error.CertificateHostMismatch,
+        without_san.verifyHostName("example.com"),
+    );
+
+    const san = "\x30\x0d\x82\x0bexample.com";
+    const with_san = parsedForNameConstraintsTest(
+        san,
+        .empty,
+        .{ .start = 0, .end = san.len },
+        .empty,
+        false,
+    );
+    try with_san.verifyHostName("example.com");
+}
+
+// RFC 6125 §6.4.3 and CA/B Forum BR §3.2.2.6 — wildcard certificates must
+// not match directly below a public suffix.
+test "Parsed.checkHostName rejects public suffix wildcard" {
+    try std.testing.expect(!Parsed.checkHostName("foo.com", "*.com"));
+    try std.testing.expect(Parsed.checkHostName("host.example.com", "*.example.com"));
 }
 
 test "Parsed.checkHostName RFC 6125 compliance" {

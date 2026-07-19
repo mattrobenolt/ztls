@@ -308,9 +308,42 @@ data to openssl s_server and receives the HTTP response.
   - H23 — `rejectDuplicateExtensions` caps the extension block at 64 entries
     (outer + inner count guards), bounding the previous O(n²) scan to O(64²) and
     neutralizing the pre-auth CPU amplifier.
+  - H21 (partial) — hostname policy: SAN is now required for host matching (CN
+    fallback removed, per RFC 9525), and public-suffix wildcards like `*.com` are
+    rejected (heuristic, not a full PSL). server.crt was modernized with a SAN
+    (key preserved).
 
-  Open — the remainder: S14 (mTLS identity, design), H15–H17 (design), H20
-  (0.5-RTT receive, interop), and the H21 policy calls. H12 (post-handshake KeyUpdate counter) is
+  Open — the remainder, all design/decision (not mechanical bugs):
+  - S14 — mTLS client identity: the server verifies the client chain and keeps
+    the leaf public key but exposes no subject/SAN to authorize against. A
+    real gap in the mTLS auth story; needs an identity-surfacing API decision.
+  - H12 — post-handshake KeyUpdate counter: NOT taken as the audit specifies
+    (its "don't reset on app data" makes the bound a lifetime cap of 16
+    KeyUpdates and breaks long high-throughput connections). The current
+    reset-on-app-data burst counter matches Go's `maxUselessRecords`; a
+    NST/KeyUpdate split with a research-backed limit is the sound refinement.
+  - H15 — C-ABI KeyUpdate/NST events are swallowed (mapped to `.none`), and
+    `ztls_client_init` hardcodes `insecure_no_chain_anchor = true`. Decide the
+    event story and the anchor-removal milestone under #30 before any external
+    consumer ships.
+  - H16 — `Signer` borrows the `PrivateKey` context with no lifetime guard
+    (deinit-then-use is a UAF). Documented contract is the interim mitigation; a
+    credential object owning the lifetime is an API change.
+  - H17 — HKDF passes `Prk`/`TrafficSecret` by value, leaving un-zeroized stack
+    copies; the important handshake locals are wiped. Needs a dedicated
+    zeroization-strategy pass, not a point fix.
+  - H20 — 0.5-RTT interop: the client rejects legal server application_data in
+    `.send_finished`. Fixing it needs an API/state-machine channel to surface
+    pre-connected app data; interop feature, not a security bug.
+  - H21 (remainder) — SHA-1 in chain signatures (security-vs-interop tradeoff)
+    and IDNA/A-label handling (feature gap) remain explicit policy decisions;
+    rfc822/URI name-constraint bare-host is #75.
+  - H22 — `entropy.fillLinux` panics on an unexpected `getrandom` errno.
+    Decision: keep the fail-stop. For a CSPRNG, proceeding without entropy is
+    never acceptable; the only reachable errnos are EINTR/EAGAIN (handled) or
+    EFAULT/EINVAL/ENOSYS, which indicate a ztls or kernel bug, not a recoverable
+    condition. Converting to an error would make every `.generate()` convenience
+    constructor fallible for no practical embedder benefit. H12 (post-handshake KeyUpdate counter) is
   deliberately NOT taken as specified: the audit's "don't reset on app data"
   would make the bound a lifetime cap of 16 KeyUpdates and break long-lived
   high-throughput connections; the current reset-on-app-data burst counter
