@@ -151,7 +151,8 @@ pub fn parseClientChain(
 
     const handshake_type = r.assumeRead(handshake.Type);
     if (handshake_type != .certificate) return error.InvalidHandshakeType;
-    r.assumeSkip(3); // body length
+    const body_len = r.assumeRead(u24);
+    if (body_len != msg.len - 4) return error.InvalidHandshakeLength;
 
     const ctx_len = r.assumeRead(u8);
     if (r.remaining().len < @as(usize, ctx_len) + 3) return error.UnexpectedEof;
@@ -240,7 +241,8 @@ pub fn parse(msg: []const u8, policy: Policy) ParseError![]const u8 {
 
     const handshake_type = r.assumeRead(handshake.Type);
     if (handshake_type != .certificate) return error.InvalidHandshakeType;
-    r.assumeSkip(3); // body length
+    const body_len = r.assumeRead(u24);
+    if (body_len != msg.len - 4) return error.InvalidHandshakeLength;
 
     const ctx_len = r.assumeRead(u8);
     if (ctx_len != 0) return error.UnexpectedCertificateRequestContext;
@@ -659,6 +661,21 @@ test "parse: wrong handshake type" {
     _ = buildCertMsg(&buf, fixtureCertDer());
     buf[0] = 0x01;
     try testing.expectError(error.InvalidHandshakeType, parse(&buf, .{}));
+}
+
+// RFC 8446 §4.4 — the handshake header length must exactly match the
+// Certificate body for both server and client chain parsers.
+test "parse: rejects mismatched Certificate handshake body length" {
+    var buf: [1024]u8 = undefined;
+    const msg = buildCertMsg(&buf, fixtureCertDer());
+    buf[1..4].* = .{ 0x00, 0x00, 0x00 };
+    const policy: Policy = .{ .insecure_no_chain_anchor = true };
+
+    try testing.expectError(error.InvalidHandshakeLength, parse(msg, policy));
+    try testing.expectError(
+        error.InvalidHandshakeLength,
+        parseClientChain(msg, &.{}, policy),
+    );
 }
 
 // RFC 8446 §4.4.2 — client Certificate echoes CertificateRequest context
