@@ -51,6 +51,14 @@ ztls validation gotchas (non-negotiable):
 - The per-slice gate is `zig build test` green + `just lint` green. `just ci`'s
   conformance leg needs a working `conformance/.venv` (`cd conformance && uv sync`
   if it errors with `No module named 'python'`).
+- If you touch `src/crypto/backend_*.zig` (or anything the backends share via
+  `compat = @import("backend_openssl.zig")`), verify ALL THREE backends, not just
+  openssl: `timeout 300 just check-backend-boringssl` AND
+  `timeout 300 just check-backend-aws-lc` in addition to `zig build test`.
+  BoringSSL lacks some OpenSSL EVP symbols (e.g. `EVP_chacha20_poly1305` →
+  `EVP_aead_chacha20_poly1305`), and even a test that merely *references*
+  otherwise-dead backend_openssl code can break the BoringSSL compile. Zig
+  compiles referenced decls lazily, so an openssl+aws-lc-only gate will miss it.
 - ziglint Z015 does not follow composed/imported public error-set aliases
   (`A || error{...}`, `= other.Error`). Prefer an explicit local error set, or
   reuse the repo's `// ziglint-ignore: Z015 -- <name> is a public error-set
