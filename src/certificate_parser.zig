@@ -542,6 +542,9 @@ pub const Parsed = struct {
         if (extension.len == 0) return true;
 
         const sequence = try der.Element.parse(extension, 0);
+        if (sequence.identifier.class != .universal or sequence.identifier.tag != .sequence)
+            return error.CertificateFieldHasWrongDataType;
+        if (sequence.slice.end != extension.len) return error.CertificateFieldHasInvalidLength;
         var oid_i = sequence.slice.start;
         while (oid_i < sequence.slice.end) {
             const oid_elem = try der.Element.parse(extension, oid_i);
@@ -644,12 +647,14 @@ pub const Parsed = struct {
         while (name_i < general_names.slice.end) {
             const general_name = try der.Element.parse(subject_alt_name, name_i);
             name_i = general_name.slice.end;
-            switch (@as(GeneralNameTag, @enumFromInt(@intFromEnum(general_name.identifier.tag)))) {
-                .dNSName => {
-                    const dns_name = subject_alt_name[general_name.slice.start..general_name.slice.end];
-                    if (checkHostName(host_name, dns_name)) return;
-                },
-                else => {},
+            if (general_name.identifier.class == .context_specific) {
+                switch (@as(GeneralNameTag, @enumFromInt(@intFromEnum(general_name.identifier.tag)))) {
+                    .dNSName => {
+                        const dns_name = subject_alt_name[general_name.slice.start..general_name.slice.end];
+                        if (checkHostName(host_name, dns_name)) return;
+                    },
+                    else => {},
+                }
             }
         }
 
@@ -694,6 +699,21 @@ pub const Parsed = struct {
         return false;
     }
 };
+
+// RFC 5280 §4.2.1.6 — dNSName is the context-specific [2] GeneralName,
+// not a universal tag with the same tag number.
+test "Parsed.verifyHostName rejects universal tag 2 as dNSName" {
+    const san = "\x30\x0c\x02\x0avictim.com";
+    const parsed = parsedForNameConstraintsTest(
+        san,
+        .empty,
+        .{ .start = 0, .end = san.len },
+        .empty,
+        false,
+    );
+
+    try std.testing.expectError(error.CertificateHostMismatch, parsed.verifyHostName("victim.com"));
+}
 
 test "Parsed.checkHostName RFC 6125 compliance" {
     const expectEqual = std.testing.expectEqual;
@@ -808,6 +828,34 @@ test "Parsed.allowsExtKeyUsage finds serverAuth" {
 
     try std.testing.expect(try parsed.allowsExtKeyUsage(&server_auth_oid));
     try std.testing.expect(!try parsed.allowsExtKeyUsage(&.{ 0x2b, 0x06, 0x01, 0x05, 0x05, 0x07, 0x03, 0x02 }));
+}
+
+// RFC 5280 §4.2.1.12 — ExtKeyUsageSyntax is a SEQUENCE OF KeyPurposeId.
+test "Parsed.allowsExtKeyUsage rejects non-SEQUENCE wrapper" {
+    const malformed_eku = "\x04\x0a\x06\x08\x2b\x06\x01\x05\x05\x07\x03\x01";
+    const parsed: Parsed = .{
+        .certificate = .{ .buffer = malformed_eku, .index = 0 },
+        .issuer_slice = .empty,
+        .subject_slice = .empty,
+        .common_name_slice = .empty,
+        .signature_slice = .empty,
+        .signature_algorithm = .ecdsa_with_SHA256,
+        .pub_key_algo = .{ .curveEd25519 = {} },
+        .pub_key_slice = .empty,
+        .message_slice = .empty,
+        .subject_alt_name_slice = .empty,
+        .key_usage_slice = .empty,
+        .ext_key_usage_slice = .{ .start = 0, .end = malformed_eku.len },
+        .name_constraints_slice = .empty,
+        .name_constraints_critical = false,
+        .validity = .{ .not_before = 0, .not_after = 0 },
+        .version = .v3,
+    };
+
+    try std.testing.expectError(
+        error.CertificateFieldHasWrongDataType,
+        parsed.allowsExtKeyUsage("\x2b\x06\x01\x05\x05\x07\x03\x01"),
+    );
 }
 
 // RFC 5280 §4.2.1.10 — Name Constraints extension value can be extracted from
@@ -1171,7 +1219,11 @@ test "Parsed.verifyNameConstraints: non-critical unsupported subtree is ignored"
     try ca.verifyNameConstraints(leaf);
 }
 
-pub const ParseError = der.Element.ParseError || ParseVersionError || ParseTimeError || ParseEnumError || ParseBitStringError;
+pub const ParseError = der.Element.ParseError || ParseVersionError || ParseTimeError || ParseEnumError ||
+    ParseBitStringError || error{
+    CertificateUnsupportedCriticalExtension,
+    CertificateHasDuplicateExtension,
+};
 
 pub fn parse(cert: Certificate) ParseError!Parsed {
     const cert_bytes = cert.buffer;
@@ -1268,19 +1320,39 @@ pub fn parse(cert: Certificate) ParseError!Parsed {
 
         const extensions = try der.Element.parse(cert_bytes, outer_extensions.slice.start);
 
+        // Only processed extensions can overwrite parsed policy state. Recognition
+        // is semantic for these five: obsolete X.509v1 and modern PKIX OID forms
+        // map to the same ID and intentionally count as duplicates.
+        var seen_extensions: std.EnumSet(ExtensionId) = .initEmpty();
         var ext_i = extensions.slice.start;
         while (ext_i < extensions.slice.end) {
             const extension = try der.Element.parse(cert_bytes, ext_i);
             ext_i = extension.slice.end;
             const oid_elem = try der.Element.parse(cert_bytes, extension.slice.start);
-            const ext_id = parseExtensionId(cert_bytes, oid_elem) catch |err| switch (err) {
-                error.CertificateHasUnrecognizedObjectId => continue,
-                else => |e| return e,
-            };
             const critical_elem = try der.Element.parse(cert_bytes, oid_elem.slice.end);
             const extension_critical = critical_elem.identifier.tag == .boolean;
             if (extension_critical and critical_elem.slice.end - critical_elem.slice.start != 1)
                 return error.CertificateFieldHasWrongDataType;
+            const is_critical = extension_critical and cert_bytes[critical_elem.slice.start] != 0;
+            const ext_id = parseExtensionId(cert_bytes, oid_elem) catch |err| switch (err) {
+                error.CertificateHasUnrecognizedObjectId => {
+                    if (is_critical) return error.CertificateUnsupportedCriticalExtension;
+                    continue;
+                },
+                else => |e| return e,
+            };
+            switch (ext_id) {
+                .subject_alt_name,
+                .key_usage,
+                .ext_key_usage,
+                .basic_constraints,
+                .name_constraints,
+                => {
+                    if (seen_extensions.contains(ext_id)) return error.CertificateHasDuplicateExtension;
+                    seen_extensions.insert(ext_id);
+                },
+                else => {},
+            }
             const ext_bytes_elem = if (!extension_critical)
                 critical_elem
             else
@@ -1296,7 +1368,7 @@ pub fn parse(cert: Certificate) ParseError!Parsed {
                 },
                 .name_constraints => {
                     name_constraints_slice = ext_bytes_elem.slice;
-                    name_constraints_critical = extension_critical and cert_bytes[critical_elem.slice.start] != 0;
+                    name_constraints_critical = is_critical;
                 },
                 else => continue,
             }
@@ -1374,6 +1446,69 @@ test "parseBasicConstraints rejects pathLenConstraint without cA" {
         error.CertificateFieldHasInvalidLength,
         parseBasicConstraints(encoded, extension_slice),
     );
+}
+
+// RFC 5280 §4.2 — an unrecognized critical extension must cause rejection.
+test "parse rejects unknown critical extension" {
+    const cert_der = &[_]u8{
+        0x30, 0x81, 0x80, 0x30, 0x6b, 0xa0, 0x03, 0x02, 0x01, 0x02, 0x02, 0x01,
+        0x01, 0x30, 0x0d, 0x06, 0x09, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01,
+        0x01, 0x0b, 0x05, 0x00, 0x30, 0x00, 0x30, 0x22, 0x18, 0x0f, 0x32, 0x30,
+        0x32, 0x36, 0x30, 0x31, 0x30, 0x31, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30,
+        0x5a, 0x18, 0x0f, 0x32, 0x30, 0x33, 0x30, 0x30, 0x31, 0x30, 0x31, 0x30,
+        0x30, 0x30, 0x30, 0x30, 0x30, 0x5a, 0x30, 0x00, 0x30, 0x1a, 0x30, 0x0d,
+        0x06, 0x09, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x01, 0x05,
+        0x00, 0x03, 0x09, 0x00, 0x30, 0x06, 0x02, 0x01, 0x01, 0x02, 0x01, 0x03,
+        0xa3, 0x0e, 0x30, 0x0c, 0x30, 0x0a, 0x06, 0x03, 0x2a, 0x03, 0x04, 0x01,
+        0x01, 0xff, 0x04, 0x00, 0x30, 0x0d, 0x06, 0x09, 0x2a, 0x86, 0x48, 0x86,
+        0xf7, 0x0d, 0x01, 0x01, 0x0b, 0x05, 0x00, 0x03, 0x02, 0x00, 0x00,
+    };
+    const cert: Certificate = .{ .buffer = cert_der, .index = 0 };
+
+    try std.testing.expectError(error.CertificateUnsupportedCriticalExtension, cert.parse());
+}
+
+// RFC 5280 §4.2 — a certificate must not contain duplicate extension OIDs.
+test "parse rejects duplicate recognized extensions" {
+    const cert_der = &[_]u8{
+        0x30, 0x81, 0x8a, 0x30, 0x75, 0xa0, 0x03, 0x02, 0x01, 0x02, 0x02, 0x01,
+        0x01, 0x30, 0x0d, 0x06, 0x09, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01,
+        0x01, 0x0b, 0x05, 0x00, 0x30, 0x00, 0x30, 0x22, 0x18, 0x0f, 0x32, 0x30,
+        0x32, 0x36, 0x30, 0x31, 0x30, 0x31, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30,
+        0x5a, 0x18, 0x0f, 0x32, 0x30, 0x33, 0x30, 0x30, 0x31, 0x30, 0x31, 0x30,
+        0x30, 0x30, 0x30, 0x30, 0x30, 0x5a, 0x30, 0x00, 0x30, 0x1a, 0x30, 0x0d,
+        0x06, 0x09, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x01, 0x05,
+        0x00, 0x03, 0x09, 0x00, 0x30, 0x06, 0x02, 0x01, 0x01, 0x02, 0x01, 0x03,
+        0xa3, 0x18, 0x30, 0x16, 0x30, 0x09, 0x06, 0x03, 0x55, 0x1d, 0x11, 0x04,
+        0x02, 0x30, 0x00, 0x30, 0x09, 0x06, 0x03, 0x55, 0x1d, 0x11, 0x04, 0x02,
+        0x30, 0x00, 0x30, 0x0d, 0x06, 0x09, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d,
+        0x01, 0x01, 0x0b, 0x05, 0x00, 0x03, 0x02, 0x00, 0x00,
+    };
+    const cert: Certificate = .{ .buffer = cert_der, .index = 0 };
+
+    try std.testing.expectError(error.CertificateHasDuplicateExtension, cert.parse());
+}
+
+// RFC 5280 §4.2 — recognized extensions outside ztls's processing set do not
+// overwrite parsed policy state, including obsolete and modern OID aliases.
+test "parse accepts old and new authority key identifier OIDs" {
+    const cert_der = &[_]u8{
+        0x30, 0x81, 0x8a, 0x30, 0x75, 0xa0, 0x03, 0x02, 0x01, 0x02, 0x02, 0x01,
+        0x01, 0x30, 0x0d, 0x06, 0x09, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01,
+        0x01, 0x0b, 0x05, 0x00, 0x30, 0x00, 0x30, 0x22, 0x18, 0x0f, 0x32, 0x30,
+        0x32, 0x36, 0x30, 0x31, 0x30, 0x31, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30,
+        0x5a, 0x18, 0x0f, 0x32, 0x30, 0x33, 0x30, 0x30, 0x31, 0x30, 0x31, 0x30,
+        0x30, 0x30, 0x30, 0x30, 0x30, 0x5a, 0x30, 0x00, 0x30, 0x1a, 0x30, 0x0d,
+        0x06, 0x09, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x01, 0x05,
+        0x00, 0x03, 0x09, 0x00, 0x30, 0x06, 0x02, 0x01, 0x01, 0x02, 0x01, 0x03,
+        0xa3, 0x18, 0x30, 0x16, 0x30, 0x09, 0x06, 0x03, 0x55, 0x1d, 0x01, 0x04,
+        0x02, 0x30, 0x00, 0x30, 0x09, 0x06, 0x03, 0x55, 0x1d, 0x23, 0x04, 0x02,
+        0x30, 0x00, 0x30, 0x0d, 0x06, 0x09, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d,
+        0x01, 0x01, 0x0b, 0x05, 0x00, 0x03, 0x02, 0x00, 0x00,
+    };
+    const cert: Certificate = .{ .buffer = cert_der, .index = 0 };
+
+    _ = try cert.parse();
 }
 
 fn contents(cert: Certificate, elem: der.Element) []const u8 {

@@ -252,35 +252,40 @@ data to openssl s_server and receives the HTTP response.
   enforcement on issuers), three further #72-class narrow-arithmetic panic sites
   (S6/S7), a public-AEAD length-mismatch write hazard reachable only off the
   public API / C ABI (S8), plus protocol/state-machine and hardening items
-  (S9–S14, H1–H24). Remediation status (this is the current parser/auth-surface
-  status, superseding the Glasswing bullet above until it completes):
-  fixed and regression-tested — S5 (the CRITICAL end-entity-as-CA bypass:
-  BasicConstraints `cA` and, when KeyUsage is present, `keyCertSign` are now
-  enforced on every presented-chain issuer and on the bundle trust anchor;
-  pathLenConstraint is parsed but depth-enforcement is deferred, tracked as a
-  `TODO(audit S5)`), and S6/S7 (three #72-class narrow-arithmetic sites, widened
-  to `usize`), and S8 (the public `Aead.encrypt`/`decrypt` now reject mismatched
-  in/out slice lengths with `SliceLengthMismatch` before the backend call,
-  closing the off-public-API / C-ABI out-of-bounds-write hazard; not
-  peer-reachable via the RecordLayer, which uses equal-length in-place slices),
-  and S9 (after HelloRetryRequest the server now validates ClientHello2 against
-  ClientHello1 via a length-prefixed stable-field digest and rejects `early_data`
-  in CH2, per RFC 8446 §4.1.2/§4.2.10), and S10+H1+H11 (PSK selection now honors
-  `psk_key_exchange_modes` — abort on a `pre_shared_key` offer lacking the
-  extension, no resumption without `psk_dhe_ke` — and enforces PSK/cipher-suite
-  hash compatibility on both server selection and client acceptance; the binder
-  compare is now constant-time, per RFC 8446 §4.2.9/§4.2.11.2); open — the
-  remainder (S12–S14, and the H-series minus H1/H11), plus S11 (the client now
-  rejects an EncryptedExtensions `early_data` acceptance unless it selected the
-  PSK, installed early keys, and no HRR intervened, and only offers CH
-  `early_data` when the ticket's `max_early_data_size` permits it, per RFC 8446
-  §4.2.10/§4.5), and S12+S13 (the client now rejects trailing handshake bytes
-  after the server Finished instead of silently dropping them, and frames
-  ClientHello2 after HelloRetryRequest as a proper handshake record rather than
-  emitting raw unframed bytes, per RFC 8446 §4.1.4/§5.1). Requiring `cA` on
-  issuers
-  is intentional and matches RFC 5280 / OpenSSL / browsers; non-conforming roots
-  that omit BasicConstraints are rejected by design.
+  (S9–S14, H1–H24). This bullet is the current parser/auth-surface status,
+  superseding the Glasswing bullet above until remediation completes. Fixed and
+  regression-tested:
+  - S5 (CRITICAL) — end-entity-as-CA bypass: BasicConstraints `cA` and, when
+    KeyUsage is present, `keyCertSign` enforced on every presented-chain issuer
+    and the bundle trust anchor. `pathLenConstraint` is parsed but depth
+    enforcement is deferred (`TODO(audit S5)`). Requiring `cA` on issuers is
+    intentional and matches RFC 5280 / OpenSSL / browsers.
+  - S6/S7 — three #72-class narrow-arithmetic panic sites widened to `usize`.
+  - S8 — public `Aead.encrypt`/`decrypt` reject mismatched in/out slice lengths
+    (`SliceLengthMismatch`) before the backend call; not peer-reachable via the
+    RecordLayer (equal-length in-place slices).
+  - S9 — after HelloRetryRequest the server validates ClientHello2 against
+    ClientHello1 (length-prefixed stable-field digest) and rejects `early_data`
+    in CH2 (§4.1.2/§4.2.10).
+  - S10 + H1 + H11 — PSK selection honors `psk_key_exchange_modes` (abort on a
+    `pre_shared_key` offer with no modes; no resumption without `psk_dhe_ke`) and
+    enforces PSK/cipher-suite hash compatibility on both server selection and
+    client acceptance; the binder compare is constant-time (§4.2.9/§4.2.11.2).
+  - S11 — the client rejects an EncryptedExtensions `early_data` acceptance
+    unless it selected the PSK, installed early keys, and no HRR intervened, and
+    only offers CH `early_data` when the ticket permits it (§4.2.10/§4.5).
+  - S12 + S13 — the client rejects trailing handshake bytes after the server
+    Finished, and frames ClientHello2 after HRR as a proper handshake record
+    (§4.1.4/§5.1).
+  - H6/H7/H8/H10 — X.509 DER strictness: unknown critical extensions rejected,
+    SAN dNSName matched only for context-specific GeneralNames, EKU requires a
+    SEQUENCE wrapper, and duplicate instances of a processed extension are
+    rejected (RFC 5280 §4.2). Pre-existing residuals tracked for a later pass:
+    recognized-but-unimplemented critical extensions are still accepted, and the
+    outer SAN SEQUENCE in `verifyHostName` is not class-checked.
+
+  Open — the remainder: S14 (mTLS identity, design), H9, H2–H5, H12–H24, and the
+  H21 policy calls.
 - Targeted client-side bad-server tests for malformed ServerHello, unexpected
   flight messages, bad CertificateVerify and Finished checks, corrupted
   encrypted records, client-emitted alert descriptions, peer fatal alerts,
