@@ -14,11 +14,14 @@ const assert = std.debug.assert;
 const Io = std.Io;
 const net = Io.net;
 const testing = std.testing;
-const ztls = @import("ztls");
+const mem = std.mem;
+const crypto = std.crypto;
+const posix = std.posix;
 
+const fixtures = @import("fixtures");
+const ztls = @import("ztls");
 /// Re-export ztls so consumers of ztls-std can reach the core if needed.
 pub const core = ztls;
-
 const frame = ztls.frame;
 const RecordBuffer = ztls.RecordBuffer;
 
@@ -34,7 +37,7 @@ pub const Verify = union(enum) {
     system_bundle,
     /// Verify against a caller-owned bundle (pin a root / custom store).
     /// Borrowed for the life of the Stream.
-    bundle: *const std.crypto.Certificate.Bundle,
+    bundle: *const crypto.Certificate.Bundle,
     /// Skip chain-anchor verification (sets ztls `insecure_no_chain_anchor`).
     /// Hostname verification still runs unless `host` is null. Demo/test only.
     insecure,
@@ -173,13 +176,20 @@ const WriterError = error{WriteFailed};
 /// variant? ClientHandshake.Event does, ServerHandshake.Event does not.
 fn eventHasNst(comptime Event: type) bool {
     inline for (@typeInfo(Event).@"union".fields) |f| {
-        if (std.mem.eql(u8, f.name, "new_session_ticket")) return true;
+        if (mem.eql(u8, f.name, "new_session_ticket")) return true;
     }
     return false;
 }
 
 fn StreamImpl(comptime Hs: type) type {
     const has_nst = eventHasNst(Hs.Event);
+    const Flag = enum {
+        rx_closed,
+        tx_closed,
+        closed,
+    };
+    const Flags = std.EnumSet(Flag);
+
     return struct {
         const Self = @This();
         pub const Handshake = Hs;
@@ -194,9 +204,7 @@ fn StreamImpl(comptime Hs: type) type {
         write_buffer: [frame.max_plaintext_len]u8 = undefined,
         reader_impl: Reader,
         writer_impl: Writer,
-        rx_closed: bool = false,
-        tx_closed: bool = false,
-        closed: bool = false,
+        flags: Flags = .initEmpty(),
 
         pub const Reader = struct {
             interface: Io.Reader,
@@ -245,7 +253,7 @@ fn StreamImpl(comptime Hs: type) type {
             /// Returns 0 (data in buffer). EndOfStream = clean close_notify.
             fn refill(s: *Self, io_r: *Io.Reader) ReaderError!usize {
                 // RFC 8446 §6.1 — after close_notify or close(), reads return EndOfStream.
-                if (s.closed or s.rx_closed) return error.EndOfStream;
+                if (s.flags.contains(.closed) or s.flags.contains(.rx_closed)) return error.EndOfStream;
                 while (true) {
                     while (true) {
                         const record = (s.rb.next() catch return error.ReadFailed) orelse break;
@@ -280,7 +288,7 @@ fn StreamImpl(comptime Hs: type) type {
                                     continue;
                                 },
                                 .closed => {
-                                    s.rx_closed = true;
+                                    s.flags.insert(.rx_closed);
                                     return error.EndOfStream;
                                 },
                                 .application_data => |app_data| {
@@ -314,7 +322,7 @@ fn StreamImpl(comptime Hs: type) type {
                                     continue;
                                 },
                                 .closed => {
-                                    s.rx_closed = true;
+                                    s.flags.insert(.rx_closed);
                                     return error.EndOfStream;
                                 },
                                 .application_data => |app_data| {
@@ -368,11 +376,11 @@ fn StreamImpl(comptime Hs: type) type {
 
         /// Send close_notify and close the underlying socket. Idempotent.
         pub fn close(s: *Self, io: Io) void {
-            if (s.closed) return;
-            s.closed = true;
+            if (s.flags.contains(.closed)) return;
+            s.flags.insert(.closed);
 
-            if (!s.tx_closed) {
-                s.tx_closed = true;
+            if (!s.flags.contains(.tx_closed)) {
+                s.flags.insert(.tx_closed);
                 if (s.hs.sendAlert(.close_notify, &s.out.buffer)) |alert_record| {
                     transportWriteAll(io, s.sock.socket.handle, alert_record) catch {};
                     s.hs.completeWrite();
@@ -388,8 +396,8 @@ fn StreamImpl(comptime Hs: type) type {
         /// secure-zeros all buffers. Idempotent. Use after a failed connect
         /// too — the socket may be open even if the handshake failed.
         pub fn deinit(s: *Self) void {
-            if (s.closed) return;
-            s.closed = true;
+            if (s.flags.contains(.closed)) return;
+            s.flags.insert(.closed);
             s.sock.close(s.io);
             s.zeroWrapperBuffers();
             s.hs.deinit();
@@ -399,7 +407,7 @@ fn StreamImpl(comptime Hs: type) type {
             s.storage.secureZero();
             s.out.secureZero();
             s.reassembly.secureZero();
-            std.crypto.secureZero(u8, &s.write_buffer);
+            crypto.secureZero(u8, &s.write_buffer);
         }
 
         // ── Writer drain ──────────────
@@ -408,7 +416,7 @@ fn StreamImpl(comptime Hs: type) type {
             const w: *Writer = @alignCast(@fieldParentPtr("interface", io_w));
             const s: *Self = @alignCast(@fieldParentPtr("writer_impl", w));
 
-            if (s.closed or s.tx_closed) return error.WriteFailed;
+            if (s.flags.contains(.closed) or s.flags.contains(.tx_closed)) return error.WriteFailed;
 
             var total_written: usize = 0;
 
@@ -478,8 +486,8 @@ fn StreamImpl(comptime Hs: type) type {
         fn finishInit(s: *Self) void {
             s.rb = .init(&s.storage.buffer);
             s.hs.useHandshakeBuffer(&s.reassembly.buffer);
-            s.reader_impl = Reader.init(s);
-            s.writer_impl = Writer.init(s);
+            s.reader_impl = .init(s);
+            s.writer_impl = .init(s);
         }
     };
 }
@@ -503,16 +511,16 @@ pub const Client = struct {
     /// surface here. `gpa` is used ONLY when `options.verify == .system_bundle`.
     pub fn connect(
         out: *Stream,
-        gpa: std.mem.Allocator,
+        gpa: mem.Allocator,
         io: Io,
         sock: net.Stream,
         options: Options,
     ) ConnectError!void {
         var client_keypair: ztls.x25519.KeyPair = .generate();
-        defer std.crypto.secureZero(u8, std.mem.asBytes(&client_keypair));
+        defer crypto.secureZero(u8, mem.asBytes(&client_keypair));
         var random: ztls.Random = undefined;
         io.random(&random.data);
-        defer std.crypto.secureZero(u8, std.mem.asBytes(&random));
+        defer crypto.secureZero(u8, mem.asBytes(&random));
 
         const now_sec: i64 = Io.Timestamp.now(io, .real).toSeconds();
 
@@ -525,7 +533,7 @@ pub const Client = struct {
             .offer_pq_key_share = options.offer_pq_key_share,
         });
 
-        var bundle: std.crypto.Certificate.Bundle = undefined;
+        var bundle: crypto.Certificate.Bundle = undefined;
         var bundle_loaded = false;
         defer if (bundle_loaded) bundle.deinit(gpa);
 
@@ -548,7 +556,7 @@ pub const Client = struct {
             },
         }
 
-        out.* = Stream.init(io, sock, hs);
+        out.* = .init(io, sock, hs);
         out.finishInit();
 
         try clientHandshakeDrive(out);
@@ -620,10 +628,10 @@ pub const Server = struct {
         if (options.cert_chain.len == 0) return error.MissingCredentials;
 
         var server_keypair: ztls.x25519.KeyPair = .generate();
-        defer std.crypto.secureZero(u8, std.mem.asBytes(&server_keypair));
+        defer crypto.secureZero(u8, mem.asBytes(&server_keypair));
         var random: ztls.Random = undefined;
         io.random(&random.data);
-        defer std.crypto.secureZero(u8, std.mem.asBytes(&random));
+        defer crypto.secureZero(u8, mem.asBytes(&random));
 
         var hs: ztls.ServerHandshake = .init(.{
             .keypairs = .init(server_keypair),
@@ -632,7 +640,7 @@ pub const Server = struct {
         });
         hs.setCredentials(options.cert_chain, options.signer);
 
-        out.* = Stream.init(io, sock, hs);
+        out.* = .init(io, sock, hs);
         out.finishInit();
 
         try serverHandshakeDrive(out);
@@ -680,8 +688,6 @@ fn serverHandshakeDrive(s: *Server.Stream) AcceptError!void {
 // Tests
 // ───────────────────────────────
 
-const fixtures = @import("fixtures");
-
 const test_cert_der: []const u8 = &fixtures.server_ecdsa_cert_der;
 const test_scalar: []const u8 = &fixtures.server_ecdsa_scalar;
 
@@ -692,8 +698,8 @@ fn testIo() Io {
 // TCP loopback round-trip through the ztls-std API.
 // RFC 8446 — full TLS 1.3 handshake + application data both directions + clean close_notify.
 test "ztls-std: socketpair echo" {
-    var fds: [2]std.posix.fd_t = undefined;
-    const rc = std.c.socketpair(std.posix.AF.UNIX, std.posix.SOCK.STREAM, 0, &fds);
+    var fds: [2]posix.fd_t = undefined;
+    const rc = std.c.socketpair(posix.AF.UNIX, posix.SOCK.STREAM, 0, &fds);
     try testing.expectEqual(@as(c_int, 0), rc);
     defer _ = std.c.close(fds[0]);
     defer _ = std.c.close(fds[1]);
@@ -708,7 +714,7 @@ test "ztls-std: socketpair echo" {
 }
 
 const ThreadEchoCtx = struct {
-    fd: std.posix.fd_t,
+    fd: posix.fd_t,
     err: ?anyerror = null,
 };
 
@@ -729,10 +735,10 @@ fn threadEchoRun(ctx: *ThreadEchoCtx) void {
 test "ztls-std: thread spawn works" {
     // Sanity that std.Thread.spawn works in the test context — the
     // round-trip tests below depend on this.
-    var fds: [2]std.posix.fd_t = undefined;
+    var fds: [2]posix.fd_t = undefined;
     try testing.expectEqual(
         @as(c_int, 0),
-        std.c.socketpair(std.posix.AF.UNIX, std.posix.SOCK.STREAM, 0, &fds),
+        std.c.socketpair(posix.AF.UNIX, posix.SOCK.STREAM, 0, &fds),
     );
     defer _ = std.c.close(fds[0]);
     defer _ = std.c.close(fds[1]);
@@ -752,7 +758,7 @@ test "ztls-std: thread spawn works" {
 
 /// Context for the server thread in the round-trip test.
 const RoundTripServerCtx = struct {
-    fd: std.posix.fd_t,
+    fd: posix.fd_t,
     err: ?anyerror = null,
 };
 
@@ -815,10 +821,10 @@ test "ztls-std: in-memory client↔server round-trip" {
     // ServerCtx + serverRun shape.
     const io = testIo();
 
-    var fds: [2]std.posix.fd_t = undefined;
+    var fds: [2]posix.fd_t = undefined;
     try testing.expectEqual(
         @as(c_int, 0),
-        std.c.socketpair(std.posix.AF.UNIX, std.posix.SOCK.STREAM, 0, &fds),
+        std.c.socketpair(posix.AF.UNIX, posix.SOCK.STREAM, 0, &fds),
     );
     // Server thread owns fds[1]; parent owns fds[0]. The parent must not
     // close fds[1] before join — the server thread reads from it.
@@ -873,7 +879,7 @@ test "ztls-std: Stream size is reasonable" {
 }
 
 const ReadAfterCloseServerCtx = struct {
-    fd: std.posix.fd_t,
+    fd: posix.fd_t,
     err: ?anyerror = null,
 };
 
@@ -929,10 +935,10 @@ fn readAfterCloseServerRun(ctx: *ReadAfterCloseServerCtx) void {
 test "ztls-std: read after close returns EndOfStream" {
     const io = testIo();
 
-    var fds: [2]std.posix.fd_t = undefined;
+    var fds: [2]posix.fd_t = undefined;
     try testing.expectEqual(
         @as(c_int, 0),
-        std.c.socketpair(std.posix.AF.UNIX, std.posix.SOCK.STREAM, 0, &fds),
+        std.c.socketpair(posix.AF.UNIX, posix.SOCK.STREAM, 0, &fds),
     );
     defer _ = std.c.close(fds[0]);
 
@@ -975,7 +981,7 @@ test "ztls-std: read after close returns EndOfStream" {
 }
 
 const LargeWriteServerCtx = struct {
-    fd: std.posix.fd_t,
+    fd: posix.fd_t,
     payload_len: usize,
     total_read: usize = 0,
     err: ?anyerror = null,
@@ -1039,10 +1045,10 @@ fn largeWriteServerRun(ctx: *LargeWriteServerCtx) void {
 test "ztls-std: large write spanning multiple records" {
     const io = testIo();
 
-    var fds: [2]std.posix.fd_t = undefined;
+    var fds: [2]posix.fd_t = undefined;
     try testing.expectEqual(
         @as(c_int, 0),
-        std.c.socketpair(std.posix.AF.UNIX, std.posix.SOCK.STREAM, 0, &fds),
+        std.c.socketpair(posix.AF.UNIX, posix.SOCK.STREAM, 0, &fds),
     );
     defer _ = std.c.close(fds[0]);
 
