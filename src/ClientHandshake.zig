@@ -683,6 +683,7 @@ pub fn startWithPsk(
         .aes_128_gcm_sha256, .chacha20_poly1305_sha256 => 32,
         .aes_256_gcm_sha384 => 48,
     };
+    const offer = offer_early_data and ticket.max_early_data_size != null;
     const r = try client_hello.encodeWithPsk(
         out[frame.header_len..],
         self.random,
@@ -698,7 +699,7 @@ pub fn startWithPsk(
         // just ticket_age_add.
         ticket.ticket_age_add,
         binder_len,
-        offer_early_data,
+        offer,
     );
     const ch = r.msg;
 
@@ -743,7 +744,7 @@ pub fn startWithPsk(
     // The caller uses sendEarlyData() to send 0-RTT data before the server
     // Finished. Replay risk: 0-RTT data is replayable; the caller is
     // responsible for replay-safe policy (disabled by default).
-    if (offer_early_data and ticket.max_early_data_size != null) {
+    if (offer) {
         switch (ticket.cipher_suite) {
             .aes_128_gcm_sha256, .chacha20_poly1305_sha256 => {
                 const H = hkdf.HkdfSha256;
@@ -1388,14 +1389,23 @@ fn processFlightMessage(
                 self.selected_alpn.clear();
                 self.selected_alpn.appendSliceAssumeCapacity(protocol);
             }
-            // RFC 8446 §4.2.10, §4.5 — record whether the server accepted
-            // 0-RTT from the EE early_data extension. If the client offered
-            // early data but the server declined (EE omitted early_data),
-            // clear early_tx and proceed without EndOfEarlyData.
-            self.server_accepted_early_data = ee.early_data_accepted;
-            if (!ee.early_data_accepted and self.early_tx != null) {
-                self.early_tx.?.deinit();
-                self.early_tx = null;
+            // RFC 8446 §4.2.10, §4.5 — accepting 0-RTT requires our PSK,
+            // installed early keys, and no HelloRetryRequest. Otherwise the
+            // client could report acceptance without being able to send EOED.
+            if (ee.early_data_accepted) {
+                if (!self.server_selected_psk or
+                    self.early_tx == null or
+                    self.retry_selected_group != null)
+                {
+                    return error.UnexpectedMessage;
+                }
+                self.server_accepted_early_data = true;
+            } else {
+                self.server_accepted_early_data = false;
+                if (self.early_tx != null) {
+                    self.early_tx.?.deinit();
+                    self.early_tx = null;
+                }
             }
             self.suite.update(msg.raw);
             self.state = .wait_cert_or_cr;
@@ -3255,6 +3265,134 @@ test "startWithPsk: binder matches an independent HMAC over the prefix" {
 
     // The offered identity appears in the pre_shared_key extension.
     try testing.expect(std.mem.indexOf(u8, ch, &identity) != null);
+}
+
+// RFC 8446 §4.2.10 — a client MUST NOT offer early_data unless the selected
+// ticket permits sending early data.
+test "startWithPsk: ticket without early-data permission omits early_data" {
+    const psk: [32]u8 = @splat(0x42);
+    const identity = [_]u8{ 0x2c, 0x03, 0x5d, 0x82, 0x93, 0x59 };
+    var ticket: SessionTicket = .{
+        .ticket_age_add = 0,
+        .cipher_suite = .aes_128_gcm_sha256,
+        .max_early_data_size = null,
+    };
+    ticket.identity.appendSliceAssumeCapacity(&identity);
+    ticket.psk.appendSliceAssumeCapacity(&psk);
+
+    var hs: ClientHandshake = .init(testConfig(x25519.KeyPair.generate()));
+    defer hs.deinit();
+    var out: [1024]u8 = undefined;
+    const record = try hs.startWithPsk(&ticket, &out, true);
+    const parsed = try client_hello.parse(record[frame.header_len..]);
+
+    try testing.expect(!parsed.offered_early_data);
+    try testing.expect(hs.early_tx == null);
+}
+
+const TestPskSelection = enum { declined, selected };
+
+fn advanceZeroRttClientToEe(
+    hs: *ClientHandshake,
+    server_keypair: x25519.KeyPair,
+    selection: TestPskSelection,
+) !void {
+    var key_share: server_hello.KeyShare = .{ .x25519 = server_keypair.public_key };
+    var sh_buf: [256]u8 = undefined;
+    const sh = switch (selection) {
+        .declined => try server_hello.encodeWithKeyShare(
+            &sh_buf,
+            @splat(0xab),
+            &.{},
+            .aes_128_gcm_sha256,
+            &key_share,
+        ),
+        .selected => try server_hello.encodeWithKeyShareAndPsk(
+            &sh_buf,
+            @splat(0xab),
+            &.{},
+            .aes_128_gcm_sha256,
+            &key_share,
+            0,
+        ),
+    };
+    try hs.processServerHello(sh);
+}
+
+const accepted_early_data_ee = [_]u8{
+    0x08, 0x00, 0x00, 0x06, 0x00, 0x04, 0x00, 0x2a, 0x00, 0x00,
+};
+
+// RFC 8446 §4.2.10, §4.5 — a server cannot accept early data when it declined
+// the offered PSK; EndOfEarlyData is only valid for accepted 0-RTT.
+test "EncryptedExtensions: rejects early_data when server declined PSK" {
+    const psk: [32]u8 = @splat(0x42);
+    const identity = [_]u8{0x01};
+    var ticket: SessionTicket = .{
+        .cipher_suite = .aes_128_gcm_sha256,
+        .max_early_data_size = 1024,
+    };
+    ticket.identity.appendSliceAssumeCapacity(&identity);
+    ticket.psk.appendSliceAssumeCapacity(&psk);
+
+    var hs = try setupZeroRttClientForFuzz(&ticket);
+    defer hs.deinit();
+    try advanceZeroRttClientToEe(&hs, x25519.KeyPair.generate(), .declined);
+
+    try testing.expectError(
+        error.UnexpectedMessage,
+        hs.processFlight(&accepted_early_data_ee, hs.policy),
+    );
+    try testing.expect(!hs.server_accepted_early_data);
+}
+
+// RFC 8446 §4.2.10, §4.5 — accepting early data requires installed client
+// early traffic keys so the client can send EndOfEarlyData.
+test "EncryptedExtensions: rejects early_data without early traffic keys" {
+    const psk: [32]u8 = @splat(0x42);
+    const identity = [_]u8{0x01};
+    var ticket: SessionTicket = .{
+        .cipher_suite = .aes_128_gcm_sha256,
+        .max_early_data_size = 1024,
+    };
+    ticket.identity.appendSliceAssumeCapacity(&identity);
+    ticket.psk.appendSliceAssumeCapacity(&psk);
+
+    var hs = try setupZeroRttClientForFuzz(&ticket);
+    defer hs.deinit();
+    try advanceZeroRttClientToEe(&hs, x25519.KeyPair.generate(), .selected);
+    hs.early_tx.?.deinit();
+    hs.early_tx = null;
+
+    try testing.expectError(
+        error.UnexpectedMessage,
+        hs.processFlight(&accepted_early_data_ee, hs.policy),
+    );
+    try testing.expect(!hs.server_accepted_early_data);
+}
+
+// RFC 8446 §4.2.10, §4.5 — 0-RTT is incompatible with HelloRetryRequest, so
+// a post-HRR server cannot accept early data.
+test "EncryptedExtensions: rejects early_data after HelloRetryRequest" {
+    const psk: [32]u8 = @splat(0x42);
+    const identity = [_]u8{0x01};
+    var ticket: SessionTicket = .{
+        .cipher_suite = .aes_128_gcm_sha256,
+        .max_early_data_size = 1024,
+    };
+    ticket.identity.appendSliceAssumeCapacity(&identity);
+    ticket.psk.appendSliceAssumeCapacity(&psk);
+
+    var hs = try setupZeroRttClientForFuzz(&ticket);
+    defer hs.deinit();
+    try advanceZeroRttClientToEe(&hs, x25519.KeyPair.generate(), .selected);
+    hs.retry_selected_group = .secp256r1;
+
+    try testing.expectError(
+        error.UnexpectedMessage,
+        hs.processFlight(&accepted_early_data_ee, hs.policy),
+    );
+    try testing.expect(!hs.server_accepted_early_data);
 }
 
 // RFC 8446 §4.2.11.2 — a server selecting the offered PSK MUST negotiate a

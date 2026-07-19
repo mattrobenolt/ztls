@@ -270,7 +270,11 @@ data to openssl s_server and receives the HTTP response.
   extension, no resumption without `psk_dhe_ke` — and enforces PSK/cipher-suite
   hash compatibility on both server selection and client acceptance; the binder
   compare is now constant-time, per RFC 8446 §4.2.9/§4.2.11.2); open — the
-  remainder (S11–S14, and the H-series minus H1/H11). Requiring `cA` on issuers
+  remainder (S12–S14, and the H-series minus H1/H11), plus S11 (the client now
+  rejects an EncryptedExtensions `early_data` acceptance unless it selected the
+  PSK, installed early keys, and no HRR intervened, and only offers CH
+  `early_data` when the ticket's `max_early_data_size` permits it, per RFC 8446
+  §4.2.10/§4.5). Requiring `cA` on issuers
   is intentional and matches RFC 5280 / OpenSSL / browsers; non-conforming roots
   that omit BasicConstraints are rejected by design.
 - Targeted client-side bad-server tests for malformed ServerHello, unexpected
