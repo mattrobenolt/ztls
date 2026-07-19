@@ -1545,8 +1545,13 @@ fn parseTime(cert: Certificate, elem: der.Element) ParseTimeError!u64 {
             if (bytes[12] != 'Z')
                 return error.CertificateTimeInvalid;
 
-            return Date.toSeconds(.{
-                .year = @as(u16, 2000) + try parseTimeDigits(bytes[0..2], 0, 99),
+            const year_two_digits = try parseTimeDigits(bytes[0..2], 0, 99);
+            const year: u16 = if (year_two_digits >= 50)
+                @as(u16, 1900) + year_two_digits
+            else
+                @as(u16, 2000) + year_two_digits;
+            return dateToSeconds(.{
+                .year = year,
                 .month = try parseTimeDigits(bytes[2..4], 1, 12),
                 .day = try parseTimeDigits(bytes[4..6], 1, 31),
                 .hour = try parseTimeDigits(bytes[6..8], 0, 23),
@@ -1555,13 +1560,12 @@ fn parseTime(cert: Certificate, elem: der.Element) ParseTimeError!u64 {
             });
         },
         .generalized_time => {
-            // Examples:
-            // "19920521000000Z"
-            // "19920622123421Z"
-            // "19920722132100.3Z"
-            if (bytes.len < 15)
+            // Example: "19920521000000Z"
+            if (bytes.len != 15)
                 return error.CertificateTimeInvalid;
-            return Date.toSeconds(.{
+            if (bytes[14] != 'Z')
+                return error.CertificateTimeInvalid;
+            return dateToSeconds(.{
                 .year = try parseYear4(bytes[0..4]),
                 .month = try parseTimeDigits(bytes[4..6], 1, 12),
                 .day = try parseTimeDigits(bytes[6..8], 1, 31),
@@ -1572,6 +1576,84 @@ fn parseTime(cert: Certificate, elem: der.Element) ParseTimeError!u64 {
         },
         else => return error.CertificateFieldHasWrongDataType,
     }
+}
+
+// RFC 5280 §4.1.2.5.1 — UTCTime years 50 through 99 denote 1950 through 1999,
+// while years 00 through 49 denote 2000 through 2049.
+test "parseTime maps UTCTime centuries and expires 1999 certificates" {
+    const expired_cert: Certificate = .{ .buffer = "\x17\x0d991231235959Z", .index = 0 };
+    const expired_elem = try der.Element.parse(expired_cert.buffer, 0);
+    const not_after = try parseTime(expired_cert, expired_elem);
+    var parsed = parsedForNameConstraintsTest("", .empty, .empty, .empty, false);
+    parsed.validity = .{ .not_before = 0, .not_after = not_after };
+
+    const now_sec: i64 = @intCast(Date.toSeconds(.{
+        .year = 2020,
+        .month = 1,
+        .day = 1,
+        .hour = 0,
+        .minute = 0,
+        .second = 0,
+    }));
+    try std.testing.expectError(error.CertificateExpired, parsed.verify(parsed, now_sec));
+
+    const future_cert: Certificate = .{ .buffer = "\x17\x0d490101000000Z", .index = 0 };
+    const future_elem = try der.Element.parse(future_cert.buffer, 0);
+    try std.testing.expectEqual(
+        Date.toSeconds(.{
+            .year = 2049,
+            .month = 1,
+            .day = 1,
+            .hour = 0,
+            .minute = 0,
+            .second = 0,
+        }),
+        try parseTime(future_cert, future_elem),
+    );
+}
+
+// RFC 5280 §4.1.2.5.2 — GeneralizedTime is exactly YYYYMMDDHHMMSSZ: seconds
+// are present, the timezone is Z, and fractional seconds are forbidden.
+test "parseTime enforces GeneralizedTime certificate grammar" {
+    const valid: Certificate = .{ .buffer = "\x18\x0f20240101000000Z", .index = 0 };
+    const valid_elem = try der.Element.parse(valid.buffer, 0);
+    _ = try parseTime(valid, valid_elem);
+
+    const missing_z: Certificate = .{ .buffer = "\x18\x0f202401010000000", .index = 0 };
+    const missing_z_elem = try der.Element.parse(missing_z.buffer, 0);
+    try std.testing.expectError(error.CertificateTimeInvalid, parseTime(missing_z, missing_z_elem));
+
+    const fractional: Certificate = .{ .buffer = "\x18\x1120240101000000.3Z", .index = 0 };
+    const fractional_elem = try der.Element.parse(fractional.buffer, 0);
+    try std.testing.expectError(error.CertificateTimeInvalid, parseTime(fractional, fractional_elem));
+}
+
+// RFC 5280 §4.1.2.5.1 and §4.1.2.5.2 — certificate times must identify a
+// real calendar date, including Gregorian leap-year handling for February.
+test "parseTime rejects impossible dates and accepts leap day" {
+    const february_31: Certificate = .{ .buffer = "\x17\x0d240231000000Z", .index = 0 };
+    const february_31_elem = try der.Element.parse(february_31.buffer, 0);
+    try std.testing.expectError(error.CertificateTimeInvalid, parseTime(february_31, february_31_elem));
+
+    const leap_day: Certificate = .{ .buffer = "\x18\x0f20240229000000Z", .index = 0 };
+    const leap_day_elem = try der.Element.parse(leap_day.buffer, 0);
+    _ = try parseTime(leap_day, leap_day_elem);
+
+    const non_leap_day: Certificate = .{ .buffer = "\x18\x0f20230229000000Z", .index = 0 };
+    const non_leap_day_elem = try der.Element.parse(non_leap_day.buffer, 0);
+    try std.testing.expectError(error.CertificateTimeInvalid, parseTime(non_leap_day, non_leap_day_elem));
+}
+
+fn dateToSeconds(date: Date) ParseTimeError!u64 {
+    const days_in_month = [12]u8{ 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
+    var day_max = days_in_month[date.month - 1];
+    if (date.month == 2 and isLeapYear(date.year)) day_max = 29;
+    if (date.day > day_max) return error.CertificateTimeInvalid;
+    return date.toSeconds();
+}
+
+fn isLeapYear(year: u16) bool {
+    return year % 400 == 0 or (year % 4 == 0 and year % 100 != 0);
 }
 
 const Date = struct {

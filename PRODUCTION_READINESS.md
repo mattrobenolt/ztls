@@ -283,8 +283,12 @@ data to openssl s_server and receives the HTTP response.
     rejected (RFC 5280 §4.2). Pre-existing residuals tracked for a later pass:
     recognized-but-unimplemented critical extensions are still accepted, and the
     outer SAN SEQUENCE in `verifyHostName` is not class-checked.
+  - H9 — X.509 time strictness: UTCTime `YY` now follows RFC 5280 (00–49 → 20YY,
+    50–99 → 19YY, so a long-expired 19YY cert is no longer read as 20YY),
+    GeneralizedTime requires exactly `YYYYMMDDHHMMSSZ`, and impossible dates
+    (e.g. Feb 31, Feb 29 on a non-leap year) are rejected.
 
-  Open — the remainder: S14 (mTLS identity, design), H9, H2–H5, H12–H24, and the
+  Open — the remainder: S14 (mTLS identity, design), H2–H5, H12–H24, and the
   H21 policy calls.
 - Targeted client-side bad-server tests for malformed ServerHello, unexpected
   flight messages, bad CertificateVerify and Finished checks, corrupted
