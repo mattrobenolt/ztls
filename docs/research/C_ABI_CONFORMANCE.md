@@ -46,7 +46,7 @@ C-driven server harness when the C server side lands.
 The harness can be one of:
 
 - `conformance/c_anvil_client.c` — a C-language harness that drives
-  `ztls_client_init`, `ztls_client_start`, `ztls_client_handle_record` (and
+  `ztls_client_init_insecure`, `ztls_client_start`, `ztls_client_handle_record` (and
   the matching `ztls_server_*` for the server direction once #30 server
   lands), with `ztls_record_buffer_next` for record framing. Driven under
   TLS-Anvil by `scripts/anvil_client.py` — only the `--trigger-script`
@@ -143,7 +143,7 @@ the act of exposing it changes the conformance surface in four places the
 Zig harness does not test:
 
 **Handshake round-trip through C-owned buffers.** A TLS 1.3 handshake
-driven end-to-end by `ztls_client_init` → `ztls_client_start` →
+driven end-to-end by `ztls_client_init_insecure` → `ztls_client_start` →
 `ztls_client_handle_record` (with `ztls_record_buffer_next` for record
 framing), in both client and server directions, against a real libcrypto-
 backed server (openssl `s_server`, AWS-LC `s_client`/`s_server`, BoringSSL

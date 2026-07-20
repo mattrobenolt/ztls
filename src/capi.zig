@@ -3,7 +3,7 @@
 //! This module exports a C-callable surface for the client-side handshake.
 //! The internal layout of the client handle is opaque: the C consumer
 //! allocates `ztls_client_size()` bytes with alignment `ztls_client_align()`
-//! and passes the pointer to `ztls_client_init`. Layout is unstable; the
+//! and passes the pointer to `ztls_client_init_insecure`. Layout is unstable; the
 //! consumer must not access the memory directly.
 //!
 //! The opaque-sized approach is used because `ClientHandshake.Suite` is a
@@ -16,6 +16,7 @@
 //! certificate verification, KeyUpdate initiation, PSK/resumption, and
 //! dynamic linking are deferred per #30.
 
+const CApi = @This();
 const std = @import("std");
 const assert = std.debug.assert;
 const testing = std.testing;
@@ -127,7 +128,7 @@ fn mapError(err: anyerror) ZtlsResult {
 }
 
 // Client lifecycle
-fn clientInitImpl(
+fn clientInitInsecureImpl(
     client: ?*anyopaque,
     x25519_pub: ?[*]const u8,
     x25519_sec: ?[*]const u8,
@@ -160,7 +161,7 @@ fn clientInitImpl(
         .host_name = host,
         .now_sec = 0,
         .random = .{ .data = random_bytes },
-        // Certificate verification deferred per #30.
+        // The exported name makes this explicit until verified init lands in #30.
         .insecure_no_chain_anchor = true,
     };
 
@@ -233,13 +234,16 @@ fn clientHandleRecordImpl(
         .none => {
             e.* = .{ .type = .none, .data = null, .data_len = 0 };
         },
-        // KeyUpdate and NewSessionTicket are deferred per #30. Map to NONE
-        // with a documented note: the caller sees no event and no data.
-        // KeyUpdate response bytes (if any) are in `out` but the event
-        // does not surface them. This is an honest partial — the caller
-        // must use the Zig API until the C ABI gains KeyUpdate support.
-        .key_update => {
-            e.* = .{ .type = .none, .data = null, .data_len = 0 };
+        .key_update => |key_update| {
+            if (key_update.response) |response| {
+                e.* = .{
+                    .type = .write,
+                    .data = response.ptr,
+                    .data_len = response.len,
+                };
+            } else {
+                e.* = .{ .type = .none, .data = null, .data_len = 0 };
+            }
         },
         .new_session_ticket => {
             e.* = .{ .type = .none, .data = null, .data_len = 0 };
@@ -301,7 +305,7 @@ comptime {
     @export(&versionImpl, .{ .name = "ztls_version" });
     @export(&clientSizeImpl, .{ .name = "ztls_client_size" });
     @export(&clientAlignImpl, .{ .name = "ztls_client_align" });
-    @export(&clientInitImpl, .{ .name = "ztls_client_init" });
+    @export(&clientInitInsecureImpl, .{ .name = "ztls_client_init_insecure" });
     @export(&clientDeinitImpl, .{ .name = "ztls_client_deinit" });
     @export(&clientStartImpl, .{ .name = "ztls_client_start" });
     @export(&clientHandleRecordImpl, .{ .name = "ztls_client_handle_record" });
@@ -325,6 +329,11 @@ test "capi: ztls_version returns a non-empty string" {
     try testing.expect(v[0] != 0);
 }
 
+test "capi: insecure client init is explicitly named" {
+    try testing.expect(@hasDecl(CApi, "clientInitInsecureImpl"));
+    try testing.expect(!@hasDecl(CApi, "clientInitImpl"));
+}
+
 test "capi: size and alignment are non-zero and sane" {
     const sz = clientSizeImpl();
     const al = clientAlignImpl();
@@ -336,9 +345,9 @@ test "capi: size and alignment are non-zero and sane" {
 }
 
 test "capi: NULL parameters are rejected" {
-    // ztls_client_init with NULL client
+    // ztls_client_init_insecure with NULL client
     var dummy: [32]u8 = @splat(0);
-    try testing.expectEqual(.err_null_parameter, clientInitImpl(
+    try testing.expectEqual(.err_null_parameter, clientInitInsecureImpl(
         null,
         &dummy,
         &dummy,
@@ -382,7 +391,7 @@ test "capi: full client handshake through the C ABI" {
     // Client setup via C ABI
     var client_storage: [@sizeOf(ClientHandshake)]u8 align(@alignOf(ClientHandshake)) = undefined;
 
-    const init_result = clientInitImpl(
+    const init_result = clientInitInsecureImpl(
         &client_storage,
         &client_keypair.public_key.data,
         &client_keypair.secret_key.data,
@@ -552,7 +561,13 @@ test "capi: send_application_data before connected fails" {
     const kp: ztls.x25519.KeyPair = .generate();
     var rand: ztls.Random = .{ .data = @splat(0x55) };
 
-    _ = clientInitImpl(&client_storage, &kp.public_key.data, &kp.secret_key.data, "x", &rand.data);
+    _ = clientInitInsecureImpl(
+        &client_storage,
+        &kp.public_key.data,
+        &kp.secret_key.data,
+        "x",
+        &rand.data,
+    );
     defer _ = clientDeinitImpl(&client_storage);
 
     var out: [1024]u8 = undefined;
@@ -567,4 +582,236 @@ test "capi: send_application_data before connected fails" {
     );
     // Not connected — should fail with handshake_failure or not_connected.
     try testing.expect(result != .ok);
+}
+
+fn connectClientAndServerForTest(
+    client_storage: *[@sizeOf(ClientHandshake)]u8,
+    server: *ServerHandshake,
+) !void {
+    var signer: ztls.signature.PrivateKey = try .fromP256Scalar(
+        fixtures.server_ecdsa_scalar[0..32],
+    );
+    defer signer.deinit();
+
+    const client_keypair: ztls.x25519.KeyPair = .generate();
+    const client_random: ztls.Random = .{ .data = @splat(0x42) };
+    const init_result = clientInitInsecureImpl(
+        client_storage,
+        &client_keypair.public_key.data,
+        &client_keypair.secret_key.data,
+        "ztls.server.test",
+        &client_random.data,
+    );
+    try testing.expectEqual(.ok, init_result);
+
+    server.* = .init(.{
+        .keypairs = .init(ztls.x25519.KeyPair.generate()),
+        .random = .{ .data = @splat(0x37) },
+    });
+    server.setCredentials(&.{&fixtures.server_ecdsa_cert_der}, signer.signer());
+
+    var client_out: [frame.max_wire_record_len]u8 = undefined;
+    var client_written: usize = 0;
+    try testing.expectEqual(.ok, clientStartImpl(
+        client_storage,
+        &client_out,
+        client_out.len,
+        &client_written,
+    ));
+    _ = clientCompleteWriteImpl(client_storage);
+
+    try finishHandshakeForTest(
+        client_storage,
+        server,
+        client_out[0..client_written],
+        &client_out,
+    );
+}
+
+fn finishHandshakeForTest(
+    client_storage: *[@sizeOf(ClientHandshake)]u8,
+    server: *ServerHandshake,
+    client_hello: []const u8,
+    client_out: []u8,
+) !void {
+    var server_out: ServerHandshake.OutBuffer = .empty;
+    const server_hello = try server.acceptClientHello(client_hello, &server_out.buffer);
+    server.completeWrite();
+
+    var record: [frame.max_wire_record_len]u8 = undefined;
+    @memcpy(record[0..server_hello.len], server_hello);
+    var event: ZtlsEvent = undefined;
+    try testing.expectEqual(.ok, clientHandleRecordImpl(
+        client_storage,
+        &record,
+        server_hello.len,
+        client_out.ptr,
+        client_out.len,
+        &event,
+    ));
+
+    var flight: ServerHandshake.FlightBuffer = .empty;
+    const server_flight = (try server.sendServerFlightBuffered(&flight)).?;
+    server.completeWrite();
+    @memcpy(record[0..server_flight.len], server_flight);
+    try testing.expectEqual(.ok, clientHandleRecordImpl(
+        client_storage,
+        &record,
+        server_flight.len,
+        client_out.ptr,
+        client_out.len,
+        &event,
+    ));
+    try testing.expectEqual(ZtlsEventType.write, event.type);
+    _ = clientCompleteWriteImpl(client_storage);
+    try server.processClientFinished(client_out[0..event.data_len]);
+    try testing.expect(clientIsConnectedImpl(client_storage));
+    try testing.expect(server.isConnected());
+}
+
+// RFC 8446 §4.6.3 — a requested peer KeyUpdate produces a response record
+// that the C caller must write and acknowledge before continuing.
+test "capi: KeyUpdate response is surfaced as a write event" {
+    var client_storage: [@sizeOf(ClientHandshake)]u8 align(@alignOf(ClientHandshake)) = undefined;
+    var server: ServerHandshake = undefined;
+    try connectClientAndServerForTest(&client_storage, &server);
+    defer _ = clientDeinitImpl(&client_storage);
+    defer server.deinit();
+
+    var server_out: [128]u8 = undefined;
+    const update = try server.sendKeyUpdate(&server_out, .update_requested);
+    server.completeWrite();
+    var update_record: [128]u8 = undefined;
+    @memcpy(update_record[0..update.len], update);
+
+    var client_out: [128]u8 = undefined;
+    var event: ZtlsEvent = undefined;
+    try testing.expectEqual(.ok, clientHandleRecordImpl(
+        &client_storage,
+        &update_record,
+        update.len,
+        &client_out,
+        client_out.len,
+        &event,
+    ));
+    try testing.expectEqual(ZtlsEventType.write, event.type);
+    try testing.expect(event.data_len > 0);
+    try testing.expectEqualSlices(
+        u8,
+        client_out[0..event.data_len],
+        event.data.?[0..event.data_len],
+    );
+
+    var response_record: [128]u8 = undefined;
+    @memcpy(response_record[0..event.data_len], event.data.?[0..event.data_len]);
+    _ = clientCompleteWriteImpl(&client_storage);
+    const server_event = try server.handleRecord(
+        response_record[0..event.data_len],
+        &server_out,
+    );
+    try testing.expect(server_event == .key_update);
+
+    const after = try server.sendApplicationData("after", &server_out);
+    server.completeWrite();
+    @memcpy(update_record[0..after.len], after);
+    try testing.expectEqual(.ok, clientHandleRecordImpl(
+        &client_storage,
+        &update_record,
+        after.len,
+        &client_out,
+        client_out.len,
+        &event,
+    ));
+    try testing.expectEqual(ZtlsEventType.application_data, event.type);
+    try testing.expectEqualStrings("after", event.data.?[0..event.data_len]);
+}
+
+// RFC 8446 §4.6.3 — update_not_requested has no response and therefore must
+// not set the pending-write interlock.
+test "capi: KeyUpdate without response maps to none without pending write" {
+    var client_storage: [@sizeOf(ClientHandshake)]u8 align(@alignOf(ClientHandshake)) = undefined;
+    var server: ServerHandshake = undefined;
+    try connectClientAndServerForTest(&client_storage, &server);
+    defer _ = clientDeinitImpl(&client_storage);
+    defer server.deinit();
+
+    var server_out: [128]u8 = undefined;
+    const update = try server.sendKeyUpdate(&server_out, .update_not_requested);
+    server.completeWrite();
+    var input: [128]u8 = undefined;
+    @memcpy(input[0..update.len], update);
+
+    var client_out: [128]u8 = undefined;
+    var event: ZtlsEvent = undefined;
+    try testing.expectEqual(.ok, clientHandleRecordImpl(
+        &client_storage,
+        &input,
+        update.len,
+        &client_out,
+        client_out.len,
+        &event,
+    ));
+    try testing.expectEqual(ZtlsEventType.none, event.type);
+
+    const still_open = try server.sendApplicationData("open", &server_out);
+    server.completeWrite();
+    @memcpy(input[0..still_open.len], still_open);
+    try testing.expectEqual(.ok, clientHandleRecordImpl(
+        &client_storage,
+        &input,
+        still_open.len,
+        &client_out,
+        client_out.len,
+        &event,
+    ));
+    try testing.expectEqual(ZtlsEventType.application_data, event.type);
+    try testing.expectEqualStrings("open", event.data.?[0..event.data_len]);
+}
+
+// RFC 8446 §4.6.1 — an ignored NewSessionTicket has no write response and
+// must not leave the C client blocked by the pending-write interlock.
+test "capi: NewSessionTicket maps to none without pending write" {
+    var client_storage: [@sizeOf(ClientHandshake)]u8 align(@alignOf(ClientHandshake)) = undefined;
+    var server: ServerHandshake = undefined;
+    try connectClientAndServerForTest(&client_storage, &server);
+    defer _ = clientDeinitImpl(&client_storage);
+    defer server.deinit();
+
+    const ticket = [_]u8{
+        0x04, 0x00, 0x00, 0x0f,
+        0x00, 0x00, 0x0e, 0x10,
+        0x12, 0x34, 0x56, 0x78,
+        0x01, 0xaa, 0x00, 0x01,
+        0xbb, 0x00, 0x00,
+    };
+    var server_out: [128]u8 = undefined;
+    const ticket_record = try server.tx.encrypt(.handshake, &ticket, &server_out);
+    var input: [128]u8 = undefined;
+    @memcpy(input[0..ticket_record.len], ticket_record);
+
+    var client_out: [128]u8 = undefined;
+    var event: ZtlsEvent = undefined;
+    try testing.expectEqual(.ok, clientHandleRecordImpl(
+        &client_storage,
+        &input,
+        ticket_record.len,
+        &client_out,
+        client_out.len,
+        &event,
+    ));
+    try testing.expectEqual(ZtlsEventType.none, event.type);
+
+    const after = try server.sendApplicationData("after", &server_out);
+    server.completeWrite();
+    @memcpy(input[0..after.len], after);
+    try testing.expectEqual(.ok, clientHandleRecordImpl(
+        &client_storage,
+        &input,
+        after.len,
+        &client_out,
+        client_out.len,
+        &event,
+    ));
+    try testing.expectEqual(ZtlsEventType.application_data, event.type);
+    try testing.expectEqualStrings("after", event.data.?[0..event.data_len]);
 }

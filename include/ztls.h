@@ -3,7 +3,8 @@
  *
  * This header defines the client-side C ABI surface (#30). The internal
  * layout of ztls_client is opaque: allocate ztls_client_size() bytes with
- * alignment ztls_client_align(), pass the pointer to ztls_client_init, and
+ * alignment ztls_client_align(), pass the pointer to
+ * ztls_client_init_insecure, and
  * do not access the memory directly. Layout is unstable between ztls
  * versions; pin a version and recompile on upgrade.
  *
@@ -72,7 +73,8 @@ const char *ztls_version(void);
 /* ── Client size / alignment ─────────────────────────────────── */
 
 /* Runtime query for the opaque client handle size. Allocate this many bytes
- * (with alignment ztls_client_align) and pass the pointer to ztls_client_init.
+ * (with alignment ztls_client_align) and pass the pointer to
+ * ztls_client_init_insecure.
  * Layout is unstable; never hard-code the value. */
 size_t ztls_client_size(void);
 size_t ztls_client_align(void);
@@ -89,11 +91,12 @@ size_t ztls_client_align(void);
  *   host_name   — NUL-terminated server name for SNI; empty string disables SNI
  *   random      — 32-byte ClientHello random (non-NULL, must not be all-zero)
  *
- * Certificate verification is deferred (#30): insecure_no_chain_anchor is
- * set, so the server certificate is accepted without chain validation.
- * Production callers must not use this without a separate verification step.
+ * WARNING: this entry point does not authenticate the server. It explicitly
+ * opts into insecure_no_chain_anchor and accepts a certificate without chain
+ * validation. A verifying ztls_client_init will arrive with #30 trust-anchor
+ * plumbing. Do not use this entry point in production.
  */
-ztls_result ztls_client_init(
+ztls_result ztls_client_init_insecure(
     void *client,
     const uint8_t x25519_pub[32],
     const uint8_t x25519_sec[32],
@@ -121,10 +124,12 @@ ztls_result ztls_client_start(
  *   ZTLS_EVENT_APPLICATION_DATA — decrypted app data in event.data
  *   ZTLS_EVENT_WRITE — a record to send (in event.data); call complete_write after
  *   ZTLS_EVENT_CLOSED — peer sent close_notify
- *   ZTLS_EVENT_NONE — handled internally (e.g. CCS, or deferred event)
+ *   ZTLS_EVENT_NONE — handled internally (e.g. CCS, NewSessionTicket, or a
+ *                     KeyUpdate that does not require a response)
  *
- * KeyUpdate and NewSessionTicket events are currently mapped to
- * ZTLS_EVENT_NONE (deferred per #30 — honest partial). */
+ * A requested KeyUpdate response is surfaced as ZTLS_EVENT_WRITE and must be
+ * acknowledged with ztls_client_complete_write. NewSessionTicket remains
+ * deferred per #30 and is ignored without blocking the connection. */
 ztls_result ztls_client_handle_record(
     void *client,
     uint8_t *record,

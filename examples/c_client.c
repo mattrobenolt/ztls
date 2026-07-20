@@ -52,12 +52,12 @@ int main(void) {
     unsigned char random[32];
     memset(random, 0x42, sizeof(random));
 
-    /* Initialize the client. Certificate verification is deferred (#30):
-     * insecure_no_chain_anchor is set internally. */
-    ztls_result r = ztls_client_init(client, pub, sec,
-                                     "ztls.server.test", random);
+    /* This demo explicitly uses the insecure initializer because trust-anchor
+     * plumbing is deferred to #30. It does not authenticate the server. */
+    ztls_result r = ztls_client_init_insecure(client, pub, sec,
+                                              "ztls.server.test", random);
     if (r != ZTLS_OK) {
-        fprintf(stderr, "ztls_client_init failed: %d\n", (int)r);
+        fprintf(stderr, "ztls_client_init_insecure failed: %d\n", (int)r);
         free(raw);
         return 1;
     }

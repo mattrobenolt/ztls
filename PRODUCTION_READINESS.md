@@ -325,13 +325,15 @@ data to openssl s_server and receives the HTTP response.
     (gated on `.connected`, explicit null when no client cert). Ergonomics
     (struct-return shape, three-way absence, parsed subject/SAN helpers) flagged
     for maintainer refinement.
+  - H15 (safety subset) — the C ABI no longer silently wedges or ships a silent
+    insecure default: a KeyUpdate carrying a response now surfaces as
+    `ZTLS_EVENT_WRITE` (was `.none` + a jammed `err_pending_write`), and the sole
+    client initializer is the explicitly-named `ztls_client_init_insecure` (was a
+    silent `insecure_no_chain_anchor = true`). Full trust-anchor plumbing / a
+    verifying `ztls_client_init` remain #30.
 
-  Open — the remainder (re-adjudicated 2026-07 by a cross-family council; it
-  moved H15/H16 from defer to active work, kept H17/H20 deferred with a plan):
-  - H15 — C-ABI KeyUpdate/NST events are swallowed (mapped to `.none`), and
-    `ztls_client_init` hardcodes `insecure_no_chain_anchor = true`. Decide the
-    event story and the anchor-removal milestone under #30 before any external
-    consumer ships.
+  Open — the remainder (re-adjudicated 2026-07 by a cross-family council; H16 is
+  active work, H17/H20 deferred with a plan):
   - H16 — `Signer` borrows the `PrivateKey` context with no lifetime guard
     (deinit-then-use is a UAF). Documented contract is the interim mitigation; a
     credential object owning the lifetime is an API change.
@@ -341,8 +343,11 @@ data to openssl s_server and receives the HTTP response.
   - H20 — 0.5-RTT interop: the client rejects legal server application_data in
     `.send_finished`. Fixing it needs an API/state-machine channel to surface
     pre-connected app data; interop feature, not a security bug.
-  - H21 (remainder) — SHA-1 in chain signatures (security-vs-interop tradeoff)
-    and IDNA/A-label handling (feature gap) remain explicit policy decisions.
+  - H21 (remainder) — SHA-1 chain signatures are in fact ALREADY rejected at the
+    policy layer (`verifyChainCertificateSignatureAlgorithms`; the audit finding
+    was stale — the council caught it), so only IDNA/A-label handling (a feature
+    gap) remains a policy decision. The rfc822/URI name-constraint item (#75) was
+    fixed separately.
   - #75 (fixed) — rfc822Name/URI bare-host name-constraint escape: bare-host
     constraints (no leading `.`) now do exact host matching per RFC 5280
     §4.2.1.10, instead of being routed through `dnsNameInSubtree` (subtree
@@ -495,14 +500,14 @@ CI-gated examples remain canonical for transport drive-loop glue.
 
 The C ABI surface for the ztls TLS 1.3 client lifecycle is partially
 landed. `src/capi.zig` exports C-callable shims (`callconv(.c)`) for the
-client lifecycle: `ztls_client_init`, `ztls_client_deinit`,
+client lifecycle: `ztls_client_init_insecure`, `ztls_client_deinit`,
 `ztls_client_start`, `ztls_client_handle_record`,
 `ztls_client_complete_write`, `ztls_client_send_application_data`,
 `ztls_client_is_connected`, `ztls_client_selected_alpn`, plus
 `ztls_version`, `ztls_client_size`, and `ztls_client_align`. The
 opaque-sized approach is used: the C consumer allocates
 `ztls_client_size()` bytes with alignment `ztls_client_align()` and
-passes the pointer to `ztls_client_init`; the internal layout is
+passes the pointer to `ztls_client_init_insecure`; the internal layout is
 unstable and not directly accessible. `include/ztls.h` is the C ABI
 contract. `zig build -Dcapi` produces `libztls.a` (static) and installs
 the header. `examples/c_client.c` compiles against the header + lib
@@ -516,10 +521,12 @@ The security review
 opaque-sized design: transparent C structs leak secrets and backend
 pointers across C struct copies, so the internal state is hidden behind
 runtime size/align queries. NULL parameter checks map to
-`ZTLS_ERR_NULL_PARAMETER` before entering the Zig engine. KeyUpdate and
-NewSessionTicket events map to `ZTLS_EVENT_NONE` with a documented
-deferred note (honest partial). Certificate verification is deferred:
-`ztls_client_init` sets `insecure_no_chain_anchor = true`.
+`ZTLS_ERR_NULL_PARAMETER` before entering the Zig engine. A KeyUpdate carrying a
+response surfaces as `ZTLS_EVENT_WRITE`; NewSessionTicket (and a no-response
+KeyUpdate) map to `ZTLS_EVENT_NONE` without wedging. Certificate verification is
+deferred to #30: the sole init is the explicitly-named
+`ztls_client_init_insecure` (no server authentication), so an unauthenticated
+client cannot be created unknowingly.
 
 **Deferred (tracked under #30):** server-side C ABI shims, RecordBuffer
 C ABI, certificate verification, KeyUpdate initiation from C, PSK /
