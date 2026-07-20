@@ -400,16 +400,65 @@ fn run(args_vector: ArgsVector) !u8 {
     const certs = try cert_list.toOwnedSlice(arena);
 
     var shared: Shared = .{};
-    const server_thread: Thread = try .spawn(.{}, serverRun, .{ arena, &args, certs, &shared });
+    var server_result: ?anyerror = null;
+    var client_result: ?anyerror = null;
+
+    const server_thread: Thread = try .spawn(
+        .{},
+        serverEntry,
+        .{ arena, &args, certs, &shared, &server_result },
+    );
 
     shared.ready.wait();
 
-    const client_thread: Thread = try .spawn(.{}, clientRun, .{ arena, &args, shared.port });
+    const client_thread: Thread = try .spawn(
+        .{},
+        clientEntry,
+        .{ arena, &args, shared.port, &client_result },
+    );
     client_thread.join();
     server_thread.join();
 
+    // Thread.join does not propagate the entry's error, so the wrappers below
+    // capture it into the result out-params. Only declare success when BOTH
+    // threads completed without error.
+    if (server_result != null or client_result != null) return 1;
+
     stdout.writeAll("\n=== epoll ping-pong OK ===\n");
     return 0;
+}
+
+/// void-returning entry wrapper for the server thread: captures serverRun's
+/// error into `result` (Thread.join does not propagate it) and prints a clean
+/// one-line diagnostic. Returning void also suppresses Zig's thread-wrapper
+/// stack trace. On error before `shared.ready.set()` (e.g. bind/listen fails)
+/// we set the event ourselves so main is not stranded in `ready.wait()`.
+fn serverEntry(
+    arena: Allocator,
+    args: *const Args,
+    certs: []const []const u8,
+    shared: *Shared,
+    result: *?anyerror,
+) void {
+    serverRun(arena, args, certs, shared) catch |err| {
+        result.* = err;
+        stderr.print("[server] failed: {s}\n", .{@errorName(err)});
+        shared.ready.set();
+    };
+}
+
+/// void-returning entry wrapper for the client thread: captures clientRun's
+/// error into `result` and prints a clean one-line diagnostic.
+fn clientEntry(
+    arena: Allocator,
+    args: *const Args,
+    port: u16,
+    result: *?anyerror,
+) void {
+    clientRun(arena, args, port) catch |err| {
+        result.* = err;
+        stderr.print("[client] failed: {s}\n", .{@errorName(err)});
+    };
 }
 
 // -- Server -------------------------------------------------------------------
@@ -578,6 +627,7 @@ fn clientRun(arena: Allocator, args: *const Args, port: u16) !void {
 
     var connected = false;
     var handshake_logged = false;
+    var done = false; // set true only on the clean `round == args.rounds` exit
     var round: usize = 1;
     var msg_buf: [64]u8 = undefined;
     var events: [8]linux.epoll_event = undefined;
@@ -611,6 +661,7 @@ fn clientRun(arena: Allocator, args: *const Args, port: u16) !void {
                     stdout.print("[client] received: {s}", .{data});
                     if (round == args.rounds) {
                         try conn.send(&hs, try hs.sendAlert(.close_notify, &out.buffer));
+                        done = true;
                         break :outer;
                     }
                     round += 1;
@@ -639,4 +690,8 @@ fn clientRun(arena: Allocator, args: *const Args, port: u16) !void {
             try conn.send(&hs, first);
         }
     }
+
+    // A premature close (server `.closed` or EOF from fillRecordBuffer) before
+    // the final round completes is a failure, not a silent success.
+    if (!done) return error.IncompleteExchange;
 }
