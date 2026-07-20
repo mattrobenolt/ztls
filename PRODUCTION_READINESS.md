@@ -332,11 +332,19 @@ data to openssl s_server and receives the HTTP response.
     silent `insecure_no_chain_anchor = true`). Full trust-anchor plumbing / a
     verifying `ztls_client_init` remain #30.
 
-  Open — the remainder (re-adjudicated 2026-07 by a cross-family council; H16 is
-  active work, H17/H20 deferred with a plan):
-  - H16 — `Signer` borrows the `PrivateKey` context with no lifetime guard
-    (deinit-then-use is a UAF). Documented contract is the interim mitigation; a
-    credential object owning the lifetime is an API change.
+  Open — the remainder (re-adjudicated 2026-07 by a cross-family council):
+  - H16 — `Signer` borrows the `PrivateKey` (deinit-then-use is a UAF). The
+    council voted 2-1 to ref-count now, but on code inspection the borrowed
+    `Signer` is consistent with ztls's caller-owns-everything Sans-I/O design:
+    it is a stored caller-owned resource with a documented "must outlive the
+    handshake" contract, exactly like caller-owned certs, reassembly buffers,
+    keypairs, and ALPN — and the engine never frees it. Ref-counting it (the
+    2-1 fix, reasoned from rustls/OpenSSL norms) would make it the lone
+    engine-owned backend resource, against the philosophy. Deferred to #30
+    (kimi's dissent): cross-language ownership genuinely needs a model at the C
+    ABI boundary, where a Zig "must outlive" contract can't be expressed — so the
+    credential-lifetime redesign belongs there, as a hard gate before the C ABI
+    ships. The Zig API stays borrowed-consistent.
   - H17 — HKDF passes `Prk`/`TrafficSecret` by value, leaving un-zeroized stack
     copies; the important handshake locals are wiped. Needs a dedicated
     zeroization-strategy pass, not a point fix.
