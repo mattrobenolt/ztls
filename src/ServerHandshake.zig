@@ -18,6 +18,7 @@ const array_buffer = @import("array_buffer.zig");
 const ArrayBuffer = array_buffer.ArrayBuffer;
 const SliceBuffer = array_buffer.SliceBuffer;
 const certificate = @import("certificate.zig");
+const Certificate = @import("certificate_parser.zig");
 const CertificateChain = @import("certificate_chain.zig").CertificateChain;
 const certificate_request = @import("certificate_request.zig");
 const client_hello = @import("client_hello.zig");
@@ -198,6 +199,9 @@ pub const Config = struct {
     client_auth_now_sec: i64 = 0,
     /// Optional caller-owned ClientHello reassembly storage.
     reassembly: ?[]u8 = null,
+    /// Optional caller-owned storage for retaining the verified client leaf
+    /// certificate DER. The storage must outlive the handshake.
+    client_cert_buffer: ?[]u8 = null,
     /// Optional caller-owned PSK lookup for session resumption (RFC 8446
     /// §4.2.11). When set, the server verifies offered PSK binders and, if one
     /// verifies, resumes with that PSK (psk_dhe_ke) instead of a full
@@ -224,6 +228,8 @@ client_cert_policy: certificate.Policy = .{ .leaf_usage = .client_auth },
 /// Leaf public key extracted from the client Certificate, retained until
 /// CertificateVerify verification. Copied so it survives across records.
 client_leaf_pub_key: ClientLeafPubKeyBuffer = .empty,
+/// Caller-owned storage containing the verified client leaf certificate DER.
+client_cert: HandshakeBuffer = .empty,
 /// Transcript hash through the server Finished, snapshotted when the server
 /// flight is emitted. RFC 8446 §7.1: application traffic secrets are derived
 /// from the transcript through the server Finished, independent of any client
@@ -311,6 +317,7 @@ pub fn init(config: Config) ServerHandshake {
             .leaf_usage = .client_auth,
         },
         .ch_buf = if (config.reassembly) |buf| .init(buf) else .empty,
+        .client_cert = if (config.client_cert_buffer) |buf| .init(buf) else .empty,
         .psk_lookup = config.psk_lookup,
     };
 }
@@ -332,6 +339,7 @@ pub fn deinit(self: *ServerHandshake) void {
     self.fin_frag.secureZero();
     self.ku_frag.secureZero();
     self.client_leaf_pub_key.secureZero();
+    self.client_cert.clear();
     self.* = undefined;
 }
 
@@ -483,6 +491,27 @@ pub fn clientServerName(self: *const ServerHandshake) ?[]const u8 {
     return self.client_server_name;
 }
 
+/// Return the retained, verified client leaf certificate DER. Available only
+/// after the handshake reaches the authenticated connected state. Null means
+/// no client certificate was presented or no retention buffer was configured.
+///
+/// RFC 8446 §4.4.2, §4.4.3.
+pub fn clientCertificateDer(self: *const ServerHandshake) ?[]const u8 {
+    if (self.state != .connected) return null;
+    if (self.client_cert.len == 0) return null;
+    return self.client_cert.constSlice();
+}
+
+/// Parse the retained, verified client leaf certificate. See
+/// `clientCertificateDer` for availability and absence semantics.
+///
+/// RFC 8446 §4.4.2, §4.4.3.
+pub fn clientCertificate(self: *const ServerHandshake) ?Certificate.Parsed {
+    const der = self.clientCertificateDer() orelse return null;
+    const cert: Certificate = .{ .buffer = der, .index = 0 };
+    return cert.parse() catch return null;
+}
+
 pub fn completeWrite(self: *ServerHandshake) void {
     self.pending_write.clear();
 }
@@ -556,6 +585,7 @@ pub const ClientFinishedError =
         ClientCertificateRequired,
         UnsupportedClientCertificate,
         CertificateKeyTooLarge,
+        ClientCertificateTooLarge,
     };
 
 pub const SendError = RecordLayer.EncryptError || error{PendingWrite};
@@ -1296,10 +1326,13 @@ fn processClientFinishedPlaintext(
     plaintext: []const u8,
 ) ClientFinishedError!void {
     assert(self.state == .wait_client_finished);
+    var authenticated_leaf_der: ?[]const u8 = null;
     var hr: HandshakeReader = .init(plaintext);
     var msg = (try hr.next()) orelse return error.UnexpectedMessage;
 
     if (self.client_auth != .none) {
+        self.client_leaf_pub_key.clear();
+        self.client_cert.clear();
         if (msg.type != .certificate) return error.UnexpectedMessage;
         // The handshake-time CertificateRequest context is empty; the client
         // echoes it. RFC 8446 §4.4.2.
@@ -1315,9 +1348,14 @@ fn processClientFinishedPlaintext(
                 // key is retained for CertificateVerify verification, which
                 // may arrive in this same record or a later one. RFC 8446
                 // §4.4.2, §4.4.3.
-                const pk = try certificate.parseClientChain(msg.raw, &.{}, self.client_cert_policy);
-                self.client_leaf_pub_key.clear();
-                self.client_leaf_pub_key.appendSlice(pk) catch return error.CertificateKeyTooLarge;
+                const verified = try certificate.parseClientChain(
+                    msg.raw,
+                    &.{},
+                    self.client_cert_policy,
+                );
+                self.client_leaf_pub_key.appendSlice(verified.pub_key) catch
+                    return error.CertificateKeyTooLarge;
+                authenticated_leaf_der = verified.leaf_der;
                 self.suite_state.update(msg.raw);
                 // Next message must be CertificateVerify.
                 msg = (try hr.next()) orelse return error.UnexpectedMessage;
@@ -1348,6 +1386,11 @@ fn processClientFinishedPlaintext(
     if (msg.type != .finished) return error.UnexpectedMessage;
     if (try hr.next() != null) return error.UnexpectedMessage;
     try self.verifyClientFinished(msg.raw);
+    if (authenticated_leaf_der) |der| {
+        if (self.client_cert.buffer.len != 0) {
+            self.client_cert.retainFrom(der) catch return error.ClientCertificateTooLarge;
+        }
+    }
 }
 
 /// Verify a complete client Finished message, install application traffic
@@ -3075,10 +3118,12 @@ test "processClientFinished: optional client auth accepts empty Certificate" {
     const ch_record = try client.start(&client_out);
     client.completeWrite();
 
+    var client_cert_storage: [1024]u8 = undefined;
     var server: ServerHandshake = .init(.{
         .keypairs = .init(server_keypair),
         .random = .zero,
         .client_auth = .optional,
+        .client_cert_buffer = &client_cert_storage,
     });
     var server_out: [4096]u8 = undefined;
     const sh_record = try server.acceptClientHello(ch_record, &server_out);
@@ -3114,6 +3159,8 @@ test "processClientFinished: optional client auth accepts empty Certificate" {
     client.completeWrite();
     try server.processClientFinished(client_out[0..client_finished_record.len]);
     try testing.expectEqual(.connected, server.state);
+    try testing.expectEqual(@as(?[]const u8, null), server.clientCertificateDer());
+    try testing.expectEqual(@as(?Certificate.Parsed, null), server.clientCertificate());
 }
 
 // RFC 8446 §4.4.2 — a server that requires client authentication rejects an
@@ -3191,12 +3238,16 @@ test "processClientFinished: required client auth verifies real client Certifica
     const ch_record = try client.start(&client_out);
     client.completeWrite();
 
+    var client_cert_storage: [1024]u8 = undefined;
     var server: ServerHandshake = .init(.{
         .keypairs = .init(server_keypair),
         .random = .zero,
         .client_auth = .required,
         .insecure_no_client_chain_anchor = true,
+        .client_cert_buffer = &client_cert_storage,
     });
+    try testing.expectEqual(@as(?[]const u8, null), server.clientCertificateDer());
+    try testing.expectEqual(@as(?Certificate.Parsed, null), server.clientCertificate());
     var server_out: [4096]u8 = undefined;
     const sh_record = try server.acceptClientHello(ch_record, &server_out);
     try client.processServerHello(sh_record[frame.header_len..]);
@@ -3237,6 +3288,140 @@ test "processClientFinished: required client auth verifies real client Certifica
     client.completeWrite();
     try server.processClientFinished(client_out[0..client_finished_record.len]);
     try testing.expectEqual(.connected, server.state);
+
+    const retained_der = server.clientCertificateDer().?;
+    try testing.expectEqualSlices(u8, clientEcdsaCertDer(), retained_der);
+    const retained = server.clientCertificate().?;
+    const presented: Certificate = .{ .buffer = clientEcdsaCertDer(), .index = 0 };
+    const parsed_presented = try presented.parse();
+    try testing.expectEqualSlices(u8, parsed_presented.subject(), retained.subject());
+    const expected_san = parsed_presented.subject_alt_name_slice;
+    const actual_san = retained.subject_alt_name_slice;
+    try testing.expectEqualSlices(
+        u8,
+        parsed_presented.certificate.buffer[expected_san.start..expected_san.end],
+        retained.certificate.buffer[actual_san.start..actual_san.end],
+    );
+}
+
+// RFC 8446 §4.4.3, §4.4.4 — a chain-valid client identity is not retained
+// unless CertificateVerify and Finished both authenticate the client.
+test "processClientFinished: bad client Finished does not retain identity" {
+    const client_keypair: x25519.KeyPair = .generate();
+    const server_keypair: x25519.KeyPair = .generate();
+
+    var client: ClientHandshake = .init(.{
+        .keypairs = .init(client_keypair),
+        .host_name = "ztls.server.test",
+        .now_sec = 0,
+        .random = .zero,
+    });
+    client.policy.insecure_no_chain_anchor = true;
+    var client_signer = try signature.PrivateKey.fromP256Scalar(clientEcdsaScalar()[0..32]);
+    defer client_signer.deinit();
+    client.setCredentials(&.{clientEcdsaCertDer()}, client_signer.signer());
+    var client_out: [4096]u8 = undefined;
+    const ch_record = try client.start(&client_out);
+    client.completeWrite();
+
+    var client_cert_storage: [1024]u8 = undefined;
+    var server: ServerHandshake = .init(.{
+        .keypairs = .init(server_keypair),
+        .random = .zero,
+        .client_auth = .required,
+        .insecure_no_client_chain_anchor = true,
+        .client_cert_buffer = &client_cert_storage,
+    });
+    var server_out: [4096]u8 = undefined;
+    const sh_record = try server.acceptClientHello(ch_record, &server_out);
+    try client.processServerHello(sh_record[frame.header_len..]);
+
+    var signer = try signature.PrivateKey.fromP256Scalar(serverEcdsaScalar()[0..32]);
+    defer signer.deinit();
+    var plaintext: [4096]u8 = undefined;
+    const flight_record = try server.sendAuthenticatedFlight(
+        &.{serverEcdsaCertDer()},
+        signer.signer(),
+        &plaintext,
+        &server_out,
+    );
+    const client_event = try client.handleRecord(server_out[0..flight_record.len], &client_out);
+    const client_finished_record = switch (client_event) {
+        .write => |w| w,
+        else => return error.UnexpectedEvent,
+    };
+
+    var inspect_rx = try server.rx.clone();
+    defer inspect_rx.deinit();
+    var inspect_buf: [4096]u8 = undefined;
+    @memcpy(inspect_buf[0..client_finished_record.len], client_finished_record);
+    const dec = try inspect_rx.decrypt(inspect_buf[0..client_finished_record.len]);
+    dec.content[dec.content.len - 1] ^= 0xff;
+
+    var tampered_tx = try server.rx.clone();
+    defer tampered_tx.deinit();
+    var tampered_wire: [4096]u8 = undefined;
+    const tampered_record = try tampered_tx.encrypt(.handshake, dec.content, &tampered_wire);
+    client.completeWrite();
+    try testing.expectError(
+        error.InvalidVerifyData,
+        server.processClientFinished(tampered_wire[0..tampered_record.len]),
+    );
+    try testing.expectEqual(.wait_client_finished, server.state);
+    try testing.expectEqual(@as(usize, 0), server.client_cert.len);
+    try testing.expectEqual(@as(?[]const u8, null), server.clientCertificateDer());
+}
+
+// RFC 8446 §4.4.2, §4.4.3 — omitting caller-owned retention storage does not
+// prevent successful client authentication; the verified identity is null.
+test "processClientFinished: client identity requires caller-owned storage" {
+    const client_keypair: x25519.KeyPair = .generate();
+    const server_keypair: x25519.KeyPair = .generate();
+
+    var client: ClientHandshake = .init(.{
+        .keypairs = .init(client_keypair),
+        .host_name = "ztls.server.test",
+        .now_sec = 0,
+        .random = .zero,
+    });
+    client.policy.insecure_no_chain_anchor = true;
+    var client_signer = try signature.PrivateKey.fromP256Scalar(clientEcdsaScalar()[0..32]);
+    defer client_signer.deinit();
+    client.setCredentials(&.{clientEcdsaCertDer()}, client_signer.signer());
+    var client_out: [4096]u8 = undefined;
+    const ch_record = try client.start(&client_out);
+    client.completeWrite();
+
+    var server: ServerHandshake = .init(.{
+        .keypairs = .init(server_keypair),
+        .random = .zero,
+        .client_auth = .required,
+        .insecure_no_client_chain_anchor = true,
+    });
+    var server_out: [4096]u8 = undefined;
+    const sh_record = try server.acceptClientHello(ch_record, &server_out);
+    try client.processServerHello(sh_record[frame.header_len..]);
+
+    var signer = try signature.PrivateKey.fromP256Scalar(serverEcdsaScalar()[0..32]);
+    defer signer.deinit();
+    var plaintext: [4096]u8 = undefined;
+    const flight_record = try server.sendAuthenticatedFlight(
+        &.{serverEcdsaCertDer()},
+        signer.signer(),
+        &plaintext,
+        &server_out,
+    );
+    const client_event = try client.handleRecord(server_out[0..flight_record.len], &client_out);
+    const client_finished_record = switch (client_event) {
+        .write => |w| w,
+        else => return error.UnexpectedEvent,
+    };
+    client.completeWrite();
+    try server.processClientFinished(client_out[0..client_finished_record.len]);
+
+    try testing.expectEqual(.connected, server.state);
+    try testing.expectEqual(@as(?[]const u8, null), server.clientCertificateDer());
+    try testing.expectEqual(@as(?Certificate.Parsed, null), server.clientCertificate());
 }
 
 // RFC 8446 §4.4.3 — a client CertificateVerify whose signature does not match

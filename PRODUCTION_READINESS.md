@@ -318,13 +318,16 @@ data to openssl s_server and receives the HTTP response.
     cross-family council endorsed this split and rejected the audit's original
     "don't reset on app data" (which would cap a connection at 16 KeyUpdates for
     life — OpenSSL removed exactly such a cap).
+  - S14 — the server now surfaces the verified mTLS client identity: an optional
+    caller-owned `Config.client_cert_buffer` retains the verified leaf DER (copied
+    only after the client is fully authenticated — after CertificateVerify and
+    Finished), exposed via `clientCertificateDer()` / `clientCertificate()`
+    (gated on `.connected`, explicit null when no client cert). Ergonomics
+    (struct-return shape, three-way absence, parsed subject/SAN helpers) flagged
+    for maintainer refinement.
 
   Open — the remainder (re-adjudicated 2026-07 by a cross-family council; it
-  moved S14/H15/H16 from defer to active work, kept H17/H20 deferred with a
-  plan):
-  - S14 — mTLS client identity: the server verifies the client chain and keeps
-    the leaf public key but exposes no subject/SAN to authorize against. A
-    real gap in the mTLS auth story; needs an identity-surfacing API decision.
+  moved H15/H16 from defer to active work, kept H17/H20 deferred with a plan):
   - H15 — C-ABI KeyUpdate/NST events are swallowed (mapped to `.none`), and
     `ztls_client_init` hardcodes `insecure_no_chain_anchor = true`. Decide the
     event story and the anchor-removal milestone under #30 before any external

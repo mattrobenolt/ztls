@@ -47,6 +47,12 @@ pub const ClientCertificateStatus = enum {
     present,
 };
 
+/// Verified client leaf material borrowed from the Certificate message.
+pub const VerifiedClientChain = struct {
+    pub_key: []const u8,
+    leaf_der: []const u8,
+};
+
 pub fn encodedLen(certs_der: []const []const u8) usize {
     return encodedLenWithRequestContext(0, certs_der);
 }
@@ -135,17 +141,17 @@ pub fn parseClientCertificate(
 }
 
 /// Parse a client Certificate handshake message (echoing the CertificateRequest
-/// request_context), extract the leaf public key as a slice into `msg`, and run
-/// chain validation per `policy`. Mirrors `parse` but accepts the non-empty
-/// client request_context and uses the client-auth leaf policy. The caller must
-/// keep `msg` alive until `verifyClientSignature` has been called.
+/// request_context), return the verified leaf public key and DER as slices into
+/// `msg`, and run chain validation per `policy`. Mirrors `parse` but accepts the
+/// non-empty client request_context and uses the client-auth leaf policy. The
+/// caller must keep `msg` alive until the returned slices have been consumed.
 /// RFC 8446 §4.4.2 (client Certificate), §4.4.3 (client CertificateVerify).
 // ziglint-ignore: Z015 -- ParseError is a public error-set alias.
 pub fn parseClientChain(
     msg: []const u8,
     expected_request_context: []const u8,
     policy: Policy,
-) ParseError![]const u8 {
+) ParseError!VerifiedClientChain {
     if (msg.len < 4 + 1 + 3) return error.UnexpectedEof;
     var r: wire.Reader = .init(msg);
 
@@ -167,6 +173,7 @@ pub fn parseClientChain(
     const list_end = r.pos + list_len;
     var cert_index: usize = 0;
     var leaf_pub_key: ?[]const u8 = null;
+    var leaf_der: ?[]const u8 = null;
     var subject_to_verify: ?Certificate.Parsed = null;
     var chain: ArrayBuffer(Certificate.Parsed, 8) = .empty;
 
@@ -185,6 +192,7 @@ pub fn parseClientChain(
 
         if (cert_index == 0) {
             leaf_pub_key = parsed.pubKey();
+            leaf_der = cert_der;
             switch (policy.leaf_usage) {
                 .none => {},
                 .server_auth => try certificate_policy.verifyServerAuthWithSignatureSchemes(
@@ -225,7 +233,10 @@ pub fn parseClientChain(
         try verifyChainNameConstraints(chain.constSlice(), null);
     }
 
-    return leaf_pub_key orelse error.EmptyCertificateList;
+    return .{
+        .pub_key = leaf_pub_key orelse return error.EmptyCertificateList,
+        .leaf_der = leaf_der orelse return error.EmptyCertificateList,
+    };
 }
 
 /// Parse a Certificate handshake message and extract the leaf certificate
@@ -650,10 +661,16 @@ test "parseClientCertificate: oversized ctx_len does not overflow" {
 
 test "parse: extracts public key from ECDSA P-256 certificate" {
     var buf: [1024]u8 = undefined;
-    const pub_key = try parse(buildCertMsg(&buf, fixtureCertDer()), .{
-        .insecure_no_chain_anchor = true,
-    });
+    const msg = buildCertMsg(&buf, fixtureCertDer());
+    const policy: Policy = .{ .insecure_no_chain_anchor = true };
+    const pub_key = try parse(msg, policy);
     try testing.expect(pub_key.len > 0);
+
+    // RFC 8446 §4.4.2 — client-chain validation also surfaces the leaf DER
+    // borrowed from the Certificate message for caller-owned retention.
+    const verified = try parseClientChain(msg, &.{}, policy);
+    try testing.expectEqualSlices(u8, pub_key, verified.pub_key);
+    try testing.expectEqualSlices(u8, fixtureCertDer(), verified.leaf_der);
 }
 
 test "parse: wrong handshake type" {
