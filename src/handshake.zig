@@ -9,7 +9,10 @@ const assert = std.debug.assert;
 const RecordLayer = @import("RecordLayer.zig");
 const wire = @import("wire.zig");
 
-pub const max_post_handshake_messages = 16;
+pub const max_post_handshake_key_updates = 16;
+pub const max_post_handshake_new_session_tickets = 32;
+// Retained for the server-side KeyUpdate counter.
+pub const max_post_handshake_messages = max_post_handshake_key_updates;
 pub const SendError = RecordLayer.EncryptError || error{PendingWrite};
 pub const KeyUpdateSender = enum { client, server };
 

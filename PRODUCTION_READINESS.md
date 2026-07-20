@@ -312,16 +312,19 @@ data to openssl s_server and receives the HTTP response.
     fallback removed, per RFC 9525), and public-suffix wildcards like `*.com` are
     rejected (heuristic, not a full PSL). server.crt was modernized with a SAN
     (key preserved).
+  - H12 — the client post-handshake flood counter now tracks KeyUpdate and
+    NewSessionTicket separately (limits 16 / 32), both reset on application data,
+    so a ticket-heavy server no longer false-trips the KeyUpdate limit. A
+    cross-family council endorsed this split and rejected the audit's original
+    "don't reset on app data" (which would cap a connection at 16 KeyUpdates for
+    life — OpenSSL removed exactly such a cap).
 
-  Open — the remainder, all design/decision (not mechanical bugs):
+  Open — the remainder (re-adjudicated 2026-07 by a cross-family council; it
+  moved S14/H15/H16 from defer to active work, kept H17/H20 deferred with a
+  plan):
   - S14 — mTLS client identity: the server verifies the client chain and keeps
     the leaf public key but exposes no subject/SAN to authorize against. A
     real gap in the mTLS auth story; needs an identity-surfacing API decision.
-  - H12 — post-handshake KeyUpdate counter: NOT taken as the audit specifies
-    (its "don't reset on app data" makes the bound a lifetime cap of 16
-    KeyUpdates and breaks long high-throughput connections). The current
-    reset-on-app-data burst counter matches Go's `maxUselessRecords`; a
-    NST/KeyUpdate split with a research-backed limit is the sound refinement.
   - H15 — C-ABI KeyUpdate/NST events are swallowed (mapped to `.none`), and
     `ztls_client_init` hardcodes `insecure_no_chain_anchor = true`. Decide the
     event story and the anchor-removal milestone under #30 before any external

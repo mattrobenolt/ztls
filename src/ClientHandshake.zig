@@ -35,11 +35,14 @@ const handshake = @import("handshake.zig");
 pub const HandshakeReader = handshake.Reader;
 pub const HandshakeType = handshake.Type;
 pub const KeyUpdateRequest = handshake.KeyUpdateRequest;
-/// Max consecutive post-handshake messages with no intervening application
-/// data before we treat the peer as flooding us (RFC 8446 §4.6.3 allows
-/// either side to force updates; an unbounded stream is a DoS). Mirrors Go's
-/// maxUselessRecords. Reset by application data.
-const max_post_handshake_messages = handshake.max_post_handshake_messages;
+/// Max consecutive KeyUpdates with no intervening application data before we
+/// treat the peer as flooding us. RFC 8446 §4.6.3 allows either side to force
+/// updates, so the stream must be bounded. Reset by application data.
+const max_post_handshake_key_updates = handshake.max_post_handshake_key_updates;
+/// RFC 8446 §4.6.1 permits servers to send multiple NewSessionTickets. Keep a
+/// separate, generous burst bound so tickets cannot consume the KeyUpdate cap.
+const max_post_handshake_new_session_tickets =
+    handshake.max_post_handshake_new_session_tickets;
 const hkdf = @import("hkdf.zig");
 const handshake_key_pairs = @import("handshake_key_pairs.zig");
 const memx = @import("memx.zig");
@@ -439,9 +442,10 @@ leaf_pub_key: LeafPublicKeyBuffer = .empty,
 /// Optional caller-owned storage for a handshake message that spans encrypted
 /// records. Empty means spanning messages are rejected with UnexpectedEof.
 handshake_buf: HandshakeBuffer = .empty,
-/// Consecutive post-handshake messages seen with no intervening application
-/// data; reset by application data. Bounds KeyUpdate-flood DoS.
-post_handshake_count: u8 = 0,
+/// Consecutive KeyUpdates seen with no intervening application data.
+post_handshake_key_update_count: u8 = 0,
+/// Consecutive NewSessionTickets seen with no intervening application data.
+post_handshake_new_session_ticket_count: u8 = 0,
 /// Ordered verification progress through the server flight. Finished emission
 /// requires Certificate, CertificateVerify, and Finished to verify in sequence.
 server_flight_progress: ServerFlightProgress = .none,
@@ -1664,12 +1668,13 @@ pub const ReceiveError = RecordLayer.DecryptError || SendError || alert.ParseErr
         UnexpectedMessage,
         IllegalParameter,
         TooManyKeyUpdates,
+        TooManyNewSessionTickets,
         PeerAlert,
     };
 
 // Connected-phase inbound: the engine owns the receive path so post-handshake
-// control messages (KeyUpdate) are routed and answered correctly and the flood
-// counter sees the full record stream. RFC 8446 §4.6.3, §7.2.
+// control messages are routed and answered correctly and the separate flood
+// counters see the full record stream. RFC 8446 §4.6.1, §4.6.3, §7.2.
 //
 // Decrypts with rx and dispatches on the inner content type: application data
 // is returned to the caller; a requested KeyUpdate is answered with our own
@@ -1680,7 +1685,10 @@ fn receiveConnected(self: *ClientHandshake, record: []u8, out: []u8) ReceiveErro
     const dec = try handshake.decryptProtected(&self.rx, record);
     switch (dec.content_type) {
         .application_data => {
-            if (dec.content.len > 0) self.post_handshake_count = 0;
+            if (dec.content.len > 0) {
+                self.post_handshake_key_update_count = 0;
+                self.post_handshake_new_session_ticket_count = 0;
+            }
             return .{ .application_data = dec.content };
         },
         .handshake => {
@@ -1690,11 +1698,14 @@ fn receiveConnected(self: *ClientHandshake, record: []u8, out: []u8) ReceiveErro
             var nst_event: ?NewSessionTicket = null;
             var hr: HandshakeReader = .init(dec.content);
             while (try hr.next()) |msg| {
-                self.post_handshake_count +|= 1;
-                if (self.post_handshake_count > max_post_handshake_messages)
-                    return error.TooManyKeyUpdates;
                 switch (msg.type) {
                     .key_update => {
+                        self.post_handshake_key_update_count +|= 1;
+                        if (self.post_handshake_key_update_count >
+                            max_post_handshake_key_updates)
+                        {
+                            return error.TooManyKeyUpdates;
+                        }
                         // RFC 8446 §5.1: a message immediately preceding a key
                         // change MUST align with a record boundary. A KeyUpdate
                         // sharing its record with anything that follows would be
@@ -1712,6 +1723,12 @@ fn receiveConnected(self: *ClientHandshake, record: []u8, out: []u8) ReceiveErro
                         saw_key_update = true;
                     },
                     .new_session_ticket => {
+                        self.post_handshake_new_session_ticket_count +|= 1;
+                        if (self.post_handshake_new_session_ticket_count >
+                            max_post_handshake_new_session_tickets)
+                        {
+                            return error.TooManyNewSessionTickets;
+                        }
                         // Parse and surface to the caller; the caller calls
                         // deriveSessionTicket to store resumption material.
                         // RFC 8446 §4.6.1. If multiple tickets are coalesced in
@@ -2932,9 +2949,10 @@ fn connectedTestClient() !ClientHandshake {
     return hs;
 }
 
-test "handleRecord: application data returns plaintext and resets the flood counter" {
+test "handleRecord: application data resets both post-handshake flood counters" {
     var hs = try connectedTestClient();
-    hs.post_handshake_count = 5; // pretend we saw some control messages
+    hs.post_handshake_key_update_count = 5;
+    hs.post_handshake_new_session_ticket_count = 7;
 
     // The server's sending layer mirrors our rx (server app key, seq 0).
     var server_tx = try hs.rx.clone();
@@ -2947,7 +2965,8 @@ test "handleRecord: application data returns plaintext and resets the flood coun
     var out: [64]u8 = undefined;
     const ev = try hs.handleRecord(rx_buf[0..app_record.len], &out);
     try testing.expectEqualSlices(u8, "ping", ev.application_data);
-    try testing.expectEqual(@as(u8, 0), hs.post_handshake_count);
+    try testing.expectEqual(@as(u8, 0), hs.post_handshake_key_update_count);
+    try testing.expectEqual(@as(u8, 0), hs.post_handshake_new_session_ticket_count);
 }
 
 // RFC 8446 §4.6.3 — a server KeyUpdate(update_requested) must ratchet our
@@ -3631,6 +3650,53 @@ test "handleRecord: PSK-offering client rejects bare Finished unless server sele
     try testing.expect(client2.isConnected());
 }
 
+// RFC 8446 §4.6.1 — servers may send multiple NewSessionTicket messages;
+// their burst accounting must not consume the KeyUpdate flood budget.
+test "handleRecord: accepts 17 consecutive NewSessionTickets" {
+    var hs = try connectedTestClient();
+    var server_tx = try hs.rx.clone();
+    defer server_tx.deinit();
+
+    const ticket = [_]u8{
+        0x04, 0x00, 0x00, 0x0f,
+        0x00, 0x00, 0x0e, 0x10,
+        0x12, 0x34, 0x56, 0x78,
+        0x01, 0xaa, 0x00, 0x01,
+        0xbb, 0x00, 0x00,
+    };
+    var wire_buf: [128]u8 = undefined;
+    var out: [128]u8 = undefined;
+    for (0..17) |_| {
+        const record = try server_tx.encrypt(.handshake, &ticket, &wire_buf);
+        const ev = try hs.handleRecord(record, &out);
+        try testing.expect(ev == .new_session_ticket);
+    }
+}
+
+// RFC 8446 §4.6.1 — an excessive burst of NewSessionTickets is rejected with
+// a ticket-specific error rather than being mislabeled as a KeyUpdate flood.
+test "handleRecord: NewSessionTicket flood is rejected with ticket-specific error" {
+    var hs = try connectedTestClient();
+    var server_tx = try hs.rx.clone();
+    defer server_tx.deinit();
+
+    const ticket = [_]u8{
+        0x04, 0x00, 0x00, 0x0f,
+        0x00, 0x00, 0x0e, 0x10,
+        0x12, 0x34, 0x56, 0x78,
+        0x01, 0xaa, 0x00, 0x01,
+        0xbb, 0x00, 0x00,
+    };
+    var wire_buf: [128]u8 = undefined;
+    var out: [128]u8 = undefined;
+    var count: usize = 0;
+    const result = while (count < max_post_handshake_new_session_tickets + 1) : (count += 1) {
+        const record = try server_tx.encrypt(.handshake, &ticket, &wire_buf);
+        _ = hs.handleRecord(record, &out) catch |err| break err;
+    } else error.NoError;
+    try testing.expectEqual(error.TooManyNewSessionTickets, result);
+}
+
 test "handleRecord: malformed NewSessionTicket is rejected" {
     var hs = try connectedTestClient();
     const next_rx = try hs.suite.ratchetServerKey();
@@ -3645,6 +3711,7 @@ test "handleRecord: malformed NewSessionTicket is rejected" {
     try testing.expectError(error.UnexpectedEof, hs.handleRecord(record, &out));
 }
 
+// RFC 8446 §4.6.3 — consecutive KeyUpdates remain independently bounded.
 test "handleRecord: KeyUpdate flood is rejected" {
     var hs = try connectedTestClient();
     var out: [64]u8 = undefined;
@@ -3655,7 +3722,7 @@ test "handleRecord: KeyUpdate flood is rejected" {
     const H = hkdf.HkdfSha256;
     var server_secret = hs.suite.sha256.server_app_secret;
     var i: usize = 0;
-    const result = while (i < max_post_handshake_messages + 1) : (i += 1) {
+    const result = while (i < max_post_handshake_key_updates + 1) : (i += 1) {
         var server_tx = try H.makeRecordLayer(.aes_128_gcm_sha256, server_secret);
         defer server_tx.deinit();
         const ku = [_]u8{ 0x18, 0x00, 0x00, 0x01, 0x00 };
@@ -3672,9 +3739,10 @@ test "handleRecord: KeyUpdate flood is rejected" {
 // RFC 8446 §5.1 — empty application-data records are valid TLS 1.3 but
 // carry no user data. They must not reset the KeyUpdate flood counter;
 // otherwise an attacker can interleave empty records to bypass the cap.
-test "handleRecord: empty application data does not reset flood counter" {
+test "handleRecord: empty application data does not reset flood counters" {
     var hs = try connectedTestClient();
-    hs.post_handshake_count = 7;
+    hs.post_handshake_key_update_count = 7;
+    hs.post_handshake_new_session_ticket_count = 9;
 
     var server_tx = try hs.rx.clone();
     defer server_tx.deinit();
@@ -3686,7 +3754,8 @@ test "handleRecord: empty application data does not reset flood counter" {
     var out: [64]u8 = undefined;
     const ev = try hs.handleRecord(rx_buf[0..app_record.len], &out);
     try testing.expectEqualSlices(u8, "", ev.application_data);
-    try testing.expectEqual(@as(u8, 7), hs.post_handshake_count);
+    try testing.expectEqual(@as(u8, 7), hs.post_handshake_key_update_count);
+    try testing.expectEqual(@as(u8, 9), hs.post_handshake_new_session_ticket_count);
 }
 
 // RFC 8446 §4.6.3, §5.1 — the KeyUpdate flood cap must fire even when
@@ -3700,7 +3769,7 @@ test "handleRecord: KeyUpdate flood cap fires despite empty app-data interleavin
     var peer_tx = try H.makeRecordLayer(.aes_128_gcm_sha256, server_secret);
 
     var i: usize = 0;
-    const result = while (i < max_post_handshake_messages + 1) : (i += 1) {
+    const result = while (i < max_post_handshake_key_updates + 1) : (i += 1) {
         const ku = [_]u8{
             @intFromEnum(HandshakeType.key_update),              0x00, 0x00, 0x01,
             @intFromEnum(KeyUpdateRequest.update_not_requested),
