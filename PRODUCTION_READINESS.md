@@ -366,7 +366,13 @@ data to openssl s_server and receives the HTTP response.
     never acceptable; the only reachable errnos are EINTR/EAGAIN (handled) or
     EFAULT/EINVAL/ENOSYS, which indicate a ztls or kernel bug, not a recoverable
     condition. Converting to an error would make every `.generate()` convenience
-    constructor fallible for no practical embedder benefit. H12 (post-handshake KeyUpdate counter) is
+    constructor fallible for no practical embedder benefit. This is consistent
+    with BoringSSL/AWS-LC backends, which abort on RAND failure. The fail-stop
+    contract is now documented on `entropy.fill` and on the `generate()`
+    convenience constructors (x25519/p256/p384), and the `getrandom` abort now
+    emits an actionable errno message (`ztls: OS CSPRNG getrandom failed with
+    errno {d}; cannot generate key material without entropy`) so embedders can
+    diagnose the root cause rather than seeing a bare library panic. H12 (post-handshake KeyUpdate counter) is
   deliberately NOT taken as specified: the audit's "don't reset on app data"
   would make the bound a lifetime cap of 16 KeyUpdates and break long-lived
   high-throughput connections; the current reset-on-app-data burst counter

@@ -6,6 +6,10 @@ const std = @import("std");
 const testing = std.testing;
 const builtin = @import("builtin");
 
+/// Fill `buf` from the OS CSPRNG. Aborts the process if the OS CSPRNG is
+/// unavailable — an unrecoverable condition (getrandom flags=0 only fails on
+/// EFAULT/EINVAL/ENOSYS, i.e. programming or kernel bugs; EINTR/EAGAIN are
+/// retried; macOS arc4random_buf cannot fail).
 pub fn fill(buf: []u8) void {
     switch (builtin.os.tag) {
         .linux => fillLinux(buf),
@@ -27,7 +31,11 @@ fn fillLinux(buf: []u8) void {
         const errno: usize = @intCast(-signed_rc);
         switch (errno) {
             4, 11 => continue, // EINTR, EAGAIN
-            else => @panic("getrandom failed"),
+            else => std.debug.panic(
+                "ztls: OS CSPRNG getrandom failed with errno {d}; " ++
+                    "cannot generate key material without entropy",
+                .{errno},
+            ),
         }
     }
 }

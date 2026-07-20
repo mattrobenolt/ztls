@@ -24,6 +24,9 @@ pub const KeyPair = struct {
     secret_key: SecretKey,
     public_key: PublicKey,
 
+    /// Generate a keypair using the OS CSPRNG. Aborts if the CSPRNG is
+    /// unavailable (see `entropy.fill`); use `generateDeterministic` with your
+    /// own seed if you need to own entropy or handle failure.
     pub fn generate() KeyPair {
         var secret_key: [secret_length]u8 = undefined;
         entropy.fill(&secret_key);
