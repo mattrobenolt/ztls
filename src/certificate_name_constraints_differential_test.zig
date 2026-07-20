@@ -16,14 +16,9 @@
 //! Ground truth is `openssl verify -CAfile root -untrusted inter leaf`; ztls's
 //! verdict is `intermediate.verifyNameConstraints(leaf)` on the same DER.
 //!
-//! DOCUMENTED DIVERGENCE (security-issue follow-up): ztls routes rfc822Name and
-//! uniformResourceIdentifier *host* constraints (no leading dot) through dNSName
-//! subtree matching, which allows label-prefixing. RFC 5280 §4.2.1.10 says a
-//! mail/URI constraint without a leading period specifies a HOST (exact match);
-//! only a leading-period constraint (".example.com") matches the subtree. So a
-//! sub-CA permitted only `email:example.com` / `URI:example.com` can still issue
-//! `user@host.example.com` / `https://host.example.com` — an escape OpenSSL
-//! blocks. The dNSName and iPAddress paths agree with OpenSSL.
+//! ztls now agrees with OpenSSL on every case. The former rfc822Name/URI
+//! bare-host subtree divergence (#75) was fixed: bare-host constraints now do
+//! exact host matching per RFC 5280 §4.2.1.10.
 
 const std = @import("std");
 const testing = std.testing;
@@ -276,7 +271,7 @@ const cases = [_]Case{
     .{
         .name = "email_sub__email_hostperm",
         .openssl_ok = false,
-        .ztls_ok = true,
+        .ztls_ok = false,
         .inter_b64 = "MIIBujCCAWCgAwIBAgIUfIXDd6WpQ1DRce6dL3A/5kNomsIwCgYIKoZIzj0EAwIwEjEQMA4G" ++
             "A1UEAwwHbmMtcm9vdDAeFw0yNjA3MTUyMDEyMTRaFw0zNjA3MTIyMDEyMTRaMCIxIDAeBgNV" ++
             "BAMMF25jLWludGVyLWVtYWlsX2hvc3RwZXJtMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE" ++
@@ -414,7 +409,7 @@ const cases = [_]Case{
     .{
         .name = "email_sub__email_hostexcl",
         .openssl_ok = true,
-        .ztls_ok = false,
+        .ztls_ok = true,
         .inter_b64 = "MIIBujCCAWCgAwIBAgIUfIXDd6WpQ1DRce6dL3A/5kNomsUwCgYIKoZIzj0EAwIwEjEQMA4G" ++
             "A1UEAwwHbmMtcm9vdDAeFw0yNjA3MTUyMDEyMTRaFw0zNjA3MTIyMDEyMTRaMCIxIDAeBgNV" ++
             "BAMMF25jLWludGVyLWVtYWlsX2hvc3RleGNsMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE" ++
@@ -506,7 +501,7 @@ const cases = [_]Case{
     .{
         .name = "uri_sub__uri_hostperm",
         .openssl_ok = false,
-        .ztls_ok = true,
+        .ztls_ok = false,
         .inter_b64 = "MIIBtzCCAV6gAwIBAgIUfIXDd6WpQ1DRce6dL3A/5kNomscwCgYIKoZIzj0EAwIwEjEQMA4G" ++
             "A1UEAwwHbmMtcm9vdDAeFw0yNjA3MTUyMDEyMTRaFw0zNjA3MTIyMDEyMTRaMCAxHjAcBgNV" ++
             "BAMMFW5jLWludGVyLXVyaV9ob3N0cGVybTBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABFS0" ++
@@ -552,7 +547,7 @@ const cases = [_]Case{
     .{
         .name = "uri_userport__uri_hostperm",
         .openssl_ok = false,
-        .ztls_ok = true,
+        .ztls_ok = false,
         .inter_b64 = "MIIBtzCCAV6gAwIBAgIUfIXDd6WpQ1DRce6dL3A/5kNomscwCgYIKoZIzj0EAwIwEjEQMA4G" ++
             "A1UEAwwHbmMtcm9vdDAeFw0yNjA3MTUyMDEyMTRaFw0zNjA3MTIyMDEyMTRaMCAxHjAcBgNV" ++
             "BAMMFW5jLWludGVyLXVyaV9ob3N0cGVybTBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABFS0" ++
@@ -685,22 +680,8 @@ const cases = [_]Case{
     },
 };
 
-// ztls accepts, OpenSSL rejects — sub-CA escaping an rfc822Name/URI host
-// constraint (#75). Fixing #75 flips these to agreement and must remove them.
-const known_bypass = [_][]const u8{
-    "email_sub__email_hostperm",
-    "uri_sub__uri_hostperm",
-    "uri_userport__uri_hostperm",
-};
-// ztls rejects, OpenSSL accepts — same root cause, fail-closed direction (#75).
-const known_overstrict = [_][]const u8{
-    "email_sub__email_hostexcl",
-};
-
-fn inSet(set: []const []const u8, name: []const u8) bool {
-    for (set) |s| if (std.mem.eql(u8, s, name)) return true;
-    return false;
-}
+// All rfc822Name/URI host-constraint divergences resolved (#75): bare-host
+// constraints now do exact host matching per RFC 5280 §4.2.1.10.
 
 fn decode(buf: []u8, b64: []const u8) []const u8 {
     const n = std.base64.standard.Decoder.calcSizeForSlice(b64) catch unreachable;
@@ -709,10 +690,7 @@ fn decode(buf: []u8, b64: []const u8) []const u8 {
 }
 
 // RFC 5280 §4.2.1.10 / RFC 8446 §4.4.2 — verifyNameConstraints must match the
-// verdict OpenSSL reaches on the same DER, except for the documented
-// rfc822Name/URI host-subtree divergences in `known_bypass` / `known_overstrict`.
-// Any new disagreement, or a divergence disappearing because the bug was fixed,
-// trips this test so the surface stays pinned.
+// verdict OpenSSL reaches on the same DER. Any disagreement trips this test.
 test "RFC 5280 §4.2.1.10 name-constraint verdicts vs OpenSSL 3.6.3 ground truth" {
     var ibuf: [4096]u8 = undefined;
     var lbuf: [4096]u8 = undefined;
@@ -730,34 +708,11 @@ test "RFC 5280 §4.2.1.10 name-constraint verdicts vs OpenSSL 3.6.3 ground truth
             return e;
         };
 
-        // Differential classification against OpenSSL.
-        if (ztls_ok != c.openssl_ok) {
-            const documented = inSet(&known_bypass, c.name) or
-                inSet(&known_overstrict, c.name);
-            testing.expect(documented) catch |e| {
-                std.debug.print("UNDOCUMENTED disagreement: {s}\n", .{c.name});
-                return e;
-            };
-        }
-    }
-}
-
-// Guard the documented bypass set: each listed case must still be an
-// accepted-by-ztls / rejected-by-OpenSSL escape. If a fix lands, this test
-// fails and forces the list (and security-issue status) to be updated.
-test "RFC 5280 §4.2.1.10 documented name-constraint bypasses are still present" {
-    var ibuf: [4096]u8 = undefined;
-    var lbuf: [4096]u8 = undefined;
-    for (known_bypass) |name| {
-        const c = for (cases) |cc| {
-            if (std.mem.eql(u8, cc.name, name)) break cc;
-        } else unreachable;
-        const inter_cert: Certificate = .{ .buffer = decode(&ibuf, c.inter_b64), .index = 0 };
-        const leaf_cert: Certificate = .{ .buffer = decode(&lbuf, c.leaf_b64), .index = 0 };
-        const inter = try inter_cert.parse();
-        const leaf = try leaf_cert.parse();
-        const ztls_ok = if (inter.verifyNameConstraints(leaf)) true else |_| false;
-        try testing.expect(ztls_ok and !c.openssl_ok);
+        // ztls must agree with OpenSSL on every case (#75 resolved).
+        testing.expectEqual(c.openssl_ok, ztls_ok) catch |e| {
+            std.debug.print("DISAGREEMENT with OpenSSL: {s}\n", .{c.name});
+            return e;
+        };
     }
 }
 

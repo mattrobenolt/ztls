@@ -339,8 +339,12 @@ data to openssl s_server and receives the HTTP response.
     `.send_finished`. Fixing it needs an API/state-machine channel to surface
     pre-connected app data; interop feature, not a security bug.
   - H21 (remainder) — SHA-1 in chain signatures (security-vs-interop tradeoff)
-    and IDNA/A-label handling (feature gap) remain explicit policy decisions;
-    rfc822/URI name-constraint bare-host is #75.
+    and IDNA/A-label handling (feature gap) remain explicit policy decisions.
+  - #75 (fixed) — rfc822Name/URI bare-host name-constraint escape: bare-host
+    constraints (no leading `.`) now do exact host matching per RFC 5280
+    §4.2.1.10, instead of being routed through `dnsNameInSubtree` (subtree
+    match). Leading-`.` constraints keep subtree semantics. The differential
+    test against OpenSSL 3.6.3 now agrees on every case.
   - H22 — `entropy.fillLinux` panics on an unexpected `getrandom` errno.
     Decision: keep the fail-stop. For a CSPRNG, proceeding without entropy is
     never acceptable; the only reachable errnos are EINTR/EAGAIN (handled) or
@@ -370,8 +374,9 @@ data to openssl s_server and receives the HTTP response.
   / Finished before promoting to app keys; server must verify client Finished).
 - RFC 5280 name constraints are enforced in the certificate path for DNS, IP,
   rfc822Name, and URI GeneralName forms, including permitted/excluded subtree
-  tests, critical unsupported-subtree rejection, and real chain fixtures for DNS
-  permitted/excluded behavior.
+  tests, bare-host exact-match for rfc822/URI (§4.2.1.10), critical
+  unsupported-subtree rejection, and a differential test corpus against OpenSSL
+  3.6.3 covering all four GeneralName forms (#75 resolved).
 
 **Status:** `PROVEN`
 

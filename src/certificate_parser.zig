@@ -460,12 +460,18 @@ pub const Parsed = struct {
 
     fn emailNameInSubtree(name: []const u8, subtree: []const u8) bool {
         if (mem.indexOfScalar(u8, subtree, '@')) |subtree_at| {
+            // Exact mailbox constraint: "user@host" matches only that address.
             const name_at = mem.lastIndexOfScalar(u8, name, '@') orelse return false;
             return mem.eql(u8, name[0..name_at], subtree[0..subtree_at]) and
                 std.ascii.eqlIgnoreCase(name[name_at + 1 ..], subtree[subtree_at + 1 ..]);
         }
+        // Host-only constraint. RFC 5280 §4.2.1.10: a bare host (no leading
+        // '.') is an exact host match; a leading '.' matches any subdomain.
         const at = mem.lastIndexOfScalar(u8, name, '@') orelse return false;
-        return dnsNameInSubtree(name[at + 1 ..], subtree);
+        const host = name[at + 1 ..];
+        if (subtree.len > 0 and subtree[0] == '.')
+            return dnsNameInSubtree(host, subtree);
+        return asciiEqlIgnoreCaseTrim(host, subtree);
     }
 
     fn uriNameInSubtree(uri: []const u8, subtree: []const u8) bool {
@@ -474,7 +480,11 @@ pub const Parsed = struct {
         if (mem.indexOfAny(u8, authority, "/?#")) |end| authority = authority[0..end];
         if (mem.indexOfScalar(u8, authority, '@')) |at| authority = authority[at + 1 ..];
         if (mem.indexOfScalar(u8, authority, ':')) |port| authority = authority[0..port];
-        return dnsNameInSubtree(authority, subtree);
+        // RFC 5280 §4.2.1.10: a bare host (no leading '.') is an exact host
+        // match; a leading '.' matches any subdomain.
+        if (subtree.len > 0 and subtree[0] == '.')
+            return dnsNameInSubtree(authority, subtree);
+        return asciiEqlIgnoreCaseTrim(authority, subtree);
     }
 
     fn baseDistanceIsZero(distance: []const u8) bool {
@@ -507,6 +517,12 @@ pub const Parsed = struct {
     fn asciiEndsWithIgnoreCase(value: []const u8, suffix: []const u8) bool {
         if (value.len < suffix.len) return false;
         return std.ascii.eqlIgnoreCase(value[value.len - suffix.len ..], suffix);
+    }
+
+    /// Case-insensitive equality after trimming trailing dots from both sides.
+    /// Used for RFC 5280 §4.2.1.10 bare-host rfc822Name/URI exact-match checks.
+    fn asciiEqlIgnoreCaseTrim(a: []const u8, b: []const u8) bool {
+        return std.ascii.eqlIgnoreCase(trimTrailingDot(a), trimTrailingDot(b));
     }
 
     /// RFC 5280 §4.2.1.3 — KeyUsage is a BIT STRING. Missing extension means
