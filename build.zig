@@ -193,6 +193,12 @@ pub fn build(b: *Build) void {
             .root_module = capi_mod,
             .linkage = .static,
         });
+        // Zig 0.15's self-hosted ELF archiver (the default for Debug) can emit
+        // truncated/malformed archives in some CI environments even for a
+        // clean single-object .a (ziglang/zig#25129). Using the LLVM toolchain
+        // routes archiving through llvm-ar, which produces a well-formed
+        // archive. Local builds never reproduced the bug; this guards CI.
+        libztls.use_llvm = true;
         const install_lib = b.addInstallArtifact(libztls, .{});
         const install_header = b.addInstallFile(b.path("include/ztls.h"), "include/ztls.h");
 
