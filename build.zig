@@ -152,9 +152,9 @@ pub fn build(b: *Build) void {
     docs_step.dependOn(&docs_install.step);
 
     // C ABI library (-Dcapi)
-    // Produces libztls.a (static) from src/capi.zig, linking libc and
-    // libcrypto. Installs include/ztls.h alongside. Behind the option so
-    // default builds are unaffected. #30.
+    // Produces libztls.a (static) from src/capi.zig. Consumers link a compatible
+    // libcrypto-family library. Installs include/ztls.h alongside. Behind the
+    // option so default builds are unaffected. #30.
     const capi = b.option(bool, "capi", "Build the C ABI library (libztls.a)") orelse false;
     if (capi) {
         const capi_mod = b.createModule(.{
@@ -164,7 +164,29 @@ pub fn build(b: *Build) void {
         });
         capi_mod.addOptions("build_options", build_options);
         capi_mod.link_libc = true;
-        capi_mod.linkSystemLibrary("crypto", .{});
+
+        const crypto_cflags = b.run(&.{ "pkg-config", "--cflags-only-I", "libcrypto" });
+        var include_flags = std.mem.tokenizeAny(u8, crypto_cflags, " \t\r\n");
+        var include_count: usize = 0;
+        while (include_flags.next()) |flag| {
+            const include_dir: []const u8 = if (std.mem.eql(u8, flag, "-I"))
+                include_flags.next() orelse panic("pkg-config returned -I without a path", .{})
+            else if (std.mem.startsWith(u8, flag, "-I"))
+                flag[2..]
+            else
+                panic("unexpected pkg-config --cflags-only-I output: {s}", .{flag});
+            if (include_dir.len == 0) panic("pkg-config returned an empty include path", .{});
+            capi_mod.addSystemIncludePath(.{ .cwd_relative = include_dir });
+            include_count += 1;
+        }
+        if (include_count == 0) {
+            const includedir_output = b.run(&.{
+                "pkg-config", "--variable=includedir", "libcrypto",
+            });
+            const include_dir = std.mem.trim(u8, includedir_output, " \t\r\n");
+            if (include_dir.len == 0) panic("libcrypto pkg-config includedir is empty", .{});
+            capi_mod.addSystemIncludePath(.{ .cwd_relative = include_dir });
+        }
 
         const libztls = b.addLibrary(.{
             .name = "ztls",

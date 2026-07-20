@@ -3,8 +3,9 @@
 The C ABI surface tracked by #30 lands `ztls_client_*`, `ztls_server_*`, and
 `ztls_record_buffer_*` symbols as `extern struct` types with a fixed-size
 opaque-byte region for internal state. The packaging step in #30's plan —
-"build the C ABI and compile + run the C example" — proves the shared library
-output and one self-contained round-trip; it does not prove the C ABI as an
+"build the C ABI and compile + run the C example" — produces the static
+`libztls.a` archive and proves one C example can link it with a compatible
+libcrypto-family library (`-lcrypto`); it does not prove the C ABI as an
 external conformant boundary. This note describes how the conformance harness
 extends to drive that boundary end-to-end through TLS-Anvil, what the
 before-close acceptance gate looks like, and what a C harness deliberately
@@ -23,12 +24,12 @@ into the `ztls_event` flat struct, wrong opaque-byte sizing for
 because the Zig path sees the underlying Zig type.
 
 A layout or buffer-ownership bug that survives the Zig harness is invisible
-to the existing TLS-Anvil evidence. The shared library builds, the C example
-echoes a single byte, and a real conversation still corrupts handshake state
-two flights later. The smallest honest slice that surfaces that class of bug
-is a TLS-Anvil trigger script driving a C harness through `libztls.so` (or a
-Zig driver built against `libztls.so` via `@cImport` — same contract from
-TLS-Anvil's perspective, same evidence weight).
+to the existing TLS-Anvil evidence. The static archive can build, the C example
+can link it with `-lcrypto` and echo a single byte, and a real conversation can
+still corrupt handshake state two flights later. The smallest honest slice that
+surfaces that class of bug is a TLS-Anvil trigger script driving a C harness
+through the published `libztls.a`. A future dynamic-library deliverable could
+instead use `libztls.so` / `libztls.dylib` without changing the evidence weight.
 
 ## Before-close acceptance gate
 
@@ -52,10 +53,12 @@ The harness can be one of:
   TLS-Anvil by `scripts/anvil_client.py` — only the `--trigger-script`
   binary target changes; no schema change to the runner.
 
-- `conformance/src/c_anvil_client.zig` — a Zig driver built against
-  `libztls.so` / `libztls.dylib` via `@cImport("ztls.h")`. Valid only as an
-  evidence lane if it links against the published shared library artifact
-  (not the in-tree module). This satisfies the acceptance gate without
+- `conformance/src/c_anvil_client.zig` — a Zig driver built against the
+  published `libztls.a` via `@cImport("ztls.h")`, with a compatible
+  libcrypto-family library linked by the consumer. A future dynamic-library
+  lane could use `libztls.so` / `libztls.dylib`. This is valid only as an
+  evidence lane if it links against the published library artifact (not the
+  in-tree module). This satisfies the acceptance gate without
   forcing a C toolchain into the CI matrix. A real `conformance/c_anvil_client.c`
   is still wanted as a deliverable so C consumers have a complete
   driver reference.
@@ -276,7 +279,8 @@ there whether the runner cost has paid off.
 The before-close acceptance gate for #30 is:
 
 1. `conformance/c_anvil_client.c` (or the Zig-vs-C-ABI alternative) drives
-   a TLS 1.3 client handshake through `libztls.so` for every TLS-Anvil
+   a TLS 1.3 client handshake through the published `libztls.a`, linked by the
+   consumer with a compatible libcrypto-family library, for every TLS-Anvil
    client case the existing strict client capture exercises.
 2. The resulting `report.normalized.json` matches the existing strict
    Zig capture on every count bucket: `passed`, `expected_failed == 6`,

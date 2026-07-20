@@ -80,6 +80,17 @@ capi-ci:
         exit 1
     fi
     libdir=$(dirname "$lib")
+    if command -v llvm-ar >/dev/null 2>&1; then
+        archive_members=$(llvm-ar t "$lib")
+    else
+        archive_members=$(ar t "$lib")
+    fi
+    printf '%s\n' "$archive_members"
+    shared_members=$(printf '%s\n' "$archive_members" | grep -E '(\.so$|\.so\.|\.dylib$)' || true)
+    if [ -n "$shared_members" ]; then
+        printf 'libztls.a contains shared-object archive members:\n%s\n' "$shared_members" >&2
+        exit 1
+    fi
     zig cc -o zig-out/c_client examples/c_client.c -I include -L "$libdir" -lztls -lcrypto -lm
     zig-out/c_client
 
