@@ -76,6 +76,16 @@ pub const WriteError = error{
     TlsAlertReceived,
 } || net.Stream.Writer.Error || Io.Cancelable || Io.UnexpectedError;
 
+/// Negotiated connection properties. Slices are borrowed and valid until
+/// `deinit`.
+pub const Info = struct {
+    cipher_suite: ztls.CipherSuite,
+    alpn: ?[]const u8,
+    /// Verified peer certificates, leaf first. The server side is empty until
+    /// client-certificate retention is added to Server.Options.
+    peer_chain: []const []const u8,
+};
+
 // ───────────────────────────────
 // Transport helpers
 // ───────────────────────────────
@@ -135,7 +145,11 @@ fn mapClientHandshakeError(err: anyerror) ConnectError {
 
         error.RecordTooLarge => error.HandshakeBufferTooShort,
 
-        else => @panic("unmapped ztls client handshake error"),
+        // Keep production callers insulated from core error-set growth. The
+        // test below reflects over the core set so a new variant is visible in
+        // CI, while an integration built against newer core code still gets a
+        // usable coarse error instead of a process abort.
+        else => error.HandshakeProtocolError,
     };
 }
 
@@ -159,7 +173,7 @@ fn mapServerHandshakeError(err: anyerror) AcceptError {
         error.NoApplicationProtocol => error.NoApplicationProtocol,
         error.RecordTooLarge => error.HandshakeBufferTooShort,
 
-        else => @panic("unmapped ztls server handshake error"),
+        else => error.HandshakeProtocolError,
     };
 }
 
@@ -172,27 +186,80 @@ fn mapServerHandshakeError(err: anyerror) AcceptError {
 const ReaderError = error{ ReadFailed, EndOfStream };
 const WriterError = error{WriteFailed};
 
-/// Comptime check: does the handshake Event type have a .new_session_ticket
-/// variant? ClientHandshake.Event does, ServerHandshake.Event does not.
-fn eventHasNst(comptime Event: type) bool {
-    inline for (@typeInfo(Event).@"union".fields) |f| {
-        if (mem.eql(u8, f.name, "new_session_ticket")) return true;
-    }
-    return false;
-}
+const Role = enum { client, server };
 
-fn StreamImpl(comptime Hs: type) type {
-    const has_nst = eventHasNst(Hs.Event);
+/// Client connection options. See `Client.connect`.
+const ClientOptions = struct {
+    /// SNI + certificate hostname (SAN/CN) to verify. Required for real
+    /// verification; null disables BOTH SNI and hostname verification
+    /// (ztls `host_name = null`).
+    host: ?[]const u8 = null,
+    /// Cert verification. Defaults to the OS trust bundle.
+    verify: Verify = .system_bundle,
+    /// ALPN protocols to offer (e.g. &.{ "h2", "http/1.1" }). Borrowed.
+    alpn: []const []const u8 = &.{},
+    /// Offer an X25519MLKEM768 hybrid key share (PQ). False by default.
+    offer_pq_key_share: bool = false,
+};
+
+/// Server connection options. See `Server.accept`.
+const ServerOptions = struct {
+    /// Certificate chain, leaf first, DER. Borrowed for the connection's life.
+    cert_chain: []const []const u8,
+    /// Signer for CertificateVerify. Obtained from
+    /// `var key: ztls.signature.PrivateKey = try .fromP256Scalar(scalar);
+    ///  defer key.deinit(); key.signer()` — the `PrivateKey` must outlive
+    /// the handshake (caller-owned). Borrowed.
+    signer: ztls.signature.Signer,
+    /// ALPN protocols supported. Borrowed.
+    alpn: []const []const u8 = &.{},
+};
+
+fn StreamImpl(comptime Hs: type, comptime role: Role) type {
     const Flag = enum {
         rx_closed,
         tx_closed,
         closed,
     };
     const Flags = std.EnumSet(Flag);
+    const WriteBuffer = ztls.Array(frame.max_plaintext_len);
+
+    const PeerCertificateStorage = if (role == .client)
+        ztls.Array(ztls.ClientHandshake.recommended_handshake_storage)
+    else
+        void;
 
     return struct {
         const Self = @This();
+        const ReaderEvent = union(enum) {
+            application_data: []const u8,
+            write: []const u8,
+            key_update: ?[]const u8,
+            none,
+            closed,
+        };
+
+        // The client alone receives NewSessionTicket. Normalize that difference
+        // at the engine boundary so the record loop has one event switch.
+        fn normalizeReaderEvent(event: Hs.Event) ReaderEvent {
+            return if (role == .client) switch (event) {
+                .application_data => |data| .{ .application_data = data },
+                .write => |data| .{ .write = data },
+                .key_update => |update| .{ .key_update = update.response },
+                .new_session_ticket, .none => .none,
+                .closed => .closed,
+            } else switch (event) {
+                .application_data => |data| .{ .application_data = data },
+                .write => |data| .{ .write = data },
+                .key_update => |update| .{ .key_update = update.response },
+                .none => .none,
+                .closed => .closed,
+            };
+        }
+
         pub const Handshake = Hs;
+
+        pub const Options = if (role == .client) ClientOptions else ServerOptions;
 
         sock: net.Stream,
         io: Io,
@@ -201,7 +268,8 @@ fn StreamImpl(comptime Hs: type) type {
         rb: RecordBuffer,
         out: Hs.OutBuffer,
         reassembly: Hs.Storage = .empty,
-        write_buffer: [frame.max_plaintext_len]u8 = undefined,
+        peer_certificate_storage: PeerCertificateStorage = undefined,
+        write_buffer: WriteBuffer = .empty,
         reader_impl: Reader,
         writer_impl: Writer,
         flags: Flags = .initEmpty(),
@@ -209,13 +277,16 @@ fn StreamImpl(comptime Hs: type) type {
         pub const Reader = struct {
             interface: Io.Reader,
 
-            pub fn init(_: *Self) Reader {
+            pub fn init(s: *Self) Reader {
                 return .{
                     .interface = .{
-                        .vtable = &.{
-                            .stream = streamImpl,
-                        },
-                        .buffer = &.{},
+                        .vtable = &.{ .stream = streamImpl },
+                        // Placeholder with nonzero capacity: refill repoints
+                        // buffer at each decrypted record, but generic
+                        // fillMore/rebase asserts buffer.len >= 1 before the
+                        // first refill. Never written through — stream()
+                        // ignores the writer side of the vtable contract.
+                        .buffer = &s.write_buffer.data,
                         .seek = 0,
                         .end = 0,
                     },
@@ -253,92 +324,59 @@ fn StreamImpl(comptime Hs: type) type {
             /// Returns 0 (data in buffer). EndOfStream = clean close_notify.
             fn refill(s: *Self, io_r: *Io.Reader) ReaderError!usize {
                 // RFC 8446 §6.1 — after close_notify or close(), reads return EndOfStream.
-                if (s.flags.contains(.closed) or s.flags.contains(.rx_closed)) return error.EndOfStream;
+                if (s.flags.contains(.closed) or s.flags.contains(.rx_closed))
+                    return error.EndOfStream;
                 while (true) {
                     while (true) {
                         const record = (s.rb.next() catch return error.ReadFailed) orelse break;
                         const ev = s.hs.handleRecord(record, &s.out.buffer) catch {
                             return error.ReadFailed;
                         };
-                        // Comptime-segregated exhaustive switch: ClientHandshake.Event
-                        // has .new_session_ticket, ServerHandshake.Event does not. Each
-                        // branch is exhaustive so adding a variant is a compile error.
-                        if (has_nst) {
-                            switch (ev) {
-                                .new_session_ticket => continue,
-                                .none => continue,
-                                .write => |w| {
+                        switch (normalizeReaderEvent(ev)) {
+                            .none => continue,
+                            .write => |bytes| {
+                                transportWriteAll(
+                                    s.io,
+                                    s.sock.socket.handle,
+                                    bytes,
+                                ) catch return error.ReadFailed;
+                                s.hs.completeWrite();
+                                continue;
+                            },
+                            .key_update => |response| {
+                                if (response) |bytes| {
                                     transportWriteAll(
                                         s.io,
                                         s.sock.socket.handle,
-                                        w,
+                                        bytes,
                                     ) catch return error.ReadFailed;
                                     s.hs.completeWrite();
-                                    continue;
-                                },
-                                .key_update => |ku| {
-                                    if (ku.response) |resp| {
-                                        transportWriteAll(
-                                            s.io,
-                                            s.sock.socket.handle,
-                                            resp,
-                                        ) catch return error.ReadFailed;
-                                        s.hs.completeWrite();
-                                    }
-                                    continue;
-                                },
-                                .closed => {
-                                    s.flags.insert(.rx_closed);
-                                    return error.EndOfStream;
-                                },
-                                .application_data => |app_data| {
-                                    io_r.buffer = @constCast(app_data);
-                                    io_r.seek = 0;
-                                    io_r.end = app_data.len;
-                                    return 0;
-                                },
-                            }
-                        } else {
-                            switch (ev) {
-                                .none => continue,
-                                .write => |w| {
-                                    transportWriteAll(
-                                        s.io,
-                                        s.sock.socket.handle,
-                                        w,
-                                    ) catch return error.ReadFailed;
-                                    s.hs.completeWrite();
-                                    continue;
-                                },
-                                .key_update => |ku| {
-                                    if (ku.response) |resp| {
-                                        transportWriteAll(
-                                            s.io,
-                                            s.sock.socket.handle,
-                                            resp,
-                                        ) catch return error.ReadFailed;
-                                        s.hs.completeWrite();
-                                    }
-                                    continue;
-                                },
-                                .closed => {
-                                    s.flags.insert(.rx_closed);
-                                    return error.EndOfStream;
-                                },
-                                .application_data => |app_data| {
-                                    io_r.buffer = @constCast(app_data);
-                                    io_r.seek = 0;
-                                    io_r.end = app_data.len;
-                                    return 0;
-                                },
-                            }
+                                }
+                                continue;
+                            },
+                            .closed => {
+                                s.flags.insert(.rx_closed);
+                                return error.EndOfStream;
+                            },
+                            .application_data => |app_data| {
+                                // RFC 8446 §5.1 — zero-length app-data
+                                // fragments are legal (traffic-analysis
+                                // countermeasure); they carry no bytes, so
+                                // skip them. Also keeps buffer.len >= 1 for
+                                // the generic rebase path.
+                                if (app_data.len == 0) continue;
+                                io_r.buffer = @constCast(app_data);
+                                io_r.seek = 0;
+                                io_r.end = app_data.len;
+                                return 0;
+                            },
                         }
                     }
 
                     const n = transportRead(s.io, s.sock.socket.handle, s.rb.writable()) catch {
                         return error.ReadFailed;
                     };
-                    if (n == 0) return error.ReadFailed;
+                    if (n == 0) return error.EndOfStream;
                     s.rb.advance(n);
                 }
             }
@@ -350,10 +388,8 @@ fn StreamImpl(comptime Hs: type) type {
             pub fn init(s: *Self) Writer {
                 return .{
                     .interface = .{
-                        .vtable = &.{
-                            .drain = drainImpl,
-                        },
-                        .buffer = &s.write_buffer,
+                        .vtable = &.{ .drain = drainImpl },
+                        .buffer = &s.write_buffer.data,
                     },
                 };
             }
@@ -374,20 +410,42 @@ fn StreamImpl(comptime Hs: type) type {
             return s.hs.selectedAlpnProtocol();
         }
 
+        /// Negotiated connection properties. Valid after connect or accept.
+        pub fn info(s: *const Self) Info {
+            return .{
+                .cipher_suite = s.hs.cipherSuite(),
+                .alpn = s.hs.selectedAlpnProtocol(),
+                .peer_chain = if (role == .client) s.hs.peerCertificateChain() else &.{},
+            };
+        }
+
+        /// True when a read can return data without touching the transport:
+        /// either the Reader still holds decrypted bytes or the RecordBuffer
+        /// already holds a complete record. Poll-style loops use this to drain
+        /// coalesced records without blocking.
+        pub fn hasBuffered(s: *Self) bool {
+            return s.reader_impl.interface.buffered().len > 0 or s.rb.hasRecord();
+        }
+
+        /// Send close_notify and keep reading until the peer closes. Idempotent.
+        ///
+        /// RFC 8446 §6.1 permits each direction to close independently.
+        pub fn closeWrite(s: *Self) void {
+            if (s.flags.contains(.closed) or s.flags.contains(.tx_closed)) return;
+            s.flags.insert(.tx_closed);
+
+            if (s.hs.sendAlert(.close_notify, &s.out.buffer)) |alert_record| {
+                transportWriteAll(s.io, s.sock.socket.handle, alert_record) catch return;
+                s.hs.completeWrite();
+            } else |_| return;
+        }
+
         /// Send close_notify and close the underlying socket. Idempotent.
-        pub fn close(s: *Self, io: Io) void {
+        pub fn close(s: *Self) void {
             if (s.flags.contains(.closed)) return;
+            s.closeWrite();
             s.flags.insert(.closed);
-
-            if (!s.flags.contains(.tx_closed)) {
-                s.flags.insert(.tx_closed);
-                if (s.hs.sendAlert(.close_notify, &s.out.buffer)) |alert_record| {
-                    transportWriteAll(io, s.sock.socket.handle, alert_record) catch {};
-                    s.hs.completeWrite();
-                } else |_| {}
-            }
-
-            s.sock.close(io);
+            s.sock.close(s.io);
             s.zeroWrapperBuffers();
             s.hs.deinit();
         }
@@ -407,7 +465,8 @@ fn StreamImpl(comptime Hs: type) type {
             s.storage.secureZero();
             s.out.secureZero();
             s.reassembly.secureZero();
-            crypto.secureZero(u8, &s.write_buffer);
+            s.write_buffer.secureZero();
+            if (role == .client) s.peer_certificate_storage.secureZero();
         }
 
         // ── Writer drain ──────────────
@@ -489,85 +548,126 @@ fn StreamImpl(comptime Hs: type) type {
             s.reader_impl = .init(s);
             s.writer_impl = .init(s);
         }
+
+        /// Client only. Wrap a CONNECTED `std.Io.net.Stream` and run the TLS
+        /// 1.3 handshake to completion. Moves the socket into `s`. Eager: all
+        /// handshake errors (cert verification, ALPN no-overlap, alerts)
+        /// surface here. `gpa` is used ONLY when `options.verify ==
+        /// .system_bundle` (to load the OS trust store); ignored otherwise.
+        pub fn connect(
+            s: *Self,
+            gpa: mem.Allocator,
+            io: Io,
+            sock: net.Stream,
+            options: Options,
+        ) ConnectError!void {
+            switch (role) {
+                .client => {
+                    var client_keypair: ztls.x25519.KeyPair = .generate();
+                    defer client_keypair.secureZero();
+                    var random: ztls.Random = .empty;
+                    io.random(&random.data);
+                    defer random.secureZero();
+
+                    const now_sec: i64 = Io.Timestamp.now(io, .real).toSeconds();
+
+                    var hs: ztls.ClientHandshake = .init(.{
+                        .keypairs = .init(client_keypair),
+                        .host_name = options.host,
+                        .now_sec = now_sec,
+                        .random = random,
+                        .alpn_protocols = options.alpn,
+                        .offer_pq_key_share = options.offer_pq_key_share,
+                    });
+
+                    var bundle: crypto.Certificate.Bundle = undefined;
+                    var bundle_loaded = false;
+                    defer if (bundle_loaded) bundle.deinit(gpa);
+
+                    switch (options.verify) {
+                        .system_bundle => {
+                            bundle = .empty;
+                            const bundle_now = Io.Timestamp.now(io, .real);
+                            bundle.rescan(gpa, io, bundle_now) catch |err| switch (err) {
+                                error.OutOfMemory => return error.OutOfMemory,
+                                else => return error.CertificateVerificationFailed,
+                            };
+                            bundle_loaded = true;
+                            hs.policy.bundle = &bundle;
+                        },
+                        .bundle => |b| {
+                            hs.policy.bundle = b;
+                        },
+                        .insecure => {
+                            hs.policy.insecure_no_chain_anchor = true;
+                        },
+                    }
+
+                    s.* = .init(io, sock, hs);
+                    s.finishInit();
+                    s.hs.usePeerCertificateBuffer(&s.peer_certificate_storage.data);
+
+                    try clientHandshakeDrive(s);
+
+                    // TLS 1.3 only needs the bundle during the handshake.
+                    s.hs.policy.bundle = null;
+                },
+                .server => @compileError("connect is client-only; use accept on ztls_std.Server"),
+            }
+        }
+
+        /// Server only. Wrap an ACCEPTED `std.Io.net.Stream` and run the
+        /// server-side handshake to completion. Moves the socket into `s`.
+        /// No allocator: the server presents, it does not anchor a chain.
+        pub fn accept(
+            s: *Self,
+            io: Io,
+            sock: net.Stream,
+            options: Options,
+        ) AcceptError!void {
+            switch (role) {
+                .server => {
+                    if (options.cert_chain.len == 0) return error.MissingCredentials;
+
+                    var server_keypair: ztls.x25519.KeyPair = .generate();
+                    defer server_keypair.secureZero();
+                    var random: ztls.Random = .empty;
+                    io.random(&random.data);
+                    defer random.secureZero();
+
+                    var hs: ztls.ServerHandshake = .init(.{
+                        .keypairs = .init(server_keypair),
+                        .random = random,
+                        .alpn_protocols = options.alpn,
+                    });
+                    hs.setCredentials(options.cert_chain, options.signer);
+
+                    s.* = .init(io, sock, hs);
+                    s.finishInit();
+
+                    try serverHandshakeDrive(s);
+                },
+                .client => @compileError("accept is server-only; use connect on ztls_std.Client"),
+            }
+        }
     };
 }
 
 // ───────────────────────────────
-// Client
+// Client / Server
 // ───────────────────────────────
 
-pub const Client = struct {
-    pub const Options = struct {
-        host: ?[]const u8 = null,
-        verify: Verify = .system_bundle,
-        alpn: []const []const u8 = &.{},
-        offer_pq_key_share: bool = false,
-    };
+/// A TLS 1.3 client connection. Sized ~130 KB (includes inline reassembly
+/// storage for multi-record certificate chains): declare with `undefined`
+/// and initialize in place via `connect` — the type is self-referential and
+/// must not be moved after connecting.
+pub const Client = StreamImpl(ztls.ClientHandshake, .client);
 
-    pub const Stream = StreamImpl(ztls.ClientHandshake);
-
-    /// Wrap a CONNECTED `std.Io.net.Stream` and run the TLS 1.3 handshake to
-    /// completion. Moves the socket into `out`. Eager: all handshake errors
-    /// surface here. `gpa` is used ONLY when `options.verify == .system_bundle`.
-    pub fn connect(
-        out: *Stream,
-        gpa: mem.Allocator,
-        io: Io,
-        sock: net.Stream,
-        options: Options,
-    ) ConnectError!void {
-        var client_keypair: ztls.x25519.KeyPair = .generate();
-        defer crypto.secureZero(u8, mem.asBytes(&client_keypair));
-        var random: ztls.Random = undefined;
-        io.random(&random.data);
-        defer crypto.secureZero(u8, mem.asBytes(&random));
-
-        const now_sec: i64 = Io.Timestamp.now(io, .real).toSeconds();
-
-        var hs: ztls.ClientHandshake = .init(.{
-            .keypairs = .init(client_keypair),
-            .host_name = options.host,
-            .now_sec = now_sec,
-            .random = random,
-            .alpn_protocols = options.alpn,
-            .offer_pq_key_share = options.offer_pq_key_share,
-        });
-
-        var bundle: crypto.Certificate.Bundle = undefined;
-        var bundle_loaded = false;
-        defer if (bundle_loaded) bundle.deinit(gpa);
-
-        switch (options.verify) {
-            .system_bundle => {
-                bundle = .empty;
-                const bundle_now = Io.Timestamp.now(io, .real);
-                bundle.rescan(gpa, io, bundle_now) catch |err| switch (err) {
-                    error.OutOfMemory => return error.OutOfMemory,
-                    else => return error.CertificateVerificationFailed,
-                };
-                bundle_loaded = true;
-                hs.policy.bundle = &bundle;
-            },
-            .bundle => |b| {
-                hs.policy.bundle = b;
-            },
-            .insecure => {
-                hs.policy.insecure_no_chain_anchor = true;
-            },
-        }
-
-        out.* = .init(io, sock, hs);
-        out.finishInit();
-
-        try clientHandshakeDrive(out);
-
-        // TLS 1.3 only needs the bundle during the handshake.
-        out.hs.policy.bundle = null;
-    }
-};
+/// A TLS 1.3 server connection. Same placement rules as `Client`.
+pub const Server = StreamImpl(ztls.ServerHandshake, .server);
 
 /// Drive the client handshake to completion.
-fn clientHandshakeDrive(s: *Client.Stream) ConnectError!void {
+fn clientHandshakeDrive(s: *Client) ConnectError!void {
     const io = s.io;
     const handle = s.sock.socket.handle;
 
@@ -604,51 +704,8 @@ fn clientHandshakeDrive(s: *Client.Stream) ConnectError!void {
     }
 }
 
-// ───────────────────────────────
-// Server
-// ───────────────────────────────
-
-pub const Server = struct {
-    pub const Options = struct {
-        cert_chain: []const []const u8,
-        signer: ztls.signature.Signer,
-        alpn: []const []const u8 = &.{},
-    };
-
-    pub const Stream = StreamImpl(ztls.ServerHandshake);
-
-    /// Wrap an ACCEPTED `std.Io.net.Stream` and run the server-side handshake
-    /// to completion. Moves the socket into `out`. No allocator.
-    pub fn accept(
-        out: *Stream,
-        io: Io,
-        sock: net.Stream,
-        options: Options,
-    ) AcceptError!void {
-        if (options.cert_chain.len == 0) return error.MissingCredentials;
-
-        var server_keypair: ztls.x25519.KeyPair = .generate();
-        defer crypto.secureZero(u8, mem.asBytes(&server_keypair));
-        var random: ztls.Random = undefined;
-        io.random(&random.data);
-        defer crypto.secureZero(u8, mem.asBytes(&random));
-
-        var hs: ztls.ServerHandshake = .init(.{
-            .keypairs = .init(server_keypair),
-            .random = random,
-            .alpn_protocols = options.alpn,
-        });
-        hs.setCredentials(options.cert_chain, options.signer);
-
-        out.* = .init(io, sock, hs);
-        out.finishInit();
-
-        try serverHandshakeDrive(out);
-    }
-};
-
 /// Drive the server handshake to completion.
-fn serverHandshakeDrive(s: *Server.Stream) AcceptError!void {
+fn serverHandshakeDrive(s: *Server) AcceptError!void {
     const io = s.io;
     const handle = s.sock.socket.handle;
 
@@ -777,8 +834,8 @@ fn roundTripServerRun(ctx: *RoundTripServerCtx) void {
     };
     defer key.deinit();
 
-    var conn: Server.Stream = undefined;
-    Server.accept(&conn, io, server_sock, .{
+    var conn: Server = undefined;
+    conn.accept(io, server_sock, .{
         .cert_chain = &.{test_cert_der},
         .signer = key.signer(),
         .alpn = &.{"h2"},
@@ -811,7 +868,7 @@ fn roundTripServerRun(ctx: *RoundTripServerCtx) void {
         return;
     };
 
-    conn.close(io);
+    conn.close();
 }
 
 test "ztls-std: in-memory client↔server round-trip" {
@@ -841,16 +898,22 @@ test "ztls-std: in-memory client↔server round-trip" {
     defer _ = gpa_state.deinit();
     const gpa = gpa_state.allocator();
 
-    var conn: Client.Stream = undefined;
-    try Client.connect(&conn, gpa, io, client_sock, .{
+    var conn: Client = undefined;
+    try conn.connect(gpa, io, client_sock, .{
         .host = "ztls.server.test",
         .verify = .insecure,
         .alpn = &.{"h2"},
     });
     defer conn.deinit();
 
-    // Verify ALPN
+    // Verify negotiated connection metadata. The chain is retained in the
+    // Client-owned buffer, not borrowed from the mutable RecordBuffer.
     try testing.expectEqualStrings("h2", conn.selectedAlpn().?);
+    const info = conn.info();
+    try testing.expectEqual(.aes_128_gcm_sha256, info.cipher_suite);
+    try testing.expectEqualStrings("h2", info.alpn.?);
+    try testing.expectEqual(@as(usize, 1), info.peer_chain.len);
+    try testing.expectEqualSlices(u8, test_cert_der, info.peer_chain[0]);
 
     // Write to server
     const w = conn.writer();
@@ -864,18 +927,45 @@ test "ztls-std: in-memory client↔server round-trip" {
     try testing.expectEqualStrings("hello", buf[0..n]);
 
     // Close
-    conn.close(io);
+    conn.close();
 
     server_thread.join();
     if (sctx.err) |err| return err;
+}
+
+test "ztls-std: handshake errors map without panicking" {
+    inline for (@typeInfo(ztls.ClientHandshake.StartError).error_set.?) |err| {
+        const value: ztls.ClientHandshake.StartError = @field(
+            ztls.ClientHandshake.StartError,
+            err.name,
+        );
+        const mapped: ConnectError = mapClientHandshakeError(value);
+        try testing.expect(mapped == mapped);
+    }
+    inline for (@typeInfo(ztls.ClientHandshake.HandleError).error_set.?) |err| {
+        const value: ztls.ClientHandshake.HandleError = @field(
+            ztls.ClientHandshake.HandleError,
+            err.name,
+        );
+        const mapped: ConnectError = mapClientHandshakeError(value);
+        try testing.expect(mapped == mapped);
+    }
+    inline for (@typeInfo(ztls.ServerHandshake.HandleError).error_set.?) |err| {
+        const value: ztls.ServerHandshake.HandleError = @field(
+            ztls.ServerHandshake.HandleError,
+            err.name,
+        );
+        const mapped: AcceptError = mapServerHandshakeError(value);
+        try testing.expect(mapped == mapped);
+    }
 }
 
 test "ztls-std: Stream size is reasonable" {
     // Stream includes RecordBuffer.Storage (~33KB), OutBuffer (~16KB),
     // write_buffer (16KB), reassembly (client ~65KB / server ~33KB), plus
     // the handshake engine. Large but not absurd for an inline TLS stream.
-    try testing.expect(@sizeOf(Client.Stream) < 200_000);
-    try testing.expect(@sizeOf(Server.Stream) < 200_000);
+    try testing.expect(@sizeOf(Client) < 210_000);
+    try testing.expect(@sizeOf(Server) < 200_000);
 }
 
 const ReadAfterCloseServerCtx = struct {
@@ -898,8 +988,8 @@ fn readAfterCloseServerRun(ctx: *ReadAfterCloseServerCtx) void {
     };
     defer key.deinit();
 
-    var conn: Server.Stream = undefined;
-    Server.accept(&conn, io, server_sock, .{
+    var conn: Server = undefined;
+    conn.accept(io, server_sock, .{
         .cert_chain = &.{test_cert_der},
         .signer = key.signer(),
         .alpn = &.{"h2"},
@@ -928,11 +1018,11 @@ fn readAfterCloseServerRun(ctx: *ReadAfterCloseServerCtx) void {
         conn.deinit();
         return;
     };
-    conn.close(io);
+    conn.close();
 }
 
-// RFC 8446 §6.1 — after close_notify, reads must return EndOfStream.
-test "ztls-std: read after close returns EndOfStream" {
+// RFC 8446 §6.1 — close_notify is a write-side half-close.
+test "ztls-std: closeWrite preserves peer response" {
     const io = testIo();
 
     var fds: [2]posix.fd_t = undefined;
@@ -953,8 +1043,8 @@ test "ztls-std: read after close returns EndOfStream" {
     defer _ = gpa_state.deinit();
     const gpa = gpa_state.allocator();
 
-    var conn: Client.Stream = undefined;
-    try Client.connect(&conn, gpa, io, client_sock, .{
+    var conn: Client = undefined;
+    try conn.connect(gpa, io, client_sock, .{
         .host = "ztls.server.test",
         .verify = .insecure,
         .alpn = &.{"h2"},
@@ -965,16 +1055,16 @@ test "ztls-std: read after close returns EndOfStream" {
     try w.writeAll("ping");
     try w.flush();
 
+    // RFC 8446 §6.1 — close_notify closes only the write side. The peer's
+    // application data remains readable until its close_notify arrives.
+    conn.closeWrite();
+
     const r = conn.reader();
-    var buf: [2]u8 = undefined;
-    _ = try r.readSliceShort(&buf);
-
-    conn.close(io);
-
-    // After close, reading must return 0 (end-of-stream per RFC 8446 §6.1).
-    // readSliceShort maps EndOfStream from the vtable to a 0-length return.
-    const n = try r.readSliceShort(&buf);
-    try testing.expectEqual(@as(usize, 0), n);
+    try r.fillMore();
+    const chunk = r.buffered();
+    try testing.expectEqualStrings("ok", chunk);
+    r.toss(chunk.len);
+    try testing.expectError(error.EndOfStream, r.fillMore());
 
     server_thread.join();
     if (sctx.err) |err| return err;
@@ -1002,8 +1092,8 @@ fn largeWriteServerRun(ctx: *LargeWriteServerCtx) void {
     };
     defer key.deinit();
 
-    var conn: Server.Stream = undefined;
-    Server.accept(&conn, io, server_sock, .{
+    var conn: Server = undefined;
+    conn.accept(io, server_sock, .{
         .cert_chain = &.{test_cert_der},
         .signer = key.signer(),
         .alpn = &.{"h2"},
@@ -1037,7 +1127,7 @@ fn largeWriteServerRun(ctx: *LargeWriteServerCtx) void {
         conn.deinit();
         return;
     };
-    conn.close(io);
+    conn.close();
 }
 
 // RFC 8446 §5.1 — plaintext exceeding max_plaintext_len (16384) is split
@@ -1065,8 +1155,8 @@ test "ztls-std: large write spanning multiple records" {
     defer _ = gpa_state.deinit();
     const gpa = gpa_state.allocator();
 
-    var conn: Client.Stream = undefined;
-    try Client.connect(&conn, gpa, io, client_sock, .{
+    var conn: Client = undefined;
+    try conn.connect(gpa, io, client_sock, .{
         .host = "ztls.server.test",
         .verify = .insecure,
         .alpn = &.{"h2"},
@@ -1084,7 +1174,7 @@ test "ztls-std: large write spanning multiple records" {
     const n = try r.readSliceShort(&buf);
     try testing.expectEqualStrings("done", buf[0..n]);
 
-    conn.close(io);
+    conn.close();
 
     server_thread.join();
     if (sctx.err) |err| return err;

@@ -44,9 +44,8 @@ load-bearing facts are verified against the released Zig 0.16.0 stdlib
    `*std.Io.Reader`/`*std.Io.Writer` works unmodified — TLS is invisible.
 3. **Consume the underlying stream.** `connect`/`accept` move the
    `std.Io.net.Stream` into the `Stream`. `close()` sends `close_notify` and
-   closes the socket — one call, one mental model. No `shutdown`/half-close
-   knob in v1 (TLS 1.3 half-close is real but rarely needed; add later without
-   breaking the surface).
+   closes the socket. `closeWrite()` sends `close_notify` while preserving the
+   read side, which matters for request/response clients after stdin EOF.
 4. **Per-call `Options`, no `Config`+`Connector`.** A `Config`+`Connector`+
    `TlsStream` triple is more than `connect(stream, Options)` needs. The only
    genuinely reusable, allocation-bearing piece is the cert bundle, and it's
@@ -55,12 +54,14 @@ load-bearing facts are verified against the released Zig 0.16.0 stdlib
 5. **Verification on by default.** A plain `connect` just works against a real
    server: cert verification defaults to the OS trust bundle. `.insecure` is
    the explicit opt-out.
-6. **Out-param init.** `Stream` is large (~130 KB client / ~100 KB server:
+6. **In-place init.** `Client`/`Server` are large (~200 KB / ~100 KB:
    `RecordBuffer.Storage` ~33 KB + `OutBuffer` ~16 KB + `write_buffer` 16 KB
-   + reassembly ~65 KB client / ~33 KB server + the handshake engine).
-   `connect`/`accept` take `out: *Stream` and return `!void` — no large struct
-   returned by value (the large-union-variant codegen hazard, see ztls #65).
-   The caller chooses placement (stack for one connection, heap/arena for many).
+   + reassembly ~65 KB client / ~33 KB server + the handshake engine) and,
+   more importantly, self-referential — the record buffer, handshake
+   reassembly buffer, and the reader's zero-copy window all point into the
+   struct. Declare `undefined`, `connect`/`accept` in place, never move the
+   value afterward (the `std.Thread.Pool` pattern). The caller chooses
+   placement (stack for one connection, heap/arena for many).
 
 ## Public API
 
@@ -82,10 +83,39 @@ pub const Verify = union(enum) {
 };
 ```
 
+`Client` and `Server` ARE the connection types — not namespaces around one.
+They share an implementation (`StreamImpl(Hs, role)`), so `reader`/`writer`/
+`hasBuffered`/`selectedAlpn`/`info`/`closeWrite`/`close`/`deinit` exist on both; `connect` is
+client-only and `accept` is server-only (calling the wrong one is a compile
+error, not a runtime surprise).
+
+`info()` exposes negotiated metadata without making callers spelunk through
+handshake state:
+
+```zig
+pub const Info = struct {
+    cipher_suite: ztls.CipherSuite,
+    alpn: ?[]const u8,
+    peer_chain: []const []const u8, // verified DER, leaf first
+};
+```
+
+`peer_chain` is retained in the client and remains valid until `deinit`; it
+adds one handshake-sized (64 KiB) buffer to `Client`. On `Server`, it is empty
+until client-certificate retention is configured through `Server.Options`.
+
+Both are self-referential (internal buffers point into the struct), so they
+must be initialized in place and never moved after connect/accept:
+
+```zig
+var conn: tls.Client = undefined;
+try conn.connect(gpa, io, sock, .{ .host = "example.com" });
+```
+
 ### Client
 
 ```zig
-pub const Client = struct {
+pub const Client = /* StreamImpl(ztls.ClientHandshake, .client) */ struct {
     pub const Options = struct {
         /// SNI + certificate hostname (SAN/CN) to verify. Required for real
         /// verification; null disables BOTH SNI and hostname verification
@@ -99,55 +129,64 @@ pub const Client = struct {
         offer_pq_key_share: bool = false,
     };
 
-    /// A ready, connected TLS 1.3 stream. Sized ~130 KB (includes inline
-    /// reassembly storage for multi-record certificate chains); place on the
-    /// stack for a single connection or heap/arena for many. Out-param initialized.
-    pub const Stream = struct {
-        // (fields are internal: owned net.Stream, ztls.ClientHandshake,
-        //  RecordBuffer.Storage + RecordBuffer, OutBuffer, reassembly storage,
-        //  write_buffer, Reader, Writer, rx_closed/tx_closed/closed flags.)
-
-        /// Borrowed `*std.Io.Reader` — drop-in for any `*Io.Reader` consumer.
-        pub fn reader(s: *Stream) *std.Io.Reader;
-        /// Borrowed `*std.Io.Writer` — drop-in for any `*Io.Writer` consumer.
-        pub fn writer(s: *Stream) *std.Io.Writer;
-
-        /// ALPN protocol selected by the server, or null. Valid after connect.
-        /// Borrowed from the engine; lives until deinit.
-        pub fn selectedAlpn(s: *const Stream) ?[]const u8;
-
-        /// Send close_notify and close the underlying socket. Idempotent.
-        /// Does not drain pending peer app data (callers wanting that read
-        /// until `error.EndOfStream`, then close).
-        pub fn close(s: *Stream, io: std.Io) void;
-
-        /// Always-callable teardown: closes the socket (no alert) and
-        /// secure-zeros all wrapper-owned buffers. Idempotent. Use after a
-        /// failed connect too — the socket may be open even if the handshake
-        /// failed. `close` sends close_notify first, then does the same cleanup.
-        pub fn deinit(s: *Stream) void;
-    };
+    // (fields are internal: owned net.Stream, ztls.ClientHandshake,
+    //  RecordBuffer.Storage + RecordBuffer, OutBuffer, reassembly storage,
+    //  peer-certificate storage, write_buffer, Reader, Writer, flags.)
+    //  Sized ~200 KB: stack for one connection, heap/arena for many.
 
     /// Wrap a CONNECTED `std.Io.net.Stream` and run the TLS 1.3 handshake to
-    /// completion. Moves the socket into `out`. Eager: all handshake errors
+    /// completion. Moves the socket into `s`. Eager: all handshake errors
     /// surface here. `gpa` is used ONLY when `options.verify == .system_bundle`
     /// (to load the OS trust store); ignored otherwise.
     pub fn connect(
-        out: *Stream,
+        s: *Client,
         gpa: std.mem.Allocator,
         io: std.Io,
         stream: std.Io.net.Stream,
         options: Options,
     ) ConnectError!void;
+
+    /// Borrowed `*std.Io.Reader` — drop-in for any `*Io.Reader` consumer.
+    pub fn reader(s: *Client) *std.Io.Reader;
+    /// Borrowed `*std.Io.Writer` — drop-in for any `*Io.Writer` consumer.
+    pub fn writer(s: *Client) *std.Io.Writer;
+
+    /// True when a read can return data without touching the transport
+    /// (decrypted bytes pending, or a complete record already in the
+    /// RecordBuffer). Poll-style loops use this to drain coalesced
+    /// records without blocking.
+    pub fn hasBuffered(s: *Client) bool;
+
+    /// ALPN protocol selected by the server, or null. Valid after connect.
+    /// Borrowed from the engine; lives until deinit.
+    pub fn selectedAlpn(s: *const Client) ?[]const u8;
+
+    /// Cipher suite, ALPN, and verified peer DER chain (leaf first).
+    /// Borrowed; valid until deinit.
+    pub fn info(s: *const Client) Info;
+
+    /// Send close_notify but keep the read side open for the peer's response.
+    pub fn closeWrite(s: *Client) void;
+
+    /// Send close_notify and close the underlying socket. Idempotent.
+    /// Does not drain pending peer app data (callers wanting that read
+    /// until `error.EndOfStream`, then close).
+    pub fn close(s: *Client) void;
+
+    /// Always-callable teardown: closes the socket (no alert) and
+    /// secure-zeros all wrapper-owned buffers. Idempotent. Use after a
+    /// failed connect too — the socket may be open even if the handshake
+    /// failed. `close` sends close_notify first, then does the same cleanup.
+    pub fn deinit(s: *Client) void;
 };
 ```
 
 ### Server
 
 ```zig
-pub const Server = struct {
+pub const Server = /* StreamImpl(ztls.ServerHandshake, .server) */ struct {
     pub const Options = struct {
-        /// Certificate chain, leaf first, DER. Borrowed for the Stream's life.
+        /// Certificate chain, leaf first, DER. Borrowed for the connection's life.
         cert_chain: []const []const u8,
         /// Signer for CertificateVerify. Obtained from
         /// `var key: ztls.signature.PrivateKey = try .fromP256Scalar(scalar);
@@ -158,33 +197,34 @@ pub const Server = struct {
         alpn: []const []const u8 = &.{},
     };
 
-    pub const Stream = struct {
-        // (internal: owned net.Stream, ztls.ServerHandshake, RecordBuffer,
-        //  OutBuffer [also used as FlightBuffer], reassembly storage,
-        //  write_buffer, Reader, Writer, flags.)
-
-        pub fn reader(s: *Stream) *std.Io.Reader;
-        pub fn writer(s: *Stream) *std.Io.Writer;
-        pub fn selectedAlpn(s: *const Stream) ?[]const u8;
-        pub fn close(s: *Stream, io: std.Io) void;
-        pub fn deinit(s: *Stream) void;
-    };
+    // (internal: owned net.Stream, ztls.ServerHandshake, RecordBuffer,
+    //  OutBuffer [also used as FlightBuffer], reassembly storage,
+    //  write_buffer, Reader, Writer, flags. Sized ~100 KB.)
 
     /// Wrap an ACCEPTED `std.Io.net.Stream` and run the server-side handshake
-    /// to completion. Moves the socket into `out`. No allocator: the server
+    /// to completion. Moves the socket into `s`. No allocator: the server
     /// presents, it does not anchor a chain.
     pub fn accept(
-        out: *Stream,
+        s: *Server,
         io: std.Io,
         stream: std.Io.net.Stream,
         options: Options,
     ) AcceptError!void;
+
+    pub fn reader(s: *Server) *std.Io.Reader;
+    pub fn writer(s: *Server) *std.Io.Writer;
+    pub fn hasBuffered(s: *Server) bool;
+    pub fn selectedAlpn(s: *const Server) ?[]const u8;
+    pub fn info(s: *const Server) Info;
+    pub fn closeWrite(s: *Server) void;
+    pub fn close(s: *Server) void;
+    pub fn deinit(s: *Server) void;
 };
 ```
 
 ### Reader / Writer
 
-`Client.Stream.Reader` and `Server.Stream.Reader` are structs embedding
+`Client.Reader` and `Server.Reader` are structs embedding
 `interface: std.Io.Reader`; the `Writer` structs embed
 `interface: std.Io.Writer`. The vtable implementations recover the `Stream` via
 `@fieldParentPtr("interface", io_r)` and drive the ztls record layer against the
@@ -221,9 +261,13 @@ pub const AcceptError = error{
 Post-handshake reads and writes go through the `Io.Reader`/`Io.Writer` vtable,
 whose `Error` sets are narrow by design — `error{ReadFailed, EndOfStream}` for
 Reader and `error{WriteFailed}` for Writer. All TLS-specific failures
-(decrypt/auth errors, alert received, transport EOF without close_notify)
-collapse to `ReadFailed` on the read path and `WriteFailed` on the write path.
-A clean `close_notify` surfaces as `error.EndOfStream`. The `ReadError` and
+(decrypt/auth errors, alert received) collapse to `ReadFailed` on the read
+path and `WriteFailed` on the write path. Both a clean `close_notify` and a
+transport EOF without one surface as `error.EndOfStream` — RFC 8446 §6.1
+requires `close_notify`, but hard-closing the transport is ubiquitous on the
+real internet and the reader cannot distinguish truncation from a rude
+close anyway; callers that care about truncation must frame their own
+protocol (Content-Length, chunked, etc.). The `ReadError` and
 `WriteError` types defined in the library are retained for documentation but are
 NOT produced post-handshake through the vtable — TLS-specific errors surface at
 handshake time via `ConnectError`/`AcceptError`, and post-handshake failures are
@@ -253,7 +297,14 @@ the caller:
    - `.write` (post-handshake control) → write + `completeWrite`; loop.
    - `.none` → loop.
    - `.closed` → return `error.EndOfStream`.
-   - Transport returns 0 without `.closed` → `error.ReadFailed`.
+   - Transport returns 0 without `.closed` → `error.EndOfStream` (abrupt
+     close; see the error-set section above for why this isn't ReadFailed).
+
+`readSliceShort()` tries to fill its entire destination buffer, so it blocks
+on a keep-alive peer after a short response. For record-at-a-time reads, call
+`fillMore()`, consume `buffered()`, then `toss()` that length. Use
+`hasBuffered()` with poll loops to drain coalesced records without another
+transport read.
 
 The `Writer` is `BufWriter`-shaped (matching `tokio-rustls`): `interface.buffer`
 is a plaintext staging buffer sized to `ztls.frame.max_plaintext_len` (16384) so
@@ -280,8 +331,8 @@ pub fn main(init: std.process.Init) !void {
     const sock = try addr.connect(io, .{ .mode = .stream });
 
     // 2. TLS handshake to completion (eager — errors surface here).
-    var conn: tls.Client.Stream = undefined; // large struct: out-param init
-    try tls.Client.connect(&conn, gpa, io, sock, .{
+    var conn: tls.Client = undefined; // large struct: out-param init
+    try conn.connect(gpa, io, sock, .{
         .host = "example.com",
         .alpn = &.{"http/1.1"},
         // .verify defaults to .system_bundle
@@ -293,20 +344,22 @@ pub fn main(init: std.process.Init) !void {
     try w.writeAll("GET / HTTP/1.0\r\nHost: example.com\r\n\r\n");
     try w.flush();
 
-    // 4. Read via the Io.Reader.
+    // 4. Read via the Io.Reader. fillMore performs exactly one underlying
+    // read (one decrypted record) per call — readSliceShort(buf) would block
+    // until buf is full, which hangs on keep-alive connections.
     const r = conn.reader();
-    var buf: [4096]u8 = undefined;
     while (true) {
-        const n = r.readSliceShort(&buf) catch |err| switch (err) {
-            error.ReadFailed => break, // transport closed / TLS error
-            else => return err,
+        r.fillMore() catch |err| switch (err) {
+            error.EndOfStream => break, // clean close_notify
+            error.ReadFailed => break,  // transport closed / TLS error
         };
-        if (n == 0) break; // clean close_notify (EndOfStream mapped to 0)
-        std.debug.print("{s}", .{buf[0..n]});
+        const chunk = r.buffered();
+        std.debug.print("{s}", .{chunk});
+        r.toss(chunk.len);
     }
 
     // 5. Close: send close_notify + close socket.
-    conn.close(io);
+    conn.close();
 }
 ```
 
@@ -324,8 +377,8 @@ pub fn serveOne(io: std.Io, listener: *std.Io.net.Server,
     var key: ztls.signature.PrivateKey = try .fromP256Scalar(scalar);
     defer key.deinit();
 
-    var conn: tls.Server.Stream = undefined;
-    try tls.Server.accept(&conn, io, sock, .{
+    var conn: tls.Server = undefined;
+    try conn.accept(io, sock, .{
         .cert_chain = &.{cert_der}, // leaf-first DER
         .signer = key.signer(),     // key must outlive this accept() call
         .alpn = &.{"http/1.1"},
@@ -333,14 +386,15 @@ pub fn serveOne(io: std.Io, listener: *std.Io.net.Server,
     defer conn.deinit();
 
     const r = conn.reader();
-    var buf: [1024]u8 = undefined;
-    const n = try r.readSliceShort(&buf);
-    if (n == 0 or !std.mem.startsWith(u8, buf[0..n], "GET ")) return error.BadRequest;
+    try r.fillMore(); // exactly one underlying read: one request record
+    const chunk = r.buffered();
+    if (chunk.len == 0 or !std.mem.startsWith(u8, chunk, "GET ")) return error.BadRequest;
+    r.toss(chunk.len);
 
     const w = conn.writer();
     try w.writeAll("HTTP/1.0 200 OK\r\nContent-Length: 5\r\n\r\nhello");
     try w.flush();
-    conn.close(io);
+    conn.close();
 }
 ```
 
@@ -348,8 +402,8 @@ pub fn serveOne(io: std.Io, listener: *std.Io.net.Server,
 
 ```zig
 // http.zig takes *std.Io.Reader / *std.Io.Writer — it knows nothing about TLS.
-var conn: tls.Client.Stream = undefined;
-try tls.Client.connect(&conn, gpa, io, sock, .{ .host = "example.com", .alpn = &.{"http/1.1"} });
+var conn: tls.Client = undefined;
+try conn.connect(gpa, io, sock, .{ .host = "example.com", .alpn = &.{"http/1.1"} });
 defer conn.deinit();
 
 const resp = try http.get(io, conn.reader(), conn.writer(), "/");
@@ -367,9 +421,8 @@ seam.
 - **Client-auth** — the ztls core marks full client-cert verification as a
   later slice; exposing a non-functional knob now would be dishonest. Add when
   the core proves it.
-- **Half-close / `shutdown`**, **session resumption / 0-RTT surface**,
-  **`socketHandle()` for kTLS** — cut from v1 (WWMD: don't ship knobs without
-  proven need). `socketHandle()` returns when `ztls-ktls` lands.
+- **Session resumption / 0-RTT surface**, **`socketHandle()` for kTLS** — cut
+  from v1. `socketHandle()` returns when `ztls-ktls` lands.
 - **0.15 support** — 0.16 only.
 - **Distribution as an independently `zig fetch`-able package** — tracked by #79.
 

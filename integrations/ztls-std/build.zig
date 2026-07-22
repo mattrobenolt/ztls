@@ -58,6 +58,36 @@ pub fn build(b: *std.Build) void {
     run_cmd.step.dependOn(b.getInstallStep());
     if (b.args) |args| run_cmd.addArgs(args);
 
+    // Examples: runnable programs that exercise the higher-order ztls-std
+    // API (Client.connect / Server.accept / Stream.reader / writer). Each is
+    // wired as `zig build example-<name>`.
+    const examples = [_][]const u8{
+        "tls_client",
+    };
+    for (examples) |name| {
+        const exe_mod = b.createModule(.{
+            .root_source_file = b.path(b.fmt("examples/{s}.zig", .{name})),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "ztls_std", .module = mod },
+                .{ .name = "ztls", .module = ztls_mod },
+            },
+        });
+        exe_mod.addImport("fixtures", fixtures_mod);
+        const example_exe = b.addExecutable(.{
+            .name = name,
+            .root_module = exe_mod,
+        });
+        const run = b.addRunArtifact(example_exe);
+        if (b.args) |args| run.addArgs(args);
+        const step = b.step(
+            b.fmt("example-{s}", .{name}),
+            b.fmt("Run {s} example", .{name}),
+        );
+        step.dependOn(&run.step);
+    }
+
     // Tests.
     const mod_tests = b.addTest(.{ .root_module = mod });
     const run_mod_tests = b.addRunArtifact(mod_tests);
