@@ -27,7 +27,9 @@ This section describes what exists on `main` today. It is not a release.
 - Key exchange: X25519 and P-256 ECDHE.
 - Server certificate authentication (hostname verification, chain validation,
   leaf policy) and client certificate authentication (both roles, EKU/KU
-  enforcement, OpenSSL interop).
+  enforcement, OpenSSL interop). Chain validation anchors at the highest
+  presented certificate whose issuer is a trust anchor (trusted-first), so
+  chains terminating in a cross-signed root verify like OpenSSL's.
 - Session resumption (PSK / NewSessionTicket) and 0-RTT early data, with
   replay-safety policy left to the caller.
 - HelloRetryRequest, KeyUpdate (both directions), application data, alerts, and

@@ -64,6 +64,9 @@ pub const nc_intermediate_der = decodeSection("nc_intermediate_der");
 pub const nc_leaf_allowed_der = decodeSection("nc_leaf_allowed_der");
 pub const nc_leaf_excluded_der = decodeSection("nc_leaf_excluded_der");
 pub const nc_leaf_outside_der = decodeSection("nc_leaf_outside_der");
+pub const crosssigned_leaf_der = decodeSection("crosssigned_leaf_der");
+pub const crosssigned_intermediate_der = decodeSection("crosssigned_intermediate_der");
+pub const crosssigned_root_cross_der = decodeSection("crosssigned_root_cross_der");
 
 // --- Signature fixtures (base64-decoded at comptime) ------------------------
 

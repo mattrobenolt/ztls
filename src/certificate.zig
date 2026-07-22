@@ -215,17 +215,13 @@ pub fn parseClientChain(
     }
     if (r.pos != list_end) return error.UnexpectedEof;
 
-    const subject = subject_to_verify orelse return error.EmptyCertificateList;
+    if (chain.constSlice().len == 0) return error.EmptyCertificateList;
     try verifyChainCertificateSignatureAlgorithms(
         chain.constSlice(),
         policy.certificate_signature_schemes,
     );
     if (policy.bundle) |bundle| {
-        const trust_anchor = try certificate_policy.findVerifiedIssuerInBundle(
-            bundle,
-            subject,
-            policy.now_sec,
-        );
+        const trust_anchor = try anchorChain(bundle, chain.constSlice(), policy.now_sec);
         try verifyChainNameConstraints(chain.constSlice(), trust_anchor);
     } else if (!policy.insecure_no_chain_anchor) {
         return error.MissingTrustAnchor;
@@ -237,6 +233,34 @@ pub fn parseClientChain(
         .pub_key = leaf_pub_key orelse return error.EmptyCertificateList,
         .leaf_der = leaf_der orelse return error.EmptyCertificateList,
     };
+}
+
+/// Trusted-first path building: anchor the presented chain at the highest
+/// certificate whose issuer is a trust anchor in the bundle. Servers may
+/// terminate the presented chain at a cross-signed root (e.g. SSL.com 2022
+/// roots cross-signed by Comodo AAA Certificate Services) whose issuer is not
+/// a trust anchor, while a lower certificate's issuer is. Walking the chain
+/// from the top down and accepting the first bundle hit matches OpenSSL's
+/// default trusted-first behavior. A bundle hit whose signature or usage
+/// checks fail is a hard error, not a cue to keep walking.
+fn anchorChain(
+    bundle: *const Certificate.Bundle,
+    chain: []const Certificate.Parsed,
+    now_sec: i64,
+) certificate_policy.VerifyAgainstBundleError!Certificate.Parsed {
+    var i = chain.len;
+    while (i > 0) {
+        i -= 1;
+        return certificate_policy.findVerifiedIssuerInBundle(
+            bundle,
+            chain[i],
+            now_sec,
+        ) catch |err| switch (err) {
+            error.CertificateIssuerNotFound => continue,
+            else => return err,
+        };
+    }
+    return error.CertificateIssuerNotFound;
 }
 
 /// Parse a Certificate handshake message and extract the leaf certificate
@@ -306,17 +330,13 @@ pub fn parse(msg: []const u8, policy: Policy) ParseError![]const u8 {
     }
     if (r.pos != list_end) return error.UnexpectedEof;
 
-    const subject = subject_to_verify orelse return error.EmptyCertificateList;
+    if (chain.constSlice().len == 0) return error.EmptyCertificateList;
     try verifyChainCertificateSignatureAlgorithms(
         chain.constSlice(),
         policy.certificate_signature_schemes,
     );
     if (policy.bundle) |bundle| {
-        const trust_anchor = try certificate_policy.findVerifiedIssuerInBundle(
-            bundle,
-            subject,
-            policy.now_sec,
-        );
+        const trust_anchor = try anchorChain(bundle, chain.constSlice(), policy.now_sec);
         try verifyChainNameConstraints(chain.constSlice(), trust_anchor);
     } else if (!policy.insecure_no_chain_anchor) {
         return error.MissingTrustAnchor;
@@ -567,6 +587,19 @@ fn ed25519CertDer() []const u8 {
 fn chainIntermediateDer() []const u8 {
     // ziglint-ignore: Z028
     return &@import("fixtures").chain_intermediate_der;
+}
+const crosssigned_root_pem = "tests/fixtures/crosssigned/root.crt";
+fn crosssignedLeafDer() []const u8 {
+    // ziglint-ignore: Z028
+    return &@import("fixtures").crosssigned_leaf_der;
+}
+fn crosssignedIntermediateDer() []const u8 {
+    // ziglint-ignore: Z028
+    return &@import("fixtures").crosssigned_intermediate_der;
+}
+fn crosssignedRootCrossDer() []const u8 {
+    // ziglint-ignore: Z028
+    return &@import("fixtures").crosssigned_root_cross_der;
 }
 fn auditS5LeafDer() []const u8 {
     // ziglint-ignore: Z028
@@ -961,6 +994,47 @@ test "parse: rejects chain with intermediate before leaf" {
         parse(
             buildCertChainMsg(&buf, &.{ chainIntermediateDer(), chainLeafDer() }),
             .{ .bundle = &bundle, .now_sec = 1_780_300_000, .host_name = "chain.test" },
+        ),
+    );
+}
+
+// RFC 5280 §6.1, RFC 8446 §4.4.2 — trusted-first path building: when the
+// presented chain ends in a cross-signed root whose issuer is not a trust
+// anchor, the verifier anchors the highest certificate whose issuer IS in
+// the bundle. Mirrors production chains like example.com's SSL.com 2022
+// root presented cross-signed by Comodo AAA Certificate Services.
+test "parse: anchors chain below a cross-signed root" {
+    var bundle: Certificate.Bundle = empty_bundle;
+    defer bundle.deinit(testing.allocator);
+    try addCertsFromFixturePath(&bundle, crosssigned_root_pem);
+
+    var buf: [8192]u8 = undefined;
+    const pub_key = try parse(
+        buildCertChainMsg(&buf, &.{
+            crosssignedLeafDer(),
+            crosssignedIntermediateDer(),
+            crosssignedRootCrossDer(),
+        }),
+        .{ .bundle = &bundle, .now_sec = 1_800_000_000, .host_name = "cross.test" },
+    );
+    try testing.expect(pub_key.len > 0);
+}
+
+// The presented cross-signed root alone must not anchor anything: its issuer
+// is not in the bundle, and no lower certificate chains to the bundle root.
+test "parse: rejects cross-signed root without a bundle anchor below it" {
+    const bundle: Certificate.Bundle = empty_bundle;
+
+    var buf: [8192]u8 = undefined;
+    try testing.expectError(
+        error.CertificateIssuerNotFound,
+        parse(
+            buildCertChainMsg(&buf, &.{
+                crosssignedLeafDer(),
+                crosssignedIntermediateDer(),
+                crosssignedRootCrossDer(),
+            }),
+            .{ .bundle = &bundle, .now_sec = 1_800_000_000, .host_name = "cross.test" },
         ),
     );
 }
