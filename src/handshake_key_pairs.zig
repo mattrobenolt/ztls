@@ -2,9 +2,11 @@
 //!
 //! TLS 1.3 ClientHello may carry multiple KeyShareEntry values, so this is a
 //! small product type rather than a tagged union.
-const x25519 = @import("x25519.zig");
+const std = @import("std");
+
 const p256 = @import("p256.zig");
 const p384 = @import("p384.zig");
+const x25519 = @import("x25519.zig");
 
 pub const KeyPairs = struct {
     x25519: x25519.KeyPair,
@@ -31,8 +33,13 @@ pub const KeyPairs = struct {
     }
 
     pub fn secureZero(self: *KeyPairs) void {
-        self.x25519.secret_key.secureZero();
-        self.p256.secret_key.secureZero();
-        if (self.p384) |*keypair| keypair.secret_key.secureZero();
+        std.crypto.secureZero(u8, std.mem.asBytes(self));
+        self.p384 = null;
     }
 };
+
+test "secureZero zeroes all secret material" {
+    var kp: KeyPairs = .initWithP256P384(.generate(), .generate(), .generate());
+    kp.secureZero();
+    try std.testing.expect(std.mem.allEqual(u8, std.mem.asBytes(&kp), 0));
+}
