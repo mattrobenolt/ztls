@@ -78,6 +78,16 @@ pub fn next(self: *RecordBuffer) error{RecordTooLarge}!?[]u8 {
     return avail[0..total];
 }
 
+/// True when a complete record is buffered and the next `next()` call will
+/// return it without more transport reads. Poll-style drive loops use this to
+/// drain coalesced records without blocking on the transport.
+pub fn hasRecord(self: *const RecordBuffer) bool {
+    const avail = self.storage[self.pos..self.filled];
+    if (avail.len < frame.header_len) return false;
+    const hdr = frame.parseHeader(avail) catch return false;
+    return avail.len >= frame.header_len + hdr.length();
+}
+
 /// Move unconsumed bytes to the front so `writable()` is maximally contiguous.
 fn compact(self: *RecordBuffer) void {
     if (self.pos == 0) return;
