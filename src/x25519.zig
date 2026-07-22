@@ -6,6 +6,7 @@ const assert = std.debug.assert;
 const testing = std.testing;
 
 const backend = @import("crypto/backend.zig");
+pub const Error = backend.x25519.Error;
 const entropy = @import("entropy.zig");
 const memx = @import("memx.zig");
 const hex = memx.hex;
@@ -15,8 +16,6 @@ pub const secret_length = 32;
 
 pub const PublicKey = memx.Array(public_length);
 pub const SecretKey = memx.Array(secret_length);
-
-pub const Error = backend.x25519.Error;
 
 /// Caller-owned X25519 keypair. The secret key is the raw 32-byte scalar input;
 /// the libcrypto backend performs RFC 7748 clamping internally.
@@ -35,6 +34,10 @@ pub const KeyPair = struct {
 
     pub fn generateDeterministic(seed: SecretKey) Error!KeyPair {
         return .{ .secret_key = seed, .public_key = try publicFromSecret(seed) };
+    }
+
+    pub fn secureZero(self: *KeyPair) void {
+        std.crypto.secureZero(u8, std.mem.asBytes(self));
     }
 };
 

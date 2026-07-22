@@ -65,6 +65,7 @@ pub const CertificateChain = certificate_chain.CertificateChain;
 const suite_state = @import("suite_state.zig");
 const HashArm = suite_state.HashArm;
 const transcript_util = @import("transcript.zig");
+const wiremod = @import("wire.zig");
 const x25519 = @import("x25519.zig");
 const mlkem = @import("mlkem.zig");
 const NamedGroup = @import("kex.zig").NamedGroup;
@@ -442,6 +443,11 @@ leaf_pub_key: LeafPublicKeyBuffer = .empty,
 /// Optional caller-owned storage for a handshake message that spans encrypted
 /// records. Empty means spanning messages are rejected with UnexpectedEof.
 handshake_buf: HandshakeBuffer = .empty,
+/// Caller-owned storage retaining the verified server Certificate message.
+/// Empty disables peer-chain introspection.
+peer_certificate: HandshakeBuffer = .empty,
+/// DER views into `peer_certificate`, leaf first.
+peer_chain: ArrayBuffer([]const u8, 8) = .empty,
 /// Consecutive KeyUpdates seen with no intervening application data.
 post_handshake_key_update_count: u8 = 0,
 /// Consecutive NewSessionTickets seen with no intervening application data.
@@ -567,6 +573,8 @@ pub fn deinit(self: *ClientHandshake) void {
     if (self.kem_key) |k| mlkem.freeKey(k);
     self.suite.secureZero();
     self.keypairs.secureZero();
+    self.peer_certificate.secureZero();
+    self.peer_chain.secureZero();
     self.* = undefined;
 }
 
@@ -590,6 +598,22 @@ pub fn useHandshakeBuffer(self: *ClientHandshake, storage: []u8) void {
     self.handshake_buf = .init(storage);
 }
 
+/// Retain the verified server certificate chain for connection introspection.
+/// The caller owns `storage`, which must outlive the handshake and any returned
+/// peer-certificate slices.
+pub fn usePeerCertificateBuffer(self: *ClientHandshake, storage: []u8) void {
+    assert(self.state == .start);
+    assert(self.peer_certificate.buffer.len == 0);
+    self.peer_certificate = .init(storage);
+}
+
+/// Return the verified server certificate chain, leaf first. The DER slices
+/// are valid until deinit. Empty means no retention buffer was configured.
+pub fn peerCertificateChain(self: *const ClientHandshake) []const []const u8 {
+    if (self.state != .connected) return &.{};
+    return self.peer_chain.constSlice();
+}
+
 /// Offer ALPN protocols in ClientHello. Each protocol must be 1..255 bytes.
 /// The slice is caller-owned and only needs to live until start() encodes it.
 /// ziglint-ignore: Z012
@@ -603,6 +627,17 @@ pub fn offerAlpn(self: *ClientHandshake, protocols: AlpnProtocols) void {
 pub fn selectedAlpnProtocol(self: *const ClientHandshake) ?[]const u8 {
     if (self.selected_alpn.len == 0) return null;
     return self.selected_alpn.constSlice();
+}
+
+/// Return the cipher suite selected in ServerHello. Valid after ServerHello.
+pub fn cipherSuite(self: *const ClientHandshake) CipherSuite {
+    assert(self.state != .start);
+    assert(self.state != .wait_sh);
+    return switch (self.suite) {
+        .buffering => unreachable,
+        .sha256 => |s| s.aead,
+        .sha384 => |s| s.aead,
+    };
 }
 
 /// Store caller-owned client certificate credentials for client authentication.
@@ -1380,11 +1415,34 @@ fn processServerCertificate(
     // Extract and copy the leaf public key now; it must survive until
     // CertificateVerify, which may arrive in a later record.
     const pk = try certificate.parse(msg.raw, policy);
+    try self.retainPeerCertificate(msg.raw);
     self.leaf_pub_key.clear();
     self.leaf_pub_key.appendSlice(pk) catch return error.CertificateKeyTooLarge;
     self.server_flight_progress = .certificate_verified;
     self.suite.update(msg.raw);
     self.state = .wait_cv;
+}
+
+fn retainPeerCertificate(
+    self: *ClientHandshake,
+    msg: []const u8,
+) error{HandshakeBufferTooShort}!void {
+    if (self.peer_certificate.buffer.len == 0) return;
+    self.peer_certificate.retainFrom(msg) catch return error.HandshakeBufferTooShort;
+    self.peer_chain.clear();
+
+    var r: wiremod.Reader = .init(self.peer_certificate.constSlice());
+    r.assumeSkip(4); // Handshake header already validated by certificate.parse.
+    r.assumeSkip(r.assumeRead(u8)); // certificate_request_context
+    const list_len = r.assumeRead(u24);
+    const list_end = r.pos + list_len;
+    while (r.pos < list_end) {
+        const cert_len = r.assumeRead(u24);
+        const cert_der = r.assumeReadSlice(cert_len);
+        r.assumeSkip(r.assumeRead(u16)); // CertificateEntry.extensions
+        self.peer_chain.append(cert_der) catch unreachable;
+    }
+    assert(r.pos == list_end);
 }
 
 fn saveServerFinishedHash(self: *ClientHandshake) void {

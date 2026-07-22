@@ -14,6 +14,7 @@ pub fn Array(comptime len: comptime_int) type {
 
         data: Data,
 
+        pub const empty: Self = .{ .data = undefined };
         pub const zero: Self = .{ .data = @splat(0) };
 
         pub inline fn init(data: Data) Self {

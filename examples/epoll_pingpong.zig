@@ -30,6 +30,14 @@ const crypto = std.crypto;
 const linux = std.os.linux;
 const Allocator = mem.Allocator;
 const Thread = std.Thread;
+const Base64Decoder = std.base64.standard.Decoder;
+const Io = std.Io;
+const builtin = @import("builtin");
+
+const net = @import("net_compat");
+const Address = net.Address;
+const ztls = @import("ztls");
+
 const NoopMutex = struct {
     fn lock(_: *NoopMutex) void {}
     fn unlock(_: *NoopMutex) void {}
@@ -48,16 +56,9 @@ const SpinEvent = struct {
     }
 };
 const ResetEvent = if (is_zig_16) SpinEvent else Thread.ResetEvent;
-const net = @import("net_compat");
-const Address = net.Address;
-const Base64Decoder = std.base64.standard.Decoder;
-const Io = std.Io;
-const builtin = @import("builtin");
 const is_zig_16 = builtin.zig_version.major == 0 and builtin.zig_version.minor >= 16;
 const ArgsVector = if (is_zig_16) std.process.Args.Vector else void;
 const Init = if (is_zig_16) std.process.Init else void;
-
-const ztls = @import("ztls");
 
 comptime {
     if (builtin.os.tag != .linux) @compileError("epoll_pingpong is Linux-only");
@@ -490,7 +491,7 @@ fn serverRun(
     var listen_ev: linux.epoll_event = .{ .events = linux.EPOLL.IN, .data = .{ .fd = listen_fd } };
     try epollCtl(epoll_fd, linux.EPOLL.CTL_ADD, listen_fd, &listen_ev);
 
-    var random: ztls.Random = undefined;
+    var random: ztls.Random = .empty;
     net.fillRandom(&random.data);
     var hs_storage: ztls.ServerHandshake.Storage = .empty;
     var hs: ztls.ServerHandshake = .init(.{
@@ -606,7 +607,7 @@ fn clientRun(arena: Allocator, args: *const Args, port: u16) !void {
         try bundle.parseCert(arena, cert_start, net.timestamp());
     }
 
-    var random: ztls.Random = undefined;
+    var random: ztls.Random = .empty;
     net.fillRandom(&random.data);
     var hs_storage: ztls.ClientHandshake.Storage = .empty;
 

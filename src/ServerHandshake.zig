@@ -478,6 +478,13 @@ pub fn selectedAlpnProtocol(self: *const ServerHandshake) ?[]const u8 {
     return self.selected_alpn;
 }
 
+/// Return the cipher suite selected for this connection. Valid after the
+/// ClientHello is accepted.
+pub fn cipherSuite(self: *const ServerHandshake) CipherSuite {
+    assert(self.state != .wait_ch);
+    return self.suite;
+}
+
 /// Return the SNI hostname from the ClientHello server_name extension, or null
 /// if the client did not send one. Available after the first handleRecord/
 /// acceptClientHello call returns. After HelloRetryRequest, this reflects

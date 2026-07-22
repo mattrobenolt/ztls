@@ -14,10 +14,13 @@ pub const ExtensionType = @import("extension_type.zig").ExtensionType;
 pub const frame = @import("frame.zig");
 pub const hkdf = @import("hkdf.zig");
 pub const kex = @import("kex.zig");
-pub const mlkem = @import("mlkem.zig");
 pub const ktls = @import("ktls.zig");
-pub const Outbox = @import("Outbox.zig");
 const memx = @import("memx.zig");
+pub const Array = memx.Array;
+pub const mlkem = @import("mlkem.zig");
+pub const Outbox = @import("Outbox.zig");
+pub const p256 = @import("p256.zig");
+pub const p384 = @import("p384.zig");
 pub const ProtocolVersion = @import("protocol_version.zig").ProtocolVersion;
 pub const RecordBuffer = @import("RecordBuffer.zig");
 pub const RecordLayer = @import("RecordLayer.zig");
@@ -25,9 +28,7 @@ pub const server_hello = @import("server_hello.zig");
 pub const ServerHandshake = @import("ServerHandshake.zig");
 pub const signature = @import("signature.zig");
 pub const SignatureScheme = @import("signature_scheme.zig").SignatureScheme;
-pub const p256 = @import("p256.zig");
-pub const p384 = @import("p384.zig");
 pub const x25519 = @import("x25519.zig");
 
 /// RFC 8446 §4.1.2 — ClientHello random bytes.
-pub const Random = memx.Array(32);
+pub const Random = Array(32);

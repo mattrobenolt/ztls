@@ -1,12 +1,16 @@
 const std = @import("std");
-const builtin = @import("builtin");
-const entropy = @import("entropy.zig");
 const fs = std.fs;
 const heap = std.heap;
 const mem = std.mem;
 const testing = std.testing;
 const Child = std.process.Child;
 const Allocator = mem.Allocator;
+const builtin = @import("builtin");
+
+const fixtures = @import("fixtures");
+
+const entropy = @import("entropy.zig");
+const ztls = @import("root.zig");
 
 const is_zig_16 = builtin.zig_version.major == 0 and builtin.zig_version.minor >= 16;
 const Net = if (is_zig_16) std.Io.net else std.net;
@@ -14,13 +18,10 @@ const Address = if (is_zig_16) Net.IpAddress else Net.Address;
 const Stream = Net.Stream;
 const Server = Net.Server;
 
-const ztls = @import("root.zig");
-
 const host = "127.0.0.1";
 const alpn_protocol = "http/1.1";
 const response = "HTTP/1.0 200 OK\r\nContent-Length: 5\r\n\r\nhello";
 
-const fixtures = @import("fixtures");
 const server_cert_der: []const u8 = &fixtures.server_ecdsa_cert_der;
 const server_scalar: []const u8 = &fixtures.server_ecdsa_scalar;
 
@@ -177,7 +178,7 @@ test "ztls-to-ztls TCP KeyUpdate round trip with ChaCha20-Poly1305" {
             const stream = try accept(&listener);
             defer closeStream(stream);
 
-            var random: ztls.Random = undefined;
+            var random: ztls.Random = .empty;
             entropy.fill(&random.data);
             var hs: ztls.ServerHandshake = .init(.{
                 .keypairs = .init(c.server_keypair),
@@ -276,7 +277,7 @@ test "ztls-to-ztls TCP KeyUpdate round trip with ChaCha20-Poly1305" {
     const stream = try connect(addr);
     defer closeStream(stream);
 
-    var random: ztls.Random = undefined;
+    var random: ztls.Random = .empty;
     entropy.fill(&random.data);
     var hs: ztls.ClientHandshake = .init(.{
         .keypairs = .init(client_keypair),
@@ -489,7 +490,7 @@ fn startServer(
 
 fn clientInterop(stream: Stream) !void {
     const kp: ztls.x25519.KeyPair = .generate();
-    var random: ztls.Random = undefined;
+    var random: ztls.Random = .empty;
     entropy.fill(&random.data);
 
     var hs: ztls.ClientHandshake = .init(.{
@@ -564,7 +565,7 @@ fn clientInterop(stream: Stream) !void {
 /// and exchange a request/response so the connection closes cleanly.
 fn clientInteropCaptureTicket(stream: Stream) !ztls.ClientHandshake.SessionTicket {
     const kp: ztls.x25519.KeyPair = .generate();
-    var random: ztls.Random = undefined;
+    var random: ztls.Random = .empty;
     entropy.fill(&random.data);
 
     var hs: ztls.ClientHandshake = .init(.{
@@ -648,7 +649,7 @@ fn clientInteropCaptureTicket(stream: Stream) !ztls.ClientHandshake.SessionTicke
 /// resumed handshake, then exchange application data.
 fn clientInteropResume(stream: Stream, ticket: *const ztls.ClientHandshake.SessionTicket) !void {
     const kp: ztls.x25519.KeyPair = .generate();
-    var random: ztls.Random = undefined;
+    var random: ztls.Random = .empty;
     entropy.fill(&random.data);
 
     var hs: ztls.ClientHandshake = .init(.{
@@ -724,7 +725,7 @@ fn clientEarlyDataInterop(
     ticket: *const ztls.ClientHandshake.SessionTicket,
 ) !void {
     const kp: ztls.x25519.KeyPair = .generate();
-    var random: ztls.Random = undefined;
+    var random: ztls.Random = .empty;
     entropy.fill(&random.data);
 
     var hs: ztls.ClientHandshake = .init(.{
@@ -860,7 +861,7 @@ fn serverThread(args: *const ServerArgs) !void {
 
 fn serve(stream: Stream, suite: ztls.CipherSuite) !void {
     const server_keypair: ztls.x25519.KeyPair = .generate();
-    var server_random: ztls.Random = undefined;
+    var server_random: ztls.Random = .empty;
     entropy.fill(&server_random.data);
 
     var hs: ztls.ServerHandshake = .init(.{
@@ -993,7 +994,7 @@ fn serverClientAuthThread(args: *const ServerAuthArgs) !void {
 
 fn serveClientAuth(stream: Stream) !void {
     const server_keypair: ztls.x25519.KeyPair = .generate();
-    var server_random: ztls.Random = undefined;
+    var server_random: ztls.Random = .empty;
     entropy.fill(&server_random.data);
 
     var hs: ztls.ServerHandshake = .init(.{
@@ -1166,7 +1167,7 @@ fn startServerVerify(
 
 fn clientInteropWithCreds(stream: Stream) !void {
     const kp: ztls.x25519.KeyPair = .generate();
-    var random: ztls.Random = undefined;
+    var random: ztls.Random = .empty;
     entropy.fill(&random.data);
 
     var hs: ztls.ClientHandshake = .init(.{

@@ -12,16 +12,14 @@
 //! it proved TLS.
 const std = @import("std");
 const print = std.debug.print;
-const net = @import("net_compat");
-const Address = net.Address;
-
-const ztls = @import("ztls");
-
-const fixtures = @import("fixtures");
-
-const trust_anchor_der: []const u8 = &fixtures.server_ecdsa_cert_der;
 const CertificateBundle = std.crypto.Certificate.Bundle;
 
+const fixtures = @import("fixtures");
+const net = @import("net_compat");
+const Address = net.Address;
+const ztls = @import("ztls");
+
+const trust_anchor_der: []const u8 = &fixtures.server_ecdsa_cert_der;
 const connect_host = "127.0.0.1";
 const server_name = "ztls.server.test";
 const port: u16 = 8443;
@@ -44,7 +42,7 @@ pub fn main() !void {
     print("[https]  connected to {s}:{d}\n", .{ connect_host, port });
 
     const client_keypair: ztls.x25519.KeyPair = .generate();
-    var random: ztls.Random = undefined;
+    var random: ztls.Random = .empty;
     net.fillRandom(&random.data);
 
     var hs: ztls.ClientHandshake = .init(.{

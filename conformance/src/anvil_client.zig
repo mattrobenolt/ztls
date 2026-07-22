@@ -6,11 +6,11 @@
 //!
 //! This is test harness code; allocators and I/O are acceptable here.
 const std = @import("std");
-const net = @import("net_compat");
 const mem = std.mem;
 const ascii = std.ascii;
 const heap = std.heap;
 
+const net = @import("net_compat");
 const ztls = @import("ztls");
 
 pub fn main() !void {
@@ -43,7 +43,7 @@ pub fn main() !void {
     defer net.close(stream);
 
     const kp: ztls.x25519.KeyPair = .generate();
-    var random: ztls.Random = undefined;
+    var random: ztls.Random = .empty;
     net.fillRandom(&random.data);
 
     var hs: ztls.ClientHandshake = .init(.{

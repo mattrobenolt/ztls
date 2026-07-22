@@ -5,12 +5,11 @@
 //! API composes with actual sockets: no OpenSSL, no external processes.
 const std = @import("std");
 const print = std.debug.print;
-const net = @import("net_compat");
-const Address = net.Address;
-
-const ztls = @import("ztls");
 
 const fixtures = @import("fixtures");
+const net = @import("net_compat");
+const Address = net.Address;
+const ztls = @import("ztls");
 
 // Test fixtures: ECDSA P-256 server certificate and signing scalar.
 const cert_der: []const u8 = &fixtures.server_ecdsa_cert_der;
@@ -52,7 +51,7 @@ fn serverRun(ctx: *ServerCtx) !void {
     defer net.close(stream);
     print("[server] accepted connection\n", .{});
 
-    var random: ztls.Random = undefined;
+    var random: ztls.Random = .empty;
     net.fillRandom(&random.data);
 
     var hs: ztls.ServerHandshake = .init(.{
@@ -135,7 +134,7 @@ fn clientRun(client_keypair: ztls.x25519.KeyPair, actual_port: u16) !void {
     defer net.close(stream);
     print("[client] connected to {s}:{d}\n", .{ host, actual_port });
 
-    var random: ztls.Random = undefined;
+    var random: ztls.Random = .empty;
     net.fillRandom(&random.data);
 
     var hs: ztls.ClientHandshake = .init(.{
