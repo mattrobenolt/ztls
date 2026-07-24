@@ -3,8 +3,9 @@
 //! Useful for building messages or accumulating bytes without heap allocation.
 const std = @import("std");
 const assert = std.debug.assert;
+const mem = std.mem;
 const testing = std.testing;
-const Alignment = std.mem.Alignment;
+const Alignment = mem.Alignment;
 
 pub fn SliceBuffer(comptime T: type) type {
     return struct {
@@ -144,7 +145,16 @@ fn ArrayBufferAligned(
         }
 
         pub fn secureZero(self: *Self) void {
-            std.crypto.secureZero(T, &self.buffer);
+            // `std.crypto.secureZero`'s volatile store is only meaningful for
+            // scalar element types, and Zig 0.15 cannot `@memset` a non-scalar
+            // element type at all. For a buffer of slices (a certificate chain
+            // of borrowed DER) the secret lives in the pointed-to storage, not
+            // in the headers this buffer owns, so a plain clear is correct.
+            if (@typeInfo(T) == .int) {
+                std.crypto.secureZero(T, &self.buffer);
+            } else {
+                @memset(&self.buffer, mem.zeroes(T));
+            }
             self.len = 0;
         }
     };
