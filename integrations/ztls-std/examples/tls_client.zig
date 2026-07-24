@@ -18,28 +18,39 @@
 //!     printf 'GET / HTTP/1.0\r\nHost: example.com\r\n\r\n' | \
 //!         zig build example-tls_client -- --host example.com
 //!
-//! Or use an interactive terminal — the relay is duplex, so each line you
-//! type is sent immediately and responses print as they arrive. Bare
-//! newlines are translated to CRLF so you can type HTTP requests directly.
-//! Ctrl-D sends TLS close_notify but keeps reading until the peer replies with
+//! Or type interactively with --crlf, which translates bare newlines so an
+//! HTTP request line works from a terminal. The relay is duplex, so each chunk
+//! you type is sent immediately and responses print as they arrive. Ctrl-D
+//! sends TLS close_notify but keeps reading until the peer replies with
 //! close_notify.
 const std = @import("std");
+const assert = std.debug.assert;
 const Io = std.Io;
 const net = Io.net;
 const mem = std.mem;
 const posix = std.posix;
+const testing = std.testing;
 const print = std.debug.print;
 
 const tls = @import("ztls_std");
 
+/// Retain the verified chain so `info().peer_chain` can report it. Default
+/// `tls.Client` skips retention and is ~64 KB smaller.
+const Client = tls.ClientWith(.{
+    .peer_chain_storage = tls.core.ClientHandshake.recommended_handshake_storage,
+});
+
 const usage =
-    \\Usage: tls_client --host <host> [--port <port>] [--insecure] [--alpn <proto>]
+    \\Usage: tls_client --host <host> [--port <port>] [--insecure] [--alpn <proto>] [--crlf]
     \\
     \\Options:
     \\  --host <host>       Server hostname or IP (required). Used for SNI + verification.
     \\  --port <port>       Port number (default: 443).
     \\  --insecure          Skip certificate chain verification (demo/test only).
     \\  --alpn <proto>      ALPN protocol to offer (default: http/1.1).
+    \\  --crlf              Translate bare LF from stdin to CRLF, for typing HTTP
+    \\                      requests interactively. Off by default so piped binary
+    \\                      input passes through untouched.
     \\
 ;
 
@@ -57,6 +68,7 @@ pub fn main(init: std.process.Init) !void {
     var host: ?[]const u8 = null;
     var port: u16 = 443;
     var insecure = false;
+    var crlf = false;
     var alpn: []const u8 = "http/1.1";
 
     while (args.next()) |arg| {
@@ -70,6 +82,8 @@ pub fn main(init: std.process.Init) !void {
                 die("invalid port: {s}", .{port_str});
         } else if (mem.eql(u8, arg, "--insecure")) {
             insecure = true;
+        } else if (mem.eql(u8, arg, "--crlf")) {
+            crlf = true;
         } else if (mem.eql(u8, arg, "--alpn")) {
             alpn = args.next() orelse
                 die("missing value for --alpn\n{s}", .{usage});
@@ -90,18 +104,19 @@ pub fn main(init: std.process.Init) !void {
     // TLS handshake via the wrapper.
     // connect() runs the full TLS 1.3 handshake to completion before
     // returning. All handshake errors (cert verification, ALPN, alerts)
-    // surface here — not leaked into the first read.
+    // surface here — not leaked into the first read — and on failure the
+    // wrapper alerts the peer and closes the socket itself.
     //
     // --insecure skips chain-anchor verification (self-signed certs)
     // but SNI and hostname verification still run. Use a cert whose
     // CN/SAN matches --host, or connect by IP with a cert that lists
     // that IP in its SAN.
-    var conn: tls.Client = undefined;
-    conn.connect(init.gpa, io, sock, .{
+    var conn: Client = undefined;
+    conn.connect(io, sock, .{
         .host = host_str,
-        .verify = if (insecure) .insecure else .system_bundle,
+        .verify = if (insecure) .insecure else .{ .system_bundle = init.gpa },
         .alpn = &.{alpn},
-    }) catch |err| die("handshake failed: {}", .{err});
+    }) catch |err| die("handshake failed: {t}", .{err});
     defer conn.deinit();
 
     // Print connection info.
@@ -121,22 +136,25 @@ pub fn main(init: std.process.Init) !void {
     const stdout = &stdout_writer.interface;
     defer stdout.flush() catch {};
 
-    // Duplex relay: poll stdin and the TLS socket.
-    // stdin → TLS: each chunk is CRLF-translated and flushed immediately so
-    // interactive typing behaves like openssl s_client. TLS → stdout: each
-    // decrypted record is written out, and Stream.hasBuffered() drains
-    // records coalesced into one transport read before going back to poll.
+    // Duplex relay.
     //
-    // Sequential phases (read all of stdin, then read the response) would
-    // deadlock against servers that wait for more input before answering
-    // mid-request; polling both directions avoids that.
+    // Both directions must run on one thread: a ztls-std Stream shares its
+    // handshake engine and outbound record buffer between reader and writer, so
+    // it is not safe to drive the two halves concurrently. That rules out
+    // `io.async` per direction, and sequential phases (read all of stdin, then
+    // read the response) deadlock against a server that waits for more input
+    // mid-request. What is left is readiness multiplexing in one thread, and
+    // `std.Io` 0.16 is a completion API with no readiness primitive — hence
+    // `posix.poll` on `conn.socketHandle()` rather than something Io-native.
+    // `hasBuffered()` covers the gap poll cannot see: records already decrypted
+    // or already framed inside the wrapper.
     const tls_r = conn.reader();
     const tls_w = conn.writer();
-    const sock_fd = conn.sock.socket.handle;
+    const sock_fd = conn.socketHandle();
 
     var stdin_open = true;
     var stdin_buf: [4096]u8 = undefined;
-    var translated: [8192]u8 = undefined; // worst case: every byte is \n → 2×
+    var translated: [2 * stdin_buf.len]u8 = undefined; // worst case: every byte is \n
     var prev_was_cr = false;
 
     defer {
@@ -165,22 +183,14 @@ pub fn main(init: std.process.Init) !void {
                 stdin_open = false; // EOF (Ctrl-D or drained pipe)
                 conn.closeWrite();
             } else {
-                // Translate bare \n → \r\n so HTTP requests can be typed
-                // interactively; existing \r\n from piped input is untouched.
-                var ti: usize = 0;
-                for (stdin_buf[0..n]) |b| {
-                    if (b == '\n' and !prev_was_cr) {
-                        translated[ti] = '\r';
-                        ti += 1;
-                    }
-                    translated[ti] = b;
-                    ti += 1;
-                    prev_was_cr = (b == '\r');
-                }
-                tls_w.writeAll(translated[0..ti]) catch |err|
-                    die("TLS write failed: {}", .{err});
+                const chunk = if (crlf)
+                    crlfTranslate(stdin_buf[0..n], &translated, &prev_was_cr)
+                else
+                    stdin_buf[0..n];
+                tls_w.writeAll(chunk) catch |err|
+                    die("TLS write failed: {t}", .{err});
                 tls_w.flush() catch |err|
-                    die("TLS flush failed: {}", .{err});
+                    die("TLS flush failed: {t}", .{err});
             }
         }
 
@@ -195,7 +205,7 @@ pub fn main(init: std.process.Init) !void {
                 tls_r.fillMore() catch |err| switch (err) {
                     error.EndOfStream => return,
                     else => {
-                        print("\n[tls] TLS read failed: {}\n", .{err});
+                        print("\n[tls] TLS read failed: {t}\n", .{err});
                         return;
                     },
                 };
@@ -210,4 +220,44 @@ pub fn main(init: std.process.Init) !void {
             }
         }
     }
+}
+
+/// Translate bare LF to CRLF so HTTP request lines can be typed interactively.
+/// `prev_was_cr` carries the state across chunk boundaries so an existing CRLF
+/// split by a read is not doubled. `out` must be twice `in`.
+fn crlfTranslate(in: []const u8, out: []u8, prev_was_cr: *bool) []const u8 {
+    assert(out.len >= 2 * in.len);
+    var i: usize = 0;
+    for (in) |b| {
+        if (b == '\n' and !prev_was_cr.*) {
+            out[i] = '\r';
+            i += 1;
+        }
+        out[i] = b;
+        i += 1;
+        prev_was_cr.* = (b == '\r');
+    }
+    return out[0..i];
+}
+
+test "crlfTranslate: bare LF becomes CRLF, existing CRLF is untouched" {
+    var out: [64]u8 = undefined;
+    var cr = false;
+    try testing.expectEqualStrings(
+        "GET /\r\n\r\n",
+        crlfTranslate("GET /\n\n", &out, &cr),
+    );
+    cr = false;
+    try testing.expectEqualStrings(
+        "GET /\r\n",
+        crlfTranslate("GET /\r\n", &out, &cr),
+    );
+}
+
+// A CRLF pair split across two reads must not become CR CR LF.
+test "crlfTranslate: carries CR state across chunks" {
+    var out: [64]u8 = undefined;
+    var cr = false;
+    try testing.expectEqualStrings("a\r", crlfTranslate("a\r", &out, &cr));
+    try testing.expectEqualStrings("\nb", crlfTranslate("\nb", &out, &cr));
 }

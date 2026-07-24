@@ -68,6 +68,11 @@ check-backend-boringssl:
 fmt: fmt-zig fmt-actions fmt-just fmt-rust
     just conformance/fmt
 
+[doc("Run the ztls-std integration gate (needs a Zig 0.16 devshell)")]
+[group("check")]
+integrations-ci:
+    just integrations/ztls-std/ci
+
 [doc("Build and run the C ABI example (libztls.a + c_client.c)")]
 [group("check")]
 capi-ci:

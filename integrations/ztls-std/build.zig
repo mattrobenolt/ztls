@@ -19,7 +19,9 @@ pub fn build(b: *std.Build) void {
     });
     const ztls_mod = ztls_dep.module("ztls");
 
-    // Fixtures module for tests (ECDSA P-256 test cert + scalar).
+    // Fixtures module (ECDSA P-256 test cert + scalar). Test-only: it is wired
+    // into the round-trip test module below, never into the library module, so
+    // consumers of ztls_std do not inherit a dependency on test fixtures.
     const fixtures_mod = b.addModule("fixtures", .{
         .root_source_file = ztls_dep.path("tests/fixtures/fixtures.zig"),
         .target = target,
@@ -35,8 +37,6 @@ pub fn build(b: *std.Build) void {
             .{ .name = "ztls", .module = ztls_mod },
         },
     });
-    // Tests need fixtures for the in-memory round-trip.
-    mod.addImport("fixtures", fixtures_mod);
 
     // Smoke executable: proves the ztls-std + ztls wiring builds and runs.
     const exe = b.addExecutable(.{
@@ -52,6 +52,11 @@ pub fn build(b: *std.Build) void {
     });
     b.installArtifact(exe);
 
+    const build_examples_step = b.step(
+        "build-examples",
+        "Compile every example (no peer required)",
+    );
+
     const run_step = b.step("run", "Run the smoke executable");
     const run_cmd = b.addRunArtifact(exe);
     run_step.dependOn(&run_cmd.step);
@@ -64,7 +69,8 @@ pub fn build(b: *std.Build) void {
     const examples = [_][]const u8{
         "tls_client",
     };
-    for (examples) |name| {
+    var example_test_runs: [examples.len]*std.Build.Step.Run = undefined;
+    for (examples, &example_test_runs) |name, *test_run| {
         const exe_mod = b.createModule(.{
             .root_source_file = b.path(b.fmt("examples/{s}.zig", .{name})),
             .target = target,
@@ -74,7 +80,6 @@ pub fn build(b: *std.Build) void {
                 .{ .name = "ztls", .module = ztls_mod },
             },
         });
-        exe_mod.addImport("fixtures", fixtures_mod);
         const example_exe = b.addExecutable(.{
             .name = name,
             .root_module = exe_mod,
@@ -86,15 +91,39 @@ pub fn build(b: *std.Build) void {
             b.fmt("Run {s} example", .{name}),
         );
         step.dependOn(&run.step);
+
+        // Examples carry unit tests for their own helpers; `zig build test`
+        // runs them, and `build-examples` proves every example still compiles
+        // without needing a peer to talk to.
+        test_run.* = b.addRunArtifact(b.addTest(.{ .root_module = exe_mod }));
+        build_examples_step.dependOn(&b.addInstallArtifact(example_exe, .{}).step);
     }
 
-    // Tests.
+    // Tests: unit tests inside the library module, plus the fixture-backed
+    // round-trip suite that exercises only the public API.
     const mod_tests = b.addTest(.{ .root_module = mod });
     const run_mod_tests = b.addRunArtifact(mod_tests);
+
+    const roundtrip_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/tests.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "ztls_std", .module = mod },
+                .{ .name = "ztls", .module = ztls_mod },
+                .{ .name = "fixtures", .module = fixtures_mod },
+            },
+        }),
+    });
+    const run_roundtrip_tests = b.addRunArtifact(roundtrip_tests);
+
     const exe_tests = b.addTest(.{ .root_module = exe.root_module });
     const run_exe_tests = b.addRunArtifact(exe_tests);
 
     const test_step = b.step("test", "Run tests");
     test_step.dependOn(&run_mod_tests.step);
+    test_step.dependOn(&run_roundtrip_tests.step);
     test_step.dependOn(&run_exe_tests.step);
+    for (example_test_runs) |test_run| test_step.dependOn(&test_run.step);
 }

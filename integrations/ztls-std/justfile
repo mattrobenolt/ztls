@@ -1,0 +1,52 @@
+# ztls-std integration workflows (#77).
+#
+# Zig 0.16 only. Enter the devshell with `nix develop ../..#ztls-std`, or let
+# direnv do it via .envrc. The root workspace delegates here rather than
+# absorbing these details.
+
+[private]
+default:
+    @just --list
+
+[doc("Remove local build artifacts")]
+clean:
+    rm -rf zig-out .zig-cache
+
+[doc("Build the smoke executable")]
+build:
+    zig build
+
+[doc("Compile every example (no peer required)")]
+build-examples:
+    zig build build-examples
+
+[doc("Run unit, round-trip, and example tests")]
+test:
+    zig build test --summary all
+
+[doc("Format Zig and Just sources")]
+fmt: fmt-zig fmt-just
+
+[doc("Lint Zig and Just sources")]
+lint: lint-zig lint-just
+
+[doc("Format Zig code")]
+fmt-zig:
+    zig fmt build.zig src/ examples/
+
+[doc("Lint Zig code (fmt, ziglint, and the workspace std-alias rules)")]
+lint-zig:
+    zig fmt --check build.zig src/ examples/
+    ziglint build.zig src/ examples/
+    rc=0; for rule in ../../rules/std-alias-*.yml; do ast-grep scan --rule "$rule" src examples --globs '*.zig' --report-style short || rc=1; done; exit $rc
+
+[doc("Format Justfile")]
+fmt-just:
+    just --fmt --unstable --justfile justfile
+
+[doc("Lint Justfile")]
+lint-just:
+    just --check --fmt --unstable --justfile justfile
+
+[doc("Run all CI gates for this integration")]
+ci: lint test build-examples

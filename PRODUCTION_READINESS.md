@@ -60,7 +60,7 @@ ztls is production-ready when all six pillars are `PROVEN`:
 | Pillar | Status | One-line |
 |---|---|---|
 | 1. Correctness | `PROVEN` | RFC 8446 MUST matrix closed for the supported surface; interop + tlsfuzzer PR-gated; TLS-Anvil scheduled with clean captures (437/437, no unexpected failures); adversarial security review found and fixed 3 vulns. Full TLS-Anvil is scheduled-only (2-hour runtime can't be PR-gated); BoGo explicitly deferred. |
-| 2. Ergonomics | `PROVEN` | CI-gated deterministic examples cover client and server roles across io_uring, epoll, and `std.net.Stream`; Config setup, server credentials, and `Outbox` cover the supported core ergonomics boundary. |
+| 2. Ergonomics | `PROVEN` | CI-gated deterministic examples cover client and server roles across io_uring, epoll, and `std.net.Stream`; Config setup, server credentials, and `Outbox` cover the supported core ergonomics boundary. The higher-order `std.Io.net` wrapper (`integrations/ztls-std`, #77) is `PARTIAL`: landed and CI-gated under Zig 0.16, without wrapper-level interop, client auth, or concurrent split halves. |
 | 3. Performance | `PROVEN` | n=10 captures on x86_64 (c7i.2xlarge), aarch64 (c7g.2xlarge), and macOS (Apple M1 Max) with formal CIs (p=0.000): ztls beats libssl on every comparable app-data row on all three platforms and rustls on all AES-GCM rows; regression gate committed. |
 | 4. Providers | `PROVEN` | OpenSSL (default), AWS-LC, and BoringSSL all compile, pass the full test suite, tlsfuzzer smoke, and have clean TLS-Anvil captures (437/437 each). CI-gated backend lanes (`just check-backend-aws-lc`, `just check-backend-boringssl`). Cert-chain stays ztls/std (ownership decision); FIPS comptime-validated; PQ/P-384 is #6. |
 | 5. Marketing | `PROVEN` | README leads with the proven performance story (n=10, both architectures, honest ChaCha20 loss) and the adversarial security posture; the why-ztls narrative and headline benchmarks are on the front door, backed by PERFORMANCE.md. |
@@ -496,9 +496,10 @@ Sans-I/O API is pleasant across every I/O model ztls claims to support.
   0.15.2 and Zig 0.16 and exit non-zero when the peer or io_uring support is
   unavailable, so they cannot be mistaken for proof if wired into a gate later.
 
-**Status:** `PROVEN`
+**Status:** `PROVEN` for the core Sans-I/O surface. The higher-order
+`std.Io.net` wrapper is tracked separately below as `PARTIAL`.
 
-**Gaps:** none for the supported adoption path.
+**Gaps:** none for the supported adoption path through the core engine.
 
 The caller-owned drive loop around `RecordBuffer`, the explicit `OutBuffer` /
 `FlightBuffer` storage, and event-switch dispatch are accepted Sans-I/O trade-offs,
@@ -548,6 +549,69 @@ session resumption from C, ALPN offering from C (query is implemented,
 offer is not), dynamic linking (`libztls.so` / `libztls.dylib`), and C
 conformance harness integration (TLS-Anvil through the C ABI per
 `docs/research/C_ABI_CONFORMANCE.md`). The C ABI is not claimed done.
+
+---
+
+### `std.Io.net` wrapper — ztls-std (#77) — PARTIAL
+
+`integrations/ztls-std/` is the reference higher-order integration: an
+opinionated TLS 1.3 stream over Zig 0.16 `std.Io.net`. It is a separate
+workspace with its own `build.zig`, `build.zig.zon` (path dep on the core), and
+`justfile`; the root delegates through `just integrations-ci`, which is wired
+into `just ci-0_16` and therefore runs in the `test-zig-0_16` CI job. The 0.15
+lane cannot build a 0.16-only integration and does not gate it.
+
+**Landed and gated.** `Client`/`Server` are the connection types
+(`StreamImpl(Hs, role, config)`), with eager `connect`/`accept`, `Io.Reader`/
+`Io.Writer` interfaces, `socketHandle`, `hasBuffered`, `info`, and the
+`closeWrite`/`close`/`deinit` teardown triple. `just integrations-ci` runs lint
+plus 21 tests: 14 fixture-backed round-trips over a socketpair (handshake, both
+directions, ALPN negotiation and no-overlap rejection, hostname-mismatch
+rejection, close_notify half-close, multi-record writes, coalesced-record
+draining, write-after-close rejection, teardown after a failed `accept`), 5 unit
+tests on error classification and buffer sizing, and 2 on the example's helpers.
+
+Four correctness properties are gated by tests rather than asserted in prose:
+
+- **The reader honors the whole `Io.Reader` contract.** An earlier revision
+  repointed `interface.buffer` at the decrypted record in place — zero copy, and
+  legal per the vtable contract — which made the reader's capacity equal to the
+  current record's length. `peek(n)` past the record and
+  `takeDelimiterInclusive('\n')` (HTTP header parsing) then hit
+  `assert(seek == end)` in Debug and silently discarded the unconsumed tail in
+  ReleaseFast. `stream` now copies into the destination the generic layer
+  supplies; `reader: peek past the current record keeps the unconsumed tail` and
+  `reader: takeDelimiterInclusive spans a record boundary` pin the fix, and
+  `reader: a line longer than read_buffer reports StreamTooLong` pins the bound.
+- **Handshake failures reach the peer.** RFC 8446 §6.2 fatal alerts are sent
+  before the socket closes. `connect: hostname mismatch surfaces as
+  CertificateVerificationFailed` asserts the ztls server peer observes
+  `TlsAlertReceived` rather than a truncated connection; manual verification
+  against `openssl s_server` shows `SSL alert number 42` (`bad_certificate`).
+- **Error classification is exhaustive by construction.** One `classify` table
+  covers the union of every core handshake error set with no `else` arm, so
+  adding a core variant is a compile error in the integration until it is
+  classified. Two role projections mean the same core error can mean different
+  things per role (`UnsupportedCipherSuite` is negotiation for a server,
+  `illegal_parameter` for a client).
+- **Buffer footprint is configurable and pinned.** `Config` sizes record
+  staging, reassembly, read look-ahead, write staging, and optional peer-chain
+  retention at comptime. Defaults measure 151_840 bytes (client) and 134_912
+  (server); `Config: buffer sizing is the whole story of the Stream footprint`
+  asserts each knob's exact `@sizeOf` delta.
+
+**Gaps (tracked under #77):** no automated OpenSSL interop gate *through the
+wrapper* — the core's interop already covers the engine, and wrapper-level
+interop has only been checked manually against `openssl s_server` and
+`example.com`. Client authentication is not a supported surface
+(`AcceptError.ClientCertificateRejected` exists because the core can produce
+those errors, not because the path is proven). Concurrent split halves are not
+supported: `reader()` and `writer()` share the handshake engine and outbound
+record buffer, so the two directions must be multiplexed from one thread. No
+handshake deadline is imposed; `std.Io` cancellation is the intended mechanism
+and is untested here. Session resumption / 0-RTT are out of scope for v1.
+`ztls-xev` (#76) and `ztls-ktls` (#78) are unstarted; distribution as an
+independently fetchable package is #79. ztls-std is not claimed done.
 
 ---
 

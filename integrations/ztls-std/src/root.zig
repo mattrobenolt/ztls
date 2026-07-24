@@ -6,9 +6,16 @@
 //! handshake-to-completion loop. See #77.
 //!
 //! Design: eager handshake (connect/accept run the full handshake before
-//! returning), drop-in Io.Reader/Io.Writer seam (TLS is invisible to
-//! consumers), and zero-copy reads (the Reader vtable repoints its buffer at
-//! the decrypted record in place — the 0.16 Io.Reader contract permits this).
+//! returning), honest `Io.Reader`/`Io.Writer` seam (every stdlib reader API
+//! works, including the cross-record ones an HTTP parser needs), and
+//! comptime-sized caller-visible buffers so the ~200 KB default is a choice
+//! rather than a tax.
+//!
+//! NOT thread-safe. `reader()` and `writer()` share the handshake engine and
+//! one outbound record buffer, so the two halves cannot be driven from
+//! different threads concurrently the way `tokio-rustls` split halves can.
+//! Multiplex both directions from one thread (see `hasBuffered` and
+//! `socketHandle`) or serialize access yourself.
 const std = @import("std");
 const assert = std.debug.assert;
 const Io = std.Io;
@@ -18,10 +25,10 @@ const mem = std.mem;
 const crypto = std.crypto;
 const posix = std.posix;
 
-const fixtures = @import("fixtures");
 const ztls = @import("ztls");
 /// Re-export ztls so consumers of ztls-std can reach the core if needed.
 pub const core = ztls;
+const alert = ztls.alert;
 const frame = ztls.frame;
 const RecordBuffer = ztls.RecordBuffer;
 
@@ -29,14 +36,16 @@ const RecordBuffer = ztls.RecordBuffer;
 // Verification policy (client)
 // ───────────────────────────────
 
-/// Client certificate verification policy. See README.
+/// Client certificate verification policy. Required — there is no default, so
+/// no caller can get an unverified connection by omission. See README.
 pub const Verify = union(enum) {
-    /// Load the OS trust store and verify the server certificate chain.
-    /// Requires an allocator, passed to `Client.connect` (used only for this
-    /// mode; freed before connect returns).
-    system_bundle,
+    /// Load the OS trust store with `gpa` and verify the server certificate
+    /// chain against it. The bundle is freed before `connect` returns, so a
+    /// client opening many connections should build one bundle and pass
+    /// `.bundle` instead of rescanning the trust store per connection.
+    system_bundle: mem.Allocator,
     /// Verify against a caller-owned bundle (pin a root / custom store).
-    /// Borrowed for the life of the Stream.
+    /// Borrowed for the duration of the handshake.
     bundle: *const crypto.Certificate.Bundle,
     /// Skip chain-anchor verification (sets ztls `insecure_no_chain_anchor`).
     /// Hostname verification still runs unless `host` is null. Demo/test only.
@@ -44,51 +53,114 @@ pub const Verify = union(enum) {
 };
 
 // ───────────────────────────────
+// Buffer configuration
+// ───────────────────────────────
+
+/// Comptime buffer sizing for a `Stream`. ztls core is built on caller-owned
+/// buffers; this is where that choice surfaces in the wrapper. The defaults
+/// accept anything the core accepts (~148 KB client / ~132 KB server), which is
+/// the right trade for a handful of connections and the wrong one for
+/// thousands.
+pub const Config = struct {
+    /// Transport staging for record framing. Must be at least
+    /// `ztls.RecordBuffer.min_storage` (one maximum-size wire record); the
+    /// default holds a full record plus a straddling partial one.
+    record_storage: usize = RecordBuffer.recommended_storage,
+    /// Handshake-message reassembly for flights that span records (large
+    /// certificate chains, fragmented ClientHello). `null` uses the core's
+    /// recommended size for the role. Too small surfaces as
+    /// `error.HandshakeBufferTooShort`.
+    reassembly_storage: ?usize = null,
+    /// Decrypted-plaintext look-ahead for the read side. This is the reader's
+    /// buffer capacity, so it bounds `Io.Reader.peek(n)`, `takeInt`, and
+    /// `takeDelimiterInclusive` line length: those return
+    /// `error.StreamTooLong` (or assert) past it. Must be at least
+    /// `ztls.frame.max_plaintext_len` so one whole record always fits.
+    read_buffer: usize = frame.max_plaintext_len,
+    /// Plaintext staging for the write side. One `flush` of a full buffer is
+    /// one TLS record; larger writes split across records.
+    write_buffer: usize = frame.max_plaintext_len,
+    /// Bytes reserved to retain the verified peer certificate chain for
+    /// `info().peer_chain`. `null` (the default) does not retain it:
+    /// `peer_chain` is empty and a client Stream is ~64 KB smaller. Set to
+    /// `ztls.ClientHandshake.recommended_handshake_storage` to hold any chain
+    /// the core will accept. Client-side only; server-side client-certificate
+    /// retention is not wired yet.
+    peer_chain_storage: ?usize = null,
+};
+
+// ───────────────────────────────
 // Error sets
 // ───────────────────────────────
 
+/// Handshake failures, coarsened from the ~90-variant core sets. Each variant
+/// says who is at fault and what a caller can do about it; the mapping is
+/// `classify` below.
 pub const ConnectError = error{
+    /// The server certificate chain, hostname, validity window, or
+    /// CertificateVerify signature did not authenticate.
     CertificateVerificationFailed,
+    /// A Finished MAC or record AEAD tag failed to verify. The peer could not
+    /// prove possession of the negotiated keys.
+    TlsDecryptError,
+    /// The peer aborted the handshake with a fatal alert.
     TlsAlertReceived,
+    /// The peer sent a malformed, unexpected, or illegal handshake message.
     HandshakeProtocolError,
-    NoApplicationProtocol,
+    /// The peer sent a record longer than RFC 8446 §5.1 permits.
+    RecordOverflow,
+    /// This Stream's `Config` buffers cannot hold the peer's handshake. Raise
+    /// `record_storage` / `reassembly_storage`.
     HandshakeBufferTooShort,
+    /// Caller-supplied `Options` are unusable (ALPN list shape, host length).
+    InvalidOptions,
+    /// The libcrypto backend failed, a counter overflowed, or a ztls-std
+    /// invariant was violated. Not attributable to the peer.
+    InternalError,
+    /// `verify == .system_bundle` and the trust-store load could not allocate.
     OutOfMemory,
 } || net.Stream.Reader.Error || net.Stream.Writer.Error || Io.Cancelable || Io.UnexpectedError;
 
 pub const AcceptError = error{
+    /// `Options.cert_chain` is empty, or the core rejected the credentials.
     MissingCredentials,
+    /// The client presented a certificate that was required, unsupported, or
+    /// too large. Client authentication is not a supported surface yet.
+    ClientCertificateRejected,
+    /// The client certificate chain did not authenticate.
+    CertificateVerificationFailed,
+    TlsDecryptError,
     TlsAlertReceived,
     HandshakeProtocolError,
+    /// No overlap between the client's cipher suites and ours.
     UnsupportedCipherSuite,
+    /// ALPN was offered by both sides with no overlap.
     NoApplicationProtocol,
+    RecordOverflow,
     HandshakeBufferTooShort,
+    InvalidOptions,
+    InternalError,
 } || net.Stream.Reader.Error || net.Stream.Writer.Error || Io.Cancelable || Io.UnexpectedError;
-
-pub const ReadError = error{
-    TlsBadRecord,
-    TlsAlertReceived,
-    TlsUnexpectedEof,
-} || net.Stream.Reader.Error || Io.Cancelable || Io.UnexpectedError;
-
-pub const WriteError = error{
-    TlsClosed,
-    TlsAlertReceived,
-} || net.Stream.Writer.Error || Io.Cancelable || Io.UnexpectedError;
 
 /// Negotiated connection properties. Slices are borrowed and valid until
 /// `deinit`.
 pub const Info = struct {
     cipher_suite: ztls.CipherSuite,
     alpn: ?[]const u8,
-    /// Verified peer certificates, leaf first. The server side is empty until
-    /// client-certificate retention is added to Server.Options.
+    /// Verified peer certificates, leaf first. Empty unless
+    /// `Config.peer_chain_storage` was set (and, server-side, always empty
+    /// until client-certificate retention is wired).
     peer_chain: []const []const u8,
 };
 
 // ───────────────────────────────
 // Transport helpers
 // ───────────────────────────────
+
+// `Io` has no unbuffered stream read/write on `net.Stream` itself; the vtable
+// hooks below are what `std.Io.net.Stream.Reader`/`Writer` call internally.
+// Going straight to them keeps the record buffer as the only staging layer
+// instead of copying through a second one.
 
 /// Read from a net.Stream into buf. Returns 0 on transport EOF.
 fn transportRead(io: Io, handle: net.Socket.Handle, buf: []u8) net.Stream.Reader.Error!usize {
@@ -111,74 +183,236 @@ fn transportWriteAll(
 }
 
 // ───────────────────────────────
-// Handshake drive loops
+// Core error classification
 // ───────────────────────────────
 
-/// Map sprawling ztls client handshake errors to the coarse ConnectError set.
-fn mapClientHandshakeError(err: anyerror) ConnectError {
+/// Every error either handshake role can produce. Used as one classification
+/// domain so the table below is written once instead of per role.
+const HandshakeError = ztls.ClientHandshake.StartError ||
+    ztls.ClientHandshake.HandleError ||
+    ztls.ServerHandshake.HandleError ||
+    ServerFlightError;
+
+const ServerFlightError = switch (@typeInfo(
+    @typeInfo(@TypeOf(ztls.ServerHandshake.sendServerFlightBuffered)).@"fn".return_type.?,
+)) {
+    .error_union => |u| u.error_set,
+    else => @compileError("sendServerFlightBuffered no longer returns an error union"),
+};
+
+/// Coarse failure class. Public error sets are thin projections of this.
+const Class = enum {
+    /// Peer certificate chain / hostname / signature did not authenticate.
+    certificate,
+    /// AEAD tag or Finished MAC mismatch.
+    decrypt,
+    /// Peer sent a fatal alert.
+    alert,
+    /// Peer sent something malformed, unexpected, or forbidden.
+    protocol,
+    /// Peer record exceeded the RFC 8446 §5.1 limit.
+    record_overflow,
+    /// Our configured buffers were too small.
+    buffer,
+    /// Caller-supplied options were unusable.
+    options,
+    /// Our fault: backend failure, counter overflow, broken invariant.
+    internal,
+    /// ALPN offered by both sides with no overlap (server only).
+    no_alpn,
+    /// No cipher suite overlap (server only).
+    unsupported_suite,
+    /// Server credentials missing or unusable (server only).
+    missing_credentials,
+    /// Client certificate required, unsupported, or oversized (server only).
+    client_certificate,
+};
+
+/// Classify one core handshake error.
+///
+/// Deliberately exhaustive: no `else`. Adding a variant to any core handshake
+/// error set is a compile error here until someone decides which coarse class
+/// the new failure belongs to. That decision is security-relevant — silently
+/// reporting a certificate failure as a generic protocol error is exactly the
+/// bug this shape prevents — so it does not get a default.
+fn classify(err: HandshakeError) Class {
     return switch (err) {
-        error.CertificateIssuerNotFound,
-        error.CertificateSignatureAlgorithmRejected,
-        error.CertificateKeyUsageRejected,
+        // ── Peer certificate did not authenticate ──
+        error.CertificateChainTooLong,
+        error.CertificateExpired,
         error.CertificateExtendedKeyUsageRejected,
+        error.CertificateFieldHasInvalidLength,
+        error.CertificateFieldHasWrongDataType,
+        error.CertificateHasDuplicateExtension,
+        error.CertificateHasInvalidBitString,
+        error.CertificateHasUnrecognizedObjectId,
+        error.CertificateHostMismatch,
+        error.CertificateIssuerMismatch,
+        error.CertificateIssuerNotCa,
+        error.CertificateIssuerNotFound,
+        error.CertificateKeyTooLarge,
+        error.CertificateKeyUsageRejected,
+        error.CertificateNameConstraintUnsupported,
+        error.CertificateNameConstraintViolation,
+        error.CertificateNotYetValid,
+        error.CertificatePublicKeyInvalid,
+        error.CertificateSignatureAlgorithmMismatch,
+        error.CertificateSignatureAlgorithmRejected,
+        error.CertificateSignatureAlgorithmUnsupported,
+        error.CertificateSignatureInvalid,
+        error.CertificateSignatureInvalidLength,
+        error.CertificateSignatureNamedCurveUnsupported,
+        error.CertificateSignatureUnsupportedBitCount,
+        error.CertificateTimeInvalid,
+        error.CertificateUnsupportedCriticalExtension,
+        error.EmptyCertificateList,
+        error.InvalidEncoding,
+        error.MissingTrustAnchor,
+        error.SignatureVerificationFailed,
         error.UnsupportedCertificateVersion,
-        error.CertificateVerifyFailed,
-        error.HostnameMismatch,
-        => error.CertificateVerificationFailed,
+        error.UnsupportedSignatureScheme,
+        => .certificate,
 
-        error.PeerAlert => error.TlsAlertReceived,
+        // ── Cryptographic proof failed ──
+        // RFC 8446 §4.4.4 (Finished) and §5.2 (record AEAD).
+        error.AuthenticationFailed,
+        error.InvalidVerifyData,
+        => .decrypt,
 
-        error.UnexpectedRecord,
-        error.UnexpectedMessage,
+        error.PeerAlert => .alert,
+
+        // ── Peer protocol violations ──
+        error.DuplicateExtension,
+        error.DuplicateKeyShare,
+        error.EmptyTicket,
+        error.HelloRetryRequest,
+        error.IdentityElement,
         error.IllegalParameter,
         error.IncompleteRecord,
+        error.InvalidAlertLength,
+        error.InvalidCompressionMethod,
+        error.InvalidEnumTag,
+        error.InvalidExtensionLength,
+        error.InvalidHandshakeLength,
+        error.InvalidHandshakeType,
+        error.InvalidInnerPlaintext,
+        error.InvalidSessionIdEcho,
+        error.InvalidVectorLength,
+        error.MalformedKeyShare,
+        error.MissingExtension,
+        error.MissingSignatureAlgorithmsExtension,
+        error.NotHelloRetryRequest,
+        error.RecordTooShort,
+        error.SignatureSchemeNotOffered,
+        error.TooManyKeyUpdates,
+        error.TooManyNewSessionTickets,
+        error.UnexpectedCertificateRequestContext,
+        error.UnexpectedContentType,
         error.UnexpectedEof,
-        error.BufferTooShort,
-        error.ServerNameTooLong,
-        error.IdentityTooLong,
-        error.IdentityElement,
+        error.UnexpectedExtension,
+        error.UnexpectedMessage,
+        error.UnexpectedRecord,
+        error.UnofferedAlpnProtocol,
+        error.UnsupportedExtension,
+        error.UnsupportedGroup,
+        error.UnsupportedKeyShare,
         error.UnsupportedKeyShareGroup,
-        error.HelloRetryRequestMismatch,
-        => error.HandshakeProtocolError,
+        error.UnsupportedTlsVersion,
+        => .protocol,
 
-        error.NoApplicationProtocol => error.NoApplicationProtocol,
+        error.RecordTooLarge => .record_overflow,
 
-        error.RecordTooLarge => error.HandshakeBufferTooShort,
+        error.BufferTooShort,
+        error.HandshakeBufferTooShort,
+        => .buffer,
 
-        // Keep production callers insulated from core error-set growth. The
-        // test below reflects over the core set so a new variant is visible in
-        // CI, while an integration built against newer core code still gets a
-        // usable coarse error instead of a process abort.
-        else => error.HandshakeProtocolError,
+        // ── Caller-supplied options ──
+        error.AlpnProtocolTooLong,
+        error.EmptyAlpnProtocol,
+        error.IdentityTooLong,
+        error.ServerNameTooLong,
+        error.TooManyAlpnBytes,
+        error.TooManyAlpnProtocols,
+        => .options,
+
+        // ── Our side ──
+        error.AeadEncryptFailed,
+        error.AeadSetupFailed,
+        error.KeyUpdateRequired,
+        error.LibcryptoFailed,
+        error.PendingWrite,
+        error.PlaintextTooLarge,
+        error.RequestContextTooLong,
+        error.SequenceNumberOverflow,
+        error.SliceLengthMismatch,
+        => .internal,
+
+        error.NoApplicationProtocol => .no_alpn,
+        error.UnsupportedCipherSuite => .unsupported_suite,
+        error.MissingServerCredentials => .missing_credentials,
+
+        error.ClientCertificateRequired,
+        error.ClientCertificateTooLarge,
+        error.UnsupportedClientCertificate,
+        => .client_certificate,
     };
 }
 
-/// Map sprawling ztls server handshake errors to the coarse AcceptError set.
-fn mapServerHandshakeError(err: anyerror) AcceptError {
-    return switch (err) {
-        error.MissingServerCredentials => error.MissingCredentials,
+fn mapClientHandshakeError(err: HandshakeError) ConnectError {
+    return switch (classify(err)) {
+        .certificate => error.CertificateVerificationFailed,
+        .decrypt => error.TlsDecryptError,
+        .alert => error.TlsAlertReceived,
+        .record_overflow => error.RecordOverflow,
+        .buffer => error.HandshakeBufferTooShort,
+        .options => error.InvalidOptions,
+        .internal, .missing_credentials, .client_certificate => error.InternalError,
+        // A client that reaches these got them from the server picking
+        // something it was never offered — RFC 8446 §4.1.3 makes that
+        // illegal_parameter, not a negotiation outcome.
+        .protocol, .no_alpn, .unsupported_suite => error.HandshakeProtocolError,
+    };
+}
 
-        error.PeerAlert => error.TlsAlertReceived,
+fn mapServerHandshakeError(err: HandshakeError) AcceptError {
+    return switch (classify(err)) {
+        .certificate => error.CertificateVerificationFailed,
+        .decrypt => error.TlsDecryptError,
+        .alert => error.TlsAlertReceived,
+        .protocol => error.HandshakeProtocolError,
+        .record_overflow => error.RecordOverflow,
+        .buffer => error.HandshakeBufferTooShort,
+        .options => error.InvalidOptions,
+        .internal => error.InternalError,
+        .no_alpn => error.NoApplicationProtocol,
+        .unsupported_suite => error.UnsupportedCipherSuite,
+        .missing_credentials => error.MissingCredentials,
+        .client_certificate => error.ClientCertificateRejected,
+    };
+}
 
-        error.UnexpectedRecord,
-        error.UnexpectedMessage,
-        error.IllegalParameter,
-        error.IncompleteRecord,
-        error.UnexpectedEof,
-        error.IdentityElement,
-        error.UnsupportedKeyShare,
-        => error.HandshakeProtocolError,
-
-        error.UnsupportedCipherSuite => error.UnsupportedCipherSuite,
-        error.NoApplicationProtocol => error.NoApplicationProtocol,
-        error.RecordTooLarge => error.HandshakeBufferTooShort,
-
-        else => error.HandshakeProtocolError,
+/// RFC 8446 §6.2 — a fatal error SHOULD be reported to the peer with an alert
+/// before the connection closes, so the peer logs `bad_certificate` instead of
+/// a bare FIN. `null` means send nothing: either the peer already aborted, or
+/// the transport is gone and an alert cannot reach it.
+fn alertForClass(class: Class) ?alert.Description {
+    return switch (class) {
+        .certificate => .bad_certificate,
+        .decrypt => .decrypt_error,
+        // The peer already sent a fatal alert; RFC 8446 §6.2 says close
+        // without sending more data.
+        .alert => null,
+        .protocol => .illegal_parameter,
+        .record_overflow => .record_overflow,
+        .buffer, .options, .internal, .missing_credentials => .internal_error,
+        .no_alpn => .no_application_protocol,
+        .unsupported_suite => .handshake_failure,
+        .client_certificate => .certificate_required,
     };
 }
 
 // ───────────────────────────────
-// Generic Stream (parameterized by handshake engine type)
+// Generic Stream
 // ───────────────────────────────
 
 /// The Reader vtable Error maps all TLS-specific failures to ReadFailed and
@@ -188,14 +422,24 @@ const WriterError = error{WriteFailed};
 
 const Role = enum { client, server };
 
+/// Records a peer may spend in one refill without producing application data.
+///
+/// RFC 8446 §5.1 permits zero-length `application_data` fragments as a
+/// traffic-analysis countermeasure and puts no rate limit on them, so a peer
+/// can otherwise keep a `read` call from ever returning. The core already caps
+/// KeyUpdate and NewSessionTicket floods (`TooManyKeyUpdates`,
+/// `TooManyNewSessionTickets`); this covers what it does not count.
+const max_idle_records_per_refill = 64;
+
 /// Client connection options. See `Client.connect`.
 const ClientOptions = struct {
     /// SNI + certificate hostname (SAN/CN) to verify. Required for real
     /// verification; null disables BOTH SNI and hostname verification
     /// (ztls `host_name = null`).
     host: ?[]const u8 = null,
-    /// Cert verification. Defaults to the OS trust bundle.
-    verify: Verify = .system_bundle,
+    /// Certificate verification policy. No default: a TLS client should not be
+    /// able to skip this decision by omission.
+    verify: Verify,
     /// ALPN protocols to offer (e.g. &.{ "h2", "http/1.1" }). Borrowed.
     alpn: []const []const u8 = &.{},
     /// Offer an X25519MLKEM768 hybrid key share (PQ). False by default.
@@ -215,17 +459,28 @@ const ServerOptions = struct {
     alpn: []const []const u8 = &.{},
 };
 
-fn StreamImpl(comptime Hs: type, comptime role: Role) type {
-    const Flag = enum {
-        rx_closed,
-        tx_closed,
-        closed,
-    };
-    const Flags = std.EnumSet(Flag);
-    const WriteBuffer = ztls.Array(frame.max_plaintext_len);
+fn StreamImpl(comptime Hs: type, comptime role: Role, comptime config: Config) type {
+    comptime {
+        if (config.record_storage < RecordBuffer.min_storage) @compileError(
+            "Config.record_storage must be at least ztls.RecordBuffer.min_storage",
+        );
+        if (config.read_buffer < frame.max_plaintext_len) @compileError(
+            "Config.read_buffer must be at least ztls.frame.max_plaintext_len",
+        );
+        if (config.write_buffer == 0) @compileError("Config.write_buffer must be nonzero");
+    }
 
-    const PeerCertificateStorage = if (role == .client)
-        ztls.Array(ztls.ClientHandshake.recommended_handshake_storage)
+    const Flag = enum { rx_closed, tx_closed, closed };
+    const Flags = std.EnumSet(Flag);
+
+    const RecordStorage = ztls.Array(config.record_storage);
+    const Reassembly = ztls.Array(config.reassembly_storage orelse Hs.Storage.capacity);
+    const ReadStorage = ztls.Array(config.read_buffer);
+    const WriteStorage = ztls.Array(config.write_buffer);
+
+    const retain_peer_chain = role == .client and config.peer_chain_storage != null;
+    const PeerChainStorage = if (retain_peer_chain)
+        ztls.Array(config.peer_chain_storage.?)
     else
         void;
 
@@ -258,21 +513,37 @@ fn StreamImpl(comptime Hs: type, comptime role: Role) type {
         }
 
         pub const Handshake = Hs;
-
         pub const Options = if (role == .client) ClientOptions else ServerOptions;
+        /// The `Config` this Stream type was instantiated with.
+        pub const buffers = config;
 
         sock: net.Stream,
         io: Io,
         hs: Hs,
-        storage: RecordBuffer.Storage,
+        storage: RecordStorage,
         rb: RecordBuffer,
         out: Hs.OutBuffer,
-        reassembly: Hs.Storage = .empty,
-        peer_certificate_storage: PeerCertificateStorage = undefined,
-        write_buffer: WriteBuffer = .empty,
+        reassembly: Reassembly = .empty,
+        read_storage: ReadStorage = .empty,
+        write_storage: WriteStorage = .empty,
+        peer_chain_storage: PeerChainStorage = if (retain_peer_chain) .empty else {},
+        /// Decrypted application data from the current record that has not been
+        /// handed to the caller yet. Slices into `storage`, which `rb.next()`
+        /// and `rb.writable()` invalidate — so the record loop must not run
+        /// while this is non-empty.
+        pending: []const u8 = &.{},
         reader_impl: Reader,
         writer_impl: Writer,
         flags: Flags = .initEmpty(),
+        /// Set by `finishInit` to catch a moved or copied Stream. `rb`, the
+        /// reassembly buffer, and both `Io` interfaces point into this struct,
+        /// so relocating the value silently corrupts memory. Checked with
+        /// `assert`, so it costs nothing in ReleaseFast.
+        pinned: *const Self = undefined,
+
+        fn assertPinned(s: *const Self) void {
+            assert(s.pinned == s);
+        }
 
         pub const Reader = struct {
             interface: Io.Reader,
@@ -281,76 +552,72 @@ fn StreamImpl(comptime Hs: type, comptime role: Role) type {
                 return .{
                     .interface = .{
                         .vtable = &.{ .stream = streamImpl },
-                        // Placeholder with nonzero capacity: refill repoints
-                        // buffer at each decrypted record, but generic
-                        // fillMore/rebase asserts buffer.len >= 1 before the
-                        // first refill. Never written through — stream()
-                        // ignores the writer side of the vtable contract.
-                        .buffer = &s.write_buffer.data,
+                        .buffer = &s.read_storage.data,
                         .seek = 0,
                         .end = 0,
                     },
                 };
             }
 
-            /// Refill the reader: drive the record loop until application_data is
-            /// available, then repoint `io_r.buffer` at the decrypted record
-            /// (zero-copy) and return 0 (data in buffer). EndOfStream = clean
-            /// close_notify. `readVec` uses the stdlib default, which delegates
-            /// here via `stream`.
+            /// Copy decrypted application data into `io_w`, driving the record
+            /// loop when nothing is pending.
+            ///
+            /// This honors the `Io.Reader.stream` contract instead of
+            /// repointing `io_r.buffer` at the record in place. Repointing is
+            /// tempting — it removes the copy — but it makes the reader's
+            /// capacity equal to the current record's length, which breaks
+            /// every stdlib path that buffers across records: `peek`,
+            /// `takeInt`, `takeDelimiterInclusive` and friends either assert or
+            /// silently drop the unconsumed tail. Writing through `io_w` keeps
+            /// the one copy the caller's destination needs anyway, and
+            /// `stream`-to-a-writer still moves record bytes straight to the
+            /// sink.
             fn streamImpl(
                 io_r: *Io.Reader,
                 io_w: *Io.Writer,
                 limit: Io.Limit,
             ) Io.Reader.StreamError!usize {
-                // Zero-copy: refill repoints io_r.buffer at the decrypted record
-                // (in place in the RecordBuffer) and returns 0, instead of copying
-                // bytes into io_w. The Io.Reader.stream contract permits storing data
-                // in buffer + returning 0 ("including zero, does not indicate end of
-                // stream"); the generic reader meters data out of buffer respecting
-                // the caller's limit, so limit is unused here. io_w/limit are
-                // vestigial to the vtable signature.
-                _ = io_w;
-                _ = limit;
                 const r: *Reader = @alignCast(@fieldParentPtr("interface", io_r));
                 const s: *Self = @alignCast(@fieldParentPtr("reader_impl", r));
-                assert(io_r.seek == io_r.end);
+                s.assertPinned();
 
-                return refill(s, io_r);
+                if (s.pending.len == 0) s.pending = try nextApplicationData(s);
+                // A short or zero-length write leaves the remainder pending for
+                // the next call; nothing is dropped on error either, because
+                // `pending` only advances by what was accepted.
+                const n = try io_w.write(limit.sliceConst(s.pending));
+                s.pending = s.pending[n..];
+                return n;
             }
 
-            /// Drive the record loop until application_data is available, then
-            /// repoint the buffer at the decrypted record (zero-copy).
-            /// Returns 0 (data in buffer). EndOfStream = clean close_notify.
-            fn refill(s: *Self, io_r: *Io.Reader) ReaderError!usize {
-                // RFC 8446 §6.1 — after close_notify or close(), reads return EndOfStream.
+            /// Drive the record loop until the peer sends application data.
+            /// Post-handshake control records (KeyUpdate, NewSessionTicket) are
+            /// handled here and never surface to the caller. `EndOfStream` is a
+            /// clean `close_notify` or a transport EOF without one.
+            fn nextApplicationData(s: *Self) ReaderError![]const u8 {
+                assert(s.pending.len == 0);
+                // RFC 8446 §6.1 — after close_notify or close(), reads end.
                 if (s.flags.contains(.closed) or s.flags.contains(.rx_closed))
                     return error.EndOfStream;
+
+                var idle: usize = 0;
                 while (true) {
                     while (true) {
                         const record = (s.rb.next() catch return error.ReadFailed) orelse break;
+                        if (idle == max_idle_records_per_refill) return error.ReadFailed;
+                        idle += 1;
                         const ev = s.hs.handleRecord(record, &s.out.buffer) catch {
                             return error.ReadFailed;
                         };
                         switch (normalizeReaderEvent(ev)) {
                             .none => continue,
                             .write => |bytes| {
-                                transportWriteAll(
-                                    s.io,
-                                    s.sock.socket.handle,
-                                    bytes,
-                                ) catch return error.ReadFailed;
-                                s.hs.completeWrite();
+                                s.writeControlRecord(bytes) catch return error.ReadFailed;
                                 continue;
                             },
                             .key_update => |response| {
                                 if (response) |bytes| {
-                                    transportWriteAll(
-                                        s.io,
-                                        s.sock.socket.handle,
-                                        bytes,
-                                    ) catch return error.ReadFailed;
-                                    s.hs.completeWrite();
+                                    s.writeControlRecord(bytes) catch return error.ReadFailed;
                                 }
                                 continue;
                             },
@@ -360,15 +627,9 @@ fn StreamImpl(comptime Hs: type, comptime role: Role) type {
                             },
                             .application_data => |app_data| {
                                 // RFC 8446 §5.1 — zero-length app-data
-                                // fragments are legal (traffic-analysis
-                                // countermeasure); they carry no bytes, so
-                                // skip them. Also keeps buffer.len >= 1 for
-                                // the generic rebase path.
+                                // fragments are legal and carry no bytes.
                                 if (app_data.len == 0) continue;
-                                io_r.buffer = @constCast(app_data);
-                                io_r.seek = 0;
-                                io_r.end = app_data.len;
-                                return 0;
+                                return app_data;
                             },
                         }
                     }
@@ -376,7 +637,10 @@ fn StreamImpl(comptime Hs: type, comptime role: Role) type {
                     const n = transportRead(s.io, s.sock.socket.handle, s.rb.writable()) catch {
                         return error.ReadFailed;
                     };
-                    if (n == 0) return error.EndOfStream;
+                    if (n == 0) {
+                        s.flags.insert(.rx_closed);
+                        return error.EndOfStream;
+                    }
                     s.rb.advance(n);
                 }
             }
@@ -389,7 +653,7 @@ fn StreamImpl(comptime Hs: type, comptime role: Role) type {
                 return .{
                     .interface = .{
                         .vtable = &.{ .drain = drainImpl },
-                        .buffer = &s.write_buffer.data,
+                        .buffer = &s.write_storage.data,
                     },
                 };
             }
@@ -397,41 +661,69 @@ fn StreamImpl(comptime Hs: type, comptime role: Role) type {
 
         /// Borrowed `*Io.Reader` — drop-in for any `*Io.Reader` consumer.
         pub fn reader(s: *Self) *Io.Reader {
+            s.assertPinned();
             return &s.reader_impl.interface;
         }
 
         /// Borrowed `*Io.Writer` — drop-in for any `*Io.Writer` consumer.
         pub fn writer(s: *Self) *Io.Writer {
+            s.assertPinned();
             return &s.writer_impl.interface;
+        }
+
+        /// The underlying socket handle, for readiness multiplexing (`poll`,
+        /// `epoll`, `kqueue`) or kTLS setup. Reading or writing it directly
+        /// desynchronizes the record layer.
+        pub fn socketHandle(s: *const Self) net.Socket.Handle {
+            s.assertPinned();
+            return s.sock.socket.handle;
         }
 
         /// ALPN protocol selected by the peer, or null. Valid after handshake.
         pub fn selectedAlpn(s: *const Self) ?[]const u8 {
+            s.assertPinned();
             return s.hs.selectedAlpnProtocol();
         }
 
         /// Negotiated connection properties. Valid after connect or accept.
         pub fn info(s: *const Self) Info {
+            s.assertPinned();
             return .{
                 .cipher_suite = s.hs.cipherSuite(),
                 .alpn = s.hs.selectedAlpnProtocol(),
-                .peer_chain = if (role == .client) s.hs.peerCertificateChain() else &.{},
+                .peer_chain = if (retain_peer_chain) s.hs.peerCertificateChain() else &.{},
             };
         }
 
         /// True when a read can return data without touching the transport:
-        /// either the Reader still holds decrypted bytes or the RecordBuffer
-        /// already holds a complete record. Poll-style loops use this to drain
-        /// coalesced records without blocking.
+        /// decrypted bytes are pending, or a complete record is already
+        /// buffered. Poll-style loops use this to drain coalesced records
+        /// without blocking.
         pub fn hasBuffered(s: *Self) bool {
-            return s.reader_impl.interface.buffered().len > 0 or s.rb.hasRecord();
+            s.assertPinned();
+            return s.pending.len > 0 or
+                s.reader_impl.interface.bufferedLen() > 0 or
+                s.rb.hasRecord();
         }
 
-        /// Send close_notify and keep reading until the peer closes. Idempotent.
+        /// Flush staged plaintext, send `close_notify`, and keep the read side
+        /// open for the peer's response. Idempotent.
+        ///
+        /// The flush is a safety net, not a substitute for flushing: teardown
+        /// is infallible by contract, so a caller who must know that staged
+        /// bytes reached the peer flushes explicitly first and checks.
         ///
         /// RFC 8446 §6.1 permits each direction to close independently.
         pub fn closeWrite(s: *Self) void {
+            s.assertPinned();
             if (s.flags.contains(.closed) or s.flags.contains(.tx_closed)) return;
+
+            // Staged plaintext goes out before close_notify. Discarding bytes
+            // the caller already handed to the Writer would be silent data
+            // loss, and close_notify must be the last record we send.
+            // ziglint-ignore: Z026 -- teardown is infallible; a failed flush
+            // has nowhere to go and the socket is about to close regardless.
+            s.writer_impl.interface.flush() catch {};
             s.flags.insert(.tx_closed);
 
             if (s.hs.sendAlert(.close_notify, &s.out.buffer)) |alert_record| {
@@ -440,33 +732,149 @@ fn StreamImpl(comptime Hs: type, comptime role: Role) type {
             } else |_| return;
         }
 
-        /// Send close_notify and close the underlying socket. Idempotent.
+        /// Flush, send `close_notify`, and close the underlying socket.
+        /// Idempotent. Does not drain application data the peer may still be
+        /// sending; callers who want that read to `error.EndOfStream` first.
         pub fn close(s: *Self) void {
+            s.assertPinned();
             if (s.flags.contains(.closed)) return;
             s.closeWrite();
-            s.flags.insert(.closed);
-            s.sock.close(s.io);
-            s.zeroWrapperBuffers();
-            s.hs.deinit();
+            s.teardown();
         }
 
-        /// Always-callable teardown: closes the socket (no alert) and
-        /// secure-zeros all buffers. Idempotent. Use after a failed connect
-        /// too — the socket may be open even if the handshake failed.
+        /// Always-callable teardown: closes the socket without an alert and
+        /// secure-zeros every wrapper-owned buffer. Idempotent, and safe (a
+        /// no-op) after a failed `connect`/`accept`, which cleans up after
+        /// itself.
         pub fn deinit(s: *Self) void {
             if (s.flags.contains(.closed)) return;
-            s.flags.insert(.closed);
-            s.sock.close(s.io);
-            s.zeroWrapperBuffers();
-            s.hs.deinit();
+            s.teardown();
         }
 
-        fn zeroWrapperBuffers(s: *Self) void {
+        fn teardown(s: *Self) void {
+            s.flags.insert(.closed);
+            s.pending = &.{};
+            s.sock.close(s.io);
             s.storage.secureZero();
             s.out.secureZero();
             s.reassembly.secureZero();
-            s.write_buffer.secureZero();
-            if (role == .client) s.peer_certificate_storage.secureZero();
+            s.read_storage.secureZero();
+            s.write_storage.secureZero();
+            if (retain_peer_chain) s.peer_chain_storage.secureZero();
+            s.hs.deinit();
+        }
+
+        /// Send an engine-produced control record (client Finished, KeyUpdate
+        /// response) and settle the engine's pending-write latch.
+        fn writeControlRecord(s: *Self, bytes: []const u8) net.Stream.Writer.Error!void {
+            defer s.hs.completeWrite();
+            try transportWriteAll(s.io, s.sock.socket.handle, bytes);
+        }
+
+        /// RFC 8446 §6.2 — best effort. A failed alert write cannot change the
+        /// outcome, and a latched pending write means the engine cannot encode
+        /// one at all.
+        fn sendFatalAlert(s: *Self, description: alert.Description) void {
+            if (s.hs.sendAlert(description, &s.out.buffer)) |record| {
+                // ziglint-ignore: Z026 -- the handshake already failed; a
+                // failed courtesy alert cannot change the reported error.
+                s.writeControlRecord(record) catch {};
+            } else |_| {}
+        }
+
+        /// Handshake failures for this role. Transport failures do not come
+        /// through here: they are already in the public set, and an alert
+        /// cannot reach a peer whose socket just failed.
+        const HandshakeFailure = if (role == .client) ConnectError else AcceptError;
+
+        /// Report a handshake failure to the peer (RFC 8446 §6.2), then coarsen
+        /// it for the caller.
+        fn handshakeFailure(s: *Self, err: HandshakeError) HandshakeFailure {
+            if (alertForClass(classify(err))) |description| s.sendFatalAlert(description);
+            return if (role == .client)
+                mapClientHandshakeError(err)
+            else
+                mapServerHandshakeError(err);
+        }
+
+        /// Drive the client handshake to completion. RFC 8446 Appendix A.1.
+        fn driveClientHandshake(s: *Self) ConnectError!void {
+            const io = s.io;
+            const handle = s.sock.socket.handle;
+
+            const ch = s.hs.start(&s.out.buffer) catch |err| return s.handshakeFailure(err);
+            try transportWriteAll(io, handle, ch);
+            s.hs.completeWrite();
+
+            while (!s.hs.isConnected()) {
+                const n = try transportRead(io, handle, s.rb.writable());
+                // The peer hung up mid-handshake. RFC 8446 §6.1 requires
+                // close_notify; a bare FIN here is a truncated handshake, not a
+                // clean shutdown.
+                if (n == 0) return s.handshakeFailure(error.UnexpectedEof);
+                s.rb.advance(n);
+
+                while (true) {
+                    // Stop once connected — remaining records (app data,
+                    // session tickets) belong to the Reader.
+                    if (s.hs.isConnected()) break;
+                    const record = s.rb.next() catch |err| return s.handshakeFailure(err);
+                    const ev = s.hs.handleRecord(record orelse break, &s.out.buffer) catch |err|
+                        return s.handshakeFailure(err);
+                    switch (ev) {
+                        .write => |bytes| {
+                            try transportWriteAll(io, handle, bytes);
+                            s.hs.completeWrite();
+                        },
+                        .none => {},
+                        .application_data,
+                        .closed,
+                        .key_update,
+                        .new_session_ticket,
+                        => return s.handshakeFailure(error.UnexpectedRecord),
+                    }
+                }
+            }
+        }
+
+        /// Drive the server handshake to completion. RFC 8446 Appendix A.2.
+        fn driveServerHandshake(s: *Self) AcceptError!void {
+            const io = s.io;
+            const handle = s.sock.socket.handle;
+
+            while (!s.hs.isConnected()) {
+                const n = try transportRead(io, handle, s.rb.writable());
+                if (n == 0) return s.handshakeFailure(error.UnexpectedEof);
+                s.rb.advance(n);
+
+                while (true) {
+                    // Stop once connected — app data sent right after Finished
+                    // belongs to the Reader.
+                    if (s.hs.isConnected()) break;
+                    const record = s.rb.next() catch |err| return s.handshakeFailure(err);
+                    const ev = s.hs.handleRecord(record orelse break, &s.out.buffer) catch |err|
+                        return s.handshakeFailure(err);
+                    switch (ev) {
+                        .write => |hello| {
+                            try transportWriteAll(io, handle, hello);
+                            s.hs.completeWrite();
+                            // ServerHello went out in the clear; the rest of
+                            // the flight is encrypted under handshake keys.
+                            const flight = s.hs.sendServerFlightBuffered(&s.out) catch |err|
+                                return s.handshakeFailure(err);
+                            if (flight) |bytes| {
+                                try transportWriteAll(io, handle, bytes);
+                                s.hs.completeWrite();
+                            }
+                        },
+                        .none => {},
+                        .application_data,
+                        .closed,
+                        .key_update,
+                        => return s.handshakeFailure(error.UnexpectedRecord),
+                    }
+                }
+            }
         }
 
         // ── Writer drain ──────────────
@@ -474,36 +882,36 @@ fn StreamImpl(comptime Hs: type, comptime role: Role) type {
         fn drainImpl(io_w: *Io.Writer, data: []const []const u8, splat: usize) WriterError!usize {
             const w: *Writer = @alignCast(@fieldParentPtr("interface", io_w));
             const s: *Self = @alignCast(@fieldParentPtr("writer_impl", w));
+            s.assertPinned();
 
             if (s.flags.contains(.closed) or s.flags.contains(.tx_closed)) return error.WriteFailed;
 
-            var total_written: usize = 0;
+            var total: usize = 0;
 
-            // 1. Send buffered plaintext as one record
+            // Buffered plaintext first, then each data slice, with the last
+            // repeated `splat` times. `consume` subtracts the buffered part.
             const buffered = io_w.buffered();
             if (buffered.len > 0) {
-                sendPlaintext(s, buffered) catch return error.WriteFailed;
-                total_written += buffered.len;
+                sendPlaintextChunked(s, buffered) catch return error.WriteFailed;
+                total += buffered.len;
             }
-
-            // 2. Send data slices (last one repeated splat times)
             if (data.len > 0) {
                 for (data[0 .. data.len - 1]) |slice| {
                     sendPlaintextChunked(s, slice) catch return error.WriteFailed;
-                    total_written += slice.len;
+                    total += slice.len;
                 }
                 const last = data[data.len - 1];
-                var i: usize = 0;
-                while (i < splat) : (i += 1) {
+                for (0..splat) |_| {
                     sendPlaintextChunked(s, last) catch return error.WriteFailed;
-                    total_written += last.len;
+                    total += last.len;
                 }
             }
 
-            return io_w.consume(total_written);
+            return io_w.consume(total);
         }
 
-        /// Send one plaintext chunk (must be <= max_plaintext_len) as a TLS record.
+        /// Send one plaintext chunk (must be <= max_plaintext_len) as one
+        /// TLS record. RFC 8446 §5.2.
         fn sendPlaintext(s: *Self, plaintext: []const u8) WriterError!void {
             assert(plaintext.len <= frame.max_plaintext_len);
             const record = s.hs.sendApplicationData(
@@ -516,8 +924,7 @@ fn StreamImpl(comptime Hs: type, comptime role: Role) type {
             };
         }
 
-        /// Send plaintext that may exceed max_plaintext_len, splitting into
-        /// multiple TLS records.
+        /// Split plaintext across records when it exceeds one record payload.
         fn sendPlaintextChunked(s: *Self, plaintext: []const u8) WriterError!void {
             var rest = plaintext;
             while (rest.len > 0) {
@@ -542,9 +949,13 @@ fn StreamImpl(comptime Hs: type, comptime role: Role) type {
             };
         }
 
+        /// Wire up everything that points into `s`. After this the value must
+        /// not be moved or copied.
         fn finishInit(s: *Self) void {
-            s.rb = .init(&s.storage.buffer);
-            s.hs.useHandshakeBuffer(&s.reassembly.buffer);
+            s.pinned = s;
+            s.rb = .init(&s.storage.data);
+            s.hs.useHandshakeBuffer(&s.reassembly.data);
+            if (retain_peer_chain) s.hs.usePeerCertificateBuffer(&s.peer_chain_storage.data);
             s.reader_impl = .init(s);
             s.writer_impl = .init(s);
         }
@@ -552,11 +963,13 @@ fn StreamImpl(comptime Hs: type, comptime role: Role) type {
         /// Client only. Wrap a CONNECTED `std.Io.net.Stream` and run the TLS
         /// 1.3 handshake to completion. Moves the socket into `s`. Eager: all
         /// handshake errors (cert verification, ALPN no-overlap, alerts)
-        /// surface here. `gpa` is used ONLY when `options.verify ==
-        /// .system_bundle` (to load the OS trust store); ignored otherwise.
+        /// surface here rather than leaking into the first read.
+        ///
+        /// On failure the peer gets a fatal alert where one is warranted, the
+        /// socket is closed, and buffers are zeroed — a later `deinit` is
+        /// harmless but unnecessary.
         pub fn connect(
             s: *Self,
-            gpa: mem.Allocator,
             io: Io,
             sock: net.Stream,
             options: Options,
@@ -569,48 +982,46 @@ fn StreamImpl(comptime Hs: type, comptime role: Role) type {
                     io.random(&random.data);
                     defer random.secureZero();
 
-                    const now_sec: i64 = Io.Timestamp.now(io, .real).toSeconds();
-
-                    var hs: ztls.ClientHandshake = .init(.{
+                    const hs: ztls.ClientHandshake = .init(.{
                         .keypairs = .init(client_keypair),
                         .host_name = options.host,
-                        .now_sec = now_sec,
+                        .now_sec = Io.Timestamp.now(io, .real).toSeconds(),
                         .random = random,
                         .alpn_protocols = options.alpn,
                         .offer_pq_key_share = options.offer_pq_key_share,
                     });
 
-                    var bundle: crypto.Certificate.Bundle = undefined;
-                    var bundle_loaded = false;
-                    defer if (bundle_loaded) bundle.deinit(gpa);
-
-                    switch (options.verify) {
-                        .system_bundle => {
-                            bundle = .empty;
-                            const bundle_now = Io.Timestamp.now(io, .real);
-                            bundle.rescan(gpa, io, bundle_now) catch |err| switch (err) {
-                                error.OutOfMemory => return error.OutOfMemory,
-                                else => return error.CertificateVerificationFailed,
-                            };
-                            bundle_loaded = true;
-                            hs.policy.bundle = &bundle;
-                        },
-                        .bundle => |b| {
-                            hs.policy.bundle = b;
-                        },
-                        .insecure => {
-                            hs.policy.insecure_no_chain_anchor = true;
-                        },
-                    }
-
+                    // In-place init before the first fallible step, so no error
+                    // path can leave `s` undefined while the caller holds a
+                    // pointer to it.
                     s.* = .init(io, sock, hs);
                     s.finishInit();
-                    s.hs.usePeerCertificateBuffer(&s.peer_certificate_storage.data);
+                    errdefer s.deinit();
 
-                    try clientHandshakeDrive(s);
+                    // Defers unwind in reverse: policy pointer cleared first,
+                    // then the bundle memory it referenced.
+                    var bundle: crypto.Certificate.Bundle = .empty;
+                    var bundle_gpa: ?mem.Allocator = null;
+                    defer if (bundle_gpa) |gpa| bundle.deinit(gpa);
+                    // TLS 1.3 only needs trust anchors during the handshake.
+                    defer s.hs.policy.bundle = null;
 
-                    // TLS 1.3 only needs the bundle during the handshake.
-                    s.hs.policy.bundle = null;
+                    switch (options.verify) {
+                        .system_bundle => |gpa| {
+                            bundle.rescan(gpa, io, Io.Timestamp.now(io, .real)) catch |err| {
+                                return switch (err) {
+                                    error.OutOfMemory => error.OutOfMemory,
+                                    else => error.CertificateVerificationFailed,
+                                };
+                            };
+                            bundle_gpa = gpa;
+                            s.hs.policy.bundle = &bundle;
+                        },
+                        .bundle => |b| s.hs.policy.bundle = b,
+                        .insecure => s.hs.policy.insecure_no_chain_anchor = true,
+                    }
+
+                    try s.driveClientHandshake();
                 },
                 .server => @compileError("connect is client-only; use accept on ztls_std.Server"),
             }
@@ -618,7 +1029,9 @@ fn StreamImpl(comptime Hs: type, comptime role: Role) type {
 
         /// Server only. Wrap an ACCEPTED `std.Io.net.Stream` and run the
         /// server-side handshake to completion. Moves the socket into `s`.
-        /// No allocator: the server presents, it does not anchor a chain.
+        /// No allocator: the server presents a chain, it does not anchor one.
+        ///
+        /// Same failure contract as `connect`.
         pub fn accept(
             s: *Self,
             io: Io,
@@ -627,25 +1040,28 @@ fn StreamImpl(comptime Hs: type, comptime role: Role) type {
         ) AcceptError!void {
             switch (role) {
                 .server => {
-                    if (options.cert_chain.len == 0) return error.MissingCredentials;
-
                     var server_keypair: ztls.x25519.KeyPair = .generate();
                     defer server_keypair.secureZero();
                     var random: ztls.Random = .empty;
                     io.random(&random.data);
                     defer random.secureZero();
 
-                    var hs: ztls.ServerHandshake = .init(.{
+                    const hs: ztls.ServerHandshake = .init(.{
                         .keypairs = .init(server_keypair),
                         .random = random,
                         .alpn_protocols = options.alpn,
                     });
-                    hs.setCredentials(options.cert_chain, options.signer);
 
                     s.* = .init(io, sock, hs);
                     s.finishInit();
+                    errdefer s.deinit();
 
-                    try serverHandshakeDrive(s);
+                    // Checked after in-place init so this error path is
+                    // teardown-safe like every other one.
+                    if (options.cert_chain.len == 0) return error.MissingCredentials;
+                    s.hs.setCredentials(options.cert_chain, options.signer);
+
+                    try s.driveServerHandshake();
                 },
                 .client => @compileError("accept is server-only; use connect on ztls_std.Client"),
             }
@@ -657,526 +1073,122 @@ fn StreamImpl(comptime Hs: type, comptime role: Role) type {
 // Client / Server
 // ───────────────────────────────
 
-/// A TLS 1.3 client connection. Sized ~130 KB (includes inline reassembly
-/// storage for multi-record certificate chains): declare with `undefined`
-/// and initialize in place via `connect` — the type is self-referential and
-/// must not be moved after connecting.
-pub const Client = StreamImpl(ztls.ClientHandshake, .client);
-
-/// A TLS 1.3 server connection. Same placement rules as `Client`.
-pub const Server = StreamImpl(ztls.ServerHandshake, .server);
-
-/// Drive the client handshake to completion.
-fn clientHandshakeDrive(s: *Client) ConnectError!void {
-    const io = s.io;
-    const handle = s.sock.socket.handle;
-
-    // Send ClientHello
-    const ch = s.hs.start(&s.out.buffer) catch |err| return mapClientHandshakeError(err);
-    try transportWriteAll(io, handle, ch);
-    s.hs.completeWrite();
-
-    while (!s.hs.isConnected()) {
-        const n = try transportRead(io, handle, s.rb.writable());
-        if (n == 0) return error.HandshakeProtocolError;
-        s.rb.advance(n);
-
-        while (true) {
-            // Stop processing records once connected — remaining records
-            // (app data, NST, etc.) are left for the Reader to consume.
-            if (s.hs.isConnected()) break;
-            const record = (s.rb.next() catch return error.HandshakeBufferTooShort) orelse break;
-            const ev = s.hs.handleRecord(record, &s.out.buffer) catch |err|
-                return mapClientHandshakeError(err);
-            switch (ev) {
-                .write => |w| {
-                    try transportWriteAll(io, handle, w);
-                    s.hs.completeWrite();
-                },
-                .none => {},
-                .application_data,
-                .closed,
-                .key_update,
-                .new_session_ticket,
-                => return error.HandshakeProtocolError,
-            }
-        }
-    }
+/// A TLS 1.3 client connection with custom buffer sizing.
+pub fn ClientWith(comptime config: Config) type {
+    return StreamImpl(ztls.ClientHandshake, .client, config);
 }
 
-/// Drive the server handshake to completion.
-fn serverHandshakeDrive(s: *Server) AcceptError!void {
-    const io = s.io;
-    const handle = s.sock.socket.handle;
-
-    while (!s.hs.isConnected()) {
-        const n = try transportRead(io, handle, s.rb.writable());
-        if (n == 0) return error.TlsAlertReceived;
-        s.rb.advance(n);
-
-        while (true) {
-            // Stop processing records once connected — remaining records
-            // (app data sent immediately after Finished) are left in the
-            // RecordBuffer for the Reader to consume.
-            if (s.hs.isConnected()) break;
-            const record = (s.rb.next() catch return error.HandshakeBufferTooShort) orelse break;
-            const ev = s.hs.handleRecord(record, &s.out.buffer) catch |err|
-                return mapServerHandshakeError(err);
-            switch (ev) {
-                .write => |w_bytes| {
-                    try transportWriteAll(io, handle, w_bytes);
-                    s.hs.completeWrite();
-                    // After ServerHello, send the encrypted flight.
-                    if (s.hs.sendServerFlightBuffered(&s.out)) |maybe_flight| {
-                        if (maybe_flight) |flight| {
-                            try transportWriteAll(io, handle, flight);
-                            s.hs.completeWrite();
-                        }
-                    } else |err| return mapServerHandshakeError(err);
-                },
-                .none => {},
-                .application_data, .closed, .key_update => return error.HandshakeProtocolError,
-            }
-        }
-    }
+/// A TLS 1.3 server connection with custom buffer sizing.
+pub fn ServerWith(comptime config: Config) type {
+    return StreamImpl(ztls.ServerHandshake, .server, config);
 }
+
+/// A TLS 1.3 client connection with default buffers (~148 KB). Self-referential
+/// and large: declare it `undefined`, initialize in place with `connect`, and
+/// never move or copy the value afterward (the `std.Thread.Pool` pattern). A
+/// moved Stream trips an assert in Debug/ReleaseSafe rather than corrupting
+/// silently. Use `ClientWith` to resize the buffers.
+pub const Client = ClientWith(.{});
+
+/// A TLS 1.3 server connection with default buffers (~132 KB). Same placement
+/// rules as `Client`.
+pub const Server = ServerWith(.{});
 
 // ───────────────────────────────
 // Tests
 // ───────────────────────────────
+//
+// Round-trip tests that need certificate fixtures live in `src/tests.zig` so
+// the library module itself has no test-fixture dependency.
 
-const test_cert_der: []const u8 = &fixtures.server_ecdsa_cert_der;
-const test_scalar: []const u8 = &fixtures.server_ecdsa_scalar;
-
-fn testIo() Io {
-    return Io.Threaded.global_single_threaded.io();
+test "classify: representative core errors land in the intended class" {
+    try testing.expectEqual(Class.certificate, classify(error.CertificateHostMismatch));
+    try testing.expectEqual(Class.certificate, classify(error.MissingTrustAnchor));
+    try testing.expectEqual(Class.decrypt, classify(error.InvalidVerifyData));
+    try testing.expectEqual(Class.alert, classify(error.PeerAlert));
+    try testing.expectEqual(Class.protocol, classify(error.IllegalParameter));
+    try testing.expectEqual(Class.record_overflow, classify(error.RecordTooLarge));
+    try testing.expectEqual(Class.buffer, classify(error.HandshakeBufferTooShort));
+    try testing.expectEqual(Class.options, classify(error.AlpnProtocolTooLong));
+    try testing.expectEqual(Class.internal, classify(error.LibcryptoFailed));
+    try testing.expectEqual(Class.no_alpn, classify(error.NoApplicationProtocol));
+    try testing.expectEqual(Class.missing_credentials, classify(error.MissingServerCredentials));
 }
 
-// TCP loopback round-trip through the ztls-std API.
-// RFC 8446 — full TLS 1.3 handshake + application data both directions + clean close_notify.
-test "ztls-std: socketpair echo" {
-    var fds: [2]posix.fd_t = undefined;
-    const rc = std.c.socketpair(posix.AF.UNIX, posix.SOCK.STREAM, 0, &fds);
-    try testing.expectEqual(@as(c_int, 0), rc);
-    defer _ = std.c.close(fds[0]);
-    defer _ = std.c.close(fds[1]);
-
-    const written = std.c.write(fds[0], "ping", 4);
-    try testing.expectEqual(@as(isize, 4), written);
-
-    var rbuf: [16]u8 = undefined;
-    const n = std.c.read(fds[1], &rbuf, rbuf.len);
-    try testing.expectEqual(@as(isize, 4), n);
-    try testing.expectEqualStrings("ping", rbuf[0..4]);
-}
-
-const ThreadEchoCtx = struct {
-    fd: posix.fd_t,
-    err: ?anyerror = null,
-};
-
-fn threadEchoRun(ctx: *ThreadEchoCtx) void {
-    var buf: [4]u8 = undefined;
-    const n = std.c.read(ctx.fd, &buf, buf.len);
-    if (n != 4) {
-        ctx.err = error.UnexpectedReadSize;
-        return;
-    }
-    const written = std.c.write(ctx.fd, &buf, 4);
-    if (written != 4) {
-        ctx.err = error.UnexpectedWriteSize;
-        return;
-    }
-}
-
-test "ztls-std: thread spawn works" {
-    // Sanity that std.Thread.spawn works in the test context — the
-    // round-trip tests below depend on this.
-    var fds: [2]posix.fd_t = undefined;
+test "public error mapping: a cert failure never degrades to a protocol error" {
     try testing.expectEqual(
-        @as(c_int, 0),
-        std.c.socketpair(posix.AF.UNIX, posix.SOCK.STREAM, 0, &fds),
+        ConnectError.CertificateVerificationFailed,
+        mapClientHandshakeError(error.CertificateExpired),
     );
-    defer _ = std.c.close(fds[0]);
-    defer _ = std.c.close(fds[1]);
-
-    var ctx: ThreadEchoCtx = .{ .fd = fds[1] };
-    const thread = try std.Thread.spawn(.{}, threadEchoRun, .{&ctx});
-
-    _ = std.c.write(fds[0], "ping", 4);
-    var buf: [4]u8 = undefined;
-    const n = std.c.read(fds[0], &buf, buf.len);
-    try testing.expectEqual(@as(isize, 4), n);
-    try testing.expectEqualStrings("ping", buf[0..4]);
-
-    thread.join();
-    if (ctx.err) |err| return err;
-}
-
-/// Context for the server thread in the round-trip test.
-const RoundTripServerCtx = struct {
-    fd: posix.fd_t,
-    err: ?anyerror = null,
-};
-
-fn roundTripServerRun(ctx: *RoundTripServerCtx) void {
-    const io = testIo();
-    const server_sock: net.Stream = .{
-        .socket = .{ .handle = ctx.fd, .address = .{ .ip4 = undefined } },
-    };
-
-    var key: ztls.signature.PrivateKey = ztls.signature.PrivateKey.fromP256Scalar(
-        @ptrCast(test_scalar[0..32]),
-    ) catch {
-        ctx.err = error.TestUnexpectedResult;
-        _ = std.c.close(ctx.fd);
-        return;
-    };
-    defer key.deinit();
-
-    var conn: Server = undefined;
-    conn.accept(io, server_sock, .{
-        .cert_chain = &.{test_cert_der},
-        .signer = key.signer(),
-        .alpn = &.{"h2"},
-    }) catch |err| {
-        ctx.err = err;
-        _ = std.c.close(ctx.fd);
-        return;
-    };
-
-    // Read request — buffer matches expected request size so readSliceShort
-    // returns once the record is consumed.
-    const r = conn.reader();
-    var buf: [18]u8 = undefined;
-    _ = r.readSliceShort(&buf) catch |err| {
-        ctx.err = err;
-        conn.deinit();
-        return;
-    };
-
-    // Respond
-    const w = conn.writer();
-    w.writeAll("hello") catch |err| {
-        ctx.err = err;
-        conn.deinit();
-        return;
-    };
-    w.flush() catch |err| {
-        ctx.err = err;
-        conn.deinit();
-        return;
-    };
-
-    conn.close();
-}
-
-test "ztls-std: in-memory client↔server round-trip" {
-    // RFC 8446 — full TLS 1.3 handshake + application data both directions
-    // + ALPN h2 + clean close_notify. Server runs on a thread over a
-    // socketpair; client runs on the main thread. Mirrors tcp_loopback's
-    // ServerCtx + serverRun shape.
-    const io = testIo();
-
-    var fds: [2]posix.fd_t = undefined;
     try testing.expectEqual(
-        @as(c_int, 0),
-        std.c.socketpair(posix.AF.UNIX, posix.SOCK.STREAM, 0, &fds),
+        ConnectError.TlsAlertReceived,
+        mapClientHandshakeError(error.PeerAlert),
     );
-    // Server thread owns fds[1]; parent owns fds[0]. The parent must not
-    // close fds[1] before join — the server thread reads from it.
-    defer _ = std.c.close(fds[0]);
+    try testing.expectEqual(
+        ConnectError.RecordOverflow,
+        mapClientHandshakeError(error.RecordTooLarge),
+    );
+    // A server picking an unoffered suite is illegal_parameter for a client,
+    // not a negotiation result.
+    try testing.expectEqual(
+        ConnectError.HandshakeProtocolError,
+        mapClientHandshakeError(error.UnsupportedCipherSuite),
+    );
+    // The same core error is a real negotiation outcome for a server.
+    try testing.expectEqual(
+        AcceptError.UnsupportedCipherSuite,
+        mapServerHandshakeError(error.UnsupportedCipherSuite),
+    );
+    try testing.expectEqual(
+        AcceptError.MissingCredentials,
+        mapServerHandshakeError(error.MissingServerCredentials),
+    );
+}
 
-    var sctx: RoundTripServerCtx = .{ .fd = fds[1] };
-    const server_thread = try std.Thread.spawn(.{}, roundTripServerRun, .{&sctx});
+// RFC 8446 §6.2 — fatal errors are reported to the peer with a matching alert.
+test "alertForClass: peer-visible reason matches the failure" {
+    try testing.expectEqual(alert.Description.bad_certificate, alertForClass(.certificate).?);
+    try testing.expectEqual(alert.Description.decrypt_error, alertForClass(.decrypt).?);
+    try testing.expectEqual(alert.Description.illegal_parameter, alertForClass(.protocol).?);
+    try testing.expectEqual(alert.Description.record_overflow, alertForClass(.record_overflow).?);
+    try testing.expectEqual(
+        alert.Description.no_application_protocol,
+        alertForClass(.no_alpn).?,
+    );
+    // The peer already aborted; RFC 8446 §6.2 says close without replying.
+    try testing.expectEqual(@as(?alert.Description, null), alertForClass(.alert));
+}
 
-    const client_sock: net.Stream = .{
-        .socket = .{ .handle = fds[0], .address = .{ .ip4 = undefined } },
-    };
+test "Config: buffer sizing is the whole story of the Stream footprint" {
+    // Measured on this revision: Client 151_840, Server 134_912. Tight
+    // ceilings on purpose — a buffer that grows without a `Config` change is a
+    // regression, not a rounding difference.
+    try testing.expect(@sizeOf(Client) <= 152_000);
+    try testing.expect(@sizeOf(Server) <= 135_000);
 
-    var gpa_state: std.heap.DebugAllocator(.{}) = .init;
-    defer _ = gpa_state.deinit();
-    const gpa = gpa_state.allocator();
-
-    var conn: Client = undefined;
-    try conn.connect(gpa, io, client_sock, .{
-        .host = "ztls.server.test",
-        .verify = .insecure,
-        .alpn = &.{"h2"},
+    // Retaining the peer chain for `info()` costs exactly one handshake-sized
+    // buffer, which is why it is opt-in.
+    const Introspecting = ClientWith(.{
+        .peer_chain_storage = ztls.ClientHandshake.recommended_handshake_storage,
     });
-    defer conn.deinit();
-
-    // Verify negotiated connection metadata. The chain is retained in the
-    // Client-owned buffer, not borrowed from the mutable RecordBuffer.
-    try testing.expectEqualStrings("h2", conn.selectedAlpn().?);
-    const info = conn.info();
-    try testing.expectEqual(.aes_128_gcm_sha256, info.cipher_suite);
-    try testing.expectEqualStrings("h2", info.alpn.?);
-    try testing.expectEqual(@as(usize, 1), info.peer_chain.len);
-    try testing.expectEqualSlices(u8, test_cert_der, info.peer_chain[0]);
-
-    // Write to server
-    const w = conn.writer();
-    try w.writeAll("GET / HTTP/1.0\r\n\r\n");
-    try w.flush();
-
-    // Read response — buffer exactly matches "hello".
-    const r = conn.reader();
-    var buf: [5]u8 = undefined;
-    const n = try r.readSliceShort(&buf);
-    try testing.expectEqualStrings("hello", buf[0..n]);
-
-    // Close
-    conn.close();
-
-    server_thread.join();
-    if (sctx.err) |err| return err;
-}
-
-test "ztls-std: handshake errors map without panicking" {
-    inline for (@typeInfo(ztls.ClientHandshake.StartError).error_set.?) |err| {
-        const value: ztls.ClientHandshake.StartError = @field(
-            ztls.ClientHandshake.StartError,
-            err.name,
-        );
-        const mapped: ConnectError = mapClientHandshakeError(value);
-        try testing.expect(mapped == mapped);
-    }
-    inline for (@typeInfo(ztls.ClientHandshake.HandleError).error_set.?) |err| {
-        const value: ztls.ClientHandshake.HandleError = @field(
-            ztls.ClientHandshake.HandleError,
-            err.name,
-        );
-        const mapped: ConnectError = mapClientHandshakeError(value);
-        try testing.expect(mapped == mapped);
-    }
-    inline for (@typeInfo(ztls.ServerHandshake.HandleError).error_set.?) |err| {
-        const value: ztls.ServerHandshake.HandleError = @field(
-            ztls.ServerHandshake.HandleError,
-            err.name,
-        );
-        const mapped: AcceptError = mapServerHandshakeError(value);
-        try testing.expect(mapped == mapped);
-    }
-}
-
-test "ztls-std: Stream size is reasonable" {
-    // Stream includes RecordBuffer.Storage (~33KB), OutBuffer (~16KB),
-    // write_buffer (16KB), reassembly (client ~65KB / server ~33KB), plus
-    // the handshake engine. Large but not absurd for an inline TLS stream.
-    try testing.expect(@sizeOf(Client) < 210_000);
-    try testing.expect(@sizeOf(Server) < 200_000);
-}
-
-const ReadAfterCloseServerCtx = struct {
-    fd: posix.fd_t,
-    err: ?anyerror = null,
-};
-
-fn readAfterCloseServerRun(ctx: *ReadAfterCloseServerCtx) void {
-    const io = testIo();
-    const server_sock: net.Stream = .{
-        .socket = .{ .handle = ctx.fd, .address = .{ .ip4 = undefined } },
-    };
-
-    var key: ztls.signature.PrivateKey = ztls.signature.PrivateKey.fromP256Scalar(
-        @ptrCast(test_scalar[0..32]),
-    ) catch {
-        ctx.err = error.TestUnexpectedResult;
-        _ = std.c.close(ctx.fd);
-        return;
-    };
-    defer key.deinit();
-
-    var conn: Server = undefined;
-    conn.accept(io, server_sock, .{
-        .cert_chain = &.{test_cert_der},
-        .signer = key.signer(),
-        .alpn = &.{"h2"},
-    }) catch |err| {
-        ctx.err = err;
-        _ = std.c.close(ctx.fd);
-        return;
-    };
-
-    const r = conn.reader();
-    var buf: [4]u8 = undefined;
-    _ = r.readSliceShort(&buf) catch |err| {
-        ctx.err = err;
-        conn.deinit();
-        return;
-    };
-
-    const w = conn.writer();
-    w.writeAll("ok") catch |err| {
-        ctx.err = err;
-        conn.deinit();
-        return;
-    };
-    w.flush() catch |err| {
-        ctx.err = err;
-        conn.deinit();
-        return;
-    };
-    conn.close();
-}
-
-// RFC 8446 §6.1 — close_notify is a write-side half-close.
-test "ztls-std: closeWrite preserves peer response" {
-    const io = testIo();
-
-    var fds: [2]posix.fd_t = undefined;
     try testing.expectEqual(
-        @as(c_int, 0),
-        std.c.socketpair(posix.AF.UNIX, posix.SOCK.STREAM, 0, &fds),
+        @as(usize, ztls.ClientHandshake.recommended_handshake_storage),
+        @sizeOf(Introspecting) - @sizeOf(Client),
     );
-    defer _ = std.c.close(fds[0]);
 
-    var sctx: ReadAfterCloseServerCtx = .{ .fd = fds[1] };
-    const server_thread = try std.Thread.spawn(.{}, readAfterCloseServerRun, .{&sctx});
-
-    const client_sock: net.Stream = .{
-        .socket = .{ .handle = fds[0], .address = .{ .ip4 = undefined } },
-    };
-
-    var gpa_state: std.heap.DebugAllocator(.{}) = .init;
-    defer _ = gpa_state.deinit();
-    const gpa = gpa_state.allocator();
-
-    var conn: Client = undefined;
-    try conn.connect(gpa, io, client_sock, .{
-        .host = "ztls.server.test",
-        .verify = .insecure,
-        .alpn = &.{"h2"},
-    });
-    defer conn.deinit();
-
-    const w = conn.writer();
-    try w.writeAll("ping");
-    try w.flush();
-
-    // RFC 8446 §6.1 — close_notify closes only the write side. The peer's
-    // application data remains readable until its close_notify arrives.
-    conn.closeWrite();
-
-    const r = conn.reader();
-    try r.fillMore();
-    const chunk = r.buffered();
-    try testing.expectEqualStrings("ok", chunk);
-    r.toss(chunk.len);
-    try testing.expectError(error.EndOfStream, r.fillMore());
-
-    server_thread.join();
-    if (sctx.err) |err| return err;
-}
-
-const LargeWriteServerCtx = struct {
-    fd: posix.fd_t,
-    payload_len: usize,
-    total_read: usize = 0,
-    err: ?anyerror = null,
-};
-
-fn largeWriteServerRun(ctx: *LargeWriteServerCtx) void {
-    const io = testIo();
-    const server_sock: net.Stream = .{
-        .socket = .{ .handle = ctx.fd, .address = .{ .ip4 = undefined } },
-    };
-
-    var key: ztls.signature.PrivateKey = ztls.signature.PrivateKey.fromP256Scalar(
-        @ptrCast(test_scalar[0..32]),
-    ) catch {
-        ctx.err = error.TestUnexpectedResult;
-        _ = std.c.close(ctx.fd);
-        return;
-    };
-    defer key.deinit();
-
-    var conn: Server = undefined;
-    conn.accept(io, server_sock, .{
-        .cert_chain = &.{test_cert_der},
-        .signer = key.signer(),
-        .alpn = &.{"h2"},
-    }) catch |err| {
-        ctx.err = err;
-        _ = std.c.close(ctx.fd);
-        return;
-    };
-
-    const r = conn.reader();
-    var buf: [4096]u8 = undefined;
-    while (ctx.total_read < ctx.payload_len) {
-        const to_read = @min(buf.len, ctx.payload_len - ctx.total_read);
-        const n = r.readSliceShort(buf[0..to_read]) catch |err| {
-            ctx.err = err;
-            conn.deinit();
-            return;
-        };
-        if (n == 0) break;
-        ctx.total_read += n;
-    }
-
-    const w = conn.writer();
-    w.writeAll("done") catch |err| {
-        ctx.err = err;
-        conn.deinit();
-        return;
-    };
-    w.flush() catch |err| {
-        ctx.err = err;
-        conn.deinit();
-        return;
-    };
-    conn.close();
-}
-
-// RFC 8446 §5.1 — plaintext exceeding max_plaintext_len (16384) is split
-// across multiple TLS records. Exercises the Writer chunking path.
-test "ztls-std: large write spanning multiple records" {
-    const io = testIo();
-
-    var fds: [2]posix.fd_t = undefined;
+    // Every other knob is just as literal.
+    const BiggerRead = ClientWith(.{ .read_buffer = 2 * frame.max_plaintext_len });
     try testing.expectEqual(
-        @as(c_int, 0),
-        std.c.socketpair(posix.AF.UNIX, posix.SOCK.STREAM, 0, &fds),
+        @as(usize, frame.max_plaintext_len),
+        @sizeOf(BiggerRead) - @sizeOf(Client),
     );
-    defer _ = std.c.close(fds[0]);
 
-    const payload_len = frame.max_plaintext_len * 2 + 137;
-
-    var sctx: LargeWriteServerCtx = .{ .fd = fds[1], .payload_len = payload_len };
-    const server_thread = try std.Thread.spawn(.{}, largeWriteServerRun, .{&sctx});
-
-    const client_sock: net.Stream = .{
-        .socket = .{ .handle = fds[0], .address = .{ .ip4 = undefined } },
-    };
-
-    var gpa_state: std.heap.DebugAllocator(.{}) = .init;
-    defer _ = gpa_state.deinit();
-    const gpa = gpa_state.allocator();
-
-    var conn: Client = undefined;
-    try conn.connect(gpa, io, client_sock, .{
-        .host = "ztls.server.test",
-        .verify = .insecure,
-        .alpn = &.{"h2"},
+    // So a caller opening thousands of connections can trade look-ahead and
+    // reassembly headroom for footprint.
+    const Lean = ClientWith(.{
+        .record_storage = RecordBuffer.min_storage,
+        .reassembly_storage = 2 * frame.max_plaintext_len,
+        .write_buffer = 4096,
     });
-    defer conn.deinit();
-
-    const w = conn.writer();
-    var payload: [frame.max_plaintext_len * 2 + 137]u8 = undefined;
-    for (&payload, 0..) |*b, i| b.* = @intCast(i & 0xff);
-    try w.writeAll(&payload);
-    try w.flush();
-
-    const r = conn.reader();
-    var buf: [4]u8 = undefined;
-    const n = try r.readSliceShort(&buf);
-    try testing.expectEqualStrings("done", buf[0..n]);
-
-    conn.close();
-
-    server_thread.join();
-    if (sctx.err) |err| return err;
-    try testing.expectEqual(payload_len, sctx.total_read);
+    try testing.expect(@sizeOf(Lean) < @sizeOf(Client) - 45_000);
 }
