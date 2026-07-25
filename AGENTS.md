@@ -222,6 +222,26 @@ Protocol tests cite the spec section they validate. Utility tests that are not
 direct protocol assertions should name the invariant or behavior clearly. Error
 path tests are not optional.
 
+**A test is only evidence if you have seen it fail for the right reason.**
+Reproduce before fixing whenever you can: a failing artifact in hand cannot pass
+for the wrong reason. When the bug was found some other way — manually, against
+a real peer, in CI — you owe a mutation check before claiming the test guards
+it: revert the fix, confirm red, restore. Confirm it fails *on the assertion you
+care about*. A mutation check that hangs, or that trips a different assertion,
+has told you nothing. Record the result in the commit or issue comment; "tests
+pass" is not the claim being made.
+
+**Tests whose outcome depends on I/O interleaving must not assert coincidences.**
+Anything over a socketpair, a thread, or an event loop sees one interleaving out
+of many, and the one you observed is not the contract. Either force the ordering
+so only one is possible, or assert something true under all of them. Two real
+failures from one session: asserting a peer's plaintext was still at a particular
+place in a record buffer (true only when two records coalesced into one read —
+the invariant was "not all zero"), and testing a server against a peer that sent
+`close_notify` when only a bare FIN could expose the bug (the polite path
+self-healed, so the test passed with the bug in place). `just flake-check` reruns
+a suite to shake out the first kind; only forcing the condition fixes the second.
+
 **Unit tests** usually live in the same file as the code they test (`test` blocks).
 
 **Integration tests** live in `src/test/` and examples. The harnesses connect a

@@ -48,5 +48,21 @@ fmt-just:
 lint-just:
     just --check --fmt --unstable --justfile justfile
 
+[doc("Rerun a suite N times to shake out order- and timing-dependent flakes")]
+[group("check")]
+flake-check n="20":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    # Compilation caches but test runs do not, so each iteration really
+    # re-executes. Cheap enough to be routine: these suites are milliseconds.
+    for i in $(seq 1 {{ n }}); do
+        if ! zig build test > /dev/null 2>&1; then
+            echo "flaked on run $i of {{ n }}" >&2
+            zig build test 2>&1 | tail -20 >&2
+            exit 1
+        fi
+    done
+    echo "{{ n }} consecutive green runs"
+
 [doc("Run all CI gates for this integration")]
 ci: lint test build-examples
