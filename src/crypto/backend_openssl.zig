@@ -2,6 +2,7 @@
 const std = @import("std");
 
 const c = @import("c_openssl.zig").openssl;
+const is_boringssl_family = @import("c_openssl.zig").is_boringssl_family;
 const CipherSuite = @import("../cipher_suite.zig").CipherSuite;
 const SignatureScheme = @import("../signature_scheme.zig").SignatureScheme;
 
@@ -527,6 +528,17 @@ pub const SignatureError = error{
     UnsupportedSignatureScheme,
 };
 
+/// signatureSign-only extension: verification and key loading can never
+/// fail this way, so the deterministic-nonce error stays out of their
+/// error sets (mattrobenolt/ztls#82).
+pub const SignError = SignatureError || error{DeterministicNonceUnsupported};
+
+/// Whether this backend can honor RFC 6979 deterministic nonces at all:
+/// the OpenSSL family exposes the "nonce-type" provider parameter, the
+/// BoringSSL family has no equivalent. OpenSSL older than 3.2 is caught
+/// at runtime by the settable-params probe instead.
+pub const supports_deterministic_nonce = !is_boringssl_family;
+
 pub const EcCurve = enum {
     secp256r1,
     secp384r1,
@@ -617,12 +629,44 @@ pub fn rsaPublicKeyFromDer(pub_key: []const u8) SignatureError!*pkey {
     return key;
 }
 
+// RFC 6979 deterministic ECDSA nonces (mattrobenolt/ztls#82): opt-in for
+// reproducible CertificateVerify transcripts. OpenSSL 3.2+ providers expose
+// the "nonce-type" signature parameter; BoringSSL-family libcryptos do not,
+// and non-ECDSA schemes have no RFC 6979 to follow — both reject loudly
+// instead of silently signing with a random nonce. The settable-params probe
+// makes an older OpenSSL a loud error too: set_params can succeed without
+// the provider honoring an unknown key, and a silently random nonce is
+// exactly the failure this option exists to prevent.
+fn configureDeterministicNonce(
+    pctx: ?*c.EVP_PKEY_CTX,
+    scheme: SignatureScheme,
+) SignError!void {
+    if (comptime is_boringssl_family) {
+        return error.DeterministicNonceUnsupported;
+    } else {
+        switch (scheme) {
+            .ecdsa_secp256r1_sha256, .ecdsa_secp384r1_sha384 => {},
+            else => return error.DeterministicNonceUnsupported,
+        }
+        const settable = c.EVP_PKEY_CTX_settable_params(pctx);
+        if (c.OSSL_PARAM_locate_const(settable, c.OSSL_SIGNATURE_PARAM_NONCE_TYPE) == null)
+            return error.DeterministicNonceUnsupported;
+        var nonce_type: c_uint = 1; // 1 = deterministic-k (RFC 6979).
+        var params = [_]c.OSSL_PARAM{
+            c.OSSL_PARAM_construct_uint(c.OSSL_SIGNATURE_PARAM_NONCE_TYPE, &nonce_type),
+            c.OSSL_PARAM_construct_end(),
+        };
+        if (c.EVP_PKEY_CTX_set_params(pctx, &params) != 1) return error.LibcryptoFailed;
+    }
+}
+
 pub fn signatureSign(
     key: *pkey,
     scheme: SignatureScheme,
     msg: []const u8,
     out: []u8,
-) SignatureError![]const u8 {
+    deterministic_nonce: bool,
+) (SignatureError || error{DeterministicNonceUnsupported})![]const u8 {
     const md = try signatureDigest(scheme);
     const ctx = c.EVP_MD_CTX_new() orelse return error.LibcryptoFailed;
     defer c.EVP_MD_CTX_free(ctx);
@@ -630,6 +674,7 @@ pub fn signatureSign(
     var pctx: ?*c.EVP_PKEY_CTX = null;
     if (c.EVP_DigestSignInit(ctx, &pctx, md, null, key) != 1) return error.LibcryptoFailed;
     try configureRsaPss(pctx, scheme, md);
+    if (deterministic_nonce) try configureDeterministicNonce(pctx, scheme);
     if (c.EVP_DigestSignUpdate(ctx, msg.ptr, msg.len) != 1) return error.LibcryptoFailed;
 
     var required_len: usize = 0;

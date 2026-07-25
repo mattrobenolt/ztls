@@ -156,7 +156,12 @@ pub fn classify(err: HandshakeError) Class {
         => .buffer,
 
         // ── Caller-supplied options ──
+        // DeterministicNonceUnsupported is the caller asking a backend for
+        // RFC 6979 nonces it cannot produce — an unusable option, not a
+        // backend malfunction. Classifying it `.internal` would blame the
+        // libcrypto for honestly declining.
         error.AlpnProtocolTooLong,
+        error.DeterministicNonceUnsupported,
         error.EmptyAlpnProtocol,
         error.IdentityTooLong,
         error.ServerNameTooLong,
@@ -230,6 +235,7 @@ test "classify: remaining buckets" {
     try testing.expectEqual(Class.record_overflow, classify(error.RecordTooLarge));
     try testing.expectEqual(Class.buffer, classify(error.HandshakeBufferTooShort));
     try testing.expectEqual(Class.options, classify(error.AlpnProtocolTooLong));
+    try testing.expectEqual(Class.options, classify(error.DeterministicNonceUnsupported));
     try testing.expectEqual(Class.internal, classify(error.LibcryptoFailed));
     try testing.expectEqual(Class.no_alpn, classify(error.NoApplicationProtocol));
     try testing.expectEqual(Class.unsupported_suite, classify(error.UnsupportedCipherSuite));

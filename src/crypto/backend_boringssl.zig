@@ -265,6 +265,8 @@ pub fn aeadDecrypt(
 }
 
 pub const SignatureError = compat.SignatureError;
+pub const SignError = compat.SignError;
+pub const supports_deterministic_nonce = compat.supports_deterministic_nonce;
 pub const EcCurve = compat.EcCurve;
 
 pub inline fn privateKeyFromDer(der: []const u8) SignatureError!*pkey {
@@ -295,8 +297,9 @@ pub inline fn signatureSign(
     scheme: SignatureScheme,
     msg: []const u8,
     out: []u8,
-) SignatureError![]const u8 {
-    return compat.signatureSign(key, scheme, msg, out);
+    deterministic_nonce: bool,
+) SignError![]const u8 {
+    return compat.signatureSign(key, scheme, msg, out, deterministic_nonce);
 }
 
 pub inline fn signatureVerify(
