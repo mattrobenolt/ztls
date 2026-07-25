@@ -385,6 +385,12 @@ fn StreamImpl(comptime Hs: type, comptime role: Role, comptime config: Config) t
     };
     const Flags = std.EnumSet(Flag);
 
+    // Both directions end for more than one reason, so "is this side finished"
+    // is a set-membership question rather than one flag. Naming the sets keeps
+    // that out of the call sites.
+    const write_done: Flags = .initMany(&.{ .tx_closed, .closed });
+    const read_done: Flags = .initMany(&.{ .rx_closed, .closed });
+
     const RecordStorage = ztls.Array(config.record_storage);
     const Reassembly = ztls.Array(config.reassembly_storage orelse Hs.Storage.capacity);
     const ReadStorage = ztls.Array(config.read_buffer);
@@ -454,6 +460,20 @@ fn StreamImpl(comptime Hs: type, comptime role: Role, comptime config: Config) t
         pinned: *const Self = undefined,
         fn assertPinned(s: *const Self) void {
             assert(s.pinned == s);
+        }
+
+        /// True once no further application data can be sent: `close_notify`
+        /// went out, or the whole connection was torn down. RFC 8446 §6.1 lets
+        /// each direction close independently, which is why this is one of two.
+        fn writeClosed(s: *const Self) bool {
+            return s.flags.intersectWith(write_done).count() != 0;
+        }
+
+        /// True once no further application data can arrive: the peer's
+        /// `close_notify` landed, the transport hit EOF, or the connection was
+        /// torn down.
+        fn readClosed(s: *const Self) bool {
+            return s.flags.intersectWith(read_done).count() != 0;
         }
 
         /// Claim exclusive use of the engine for one read or write. Pair with
@@ -531,8 +551,7 @@ fn StreamImpl(comptime Hs: type, comptime role: Role, comptime config: Config) t
             fn nextApplicationData(s: *Self) ReaderError![]const u8 {
                 assert(s.pending.len == 0);
                 // RFC 8446 §6.1 — after close_notify or close(), reads end.
-                if (s.flags.contains(.closed) or s.flags.contains(.rx_closed))
-                    return error.EndOfStream;
+                if (s.readClosed()) return error.EndOfStream;
 
                 var idle: usize = 0;
                 while (true) {
@@ -682,7 +701,7 @@ fn StreamImpl(comptime Hs: type, comptime role: Role, comptime config: Config) t
         /// RFC 8446 §6.1 permits each direction to close independently.
         pub fn closeWrite(s: *Self) void {
             s.assertPinned();
-            if (s.flags.contains(.closed) or s.flags.contains(.tx_closed)) return;
+            if (s.writeClosed()) return;
 
             // Staged plaintext goes out before close_notify. Discarding bytes
             // the caller already handed to the Writer would be silent data
@@ -875,8 +894,7 @@ fn StreamImpl(comptime Hs: type, comptime role: Role, comptime config: Config) t
             s.acquire();
             defer s.release();
 
-            if (s.flags.contains(.closed) or s.flags.contains(.tx_closed))
-                return s.failWrite(error.TlsClosed);
+            if (s.writeClosed()) return s.failWrite(error.TlsClosed);
 
             var total: usize = 0;
 

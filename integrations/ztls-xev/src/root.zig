@@ -64,6 +64,21 @@ pub const State = enum {
     /// Terminal. The socket is released; the caller destroys the `Conn` via
     /// `deinit`.
     closed,
+
+    /// True once a close has begun. Most call sites care about the pair rather
+    /// than which of the two, because an operation issued in either state fails
+    /// with `Error.Closed`.
+    ///
+    /// An exhaustive switch rather than `s == .closing or s == .closed`: the
+    /// `or` form silently classifies a state added later as "not shutting
+    /// down", which is the same failure mode as an `else` arm in an error
+    /// switch.
+    pub fn isShuttingDown(s: State) bool {
+        return switch (s) {
+            .closing, .closed => true,
+            .handshaking, .established => false,
+        };
+    }
 };
 
 /// Failure surface for every callback. Coarse on purpose: specific enough to
@@ -161,6 +176,13 @@ pub fn fromCore(err: ztls.errors.HandshakeError) Error {
         .buffer => error.BufferTooSmall,
         .options, .internal, .missing_credentials, .client_certificate => error.InternalError,
     };
+}
+
+test "State.isShuttingDown: classifies every state, and only the closing pair" {
+    try testing.expect(State.closing.isShuttingDown());
+    try testing.expect(State.closed.isShuttingDown());
+    try testing.expect(!State.handshaking.isShuttingDown());
+    try testing.expect(!State.established.isShuttingDown());
 }
 
 test "isTls: only the TLS Handshake ContentType qualifies" {

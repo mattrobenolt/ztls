@@ -366,7 +366,7 @@ pub fn handshake(
 ) void {
     const T = Thunk(@TypeOf(ctx), root.HandshakeResult, cb);
 
-    if (self.lifecycle == .closing or self.lifecycle == .closed)
+    if (self.lifecycle.isShuttingDown())
         return self.failHandshakeNow(T.invoke, ctx, error.Closed);
     if (self.lifecycle != .handshaking)
         return self.failHandshakeNow(T.invoke, ctx, error.InvalidState);
@@ -398,7 +398,7 @@ pub fn read(
 ) void {
     const T = Thunk(@TypeOf(ctx), root.ReadResult, cb);
 
-    if (self.lifecycle == .closing or self.lifecycle == .closed)
+    if (self.lifecycle.isShuttingDown())
         return self.failReadNow(T.invoke, ctx, error.Closed);
     if (self.lifecycle != .established)
         return self.failReadNow(T.invoke, ctx, error.InvalidState);
@@ -429,7 +429,7 @@ pub fn write(
 ) void {
     const T = Thunk(@TypeOf(ctx), root.WriteResult, cb);
 
-    if (self.lifecycle == .closing or self.lifecycle == .closed)
+    if (self.lifecycle.isShuttingDown())
         return self.failWriteNow(T.invoke, ctx, error.Closed);
     if (self.lifecycle != .established)
         return self.failWriteNow(T.invoke, ctx, error.InvalidState);
@@ -554,7 +554,7 @@ fn pump(self: *Conn) void {
 /// completed handshake is reported; then buffered records are drained; and only
 /// if something is still waiting do we ask the transport for more.
 fn pumpOnce(self: *Conn) void {
-    if (self.lifecycle == .closing or self.lifecycle == .closed) return;
+    if (self.lifecycle.isShuttingDown()) return;
     if (self.wait != .idle) return;
 
     if (self.wire.len > 0) return self.issueWrite();
