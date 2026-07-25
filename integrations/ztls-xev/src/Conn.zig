@@ -68,10 +68,15 @@ pub const Storage = struct {
     /// Zero every buffer. The record buffer held decrypted application
     /// plaintext and the reassembly buffer held handshake plaintext, so this is
     /// the counterpart to `Conn.deinit` rather than an optional extra.
+    ///
+    /// One pass over the whole struct rather than per field: it is a single
+    /// volatile memset instead of three, it covers any padding, and a field
+    /// added later is zeroed without anyone remembering to update this. Safe
+    /// only because every field is an inline byte array — `asBytes` on a struct
+    /// holding a slice would zero the header and leave the secret (#81), which
+    /// the test below rules out.
     pub fn secureZero(s: *Storage) void {
-        s.record.secureZero();
-        s.out.secureZero();
-        s.reassembly.secureZero();
+        std.crypto.secureZero(u8, mem.asBytes(s));
     }
 };
 
@@ -849,6 +854,40 @@ fn onSocketClosed(
 //
 // End-to-end coverage needs a peer and a running loop, and lives in
 // src/tests.zig. These pin the contracts that are checkable without I/O.
+
+// `Storage.secureZero` zeroes `asBytes(self)`, which is only correct while every
+// field owns its bytes inline. A slice or pointer field would make it zero the
+// header and leave the secret exactly where it was — the #81 bug. This fails at
+// compile time if someone adds one.
+test "Storage: every field owns its bytes inline, so a whole-struct wipe is sound" {
+    var total: usize = 0;
+    inline for (@typeInfo(Storage).@"struct".fields) |field| {
+        const info = @typeInfo(field.type);
+        if (info != .@"struct" or !@hasField(field.type, "data")) @compileError(
+            "Storage." ++ field.name ++ " is not a ztls.Array: Storage.secureZero " ++
+                "wipes asBytes(self), which only clears bytes the struct owns inline",
+        );
+        const data_info = @typeInfo(@FieldType(field.type, "data"));
+        if (data_info != .array or data_info.array.child != u8) @compileError(
+            "Storage." ++ field.name ++ ".data is not a byte array",
+        );
+        total += @sizeOf(field.type);
+    }
+    // No padding, so the one-pass wipe covers exactly the buffers and nothing
+    // is silently skipped.
+    try testing.expectEqual(total, @sizeOf(Storage));
+}
+
+test "Storage: secureZero clears all three buffers in one pass" {
+    var storage: Storage = .{};
+    @memset(&storage.record.data, 0xa5);
+    @memset(&storage.out.data, 0xa5);
+    @memset(&storage.reassembly.data, 0xa5);
+
+    storage.secureZero();
+
+    try testing.expect(mem.allEqual(u8, mem.asBytes(&storage), 0));
+}
 
 test "Buffers: documented minimums match what init asserts" {
     try testing.expect(recommended_record_len >= RecordBuffer.min_storage);

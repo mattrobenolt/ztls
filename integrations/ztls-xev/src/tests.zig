@@ -296,12 +296,16 @@ test "xev client: handshake, write, read, close_notify" {
     ) != null);
     try testing.expectEqual(tls.State.closed, client.final_state.?);
 
-    // #81 — `deinit` must not write to memory it was lent. The peer's plaintext
-    // is still sitting in the record buffer afterwards, and clearing it is the
-    // owner's call.
-    try testing.expect(mem.indexOf(u8, &client.storage.record.data, "pong") != null);
+    // #81 — `deinit` must not write to memory it was lent, and clearing it is
+    // the owner's call.
+    //
+    // Phrased as "not all zero" rather than "still contains the peer's
+    // plaintext": which bytes survive depends on whether the reply and
+    // close_notify arrived in one transport read or two, since `rb.writable()`
+    // compacts between reads and can overwrite an already-delivered record. A
+    // real handshake pushed hundreds of bytes through this buffer, so the only
+    // way it comes back all-zero is if something wiped it.
+    try testing.expect(!mem.allEqual(u8, &client.storage.record.data, 0));
     client.storage.secureZero();
-    try testing.expect(mem.allEqual(u8, &client.storage.record.data, 0));
-    try testing.expect(mem.allEqual(u8, &client.storage.out.data, 0));
-    try testing.expect(mem.allEqual(u8, &client.storage.reassembly.data, 0));
+    try testing.expect(mem.allEqual(u8, mem.asBytes(&client.storage), 0));
 }
