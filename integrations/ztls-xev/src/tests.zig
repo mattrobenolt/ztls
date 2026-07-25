@@ -145,9 +145,7 @@ const Client = struct {
     conn: tls.Conn = undefined,
     loop: *xev.Loop,
 
-    record_buf: [tls.Conn.recommended_record_len]u8 = undefined,
-    out_buf: [tls.Conn.recommended_out_len]u8 = undefined,
-    reassembly_buf: [tls.Conn.recommended_reassembly_len]u8 = undefined,
+    storage: tls.Conn.Storage = .{},
     read_buf: [4096]u8 = undefined,
 
     /// Script: what to do once established.
@@ -165,14 +163,6 @@ const Client = struct {
     alloc_failed: bool = false,
 
     const Outcome = enum { data, close_notify, eof, err };
-
-    fn buffers(self: *Client) tls.Conn.Buffers {
-        return .{
-            .record = &self.record_buf,
-            .out = &self.out_buf,
-            .reassembly = &self.reassembly_buf,
-        };
-    }
 
     fn onHandshake(self: *Client, r: tls.HandshakeResult) void {
         if (r.result) |_| {
@@ -283,7 +273,7 @@ test "xev client: handshake, write, read, close_notify" {
         .initFd(fds[0]),
         &config,
         test_host,
-        client.buffers(),
+        client.storage.buffers(),
     );
     client.conn.handshake(&client, Client.onHandshake);
 
@@ -305,4 +295,13 @@ test "xev client: handshake, write, read, close_notify" {
         .close_notify,
     ) != null);
     try testing.expectEqual(tls.State.closed, client.final_state.?);
+
+    // #81 — `deinit` must not write to memory it was lent. The peer's plaintext
+    // is still sitting in the record buffer afterwards, and clearing it is the
+    // owner's call.
+    try testing.expect(mem.indexOf(u8, &client.storage.record.data, "pong") != null);
+    client.storage.secureZero();
+    try testing.expect(mem.allEqual(u8, &client.storage.record.data, 0));
+    try testing.expect(mem.allEqual(u8, &client.storage.out.data, 0));
+    try testing.expect(mem.allEqual(u8, &client.storage.reassembly.data, 0));
 }

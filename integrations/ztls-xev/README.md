@@ -86,9 +86,7 @@ const tls = @import("ztls_xev");
 
 const App = struct {
     conn: tls.Conn = undefined,
-    record_buf: [tls.Conn.recommended_record_len]u8 = undefined,
-    out_buf: [tls.Conn.recommended_out_len]u8 = undefined,
-    reassembly_buf: [tls.Conn.recommended_reassembly_len]u8 = undefined,
+    storage: tls.Conn.Storage = .{},
     read_buf: [16 * 1024]u8 = undefined,
 
     fn onHandshake(self: *App, r: tls.HandshakeResult) void {
@@ -107,6 +105,7 @@ const App = struct {
     }
     fn onClose(self: *App) void {
         self.conn.deinit();
+        self.storage.secureZero(); // deinit does not touch lent memory
     }
 };
 
@@ -118,11 +117,7 @@ var config = try tls.Config.initSystemBundle(blocking_io, gpa, .{
 });
 defer config.deinit();
 
-app.conn.init(blocking_io, &loop, socket, &config, "example.com", .{
-    .record = &app.record_buf,
-    .out = &app.out_buf,
-    .reassembly = &app.reassembly_buf,
-});
+app.conn.init(blocking_io, &loop, socket, &config, "example.com", app.storage.buffers());
 app.conn.handshake(&app, App.onHandshake);
 ```
 
@@ -131,9 +126,15 @@ clock; libxev owns every actual I/O operation. DNS also needs a `std.Io` —
 libxev has no resolver — which is why `examples/xev_client.zig` resolves once up
 front and is completion-driven from there.
 
-`Conn.deinit` zeroes the buffers it was lent, because the core deliberately does
-not clear caller-owned storage ([#81](https://github.com/mattrobenolt/ztls/issues/81))
-and the record buffer held decrypted plaintext.
+`Conn.deinit` releases engine state and **does not touch the buffers it was
+lent** — reaching into borrowed memory is exactly what the core refuses to do to
+us ([#81](https://github.com/mattrobenolt/ztls/issues/81)), and a per-teardown
+memset of a hundred-odd KB is real cost to impose on a server that pools its
+buffers. The record buffer ends up holding decrypted application plaintext and
+the reassembly buffer holds handshake plaintext, so the owner clears them:
+`Storage.secureZero()` for the common case, or your own slices if you brought
+them. That ownership split is why `Storage` is built from `ztls.Array` rather
+than plain arrays — `secureZero` comes with it.
 
 ## Not implemented yet
 

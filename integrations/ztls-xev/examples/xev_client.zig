@@ -51,9 +51,7 @@ const App = struct {
     conn: tls.Conn = undefined,
     connect_c: xev.Completion = .{},
 
-    record_buf: [tls.Conn.recommended_record_len]u8 = undefined,
-    out_buf: [tls.Conn.recommended_out_len]u8 = undefined,
-    reassembly_buf: [tls.Conn.recommended_reassembly_len]u8 = undefined,
+    storage: tls.Conn.Storage = .{},
     read_buf: [16 * 1024]u8 = undefined,
 
     body_bytes: usize = 0,
@@ -75,11 +73,7 @@ const App = struct {
         };
         print("[xev] TCP connected; starting TLS handshake\n", .{});
 
-        self.conn.init(self.io, self.loop, socket, self.config, self.host, .{
-            .record = &self.record_buf,
-            .out = &self.out_buf,
-            .reassembly = &self.reassembly_buf,
-        });
+        self.conn.init(self.io, self.loop, socket, self.config, self.host, self.storage.buffers());
         self.conn.handshake(self, onHandshake);
         return .disarm;
     }
@@ -140,6 +134,9 @@ const App = struct {
 
     fn onClose(self: *App) void {
         self.conn.deinit();
+        // deinit leaves the buffers alone (#81); the owner clears them, and the
+        // record buffer held decrypted response bytes.
+        self.storage.secureZero();
         print("[xev] connection closed\n", .{});
     }
 };

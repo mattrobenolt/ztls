@@ -43,8 +43,41 @@ pub const recommended_record_len: usize = RecordBuffer.recommended_storage;
 pub const recommended_out_len: usize = frame.max_wire_record_len;
 pub const recommended_reassembly_len: usize = ztls.ClientHandshake.recommended_handshake_storage;
 
+/// Recommended storage for one connection, sized to the defaults above.
+///
+/// The owner declares this, hands `buffers()` to `init`, and calls `secureZero`
+/// once the connection is `.closed`. ztls-xev never writes to memory it was
+/// lent — the same contract the core keeps with its callers (#81) — so clearing
+/// it is the owner's call, and `ztls.Array` is what makes that one line.
+///
+/// Callers with a buffer pool skip this and build `Buffers` from their own
+/// slices.
+pub const Storage = struct {
+    record: ztls.Array(recommended_record_len) = .empty,
+    out: ztls.Array(recommended_out_len) = .empty,
+    reassembly: ztls.Array(recommended_reassembly_len) = .empty,
+
+    pub fn buffers(s: *Storage) Buffers {
+        return .{
+            .record = &s.record.data,
+            .out = &s.out.data,
+            .reassembly = &s.reassembly.data,
+        };
+    }
+
+    /// Zero every buffer. The record buffer held decrypted application
+    /// plaintext and the reassembly buffer held handshake plaintext, so this is
+    /// the counterpart to `Conn.deinit` rather than an optional extra.
+    pub fn secureZero(s: *Storage) void {
+        s.record.secureZero();
+        s.out.secureZero();
+        s.reassembly.secureZero();
+    }
+};
+
 /// Caller-owned working storage for one connection. Slices rather than comptime
-/// sizes so a server can hand out pooled buffers.
+/// sizes so a server can hand out pooled buffers; see `Storage` for the
+/// batteries-included version.
 pub const Buffers = struct {
     /// Ciphertext staging; records are framed and decrypted in place here.
     /// At least `ztls.RecordBuffer.min_storage`.
@@ -158,6 +191,11 @@ const callback_depth_max: u8 = 8;
 /// `io` is used only to seed the ClientHello random and the certificate validity
 /// clock; libxev owns all actual I/O. `host` is SNI plus the name verified
 /// against the peer certificate; null disables both.
+///
+/// `buffers` stays borrowed for the connection's life and is never written to by
+/// `deinit`. Clearing it afterwards is the owner's job — `Storage.secureZero`
+/// does it — because the record buffer ends up holding decrypted application
+/// plaintext and the reassembly buffer holds handshake plaintext.
 pub fn init(
     self: *Conn,
     io: std.Io,
@@ -199,16 +237,18 @@ pub fn init(
     self.hs.policy.insecure_no_chain_anchor = config.insecureNoChainAnchor();
 }
 
-/// Release engine state and zero the buffers this connection was lent.
+/// Release engine state. Valid only once the connection is `.closed`.
 ///
-/// The core deliberately does not clear caller-owned storage (#81), and the
-/// record buffer held decrypted application plaintext, so somebody has to.
-/// Valid only once the connection is `.closed`.
+/// Does NOT touch the buffers handed to `init`. They are caller-owned, and
+/// reaching into memory we were lent is exactly what the core refuses to do to
+/// us (#81): the owner may be pooling those buffers, and a per-teardown memset
+/// of a hundred-odd KB is real cost to impose on a server that did not ask for
+/// it. The record buffer held decrypted application plaintext and the
+/// reassembly buffer held handshake plaintext, so the owner should clear them —
+/// `Storage.secureZero` for the common case.
 pub fn deinit(self: *Conn) void {
     assert(self.lifecycle == .closed);
     self.hs.deinit();
-    std.crypto.secureZero(u8, self.storage);
-    std.crypto.secureZero(u8, self.out);
     self.* = undefined;
 }
 
