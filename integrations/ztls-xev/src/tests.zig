@@ -3,6 +3,7 @@
 //! each other is the strongest available proof that the completion-driven pump
 //! and the blocking drive loop agree on the protocol.
 const std = @import("std");
+const builtin = @import("builtin");
 const mem = std.mem;
 const posix = std.posix;
 const testing = std.testing;
@@ -15,6 +16,26 @@ const tls = @import("ztls_xev");
 const test_cert_der: []const u8 = &fixtures.server_ecdsa_cert_der;
 const test_scalar: []const u8 = &fixtures.server_ecdsa_scalar;
 const test_host = "ztls.server.test";
+
+// libxev selects a backend per platform, so "the suite is green" says nothing
+// about *which* event mechanism was exercised. Recording the expectation makes a
+// green run on a given OS evidence for that backend by name, and fails loudly if
+// libxev's selection ever changes underneath us.
+test "libxev backend matches the platform" {
+    const expected: []const xev.Backend = switch (builtin.os.tag) {
+        // io_uring where the kernel allows it, epoll otherwise (Android, older
+        // kernels, seccomp).
+        .linux => &.{ .io_uring, .epoll },
+        .macos, .ios, .tvos, .watchos, .freebsd, .netbsd, .openbsd => &.{.kqueue},
+        .windows => &.{.iocp},
+        else => return error.SkipZigTest,
+    };
+    for (expected) |backend| {
+        if (xev.backend == backend) return;
+    }
+    std.debug.print("unexpected libxev backend: {t}\n", .{xev.backend});
+    return error.UnexpectedBackend;
+}
 
 fn socketPair() ![2]posix.fd_t {
     var fds: [2]posix.fd_t = undefined;
