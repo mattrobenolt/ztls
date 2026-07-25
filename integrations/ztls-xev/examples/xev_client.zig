@@ -55,8 +55,15 @@ const App = struct {
     read_buf: [16 * 1024]u8 = undefined,
 
     body_bytes: usize = 0,
-    saw_status_line: bool = false,
-    failed: bool = false,
+    flags: Flags = .initEmpty(),
+
+    const Flag = enum {
+        /// The first line of the response has been printed.
+        saw_status_line,
+        /// Something failed; exit non-zero once the loop drains.
+        failed,
+    };
+    const Flags = std.EnumSet(Flag);
 
     fn onTcpConnected(
         self_opt: ?*App,
@@ -68,7 +75,7 @@ const App = struct {
         const self = self_opt.?;
         r catch |err| {
             print("[xev] TCP connect failed: {t}\n", .{err});
-            self.failed = true;
+            self.flags.insert(.failed);
             return .disarm;
         };
         print("[xev] TCP connected; starting TLS handshake\n", .{});
@@ -82,7 +89,7 @@ const App = struct {
         r.result catch |err| {
             // The peer already got the matching fatal alert (RFC 8446 §6.2).
             print("[xev] handshake failed: {t}\n", .{err});
-            self.failed = true;
+            self.flags.insert(.failed);
             return;
         };
         print("[xev] handshake complete\n", .{});
@@ -94,7 +101,7 @@ const App = struct {
     fn onWrite(self: *App, r: tls.WriteResult) void {
         const n = r.written catch |err| {
             print("[xev] write failed: {t}\n", .{err});
-            self.failed = true;
+            self.flags.insert(.failed);
             return self.conn.closeReset(self, onClose);
         };
         print("[xev] sent {d} byte request\n", .{n});
@@ -104,8 +111,8 @@ const App = struct {
     fn onRead(self: *App, r: tls.ReadResult) void {
         switch (r) {
             .data => |bytes| {
-                if (!self.saw_status_line) {
-                    self.saw_status_line = true;
+                if (!self.flags.contains(.saw_status_line)) {
+                    self.flags.insert(.saw_status_line);
                     const line_end = mem.indexOfScalar(u8, bytes, '\n') orelse bytes.len;
                     print("[xev] {s}\n", .{mem.trimEnd(u8, bytes[0..line_end], "\r")});
                 }
@@ -126,7 +133,7 @@ const App = struct {
             },
             .err => |err| {
                 print("[xev] read failed: {t}\n", .{err});
-                self.failed = true;
+                self.flags.insert(.failed);
                 self.conn.closeReset(self, onClose);
             },
         }
@@ -206,7 +213,7 @@ pub fn main(init: std.process.Init) !void {
     socket.connect(&loop, &app.connect_c, address, App, &app, App.onTcpConnected);
 
     try loop.run(.until_done);
-    if (app.failed) std.process.exit(1);
+    if (app.flags.contains(.failed)) std.process.exit(1);
 }
 
 /// One-shot DNS through a blocking `std.Io`, taking the first address returned.

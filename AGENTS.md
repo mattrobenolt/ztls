@@ -340,6 +340,19 @@ This applies to all typed values — newtypes, structs, enums. Consistent with
 how Zig struct literals work: `.{}`, `.init()`, `.{ .field = val }` are all
 resolved from the declared type on the left.
 
+**Booleans are near useless; prefer named states.** A `bool` field costs a whole
+byte (plus padding) to carry one bit, and a bare `true`/`false` at a call site
+communicates nothing. Before writing one, check in order: does it encode anything
+at all (if every site passes the same literal, delete it and comment the
+invariant); do two bools describe one thing with a meaningless combination (use
+one `enum` so the illegal state is unrepresentable); are they several independent
+flags on a struct (use `std.EnumSet` — `flags.contains(.busy)`, one byte for the
+whole group, each tag documented); is it presence of a thing (`?T`, not
+`has_thing: bool`); is it a two-valued parameter (a named `enum`, so callers read
+`.abortive` instead of `false`). A `bool` survives only as a single independent
+predicate whose field name already reads as a question. `matt-nits` enforces this
+mechanically; write it correctly the first time instead.
+
 **Prefer pointer captures for large union variants.** When switching on a
 union whose variants carry large payloads (hundreds of bytes+), capture by
 pointer (`.kem => |*k|`) rather than by value (`.kem => |k|`). Zig 0.15 has an

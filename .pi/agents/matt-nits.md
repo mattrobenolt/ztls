@@ -95,7 +95,26 @@ These rules are softer than the rest. Surface candidates in `manual-fix-needed` 
 
     **Action:** Output as `manual-fix-needed` with one short sentence naming what the value appears to represent and a candidate type alias name (e.g. "consider `Key = memx.Array(32)`"). Do **not** search the codebase for an existing alias — that is the human's job; flagging the site is enough.
 
-22. **Booleans are a code smell.** Every `bool` variable, parameter, field, or return value should be scrutinized. Ask: does a bare `true`/`false` actually communicate intent, or would something else be clearer? Prefer a two-value `enum` with named tags, an optional (`?T`), a tagged union, or a bitset depending on context. A `bool` is the default only when it genuinely is the most logical encoding — which is rare. Flag all `bool` occurrences in `manual-fix-needed` with a one-sentence suggestion for the better encoding (e.g. "consider `enum { enabled, disabled }`" or "consider `?Config` instead of `has_config: bool`"). Do not auto-apply — the right replacement depends on domain context.
+22. **Booleans are a code smell — declared war on them.** Every `bool` variable, parameter, field, or return value gets scrutinized. A bare `true`/`false` almost never communicates intent, and a `bool` field burns a whole byte (plus padding) to carry one bit. Work down this list and pick the first that fits:
+
+    1. **Does the bool encode anything at all?** If every call site passes the same literal, or the field is only ever set to one value, it is not a flag — it is a constant with extra steps. Delete it and state the invariant in a comment. (Real example: a `completes_engine_write: bool` parameter passed `true` at all five call sites, because every queued buffer came from the engine.)
+    2. **Do two or more bools describe one thing, where some combinations are meaningless?** Use one `enum` with named states, so the illegal combination is unrepresentable. (Real example: `in_pump` + `pump_again` allowed "another pass requested while not running", which means nothing; `enum { idle, running, rerun_requested }` does not.)
+    3. **Are they several genuinely independent flags on one struct?** Use `std.EnumSet`. This is the pattern to reach for by default, and it is easy in Zig:
+
+       ```zig
+       flags: Flags = .initEmpty(),
+
+       const Flag = enum { rx_closed, tx_closed, closed, busy };
+       const Flags = std.EnumSet(Flag);
+       ```
+
+       Then `flags.contains(.busy)`, `flags.insert(.busy)`, `flags.remove(.busy)`. Four bools become one byte instead of four-plus-padding, the group gets a name, each tag gets a doc comment, and adding a fifth flag costs no struct space. Independence is the requirement: if the states are mutually exclusive, rule 2's enum is the better answer.
+    4. **Is it "presence of a thing"?** Use `?T`, not `has_thing: bool` plus `thing: T`.
+    5. **Is it a two-valued parameter at a call site?** Use a named `enum`, so callers read `.abortive` rather than `false`. Bool parameters are the worst offenders: `close(cb, ctx, true)` tells a reader nothing.
+
+    A `bool` survives only when it genuinely is the most logical encoding, which is rare — a single independent predicate on a config struct whose field name already reads as a question (`offer_pq_key_share`) is about the only routine case, and even then prefer an enum if a third state is plausible.
+
+    **Action:** `manual-fix-needed`, one sentence naming which of the five applies and the concrete replacement (e.g. "two bools, illegal combination possible — consider `enum { idle, running, rerun_requested }`", or "three independent flags — consider `std.EnumSet`"). Do not auto-apply: choosing between delete / enum / EnumSet / optional needs domain context. The one exception is rule 1 — if a bool provably has a single value across every site in scope, say so explicitly, because that is a deletion rather than a redesign.
 
 # Editing discipline
 

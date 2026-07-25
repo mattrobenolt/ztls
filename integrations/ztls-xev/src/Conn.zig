@@ -127,6 +127,27 @@ fn Slot(comptime Cb: type) type {
 
 /// What the engine is waiting on. `pump` is a function of this plus the
 /// handshake state.
+/// How a close terminates the TLS session. Named tags rather than a bool, so a
+/// call site reads `.abortive` instead of `false`.
+pub const Shutdown = enum {
+    /// Send `close_notify` first, so the peer sees an authenticated shutdown.
+    /// RFC 8446 §6.1.
+    orderly,
+    /// Skip `close_notify`: cancel and close. The peer sees a truncated stream,
+    /// which is what you want when the connection is already suspect.
+    abortive,
+};
+
+/// See `Conn.pump_state`.
+const PumpState = enum {
+    /// Not running; a call will start a pass.
+    idle,
+    /// A pass is in progress.
+    running,
+    /// A nested call arrived mid-pass; the outer loop owes another pass.
+    rerun_requested,
+};
+
 const Wait = enum {
     /// Nothing outstanding; `pump` may make progress.
     idle,
@@ -150,13 +171,13 @@ out: []u8,
 /// must not run while this is non-empty.
 pending: []const u8 = &.{},
 
-/// Wire bytes queued for the transport. Borrowed from `out` (or from the engine,
-/// which writes into `out`), valid until fully drained. The async analogue of
-/// `ztls.Outbox`, whose synchronous `write(bytes) !usize` writer contract cannot
-/// express a completion.
+/// Wire bytes queued for the transport. Borrowed from `out`, valid until fully
+/// drained. The async analogue of `ztls.Outbox`, whose synchronous
+/// `write(bytes) !usize` writer contract cannot express a completion.
+///
+/// Every queued buffer came out of the engine, so draining one always owes a
+/// `completeWrite()` — that is an invariant, not a flag to carry around.
 wire: []const u8 = &.{},
-/// Set while the engine owes a `completeWrite()` once `wire` drains.
-wire_completes_engine_write: bool = false,
 
 lifecycle: State = .handshaking,
 wait: Wait = .idle,
@@ -179,10 +200,11 @@ read_c: xev.Completion = .{},
 write_c: xev.Completion = .{},
 close_c: xev.Completion = .{},
 
-/// Set while `pump` is running, so a nested call from inside a callback defers
-/// to the outer pass instead of arming a completion twice.
-in_pump: bool = false,
-pump_again: bool = false,
+/// Reentrancy state of `pump`. One enum rather than `in_pump` + `pump_again`
+/// bools, which between them permit "another pass requested while not running"
+/// — a combination with no meaning. RFC-free bookkeeping, but the illegal state
+/// should still be unrepresentable.
+pump_state: PumpState = .idle,
 
 /// Guards against a callback re-entering the connection deeper than the
 /// synchronous-completion path can legitimately nest.
@@ -355,7 +377,7 @@ pub fn handshake(
 
     const hello = self.hs.start(self.out) catch |err|
         return self.abortHandshake(root.fromCore(err));
-    self.queueWire(hello, true);
+    self.queueWire(hello);
     self.pump();
 }
 
@@ -444,7 +466,7 @@ pub fn close(
     // ziglint-ignore: Z023 -- comptime callback keeps anyopaque out of the API.
     comptime cb: fn (@TypeOf(ctx)) void,
 ) void {
-    self.beginClose(Thunk(@TypeOf(ctx), void, cb).invokeVoid, @ptrCast(ctx), true);
+    self.beginClose(Thunk(@TypeOf(ctx), void, cb).invokeVoid, @ptrCast(ctx), .orderly);
 }
 
 /// Close abortively: no `close_notify`, just cancel and close. The peer sees a
@@ -456,10 +478,10 @@ pub fn closeReset(
     // ziglint-ignore: Z023 -- comptime callback keeps anyopaque out of the API.
     comptime cb: fn (@TypeOf(ctx)) void,
 ) void {
-    self.beginClose(Thunk(@TypeOf(ctx), void, cb).invokeVoid, @ptrCast(ctx), false);
+    self.beginClose(Thunk(@TypeOf(ctx), void, cb).invokeVoid, @ptrCast(ctx), .abortive);
 }
 
-fn beginClose(self: *Conn, cb: CloseCb, ctx: ?*anyopaque, orderly: bool) void {
+fn beginClose(self: *Conn, cb: CloseCb, ctx: ?*anyopaque, shutdown: Shutdown) void {
     if (self.lifecycle == .closed) {
         self.enterCallback();
         defer self.leaveCallback();
@@ -480,12 +502,11 @@ fn beginClose(self: *Conn, cb: CloseCb, ctx: ?*anyopaque, orderly: bool) void {
     // Canceled, before the close callback.
     self.cancelInFlight();
 
-    if (orderly and was_established) {
+    if (shutdown == .orderly and was_established) {
         // Best effort: a close_notify that cannot be encoded or sent changes
         // nothing about the outcome.
         if (self.hs.sendAlert(.close_notify, self.out)) |record| {
-            self.wire = record;
-            self.wire_completes_engine_write = true;
+            self.queueWire(record);
             self.issueWrite();
             return;
         } else |_| {}
@@ -514,17 +535,17 @@ fn cancelInFlight(self: *Conn) void {
 /// nested one already armed a completion, and arm the same `xev.Completion`
 /// twice.
 fn pump(self: *Conn) void {
-    if (self.in_pump) {
-        self.pump_again = true;
+    if (self.pump_state != .idle) {
+        self.pump_state = .rerun_requested;
         return;
     }
-    self.in_pump = true;
-    defer self.in_pump = false;
+    self.pump_state = .running;
+    defer self.pump_state = .idle;
 
     while (true) {
-        self.pump_again = false;
         self.pumpOnce();
-        if (!self.pump_again) break;
+        if (self.pump_state != .rerun_requested) break;
+        self.pump_state = .running;
     }
 }
 
@@ -574,7 +595,7 @@ fn encryptNextChunk(self: *Conn) bool {
         return true;
     };
     self.write_accepted += chunk_len;
-    self.queueWire(record, true);
+    self.queueWire(record);
     self.issueWrite();
     return true;
 }
@@ -607,13 +628,13 @@ fn drainRecords(self: *Conn) bool {
         switch (ev) {
             .none, .new_session_ticket => {},
             .write => |bytes| {
-                self.queueWire(bytes, true);
+                self.queueWire(bytes);
                 self.issueWrite();
                 return true;
             },
             .key_update => |update| {
                 if (update.response) |bytes| {
-                    self.queueWire(bytes, true);
+                    self.queueWire(bytes);
                     self.issueWrite();
                     return true;
                 }
@@ -655,10 +676,9 @@ fn deliverPending(self: *Conn) bool {
 /// NewSessionTicket floods itself.
 const max_idle_records: usize = 64;
 
-fn queueWire(self: *Conn, bytes: []const u8, completes_engine_write: bool) void {
+fn queueWire(self: *Conn, bytes: []const u8) void {
     assert(self.wire.len == 0);
     self.wire = bytes;
-    self.wire_completes_engine_write = completes_engine_write;
 }
 
 fn abortWith(self: *Conn, err: Error) void {
@@ -676,8 +696,7 @@ fn abortHandshake(self: *Conn, err: Error) void {
     self.deliverHandshake(.{ .result = err });
     if (description) |d| {
         if (self.hs.sendAlert(d, self.out)) |record| {
-            self.wire = record;
-            self.wire_completes_engine_write = true;
+            self.queueWire(record);
             self.issueWrite();
             return;
         } else |_| {}
@@ -740,10 +759,9 @@ fn onWriteComplete(
         return .disarm;
     }
 
-    if (self.wire_completes_engine_write) {
-        self.wire_completes_engine_write = false;
-        self.hs.completeWrite();
-    }
+    // Every queued buffer came from the engine, so a fully drained one always
+    // settles the pending-write latch.
+    self.hs.completeWrite();
 
     if (self.lifecycle == .closing) {
         // The close_notify (or a fatal alert) just drained.

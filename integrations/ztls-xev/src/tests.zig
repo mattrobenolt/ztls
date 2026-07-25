@@ -156,11 +156,19 @@ const Client = struct {
     received: std.ArrayList(u8) = .empty,
     read_outcomes: std.ArrayList(Outcome) = .empty,
     write_result: ?anyerror!usize = null,
-    closed: bool = false,
     /// Captured before `deinit`, which sets the Conn to undefined — asserting on
     /// a deinitialized Conn proves nothing (#81).
     final_state: ?tls.State = null,
-    alloc_failed: bool = false,
+    flags: Flags = .initEmpty(),
+
+    const Flag = enum {
+        /// The close callback ran; the loop may stop.
+        closed,
+        /// An append failed inside a callback, which cannot return an error, so
+        /// the assertions afterwards check this instead.
+        alloc_failed,
+    };
+    const Flags = std.EnumSet(Flag);
 
     const Outcome = enum { data, close_notify, eof, err };
 
@@ -195,7 +203,7 @@ const Client = struct {
             .data => |bytes| {
                 self.note(.data);
                 self.received.appendSlice(testing.allocator, bytes) catch {
-                    self.alloc_failed = true;
+                    self.flags.insert(.alloc_failed);
                 };
                 self.conn.read(&self.read_buf, self, onRead);
             },
@@ -216,14 +224,14 @@ const Client = struct {
 
     fn note(self: *Client, outcome: Outcome) void {
         self.read_outcomes.append(testing.allocator, outcome) catch {
-            self.alloc_failed = true;
+            self.flags.insert(.alloc_failed);
         };
     }
 
     fn onClose(self: *Client) void {
         self.final_state = self.conn.state();
         self.conn.deinit();
-        self.closed = true;
+        self.flags.insert(.closed);
     }
 
     /// Harness cleanup, not a Conn teardown; the Conn is deinitialized in
@@ -243,7 +251,7 @@ fn insecureConfig() tls.Config {
 /// iterations so a stalled pump fails the test instead of hanging CI.
 fn runUntilClosed(loop: *xev.Loop, client: *const Client) !void {
     var ticks: usize = 0;
-    while (!client.closed) {
+    while (!client.flags.contains(.closed)) {
         if (ticks == 10_000) return error.LoopStalled;
         ticks += 1;
         try loop.run(.once);
@@ -281,7 +289,7 @@ test "xev client: handshake, write, read, close_notify" {
     server.join();
 
     if (sctx.err) |err| return err;
-    try testing.expect(!client.alloc_failed);
+    try testing.expect(!client.flags.contains(.alloc_failed));
     try testing.expect(client.handshake_result != null);
     try client.handshake_result.?;
     try testing.expectEqual(@as(usize, 4), sctx.received);

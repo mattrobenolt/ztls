@@ -368,7 +368,21 @@ fn StreamImpl(comptime Hs: type, comptime role: Role, comptime config: Config) t
         if (config.write_buffer == 0) @compileError("Config.write_buffer must be nonzero");
     }
 
-    const Flag = enum { rx_closed, tx_closed, closed };
+    const Flag = enum {
+        /// close_notify received, or the transport hit EOF: reads are done.
+        rx_closed,
+        /// close_notify sent: writes are done.
+        tx_closed,
+        /// Socket released and buffers zeroed.
+        closed,
+        /// A read or write is in flight. Both paths share `out` and the engine,
+        /// and both yield to the runtime while that buffer holds a half-written
+        /// record, so a second task entering the other half is a data race even
+        /// on a single-threaded green-thread scheduler. Asserted rather than
+        /// locked: serializing here would hide the caller's bug and deadlock the
+        /// moment a reader blocks while a writer waits.
+        busy,
+    };
     const Flags = std.EnumSet(Flag);
 
     const RecordStorage = ztls.Array(config.record_storage);
@@ -438,14 +452,6 @@ fn StreamImpl(comptime Hs: type, comptime role: Role, comptime config: Config) t
         /// so relocating the value silently corrupts memory. Checked with
         /// `assert`, so it costs nothing in ReleaseFast.
         pinned: *const Self = undefined,
-        /// True while a read or write is in flight. Both paths share `out` and
-        /// the engine, and both yield to the runtime while that buffer holds a
-        /// half-written record, so a second task entering the other half is a
-        /// data race even on a single-threaded green-thread scheduler. Asserted
-        /// rather than locked: serializing here would hide the caller's bug and
-        /// deadlock the moment a reader blocks while a writer waits.
-        busy: bool = false,
-
         fn assertPinned(s: *const Self) void {
             assert(s.pinned == s);
         }
@@ -453,13 +459,14 @@ fn StreamImpl(comptime Hs: type, comptime role: Role, comptime config: Config) t
         /// Claim exclusive use of the engine for one read or write. Pair with
         /// `release`.
         fn acquire(s: *Self) void {
-            assert(!s.busy); // concurrent use of one Stream; see the module docs
-            s.busy = true;
+            // Concurrent use of one Stream; see the module docs.
+            assert(!s.flags.contains(.busy));
+            s.flags.insert(.busy);
         }
 
         fn release(s: *Self) void {
-            assert(s.busy);
-            s.busy = false;
+            assert(s.flags.contains(.busy));
+            s.flags.remove(.busy);
         }
 
         pub const Reader = struct {
@@ -1117,9 +1124,10 @@ test "public error mapping: a cert failure never degrades to a protocol error" {
 }
 
 test "Config: buffer sizing is the whole story of the Stream footprint" {
-    // Measured on this revision: Client 151_840, Server 134_912. Tight
-    // ceilings on purpose — a buffer that grows without a `Config` change is a
-    // regression, not a rounding difference.
+    // Measured on this revision: Client 151_856, Server 134_928. These are a
+    // coarse backstop; the exact-delta assertions below are what actually guard
+    // against a buffer growing unnoticed. The ceiling's slack already let these
+    // numbers drift 16 bytes stale once, so trust the deltas, not the comment.
     try testing.expect(@sizeOf(Client) <= 152_000);
     try testing.expect(@sizeOf(Server) <= 135_000);
 
