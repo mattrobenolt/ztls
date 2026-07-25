@@ -37,6 +37,58 @@ test "libxev backend matches the platform" {
     return error.UnexpectedBackend;
 }
 
+/// Watchdog for the loop-driving tests.
+///
+/// `loop.run(.once)` blocks until some completion fires, so a bounded tick count
+/// does not bound wall time: if every side is waiting on something that will
+/// never arrive, the test hangs rather than failing. A hang gives no diagnostic,
+/// cannot be shaken out by `just flake-check`, and on CI just eats the job
+/// timeout. An armed timer guarantees the loop always has something to wake it,
+/// so a stall becomes `error.LoopStalled` at a named line in ~2s.
+///
+/// That also makes the diagnosis reachable at all: `zig build test` prints a
+/// failing test's captured output, but a hung test never fails, so nothing is
+/// ever shown. Converting the hang into a failure is what surfaces the state
+/// dumps in the callers below.
+const Watchdog = struct {
+    timer: xev.Timer,
+    c: xev.Completion = .{},
+    fired: bool = false,
+
+    const budget_ms = 2_000;
+
+    fn init() !Watchdog {
+        return .{ .timer = try .init() };
+    }
+
+    fn arm(w: *Watchdog, loop: *xev.Loop) void {
+        w.timer.run(loop, &w.c, budget_ms, Watchdog, w, onFire);
+    }
+
+    fn onFire(
+        w_opt: ?*Watchdog,
+        _: *xev.Loop,
+        _: *xev.Completion,
+        r: xev.Timer.RunError!void,
+    ) xev.CallbackAction {
+        // Fire either way: a timer that failed to arm must not silently disable
+        // the only thing standing between a stalled loop and a hung suite.
+        // ziglint-ignore: Z026 -- see above.
+        r catch {};
+        w_opt.?.fired = true;
+        return .disarm;
+    }
+};
+
+/// Drive `loop` until `done()` or the watchdog fires.
+fn runUntil(loop: *xev.Loop, watchdog: *Watchdog, ctx: anytype) !void {
+    watchdog.arm(loop);
+    while (!ctx.done()) {
+        if (watchdog.fired) return error.LoopStalled;
+        try loop.run(.once);
+    }
+}
+
 fn socketPair() ![2]posix.fd_t {
     var fds: [2]posix.fd_t = undefined;
     try testing.expectEqual(
@@ -490,12 +542,14 @@ test "xev server: handshake, echo, and close against an xev client" {
     pair.server.handshake(&pair, Pair.onServerHandshake);
     pair.client.handshake(&pair, Pair.onClientHandshake);
 
-    var ticks: usize = 0;
-    while (!pair.done()) {
-        if (ticks == 10_000) return error.LoopStalled;
-        ticks += 1;
-        try loop.run(.once);
-    }
+    var watchdog: Watchdog = try .init();
+    runUntil(&loop, &watchdog, &pair) catch |err| {
+        std.debug.print(
+            "\nstalled: server={t} client={t} flags={any}\n",
+            .{ pair.server.state(), pair.client.state(), pair.flags.bits.mask },
+        );
+        return err;
+    };
 
     try testing.expect(!pair.flags.contains(.handshake_failed));
     try testing.expectEqualStrings("h2", pair.client_alpn[0..pair.client_alpn_len]);
@@ -611,12 +665,14 @@ test "xev server: a client that handshakes then leaves without speaking" {
     s.server.handshake(&s, Silent.onServerHandshake);
     s.client.handshake(&s, Silent.onClientHandshake);
 
-    var ticks: usize = 0;
-    while (!s.done()) {
-        if (ticks == 10_000) return error.LoopStalled;
-        ticks += 1;
-        try loop.run(.once);
-    }
+    var watchdog: Watchdog = try .init();
+    runUntil(&loop, &watchdog, &s) catch |err| {
+        std.debug.print(
+            "\nstalled: server={t} client={t} handshake_reported={} read_outcome={?}\n",
+            .{ s.server.state(), s.client.state(), s.server_handshake != null, s.server_read },
+        );
+        return err;
+    };
 
     // The handshake must be reported as a success, not swallowed and then
     // surfaced as a failure when the peer's close arrives.
