@@ -11,11 +11,17 @@
 //! comptime-sized caller-visible buffers so the ~200 KB default is a choice
 //! rather than a tax.
 //!
-//! NOT thread-safe. `reader()` and `writer()` share the handshake engine and
-//! one outbound record buffer, so the two halves cannot be driven from
-//! different threads concurrently the way `tokio-rustls` split halves can.
-//! Multiplex both directions from one thread (see `hasBuffered` and
-//! `socketHandle`) or serialize access yourself.
+//! NOT reentrant across concurrent tasks — including cooperatively scheduled
+//! ones on a single thread. `reader()` and `writer()` share the handshake engine
+//! and one outbound record buffer, and both yield to the runtime mid-operation
+//! while that buffer holds a half-written record, so a second task entering the
+//! other half corrupts it. "Not thread-safe" understates this: on a
+//! green-thread runtime like zio a single-threaded scheduler still interleaves
+//! at every I/O point, so it looks safe and is not. Debug and ReleaseSafe builds
+//! assert on reentry rather than corrupting silently.
+//!
+//! Drive both directions from one task (see `hasBuffered` and `socketHandle`),
+//! or serialize access yourself.
 const std = @import("std");
 const assert = std.debug.assert;
 const Io = std.Io;
@@ -141,6 +147,42 @@ pub const AcceptError = error{
     InvalidOptions,
     InternalError,
 } || net.Stream.Reader.Error || net.Stream.Writer.Error || Io.Cancelable || Io.UnexpectedError;
+
+/// The real cause behind an `error.ReadFailed` from `reader()`. The
+/// `Io.Reader` vtable can only carry `ReadFailed`, so cancellation, transport
+/// failures, and TLS failures are indistinguishable through it; recover which
+/// one happened with `Stream.readError()`. Same convention as
+/// `std.Io.net.Stream.Reader.err`.
+pub const ReadError = error{
+    /// The peer sent a fatal alert.
+    TlsAlertReceived,
+    /// A record failed to authenticate: AEAD tag or MAC mismatch.
+    TlsDecryptError,
+    /// The peer sent a malformed, unexpected, or illegal record.
+    TlsProtocolError,
+    /// The peer sent a record longer than RFC 8446 §5.1 permits.
+    RecordOverflow,
+    /// The peer spent `max_idle_records_per_refill` records without producing
+    /// application data. RFC 8446 §5.1 rate-limits zero-length fragments
+    /// nowhere, so this bound is what keeps a read from never returning.
+    IdleRecordFlood,
+    /// Backend failure, counter overflow, or a broken invariant on our side.
+    InternalError,
+    // Writer errors are reachable from the read path: KeyUpdate responses are
+    // written while servicing a read. RFC 8446 §4.6.3.
+} || net.Stream.Reader.Error || net.Stream.Writer.Error || Io.Cancelable || Io.UnexpectedError;
+
+/// The real cause behind an `error.WriteFailed` from `writer()`. Recover it
+/// with `Stream.writeError()`.
+pub const WriteError = error{
+    /// The write side is already closed by `closeWrite` or `close`.
+    TlsClosed,
+    /// The peer sent a malformed record, or application data was written
+    /// before the handshake completed.
+    TlsProtocolError,
+    /// Backend failure, counter overflow, or a broken invariant on our side.
+    InternalError,
+} || net.Stream.Writer.Error || Io.Cancelable || Io.UnexpectedError;
 
 /// Negotiated connection properties. Slices are borrowed and valid until
 /// `deinit`.
@@ -374,6 +416,47 @@ fn mapClientHandshakeError(err: HandshakeError) ConnectError {
     };
 }
 
+/// Post-handshake projection of the same table. Certificate and negotiation
+/// classes are unreachable once connected, but they collapse to a peer-fault
+/// bucket rather than getting a special case.
+fn mapReadError(err: HandshakeError) ReadError {
+    return switch (classify(err)) {
+        .alert => error.TlsAlertReceived,
+        .decrypt => error.TlsDecryptError,
+        .record_overflow => error.RecordOverflow,
+        .certificate,
+        .protocol,
+        .no_alpn,
+        .unsupported_suite,
+        => error.TlsProtocolError,
+        .buffer,
+        .options,
+        .internal,
+        .missing_credentials,
+        .client_certificate,
+        => error.InternalError,
+    };
+}
+
+fn mapWriteError(err: HandshakeError) WriteError {
+    return switch (classify(err)) {
+        .certificate,
+        .protocol,
+        .no_alpn,
+        .unsupported_suite,
+        .alert,
+        .decrypt,
+        .record_overflow,
+        => error.TlsProtocolError,
+        .buffer,
+        .options,
+        .internal,
+        .missing_credentials,
+        .client_certificate,
+        => error.InternalError,
+    };
+}
+
 fn mapServerHandshakeError(err: HandshakeError) AcceptError {
     return switch (classify(err)) {
         .certificate => error.CertificateVerificationFailed,
@@ -540,13 +623,36 @@ fn StreamImpl(comptime Hs: type, comptime role: Role, comptime config: Config) t
         /// so relocating the value silently corrupts memory. Checked with
         /// `assert`, so it costs nothing in ReleaseFast.
         pinned: *const Self = undefined,
+        /// True while a read or write is in flight. Both paths share `out` and
+        /// the engine, and both yield to the runtime while that buffer holds a
+        /// half-written record, so a second task entering the other half is a
+        /// data race even on a single-threaded green-thread scheduler. Asserted
+        /// rather than locked: serializing here would hide the caller's bug and
+        /// deadlock the moment a reader blocks while a writer waits.
+        busy: bool = false,
 
         fn assertPinned(s: *const Self) void {
             assert(s.pinned == s);
         }
 
+        /// Claim exclusive use of the engine for one read or write. Pair with
+        /// `release`.
+        fn acquire(s: *Self) void {
+            assert(!s.busy); // concurrent use of one Stream; see the module docs
+            s.busy = true;
+        }
+
+        fn release(s: *Self) void {
+            assert(s.busy);
+            s.busy = false;
+        }
+
         pub const Reader = struct {
             interface: Io.Reader,
+            /// The cause behind the most recent `error.ReadFailed`. Only
+            /// meaningful after the interface returned one; never cleared, like
+            /// `std.Io.net.Stream.Reader.err`. Read it via `readError()`.
+            err: ?ReadError = null,
 
             pub fn init(s: *Self) Reader {
                 return .{
@@ -580,12 +686,18 @@ fn StreamImpl(comptime Hs: type, comptime role: Role, comptime config: Config) t
                 const r: *Reader = @alignCast(@fieldParentPtr("interface", io_r));
                 const s: *Self = @alignCast(@fieldParentPtr("reader_impl", r));
                 s.assertPinned();
+                s.acquire();
+                defer s.release();
 
                 if (s.pending.len == 0) s.pending = try nextApplicationData(s);
                 // A short or zero-length write leaves the remainder pending for
                 // the next call; nothing is dropped on error either, because
                 // `pending` only advances by what was accepted.
-                const n = try io_w.write(limit.sliceConst(s.pending));
+                const n = io_w.write(limit.sliceConst(s.pending)) catch |err| {
+                    // WriteFailed here is the destination's problem, not ours,
+                    // so it is passed through without touching `err`.
+                    return err;
+                };
                 s.pending = s.pending[n..];
                 return n;
             }
@@ -603,21 +715,25 @@ fn StreamImpl(comptime Hs: type, comptime role: Role, comptime config: Config) t
                 var idle: usize = 0;
                 while (true) {
                     while (true) {
-                        const record = (s.rb.next() catch return error.ReadFailed) orelse break;
-                        if (idle == max_idle_records_per_refill) return error.ReadFailed;
+                        const record = (s.rb.next() catch |err|
+                            return s.failRead(mapReadError(err))) orelse break;
+                        if (idle == max_idle_records_per_refill)
+                            return s.failRead(error.IdleRecordFlood);
                         idle += 1;
-                        const ev = s.hs.handleRecord(record, &s.out.buffer) catch {
-                            return error.ReadFailed;
+                        const ev = s.hs.handleRecord(record, &s.out.buffer) catch |err| {
+                            return s.failRead(mapReadError(err));
                         };
                         switch (normalizeReaderEvent(ev)) {
                             .none => continue,
                             .write => |bytes| {
-                                s.writeControlRecord(bytes) catch return error.ReadFailed;
+                                s.writeControlRecord(bytes) catch |err|
+                                    return s.failRead(err);
                                 continue;
                             },
                             .key_update => |response| {
                                 if (response) |bytes| {
-                                    s.writeControlRecord(bytes) catch return error.ReadFailed;
+                                    s.writeControlRecord(bytes) catch |err|
+                                        return s.failRead(err);
                                 }
                                 continue;
                             },
@@ -634,9 +750,11 @@ fn StreamImpl(comptime Hs: type, comptime role: Role, comptime config: Config) t
                         }
                     }
 
-                    const n = transportRead(s.io, s.sock.socket.handle, s.rb.writable()) catch {
-                        return error.ReadFailed;
-                    };
+                    const n = transportRead(
+                        s.io,
+                        s.sock.socket.handle,
+                        s.rb.writable(),
+                    ) catch |err| return s.failRead(err);
                     if (n == 0) {
                         s.flags.insert(.rx_closed);
                         return error.EndOfStream;
@@ -648,6 +766,10 @@ fn StreamImpl(comptime Hs: type, comptime role: Role, comptime config: Config) t
 
         pub const Writer = struct {
             interface: Io.Writer,
+            /// The cause behind the most recent `error.WriteFailed`. Only
+            /// meaningful after the interface returned one; never cleared.
+            /// Read it via `writeError()`.
+            err: ?WriteError = null,
 
             pub fn init(s: *Self) Writer {
                 return .{
@@ -669,6 +791,28 @@ fn StreamImpl(comptime Hs: type, comptime role: Role, comptime config: Config) t
         pub fn writer(s: *Self) *Io.Writer {
             s.assertPinned();
             return &s.writer_impl.interface;
+        }
+
+        /// Why the last read failed. `Io.Reader` collapses every failure into
+        /// `error.ReadFailed`, so cancellation (`error.Canceled`), a dead
+        /// transport, and a TLS failure are otherwise indistinguishable. Call
+        /// this after `ReadFailed`; the value is stale at any other time.
+        ///
+        ///     r.fillMore() catch |err| switch (err) {
+        ///         error.EndOfStream => {},           // clean close_notify
+        ///         error.ReadFailed => switch (conn.readError().?) {
+        ///             error.Canceled => {},           // task was cancelled
+        ///             error.TlsDecryptError => {},    // record failed to auth
+        ///             else => {},
+        ///         },
+        ///     };
+        pub fn readError(s: *const Self) ?ReadError {
+            return s.reader_impl.err;
+        }
+
+        /// Why the last write failed. Same contract as `readError`.
+        pub fn writeError(s: *const Self) ?WriteError {
+            return s.writer_impl.err;
         }
 
         /// The underlying socket handle, for readiness multiplexing (`poll`,
@@ -726,6 +870,10 @@ fn StreamImpl(comptime Hs: type, comptime role: Role, comptime config: Config) t
             s.writer_impl.interface.flush() catch {};
             s.flags.insert(.tx_closed);
 
+            // The alert goes through the same shared `out` buffer as a write.
+            s.acquire();
+            defer s.release();
+
             if (s.hs.sendAlert(.close_notify, &s.out.buffer)) |alert_record| {
                 transportWriteAll(s.io, s.sock.socket.handle, alert_record) catch return;
                 s.hs.completeWrite();
@@ -767,6 +915,20 @@ fn StreamImpl(comptime Hs: type, comptime role: Role, comptime config: Config) t
             s.write_storage.secureZero();
             if (retain_peer_chain) s.peer_chain_storage.secureZero();
             s.hs.deinit();
+        }
+
+        /// Record why a read failed, then return the only error the `Io.Reader`
+        /// vtable can carry. `std.Io.net.Stream.Reader` does the same thing with
+        /// its own `err` field.
+        fn failRead(s: *Self, cause: ReadError) error{ReadFailed} {
+            s.reader_impl.err = cause;
+            return error.ReadFailed;
+        }
+
+        /// Write-side counterpart of `failRead`.
+        fn failWrite(s: *Self, cause: WriteError) error{WriteFailed} {
+            s.writer_impl.err = cause;
+            return error.WriteFailed;
         }
 
         /// Send an engine-produced control record (client Finished, KeyUpdate
@@ -888,8 +1050,11 @@ fn StreamImpl(comptime Hs: type, comptime role: Role, comptime config: Config) t
             const w: *Writer = @alignCast(@fieldParentPtr("interface", io_w));
             const s: *Self = @alignCast(@fieldParentPtr("writer_impl", w));
             s.assertPinned();
+            s.acquire();
+            defer s.release();
 
-            if (s.flags.contains(.closed) or s.flags.contains(.tx_closed)) return error.WriteFailed;
+            if (s.flags.contains(.closed) or s.flags.contains(.tx_closed))
+                return s.failWrite(error.TlsClosed);
 
             var total: usize = 0;
 
@@ -897,17 +1062,17 @@ fn StreamImpl(comptime Hs: type, comptime role: Role, comptime config: Config) t
             // repeated `splat` times. `consume` subtracts the buffered part.
             const buffered = io_w.buffered();
             if (buffered.len > 0) {
-                sendPlaintextChunked(s, buffered) catch return error.WriteFailed;
+                try sendPlaintextChunked(s, buffered);
                 total += buffered.len;
             }
             if (data.len > 0) {
                 for (data[0 .. data.len - 1]) |slice| {
-                    sendPlaintextChunked(s, slice) catch return error.WriteFailed;
+                    try sendPlaintextChunked(s, slice);
                     total += slice.len;
                 }
                 const last = data[data.len - 1];
                 for (0..splat) |_| {
-                    sendPlaintextChunked(s, last) catch return error.WriteFailed;
+                    try sendPlaintextChunked(s, last);
                     total += last.len;
                 }
             }
@@ -922,10 +1087,10 @@ fn StreamImpl(comptime Hs: type, comptime role: Role, comptime config: Config) t
             const record = s.hs.sendApplicationData(
                 plaintext,
                 &s.out.buffer,
-            ) catch return error.WriteFailed;
+            ) catch |err| return s.failWrite(mapWriteError(err));
             defer s.hs.completeWrite();
-            transportWriteAll(s.io, s.sock.socket.handle, record) catch {
-                return error.WriteFailed;
+            transportWriteAll(s.io, s.sock.socket.handle, record) catch |err| {
+                return s.failWrite(err);
             };
         }
 

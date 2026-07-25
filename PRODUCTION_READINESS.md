@@ -616,6 +616,33 @@ Four correctness properties are gated by tests rather than asserted in prose:
   retention at comptime. Defaults measure 151_840 bytes (client) and 134_912
   (server); `Config: buffer sizing is the whole story of the Stream footprint`
   asserts each knob's exact `@sizeOf` delta.
+- **Post-handshake failures are diagnosable.** The `Io.Reader`/`Io.Writer`
+  vtables can only carry `ReadFailed`/`WriteFailed`, which on their own cannot
+  distinguish a cancelled task from a forged record from a dead socket. The real
+  cause is now recorded before the narrow error is returned and recovered with
+  `readError()`/`writeError()`, following the `std.Io.net.Stream.Reader.err`
+  convention. Gated by four tests covering `TlsDecryptError` (forged record),
+  `TlsAlertReceived` (peer abort), `IdleRecordFlood`, and `TlsClosed`, plus a
+  null-on-healthy-connection case.
+
+**Runs on any `std.Io`, proven not asserted.** zio
+(<https://github.com/lalinsky/zio>) is a stackful-coroutine runtime that ships a
+full `std.Io` implementation, so ztls-std runs on it with zero adapter code:
+`rt.io()` goes straight into `Client.connect`. `examples/zio_client.zig` is the
+proof and is compiled by `just integrations-ci`; zio is a lazy dependency so
+consumers of ztls-std do not fetch an I/O runtime. Deliberately **not** a
+`ztls-zio` package: it would duplicate the drive loop, the reader/writer vtables,
+and the error table with `Io` replaced by `Io`, which is the duplicate-artifact
+failure mode. `ztls-xev` (#76) and `ztls-ktls` (#78) still warrant their own
+packages because libxev is a callback-based completion loop with its own API and
+kTLS is a kernel offload; neither implements the interface ztls-std targets.
+
+That example also closes the timeout gap by demonstration rather than by API:
+the whole exchange races a sleep through `Io.Select`, and a fired deadline arrives
+as `error.Canceled` via `readError()`. Measured against `example.com`, both
+phases: `handshake cancelled by the deadline` and `transfer cancelled by the
+deadline (recovered as error.Canceled)`. Before the `err` convention landed, the
+identical experiment reported a bare `ReadFailed`.
 
 **Gaps (tracked under #77):** no automated OpenSSL interop gate *through the
 wrapper* — the core's interop already covers the engine, and wrapper-level
@@ -624,9 +651,13 @@ interop has only been checked manually against `openssl s_server` and
 (`AcceptError.ClientCertificateRejected` exists because the core can produce
 those errors, not because the path is proven). Concurrent split halves are not
 supported: `reader()` and `writer()` share the handshake engine and outbound
-record buffer, so the two directions must be multiplexed from one thread. No
-handshake deadline is imposed; `std.Io` cancellation is the intended mechanism
-and is untested here. Session resumption / 0-RTT are out of scope for v1.
+record buffer, and both yield mid-operation while that buffer holds a half-written
+record, so the two directions must be driven from one task. This is a reentrancy
+constraint rather than a threading one — a single-threaded green-thread scheduler
+still interleaves at every I/O point — and Debug/ReleaseSafe builds now assert on
+reentry instead of corrupting silently. No deadline is imposed by the wrapper;
+`std.Io` cancellation is the mechanism and is now exercised by
+`examples/zio_client.zig` rather than untested. Session resumption / 0-RTT are out of scope for v1.
 `ztls-xev` (#76) and `ztls-ktls` (#78) are unstarted; distribution as an
 independently fetchable package is #79. ztls-std is not claimed done.
 

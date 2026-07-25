@@ -69,6 +69,11 @@ const Step = union(enum) {
     /// RFC 8446 §5.1 permits and rate-limits nowhere. Goes through the engine
     /// directly because the public Writer (correctly) drops empty writes.
     send_empty_records: usize,
+    /// Hostile peer: emit a record whose ciphertext has one flipped bit, so the
+    /// AEAD tag cannot verify. RFC 8446 §5.2.
+    send_corrupt_record,
+    /// Abort with a fatal alert instead of close_notify. RFC 8446 §6.2.
+    send_fatal_alert: ztls.alert.Description,
     /// Delay, to force the client to see a record boundary.
     pause_ms: u64,
     /// close_notify + socket close.
@@ -140,6 +145,23 @@ fn serverRun(ctx: *ServerCtx) void {
         },
         .send_empty_records => |count| for (0..count) |_| {
             const record = conn.hs.sendApplicationData("", &conn.out.buffer) catch |err|
+                return ctx.fail(err);
+            const written = std.c.write(ctx.fd, record.ptr, record.len);
+            conn.hs.completeWrite();
+            if (written != @as(isize, @intCast(record.len))) return ctx.fail(error.ShortWrite);
+        },
+        .send_corrupt_record => {
+            const record = conn.hs.sendApplicationData("tamper", &conn.out.buffer) catch |err|
+                return ctx.fail(err);
+            // Flip a bit in the ciphertext body, past the 5-byte record header.
+            const mutable = @constCast(record);
+            mutable[frame.header_len] ^= 0x01;
+            const written = std.c.write(ctx.fd, mutable.ptr, mutable.len);
+            conn.hs.completeWrite();
+            if (written != @as(isize, @intCast(mutable.len))) return ctx.fail(error.ShortWrite);
+        },
+        .send_fatal_alert => |description| {
+            const record = conn.hs.sendAlert(description, &conn.out.buffer) catch |err|
                 return ctx.fail(err);
             const written = std.c.write(ctx.fd, record.ptr, record.len);
             conn.hs.completeWrite();
@@ -495,6 +517,7 @@ test "writer: rejects writes after closeWrite" {
     // Enough to overflow the staging buffer so drain runs during writeAll.
     const big = [_]u8{'x'} ** (frame.max_plaintext_len + 1);
     try testing.expectError(error.WriteFailed, w.writeAll(&big));
+    try testing.expectEqual(tls.WriteError.TlsClosed, conn.writeError().?);
 
     conn.close();
     server.join();
@@ -570,6 +593,77 @@ test "alpn: no overlap fails both sides with a reason" {
     try testing.expectEqual(@as(?anyerror, error.NoApplicationProtocol), sctx.err);
 }
 
+// `Io.Reader` can only carry `error.ReadFailed`, which on its own cannot tell a
+// cancelled task from a forged record from a dead socket. `readError()` recovers
+// the cause, matching the `std.Io.net.Stream.Reader.err` convention.
+test "readError: a forged record is reported as TlsDecryptError" {
+    const io = testIo();
+    const fds = try socketPair();
+    defer _ = std.c.close(fds[0]);
+
+    var sctx: ServerCtx = .{ .fd = fds[1], .steps = &.{ .send_corrupt_record, .drain } };
+    const server = try spawnServer(&sctx);
+
+    var conn: tls.Client = undefined;
+    try conn.connect(io, streamFor(fds[0]), .{ .host = test_host, .verify = .insecure });
+    defer conn.deinit();
+
+    try testing.expectError(error.ReadFailed, conn.reader().fillMore());
+    try testing.expectEqual(tls.ReadError.TlsDecryptError, conn.readError().?);
+
+    conn.deinit();
+    server.join();
+}
+
+// RFC 8446 §6.2 — a peer abort is a distinct outcome from a broken transport,
+// and a caller that wants to log a reason needs to see which.
+test "readError: a peer fatal alert is reported as TlsAlertReceived" {
+    const io = testIo();
+    const fds = try socketPair();
+    defer _ = std.c.close(fds[0]);
+
+    var sctx: ServerCtx = .{
+        .fd = fds[1],
+        .steps = &.{ .{ .send_fatal_alert = .internal_error }, .drain },
+    };
+    const server = try spawnServer(&sctx);
+
+    var conn: tls.Client = undefined;
+    try conn.connect(io, streamFor(fds[0]), .{ .host = test_host, .verify = .insecure });
+    defer conn.deinit();
+
+    try testing.expectError(error.ReadFailed, conn.reader().fillMore());
+    try testing.expectEqual(tls.ReadError.TlsAlertReceived, conn.readError().?);
+
+    conn.deinit();
+    server.join();
+}
+
+// The cause is null until something actually fails, so a caller cannot mistake a
+// stale value for a fresh failure on a healthy connection.
+test "readError: null on a healthy connection" {
+    const io = testIo();
+    const fds = try socketPair();
+    defer _ = std.c.close(fds[0]);
+
+    var sctx: ServerCtx = .{ .fd = fds[1], .steps = &.{ .{ .send = "fine" }, .close } };
+    const server = try spawnServer(&sctx);
+
+    var conn: tls.Client = undefined;
+    try conn.connect(io, streamFor(fds[0]), .{ .host = test_host, .verify = .insecure });
+    defer conn.deinit();
+
+    const r = conn.reader();
+    try r.fillMore();
+    try testing.expectEqualStrings("fine", r.buffered());
+    try testing.expectEqual(@as(?tls.ReadError, null), conn.readError());
+    try testing.expectEqual(@as(?tls.WriteError, null), conn.writeError());
+
+    conn.close();
+    server.join();
+    if (sctx.err) |err| return err;
+}
+
 // RFC 8446 §5.1 allows zero-length application_data fragments and rate-limits
 // them nowhere, so a peer could otherwise keep a read call from ever returning.
 // The refill gives up instead of spinning forever.
@@ -590,6 +684,7 @@ test "reader: a flood of empty records is bounded, not an infinite read" {
 
     // Not EndOfStream (the peer is still there) and not a hang.
     try testing.expectError(error.ReadFailed, conn.reader().fillMore());
+    try testing.expectEqual(tls.ReadError.IdleRecordFlood, conn.readError().?);
 
     conn.deinit();
     server.join();

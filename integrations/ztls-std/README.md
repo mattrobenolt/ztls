@@ -60,13 +60,21 @@ tracked by [#77](https://github.com/mattrobenolt/ztls/issues/77).
    `illegal_parameter` / `no_application_protocol` as appropriate, then closes,
    so the peer logs a reason instead of a bare FIN.
 
-## Not thread-safe
+## Not reentrant across concurrent tasks
 
 `reader()` and `writer()` share the handshake engine and one outbound record
-buffer. The two halves cannot be driven from different threads the way
-`tokio-rustls` split halves can. Multiplex both directions from one thread
-(`socketHandle()` + `hasBuffered()`, as `examples/tls_client.zig` does) or
-serialize access yourself.
+buffer, and both yield to the runtime mid-operation while that buffer holds a
+half-written record. A second task entering the other half corrupts it, so the
+two halves cannot be driven concurrently the way `tokio-rustls` split halves can.
+
+"Not thread-safe" understates it. On a green-thread runtime like
+[zio](https://github.com/lalinsky/zio), a *single-threaded* scheduler still
+interleaves at every I/O point, so splitting the halves across two fibers looks
+safe and isn't. Debug and ReleaseSafe builds assert on reentry rather than
+corrupting silently.
+
+Drive both directions from one task (`socketHandle()` + `hasBuffered()`, as
+`examples/tls_client.zig` does), or serialize access yourself.
 
 ## Public API
 
@@ -276,6 +284,46 @@ and the reader cannot distinguish truncation from a rude close anyway; callers
 that care about truncation must frame their own protocol (Content-Length,
 chunked, etc.).
 
+`ReadFailed` and `WriteFailed` are not dead ends, though. Following the
+`std.Io.net.Stream.Reader.err` convention, the real cause is recorded before the
+narrow error is returned, and `readError()` / `writeError()` recover it:
+
+```zig
+pub const ReadError = error{
+    TlsAlertReceived,   // peer sent a fatal alert
+    TlsDecryptError,    // record failed to authenticate (AEAD tag / MAC)
+    TlsProtocolError,   // malformed, unexpected, or illegal record
+    RecordOverflow,     // record longer than RFC 8446 §5.1 permits
+    IdleRecordFlood,    // see the bounded-control-record section below
+    InternalError,      // backend failure, counter overflow, broken invariant
+} || std.Io.net.Stream.Reader.Error   // includes error.Canceled
+  || std.Io.net.Stream.Writer.Error   // KeyUpdate responses are written while reading
+  || std.Io.Cancelable || std.Io.UnexpectedError;
+
+pub const WriteError = error{
+    TlsClosed,          // closeWrite/close already ran
+    TlsProtocolError,
+    InternalError,
+} || std.Io.net.Stream.Writer.Error || std.Io.Cancelable || std.Io.UnexpectedError;
+```
+
+```zig
+r.fillMore() catch |err| switch (err) {
+    error.EndOfStream => {},              // clean close_notify
+    error.ReadFailed => switch (conn.readError().?) {
+        error.Canceled => {},             // the task was cancelled, not broken
+        error.TlsDecryptError => {},      // a record failed to authenticate
+        else => {},
+    },
+};
+```
+
+This matters most on a runtime built around cancellation. Without it, a cancelled
+task is indistinguishable from a forged record or a dead socket — see
+`examples/zio_client.zig`. The values are only meaningful immediately after the
+interface returned `ReadFailed`/`WriteFailed`, and are never cleared, exactly like
+the stdlib's.
+
 ## The byte-stream buffering layer (the one piece of real new code)
 
 TLS records don't align with `read()` calls: one transport read can deliver a
@@ -453,10 +501,13 @@ seam, and it is the reason the zero-copy read path had to go.
   `AcceptError.ClientCertificateRejected` exists because the core can produce
   those errors, not because the surface is supported.
 - **Session resumption / 0-RTT surface** — cut from v1.
-- **Concurrent split halves** — see the thread-safety note above.
-- **Handshake timeouts** — a slow peer can stall `connect`. `std.Io`
-  cancellation (`Io.Cancelable` is already in the error sets) is the intended
-  mechanism; nothing here imposes a deadline for you.
+- **Concurrent split halves** — see the reentrancy note above.
+- **Timeouts** — nothing here imposes a deadline. A slow peer can stall
+  `connect` or a read indefinitely. `std.Io` cancellation is the intended
+  mechanism and belongs to whoever owns the runtime;
+  `examples/zio_client.zig` shows the whole exchange raced against a sleep
+  through `Io.Select`, with the resulting `error.Canceled` recovered via
+  `readError()`.
 - **0.15 support** — 0.16 only.
 - **Distribution as an independently `zig fetch`-able package** — tracked by #79.
 
@@ -484,3 +535,41 @@ Run the example client against a real server:
 printf 'GET / HTTP/1.0\r\nHost: example.com\r\nConnection: close\r\n\r\n' | \
     zig build example-tls_client -- --host example.com
 ```
+
+## Running on another `std.Io`: there is no `ztls-zio`
+
+ztls-std targets `std.Io`, so it runs unmodified on any implementation of it.
+[zio](https://github.com/lalinsky/zio) — a stackful-coroutine runtime with
+io_uring/epoll/kqueue/IOCP backends — ships a full `std.Io`, so `rt.io()` goes
+straight into `Client.connect` with no adapter:
+
+```zig
+var rt = try zio.Runtime.init(gpa, .{});
+defer rt.deinit();
+
+var conn: tls.Client = undefined;
+try conn.connect(rt.io(), sock, .{ .host = host, .verify = .{ .system_bundle = gpa } });
+```
+
+A separate `ztls-zio` package would be this file with `Io` replaced by `Io` — two
+copies of the drive loop, the reader/writer vtables, and the error table to keep
+in lockstep. `examples/zio_client.zig` is the integration instead, and `just ci`
+builds it so the claim cannot rot. zio is a **lazy** dependency, so consuming
+ztls-std does not drag an I/O runtime into your tree.
+
+That example also covers the one thing a coroutine runtime genuinely adds over
+`std.Io.Threaded` here — a deadline, which ztls-std deliberately does not provide
+itself:
+
+```
+$ zio_client --host example.com --no-request --timeout-ms 800
+[zio] handshake complete
+[zio]   cipher: aes_128_gcm_sha256
+[zio] --no-request: reading without asking for anything
+[zio] deadline of 800ms expired
+[zio] transfer cancelled by the deadline (recovered as error.Canceled)
+```
+
+`ztls-xev` (#76) and `ztls-ktls` (#78) do get their own packages, because libxev
+is a callback-based completion loop with its own API and kTLS is a kernel offload.
+Neither implements the interface ztls-std already speaks.

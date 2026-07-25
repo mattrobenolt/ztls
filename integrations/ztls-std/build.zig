@@ -66,11 +66,20 @@ pub fn build(b: *std.Build) void {
     // Examples: runnable programs that exercise the higher-order ztls-std
     // API (Client.connect / Server.accept / Stream.reader / writer). Each is
     // wired as `zig build example-<name>`.
-    const examples = [_][]const u8{
-        "tls_client",
+    const Example = struct {
+        name: []const u8,
+        /// Examples that drive ztls-std on a third-party `std.Io` runtime pull
+        /// that runtime in lazily, so it is fetched only when the example is
+        /// actually built.
+        needs_zio: bool = false,
     };
-    var example_test_runs: [examples.len]*std.Build.Step.Run = undefined;
-    for (examples, &example_test_runs) |name, *test_run| {
+    const examples = [_]Example{
+        .{ .name = "tls_client" },
+        .{ .name = "zio_client", .needs_zio = true },
+    };
+    var example_test_runs: [examples.len]?*std.Build.Step.Run = @splat(null);
+    for (examples, &example_test_runs) |example, *test_run| {
+        const name = example.name;
         const exe_mod = b.createModule(.{
             .root_source_file = b.path(b.fmt("examples/{s}.zig", .{name})),
             .target = target,
@@ -80,6 +89,13 @@ pub fn build(b: *std.Build) void {
                 .{ .name = "ztls", .module = ztls_mod },
             },
         });
+        if (example.needs_zio) {
+            const zio_dep = b.lazyDependency("zio", .{
+                .target = target,
+                .optimize = optimize,
+            }) orelse continue;
+            exe_mod.addImport("zio", zio_dep.module("zio"));
+        }
         const example_exe = b.addExecutable(.{
             .name = name,
             .root_module = exe_mod,
@@ -125,5 +141,7 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&run_mod_tests.step);
     test_step.dependOn(&run_roundtrip_tests.step);
     test_step.dependOn(&run_exe_tests.step);
-    for (example_test_runs) |test_run| test_step.dependOn(&test_run.step);
+    for (example_test_runs) |maybe_run| {
+        if (maybe_run) |test_run| test_step.dependOn(&test_run.step);
+    }
 }

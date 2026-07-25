@@ -12,6 +12,16 @@
         .ztls = .{
             .path = "../..",
         },
+        // Example-only. zio is a stackful-coroutine runtime that implements
+        // `std.Io`, which is the interface ztls-std already targets — so it needs
+        // no adapter and gets no package of its own, just
+        // `examples/zio_client.zig` proving the integration. Lazy so a consumer
+        // of ztls-std never fetches an I/O runtime it did not ask for.
+        .zio = .{
+            .url = "git+https://github.com/lalinsky/zio#v0.16.0",
+            .hash = "zio-0.16.0-xHbVVJQxIgAMdBlOCF65siVKJRVww9Z_ayfJanpk7VEK",
+            .lazy = true,
+        },
     },
     .paths = .{
         "build.zig",
