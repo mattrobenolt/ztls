@@ -60,7 +60,7 @@ ztls is production-ready when all six pillars are `PROVEN`:
 | Pillar | Status | One-line |
 |---|---|---|
 | 1. Correctness | `PROVEN` | RFC 8446 MUST matrix closed for the supported surface; interop + tlsfuzzer PR-gated; TLS-Anvil scheduled with clean captures (437/437, no unexpected failures); adversarial security review found and fixed 3 vulns. Full TLS-Anvil is scheduled-only (2-hour runtime can't be PR-gated); BoGo explicitly deferred. |
-| 2. Ergonomics | `PROVEN` | CI-gated deterministic examples cover client and server roles across io_uring, epoll, and `std.net.Stream`; Config setup, server credentials, and `Outbox` cover the supported core ergonomics boundary. Two higher-order integrations are `PARTIAL`, both CI-gated under Zig 0.16: `ztls-std` (#77, `std.Io`) lacks wrapper-level interop, client auth, and concurrent split halves; `ztls-xev` (#76, libxev completions) is client-only on the Linux backend. |
+| 2. Ergonomics | `PROVEN` | CI-gated deterministic examples cover client and server roles across io_uring, epoll, and `std.net.Stream`; Config setup, server credentials, and `Outbox` cover the supported core ergonomics boundary. Two higher-order integrations are `PARTIAL`, both CI-gated under Zig 0.16: `ztls-std` (#77, `std.Io`) lacks wrapper-level interop, client auth, and concurrent split halves; `ztls-xev` (#76, libxev completions) has both roles but only on the Linux backend. |
 | 3. Performance | `PROVEN` | n=10 captures on x86_64 (c7i.2xlarge), aarch64 (c7g.2xlarge), and macOS (Apple M1 Max) with formal CIs (p=0.000): ztls beats libssl on every comparable app-data row on all three platforms and rustls on all AES-GCM rows; regression gate committed. |
 | 4. Providers | `PROVEN` | OpenSSL (default), AWS-LC, and BoringSSL all compile, pass the full test suite, tlsfuzzer smoke, and have clean TLS-Anvil captures (437/437 each). CI-gated backend lanes (`just check-backend-aws-lc`, `just check-backend-boringssl`). Cert-chain stays ztls/std (ownership decision); FIPS comptime-validated; PQ/P-384 is #6. |
 | 5. Marketing | `PROVEN` | README leads with the proven performance story (n=10, both architectures, honest ChaCha20 loss) and the adversarial security posture; the why-ztls narrative and headline benchmarks are on the front door, backed by PERFORMANCE.md. |
@@ -653,13 +653,22 @@ ztls-std unchanged. Separate workspace, own `build.zig`/`justfile`, own
 `nix develop .#ztls-xev` shell; gated by `just integrations-ci` inside
 `just ci-0_16`.
 
-**Landed and gated.** Client role only: `Config` (one trust-store load shared
-across connections), `Conn.init`/`handshake`/`read`/`write`/`close`/`closeReset`/
-`deinit`, with `state`, `selectedAlpn`, and `cipherSuite`. 11 tests: the
-end-to-end round trip drives a real `xev.Loop` against a blocking ztls server on
-a thread — two integrations of the same core agreeing on the protocol — plus unit
-coverage of the error projection, the alert mapping, and the callback-slot
-contract.
+**Landed and gated.** Both roles. `Conn(role)` is one implementation
+parameterised by client/server, exported as `Client` and `Server`: they share the
+pump, the wire queue, both I/O paths, and teardown, differing only in which
+engine they drive, how the handshake opens, and whether a server flight is owed.
+`ClientConfig` (one trust-store load) and `ServerConfig` (one chain and signer)
+are both shared across connections. Surface is
+`init`/`handshake`/`read`/`write`/`close`/`closeReset`/`deinit` plus `state`,
+`selectedAlpn`, and `cipherSuite`.
+
+19 tests. The client round trip drives a real `xev.Loop` against a blocking ztls
+server on a thread; the server tests run *both* roles on one loop over a
+socketpair, with no threads, so the interleaving is the loop's and the result is
+deterministic. Plus unit coverage of the error projection, the alert mapping, the
+whole-struct `Storage` wipe, and the callback-slot contract. The server example
+is verified against real `openssl s_client`, including X25519MLKEM768 hybrid key
+exchange and ALPN, across repeated connections on one shared config.
 
 The API is not a port of ztls-std, and the reasons are structural rather than
 stylistic. ztls-std's drive loop owns the stack (`while (!isConnected())
@@ -682,9 +691,9 @@ slices so a server can pool them.
 many records, while a peer that drops mid-request yields `eof` with the
 bytes-so-far.
 
-**Gaps (tracked under #76):** server role is not implemented, so the #76
-"done when" is unmet. Only the Linux backend has been exercised — kqueue and IOCP
-are unvalidated. `peek`/`consume`/`writeNegotiationPlaintext` for StartTLS-style
+**Gaps (tracked under #76):** only the Linux backend has been exercised — kqueue
+and IOCP are unvalidated, so the #76 "done when" (io_uring *and* kqueue) is still
+unmet. Client authentication is not wired. `peek`/`consume`/`writeNegotiationPlaintext` for StartTLS-style
 detection are absent (hence the first state is `handshaking`, not `negotiating`);
 `isTls()` is exported for callers doing their own peeking. Cancellation of
 in-flight operations is implemented as delivering `Error.Canceled` before the

@@ -43,15 +43,15 @@ fn die(comptime fmt: []const u8, args: anytype) noreturn {
 /// wrapper would have kept on the stack.
 const App = struct {
     loop: *xev.Loop,
-    config: *const tls.Config,
+    config: *const tls.ClientConfig,
     io: Io,
     host: []const u8,
     request: []const u8,
 
-    conn: tls.Conn = undefined,
+    conn: tls.Client = undefined,
     connect_c: xev.Completion = .{},
 
-    storage: tls.Conn.Storage = .{},
+    storage: tls.Client.Storage = .{},
     read_buf: [16 * 1024]u8 = undefined,
 
     body_bytes: usize = 0,
@@ -182,9 +182,9 @@ pub fn main(init: std.process.Init) !void {
     const address = try resolve(blocking, host_str, port);
 
     var config = if (insecure)
-        tls.Config.init(.{ .verify = .insecure, .alpn = &.{alpn} })
+        tls.ClientConfig.init(.{ .verify = .insecure, .alpn = &.{alpn} })
     else
-        try tls.Config.initSystemBundle(blocking, init.gpa, .{
+        try tls.ClientConfig.initSystemBundle(blocking, init.gpa, .{
             .verify = .owned_bundle,
             .alpn = &.{alpn},
         });

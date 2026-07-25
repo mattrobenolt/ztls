@@ -36,6 +36,12 @@ What *is* shared is `ztls.errors.classify`, so both integrations project their
 coarse failure buckets from one exhaustive table in the core rather than growing
 copies that drift.
 
+Client and server are one implementation parameterised by role
+(`Conn(.client)` / `Conn(.server)`, exported as `Client` and `Server`). They
+share the pump, the wire queue, both I/O paths, and teardown; they differ in
+which engine they drive, how the handshake opens, and whether a server flight is
+owed. Three differences did not justify eight hundred duplicated lines.
+
 The API shape follows a proven server-side libxev TLS integration rather than
 being invented here; the `ReadResult` split in particular is lifted from it.
 
@@ -77,6 +83,27 @@ byte-stream reader cannot tell them apart anyway. True for a byte stream, false
 for a callback API — so this one tells you. It shows up immediately on real
 traffic: `www.cloudflare.com` finishes with `close_notify` after 1.3 MB, while a
 peer that drops you mid-request yields `eof` with the bytes-so-far.
+
+## Roles
+
+`Client.Config` is `ClientConfig`: a trust store loaded once and shared. Its
+mirror `Server.Config` is `ServerConfig`: one certificate chain and signer,
+shared the same way. Both are borrowed for the life of every connection using
+them, and neither owns per-connection state.
+
+```zig
+const server_config: tls.ServerConfig = .init(.{
+    .cert_chain = &.{cert_der},   // leaf first
+    .signer = key.signer(),       // the PrivateKey must outlive this
+    .alpn = &.{"h2"},
+});
+```
+
+A server calls the same `handshake()` as a client — the caller has already
+accepted the TCP connection, so there is nothing left to accept. There is no
+listener abstraction: an accept loop is four lines of libxev, and wrapping it
+would only obstruct the protocol-detection patterns a real proxy needs. See
+`examples/xev_server.zig`.
 
 ## Usage
 
@@ -138,11 +165,12 @@ than plain arrays — `secureZero` comes with it.
 
 ## Not implemented yet
 
-Client only. `peek`/`consume`/`writeNegotiationPlaintext` for StartTLS-style
-protocol detection are absent, which is why the first state is `handshaking`
-rather than `negotiating`; `isTls()` is provided for callers doing their own
-pre-TLS peeking. Server role, kqueue/IOCP validation, key-update initiation, and
-session resumption are all still open under #76.
+`peek`/`consume`/`writeNegotiationPlaintext` for StartTLS-style protocol
+detection are absent, which is why the first state is `handshaking` rather than
+`negotiating`; `isTls()` is provided for callers doing their own pre-TLS
+peeking. Client authentication, kqueue/IOCP validation, key-update initiation,
+and session resumption are all still open under #76. Only the Linux backend has
+been exercised.
 
 ## Build
 
@@ -159,4 +187,20 @@ workspace delegates via `just integrations-ci`, wired into `just ci-0_16`.
 
 ```
 zig build example-xev_client -- --host example.com
+zig build example-xev_server -- --port 8443
+```
+
+The server example is an echo server with an embedded test certificate. Driven
+by real OpenSSL clients:
+
+```
+$ printf 'hello openssl\n' | openssl s_client -connect 127.0.0.1:8443 \
+      -tls1_3 -alpn echo -no_ign_eof
+Negotiated TLS1.3 group: X25519MLKEM768
+New, TLSv1.3, Cipher is TLS_AES_128_GCM_SHA256
+ALPN protocol: echo
+hello openssl
+
+[xev] handshake ok: cipher=aes_128_gcm_sha256 alpn=echo
+[xev] client closed cleanly after 14 echoed bytes
 ```

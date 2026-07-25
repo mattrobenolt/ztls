@@ -44,15 +44,22 @@ pub fn build(b: *std.Build) void {
         },
     });
 
-    const examples = [_][]const u8{
-        "xev_client",
+    const Example = struct {
+        name: []const u8,
+        /// Examples that present a certificate need the test fixtures.
+        needs_fixtures: bool = false,
+    };
+    const examples = [_]Example{
+        .{ .name = "xev_client" },
+        .{ .name = "xev_server", .needs_fixtures = true },
     };
     var example_test_runs: [examples.len]*std.Build.Step.Run = undefined;
     const build_examples_step = b.step(
         "build-examples",
         "Compile every example (no peer required)",
     );
-    for (examples, &example_test_runs) |name, *test_run| {
+    for (examples, &example_test_runs) |example, *test_run| {
+        const name = example.name;
         const exe_mod = b.createModule(.{
             .root_source_file = b.path(b.fmt("examples/{s}.zig", .{name})),
             .target = target,
@@ -63,6 +70,7 @@ pub fn build(b: *std.Build) void {
                 .{ .name = "xev", .module = xev_mod },
             },
         });
+        if (example.needs_fixtures) exe_mod.addImport("fixtures", fixtures_mod);
         const example_exe = b.addExecutable(.{ .name = name, .root_module = exe_mod });
         const run = b.addRunArtifact(example_exe);
         if (b.args) |args| run.addArgs(args);

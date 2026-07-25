@@ -36,8 +36,18 @@
 const std = @import("std");
 const testing = std.testing;
 
-pub const Config = @import("Config.zig");
-pub const Conn = @import("Conn.zig");
+pub const ClientConfig = @import("ClientConfig.zig");
+pub const ServerConfig = @import("ServerConfig.zig");
+
+const conn = @import("Conn.zig");
+
+/// Which side of the handshake a connection drives.
+pub const Role = enum { client, server };
+
+/// A TLS 1.3 client connection. `Client.Config` is `ClientConfig`.
+pub const Client = conn.Conn(.client);
+/// A TLS 1.3 server connection. `Server.Config` is `ServerConfig`.
+pub const Server = conn.Conn(.server);
 
 const ztls = @import("ztls");
 /// Re-export ztls so consumers can reach the core if needed.
@@ -212,6 +222,7 @@ test "fromCore: projections that matter" {
 test {
     // 0.16 dropped refAllDeclsRecursive; name the modules explicitly so their
     // tests run.
-    _ = Config;
-    _ = Conn;
+    _ = ClientConfig;
+    _ = ServerConfig;
+    _ = conn;
 }
