@@ -90,6 +90,18 @@
               zig-tools = zig0_16;
             };
 
+            # ztls-xev integration (#76): Zig 0.16 + OpenSSL backend. libxev is a
+            # pure-Zig dependency fetched by the package, so this shell is the
+            # same shape as ztls-std.
+            ztls-xev = backendShell {
+              name = "ztls-xev";
+              backend = "openssl";
+              pkgConfigPath = opensslBackend.pkgConfigPath;
+              libDir = opensslBackend.libDir;
+              packages = opensslBackend.packages;
+              zig-tools = zig0_16;
+            };
+
             aws-lc = backendShell {
               name = "ztls-aws-lc";
               backend = "aws-lc";

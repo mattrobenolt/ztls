@@ -60,7 +60,7 @@ ztls is production-ready when all six pillars are `PROVEN`:
 | Pillar | Status | One-line |
 |---|---|---|
 | 1. Correctness | `PROVEN` | RFC 8446 MUST matrix closed for the supported surface; interop + tlsfuzzer PR-gated; TLS-Anvil scheduled with clean captures (437/437, no unexpected failures); adversarial security review found and fixed 3 vulns. Full TLS-Anvil is scheduled-only (2-hour runtime can't be PR-gated); BoGo explicitly deferred. |
-| 2. Ergonomics | `PROVEN` | CI-gated deterministic examples cover client and server roles across io_uring, epoll, and `std.net.Stream`; Config setup, server credentials, and `Outbox` cover the supported core ergonomics boundary. The higher-order `std.Io.net` wrapper (`integrations/ztls-std`, #77) is `PARTIAL`: landed and CI-gated under Zig 0.16, without wrapper-level interop, client auth, or concurrent split halves. |
+| 2. Ergonomics | `PROVEN` | CI-gated deterministic examples cover client and server roles across io_uring, epoll, and `std.net.Stream`; Config setup, server credentials, and `Outbox` cover the supported core ergonomics boundary. Two higher-order integrations are `PARTIAL`, both CI-gated under Zig 0.16: `ztls-std` (#77, `std.Io`) lacks wrapper-level interop, client auth, and concurrent split halves; `ztls-xev` (#76, libxev completions) is client-only on the Linux backend. |
 | 3. Performance | `PROVEN` | n=10 captures on x86_64 (c7i.2xlarge), aarch64 (c7g.2xlarge), and macOS (Apple M1 Max) with formal CIs (p=0.000): ztls beats libssl on every comparable app-data row on all three platforms and rustls on all AES-GCM rows; regression gate committed. |
 | 4. Providers | `PROVEN` | OpenSSL (default), AWS-LC, and BoringSSL all compile, pass the full test suite, tlsfuzzer smoke, and have clean TLS-Anvil captures (437/437 each). CI-gated backend lanes (`just check-backend-aws-lc`, `just check-backend-boringssl`). Cert-chain stays ztls/std (ownership decision); FIPS comptime-validated; PQ/P-384 is #6. |
 | 5. Marketing | `PROVEN` | README leads with the proven performance story (n=10, both architectures, honest ChaCha20 loss) and the adversarial security posture; the why-ztls narrative and headline benchmarks are on the front door, backed by PERFORMANCE.md. |
@@ -643,6 +643,55 @@ as `error.Canceled` via `readError()`. Measured against `example.com`, both
 phases: `handshake cancelled by the deadline` and `transfer cancelled by the
 deadline (recovered as error.Canceled)`. Before the `err` convention landed, the
 identical experiment reported a bare `ReadFailed`.
+
+### libxev — ztls-xev (#76) — PARTIAL
+
+`integrations/ztls-xev/` is the completion-driven integration. libxev does not
+implement `std.Io` — it borrows `std.Io.net.IpAddress` as a type and nothing else
+— so unlike a `std.Io` runtime it needs a real adapter rather than working through
+ztls-std unchanged. Separate workspace, own `build.zig`/`justfile`, own
+`nix develop .#ztls-xev` shell; gated by `just integrations-ci` inside
+`just ci-0_16`.
+
+**Landed and gated.** Client role only: `Config` (one trust-store load shared
+across connections), `Conn.init`/`handshake`/`read`/`write`/`close`/`closeReset`/
+`deinit`, with `state`, `selectedAlpn`, and `cipherSuite`. 11 tests: the
+end-to-end round trip drives a real `xev.Loop` against a blocking ztls server on
+a thread — two integrations of the same core agreeing on the protocol — plus unit
+coverage of the error projection, the alert mapping, and the callback-slot
+contract.
+
+The API is not a port of ztls-std, and the reasons are structural rather than
+stylistic. ztls-std's drive loop owns the stack (`while (!isConnected())
+blocking_read()`); `Conn.pump` is that loop inverted, with every local promoted to
+a field and each completion re-entering it. `Io.Reader`/`Io.Writer` cannot be
+offered at all, because `stream()` must produce bytes or fail and has no way to
+say "call me back" — so ztls-std's drop-in byte-stream seam has no analogue here
+and callers get explicit callback operations. `ztls.errors.classify` is shared, so
+both integrations project from one exhaustive table.
+
+Shape follows a proven server-side libxev TLS integration rather than being
+invented: exactly-once callbacks including for synchronous failures, typed `ctx`
+with completions hidden inside `Conn`, state-gated operations that *deliver*
+`Closed`/`Concurrent` rather than asserting, and caller-owned buffers as runtime
+slices so a server can pool them.
+
+`ReadResult` splits `close_notify` from `eof`, which ztls-std cannot do
+(`std.Io.Reader` has one `EndOfStream` for both). Observed on real traffic:
+`www.cloudflare.com` completes with `close_notify` after 1_304_478 bytes across
+many records, while a peer that drops mid-request yields `eof` with the
+bytes-so-far.
+
+**Gaps (tracked under #76):** server role is not implemented, so the #76
+"done when" is unmet. Only the Linux backend has been exercised — kqueue and IOCP
+are unvalidated. `peek`/`consume`/`writeNegotiationPlaintext` for StartTLS-style
+detection are absent (hence the first state is `handshaking`, not `negotiating`);
+`isTls()` is exported for callers doing their own peeking. Cancellation of
+in-flight operations is implemented as delivering `Error.Canceled` before the
+close callback, but is not yet covered by a test. Key-update initiation and
+session resumption are untouched. ztls-xev is not claimed done.
+
+---
 
 **Gaps (tracked under #77):** no automated OpenSSL interop gate *through the
 wrapper* — the core's interop already covers the engine, and wrapper-level

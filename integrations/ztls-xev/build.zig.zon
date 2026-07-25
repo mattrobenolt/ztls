@@ -1,0 +1,26 @@
+.{
+    .name = .ztls_xev,
+    .version = "0.0.0",
+    .fingerprint = 0xe9b19ec0837bab07, // Changing this has security and trust implications.
+    .minimum_zig_version = "0.16.0",
+    .dependencies = .{
+        // In-tree path dep on the ztls core, mirroring integrations/ztls-std.
+        // Publish-time this swaps to a git-URL/tag dep — see #79.
+        .ztls = .{
+            .path = "../..",
+        },
+        // libxev is the point of this integration, not an optional extra, so
+        // it is a normal (non-lazy) dependency, unlike zio in ztls-std.
+        .libxev = .{
+            .url = "git+https://github.com/mitchellh/libxev#9ce8e8e6ff89e583258a7f8e7adeeeaeae8611bf",
+            .hash = "libxev-0.0.0-86vtcwIRFADbH4hk-EjROXxlrKIRPQdA41XiTSytYO-F",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        "examples",
+        "README.md",
+    },
+}
