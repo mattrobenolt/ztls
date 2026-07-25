@@ -7,6 +7,13 @@ const mem = std.mem;
 const testing = std.testing;
 const Alignment = mem.Alignment;
 
+/// A bounded append-only view over storage the caller owns.
+///
+/// Deliberately has no `secureZero`: the bytes belong to the caller, so
+/// clearing them is the caller's call, not something an engine does to memory
+/// it was lent. This matches `RecordBuffer`, which holds decrypted application
+/// plaintext over caller storage and likewise never zeroes it. Use `clear` to
+/// reset the view; zero the backing storage where it is declared. See #81.
 pub fn SliceBuffer(comptime T: type) type {
     return struct {
         const Self = @This();
@@ -55,10 +62,6 @@ pub fn SliceBuffer(comptime T: type) type {
 
         pub fn clear(self: *Self) void {
             self.len = 0;
-        }
-
-        pub fn secureZero(self: *Self) void {
-            std.crypto.secureZero(T, std.mem.asBytes(self));
         }
     };
 }

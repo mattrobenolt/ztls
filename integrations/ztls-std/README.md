@@ -197,6 +197,11 @@ pub const Client = /* ClientWith(.{}) */ struct {
 };
 ```
 
+Zeroing those buffers is the wrapper's job, not the engine's. ztls hands lent
+storage back untouched by design ([#81](https://github.com/mattrobenolt/ztls/issues/81)),
+and every buffer here is declared by the `Stream` — including the record and read
+buffers that held decrypted application plaintext, which nobody else would clear.
+
 `Server.Options` carries credentials instead of a verification policy:
 
 ```zig

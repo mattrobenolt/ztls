@@ -348,6 +348,23 @@ data to openssl s_server and receives the HTTP response.
   - H17 — HKDF passes `Prk`/`TrafficSecret` by value, leaving un-zeroized stack
     copies; the important handshake locals are wiped. Needs a dedicated
     zeroization-strategy pass, not a point fix.
+  - Zeroing responsibility at the caller-owned-buffer boundary is now decided
+    and documented rather than accidental (#81). `SliceBuffer.secureZero`
+    zeroed the view's own 24-byte header — the fat pointer, its length, and
+    `len` — and not the storage it pointed at, so `ClientHandshake.deinit`
+    left the retained certificate chain byte-for-byte intact in caller memory
+    while reading as though it had cleared it. The two reassembly buffers were
+    cleared by nobody at all. Resolved by deleting the method: engines zero the
+    secrets they hold inline and never write to memory they were lent, matching
+    `RecordBuffer`, which holds decrypted application plaintext over caller
+    storage and has never had a `secureZero`. Callers own clearing, stated on
+    `useHandshakeBuffer`, `usePeerCertificateBuffer`, and `RecordBuffer.init`,
+    and pinned by `deinit leaves caller-owned buffers to the caller` in both
+    engines. `integrations/ztls-std` discharges the obligation for every buffer
+    it declares, gated by `deinit zeroes the wrapper's own buffers, including
+    the retained chain`. Note this is a hygiene and honesty fix, not a
+    disclosure fix: certificates are public, and the reassembly buffers hold
+    whatever handshake plaintext spanned a record boundary.
   - H20 — 0.5-RTT interop: the client rejects legal server application_data in
     `.send_finished`. Fixing it needs an API/state-machine channel to surface
     pre-connected app data; interop feature, not a security bug.

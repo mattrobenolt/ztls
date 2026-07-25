@@ -743,14 +743,19 @@ fn StreamImpl(comptime Hs: type, comptime role: Role, comptime config: Config) t
         }
 
         /// Always-callable teardown: closes the socket without an alert and
-        /// secure-zeros every wrapper-owned buffer. Idempotent, and safe (a
-        /// no-op) after a failed `connect`/`accept`, which cleans up after
-        /// itself.
+        /// secure-zeros every wrapper-owned buffer — record storage, read and
+        /// write staging, reassembly, and the retained chain. Idempotent, and
+        /// safe (a no-op) after a failed `connect`/`accept`, which cleans up
+        /// after itself.
         pub fn deinit(s: *Self) void {
             if (s.flags.contains(.closed)) return;
             s.teardown();
         }
 
+        /// Zeroing the buffers is this type's job, not the engine's: ztls hands
+        /// lent storage back untouched by design (#81), and every buffer here is
+        /// declared by the Stream. The record and read buffers held decrypted
+        /// application plaintext, so nobody else is going to do it.
         fn teardown(s: *Self) void {
             s.flags.insert(.closed);
             s.pending = &.{};

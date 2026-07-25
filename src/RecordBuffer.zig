@@ -41,6 +41,9 @@ pos: usize = 0,
 /// End of valid data in storage.
 filled: usize = 0,
 
+/// `storage` is caller-owned, and so is clearing it. Records are decrypted in
+/// place, so this buffer holds application plaintext; nothing here zeroes it.
+/// Zero it where it is declared. See #81.
 pub fn init(storage: []u8) RecordBuffer {
     assert(storage.len >= min_storage);
     return .{ .storage = storage };

@@ -322,6 +322,14 @@ pub fn init(config: Config) ServerHandshake {
     };
 }
 
+/// Release backend handles and zero every secret this engine owns inline.
+///
+/// Does NOT touch caller-owned storage. The ClientHello reassembly buffer from
+/// `useHandshakeBuffer`, the credential chain from `setCredentials`, and the
+/// `RecordBuffer` storage are lent to the engine, so zeroing them is the
+/// caller's call at the point they are declared. `self.* = undefined` is not a
+/// wipe either: it is a no-op in ReleaseFast, which is why the secrets below
+/// are cleared explicitly with volatile stores. See #81.
 pub fn deinit(self: *ServerHandshake) void {
     switch (self.state) {
         .wait_client_finished, .connected => {
@@ -339,7 +347,6 @@ pub fn deinit(self: *ServerHandshake) void {
     self.fin_frag.secureZero();
     self.ku_frag.secureZero();
     self.client_leaf_pub_key.secureZero();
-    self.client_cert.clear();
     self.* = undefined;
 }
 
@@ -463,6 +470,10 @@ pub fn setCertificateChain(self: *ServerHandshake, chain: CertificateChain, sign
 /// ClientHello is rejected with IncompleteRecord (maps to decode_error alert).
 /// The storage must live at least until the handshake reaches
 /// wait_client_finished. ch_reassembly_buffer_size is the recommended minimum.
+///
+/// The caller owns clearing it. Reassembled handshake plaintext stays in this
+/// buffer after `deinit`, which never writes to memory it was lent; zero it
+/// where it is declared if that matters to you. See #81.
 pub fn useHandshakeBuffer(self: *ServerHandshake, storage: []u8) void {
     assert(self.state == .wait_ch);
     assert(self.ch_buf.len == 0);
@@ -6629,4 +6640,16 @@ test "handleRecord: split-header reassembly body_len 0xFFFFFF rejected without o
     // body_len_assembled = 0xFFFFFF. The addition must not overflow u24.
     var rec2 = [_]u8{ 0x16, 0x03, 0x03, 0x00, 0x01, 0xFF };
     try testing.expectError(error.IncompleteRecord, hs.handleRecord(&rec2, &out));
+}
+
+// #81 — same contract as the client: the ClientHello reassembly buffer is lent,
+// so `deinit` zeroes its own inline secrets and leaves this alone.
+test "deinit leaves caller-owned buffers to the caller" {
+    var reassembly: [ch_reassembly_buffer_size]u8 = @splat(0xc7);
+
+    var hs: ServerHandshake = .init(testConfig(.generate()));
+    hs.useHandshakeBuffer(&reassembly);
+    hs.deinit();
+
+    try testing.expect(std.mem.allEqual(u8, &reassembly, 0xc7));
 }

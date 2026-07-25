@@ -552,6 +552,14 @@ pub fn init(config: Config) ClientHandshake {
     };
 }
 
+/// Release backend handles and zero every secret this engine owns inline.
+///
+/// Does NOT touch caller-owned storage. The reassembly buffer from
+/// `useHandshakeBuffer`, the retention buffer from `usePeerCertificateBuffer`,
+/// and the `RecordBuffer` storage are lent to the engine, so zeroing them is
+/// the caller's call at the point they are declared. `self.* = undefined` is
+/// not a wipe either: it is a no-op in ReleaseFast, which is why the secrets
+/// below are cleared explicitly with volatile stores. See #81.
 pub fn deinit(self: *ClientHandshake) void {
     switch (self.state) {
         .wait_ee,
@@ -573,8 +581,6 @@ pub fn deinit(self: *ClientHandshake) void {
     if (self.kem_key) |k| mlkem.freeKey(k);
     self.suite.secureZero();
     self.keypairs.secureZero();
-    self.peer_certificate.secureZero();
-    self.peer_chain.secureZero();
     self.* = undefined;
 }
 
@@ -593,6 +599,10 @@ pub const StartError = error{ BufferTooShort, ServerNameTooLong, IdentityTooLong
 /// encrypted records (large certificate chains, fragmented flights). Without
 /// this, a spanning message is rejected with UnexpectedEof. The storage must
 /// live at least until the handshake completes.
+///
+/// The caller owns clearing it. Reassembled handshake plaintext stays in this
+/// buffer after `deinit`, which never writes to memory it was lent; zero it
+/// where it is declared if that matters to you. See #81.
 pub fn useHandshakeBuffer(self: *ClientHandshake, storage: []u8) void {
     assert(self.handshake_buf.len == 0);
     self.handshake_buf = .init(storage);
@@ -601,6 +611,11 @@ pub fn useHandshakeBuffer(self: *ClientHandshake, storage: []u8) void {
 /// Retain the verified server certificate chain for connection introspection.
 /// The caller owns `storage`, which must outlive the handshake and any returned
 /// peer-certificate slices.
+///
+/// The caller also owns clearing it. The retained DER stays in this buffer
+/// after `deinit`, which never writes to memory it was lent. Certificates are
+/// public data, so this is hygiene rather than disclosure — but do not read
+/// `deinit` as having handled it. See #81.
 pub fn usePeerCertificateBuffer(self: *ClientHandshake, storage: []u8) void {
     assert(self.state == .start);
     assert(self.peer_certificate.buffer.len == 0);
@@ -4680,4 +4695,22 @@ test "processHelloRetryRequest: HRR with cookie echoes cookie in CH2" {
         }
     }
     try testing.expect(found_cookie);
+}
+
+// #81 — buffers lent to the engine belong to the caller, including the decision
+// to clear them. `deinit` wipes the secrets it holds inline (see the KeyPairs
+// and Suite secureZero tests; it cannot be asserted through `deinit` itself,
+// which ends in `self.* = undefined`) and must not reach into lent memory.
+// A future change that "helpfully" zeroes caller storage breaks this.
+test "deinit leaves caller-owned buffers to the caller" {
+    var reassembly: [recommended_handshake_storage]u8 = @splat(0xc7);
+    var retained: [recommended_handshake_storage]u8 = @splat(0xd8);
+
+    var hs: ClientHandshake = .init(testConfig(.generate()));
+    hs.useHandshakeBuffer(&reassembly);
+    hs.usePeerCertificateBuffer(&retained);
+    hs.deinit();
+
+    try testing.expect(mem.allEqual(u8, &reassembly, 0xc7));
+    try testing.expect(mem.allEqual(u8, &retained, 0xd8));
 }

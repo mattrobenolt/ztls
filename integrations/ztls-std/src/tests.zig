@@ -225,6 +225,41 @@ test "info: peer_chain is empty without peer_chain_storage" {
     if (sctx.err) |err| return err;
 }
 
+// #81 — the core deliberately does not clear buffers it was lent, so whoever
+// owns them must. Here that is the wrapper: `teardown` zeroes every buffer the
+// Stream declares, including the retained chain and the record storage that
+// held decrypted plaintext. Nothing else in the stack would.
+test "deinit zeroes the wrapper's own buffers, including the retained chain" {
+    const io = testIo();
+    const fds = try socketPair();
+    defer _ = std.c.close(fds[0]);
+
+    var sctx: ServerCtx = .{ .fd = fds[1], .steps = &.{ .{ .send = "secret-payload" }, .drain } };
+    const server = try spawnServer(&sctx);
+
+    var conn: IntrospectingClient = undefined;
+    try conn.connect(io, streamFor(fds[0]), .{ .host = test_host, .verify = .insecure });
+
+    const r = conn.reader();
+    try r.fillMore();
+    try testing.expectEqualStrings("secret-payload", r.buffered());
+    r.toss(r.bufferedLen());
+
+    // Before teardown: the DER is retained in the Stream's storage and the
+    // plaintext is in its record and read buffers.
+    try testing.expect(mem.indexOf(u8, &conn.peer_chain_storage.data, test_cert_der) != null);
+    try testing.expect(mem.indexOf(u8, &conn.read_storage.data, "secret-payload") != null);
+
+    conn.deinit();
+
+    try testing.expect(mem.allEqual(u8, &conn.peer_chain_storage.data, 0));
+    try testing.expect(mem.allEqual(u8, &conn.read_storage.data, 0));
+    try testing.expect(mem.allEqual(u8, &conn.storage.data, 0));
+    try testing.expect(mem.allEqual(u8, &conn.reassembly.data, 0));
+
+    server.join();
+}
+
 // A partially consumed record plus a `peek` past its end is the shape that
 // breaks a reader whose buffer is the record itself: the stdlib rebases the
 // leftover and asks for more, and the unconsumed tail must survive.
