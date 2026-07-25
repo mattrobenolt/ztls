@@ -10,6 +10,9 @@ pub const CipherSuite = @import("cipher_suite.zig").CipherSuite;
 pub const client_hello = @import("client_hello.zig");
 pub const ClientHandshake = @import("ClientHandshake.zig");
 pub const CompressionMethod = @import("compression_method.zig").CompressionMethod;
+/// Coarse classification of the handshake error sets, shared by every
+/// integration so there is one exhaustive table rather than one per wrapper.
+pub const errors = @import("errors.zig");
 pub const ExtensionType = @import("extension_type.zig").ExtensionType;
 pub const frame = @import("frame.zig");
 pub const hkdf = @import("hkdf.zig");
