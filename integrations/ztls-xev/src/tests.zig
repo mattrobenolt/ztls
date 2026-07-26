@@ -761,6 +761,7 @@ fn CloseWhileReading(comptime Xev: type) type {
         server_final: ?struct {
             state: tls.State,
             wait: @TypeOf(@as(ServerConn, undefined).wait),
+            phase: @TypeOf(@as(ServerConn, undefined).close_phase),
         } = null,
         shutdown: ServerConn.Shutdown = .abortive,
 
@@ -802,7 +803,11 @@ fn CloseWhileReading(comptime Xev: type) type {
             // Captured before deinit: reading a Conn afterwards reads
             // `self.* = undefined` and prints 0xaa garbage as plausible-looking
             // states, which cost a whole diagnostic cycle here (#81, again).
-            s.server_final = .{ .state = s.server.state(), .wait = s.server.wait };
+            s.server_final = .{
+                .state = s.server.state(),
+                .wait = s.server.wait,
+                .phase = s.server.closePhase(),
+            };
             s.server.deinit();
             s.server_storage.secureZero();
             s.flags.insert(.server_done);
@@ -881,12 +886,14 @@ fn CloseWhileReading(comptime Xev: type) type {
                 }
                 if (spins == 2_000) {
                     std.debug.print(
-                        "\nstalled on {t}: srv_final={any} cli={t}/{t} active={d} events={any}\n",
+                        "\nstalled on {t}: srv={any}\n" ++
+                            "  cli={t}/{t}/{t} active={d} events={any}\n",
                         .{
                             Xev.backend,
                             s.server_final,
                             s.client.state(),
                             s.client.wait,
+                            s.client.closePhase(),
                             loop.active,
                             s.events.items,
                         },

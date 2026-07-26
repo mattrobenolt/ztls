@@ -357,6 +357,13 @@ pub fn ConnWith(comptime Xev: type, comptime role: root.Role) type {
             return self.lifecycle;
         }
 
+        /// Where a close has got to. Exposed for diagnostics: a connection stuck
+        /// in `.closing` is ambiguous without it — the phase says whether the
+        /// socket close was ever armed.
+        pub fn closePhase(self: *const Self) ClosePhase {
+            return self.close_phase;
+        }
+
         /// ALPN protocol the peer selected, or null. Valid once `.established`.
         ///
         /// Borrowed from the engine and invalidated by `deinit`. Copy it if you
