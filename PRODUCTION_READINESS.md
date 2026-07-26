@@ -719,24 +719,34 @@ before registration, with asserts so an upstream change fails loudly. Worth
 reporting upstream rather than carrying indefinitely.
 
 The abortive in-flight-read test stalls on macOS/kqueue: after the server's
-cancellation completes, the client's subsequent plain socket close is armed
+cancellation completes, the client's plain socket close is armed
 (`phase = .released`) but its callback never fires and `Loop.active == 0`.
+Unresolved, and now bounded by evidence rather than by hypothesis.
 
-Attribution is settled, and not where source analysis pointed. A standalone probe
-(`just probe-cancel`) exercises libxev directly — arm a read, cancel it, close the
-fd — and kqueue comes back clean:
+Two hypotheses were tested against real macOS runs and both are dead: libxev
+mis-accounting `active` on the cancel path (a single-socket probe comes back
+clean on kqueue — `close_cb=true`, `peer=EOF`), and completion lifetime (the
+stall is unchanged with `Conn.deinit` disabled in that scenario).
 
-    kqueue: active after read=1 cancel=0 close=0 | read_cb=true cancel_cb=true
-            close_cb=true read_err=error.Canceled | peer=EOF
+What the two-peer probe found instead is an outright libxev crash on kqueue —
+pure libxev, no ztls — when one peer cancels an armed read and closes while the
+other has a read armed:
 
-So libxev's kqueue cancel-then-close is correct in isolation, and the defect is
-ours. The probe differs from the failing test in two ways worth chasing: the test
-runs two connections on one loop, and it calls `Conn.deinit` (which sets the whole
-struct, completions included, to `undefined`) from inside the close callback. The
-leading hypothesis is completion lifetime — nothing in `Conn` guarantees libxev has
-finished with `read_c`/`cancel_c`/`close_c` before the memory is invalidated, and
-io_uring and epoll happen to tolerate it. Unproven. In-flight write cancellation
-remains separately unproven.
+    .BADF => unreachable
+      src/posix.zig:290 in close
+      src/backend/kqueue.zig:1285 in perform   (xev_posix.close(op.fd))
+      src/backend/kqueue.zig:960 in thread_perform
+
+That is a double close of an already-closed fd in the thread-pool worker.
+Whether it shares a root cause with the `Conn` stall is unestablished: the ztls
+test stalls rather than panicking, so they may be separate defects in the same
+area. Upstream-reportable either way.
+
+Continuing to narrow this costs one human macOS run per hypothesis, and two of
+the three so far were wrong. The unblock is a macOS runner in the 0.16 lane, not
+another patch: five defects in this integration have now been invisible under
+io_uring, and every one was found because a person ran a Mac by hand. In-flight
+write cancellation remains separately unproven.
 
 macOS is not CI-gated, so a kqueue regression would not be caught automatically —
 the thread-pool defect above is precisely that class of bug, found only because a

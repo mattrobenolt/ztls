@@ -798,14 +798,6 @@ fn CloseWhileReading(comptime Xev: type) type {
             });
         }
 
-        /// EXPERIMENT (kqueue stall): skip `deinit` to test whether the stall is
-        /// completion lifetime — `deinit` sets the Conn, and with it `read_c`,
-        /// `cancel_c` and `close_c`, to `undefined` while libxev may still hold
-        /// pointers to them. Leaking in a test is free; if the macOS stall
-        /// disappears with these disabled, the bug is ours and the fix belongs in
-        /// Conn's teardown contract.
-        const skip_deinit_experiment = true;
-
         fn onServerClose(s: *Self) void {
             s.note(.closed);
             // Captured before deinit: reading a Conn afterwards reads
@@ -816,10 +808,8 @@ fn CloseWhileReading(comptime Xev: type) type {
                 .wait = s.server.wait,
                 .phase = s.server.closePhase(),
             };
-            if (!skip_deinit_experiment) {
-                s.server.deinit();
-                s.server_storage.secureZero();
-            }
+            s.server.deinit();
+            s.server_storage.secureZero();
             s.flags.insert(.server_done);
         }
 
@@ -927,10 +917,8 @@ fn CloseWhileReading(comptime Xev: type) type {
         }
 
         fn onClientClose(s: *Self) void {
-            if (!skip_deinit_experiment) {
-                s.client.deinit();
-                s.client_storage.secureZero();
-            }
+            s.client.deinit();
+            s.client_storage.secureZero();
             s.flags.insert(.client_done);
         }
     };
