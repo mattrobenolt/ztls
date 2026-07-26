@@ -172,7 +172,15 @@ pub fn main(init: std.process.Init) !void {
         .alpn = &.{alpn},
     });
 
-    var loop: xev.Loop = try .init(.{});
+    // libxev closes sockets on a thread pool on the readiness backends (kqueue,
+    // epoll); without one the close fails and the fd stays open. io_uring does
+    // not need it, which is exactly why it is easy to forget.
+    var pool: xev.ThreadPool = .init(.{});
+    defer {
+        pool.shutdown();
+        pool.deinit();
+    }
+    var loop: xev.Loop = try .init(.{ .thread_pool = &pool });
     defer loop.deinit();
 
     const address: std.Io.net.IpAddress = .{ .ip4 = try .parse("127.0.0.1", port) };

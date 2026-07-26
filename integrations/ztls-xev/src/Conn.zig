@@ -255,6 +255,7 @@ pub fn Conn(comptime role: root.Role) type {
             host: ?[]const u8,
             buffers: Buffers,
         ) void {
+            requireThreadPool(loop);
             assert(buffers.record.len >= RecordBuffer.min_storage);
             assert(buffers.out.len >= frame.max_wire_record_len);
             assert(buffers.reassembly.len > 0);
@@ -295,6 +296,21 @@ pub fn Conn(comptime role: root.Role) type {
             } else {
                 self.hs.setCredentials(config.cert_chain, config.signer);
             }
+        }
+
+        /// libxev routes socket close through a thread pool on the readiness
+        /// backends (kqueue, epoll) but not on io_uring. With no pool the close
+        /// fails `ThreadPoolRequired` and **the fd is never closed**, so the
+        /// peer never sees EOF and both sides wait forever. io_uring hides this
+        /// completely, which is how it reached macOS unnoticed.
+        ///
+        /// Asserted at init rather than discovered as a hang. Measured, epoll:
+        ///
+        ///     pool=false: close_cb=true read_cb=false   (fd still open)
+        ///     pool=true:  close_cb=true read_cb=true read_err=error.EOF
+        fn requireThreadPool(loop: *xev.Loop) void {
+            if (!@hasField(xev.Loop, "thread_pool")) return; // io_uring
+            assert(loop.thread_pool != null);
         }
 
         /// Release engine state. Valid only once the connection is `.closed`.

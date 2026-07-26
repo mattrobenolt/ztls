@@ -37,6 +37,26 @@ test "libxev backend matches the platform" {
     return error.UnexpectedBackend;
 }
 
+/// A loop plus the thread pool libxev needs to close sockets on the readiness
+/// backends. See `Conn.requireThreadPool`.
+const Harness = struct {
+    pool: xev.ThreadPool,
+    loop: xev.Loop,
+
+    fn init(h: *Harness) !void {
+        h.pool = .init(.{});
+        h.loop = try .init(.{ .thread_pool = &h.pool });
+    }
+
+    // ziglint-ignore: Z030 -- test scaffolding; the caller owns the storage and
+    // never reuses it.
+    fn deinit(h: *Harness) void {
+        h.loop.deinit();
+        h.pool.shutdown();
+        h.pool.deinit();
+    }
+};
+
 /// Watchdog for the loop-driving tests.
 ///
 /// `loop.run(.once)` blocks until some completion fires, so a bounded tick count
@@ -86,6 +106,22 @@ fn runUntil(loop: *xev.Loop, watchdog: *Watchdog, ctx: anytype) !void {
     while (!ctx.done()) {
         if (watchdog.fired) return error.LoopStalled;
         try loop.run(.once);
+    }
+}
+
+// The thread-pool requirement is backend-specific, so the guard in
+// `Conn.requireThreadPool` compiles to nothing on io_uring. Pin which backends
+// it is live on, so the guard cannot silently stop covering a backend that needs
+// it — and so this file records why the pool exists at all.
+test "the close thread-pool guard is active exactly where close needs a pool" {
+    const guarded = @hasField(xev.Loop, "thread_pool");
+    switch (xev.backend) {
+        // Close is a normal SQE; no pool involved.
+        .io_uring => try testing.expect(!guarded),
+        // Close is dispatched to a thread pool; without one it fails
+        // ThreadPoolRequired and the fd is never closed.
+        .epoll, .kqueue => try testing.expect(guarded),
+        else => return error.SkipZigTest,
     }
 }
 
@@ -339,18 +375,20 @@ test "xev client: handshake, write, read, close_notify" {
     var sctx: ServerCtx = .{ .fd = fds[1], .reply = "pong", .expect_bytes = 4 };
     const server = try std.Thread.spawn(.{}, serverRun, .{&sctx});
 
-    var loop: xev.Loop = try .init(.{});
-    defer loop.deinit();
+    var harness: Harness = undefined;
+    try harness.init();
+    defer harness.deinit();
+    const loop = &harness.loop;
 
     var config = insecureConfig();
     defer config.deinit();
 
-    var client: Client = .{ .loop = &loop, .request = "ping" };
+    var client: Client = .{ .loop = loop, .request = "ping" };
     defer client.deinit();
 
     client.conn.init(
         std.Io.Threaded.global_single_threaded.io(),
-        &loop,
+        loop,
         .initFd(fds[0]),
         &config,
         test_host,
@@ -358,7 +396,7 @@ test "xev client: handshake, write, read, close_notify" {
     );
     client.conn.handshake(&client, Client.onHandshake);
 
-    try runUntilClosed(&loop, &client);
+    try runUntilClosed(loop, &client);
     server.join();
 
     if (sctx.err) |err| return err;
@@ -504,8 +542,10 @@ const Pair = struct {
 test "xev server: handshake, echo, and close against an xev client" {
     const fds = try socketPair();
 
-    var loop: xev.Loop = try .init(.{});
-    defer loop.deinit();
+    var harness: Harness = undefined;
+    try harness.init();
+    defer harness.deinit();
+    const loop = &harness.loop;
 
     var key: ztls.signature.PrivateKey = try .fromP256Scalar(@ptrCast(test_scalar[0..32]));
     defer key.deinit();
@@ -519,12 +559,12 @@ test "xev server: handshake, echo, and close against an xev client" {
     defer client_config.deinit();
 
     const io = std.Io.Threaded.global_single_threaded.io();
-    var pair: Pair = .{ .loop = &loop };
+    var pair: Pair = .{ .loop = loop };
     defer pair.client_received.deinit(testing.allocator);
 
     pair.server.init(
         io,
-        &loop,
+        loop,
         .initFd(fds[1]),
         &server_config,
         null,
@@ -532,7 +572,7 @@ test "xev server: handshake, echo, and close against an xev client" {
     );
     pair.client.init(
         io,
-        &loop,
+        loop,
         .initFd(fds[0]),
         &client_config,
         test_host,
@@ -543,7 +583,7 @@ test "xev server: handshake, echo, and close against an xev client" {
     pair.client.handshake(&pair, Pair.onClientHandshake);
 
     var watchdog: Watchdog = try .init();
-    runUntil(&loop, &watchdog, &pair) catch |err| {
+    runUntil(loop, &watchdog, &pair) catch |err| {
         std.debug.print(
             "\nstalled: server={t} client={t} flags={any}\n",
             .{ pair.server.state(), pair.client.state(), pair.flags.bits.mask },
@@ -637,8 +677,10 @@ const Silent = struct {
 test "xev server: a client that handshakes then leaves without speaking" {
     const fds = try socketPair();
 
-    var loop: xev.Loop = try .init(.{});
-    defer loop.deinit();
+    var harness: Harness = undefined;
+    try harness.init();
+    defer harness.deinit();
+    const loop = &harness.loop;
 
     var key: ztls.signature.PrivateKey = try .fromP256Scalar(@ptrCast(test_scalar[0..32]));
     defer key.deinit();
@@ -651,12 +693,12 @@ test "xev server: a client that handshakes then leaves without speaking" {
     defer client_config.deinit();
 
     const io = std.Io.Threaded.global_single_threaded.io();
-    var s: Silent = .{ .loop = &loop };
+    var s: Silent = .{ .loop = loop };
 
-    s.server.init(io, &loop, .initFd(fds[1]), &server_config, null, s.server_storage.buffers());
+    s.server.init(io, loop, .initFd(fds[1]), &server_config, null, s.server_storage.buffers());
     s.client.init(
         io,
-        &loop,
+        loop,
         .initFd(fds[0]),
         &client_config,
         test_host,
@@ -666,7 +708,7 @@ test "xev server: a client that handshakes then leaves without speaking" {
     s.client.handshake(&s, Silent.onClientHandshake);
 
     var watchdog: Watchdog = try .init();
-    runUntil(&loop, &watchdog, &s) catch |err| {
+    runUntil(loop, &watchdog, &s) catch |err| {
         std.debug.print(
             "\nstalled: server={t} client={t} handshake_reported={} read_outcome={?}\n",
             .{ s.server.state(), s.client.state(), s.server_handshake != null, s.server_read },

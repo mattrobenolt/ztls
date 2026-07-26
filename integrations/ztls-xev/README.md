@@ -45,6 +45,28 @@ owed. Three differences did not justify eight hundred duplicated lines.
 The API shape follows a proven server-side libxev TLS integration rather than
 being invented here; the `ReadResult` split in particular is lifted from it.
 
+## The loop needs a thread pool
+
+libxev dispatches socket close to a thread pool on the readiness backends
+(kqueue, epoll) but not on io_uring. With no pool the close fails
+`ThreadPoolRequired` and **the fd is never closed**, so the peer never sees EOF
+and both sides wait forever. Measured on epoll:
+
+```
+pool=false: close_cb=true read_cb=false                    (fd still open)
+pool=true:  close_cb=true read_cb=true read_err=error.EOF
+```
+
+io_uring hides this entirely, which is how it survived a full Linux CI lane and
+only surfaced on macOS. `Conn.init` asserts the pool is present on the backends
+that need one, so a missing pool is an immediate assert rather than a hang:
+
+```zig
+var pool: xev.ThreadPool = .init(.{});
+defer { pool.shutdown(); pool.deinit(); }
+var loop: xev.Loop = try .init(.{ .thread_pool = &pool });
+```
+
 ## Contract
 
 - Every operation returns `void` and invokes its callback **exactly once**,
@@ -169,8 +191,14 @@ than plain arrays — `secureZero` comes with it.
 detection are absent, which is why the first state is `handshaking` rather than
 `negotiating`; `isTls()` is provided for callers doing their own pre-TLS
 peeking. Client authentication, kqueue/IOCP validation, key-update initiation,
-and session resumption are all still open under #76. Only the Linux backend has
-been exercised.
+and session resumption are all still open under #76.
+
+One known hole worth naming: `close` while a read or write is still in flight
+delivers `Error.Canceled` to the callback slots but does not cancel the
+underlying `xev` completions, relying on the fd close to tear them down. That
+leaves a stale registration on the readiness backends. `tls-xev` carries
+dedicated cancel completions for exactly this; ztls-xev does not yet, and no test
+covers it.
 
 ## Build
 

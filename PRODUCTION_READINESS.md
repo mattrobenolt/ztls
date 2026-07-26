@@ -691,9 +691,21 @@ slices so a server can pool them.
 many records, while a peer that drops mid-request yields `eof` with the
 bytes-so-far.
 
-**Gaps (tracked under #76):** only the Linux backend has been exercised — kqueue
-and IOCP are unvalidated, so the #76 "done when" (io_uring *and* kqueue) is still
-unmet. Client authentication is not wired. `peek`/`consume`/`writeNegotiationPlaintext` for StartTLS-style
+**Gaps (tracked under #76):** kqueue is unvalidated end-to-end and IOCP is
+untouched, so the #76 "done when" (io_uring *and* kqueue) is still unmet. A first
+macOS run stalled and found a real portability defect: libxev dispatches socket
+close to a thread pool on the readiness backends but not on io_uring, so with no
+pool the close fails `ThreadPoolRequired` and the fd is never closed. Reproduced
+on Linux under epoll (`pool=false: read_cb=false`; `pool=true:
+read_err=error.EOF`), fixed by requiring a pool and asserting its presence at
+`Conn.init` on the backends that need one. That an entire green Linux lane hid it
+is the lesson: io_uring is the permissive backend, and single-backend coverage is
+not backend coverage. A confirming macOS run is still outstanding.
+
+`close` with a read or write in flight delivers `Error.Canceled` to the callback
+slots but does not cancel the underlying `xev` completions, leaving a stale
+registration on readiness backends; no test covers it. Client authentication is
+not wired. `peek`/`consume`/`writeNegotiationPlaintext` for StartTLS-style
 detection are absent (hence the first state is `handshaking`, not `negotiating`);
 `isTls()` is exported for callers doing their own peeking. Cancellation of
 in-flight operations is implemented as delivering `Error.Canceled` before the
