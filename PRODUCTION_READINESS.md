@@ -60,7 +60,7 @@ ztls is production-ready when all six pillars are `PROVEN`:
 | Pillar | Status | One-line |
 |---|---|---|
 | 1. Correctness | `PROVEN` | RFC 8446 MUST matrix closed for the supported surface; interop + tlsfuzzer PR-gated; TLS-Anvil scheduled with clean captures (437/437, no unexpected failures); adversarial security review found and fixed 3 vulns. Full TLS-Anvil is scheduled-only (2-hour runtime can't be PR-gated); BoGo explicitly deferred. |
-| 2. Ergonomics | `PROVEN` | CI-gated deterministic examples cover client and server roles across io_uring, epoll, and `std.net.Stream`; Config setup, server credentials, and `Outbox` cover the supported core ergonomics boundary. Two higher-order integrations are `PARTIAL`, both CI-gated under Zig 0.16: `ztls-std` (#77, `std.Io`) lacks wrapper-level interop, client auth, and concurrent split halves; `ztls-xev` (#76, libxev completions) has both roles but only on the Linux backend. |
+| 2. Ergonomics | `PROVEN` | CI-gated deterministic examples cover client and server roles across io_uring, epoll, and `std.net.Stream`; Config setup, server credentials, and `Outbox` cover the supported core ergonomics boundary. Two higher-order integrations are `PARTIAL`, both CI-gated under Zig 0.16: `ztls-std` (#77, `std.Io`) lacks wrapper-level interop, client auth, and concurrent split halves; `ztls-xev` (#76, libxev completions) has both roles on io_uring (CI-gated) and kqueue (manual run), with cancellation of in-flight operations still unproven (#83). |
 | 3. Performance | `PROVEN` | n=10 captures on x86_64 (c7i.2xlarge), aarch64 (c7g.2xlarge), and macOS (Apple M1 Max) with formal CIs (p=0.000): ztls beats libssl on every comparable app-data row on all three platforms and rustls on all AES-GCM rows; regression gate committed. |
 | 4. Providers | `PROVEN` | OpenSSL (default), AWS-LC, and BoringSSL all compile, pass the full test suite, tlsfuzzer smoke, and have clean TLS-Anvil captures (437/437 each). CI-gated backend lanes (`just check-backend-aws-lc`, `just check-backend-boringssl`). Cert-chain stays ztls/std (ownership decision); FIPS comptime-validated; PQ/P-384 is #6. |
 | 5. Marketing | `PROVEN` | README leads with the proven performance story (n=10, both architectures, honest ChaCha20 loss) and the adversarial security posture; the why-ztls narrative and headline benchmarks are on the front door, backed by PERFORMANCE.md. |
@@ -691,21 +691,27 @@ slices so a server can pool them.
 many records, while a peer that drops mid-request yields `eof` with the
 bytes-so-far.
 
-**Gaps (tracked under #76):** kqueue is unvalidated end-to-end and IOCP is
-untouched, so the #76 "done when" (io_uring *and* kqueue) is still unmet. A first
-macOS run stalled and found a real portability defect: libxev dispatches socket
-close to a thread pool on the readiness backends but not on io_uring, so with no
-pool the close fails `ThreadPoolRequired` and the fd is never closed. Reproduced
-on Linux under epoll (`pool=false: read_cb=false`; `pool=true:
-read_err=error.EOF`), fixed by requiring a pool and asserting its presence at
-`Conn.init` on the backends that need one. That an entire green Linux lane hid it
-is the lesson: io_uring is the permissive backend, and single-backend coverage is
-not backend coverage. A confirming macOS run is still outstanding.
+**Both backends validated.** The Linux lane (io_uring) is CI-gated through
+`just integrations-ci`. macOS (kqueue) is a recorded manual run: 21/21 on
+`Darwin arm64`, 2026-07-25. That run is evidence for kqueue *by name*, not merely
+for "a Mac" — `test "libxev backend matches the platform"` asserts
+`xev.backend == .kqueue` on Darwin and fails with the actual backend otherwise.
 
-`close` with a read or write in flight delivers `Error.Canceled` to the callback
-slots but does not cancel the underlying `xev` completions, leaving a stale
-registration on readiness backends; no test covers it. Client authentication is
-not wired. `peek`/`consume`/`writeNegotiationPlaintext` for StartTLS-style
+Getting there found a real portability defect that a fully green Linux lane had
+hidden. libxev dispatches socket close to a thread pool on the readiness backends
+but not on io_uring, so with no pool the close fails `ThreadPoolRequired` and the
+fd is never closed — both peers then wait forever. Reproduced on Linux under epoll
+(`pool=false: read_cb=false`; `pool=true: read_err=error.EOF`) rather than by
+guesswork, and fixed by requiring a pool with an assert at `Conn.init` on the
+backends that need one. The lesson is the durable part: io_uring is the permissive
+backend, and single-backend coverage is not backend coverage.
+
+**Gaps (tracked under #76's successors):** macOS is not CI-gated, so a kqueue
+regression would not be caught automatically — the defect above is precisely that
+class of bug, found only because a human ran it. IOCP is untouched. `close` with a
+read or write in flight delivers `Error.Canceled` to the callback slots but does
+not cancel the underlying `xev` completions, leaving a stale registration on the
+readiness backends (#83); no test covers it. Client authentication is not wired. `peek`/`consume`/`writeNegotiationPlaintext` for StartTLS-style
 detection are absent (hence the first state is `handshaking`, not `negotiating`);
 `isTls()` is exported for callers doing their own peeking. Cancellation of
 in-flight operations is implemented as delivering `Error.Canceled` before the

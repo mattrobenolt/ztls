@@ -193,12 +193,16 @@ detection are absent, which is why the first state is `handshaking` rather than
 peeking. Client authentication, kqueue/IOCP validation, key-update initiation,
 and session resumption are all still open under #76.
 
-One known hole worth naming: `close` while a read or write is still in flight
-delivers `Error.Canceled` to the callback slots but does not cancel the
-underlying `xev` completions, relying on the fd close to tear them down. That
-leaves a stale registration on the readiness backends. `tls-xev` carries
-dedicated cancel completions for exactly this; ztls-xev does not yet, and no test
-covers it.
+One known hole worth naming, tracked as
+[#83](https://github.com/mattrobenolt/ztls/issues/83): `close` while a read or
+write is still in flight delivers `Error.Canceled` to the callback slots but does
+not cancel the underlying `xev` completions, relying on the fd close to tear them
+down. io_uring obliges; the readiness backends leave a stale registration. No test
+covers it, because every close in the current suite happens when nothing is
+armed.
+
+Backends: io_uring is CI-gated, kqueue is a recorded manual run (21/21 on
+`Darwin arm64`), IOCP is untouched.
 
 ## Build
 
