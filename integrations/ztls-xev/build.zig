@@ -96,8 +96,20 @@ pub fn build(b: *std.Build) void {
         }),
     });
     const probe_run = b.addRunArtifact(probe_exe);
-    b.step("probe-cancel", "Probe libxev cancel/close accounting on this host")
-        .dependOn(&probe_run.step);
+    const probe_step = b.step("probe-cancel", "Probe libxev cancel/close accounting on this host");
+    probe_step.dependOn(&probe_run.step);
+
+    const two_exe = b.addExecutable(.{
+        .name = "two_conn_cancel",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("probe/two_conn_cancel.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{.{ .name = "xev", .module = xev_mod }},
+            .link_libc = true,
+        }),
+    });
+    probe_step.dependOn(&b.addRunArtifact(two_exe).step);
 
     // Tests: unit tests inside the library module, plus the fixture-backed
     // round-trip suite driving a real event loop.
