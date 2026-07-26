@@ -950,6 +950,7 @@ pub fn ConnWith(comptime Xev: type, comptime role: root.Role) type {
                 self,
                 onWriteComplete,
             );
+            useOriginalEpollFd(&self.write_c);
         }
 
         fn onWriteComplete(
@@ -1007,6 +1008,19 @@ pub fn ConnWith(comptime Xev: type, comptime role: root.Role) type {
                 self,
                 onReadComplete,
             );
+            useOriginalEpollFd(&self.read_c);
+        }
+
+        /// libxev's epoll TCP watcher duplicates the fd so independent read and write
+        /// completions can register it twice. `Conn.wait` serializes transport work, so
+        /// that duplicate is unnecessary here. More importantly, epoll cancellation
+        /// removes the duplicate from epoll but does not close it, keeping the socket
+        /// endpoint alive after the original fd closes and preventing peer EOF (#83).
+        fn useOriginalEpollFd(completion: *Xev.Completion) void {
+            if (Xev.backend != .epoll) return;
+            assert(completion.flags.dup);
+            assert(completion.flags.dup_fd == 0);
+            completion.flags.dup = false;
         }
 
         fn onReadComplete(

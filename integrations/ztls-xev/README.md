@@ -193,13 +193,27 @@ detection are absent, which is why the first state is `handshaking` rather than
 peeking. Client authentication, kqueue/IOCP validation, key-update initiation,
 and session resumption are all still open under #76.
 
-One known hole worth naming, tracked as
-[#83](https://github.com/mattrobenolt/ztls/issues/83): `close` while a read or
-write is still in flight delivers `Error.Canceled` to the callback slots but does
-not cancel the underlying `xev` completions, relying on the fd close to tear them
-down. io_uring obliges; the readiness backends leave a stale registration. No test
-covers it, because every close in the current suite happens when nothing is
-armed.
+In-flight read cancellation is covered for abortive and orderly close on the
+default backend and explicitly on epoll.
+
+The epoll path carries a workaround for what looks like an upstream libxev bug.
+Its epoll TCP watcher duplicates the fd per operation (`flags.dup`), and the
+normal completion path closes that duplicate — but `stop_completion`, the
+cancellation path, only does `epoll_ctl(CTL_DEL)` and never closes it. So a
+cancelled read **leaks a file descriptor**, and because the duplicate still holds
+a reference to the socket, closing the original fd does not make the peer see EOF.
+That second effect is what stalled the connection; the fd leak is arguably the
+worse half for a long-running server. `Conn` serializes transport completions
+(`wait` permits one at a time), so the duplicate buys nothing here and is cleared
+before the loop registers it — asserted, so an upstream change fails loudly rather
+than silently.
+
+Worth reporting upstream rather than carrying indefinitely.
+
+In-flight *write* cancellation takes the same path but has no regression test, and
+kqueue does not use the duplicate at all, so its cancellation path is untested
+either way — the macOS run predates these tests. Both keep
+[#83](https://github.com/mattrobenolt/ztls/issues/83) open.
 
 Backends: io_uring is CI-gated, kqueue is a recorded manual run (21/21 on
 `Darwin arm64`), IOCP is untouched.

@@ -758,7 +758,10 @@ fn CloseWhileReading(comptime Xev: type) type {
         events: std.ArrayList(Event) = .empty,
         flags: Flags = .initEmpty(),
         loop_active_after_close: usize = 0,
-        server_final: ?struct { state: tls.State, wait: @TypeOf(@as(ServerConn, undefined).wait) } = null,
+        server_final: ?struct {
+            state: tls.State,
+            wait: @TypeOf(@as(ServerConn, undefined).wait),
+        } = null,
         shutdown: ServerConn.Shutdown = .abortive,
 
         const Event = enum { read_canceled, read_other, closed };
@@ -806,6 +809,7 @@ fn CloseWhileReading(comptime Xev: type) type {
         }
 
         fn onClientHandshake(s: *Self, r: tls.HandshakeResult) void {
+            // ziglint-ignore: Z026 -- only the server-side cancellation is under test.
             r.result catch {};
             // Waits for the server to go away, then tears itself down.
             s.client.read(&s.client_read_buf, s, onClientRead);
@@ -838,7 +842,14 @@ fn CloseWhileReading(comptime Xev: type) type {
             defer client_config.deinit();
 
             const io = std.Io.Threaded.global_single_threaded.io();
-            s.server.init(io, loop, .initFd(fds[1]), &server_config, null, s.server_storage.buffers());
+            s.server.init(
+                io,
+                loop,
+                .initFd(fds[1]),
+                &server_config,
+                null,
+                s.server_storage.buffers(),
+            );
             s.client.init(
                 io,
                 loop,

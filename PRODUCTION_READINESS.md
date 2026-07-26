@@ -662,7 +662,7 @@ are both shared across connections. Surface is
 `init`/`handshake`/`read`/`write`/`close`/`closeReset`/`deinit` plus `state`,
 `selectedAlpn`, and `cipherSuite`.
 
-19 tests. The client round trip drives a real `xev.Loop` against a blocking ztls
+21 tests. The client round trip drives a real `xev.Loop` against a blocking ztls
 server on a thread; the server tests run *both* roles on one loop over a
 socketpair, with no threads, so the interleaving is the loop's and the result is
 deterministic. Plus unit coverage of the error projection, the alert mapping, the
@@ -706,13 +706,22 @@ guesswork, and fixed by requiring a pool with an assert at `Conn.init` on the
 backends that need one. The lesson is the durable part: io_uring is the permissive
 backend, and single-backend coverage is not backend coverage.
 
-**Gaps (tracked under #76's successors):** one real defect. `close` with a read or
-write in flight delivers `Error.Canceled` to the callback slots but does not cancel
-the underlying `xev` completions, leaving a stale registration on the readiness
-backends (#83). io_uring forgives it; kqueue does not, and closing a connection
-while a read is armed is the ordinary shape for a server dropping idle connections
-or honouring a deadline. No current test covers it, because every close in the
-suite happens when nothing is armed.
+**Gaps (tracked under #76's successors):** in-flight write cancellation remains
+unproven (#83). In-flight read cancellation is covered for abortive and orderly
+close on the default backend and explicitly on epoll. The epoll fix works around what
+looks like an upstream libxev defect: its epoll TCP watcher duplicates the fd per
+operation and the normal completion path closes that duplicate, but the
+cancellation path (`stop_completion`) only does `epoll_ctl(CTL_DEL)` and never
+closes it. A cancelled read therefore leaks a file descriptor, and the retained
+duplicate keeps the socket endpoint alive so the peer never observes EOF after the
+original fd closes. `Conn` serializes transport completions, so the duplicate buys
+nothing here and is cleared before registration, with asserts so an upstream change
+fails loudly. Worth reporting upstream rather than carrying indefinitely.
+
+Two reasons #83 stays open: in-flight *write* cancellation takes the same path but
+has no regression test, and kqueue does not use the duplicate at all, so its
+cancellation path is untested on either count — the macOS run predates these
+tests.
 
 macOS is not CI-gated, so a kqueue regression would not be caught automatically —
 the thread-pool defect above is precisely that class of bug, found only because a
