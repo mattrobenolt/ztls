@@ -83,6 +83,22 @@ pub fn build(b: *std.Build) void {
         build_examples_step.dependOn(&b.addInstallArtifact(example_exe, .{}).step);
     }
 
+    // Standalone libxev behaviour probe. Not a test: it answers questions about
+    // the event loop itself, and its output is meant to be read, not asserted.
+    const probe_exe = b.addExecutable(.{
+        .name = "cancel_accounting",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("probe/cancel_accounting.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{.{ .name = "xev", .module = xev_mod }},
+            .link_libc = true,
+        }),
+    });
+    const probe_run = b.addRunArtifact(probe_exe);
+    b.step("probe-cancel", "Probe libxev cancel/close accounting on this host")
+        .dependOn(&probe_run.step);
+
     // Tests: unit tests inside the library module, plus the fixture-backed
     // round-trip suite driving a real event loop.
     const mod_tests = b.addTest(.{ .root_module = mod });
