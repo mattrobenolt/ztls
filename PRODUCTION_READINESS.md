@@ -706,17 +706,24 @@ guesswork, and fixed by requiring a pool with an assert at `Conn.init` on the
 backends that need one. The lesson is the durable part: io_uring is the permissive
 backend, and single-backend coverage is not backend coverage.
 
-**Gaps (tracked under #76's successors):** macOS is not CI-gated, so a kqueue
-regression would not be caught automatically — the defect above is precisely that
-class of bug, found only because a human ran it. IOCP is untouched. `close` with a
-read or write in flight delivers `Error.Canceled` to the callback slots but does
-not cancel the underlying `xev` completions, leaving a stale registration on the
-readiness backends (#83); no test covers it. Client authentication is not wired. `peek`/`consume`/`writeNegotiationPlaintext` for StartTLS-style
-detection are absent (hence the first state is `handshaking`, not `negotiating`);
-`isTls()` is exported for callers doing their own peeking. Cancellation of
-in-flight operations is implemented as delivering `Error.Canceled` before the
-close callback, but is not yet covered by a test. Key-update initiation and
-session resumption are untouched. ztls-xev is not claimed done.
+**Gaps (tracked under #76's successors):** one real defect. `close` with a read or
+write in flight delivers `Error.Canceled` to the callback slots but does not cancel
+the underlying `xev` completions, leaving a stale registration on the readiness
+backends (#83). io_uring forgives it; kqueue does not, and closing a connection
+while a read is armed is the ordinary shape for a server dropping idle connections
+or honouring a deadline. No current test covers it, because every close in the
+suite happens when nothing is armed.
+
+macOS is not CI-gated, so a kqueue regression would not be caught automatically —
+the thread-pool defect above is precisely that class of bug, found only because a
+human ran it. That is a repo-wide CI decision, not an ztls-xev one.
+
+Not gaps, recorded here so they are not mistaken for debt: IOCP/Windows is an
+explicit non-goal (`AGENTS.md`: "Target platforms: Linux and macOS. No Windows
+support, no portability tax."), and client authentication is a core slice ztls-xev
+cannot wire ahead of the engine. `peek`/`consume`/`writeNegotiationPlaintext` for
+StartTLS-style detection, key-update initiation, and session resumption are
+unrequested features rather than missing work. ztls-xev is not claimed done.
 
 ---
 
