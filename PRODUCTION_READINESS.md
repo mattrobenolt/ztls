@@ -708,20 +708,35 @@ backend, and single-backend coverage is not backend coverage.
 
 **Gaps (tracked under #76's successors):** in-flight write cancellation remains
 unproven (#83). In-flight read cancellation is covered for abortive and orderly
-close on the default backend and explicitly on epoll. The epoll fix works around what
-looks like an upstream libxev defect: its epoll TCP watcher duplicates the fd per
-operation and the normal completion path closes that duplicate, but the
-cancellation path (`stop_completion`) only does `epoll_ctl(CTL_DEL)` and never
-closes it. A cancelled read therefore leaks a file descriptor, and the retained
-duplicate keeps the socket endpoint alive so the peer never observes EOF after the
-original fd closes. `Conn` serializes transport completions, so the duplicate buys
-nothing here and is cleared before registration, with asserts so an upstream change
-fails loudly. Worth reporting upstream rather than carrying indefinitely.
+close on io_uring and epoll. The epoll fix works around what looks like an upstream
+libxev defect: its epoll TCP watcher duplicates the fd per operation and the normal
+completion path closes that duplicate, but the cancellation path
+(`stop_completion`) only does `epoll_ctl(CTL_DEL)` and never closes it. A cancelled
+read therefore leaks a file descriptor, and the retained duplicate keeps the socket
+endpoint alive so the peer never observes EOF after the original fd closes. `Conn`
+serializes transport completions, so the duplicate buys nothing here and is cleared
+before registration, with asserts so an upstream change fails loudly. Worth
+reporting upstream rather than carrying indefinitely.
 
-Two reasons #83 stays open: in-flight *write* cancellation takes the same path but
-has no regression test, and kqueue does not use the duplicate at all, so its
-cancellation path is untested on either count — the macOS run predates these
-tests.
+The abortive in-flight-read test stalls on macOS/kqueue: after the server's
+cancellation completes, the client's subsequent plain socket close is armed
+(`phase = .released`) but its callback never fires and `Loop.active == 0`.
+
+Attribution is settled, and not where source analysis pointed. A standalone probe
+(`just probe-cancel`) exercises libxev directly — arm a read, cancel it, close the
+fd — and kqueue comes back clean:
+
+    kqueue: active after read=1 cancel=0 close=0 | read_cb=true cancel_cb=true
+            close_cb=true read_err=error.Canceled | peer=EOF
+
+So libxev's kqueue cancel-then-close is correct in isolation, and the defect is
+ours. The probe differs from the failing test in two ways worth chasing: the test
+runs two connections on one loop, and it calls `Conn.deinit` (which sets the whole
+struct, completions included, to `undefined`) from inside the close callback. The
+leading hypothesis is completion lifetime — nothing in `Conn` guarantees libxev has
+finished with `read_c`/`cancel_c`/`close_c` before the memory is invalidated, and
+io_uring and epoll happen to tolerate it. Unproven. In-flight write cancellation
+remains separately unproven.
 
 macOS is not CI-gated, so a kqueue regression would not be caught automatically —
 the thread-pool defect above is precisely that class of bug, found only because a
