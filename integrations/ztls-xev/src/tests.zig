@@ -724,3 +724,221 @@ test "xev server: a client that handshakes then leaves without speaking" {
     // where a caller can act on it, rather than as a handshake error.
     try testing.expectEqual(Silent.Outcome.eof, s.server_read.?);
 }
+
+// ───────────────────────────────
+// Closing with work in flight (#83)
+// ───────────────────────────────
+
+/// A server that closes while a read is still armed — the shape a real server
+/// takes when it drops an idle connection or honours a deadline, and the one
+/// path every other test avoids because they all close from inside a completed
+/// callback.
+///
+/// Two things must hold. The armed read's callback fires exactly once with
+/// `Error.Canceled`, before the close callback. And the close must actually
+/// complete: closing the fd while the loop still owns a completion on it leaves
+/// a registration the loop counts as active, which io_uring forgives (closing an
+/// fd completes its operations) and the readiness backends do not.
+fn CloseWhileReading(comptime Xev: type) type {
+    return struct {
+        const Self = @This();
+        const ServerConn = tls.ConnWith(Xev, .server);
+        const ClientConn = tls.ConnWith(Xev, .client);
+
+        server: ServerConn = undefined,
+        server_storage: ServerConn.Storage = .{},
+        server_read_buf: [4096]u8 = undefined,
+
+        client: ClientConn = undefined,
+        client_storage: ClientConn.Storage = .{},
+        client_read_buf: [4096]u8 = undefined,
+
+        /// Ordered log of what the server observed, so the contract is checked as a
+        /// sequence rather than as two independent facts.
+        events: std.ArrayList(Event) = .empty,
+        flags: Flags = .initEmpty(),
+        loop_active_after_close: usize = 0,
+        server_final: ?struct { state: tls.State, wait: @TypeOf(@as(ServerConn, undefined).wait) } = null,
+        shutdown: ServerConn.Shutdown = .abortive,
+
+        const Event = enum { read_canceled, read_other, closed };
+        const Flag = enum { server_done, client_done, read_requested, close_issued };
+        const Flags = std.EnumSet(Flag);
+
+        fn done(s: *const Self) bool {
+            return s.flags.contains(.server_done) and s.flags.contains(.client_done);
+        }
+
+        fn note(s: *Self, e: Event) void {
+            // ziglint-ignore: Z026 -- a callback cannot fail; a dropped event shows up
+            // as a mismatch in the assertions.
+            s.events.append(testing.allocator, e) catch {};
+        }
+
+        fn onServerHandshake(s: *Self, r: tls.HandshakeResult) void {
+            r.result catch return s.server.closeReset(s, onServerClose);
+            // Arm a read the peer will never satisfy. Closing on top of it has to
+            // happen from outside this callback: `read` re-enters `pump`, which
+            // defers while a pass is already running, so nothing is armed in the
+            // loop until this returns. Closing here would find `wait == .idle` and
+            // exercise nothing — which is how the first two versions of this test
+            // passed with the bug in place.
+            s.server.read(&s.server_read_buf, s, onServerRead);
+            s.flags.insert(.read_requested);
+        }
+
+        fn onServerRead(s: *Self, r: tls.ReadResult) void {
+            s.note(switch (r) {
+                .err => |e| if (e == error.Canceled) .read_canceled else .read_other,
+                else => .read_other,
+            });
+        }
+
+        fn onServerClose(s: *Self) void {
+            s.note(.closed);
+            // Captured before deinit: reading a Conn afterwards reads
+            // `self.* = undefined` and prints 0xaa garbage as plausible-looking
+            // states, which cost a whole diagnostic cycle here (#81, again).
+            s.server_final = .{ .state = s.server.state(), .wait = s.server.wait };
+            s.server.deinit();
+            s.server_storage.secureZero();
+            s.flags.insert(.server_done);
+        }
+
+        fn onClientHandshake(s: *Self, r: tls.HandshakeResult) void {
+            r.result catch {};
+            // Waits for the server to go away, then tears itself down.
+            s.client.read(&s.client_read_buf, s, onClientRead);
+        }
+
+        fn onClientRead(s: *Self, _: tls.ReadResult) void {
+            s.client.closeReset(s, onClientClose);
+        }
+
+        fn run(s: *Self, shutdown: tls.Client.Shutdown) !void {
+            s.shutdown = shutdown;
+            const fds = try socketPair();
+
+            var pool: xev.ThreadPool = .init(.{});
+            defer {
+                pool.shutdown();
+                pool.deinit();
+            }
+            var loop_storage: Xev.Loop = try .init(.{ .thread_pool = &pool });
+            defer loop_storage.deinit();
+            const loop = &loop_storage;
+
+            var key: ztls.signature.PrivateKey = try .fromP256Scalar(@ptrCast(test_scalar[0..32]));
+            defer key.deinit();
+            const server_config: tls.ServerConfig = .init(.{
+                .cert_chain = &.{test_cert_der},
+                .signer = key.signer(),
+            });
+            var client_config: tls.ClientConfig = .init(.{ .verify = .insecure });
+            defer client_config.deinit();
+
+            const io = std.Io.Threaded.global_single_threaded.io();
+            s.server.init(io, loop, .initFd(fds[1]), &server_config, null, s.server_storage.buffers());
+            s.client.init(
+                io,
+                loop,
+                .initFd(fds[0]),
+                &client_config,
+                test_host,
+                s.client_storage.buffers(),
+            );
+            s.server.handshake(s, onServerHandshake);
+            s.client.handshake(s, onClientHandshake);
+
+            // Bounded non-blocking spin rather than an armed timer: a timer
+            // would itself count toward `loop.active`, and this test asserts on
+            // that number. `.no_wait` never blocks, so the iteration bound is a
+            // real wall-clock bound and a stall fails instead of hanging.
+            var spins: usize = 0;
+            while (!s.done()) {
+                // Close from out here, the way a deadline or idle-reaper would,
+                // once the read is genuinely armed in the loop.
+                if (s.flags.contains(.read_requested) and
+                    !s.flags.contains(.close_issued) and
+                    s.server.wait == .reading)
+                {
+                    s.flags.insert(.close_issued);
+                    switch (s.shutdown) {
+                        .abortive => s.server.closeReset(s, onServerClose),
+                        .orderly => s.server.close(s, onServerClose),
+                    }
+                }
+                if (spins == 2_000) {
+                    std.debug.print(
+                        "\nstalled on {t}: srv_final={any} cli={t}/{t} active={d} events={any}\n",
+                        .{
+                            Xev.backend,
+                            s.server_final,
+                            s.client.state(),
+                            s.client.wait,
+                            loop.active,
+                            s.events.items,
+                        },
+                    );
+                    return error.LoopStalled;
+                }
+                spins += 1;
+                try loop.run(.no_wait);
+                var ts: posix.timespec = .{ .sec = 0, .nsec = 200 * std.time.ns_per_us };
+                _ = std.c.nanosleep(&ts, null);
+            }
+
+            // The invariant the caller-visible contract cannot express.
+            // `cancelInFlight` delivers `Canceled` to the callback slots whether or
+            // not the underlying completion was ever retired, so the ordering
+            // assertions hold even with the cancel missing. What does not hold is
+            // the loop's bookkeeping: an orphaned completion leaves `active`
+            // permanently raised, and a server leaking one per connection ends up
+            // with a loop that will not drain.
+            s.loop_active_after_close = loop.active;
+        }
+
+        fn onClientClose(s: *Self) void {
+            s.client.deinit();
+            s.client_storage.secureZero();
+            s.flags.insert(.client_done);
+        }
+    };
+}
+
+// #83 — an abortive close on top of an armed read, on every backend available
+// here. io_uring completes an fd's pending operations when it closes, so it
+// forgives a missing cancel entirely; epoll does not, which is why the same
+// scenario runs twice.
+fn expectCancelThenClose(comptime Xev: type, shutdown: anytype) !void {
+    const Scenario = CloseWhileReading(Xev);
+    var s: Scenario = .{};
+    defer s.events.deinit(testing.allocator);
+
+    try s.run(shutdown);
+
+    // Exactly once, with Canceled, and before the close callback. Checked as a
+    // sequence: two independent assertions would pass if the order were wrong.
+    try testing.expectEqualSlices(
+        Scenario.Event,
+        &.{ .read_canceled, .closed },
+        s.events.items,
+    );
+
+    // Nothing left in the loop. Without a real cancel the orphaned read
+    // completion keeps this above zero, which is the whole of #83 — the callback
+    // ordering above is satisfied either way.
+    try testing.expectEqual(@as(usize, 0), s.loop_active_after_close);
+}
+
+test "close: closeReset with a read in flight cancels it, then closes" {
+    try expectCancelThenClose(xev, .abortive);
+    if (builtin.os.tag == .linux) try expectCancelThenClose(xev.Epoll, .abortive);
+}
+
+// The same, but orderly: the close_notify is still owed after the cancel, so the
+// sequence has one more step to get through before the fd goes. RFC 8446 §6.1.
+test "close: orderly close with a read in flight still sends close_notify" {
+    try expectCancelThenClose(xev, .orderly);
+    if (builtin.os.tag == .linux) try expectCancelThenClose(xev.Epoll, .orderly);
+}

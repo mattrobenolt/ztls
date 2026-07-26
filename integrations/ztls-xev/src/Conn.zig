@@ -68,7 +68,12 @@ fn Slot(comptime Cb: type) type {
 /// and teardown. They differ in three places only: which engine they drive, how
 /// the handshake starts, and whether a server flight is owed. Parameterising
 /// beats duplicating eight hundred lines to change three of them.
-pub fn Conn(comptime role: root.Role) type {
+/// Backend-parametric so the suite can run against a readiness backend on Linux.
+/// Two defects in this integration have been invisible under io_uring — it
+/// completes an fd's pending operations on close, and it does not route close
+/// through a thread pool — and both were fatal on kqueue. Single-backend coverage
+/// is not backend coverage, so the backend is a parameter rather than an import.
+pub fn ConnWith(comptime Xev: type, comptime role: root.Role) type {
     return struct {
         const Self = @This();
 
@@ -160,6 +165,21 @@ pub fn Conn(comptime role: root.Role) type {
             abortive,
         };
 
+        /// Where a close has got to. Closing is a sequence, not an instant: an armed
+        /// transport completion has to be retired, a `close_notify` may be owed, and only
+        /// then can the fd go. Making the steps an enum means the completion that resumes
+        /// the sequence does not have to infer where it left off.
+        const ClosePhase = enum {
+            /// Not closing.
+            none,
+            /// A `close_notify` is still owed before the socket goes. RFC 8446 §6.1.
+            notifying,
+            /// Nothing owed but the socket close itself.
+            releasing,
+            /// Socket close is armed; the sequence is over.
+            released,
+        };
+
         /// See `Conn.pump_state`.
         const PumpState = enum {
             /// Not running; a call will start a pass.
@@ -179,8 +199,8 @@ pub fn Conn(comptime role: root.Role) type {
             reading,
         };
 
-        loop: *xev.Loop,
-        socket: xev.TCP,
+        loop: *Xev.Loop,
+        socket: Xev.TCP,
         config: *const Config,
 
         hs: Handshake,
@@ -218,9 +238,14 @@ pub fn Conn(comptime role: root.Role) type {
         /// Destination for the in-flight `read`.
         read_buf: []u8 = &.{},
 
-        read_c: xev.Completion = .{},
-        write_c: xev.Completion = .{},
-        close_c: xev.Completion = .{},
+        read_c: Xev.Completion = .{},
+        write_c: Xev.Completion = .{},
+        close_c: Xev.Completion = .{},
+        /// Retires whichever of `read_c`/`write_c` is in flight when a close
+        /// starts. One suffices because `pumpOnce` refuses to arm anything while
+        /// `wait != .idle`, so at most one transport op is ever outstanding.
+        cancel_c: Xev.Completion = .{},
+        close_phase: ClosePhase = .none,
 
         /// Reentrancy state of `pump`. One enum rather than `in_pump` + `pump_again`
         /// bools, which between them permit "another pass requested while not running"
@@ -233,7 +258,7 @@ pub fn Conn(comptime role: root.Role) type {
         callback_depth: u8 = 0,
         const callback_depth_max: u8 = 8;
 
-        /// Wrap a CONNECTED `xev.TCP` socket. Does not start the handshake — call
+        /// Wrap a CONNECTED `Xev.TCP` socket. Does not start the handshake — call
         /// `handshake` for that, so a caller doing pre-TLS protocol detection has a
         /// place to stand.
         ///
@@ -249,8 +274,8 @@ pub fn Conn(comptime role: root.Role) type {
         pub fn init(
             self: *Self,
             io: std.Io,
-            loop: *xev.Loop,
-            socket: xev.TCP,
+            loop: *Xev.Loop,
+            socket: Xev.TCP,
             config: *const Config,
             host: ?[]const u8,
             buffers: Buffers,
@@ -308,8 +333,8 @@ pub fn Conn(comptime role: root.Role) type {
         ///
         ///     pool=false: close_cb=true read_cb=false   (fd still open)
         ///     pool=true:  close_cb=true read_cb=true read_err=error.EOF
-        fn requireThreadPool(loop: *xev.Loop) void {
-            if (!@hasField(xev.Loop, "thread_pool")) return; // io_uring
+        fn requireThreadPool(loop: *Xev.Loop) void {
+            if (!@hasField(Xev.Loop, "thread_pool")) return; // io_uring
             assert(loop.thread_pool != null);
         }
 
@@ -556,21 +581,90 @@ pub fn Conn(comptime role: root.Role) type {
             const was_established = self.lifecycle == .established;
             self.lifecycle = .closing;
             self.close_slot = .{ .cb = cb, .ctx = ctx };
+            self.close_phase = if (shutdown == .orderly and was_established)
+                .notifying
+            else
+                .releasing;
 
-            // Cancel in-flight work first: each callback fires exactly once with
-            // Canceled, before the close callback.
+            // Tell the caller first: each in-flight operation's callback fires
+            // exactly once with Canceled, before the close callback. That is the
+            // documented ordering, and it holds regardless of how long retiring
+            // the transport op below takes.
             self.cancelInFlight();
 
-            if (shutdown == .orderly and was_established) {
-                // Best effort: a close_notify that cannot be encoded or sent changes
-                // nothing about the outcome.
-                if (self.hs.sendAlert(.close_notify, self.out)) |record| {
-                    self.queueWire(record);
-                    self.issueWrite();
-                    return;
-                } else |_| {}
+            // A transport completion armed in the loop must be retired before the
+            // fd goes. Closing underneath it leaves a registration the loop still
+            // counts as active and a completion that never fires — io_uring
+            // forgives that because closing an fd completes its operations; the
+            // readiness backends do not. #83.
+            if (self.wait != .idle) return self.issueCancel();
+            self.advanceClose();
+        }
+
+        /// Ask the loop to retire the outstanding transport completion. The
+        /// sequence resumes from whichever fires first: the target completing with
+        /// `Canceled`, or the cancel itself.
+        fn issueCancel(self: *Self) void {
+            const target = switch (self.wait) {
+                .reading => &self.read_c,
+                .writing => &self.write_c,
+                .idle => unreachable,
+            };
+            self.cancel_c = .{
+                .op = .{ .cancel = .{ .c = target } },
+                .userdata = self,
+                .callback = onCancelComplete,
+            };
+            self.loop.add(&self.cancel_c);
+        }
+
+        fn onCancelComplete(
+            userdata: ?*anyopaque,
+            _: *Xev.Loop,
+            _: *Xev.Completion,
+            _: Xev.Result,
+        ) Xev.CallbackAction {
+            const self: *Self = @ptrCast(@alignCast(userdata.?));
+
+            // The cancel completing is what retires the transport op, because the
+            // backends disagree about the target. io_uring delivers the target's
+            // completion with `Canceled`; epoll's `stop_completion` only does an
+            // `epoll_ctl(DEL)` and never invokes the callback, so waiting for the
+            // target there stalls the close forever. Treat it as retired here and
+            // let the target's callback, if one arrives, land on an already
+            // released phase and do nothing.
+            self.wait = .idle;
+            self.advanceClose();
+            return .disarm;
+        }
+
+        /// Drive the close sequence one step. Re-entered by whichever completion
+        /// the previous step armed.
+        fn advanceClose(self: *Self) void {
+            // Never close the fd while the loop still owns a completion on it.
+            if (self.wait != .idle) return;
+
+            switch (self.close_phase) {
+                // Reached only while closing, so a missing phase means some path
+                // set `lifecycle = .closing` without saying what it still owes.
+                // That used to be a hang; make it loud instead.
+                .none => unreachable,
+                // Socket close already armed; re-entry is expected, since both the
+                // cancelled target and the cancel itself resume the sequence.
+                .released => {},
+                .notifying => {
+                    self.close_phase = .releasing;
+                    // Best effort: a close_notify that cannot be encoded or sent
+                    // changes nothing about the outcome.
+                    if (self.hs.sendAlert(.close_notify, self.out)) |record| {
+                        self.queueWire(record);
+                        self.issueWrite();
+                        return; // resumes from onWriteComplete
+                    } else |_| {}
+                    self.advanceClose();
+                },
+                .releasing => self.issueSocketClose(),
             }
-            self.issueSocketClose();
         }
 
         fn cancelInFlight(self: *Self) void {
@@ -591,7 +685,7 @@ pub fn Conn(comptime role: root.Role) type {
         /// callers routinely issue the next operation from inside a callback, which
         /// re-enters here — so a nested call just records that another pass is needed
         /// and returns. Without that guard the outer pass would keep going after the
-        /// nested one already armed a completion, and arm the same `xev.Completion`
+        /// nested one already armed a completion, and arm the same `Xev.Completion`
         /// twice.
         fn pump(self: *Self) void {
             if (self.pump_state != .idle) {
@@ -812,6 +906,10 @@ pub fn Conn(comptime role: root.Role) type {
         fn abortHandshake(self: *Self, err: Error) void {
             const description = alertFor(err);
             self.lifecycle = .closing;
+            // Every exit from here goes through the close sequence, including the
+            // one where the alert write fails: without a phase that path resumes
+            // into `advanceClose` with nothing to do and the socket never closes.
+            self.close_phase = .releasing;
             self.deliverHandshake(.{ .result = err });
             if (description) |d| {
                 if (self.hs.sendAlert(d, self.out)) |record| {
@@ -856,12 +954,12 @@ pub fn Conn(comptime role: root.Role) type {
 
         fn onWriteComplete(
             self_opt: ?*Self,
-            _: *xev.Loop,
-            _: *xev.Completion,
-            _: xev.TCP,
-            _: xev.WriteBuffer,
-            r: xev.WriteError!usize,
-        ) xev.CallbackAction {
+            _: *Xev.Loop,
+            _: *Xev.Completion,
+            _: Xev.TCP,
+            _: Xev.WriteBuffer,
+            r: Xev.WriteError!usize,
+        ) Xev.CallbackAction {
             const self = self_opt.?;
             self.wait = .idle;
 
@@ -913,12 +1011,12 @@ pub fn Conn(comptime role: root.Role) type {
 
         fn onReadComplete(
             self_opt: ?*Self,
-            _: *xev.Loop,
-            _: *xev.Completion,
-            _: xev.TCP,
-            _: xev.ReadBuffer,
-            r: xev.ReadError!usize,
-        ) xev.CallbackAction {
+            _: *Xev.Loop,
+            _: *Xev.Completion,
+            _: Xev.TCP,
+            _: Xev.ReadBuffer,
+            r: Xev.ReadError!usize,
+        ) Xev.CallbackAction {
             const self = self_opt.?;
             self.wait = .idle;
 
@@ -946,9 +1044,9 @@ pub fn Conn(comptime role: root.Role) type {
 
         fn onTransportEof(self: *Self) void {
             // Already tearing down: the peer hanging up mid-close is the normal case,
-            // not something to report. Finish the teardown or the close callback never
-            // fires and the caller waits forever.
-            if (self.lifecycle == .closing) return self.issueSocketClose();
+            // not something to report. Resume the close sequence, which may still
+            // owe a close_notify, or the close callback never fires.
+            if (self.lifecycle == .closing) return self.advanceClose();
             if (self.handshake_slot.armed()) {
                 // A handshake cut short is a failure, not an EOF a caller can act on.
                 return self.abortHandshake(error.ProtocolError);
@@ -958,26 +1056,29 @@ pub fn Conn(comptime role: root.Role) type {
         }
 
         fn onTransportFailure(self: *Self) void {
-            // A failed close_notify (BrokenPipe, because the peer closed first) must
-            // still complete the teardown.
-            if (self.lifecycle == .closing) return self.issueSocketClose();
+            // A cancelled operation lands here (xev reports Canceled), as does a
+            // failed close_notify (BrokenPipe, when the peer closed first). Both
+            // resume the close sequence.
+            if (self.lifecycle == .closing) return self.advanceClose();
             if (self.handshake_slot.armed()) return self.abortHandshake(error.IoError);
             if (self.read_slot.armed()) self.deliverRead(.{ .err = error.IoError });
             if (self.write_slot.armed()) self.deliverWrite(.{ .written = error.IoError });
         }
 
         fn issueSocketClose(self: *Self) void {
+            if (self.close_phase == .released) return; // already armed
+            self.close_phase = .released;
             self.lifecycle = .closing;
             self.socket.close(self.loop, &self.close_c, Self, self, onSocketClosed);
         }
 
         fn onSocketClosed(
             self_opt: ?*Self,
-            _: *xev.Loop,
-            _: *xev.Completion,
-            _: xev.TCP,
-            _: xev.CloseError!void,
-        ) xev.CallbackAction {
+            _: *Xev.Loop,
+            _: *Xev.Completion,
+            _: Xev.TCP,
+            _: Xev.CloseError!void,
+        ) Xev.CallbackAction {
             const self = self_opt.?;
             self.wait = .idle;
             self.lifecycle = .closed;
@@ -985,6 +1086,11 @@ pub fn Conn(comptime role: root.Role) type {
             return .disarm;
         }
     };
+}
+
+/// A connection on the platform's default libxev backend.
+pub fn Conn(comptime role: root.Role) type {
+    return ConnWith(xev, role);
 }
 
 // ───────────────────────────────

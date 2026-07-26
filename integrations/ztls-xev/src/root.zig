@@ -44,10 +44,16 @@ const conn = @import("Conn.zig");
 /// Which side of the handshake a connection drives.
 pub const Role = enum { client, server };
 
-/// A TLS 1.3 client connection. `Client.Config` is `ClientConfig`.
+/// A TLS 1.3 client connection on the default libxev backend. `Client.Config` is
+/// `ClientConfig`.
 pub const Client = conn.Conn(.client);
-/// A TLS 1.3 server connection. `Server.Config` is `ServerConfig`.
+/// A TLS 1.3 server connection on the default libxev backend. `Server.Config` is
+/// `ServerConfig`.
 pub const Server = conn.Conn(.server);
+/// Pin the backend explicitly. Exposed so tests can exercise a readiness backend
+/// on Linux — io_uring has now hidden two defects that were fatal on kqueue, so
+/// the suite does not trust one backend to speak for the others.
+pub const ConnWith = conn.ConnWith;
 
 const ztls = @import("ztls");
 /// Re-export ztls so consumers can reach the core if needed.
