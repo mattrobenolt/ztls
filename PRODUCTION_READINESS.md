@@ -742,15 +742,20 @@ Whether it shares a root cause with the `Conn` stall is unestablished: the ztls
 test stalls rather than panicking, so they may be separate defects in the same
 area. Upstream-reportable either way.
 
-Continuing to narrow this costs one human macOS run per hypothesis, and two of
-the three so far were wrong. The unblock is a macOS runner in the 0.16 lane, not
-another patch: five defects in this integration have now been invisible under
-io_uring, and every one was found because a person ran a Mac by hand. In-flight
-write cancellation remains separately unproven.
+**macOS is now CI-gated.** A `macos-15` job runs `just integrations-ci` on kqueue,
+scoped to the 0.16 integrations rather than the whole lane (conformance needs a
+Python/TLS-Anvil stack never exercised on macOS). That is the durable fix: five
+defects here were invisible under io_uring and every one was found because a
+person ran a Mac by hand, so the coverage was only ever as fresh as the last
+manual run — the 21/21 that closed #76 was stale within a day.
 
-macOS is not CI-gated, so a kqueue regression would not be caught automatically —
-the thread-pool defect above is precisely that class of bug, found only because a
-human ran it. That is a repo-wide CI decision, not an ztls-xev one.
+The two known-failing kqueue cancellation cases are asserted as *failing*
+(`expectError(error.LoopStalled, ...)`) rather than skipped, so the lane is green
+and gates everything else, and the day #83 is fixed those tests go red and demand
+their own deletion. A skip would have rotted silently. In-flight write
+cancellation remains separately unproven.
+
+
 
 Not gaps, recorded here so they are not mistaken for debt: IOCP/Windows is an
 explicit non-goal (`AGENTS.md`: "Target platforms: Linux and macOS. No Windows
