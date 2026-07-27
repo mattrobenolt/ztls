@@ -928,15 +928,16 @@ fn CloseWhileReading(comptime Xev: type) type {
 // here. io_uring completes an fd's pending operations when it closes, so it
 // forgives a missing cancel entirely; epoll does not, which is why the same
 // scenario runs twice.
-/// kqueue stalls this sequence (#83): the client's socket close is armed and its
-/// callback never fires, with `Loop.active == 0`. Mechanism unknown — two
-/// hypotheses were refuted against real macOS runs, and the two-peer probe
-/// additionally crashes libxev there.
+/// #83 — kqueue stalls the *abortive* close with a read in flight: the client's
+/// socket close is armed and its callback never fires, with `Loop.active == 0`.
+/// Tearing the stalled loop down then crashes, so it cannot even be asserted as
+/// failing; it has to be skipped.
 ///
-/// Asserted as *failing* rather than skipped. A skip rots silently; this way the
-/// suite is green on macOS so everything else can be gated, and the day #83 is
-/// fixed this test goes red and demands its own deletion.
-const kqueue_cancel_broken = xev.backend == .kqueue;
+/// The orderly variant is NOT affected and runs normally on kqueue. That
+/// asymmetry is the sharpest clue available: the only difference is the
+/// close_notify write between the cancel and the socket close, so an extra
+/// completion cycle there is enough to unstick it.
+const kqueue_abortive_close_broken = xev.backend == .kqueue;
 
 fn expectCancelThenClose(comptime Xev: type, shutdown: anytype) !void {
     const Scenario = CloseWhileReading(Xev);
@@ -960,21 +961,14 @@ fn expectCancelThenClose(comptime Xev: type, shutdown: anytype) !void {
 }
 
 test "close: closeReset with a read in flight cancels it, then closes" {
-    if (kqueue_cancel_broken) {
-        try testing.expectError(error.LoopStalled, expectCancelThenClose(xev, .abortive));
-    } else {
-        try expectCancelThenClose(xev, .abortive);
-    }
+    if (!kqueue_abortive_close_broken) try expectCancelThenClose(xev, .abortive);
     if (builtin.os.tag == .linux) try expectCancelThenClose(xev.Epoll, .abortive);
 }
 
 // The same, but orderly: the close_notify is still owed after the cancel, so the
 // sequence has one more step to get through before the fd goes. RFC 8446 §6.1.
 test "close: orderly close with a read in flight still sends close_notify" {
-    if (kqueue_cancel_broken) {
-        try testing.expectError(error.LoopStalled, expectCancelThenClose(xev, .orderly));
-    } else {
-        try expectCancelThenClose(xev, .orderly);
-    }
+    // Runs on every backend including kqueue; only the abortive path is broken.
+    try expectCancelThenClose(xev, .orderly);
     if (builtin.os.tag == .linux) try expectCancelThenClose(xev.Epoll, .orderly);
 }

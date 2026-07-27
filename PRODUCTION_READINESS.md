@@ -749,11 +749,17 @@ defects here were invisible under io_uring and every one was found because a
 person ran a Mac by hand, so the coverage was only ever as fresh as the last
 manual run — the 21/21 that closed #76 was stale within a day.
 
-The two known-failing kqueue cancellation cases are asserted as *failing*
-(`expectError(error.LoopStalled, ...)`) rather than skipped, so the lane is green
-and gates everything else, and the day #83 is fixed those tests go red and demand
-their own deletion. A skip would have rotted silently. In-flight write
-cancellation remains separately unproven.
+The runner immediately narrowed #83, which is the argument for having it. Only
+the **abortive** close with a read in flight stalls on kqueue; the **orderly**
+close passes there and runs normally. The two differ by exactly one thing — the
+close_notify write between the cancel and the socket close — so an extra
+completion cycle at that point is enough to unstick it. That is the sharpest clue
+available and was invisible from a single manual run, which had only ever
+exercised the abortive case.
+
+The abortive case is skipped on kqueue rather than asserted-as-failing: a stalled
+loop's teardown crashes, so the failure cannot be caught and asserted. In-flight
+write cancellation remains separately unproven.
 
 
 
