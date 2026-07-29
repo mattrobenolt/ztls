@@ -27,3 +27,6 @@ images/prompt-a/
 images/prompt-b/
 images/prompt-c/
 images/wordmark/
+
+# Local macOS probe scratch (binaries, per-run captures)
+.macprobe/
