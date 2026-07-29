@@ -108,7 +108,7 @@ fn spin(p: anytype, n: usize) !void {
     }
 }
 
-const Strategy = enum { cancel, shutdown };
+const Strategy = enum { cancel, shutdown, cancel_prefill };
 
 fn probe(
     comptime name: []const u8,
@@ -121,6 +121,13 @@ fn probe(
     // the shape a close takes when the write was armed from inside a
     // completion callback earlier in the same tick.
     const same_batch = spins_before_retire == 0;
+    // When true, the pipe is filled with raw writes BEFORE the libxev write is
+    // armed, so the armed write blocks with zero bytes drained. Isolates why
+    // the cancel-batch variant sees NotFound: if the cancel still misses a
+    // write that cannot have completed, same-batch submission alone makes the
+    // target unfindable; if it instead reports ExpirationInProgress, the
+    // original NotFound was "the first partial drain already completed".
+    const prefill = spins_before_retire == 0 and strategy == .cancel_prefill;
     std.debug.print("{s}:\n", .{name});
     var fds: [2]std.posix.fd_t = undefined;
     if (std.c.socketpair(std.posix.AF.UNIX, std.posix.SOCK.STREAM, 0, &fds) != 0)
@@ -130,6 +137,17 @@ fn probe(
     // Clamp the send buffer so the write cannot drain: nobody ever reads the
     // peer end. Linux doubles this to ~4.6KB, far short of the 16KB payload.
     try std.posix.setsockopt(fds[0], std.posix.SOL.SOCKET, std.posix.SO.SNDBUF, &std.mem.toBytes(@as(c_int, 2048)));
+
+    if (comptime prefill) {
+        var fill: [4096]u8 = [_]u8{0xcd} ** 4096;
+        var filled: usize = 0;
+        while (true) {
+            const n = std.c.send(fds[0], &fill, fill.len, std.posix.MSG.DONTWAIT);
+            if (n < 0) break; // EAGAIN: full
+            filled += @intCast(n);
+        }
+        std.debug.print("{s}: prefilled {d} bytes\n", .{ name, filled });
+    }
 
     var pool: xev.ThreadPool = .init(.{});
     defer {
@@ -154,7 +172,7 @@ fn probe(
     // into a zombie.
     p.canceled = true;
     switch (strategy) {
-        .cancel => {
+        .cancel, .cancel_prefill => {
             p.c_cancel = .{
                 .op = .{ .cancel = .{ .c = &p.c_write } },
                 .userdata = &p,
@@ -206,6 +224,7 @@ pub fn main() !void {
             try probe("io_uring/cancel-late ", xev.IO_Uring, .cancel, 50);
             try probe("io_uring/cancel-early", xev.IO_Uring, .cancel, 1);
             try probe("io_uring/cancel-batch", xev.IO_Uring, .cancel, 0);
+            try probe("io_uring/cancel-batch-prefilled", xev.IO_Uring, .cancel_prefill, 0);
             try probe("io_uring/shutdown    ", xev.IO_Uring, .shutdown, 50);
             try probe("epoll/cancel       ", xev.Epoll, .cancel, 50);
             // No epoll/shutdown: on a readiness backend the armed write is a

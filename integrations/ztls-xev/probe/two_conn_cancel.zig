@@ -136,12 +136,15 @@ fn probe(comptime name: []const u8, comptime Xev: type) !void {
         return error.SocketPair;
 
     var pool: xev.ThreadPool = .init(.{});
+    var loop: Xev.Loop = try .init(.{ .thread_pool = &pool });
+    // Defers run LIFO: the pool joins before the loop dies, because a close
+    // task still in flight dereferences the loop (thread_pool_completions.push
+    // plus a wakeup) — the reverse order is a teardown use-after-free.
+    defer loop.deinit();
     defer {
         pool.shutdown();
         pool.deinit();
     }
-    var loop: Xev.Loop = try .init(.{ .thread_pool = &pool });
-    defer loop.deinit();
 
     const P = Pair(Xev);
     var p: P = .{ .a = .initFd(fds[0]), .b = .initFd(fds[1]), .loop = &loop };
