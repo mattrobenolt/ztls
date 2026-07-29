@@ -60,7 +60,7 @@ ztls is production-ready when all six pillars are `PROVEN`:
 | Pillar | Status | One-line |
 |---|---|---|
 | 1. Correctness | `PROVEN` | RFC 8446 MUST matrix closed for the supported surface; interop + tlsfuzzer PR-gated; TLS-Anvil scheduled with clean captures (437/437, no unexpected failures); adversarial security review found and fixed 3 vulns. Full TLS-Anvil is scheduled-only (2-hour runtime can't be PR-gated); BoGo explicitly deferred. |
-| 2. Ergonomics | `PROVEN` | CI-gated deterministic examples cover client and server roles across io_uring, epoll, and `std.net.Stream`; Config setup, server credentials, and `Outbox` cover the supported core ergonomics boundary. Two higher-order integrations are `PARTIAL`, both CI-gated under Zig 0.16: `ztls-std` (#77, `std.Io`) lacks wrapper-level interop, client auth, and concurrent split halves; `ztls-xev` (#76, libxev completions) has both roles on io_uring (CI-gated) and kqueue (manual run), with cancellation of in-flight operations still unproven (#83). |
+| 2. Ergonomics | `PROVEN` | CI-gated deterministic examples cover client and server roles across io_uring, epoll, and `std.net.Stream`; Config setup, server credentials, and `Outbox` cover the supported core ergonomics boundary. Two higher-order integrations are `PARTIAL`, both CI-gated under Zig 0.16: `ztls-std` (#77, `std.Io`) lacks wrapper-level interop, client auth, and concurrent split halves; `ztls-xev` (#76, libxev completions) has both roles on io_uring (CI-gated) and kqueue (CI-gated), with in-flight read and write cancellation proven on io_uring and epoll; kqueue cancellation remains the unproven island (#83). |
 | 3. Performance | `PROVEN` | n=10 captures on x86_64 (c7i.2xlarge), aarch64 (c7g.2xlarge), and macOS (Apple M1 Max) with formal CIs (p=0.000): ztls beats libssl on every comparable app-data row on all three platforms and rustls on all AES-GCM rows; regression gate committed. |
 | 4. Providers | `PROVEN` | OpenSSL (default), AWS-LC, and BoringSSL all compile, pass the full test suite, tlsfuzzer smoke, and have clean TLS-Anvil captures (437/437 each). CI-gated backend lanes (`just check-backend-aws-lc`, `just check-backend-boringssl`). Cert-chain stays ztls/std (ownership decision); FIPS comptime-validated; PQ/P-384 is #6. |
 | 5. Marketing | `PROVEN` | README leads with the proven performance story (n=10, both architectures, honest ChaCha20 loss) and the adversarial security posture; the why-ztls narrative and headline benchmarks are on the front door, backed by PERFORMANCE.md. |
@@ -662,7 +662,7 @@ are both shared across connections. Surface is
 `init`/`handshake`/`read`/`write`/`close`/`closeReset`/`deinit` plus `state`,
 `selectedAlpn`, and `cipherSuite`.
 
-21 tests. The client round trip drives a real `xev.Loop` against a blocking ztls
+23 tests. The client round trip drives a real `xev.Loop` against a blocking ztls
 server on a thread; the server tests run *both* roles on one loop over a
 socketpair, with no threads, so the interleaving is the loop's and the result is
 deterministic. Plus unit coverage of the error projection, the alert mapping, the
@@ -706,17 +706,46 @@ guesswork, and fixed by requiring a pool with an assert at `Conn.init` on the
 backends that need one. The lesson is the durable part: io_uring is the permissive
 backend, and single-backend coverage is not backend coverage.
 
-**Gaps (tracked under #76's successors):** in-flight write cancellation remains
-unproven (#83). In-flight read cancellation is covered for abortive and orderly
-close on io_uring and epoll. The epoll fix works around what looks like an upstream
-libxev defect: its epoll TCP watcher duplicates the fd per operation and the normal
-completion path closes that duplicate, but the cancellation path
-(`stop_completion`) only does `epoll_ctl(CTL_DEL)` and never closes it. A cancelled
-read therefore leaks a file descriptor, and the retained duplicate keeps the socket
-endpoint alive so the peer never observes EOF after the original fd closes. `Conn`
-serializes transport completions, so the duplicate buys nothing here and is cleared
-before registration, with asserts so an upstream change fails loudly. Worth
-reporting upstream rather than carrying indefinitely.
+**Gaps (tracked under #76's successors):** in-flight cancellation is now covered
+for both reads and writes, abortive and orderly, on io_uring and epoll (#83).
+kqueue remains the unproven island: the abortive read test stalls there for
+reasons still unestablished, and both write variants share the same
+cancel-then-close shape and are skipped for the same reason. The epoll fix works
+around what looks like an upstream libxev defect: its epoll TCP watcher
+duplicates the fd per operation and the normal completion path closes that
+duplicate, but the cancellation path (`stop_completion`) only does
+`epoll_ctl(CTL_DEL)` and never closes it. A cancelled read therefore leaks a file
+descriptor, and the retained duplicate keeps the socket endpoint alive so the
+peer never observes EOF after the original fd closes. `Conn` serializes transport
+completions, so the duplicate buys nothing here and is cleared before
+registration, with asserts so an upstream change fails loudly. Worth reporting
+upstream rather than carrying indefinitely.
+
+The write case turned out to be a different defect class than the read case, and
+a nastier one. Keeping a write in flight takes a full pipe (`SO_SNDBUF` clamped,
+peer never reads), and on a blocking fd io_uring runs that write as a kernel
+worker thread blocked in the syscall. Canceling it promptly — the exact shape a
+deadline-driven close takes — interrupts the syscall, and libxev's io_uring
+write path re-arms on EINTR: the operation resurrects as a zombie that outlives
+the close, and its late completion (EPIPE, once the peer finally goes away)
+lands on the `Conn` after `deinit` has released it. A use-after-free, found by
+the regression test on its first run (bus error at 0xaa, three of three runs).
+The retirement that actually works on io_uring is `shutdown(2)`: the blocked
+syscall fails promptly with EPIPE and the write's own callback resumes the
+close, proven by `probe/stuck_write_cancel.zig` (BrokenPipe on the tick after
+the shutdown; cancel of the same stuck write only ever worked when it landed
+~25ms late, which is why the earlier probes missed the race). Reads still
+retire by cancel on io_uring, and everything on the readiness backends retires
+by `epoll_ctl(CTL_DEL)`. The close sequence also gained a `retire_pending`
+gate: the socket close waits for the retire op's own completion, so the close
+callback — and the caller's `deinit` — can no longer outrun it. That gate is
+defense against CQE ordering variance rather than a locally reproducible
+sequence; the shutdown retirement itself is mutation-checked (reverting it
+fails the write test deterministically). The orderly close with a canceled
+write degrades to no `close_notify` by design: the half-sent record has already
+desynced the peer's stream and the engine's pending-write latch stays set, so
+`sendAlert` refuses and the close proceeds to the socket; a `close_notify`
+after half a record would be un-authenticatable garbage.
 
 The abortive in-flight-read test stalls on macOS/kqueue: after the server's
 cancellation completes, the client's plain socket close is armed

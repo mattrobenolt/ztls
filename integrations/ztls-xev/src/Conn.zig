@@ -242,9 +242,17 @@ pub fn ConnWith(comptime Xev: type, comptime role: root.Role) type {
         write_c: Xev.Completion = .{},
         close_c: Xev.Completion = .{},
         /// Retires whichever of `read_c`/`write_c` is in flight when a close
-        /// starts. One suffices because `pumpOnce` refuses to arm anything while
-        /// `wait != .idle`, so at most one transport op is ever outstanding.
+        /// starts — a cancel for reads and for anything on the readiness
+        /// backends, a socket shutdown for an io_uring write (see
+        /// `issueCancel`). One completion suffices because `pumpOnce` refuses
+        /// to arm anything while `wait != .idle`, so at most one transport op
+        /// is ever outstanding.
         cancel_c: Xev.Completion = .{},
+        /// True while the retire op above has yet to complete. The socket
+        /// close must wait for it: arming `close_c` early lets the close
+        /// callback — and the caller's `deinit` — run while the retire op is
+        /// still live, and its late completion lands on released memory.
+        retire_pending: bool = false,
         close_phase: ClosePhase = .none,
 
         /// Reentrancy state of `pump`. One enum rather than `in_pump` + `pump_again`
@@ -601,9 +609,11 @@ pub fn ConnWith(comptime Xev: type, comptime role: root.Role) type {
 
             // A transport completion armed in the loop must be retired before the
             // fd goes. Closing underneath it leaves a registration the loop still
-            // counts as active and a completion that never fires — io_uring
-            // forgives that because closing an fd completes its operations; the
-            // readiness backends do not. #83.
+            // counts as active and a completion that never fires on the readiness
+            // backends. io_uring completes an idle fd's operations on close, but
+            // a write blocked in a kernel worker is not idle — it outlives the
+            // close and its late completion lands on released memory, which is
+            // exactly the hazard rather than a forgiveness. #83.
             if (self.wait != .idle) return self.issueCancel();
             self.advanceClose();
         }
@@ -612,6 +622,29 @@ pub fn ConnWith(comptime Xev: type, comptime role: root.Role) type {
         /// sequence resumes from whichever fires first: the target completing with
         /// `Canceled`, or the cancel itself.
         fn issueCancel(self: *Self) void {
+            self.retire_pending = true;
+
+            // An io_uring write cannot be retired by a cancel. With a blocking
+            // fd and a full pipe the request is a kernel worker thread blocked
+            // in the syscall; the cancel interrupts it, and libxev's io_uring
+            // write path re-arms on EINTR, resurrecting the operation as a
+            // zombie that outlives the close — and the Conn, once `deinit`
+            // releases it. A socket shutdown(2) is the retirement that works:
+            // the blocked syscall fails promptly with EPIPE and the target's
+            // own callback resumes the close. Proven by
+            // probe/stuck_write_cancel.zig. Reads cancel cleanly on io_uring,
+            // and the readiness backends retire anything with epoll_ctl(CTL_DEL),
+            // so those keep the cancel.
+            if (Xev.backend == .io_uring and self.wait == .writing) {
+                self.cancel_c = .{
+                    .op = .{ .shutdown = .{ .socket = self.socket.fd, .how = .both } },
+                    .userdata = self,
+                    .callback = onShutdownComplete,
+                };
+                self.loop.add(&self.cancel_c);
+                return;
+            }
+
             const target = switch (self.wait) {
                 .reading => &self.read_c,
                 .writing => &self.write_c,
@@ -640,7 +673,25 @@ pub fn ConnWith(comptime Xev: type, comptime role: root.Role) type {
             // target there stalls the close forever. Treat it as retired here and
             // let the target's callback, if one arrives, land on an already
             // released phase and do nothing.
+            self.retire_pending = false;
             self.wait = .idle;
+            self.advanceClose();
+            return .disarm;
+        }
+
+        /// The socket-shutdown retire op (io_uring writes) completing. Says
+        /// nothing about the write itself: the write's own completion — EPIPE,
+        /// promptly — is what resumes the close sequence. This only lifts the
+        /// `retire_pending` gate so the socket close cannot outrun it.
+        fn onShutdownComplete(
+            userdata: ?*anyopaque,
+            _: *Xev.Loop,
+            _: *Xev.Completion,
+            _: Xev.Result,
+        ) Xev.CallbackAction {
+            const self: *Self = @ptrCast(@alignCast(userdata.?));
+
+            self.retire_pending = false;
             self.advanceClose();
             return .disarm;
         }
@@ -670,7 +721,13 @@ pub fn ConnWith(comptime Xev: type, comptime role: root.Role) type {
                     } else |_| {}
                     self.advanceClose();
                 },
-                .releasing => self.issueSocketClose(),
+                .releasing => {
+                    // The retire op's own completion may still be in flight
+                    // even though the transport op it retired is done; the
+                    // socket close waits for it, and its callback re-enters.
+                    if (self.retire_pending) return;
+                    self.issueSocketClose();
+                },
             }
         }
 
@@ -989,8 +1046,12 @@ pub fn ConnWith(comptime Xev: type, comptime role: root.Role) type {
             self.hs.completeWrite();
 
             if (self.lifecycle == .closing) {
-                // The close_notify (or a fatal alert) just drained.
-                self.issueSocketClose();
+                // The close_notify (or a fatal alert) just drained — or, racing
+                // a close, the rest of an application write did, which
+                // unlatched the engine and lets the close_notify out after
+                // all. The phase machine knows what is still owed, including
+                // waiting on a retire op.
+                self.advanceClose();
                 return .disarm;
             }
 
@@ -1088,6 +1149,10 @@ pub fn ConnWith(comptime Xev: type, comptime role: root.Role) type {
 
         fn issueSocketClose(self: *Self) void {
             if (self.close_phase == .released) return; // already armed
+            // Arming the close while a retire op is live is the zombie: the
+            // retire op's completion fires after the close callback lets the
+            // caller `deinit`, landing on released memory.
+            assert(!self.retire_pending);
             self.close_phase = .released;
             self.lifecycle = .closing;
             self.socket.close(self.loop, &self.close_c, Self, self, onSocketClosed);

@@ -193,8 +193,8 @@ detection are absent, which is why the first state is `handshaking` rather than
 peeking. Client authentication, kqueue/IOCP validation, key-update initiation,
 and session resumption are all still open under #76.
 
-In-flight read cancellation is covered for abortive and orderly close on the
-default backend and explicitly on epoll.
+In-flight cancellation of both reads and writes is covered for abortive and
+orderly close on the default backend and explicitly on epoll (#83).
 
 The epoll path carries a workaround for what looks like an upstream libxev bug.
 Its epoll TCP watcher duplicates the fd per operation (`flags.dup`), and the
@@ -208,15 +208,22 @@ worse half for a long-running server. `Conn` serializes transport completions
 before the loop registers it — asserted, so an upstream change fails loudly rather
 than silently.
 
+The io_uring write path retires a stuck write with `shutdown(2)` rather than a
+cancel: on a blocking fd with a full pipe the request is a kernel worker blocked
+in the syscall, and canceling it interrupts the syscall, which libxev's io_uring
+write path re-arms on EINTR — a zombie that outlives the close and the `Conn`.
+`shutdown` fails the syscall promptly with EPIPE instead (proven by
+`probe/stuck_write_cancel.zig`).
+
 Worth reporting upstream rather than carrying indefinitely.
 
-In-flight *write* cancellation takes the same path but has no regression test, and
-kqueue does not use the duplicate at all, so its cancellation path is untested
-either way — the macOS run predates these tests. Both keep
+kqueue does not use the duplicate at all, and its cancellation path is the one
+remaining unproven surface: the abortive close with a read in flight stalls
+there for reasons still unestablished, and the write variants share that shape
+and are skipped with it. That keeps
 [#83](https://github.com/mattrobenolt/ztls/issues/83) open.
 
-Backends: io_uring is CI-gated, kqueue is a recorded manual run (21/21 on
-`Darwin arm64`), IOCP is untouched.
+Backends: io_uring and macOS/kqueue are CI-gated, IOCP is untouched.
 
 ## Build
 

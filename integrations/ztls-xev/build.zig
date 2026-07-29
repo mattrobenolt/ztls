@@ -128,6 +128,18 @@ pub fn build(b: *std.Build) void {
     });
     probe_step.dependOn(&b.addRunArtifact(two_exe).step);
 
+    const stuck_exe = b.addExecutable(.{
+        .name = "stuck_write_cancel",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("probe/stuck_write_cancel.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{.{ .name = "xev", .module = xev_mod }},
+            .link_libc = true,
+        }),
+    });
+    probe_step.dependOn(&b.addRunArtifact(stuck_exe).step);
+
     // Tests: unit tests inside the library module, plus the fixture-backed
     // round-trip suite driving a real event loop.
     const mod_tests = b.addTest(.{

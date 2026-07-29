@@ -972,3 +972,258 @@ test "close: orderly close with a read in flight still sends close_notify" {
     try expectCancelThenClose(xev, .orderly);
     if (builtin.os.tag == .linux) try expectCancelThenClose(xev.Epoll, .orderly);
 }
+
+/// One full-sized record's worth of plaintext. RFC 8446 §5.1 caps a record at
+/// 16384 bytes of plaintext, so this encrypts to a single ~16.4KB wire record
+/// — larger than any socket send buffer once `SO_SNDBUF` is clamped, which is
+/// what keeps the write armed.
+const stuck_payload = [_]u8{0xab} ** 16384;
+
+/// A server that closes while a WRITE is still armed — the mirror of
+/// `CloseWhileReading`, and #83's remaining path: a caller flushing a large
+/// response through a slow-or-dead peer and then honouring a shutdown
+/// deadline.
+///
+/// Keeping a write armed takes more than issuing one: a socket is writable
+/// almost always, so the write completes unless the pipe is full. The server's
+/// `SO_SNDBUF` is clamped to 2048 and the client never reads, so the ~16.4KB
+/// record can never drain fully — the transport write stays armed until the
+/// close cancels it, on every platform, with no timing luck.
+///
+/// The orderly variant degrades to an abortive one BY DESIGN here. The partial
+/// record that did drain has already desynced the peer's stream, and the
+/// engine's pending-write latch is still set (the canceled record never earned
+/// a `completeWrite`), so `sendAlert(.close_notify)` fails with `PendingWrite`
+/// and the close proceeds straight to releasing the socket. A close_notify
+/// appended after half a record would be un-authenticatable garbage the peer
+/// can only report as a decrypt failure, so none is owed; the
+/// close_notify-after-cancel mechanism itself is covered by the read variant
+/// above, where the stream is still intact.
+fn CloseWhileWriting(comptime Xev: type) type {
+    return struct {
+        const Self = @This();
+        const ServerConn = tls.ConnWith(Xev, .server);
+        const ClientConn = tls.ConnWith(Xev, .client);
+
+        server: ServerConn = undefined,
+        server_storage: ServerConn.Storage = .{},
+
+        client: ClientConn = undefined,
+        client_storage: ClientConn.Storage = .{},
+
+        /// Ordered log of what the server observed; checked as a sequence.
+        events: std.ArrayList(Event) = .empty,
+        flags: Flags = .initEmpty(),
+        loop_active_after_close: usize = 0,
+        server_final: ?struct {
+            state: tls.State,
+            wait: @TypeOf(@as(ServerConn, undefined).wait),
+            phase: @TypeOf(@as(ServerConn, undefined).close_phase),
+        } = null,
+
+        const Event = enum { write_canceled, write_other, closed };
+        const Flag = enum {
+            server_done,
+            client_done,
+            write_requested,
+            close_issued,
+            client_close_issued,
+        };
+        const Flags = std.EnumSet(Flag);
+
+        fn done(s: *const Self) bool {
+            return s.flags.contains(.server_done) and s.flags.contains(.client_done);
+        }
+
+        fn note(s: *Self, e: Event) void {
+            // ziglint-ignore: Z026 -- a callback cannot fail; a dropped event shows up
+            // as a mismatch in the assertions.
+            s.events.append(testing.allocator, e) catch {};
+        }
+
+        fn onServerHandshake(s: *Self, r: tls.HandshakeResult) void {
+            r.result catch return s.server.closeReset(s, onServerClose);
+            // One record too big for the clamped pipe. Issued from inside the
+            // handshake callback, so — exactly as in CloseWhileReading — the
+            // write is not armed until the deferred pump pass runs after this
+            // returns; the close must come from the test loop, not from here.
+            s.server.write(&stuck_payload, s, onServerWrite);
+            s.flags.insert(.write_requested);
+        }
+
+        fn onServerWrite(s: *Self, r: tls.WriteResult) void {
+            s.note(if (r.written) |_| .write_other else |e| switch (e) {
+                error.Canceled => .write_canceled,
+                else => .write_other,
+            });
+        }
+
+        fn onServerClose(s: *Self) void {
+            s.note(.closed);
+            // Captured before deinit: reading a Conn afterwards reads
+            // `self.* = undefined` and prints 0xaa garbage as plausible-looking
+            // states (#81, again).
+            s.server_final = .{
+                .state = s.server.state(),
+                .wait = s.server.wait,
+                .phase = s.server.closePhase(),
+            };
+            s.server.deinit();
+            s.server_storage.secureZero();
+            s.flags.insert(.server_done);
+        }
+
+        fn onClientHandshake(s: *Self, r: tls.HandshakeResult) void {
+            _ = s;
+            // ziglint-ignore: Z026 -- only the server-side cancellation is under test.
+            r.result catch {};
+            // Arms nothing, ever. A read would drain the pipe and unstick the
+            // server's write; this peer's job is to be the dead consumer that
+            // keeps it stuck. The test loop tears the client down once the
+            // server is done.
+        }
+
+        fn onClientClose(s: *Self) void {
+            s.client.deinit();
+            s.client_storage.secureZero();
+            s.flags.insert(.client_done);
+        }
+
+        fn run(s: *Self, shutdown: ServerConn.Shutdown) !void {
+            const fds = try socketPair();
+
+            // Clamp the server's send buffer so the write cannot drain while
+            // the client refuses to read. Linux doubles this (~4.6KB); either
+            // way it is far short of one full-sized record.
+            try posix.setsockopt(
+                fds[1],
+                posix.SOL.SOCKET,
+                posix.SO.SNDBUF,
+                &mem.toBytes(@as(c_int, 2048)),
+            );
+
+            var pool: xev.ThreadPool = .init(.{});
+            defer {
+                pool.shutdown();
+                pool.deinit();
+            }
+            var loop_storage: Xev.Loop = try .init(.{ .thread_pool = &pool });
+            defer loop_storage.deinit();
+            const loop = &loop_storage;
+
+            var key: ztls.signature.PrivateKey = try .fromP256Scalar(@ptrCast(test_scalar[0..32]));
+            defer key.deinit();
+            const server_config: tls.ServerConfig = .init(.{
+                .cert_chain = &.{test_cert_der},
+                .signer = key.signer(),
+            });
+            var client_config: tls.ClientConfig = .init(.{ .verify = .insecure });
+            defer client_config.deinit();
+
+            const io = std.Io.Threaded.global_single_threaded.io();
+            s.server.init(
+                io,
+                loop,
+                .initFd(fds[1]),
+                &server_config,
+                null,
+                s.server_storage.buffers(),
+            );
+            s.client.init(
+                io,
+                loop,
+                .initFd(fds[0]),
+                &client_config,
+                test_host,
+                s.client_storage.buffers(),
+            );
+            s.server.handshake(s, onServerHandshake);
+            s.client.handshake(s, onClientHandshake);
+
+            // Bounded non-blocking spin, as in CloseWhileReading: a timer would
+            // count toward `loop.active`, which this test asserts on.
+            var spins: usize = 0;
+            while (!s.done()) {
+                // Close from out here, the way a shutdown deadline would, once
+                // the write is genuinely armed in the loop.
+                if (s.flags.contains(.write_requested) and
+                    !s.flags.contains(.close_issued) and
+                    s.server.wait == .writing)
+                {
+                    s.flags.insert(.close_issued);
+                    switch (shutdown) {
+                        .abortive => s.server.closeReset(s, onServerClose),
+                        .orderly => s.server.close(s, onServerClose),
+                    }
+                }
+                // The client armed nothing, so nothing wakes it; tear it down
+                // once the server is finished.
+                if (s.flags.contains(.server_done) and
+                    !s.flags.contains(.client_close_issued))
+                {
+                    s.flags.insert(.client_close_issued);
+                    s.client.closeReset(s, onClientClose);
+                }
+                if (spins == 2_000) {
+                    std.debug.print(
+                        "\nstalled on {t}: srv={any}\n" ++
+                            "  cli={t}/{t}/{t} active={d} events={any}\n",
+                        .{
+                            Xev.backend,
+                            s.server_final,
+                            s.client.state(),
+                            s.client.wait,
+                            s.client.closePhase(),
+                            loop.active,
+                            s.events.items,
+                        },
+                    );
+                    return error.LoopStalled;
+                }
+                spins += 1;
+                try loop.run(.no_wait);
+                var ts: posix.timespec = .{ .sec = 0, .nsec = 200 * std.time.ns_per_us };
+                _ = std.c.nanosleep(&ts, null);
+            }
+
+            // Same invariant as the read variant: without a real cancel the
+            // orphaned write completion keeps `active` raised forever, which is
+            // the #83 leak. The callback ordering above holds either way.
+            s.loop_active_after_close = loop.active;
+        }
+    };
+}
+
+fn expectWriteCancelThenClose(comptime Xev: type, shutdown: anytype) !void {
+    const Scenario = CloseWhileWriting(Xev);
+    var s: Scenario = .{};
+    defer s.events.deinit(testing.allocator);
+
+    try s.run(shutdown);
+
+    // Exactly once, with Canceled, and before the close callback.
+    try testing.expectEqualSlices(
+        Scenario.Event,
+        &.{ .write_canceled, .closed },
+        s.events.items,
+    );
+    try testing.expectEqual(tls.State.closed, s.server_final.?.state);
+    try testing.expectEqual(@as(usize, 0), s.loop_active_after_close);
+}
+
+// #83 — a close on top of an armed write, on every backend available here. Both
+// variants are skipped on kqueue: the orderly one degrades to the same
+// cancel-then-close shape as the abortive read, and that shape is the one that
+// stalls on kqueue for reasons still unestablished (see CloseWhileReading).
+test "close: closeReset with a write in flight cancels it, then closes" {
+    if (!kqueue_abortive_close_broken) try expectWriteCancelThenClose(xev, .abortive);
+    if (builtin.os.tag == .linux) try expectWriteCancelThenClose(xev.Epoll, .abortive);
+}
+
+// The same, but requested orderly: with the stream already desynced by the
+// half-sent record and the engine's pending-write latch still set, no
+// close_notify is owed or sent — the close proceeds straight to the socket.
+test "close: orderly close with a write in flight abandons close_notify" {
+    if (!kqueue_abortive_close_broken) try expectWriteCancelThenClose(xev, .orderly);
+    if (builtin.os.tag == .linux) try expectWriteCancelThenClose(xev.Epoll, .orderly);
+}
