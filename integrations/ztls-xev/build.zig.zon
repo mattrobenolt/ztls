@@ -15,6 +15,12 @@
             .url = "git+https://github.com/mitchellh/libxev#9ce8e8e6ff89e583258a7f8e7adeeeaeae8611bf",
             .hash = "libxev-0.0.0-86vtcwIRFADbH4hk-EjROXxlrKIRPQdA41XiTSytYO-F",
         },
+        // Test-only: plain-text test runner. Lazy so consumers never fetch it.
+        .ztest = .{
+            .url = "https://github.com/mattrobenolt/ztest/archive/refs/tags/v0.2.0.tar.gz",
+            .hash = "ztest-0.2.0-h6PBz0SAAAAUgmChs0QF0N4yO28IvquitA2U0PP1IJ1l",
+            .lazy = true,
+        },
     },
     .paths = .{
         "build.zig",

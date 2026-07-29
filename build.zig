@@ -57,6 +57,11 @@ pub fn build(b: *Build) void {
                 "openssl-fips, aws-lc-fips",
             .{crypto_backend_str},
         );
+    // Fuzz mode uses the default test runner, which speaks the server protocol
+    // that `zig build test --fuzz` needs. ztest's `.mode = .simple` bypasses
+    // that protocol, so it is only used for normal (non-fuzz) test runs.
+    const fuzz_mode = b.option(bool, "fuzz", "Enable fuzzing (uses the default test runner)") orelse false;
+
     const build_options = b.addOptions();
     build_options.addOption(Backend, "crypto_backend", crypto_backend);
 
@@ -82,6 +87,10 @@ pub fn build(b: *Build) void {
         .optimize = optimize,
     })) |dep| dep.module("txtar") else null;
     if (txtar_mod) |tm| test_mod.addImport("txtar", tm);
+
+    // ztest: plain-text test runner. Lazy — only fetched when the test step
+    // is actually built, not when consumers use ztls as a library dependency.
+    const ztest_dep = b.lazyDependency("ztest", .{});
 
     // Test fixtures module — replaces the old test_fixtures symlinks.
     const fixtures_mod = b.createModule(.{
@@ -115,6 +124,8 @@ pub fn build(b: *Build) void {
 
     tests.addSteps(b, .{
         .test_mod = test_mod,
+        .fuzz = fuzz_mode,
+        .ztest = ztest_dep,
     });
 
     bench_mod.addSteps(b, .{

@@ -19,6 +19,14 @@ pub fn build(b: *std.Build) void {
     });
     const ztls_mod = ztls_dep.module("ztls");
 
+    // ztest: plain-text test runner. Lazy — only fetched when the test step
+    // is built, not when consumers use this package as a dependency.
+    const ztest_dep = b.lazyDependency("ztest", .{});
+    const test_runner: ?std.Build.Step.Compile.TestRunner = if (ztest_dep) |z|
+        .{ .path = z.path("src/test_runner.zig"), .mode = .simple }
+    else
+        null;
+
     const xev_mod = b.dependency("libxev", .{
         .target = target,
         .optimize = optimize,
@@ -35,9 +43,11 @@ pub fn build(b: *std.Build) void {
 
     // The ztls-xev library module. Consumers import this as
     // `@import("ztls_xev")`.
+    // link_libc is needed because ztest's runner uses libc for getenv/isatty.
     const mod = b.addModule("ztls_xev", .{
         .root_source_file = b.path("src/root.zig"),
         .target = target,
+        .link_libc = true,
         .imports = &.{
             .{ .name = "ztls", .module = ztls_mod },
             .{ .name = "xev", .module = xev_mod },
@@ -79,7 +89,14 @@ pub fn build(b: *std.Build) void {
             b.fmt("Run {s} example", .{name}),
         );
         step.dependOn(&run.step);
-        test_run.* = b.addRunArtifact(b.addTest(.{ .root_module = exe_mod }));
+        exe_mod.link_libc = true;
+        const example_tests = b.addTest(.{
+            .root_module = exe_mod,
+            .test_runner = test_runner,
+        });
+        const run_example_tests = b.addRunArtifact(example_tests);
+        run_example_tests.has_side_effects = true;
+        test_run.* = run_example_tests;
         build_examples_step.dependOn(&b.addInstallArtifact(example_exe, .{}).step);
     }
 
@@ -113,14 +130,19 @@ pub fn build(b: *std.Build) void {
 
     // Tests: unit tests inside the library module, plus the fixture-backed
     // round-trip suite driving a real event loop.
-    const mod_tests = b.addTest(.{ .root_module = mod });
+    const mod_tests = b.addTest(.{
+        .root_module = mod,
+        .test_runner = test_runner,
+    });
     const run_mod_tests = b.addRunArtifact(mod_tests);
+    run_mod_tests.has_side_effects = true;
 
     const roundtrip_tests = b.addTest(.{
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/tests.zig"),
             .target = target,
             .optimize = optimize,
+            .link_libc = true,
             .imports = &.{
                 .{ .name = "ztls_xev", .module = mod },
                 .{ .name = "ztls", .module = ztls_mod },
@@ -128,8 +150,10 @@ pub fn build(b: *std.Build) void {
                 .{ .name = "fixtures", .module = fixtures_mod },
             },
         }),
+        .test_runner = test_runner,
     });
     const run_roundtrip_tests = b.addRunArtifact(roundtrip_tests);
+    run_roundtrip_tests.has_side_effects = true;
 
     const test_step = b.step("test", "Run tests");
     test_step.dependOn(&run_mod_tests.step);

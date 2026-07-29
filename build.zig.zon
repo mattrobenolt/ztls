@@ -15,6 +15,14 @@
             .url = "git+https://github.com/mattrobenolt/zig-benchmark#6e7e9ab7ed8bd8147c491ac53a1d326633a5c47a",
             .hash = "benchmark-0.1.0-JS72VvXxAACo8j9BYddbkivgNHXIeD1V27013BuCtW-_",
         },
+        // Test-only: plain-text test runner that writes one line per test to
+        // stderr instead of Zig's TUI progress protocol. Lazy so consumers of
+        // the library never fetch it.
+        .ztest = .{
+            .url = "https://github.com/mattrobenolt/ztest/archive/refs/tags/v0.2.0.tar.gz",
+            .hash = "ztest-0.2.0-h6PBz0SAAAAUgmChs0QF0N4yO28IvquitA2U0PP1IJ1l",
+            .lazy = true,
+        },
     },
     .paths = .{
         "build.zig",

@@ -5,7 +5,7 @@
     .minimum_zig_version = "0.16.0",
     .dependencies = .{
         // In-tree path dep on the ztls core. Mirrors the conformance/ pattern
-        // (conformance/build.zig.zon uses `.path = "../"`). From
+        // (conformance/build.zig.zon uses `.path = "../`"). From
         // integrations/ztls-std the repo root is ../.. .
         // Publish-time, this swaps to a git-URL/tag dep on a published ztls —
         // see #79 (distribution strategy). Dev-time, path.
@@ -20,6 +20,12 @@
         .zio = .{
             .url = "git+https://github.com/lalinsky/zio#v0.16.0",
             .hash = "zio-0.16.0-xHbVVJQxIgAMdBlOCF65siVKJRVww9Z_ayfJanpk7VEK",
+            .lazy = true,
+        },
+        // Test-only: plain-text test runner. Lazy so consumers never fetch it.
+        .ztest = .{
+            .url = "https://github.com/mattrobenolt/ztest/archive/refs/tags/v0.2.0.tar.gz",
+            .hash = "ztest-0.2.0-h6PBz0SAAAAUgmChs0QF0N4yO28IvquitA2U0PP1IJ1l",
             .lazy = true,
         },
     },
