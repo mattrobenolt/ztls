@@ -4,6 +4,7 @@
 //! the library module must not carry a test-fixture dependency into consumer
 //! builds. Everything here goes through the public surface only.
 const std = @import("std");
+const builtin = @import("builtin");
 const Io = std.Io;
 const net = Io.net;
 const mem = std.mem;
@@ -40,6 +41,17 @@ fn socketPair() ![2]posix.fd_t {
         @as(c_int, 0),
         std.c.socketpair(posix.AF.UNIX, posix.SOCK.STREAM, 0, &fds),
     );
+    // On Darwin a write to a peer-closed socket raises SIGPIPE, and no test
+    // runner suppresses it under 0.16, so a server thread that writes after
+    // the client closes kills the whole suite — whether a given run hits
+    // that race is scheduling luck (found by the ztest adoption turning a
+    // latent hazard into a red macOS lane). Suppress it at the socket so the
+    // write fails with EPIPE the way the test's error handling expects.
+    if (builtin.os.tag == .macos) {
+        const opt = mem.toBytes(@as(c_int, 1));
+        for (fds) |fd|
+            try posix.setsockopt(fd, posix.SOL.SOCKET, std.c.SO.NOSIGPIPE, &opt);
+    }
     return fds;
 }
 

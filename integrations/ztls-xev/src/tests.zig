@@ -131,6 +131,15 @@ fn socketPair() ![2]posix.fd_t {
         @as(c_int, 0),
         std.c.socketpair(posix.AF.UNIX, posix.SOCK.STREAM, 0, &fds),
     );
+    // On Darwin a write to a peer-closed socket raises SIGPIPE, and no test
+    // runner suppresses it under 0.16 — suppress it at the socket so the
+    // write fails with EPIPE instead of killing the suite. Same hazard and
+    // fix as the ztls-std suite; see its socketPair for the full story.
+    if (builtin.os.tag == .macos) {
+        const opt = mem.toBytes(@as(c_int, 1));
+        for (fds) |fd|
+            try posix.setsockopt(fd, posix.SOL.SOCKET, std.c.SO.NOSIGPIPE, &opt);
+    }
     return fds;
 }
 
