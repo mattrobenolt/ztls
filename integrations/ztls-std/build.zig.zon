@@ -24,8 +24,8 @@
         },
         // Test-only: plain-text test runner. Lazy so consumers never fetch it.
         .ztest = .{
-            .url = "https://github.com/mattrobenolt/ztest/archive/refs/tags/v0.2.0.tar.gz",
-            .hash = "ztest-0.2.0-h6PBz0SAAAAUgmChs0QF0N4yO28IvquitA2U0PP1IJ1l",
+            .url = "https://github.com/mattrobenolt/ztest/archive/e8a7c83a961502ff85ed82fbab06af78c81a0836.tar.gz",
+            .hash = "ztest-0.2.0-h6PBzyKEAAC49mtm1NO2CTeniItVuL0l06TpBDMDTe19",
             .lazy = true,
         },
     },
