@@ -209,10 +209,11 @@ before the loop registers it — asserted, so an upstream change fails loudly ra
 than silently.
 
 The io_uring write path retires a stuck write with `shutdown(2)` rather than a
-cancel: on a blocking fd with a full pipe the request is a kernel worker blocked
-in the syscall, and canceling it interrupts the syscall, which libxev's io_uring
-write path re-arms on EINTR — a zombie that outlives the close and the `Conn`.
-`shutdown` fails the syscall promptly with EPIPE instead (proven by
+cancel: the kernel cannot find a request submitted in the same submission batch,
+and a close cancels the write in exactly that batch (armed from inside a
+completion callback), so the cancel comes back `NotFound` and retires nothing
+— the write outlives the close and the `Conn`. `shutdown` fails the syscall
+promptly with EPIPE regardless of request state (proven by
 `probe/stuck_write_cancel.zig`).
 
 Worth reporting upstream rather than carrying indefinitely.

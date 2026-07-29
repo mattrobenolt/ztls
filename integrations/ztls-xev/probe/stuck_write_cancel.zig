@@ -9,8 +9,25 @@
 //! whether that assumption survives a write that is genuinely stuck.
 //!
 //! Sequence per backend: clamp SO_SNDBUF, arm a 16KB write with no reader,
-//! cancel it, close the fd, then close the peer — printing every CQE that
-//! arrives, in order, so the timeline is the evidence rather than a guess.
+//! retire it (cancel or shutdown), close the fd, then close the peer —
+//! printing every CQE that arrives, in order, so the timeline is the evidence
+//! rather than a guess.
+//!
+//! The three io_uring outcomes this maps, by *when* the cancel is submitted:
+//!
+//! - cancel-late (request established): cancel succeeds, target completes
+//!   Canceled. Clean.
+//! - cancel-early (next batch): same, clean.
+//! - cancel-batch (same submission batch — what a close produces when the
+//!   write was armed from inside a completion callback): the cancel comes
+//!   back NotFound and retires NOTHING, deterministically. A caller that
+//!   treats "cancel completed" as "target retired" and re-arms partial
+//!   writes (as ztls-xev does) inherits a zombie whose late EPIPE lands on
+//!   released memory. This is the #83 write-cancel UAF.
+//!
+//! shutdown(2) retires the write promptly regardless of request state
+//! (BrokenPipe on the next tick), which is why ztls-xev uses it for io_uring
+//! writes instead of a cancel.
 const std = @import("std");
 const builtin = @import("builtin");
 const xev = @import("xev");
@@ -93,7 +110,17 @@ fn spin(p: anytype, n: usize) !void {
 
 const Strategy = enum { cancel, shutdown };
 
-fn probe(comptime name: []const u8, comptime Xev: type, comptime strategy: Strategy) !void {
+fn probe(
+    comptime name: []const u8,
+    comptime Xev: type,
+    comptime strategy: Strategy,
+    comptime spins_before_retire: usize,
+) !void {
+    // When true, the retire op is queued immediately after the write with no
+    // intervening loop tick, so both SQEs go out in one submission batch —
+    // the shape a close takes when the write was armed from inside a
+    // completion callback earlier in the same tick.
+    const same_batch = spins_before_retire == 0;
     std.debug.print("{s}:\n", .{name});
     var fds: [2]std.posix.fd_t = undefined;
     if (std.c.socketpair(std.posix.AF.UNIX, std.posix.SOCK.STREAM, 0, &fds) != 0)
@@ -117,9 +144,14 @@ fn probe(comptime name: []const u8, comptime Xev: type, comptime strategy: Strat
     p.sock = .initFd(fds[0]);
 
     p.armWrite();
-    try spin(&p, 50);
-    p.log("armed; active={d} (partial drain expected first)", .{loop.active});
+    if (same_batch) p.log("write and {s} queued back-to-back", .{@tagName(strategy)});
+    try spin(&p, spins_before_retire);
+    if (!same_batch) p.log("armed; active={d} (partial drain expected first)", .{loop.active});
 
+    // Set before retiring so the write callback stops re-arming: the probe
+    // isolates libxev's behavior, and a real caller (ztls-xev) re-arms
+    // partial writes unconditionally, which is what turns a NotFound cancel
+    // into a zombie.
     p.canceled = true;
     switch (strategy) {
         .cancel => {
@@ -167,15 +199,21 @@ pub fn main() !void {
     std.debug.print("default backend = {t}\n", .{xev.backend});
     switch (builtin.os.tag) {
         .linux => {
-            try probe("io_uring/cancel  ", xev.IO_Uring, .cancel);
-            try probe("io_uring/shutdown", xev.IO_Uring, .shutdown);
-            try probe("epoll/cancel     ", xev.Epoll, .cancel);
+            // The delay before retiring matters: canceling ~25ms after arming
+            // finds the request cleanly cancelable, while canceling on the
+            // next tick — the shape a deadline-driven close takes — races its
+            // startup window. Run both so the difference is visible.
+            try probe("io_uring/cancel-late ", xev.IO_Uring, .cancel, 50);
+            try probe("io_uring/cancel-early", xev.IO_Uring, .cancel, 1);
+            try probe("io_uring/cancel-batch", xev.IO_Uring, .cancel, 0);
+            try probe("io_uring/shutdown    ", xev.IO_Uring, .shutdown, 50);
+            try probe("epoll/cancel       ", xev.Epoll, .cancel, 50);
             // No epoll/shutdown: on a readiness backend the armed write is a
             // registration, not a blocked syscall, so shutdown(2) has nothing
             // to interrupt — the registration sits there with the pipe full
             // and the probe hangs at teardown. CTL_DEL is the retirement.
         },
-        .macos => try probe("kqueue/cancel    ", xev.Kqueue, .cancel),
+        .macos => try probe("kqueue/cancel    ", xev.Kqueue, .cancel, 50),
         else => std.debug.print("unsupported host\n", .{}),
     }
     std.debug.print(

@@ -624,15 +624,18 @@ pub fn ConnWith(comptime Xev: type, comptime role: root.Role) type {
         fn issueCancel(self: *Self) void {
             self.retire_pending = true;
 
-            // An io_uring write cannot be retired by a cancel. With a blocking
-            // fd and a full pipe the request is a kernel worker thread blocked
-            // in the syscall; the cancel interrupts it, and libxev's io_uring
-            // write path re-arms on EINTR, resurrecting the operation as a
-            // zombie that outlives the close — and the Conn, once `deinit`
-            // releases it. A socket shutdown(2) is the retirement that works:
-            // the blocked syscall fails promptly with EPIPE and the target's
-            // own callback resumes the close. Proven by
-            // probe/stuck_write_cancel.zig. Reads cancel cleanly on io_uring,
+            // An io_uring write cannot be retired reliably by a cancel. The
+            // kernel cannot find a request submitted in the same submission
+            // batch — exactly the batching a close produces when the write was
+            // armed from inside a completion callback — so the cancel comes
+            // back NotFound and retires nothing (deterministic;
+            // probe/stuck_write_cancel.zig). Treating "cancel completed" as
+            // "target retired" then lets the write outlive the close, and its
+            // late completion (EPIPE, once the peer finally goes away) lands
+            // on the Conn after `deinit` releases it. A socket shutdown(2) is
+            // the retirement that works regardless of request state: the
+            // blocked syscall fails promptly with EPIPE and the target's own
+            // callback resumes the close. Reads cancel cleanly on io_uring,
             // and the readiness backends retire anything with epoll_ctl(CTL_DEL),
             // so those keep the cancel.
             if (Xev.backend == .io_uring and self.wait == .writing) {
