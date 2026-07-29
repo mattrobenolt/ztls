@@ -60,7 +60,8 @@ pub fn build(b: *Build) void {
     // Fuzz mode uses the default test runner, which speaks the server protocol
     // that `zig build test --fuzz` needs. ztest's `.mode = .simple` bypasses
     // that protocol, so it is only used for normal (non-fuzz) test runs.
-    const fuzz_mode = b.option(bool, "fuzz", "Enable fuzzing (uses the default test runner)") orelse false;
+    const fuzz_mode =
+        b.option(bool, "fuzz", "Enable fuzzing (uses the default test runner)") orelse false;
 
     const build_options = b.addOptions();
     build_options.addOption(Backend, "crypto_backend", crypto_backend);
