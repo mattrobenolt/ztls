@@ -216,7 +216,13 @@ completion callback), so the cancel comes back `NotFound` and retires nothing
 promptly with EPIPE regardless of request state (proven by
 `probe/stuck_write_cancel.zig`).
 
-Worth reporting upstream rather than carrying indefinitely.
+Reported upstream as [mitchellh/libxev#231](https://github.com/mitchellh/libxev/issues/231)
+(the dup leak and endpoint survival), with
+[#230](https://github.com/mitchellh/libxev/issues/230) (the cancel branch
+testing the cancel's own state instead of the target's) and
+[#233](https://github.com/mitchellh/libxev/issues/233) (io_uring cancel
+matching reused `user_data`) from the same investigation; the kqueue close
+abort is [#232](https://github.com/mitchellh/libxev/issues/232).
 
 kqueue does not use the duplicate at all, and its cancellation path is the one
 remaining unproven surface: the abortive close with a read in flight stalls

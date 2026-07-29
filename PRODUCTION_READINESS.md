@@ -718,8 +718,11 @@ duplicate, but the cancellation path (`stop_completion`) only does
 descriptor, and the retained duplicate keeps the socket endpoint alive so the
 peer never observes EOF after the original fd closes. `Conn` serializes transport
 completions, so the duplicate buys nothing here and is cleared before
-registration, with asserts so an upstream change fails loudly. Worth reporting
-upstream rather than carrying indefinitely.
+registration, with asserts so an upstream change fails loudly. Reported
+upstream as mitchellh/libxev#231 (dup leak and endpoint survival),
+mitchellh/libxev#230 (the cancel branch testing the cancel's own state instead
+of the target's — panic on dead targets, silent deregistration on recycled
+fds), and mitchellh/libxev#233 (io_uring cancel matching reused `user_data`).
 
 The write case turned out to be a different defect class than the read case, and
 a nastier one. Keeping a write in flight takes a full pipe (`SO_SNDBUF` clamped,
