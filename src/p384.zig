@@ -17,6 +17,10 @@ pub const secret_length = 48;
 pub const PublicKey = memx.Array(public_length);
 pub const SecretKey = memx.Array(secret_length);
 
+/// Draws `generate` may take before it gives up on the dice — see
+/// `p256.generate_attempts_max`, which this mirrors.
+const generate_attempts_max: u8 = 4;
+
 /// Caller-owned P-384 keypair. The public key is SEC1 uncompressed form:
 /// 0x04 || X || Y (97 bytes for P-384).
 pub const KeyPair = struct {
@@ -26,11 +30,22 @@ pub const KeyPair = struct {
     /// Generate a keypair using the OS CSPRNG. Aborts if the CSPRNG is
     /// unavailable (see `entropy.fill`); use `generateDeterministic` with your
     /// own seed if you need to own entropy or handle failure.
-    pub fn generate() KeyPair {
-        while (true) {
+    ///
+    /// Retries a bad draw, propagates a failing library — the split
+    /// `p256.KeyPair.generate` documents (zoxy-io/zoxy#222).
+    pub fn generate() Error!KeyPair {
+        var attempt: u8 = 1;
+        while (true) : (attempt += 1) {
+            assert(attempt <= generate_attempts_max);
             var secret_key: [secret_length]u8 = undefined;
             entropy.fill(&secret_key);
-            return generateDeterministic(.init(secret_key)) catch continue;
+            return generateDeterministic(.init(secret_key)) catch |err| switch (err) {
+                error.IdentityElement => {
+                    if (attempt == generate_attempts_max) return err;
+                    continue;
+                },
+                error.LibcryptoFailed => return err,
+            };
         }
     }
 

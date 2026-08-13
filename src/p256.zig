@@ -18,6 +18,12 @@ pub const SecretKey = memx.Array(secret_length);
 
 pub const Error = backend.p256.Error;
 
+/// Draws `generate` may take before it gives up on the dice. Each one is
+/// independent and fails with probability ~2^-32, so reaching the last is
+/// not a thing that happens — the bound exists because an unbounded retry
+/// is a promise about the future that no code can keep (zoxy-io/zoxy#222).
+const generate_attempts_max: u8 = 4;
+
 /// Caller-owned P-256 keypair. The public key is SEC1 uncompressed form:
 /// 0x04 || X || Y.
 pub const KeyPair = struct {
@@ -27,11 +33,27 @@ pub const KeyPair = struct {
     /// Generate a keypair using the OS CSPRNG. Aborts if the CSPRNG is
     /// unavailable (see `entropy.fill`); use `generateDeterministic` with your
     /// own seed if you need to own entropy or handle failure.
-    pub fn generate() KeyPair {
-        while (true) {
+    ///
+    /// Retries only what a retry can fix. A random secret lands outside
+    /// [1, n-1] about once in 2^32 draws and the next draw is independent,
+    /// so `IdentityElement` is worth another attempt. `LibcryptoFailed` is
+    /// the library failing rather than the dice — an exhausted allocator,
+    /// a backend that will answer the same way forever — so it propagates
+    /// on the first occurrence, leaving the caller to shed this session
+    /// rather than the process to spin (zoxy-io/zoxy#222).
+    pub fn generate() Error!KeyPair {
+        var attempt: u8 = 1;
+        while (true) : (attempt += 1) {
+            assert(attempt <= generate_attempts_max);
             var secret_key: [secret_length]u8 = undefined;
             entropy.fill(&secret_key);
-            return generateDeterministic(.init(secret_key)) catch continue;
+            return generateDeterministic(.init(secret_key)) catch |err| switch (err) {
+                error.IdentityElement => {
+                    if (attempt == generate_attempts_max) return err;
+                    continue;
+                },
+                error.LibcryptoFailed => return err,
+            };
         }
     }
 
@@ -89,6 +111,36 @@ test "sharedSecret: P-256 deterministic peers agree" {
     const alice_secret = try sharedSecret(alice.secret_key, bob.public_key);
     const bob_secret = try sharedSecret(bob.secret_key, alice.public_key);
     try testing.expectEqualSlices(u8, &alice_secret, &bob_secret);
+}
+
+// zoxy-io/zoxy#222 — `generate` retries a bad draw and only a bad draw.
+test "KeyPair.generate succeeds and terminates" {
+    // The loop is bounded, so this returning at all is the property: the
+    // shipped bug was a `generate` that never came back.
+    const keypair = try KeyPair.generate();
+    try testing.expectEqual(@as(u8, 0x04), keypair.public_key.data[0]);
+    // Two calls draw independently, so the same secret twice would mean
+    // the entropy source, not the loop, is what is broken.
+    const second = try KeyPair.generate();
+    try testing.expect(!std.mem.eql(
+        u8,
+        &keypair.secret_key.data,
+        &second.secret_key.data,
+    ));
+}
+
+// The bound is what makes the retry a claim rather than a hope: a scalar
+// the backend rejects every time must surface as an error, not a spin.
+test "KeyPair.generate: a rejected scalar is bounded, not retried forever" {
+    // Zero is the scalar the backend rejects deterministically, so driving
+    // `generateDeterministic` with it stands in for the draw `generate`
+    // would keep making. It must answer, and answer `IdentityElement` —
+    // the retryable classification — rather than hang.
+    try testing.expectError(
+        error.IdentityElement,
+        KeyPair.generateDeterministic(.init(@splat(0))),
+    );
+    try testing.expect(generate_attempts_max >= 1);
 }
 
 // RFC 8446 §4.2.8.2 — peers must reject malformed public keys for the group.

@@ -10,6 +10,7 @@ const txtar = @import("txtar");
 const ztls = @import("../root.zig");
 const Aead = ztls.aead.Aead;
 const Iv = ztls.aead.Iv;
+const KeyPairs = ztls.ClientHandshake.KeyPairs;
 const RecordBuffer = ztls.RecordBuffer;
 const RecordLayer = ztls.RecordLayer;
 const frame = ztls.frame;
@@ -90,7 +91,7 @@ pub fn benchmarkRecordBufferNext(b: *bench.B) !void {
 
 fn replayHandshake(records: []const u8, out: []u8) !void {
     var hs: ztls.ClientHandshake = .init(.{
-        .keypairs = .init(rfc8448.client_keypair),
+        .keypairs = try .init(rfc8448.client_keypair),
         .host_name = rfc8448.replay_host_name,
         .now_sec = 0,
         .random = rfc8448.client_random,
@@ -162,7 +163,7 @@ fn deterministicServerKeypair() !ztls.x25519.KeyPair {
 
 fn deterministicClientHandshake() ztls.ClientHandshake {
     const client: ztls.ClientHandshake = .init(.{
-        .keypairs = .init(deterministicClientKeypair() catch unreachable),
+        .keypairs = KeyPairs.init(deterministicClientKeypair() catch unreachable) catch unreachable,
         .host_name = "ztls.server.test",
         .now_sec = 0,
         .random = rfc8448.client_random,
@@ -173,7 +174,7 @@ fn deterministicClientHandshake() ztls.ClientHandshake {
 
 fn deterministicServerHandshake() ztls.ServerHandshake {
     return .init(.{
-        .keypairs = .init(deterministicServerKeypair() catch unreachable),
+        .keypairs = KeyPairs.init(deterministicServerKeypair() catch unreachable) catch unreachable,
         .random = rfc8448.server_random,
     });
 }
@@ -183,7 +184,7 @@ fn connectPair(comptime suite: Suite) !struct {
     server: ztls.ServerHandshake,
 } {
     var client: ztls.ClientHandshake = .init(.{
-        .keypairs = .init(try deterministicClientKeypair()),
+        .keypairs = try .init(try deterministicClientKeypair()),
         .host_name = "ztls.server.test",
         .now_sec = 0,
         .random = rfc8448.client_random,
@@ -194,7 +195,7 @@ fn connectPair(comptime suite: Suite) !struct {
     client.completeWrite();
 
     var server: ztls.ServerHandshake = ztls.ServerHandshake.init(.{
-        .keypairs = .init(try deterministicServerKeypair()),
+        .keypairs = try .init(try deterministicServerKeypair()),
         .random = rfc8448.server_random,
     });
     const suites = [_]ztls.CipherSuite{suite.cipherSuite()};

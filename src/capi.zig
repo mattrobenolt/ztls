@@ -156,8 +156,11 @@ fn clientInitInsecureImpl(
         .secret_key = .{ .data = sec_key },
     };
 
+    // A backend that cannot produce the P-256 half is a failure this ABI
+    // reports rather than one it retries past (zoxy-io/zoxy#222).
+    const keypairs = ClientHandshake.KeyPairs.init(keypair) catch |err| return mapError(err);
     const config: Config = .{
-        .keypairs = .init(keypair),
+        .keypairs = keypairs,
         .host_name = host,
         .now_sec = 0,
         .random = .{ .data = random_bytes },
@@ -407,7 +410,7 @@ test "capi: full client handshake through the C ABI" {
 
     // Server setup (native Zig)
     var server: ServerHandshake = .init(.{
-        .keypairs = .init(server_keypair),
+        .keypairs = try .init(server_keypair),
         .random = server_random,
     });
     defer server.deinit();
@@ -605,7 +608,7 @@ fn connectClientAndServerForTest(
     try testing.expectEqual(.ok, init_result);
 
     server.* = .init(.{
-        .keypairs = .init(ztls.x25519.KeyPair.generate()),
+        .keypairs = try .init(ztls.x25519.KeyPair.generate()),
         .random = .{ .data = @splat(0x37) },
     });
     server.setCredentials(&.{&fixtures.server_ecdsa_cert_der}, signer.signer());

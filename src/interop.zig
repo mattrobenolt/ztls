@@ -181,7 +181,7 @@ test "ztls-to-ztls TCP KeyUpdate round trip with ChaCha20-Poly1305" {
             var random: ztls.Random = .empty;
             entropy.fill(&random.data);
             var hs: ztls.ServerHandshake = .init(.{
-                .keypairs = .init(c.server_keypair),
+                .keypairs = try .init(c.server_keypair),
                 .random = random,
             });
             defer hs.deinit();
@@ -280,7 +280,7 @@ test "ztls-to-ztls TCP KeyUpdate round trip with ChaCha20-Poly1305" {
     var random: ztls.Random = .empty;
     entropy.fill(&random.data);
     var hs: ztls.ClientHandshake = .init(.{
-        .keypairs = .init(client_keypair),
+        .keypairs = try .init(client_keypair),
         .host_name = "ztls.server.test",
         .now_sec = 0,
         .random = random,
@@ -494,7 +494,7 @@ fn clientInterop(stream: Stream) !void {
     entropy.fill(&random.data);
 
     var hs: ztls.ClientHandshake = .init(.{
-        .keypairs = .init(kp),
+        .keypairs = try .init(kp),
         .host_name = "localhost",
         .now_sec = 0,
         .random = random,
@@ -569,7 +569,7 @@ fn clientInteropCaptureTicket(stream: Stream) !ztls.ClientHandshake.SessionTicke
     entropy.fill(&random.data);
 
     var hs: ztls.ClientHandshake = .init(.{
-        .keypairs = .init(kp),
+        .keypairs = try .init(kp),
         .host_name = "localhost",
         .now_sec = 0,
         .random = random,
@@ -653,7 +653,7 @@ fn clientInteropResume(stream: Stream, ticket: *const ztls.ClientHandshake.Sessi
     entropy.fill(&random.data);
 
     var hs: ztls.ClientHandshake = .init(.{
-        .keypairs = .init(kp),
+        .keypairs = try .init(kp),
         .host_name = "localhost",
         .now_sec = 0,
         .random = random,
@@ -729,7 +729,7 @@ fn clientEarlyDataInterop(
     entropy.fill(&random.data);
 
     var hs: ztls.ClientHandshake = .init(.{
-        .keypairs = .init(kp),
+        .keypairs = try .init(kp),
         .host_name = "localhost",
         .now_sec = 0,
         .random = random,
@@ -865,7 +865,7 @@ fn serve(stream: Stream, suite: ztls.CipherSuite) !void {
     entropy.fill(&server_random.data);
 
     var hs: ztls.ServerHandshake = .init(.{
-        .keypairs = .init(server_keypair),
+        .keypairs = try .init(server_keypair),
         .random = server_random,
     });
     defer hs.deinit();
@@ -998,7 +998,7 @@ fn serveClientAuth(stream: Stream) !void {
     entropy.fill(&server_random.data);
 
     var hs: ztls.ServerHandshake = .init(.{
-        .keypairs = .init(server_keypair),
+        .keypairs = try .init(server_keypair),
         .random = server_random,
         .client_auth = .required,
         .insecure_no_client_chain_anchor = true,
@@ -1171,7 +1171,7 @@ fn clientInteropWithCreds(stream: Stream) !void {
     entropy.fill(&random.data);
 
     var hs: ztls.ClientHandshake = .init(.{
-        .keypairs = .init(kp),
+        .keypairs = try .init(kp),
         .host_name = "localhost",
         .now_sec = 0,
         .random = random,

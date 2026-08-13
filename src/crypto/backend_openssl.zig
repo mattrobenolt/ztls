@@ -254,9 +254,16 @@ pub fn p256PrivateKeyFromSecret(secret: *const [32]u8) Error!*pkey {
     const ec = c.EC_KEY_new_by_curve_name(c.NID_X9_62_prime256v1) orelse
         return error.LibcryptoFailed;
     errdefer c.EC_KEY_free(ec);
-    if (c.EC_KEY_set_private_key(ec, priv) != 1) return error.LibcryptoFailed;
-    if (c.EC_KEY_set_public_key(ec, public) != 1) return error.LibcryptoFailed;
-    if (c.EC_KEY_check_key(ec) != 1) return error.LibcryptoFailed;
+    // These three judge the *scalar*, not the library's health: they are how
+    // a secret outside [1, n-1] is rejected. Separating them from the
+    // allocation failures around them is what lets a caller tell "draw
+    // again" (`IdentityElement`, ~2^-32 of random secrets) from "this will
+    // fail identically forever" (`LibcryptoFailed` — e.g. the fixed arena
+    // behind `mem_hooks` being full). Conflating the two is what let a
+    // retry loop spin on an unfixable error: zoxy-io/zoxy#222.
+    if (c.EC_KEY_set_private_key(ec, priv) != 1) return error.IdentityElement;
+    if (c.EC_KEY_set_public_key(ec, public) != 1) return error.IdentityElement;
+    if (c.EC_KEY_check_key(ec) != 1) return error.IdentityElement;
 
     const key = c.EVP_PKEY_new() orelse return error.LibcryptoFailed;
     errdefer c.EVP_PKEY_free(key);
@@ -326,9 +333,10 @@ pub fn p384PrivateKeyFromSecret(secret: *const [48]u8) Error!*pkey {
     const ec = c.EC_KEY_new_by_curve_name(c.NID_secp384r1) orelse
         return error.LibcryptoFailed;
     errdefer c.EC_KEY_free(ec);
-    if (c.EC_KEY_set_private_key(ec, priv) != 1) return error.LibcryptoFailed;
-    if (c.EC_KEY_set_public_key(ec, public) != 1) return error.LibcryptoFailed;
-    if (c.EC_KEY_check_key(ec) != 1) return error.LibcryptoFailed;
+    // Scalar validity, not library health — see `p256PrivateKeyFromSecret`.
+    if (c.EC_KEY_set_private_key(ec, priv) != 1) return error.IdentityElement;
+    if (c.EC_KEY_set_public_key(ec, public) != 1) return error.IdentityElement;
+    if (c.EC_KEY_check_key(ec) != 1) return error.IdentityElement;
 
     const key = c.EVP_PKEY_new() orelse return error.LibcryptoFailed;
     errdefer c.EVP_PKEY_free(key);

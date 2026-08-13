@@ -15,8 +15,12 @@ pub const KeyPairs = struct {
     p256: p256.KeyPair,
     p384: ?p384.KeyPair = null,
 
-    pub fn init(x25519_keypair: x25519.KeyPair) KeyPairs {
-        return .{ .x25519 = x25519_keypair, .p256 = .generate() };
+    /// Fallible because generating the P-256 half is: the backend can
+    /// refuse, and a refusal it would repeat is the caller's to handle —
+    /// shed this handshake — not this function's to hide behind a retry
+    /// (zoxy-io/zoxy#222).
+    pub fn init(x25519_keypair: x25519.KeyPair) p256.Error!KeyPairs {
+        return .{ .x25519 = x25519_keypair, .p256 = try .generate() };
     }
 
     pub fn initWithP256(
@@ -47,7 +51,7 @@ pub const KeyPairs = struct {
 };
 
 test "secureZero zeroes all secret material" {
-    var kp: KeyPairs = .initWithP256P384(.generate(), .generate(), .generate());
+    var kp: KeyPairs = .initWithP256P384(.generate(), try .generate(), try .generate());
     kp.secureZero();
     try testing.expect(mem.allEqual(u8, mem.asBytes(&kp), 0));
     // Every byte zero must also leave the optional readable as null, not as a
