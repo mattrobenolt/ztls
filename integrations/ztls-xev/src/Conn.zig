@@ -300,14 +300,14 @@ pub fn ConnWith(comptime Xev: type, comptime role: root.Role) type {
             defer random.secureZero();
 
             const engine: Handshake = if (role == .client) .init(.{
-                .keypairs = .init(keypair),
+                .keypairs = try .init(keypair),
                 .host_name = host,
                 .now_sec = std.Io.Timestamp.now(io, .real).toSeconds(),
                 .random = random,
                 .alpn_protocols = config.alpn,
                 .offer_pq_key_share = config.offer_pq_key_share,
             }) else .init(.{
-                .keypairs = .init(keypair),
+                .keypairs = try .init(keypair),
                 .random = random,
                 .alpn_protocols = config.alpn,
             });

@@ -61,7 +61,7 @@ pub fn main() !void {
     var random: ztls.Random = undefined;
     net.fillRandom(&random.data);
     var hs: ztls.ServerHandshake = .init(.{
-        .keypairs = .init(server_keypair),
+        .keypairs = try .init(server_keypair),
         .random = random,
         .alpn_protocols = &.{"http/1.1"},
     });

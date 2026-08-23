@@ -174,7 +174,7 @@ fn runServer(ctx: *ServerCtx) !void {
     defer keypair.secureZero();
 
     var hs: ztls.ServerHandshake = .init(.{
-        .keypairs = .init(keypair),
+        .keypairs = try .init(keypair),
         .random = .zero,
     });
     defer hs.deinit();

@@ -993,7 +993,7 @@ fn StreamImpl(comptime Hs: type, comptime role: Role, comptime config: Config) t
                     defer random.secureZero();
 
                     const hs: ztls.ClientHandshake = .init(.{
-                        .keypairs = .init(client_keypair),
+                        .keypairs = try .init(client_keypair),
                         .host_name = options.host,
                         .now_sec = Io.Timestamp.now(io, .real).toSeconds(),
                         .random = random,
@@ -1057,7 +1057,7 @@ fn StreamImpl(comptime Hs: type, comptime role: Role, comptime config: Config) t
                     defer random.secureZero();
 
                     const hs: ztls.ServerHandshake = .init(.{
-                        .keypairs = .init(server_keypair),
+                        .keypairs = try .init(server_keypair),
                         .random = random,
                         .alpn_protocols = options.alpn,
                     });
