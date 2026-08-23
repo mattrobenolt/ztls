@@ -80,7 +80,11 @@ const App = struct {
         };
         print("[xev] TCP connected; starting TLS handshake\n", .{});
 
-        self.conn.init(self.io, self.loop, socket, self.config, self.host, self.storage.buffers());
+        self.conn.init(self.io, self.loop, socket, self.config, self.host, self.storage.buffers()) catch |err| {
+            print("[xev] TLS init failed: {t}\n", .{err});
+            self.flags.insert(.failed);
+            return .disarm;
+        };
         self.conn.handshake(self, onHandshake);
         return .disarm;
     }

@@ -287,7 +287,7 @@ pub fn ConnWith(comptime Xev: type, comptime role: root.Role) type {
             config: *const Config,
             host: ?[]const u8,
             buffers: Buffers,
-        ) void {
+        ) ztls.p256.Error!void {
             requireThreadPool(loop);
             assert(buffers.record.len >= RecordBuffer.min_storage);
             assert(buffers.out.len >= frame.max_wire_record_len);

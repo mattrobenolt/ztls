@@ -135,7 +135,11 @@ const Listener = struct {
             self.config,
             null, // SNI is the client's to send; a server reads it, not sets it
             session.storage.buffers(),
-        );
+        ) catch |err| {
+            print("[xev] TLS init failed: {t}\n", .{err});
+            self.pool.destroy(session);
+            return .rearm;
+        };
         session.conn.handshake(session, Session.onHandshake);
         return .rearm;
     }

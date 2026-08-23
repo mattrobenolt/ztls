@@ -395,7 +395,7 @@ test "xev client: handshake, write, read, close_notify" {
     var client: Client = .{ .loop = loop, .request = "ping" };
     defer client.deinit();
 
-    client.conn.init(
+    try client.conn.init(
         std.Io.Threaded.global_single_threaded.io(),
         loop,
         .initFd(fds[0]),
@@ -571,7 +571,7 @@ test "xev server: handshake, echo, and close against an xev client" {
     var pair: Pair = .{ .loop = loop };
     defer pair.client_received.deinit(testing.allocator);
 
-    pair.server.init(
+    try pair.server.init(
         io,
         loop,
         .initFd(fds[1]),
@@ -579,7 +579,7 @@ test "xev server: handshake, echo, and close against an xev client" {
         null,
         pair.server_storage.buffers(),
     );
-    pair.client.init(
+    try pair.client.init(
         io,
         loop,
         .initFd(fds[0]),
@@ -704,8 +704,8 @@ test "xev server: a client that handshakes then leaves without speaking" {
     const io = std.Io.Threaded.global_single_threaded.io();
     var s: Silent = .{ .loop = loop };
 
-    s.server.init(io, loop, .initFd(fds[1]), &server_config, null, s.server_storage.buffers());
-    s.client.init(
+    try s.server.init(io, loop, .initFd(fds[1]), &server_config, null, s.server_storage.buffers());
+    try s.client.init(
         io,
         loop,
         .initFd(fds[0]),
@@ -856,7 +856,7 @@ fn CloseWhileReading(comptime Xev: type) type {
             defer client_config.deinit();
 
             const io = std.Io.Threaded.global_single_threaded.io();
-            s.server.init(
+            try s.server.init(
                 io,
                 loop,
                 .initFd(fds[1]),
@@ -864,7 +864,7 @@ fn CloseWhileReading(comptime Xev: type) type {
                 null,
                 s.server_storage.buffers(),
             );
-            s.client.init(
+            try s.client.init(
                 io,
                 loop,
                 .initFd(fds[0]),
@@ -1130,7 +1130,7 @@ fn CloseWhileWriting(comptime Xev: type) type {
             defer client_config.deinit();
 
             const io = std.Io.Threaded.global_single_threaded.io();
-            s.server.init(
+            try s.server.init(
                 io,
                 loop,
                 .initFd(fds[1]),
@@ -1138,7 +1138,7 @@ fn CloseWhileWriting(comptime Xev: type) type {
                 null,
                 s.server_storage.buffers(),
             );
-            s.client.init(
+            try s.client.init(
                 io,
                 loop,
                 .initFd(fds[0]),
