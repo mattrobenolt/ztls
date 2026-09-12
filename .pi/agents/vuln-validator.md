@@ -2,7 +2,7 @@
 name: vuln-validator
 description: Independent validator that tries to disprove a whitehat-hacker finding without generating new findings.
 tools: bash, grep, find, ls, read, edit, write
-model: fireworks/accounts/fireworks/models/kimi-k2p7-code
+model: fireworks/accounts/fireworks/models/kimi-k3
 thinking: medium
 systemPromptMode: replace
 inheritProjectContext: true

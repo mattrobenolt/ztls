@@ -2,8 +2,8 @@
 name: security-reviewer
 description: Adversarial TLS/crypto/security reviewer for ztls state machines, parsers, certificate policy, alerts, and secret lifetime.
 tools: bash, grep, find, ls, read, webfetch, websearch
-model: fireworks/accounts/fireworks/models/kimi-k2p7-code
-thinking: medium
+model: fireworks/accounts/fireworks/models/kimi-k3
+thinking: max
 systemPromptMode: replace
 inheritProjectContext: true
 inheritSkills: true
