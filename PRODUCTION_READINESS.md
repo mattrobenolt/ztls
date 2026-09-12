@@ -1031,26 +1031,17 @@ each passing the same correctness and interop gates.
 - `src/signature.zig` keeps the caller-facing `Signer` vtable for server
   signing, and its concrete `PrivateKey` helper now routes PEM/DER/scalar key
   loading and signing through `src/crypto/backend.zig`. `PrivateKey` also
-  carries a `nonce_mode` option (`NonceMode`, RFC 6979,
-  mattrobenolt/ztls#82): the default `.random` is the production path;
-  `.deterministic` makes an ECDSA CertificateVerify byte-reproducible
-  (making a seeded handshake transcript byte-exact). The compiled
-  capability is `backend.sign.supportsDeterministicNonce()`, derived at
-  compile time from the backend not being BoringSSL-family and
-  `OSSL_SIGNATURE_PARAM_NONCE_TYPE` existing in the translated headers
-  (OpenSSL 3.2+); that is compiled support only — the linked provider or key
-  can still reject the parameter, so the per-key settable-params probe makes
-  every rejection a loud `error.DeterministicNonceUnsupported` (BoringSSL
-  family, non-ECDSA schemes such as RSA-PSS, or a provider without the
-  parameter) rather than a silently random nonce. Proven by the RFC 6979
-  §A.2.5 and §A.2.6 vectors under OpenSSL (the A.2.6 P-384/SHA-384 KAT
-  mutation-checked red under a random nonce) and the rejection-contract
-  assertions under AWS-LC (`src/signature.zig` tests). Pre-3.2-header
-  compile behavior was validated by simulation: a doctored copy of the
-  OpenSSL 3.6.3 headers with only `OSSL_SIGNATURE_PARAM_NONCE_TYPE`
-  removed compiles red on the pre-gate code and compiles green with the
-  rejection assertions passing on the gated code — a header-overlay
-  simulation, not an actual OpenSSL 3.0 runtime validation.
+  carries a `nonce_mode` option (`NonceMode`, RFC 6979, mattrobenolt/ztls#82):
+  default `.random`; `.deterministic` makes an ECDSA CertificateVerify
+  byte-reproducible. Capability is compiled support only
+  (`supportsDeterministicNonce()`: not BoringSSL-family and the nonce-type
+  macro in the headers); the provider can still reject, and unsupported
+  requests fail loudly (`DeterministicNonceUnsupported`, or
+  `LibcryptoFailed` on a provider set-params rejection) — never a silently
+  random nonce. Proven by the RFC 6979 §A.2.5 and §A.2.6 KATs (A.2.6
+  mutation-checked red under a random nonce) plus the AWS-LC rejection
+  assertions; pre-3.2-header compile behavior validated by header-overlay
+  simulation only, not an actual OpenSSL 3.0 runtime.
 - `src/certificate.zig` routes CertificateVerify public-key construction and
   signature verification through `src/crypto/backend.zig`; certificate parsing,
   chain signature verification, and path policy remain ztls/std-derived code.

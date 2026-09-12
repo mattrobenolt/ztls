@@ -501,6 +501,7 @@ Low-level in-memory hooks used by `examples/in_memory_handshake.zig`: `acceptCli
 - `signature.PrivateKey.fromP256Scalar(scalar)` is useful for fixtures and examples that carry a raw P-256 scalar.
 - `signature.PrivateKey.signer()` borrows a `signature.Signer` vtable for `setCredentials`.
 - `signature.PrivateKey.deinit()` releases libcrypto key material.
+- `signature.PrivateKey.nonce_mode` selects the ECDSA nonce strategy (`signature.NonceMode`): the default `.random` is the production path; `.deterministic` opts into RFC 6979 deterministic nonces so identical key and message produce identical signature bytes, which makes a seeded handshake transcript byte-reproducible. It requires a backend compiled with nonce-type provider support and an ECDSA scheme; unsupported requests fail loudly — `error.DeterministicNonceUnsupported` for a missing capability or non-ECDSA scheme, `error.LibcryptoFailed` when the provider rejects the parameter — instead of silently signing with a random nonce. Keep `.random` in production.
 - `SignatureScheme` names the TLS signature scheme used with a loaded key, including `rsa_pss_rsae_sha256`, `ecdsa_secp256r1_sha256`, `ecdsa_secp384r1_sha384`, and `ed25519`.
 - `x25519.KeyPair.generate()` creates a fresh ephemeral X25519 keypair.
 - `x25519.KeyPair.generateDeterministic(seed)` and `x25519.sharedSecret(secret_key, peer_public_key)` are lower-level primitives for tests and fixed-vector paths.

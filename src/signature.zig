@@ -17,14 +17,14 @@ pub const Signer = struct {
 pub const PrivateKey = struct {
     scheme: SignatureScheme,
     key: *backend.sign.pkey,
-    /// Opt-in RFC 6979 deterministic ECDSA nonces (mattrobenolt/ztls#82):
-    /// `.deterministic` makes identical key and message yield identical
-    /// signature bytes, so a seeded handshake transcript is reproducible
-    /// byte-for-byte. Requires a backend compiled with nonce-type provider
-    /// support (OpenSSL 3.2+ headers) and an ECDSA scheme; any other
-    /// combination fails with error.DeterministicNonceUnsupported rather
-    /// than silently signing with a random nonce. Production signing keeps
-    /// the default `.random`.
+    /// RFC 6979 nonce strategy (mattrobenolt/ztls#82): `.deterministic`
+    /// makes identical key and message yield identical signature bytes for
+    /// byte-reproducible seeded transcripts. Requires compiled nonce-type
+    /// provider support and an ECDSA scheme; unsupported requests fail
+    /// loudly — error.DeterministicNonceUnsupported for a missing
+    /// capability or non-ECDSA scheme, error.LibcryptoFailed when the
+    /// provider rejects the parameter — rather than silently signing with
+    /// a random nonce. Production signing keeps the default `.random`.
     nonce_mode: NonceMode = .random,
 
     pub fn fromDer(scheme: SignatureScheme, der: []const u8) SignError!PrivateKey {
@@ -162,51 +162,21 @@ test "PrivateKey.sign: deterministic ECDSA P-384 matches the RFC 6979 A.2.6 vect
         return;
     }
 
-    // The RFC publishes r and s, not a DER blob, and DER INTEGERs may carry
-    // a leading zero pad byte (OpenSSL emits one even when the high bit is
-    // clear), so decode the two INTEGERs and compare against the vector's
-    // values instead of raw signature bytes.
-    const r = "94EDBB92A5ECB8AAD4736E56C691916B3F88140666CE9FA73D64C4EA95AD133C" ++
-        "81A648152E44ACF96E36DD1E80FABE46";
-    const s = "99EF4AEB15F178CEA1FE40DB2603138F130E740A19624526203B6351D0A3A94F" ++
-        "A329C145786E679E7B82C71A38628AC8";
-    var expected_r: [48]u8 = undefined;
-    var expected_s: [48]u8 = undefined;
-    _ = try std.fmt.hexToBytes(&expected_r, r);
-    _ = try std.fmt.hexToBytes(&expected_s, s);
+    // DER SEQUENCE of the vector's r and s; both have the high bit set,
+    // so each carries a leading zero pad byte.
+    var expected: [104]u8 = undefined;
+    _ = try std.fmt.hexToBytes(&expected, "3066" ++
+        "023100" ++ "94EDBB92A5ECB8AAD4736E56C691916B3F88140666CE9FA73D64C4EA95AD133C" ++
+        "81A648152E44ACF96E36DD1E80FABE46" ++
+        "023100" ++ "99EF4AEB15F178CEA1FE40DB2603138F130E740A19624526203B6351D0A3A94F" ++
+        "A329C145786E679E7B82C71A38628AC8");
 
-    var sig: [106]u8 = undefined;
+    var sig: [104]u8 = undefined;
     const out = try key.sign("sample", &sig);
-    try expectEcDsaSigIntegers(out, &expected_r, &expected_s);
+    try testing.expectEqualSlices(u8, &expected, out);
 
-    var again: [106]u8 = undefined;
+    var again: [104]u8 = undefined;
     try testing.expectEqualSlices(u8, out, try key.sign("sample", &again));
-}
-
-// RFC 6979 appendix A.2 vectors publish r and s as fixed-width integers,
-// not DER. A DER INTEGER may open with a zero pad byte, so decode both
-// INTEGERs of the signature's SEQUENCE and compare the pad-stripped values.
-// Short-form lengths only: a P-384 signature is at most ~107 bytes.
-fn expectEcDsaSigIntegers(
-    der: []const u8,
-    expected_r: *const [48]u8,
-    expected_s: *const [48]u8,
-) !void {
-    try testing.expect(der.len >= 8);
-    try testing.expectEqual(@as(u8, 0x30), der[0]); // SEQUENCE
-    try testing.expectEqual(der.len - 2, der[1]);
-    var i: usize = 2;
-    const integers = [_]*const [48]u8{ expected_r, expected_s };
-    for (integers) |expected| {
-        try testing.expectEqual(@as(u8, 0x02), der[i]); // INTEGER
-        const int_len: usize = der[i + 1];
-        i += 2;
-        const integer = der[i .. i + int_len];
-        i += int_len;
-        const value = if (integer[0] == 0) integer[1..] else integer;
-        try testing.expectEqualSlices(u8, expected, value);
-    }
-    try testing.expectEqual(der.len, i);
 }
 
 // A scheme with no RFC 6979 to follow cannot honor the request — fail

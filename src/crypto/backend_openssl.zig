@@ -533,22 +533,16 @@ pub const SignatureError = error{
 /// error sets (mattrobenolt/ztls#82).
 pub const SignError = SignatureError || error{DeterministicNonceUnsupported};
 
-/// Selects the ECDSA nonce strategy passed through the sign seam
-/// (mattrobenolt/ztls#82). `.random` is the default production path;
-/// `.deterministic` requests RFC 6979 deterministic-k for byte-reproducible
-/// signatures. Re-exported by the backend facade and `signature.zig`.
+/// ECDSA nonce strategy for the sign seam (mattrobenolt/ztls#82):
+/// `.random` (default) or `.deterministic` RFC 6979 deterministic-k.
 pub const NonceMode = enum {
     random,
     deterministic,
 };
 
-/// Whether this backend was compiled with RFC 6979 deterministic-nonce
-/// support. The OpenSSL family exposes the "nonce-type" provider parameter
-/// via OSSL_SIGNATURE_PARAM_NONCE_TYPE (OpenSSL 3.2+); the BoringSSL family
-/// has no equivalent and the macro is absent from its headers. This is
-/// compiled support only — the linked provider or key can still reject the
-/// parameter at runtime, so `configureDeterministicNonce` retains its
-/// per-key settable-params probe with no silent random-nonce fallback.
+/// Whether the translated headers carry the nonce-type signature parameter
+/// (OpenSSL 3.2+; absent from BoringSSL-family headers). Compiled support
+/// only — the provider can still reject the parameter at runtime.
 pub const supports_deterministic_nonce = !is_boringssl_family and
     @hasDecl(c, "OSSL_SIGNATURE_PARAM_NONCE_TYPE");
 
@@ -642,19 +636,11 @@ pub fn rsaPublicKeyFromDer(pub_key: []const u8) SignatureError!*pkey {
     return key;
 }
 
-// RFC 6979 deterministic ECDSA nonces (mattrobenolt/ztls#82): opt-in for
-// reproducible CertificateVerify transcripts. The capability is derived at
-// compile time from OSSL_SIGNATURE_PARAM_NONCE_TYPE being present in the
-// translated headers, and this function comptime-gates on the same constant,
-// which prunes every provider-parameter reference when the macro is absent
-// (OpenSSL pre-3.2 headers, BoringSSL family). Compiled support is necessary
-// but not sufficient: the linked provider or key can still reject the
-// parameter, so the per-key settable-params probe turns that into a loud
-// error rather than a silently random nonce. Error identity: an RSA-PSS (or
-// any non-ECDSA) deterministic request is rejected with the same
-// DeterministicNonceUnsupported, and a scheme unknown to signatureDigest
-// fails UnsupportedSignatureScheme earlier, before the nonce request is
-// examined.
+// RFC 6979 deterministic ECDSA nonces (mattrobenolt/ztls#82). The comptime
+// gate prunes the provider-parameter path when the headers lack the macro;
+// the per-key settable-params probe stays because compiled support does not
+// bind the provider, and a silently random nonce is the failure this option
+// exists to prevent.
 fn configureDeterministicNonce(
     pctx: ?*c.EVP_PKEY_CTX,
     scheme: SignatureScheme,
