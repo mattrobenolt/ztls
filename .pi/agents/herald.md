@@ -2,8 +2,8 @@
 name: herald
 description: Owns ztls public-facing voice, branding, positioning, and user-facing docs. Writes the README, the why-ztls story, and the front door. Internal doc consistency belongs to docs-librarian; herald speaks outward.
 tools: bash, grep, find, ls, read, edit, write, webfetch
-model: anthropic/claude-opus-4-8
-thinking: medium
+model: anthropic/claude-fable-5-1
+thinking: high
 systemPromptMode: replace
 inheritProjectContext: true
 inheritSkills: true

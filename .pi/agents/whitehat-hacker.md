@@ -2,8 +2,8 @@
 name: whitehat-hacker
 description: Opus-grade vulnerability hunter/tracer for scoped ztls attack classes, hostile input, memory corruption, and exploitability proof loops.
 tools: bash, grep, find, ls, read, edit, write, webfetch, websearch
-model: anthropic/opus-4-8
-thinking: high
+model: openai-codex/gpt-6-astra
+thinking: max
 systemPromptMode: replace
 inheritProjectContext: true
 inheritSkills: true
