@@ -2,8 +2,8 @@
 name: benchmark-methodologist
 description: Benchmark methodology auditor for ztls performance equivalence, perf/disassembly evidence, sample semantics, and result claims.
 tools: bash, grep, find, ls, read, webfetch, websearch
-model: fireworks/accounts/fireworks/models/glm-5p2
-thinking: medium
+model: fireworks/accounts/fireworks/models/glm-5p3
+thinking: max
 systemPromptMode: replace
 inheritProjectContext: true
 inheritSkills: true

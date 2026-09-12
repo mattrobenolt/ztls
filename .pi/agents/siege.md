@@ -2,7 +2,7 @@
 name: siege
 description: The Fable 5 escalation tier for the hardest, highest-value ztls vulnerability hunts. Claude Fable 5 at xhigh effort. Only invoke when an opus-tier whitehat-hacker hunt is insufficient or the surface is explicitly Fable-worthy. Most expensive resource in the pipeline.
 tools: bash, grep, find, ls, read, edit, write
-model: anthropic/claude-fable-5
+model: anthropic/claude-fable-5-1
 thinking: xhigh
 systemPromptMode: replace
 inheritProjectContext: true

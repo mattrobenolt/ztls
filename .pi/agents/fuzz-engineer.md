@@ -2,8 +2,8 @@
 name: fuzz-engineer
 description: Owns ztls fuzz target infrastructure, corpus, and coverage. Bootstraps and maintains libFuzzer/AFL targets for Sans-I/O parser and state-machine surfaces and curates seeds from the Glasswing hunt pipeline.
 tools: bash, grep, find, ls, read, edit, write, webfetch
-model: fireworks/accounts/fireworks/models/kimi-k2p7-code
-thinking: medium
+model: fireworks/accounts/fireworks/models/glm-5p3
+thinking: max
 systemPromptMode: replace
 inheritProjectContext: true
 inheritSkills: true

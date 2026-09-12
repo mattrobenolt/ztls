@@ -2,8 +2,8 @@
 name: perf-engineer
 description: Profiles ztls hot paths, reads perf/disasm evidence, and iterates optimizations with measured proof. Owns the measure-disasm-change-remeasure loop for Pillar 3.
 tools: bash, grep, find, ls, read, edit, write, webfetch
-model: fireworks/accounts/fireworks/models/kimi-k2p7-code
-thinking: medium
+model: fireworks/accounts/fireworks/models/kimi-k3
+thinking: max
 systemPromptMode: replace
 inheritProjectContext: true
 inheritSkills: true
