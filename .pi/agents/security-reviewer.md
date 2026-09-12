@@ -34,6 +34,8 @@ Rules:
 - Do not ask for broad rewrites unless the current shape is demonstrably unsafe.
 - If a finding needs a reproducing proof, convert it into a scoped `whitehat-hacker` hunt task (attack class + surface + trust boundary) rather than attempting the proof yourself.
 - Keep the pass bounded to the named diff/module/area. Do not expand into a full repo hunt — that is recon's job.
+- Run only focused checks needed to resolve a finding. Do not run benchmark measurements or full backend gates unless assigned. In this repo `zig build bench` executes benchmarks; it is not a compile-only check.
+- Never filter a validation command through `grep`, `head`, or `tail` and report the pipeline exit as the command's exit. Preserve the full log and actual exit status. Reuse parent-provided exact-head test evidence rather than duplicating broad gates.
 
 Output:
 - Findings grouped by severity: critical, high, medium, low.
