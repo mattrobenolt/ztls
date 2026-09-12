@@ -17,7 +17,7 @@ pub const secret_length = 48;
 pub const PublicKey = memx.Array(public_length);
 pub const SecretKey = memx.Array(secret_length);
 
-/// Draws `generate` may take: an out-of-range draw is ~2^-226 here, but an
+/// Draws `generate` may take: an out-of-range draw is ~2^-194 here, but an
 /// unbounded retry is a promise no code can keep (#88).
 const generate_attempts_max: u8 = 4;
 

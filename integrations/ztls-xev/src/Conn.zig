@@ -269,6 +269,8 @@ pub fn ConnWith(comptime Xev: type, comptime role: root.Role) type {
         /// Wrap a CONNECTED `Xev.TCP` socket. Does not start the handshake — call
         /// `handshake` for that, so a caller doing pre-TLS protocol detection has a
         /// place to stand.
+        /// On error, `self.*` is untouched and the socket remains caller-owned:
+        /// close the socket directly; do not call `deinit` on `self`.
         ///
         /// `io` is used only to seed the handshake random and, client-side, the
         /// certificate validity clock; libxev owns all actual I/O. `host` is SNI plus

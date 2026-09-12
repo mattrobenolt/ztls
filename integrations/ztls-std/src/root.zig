@@ -975,6 +975,7 @@ fn StreamImpl(comptime Hs: type, comptime role: Role, comptime config: Config) t
         /// field `deinit` reads — is initialized by hand to keep the
         /// documented failure contract (a later `deinit` is a no-op), and
         /// the owned socket is closed before the error is returned.
+        /// Never use on an initialized stream; use `deinit` instead.
         pub fn abortBeforeInit(s: *Self, io: Io, sock: net.Stream) void {
             sock.close(io);
             s.flags = .initOne(.closed);
