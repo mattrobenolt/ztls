@@ -567,11 +567,21 @@ test "abortBeforeInit: peer sees EOF and deinit stays a no-op" {
     var fds: [2]posix.fd_t = undefined;
     try testing.expectEqual(@as(c_int, 0), std.c.socketpair(
         posix.AF.UNIX,
-        posix.SOCK.STREAM | posix.SOCK.NONBLOCK,
+        posix.SOCK.STREAM,
         0,
         &fds,
     ));
     defer _ = std.c.close(fds[0]);
+
+    // Darwin does not accept SOCK_NONBLOCK in socketpair's type argument.
+    const flags = std.c.fcntl(fds[0], posix.F.GETFL);
+    try testing.expect(flags >= 0);
+    const nonblock: posix.O = .{ .NONBLOCK = true };
+    try testing.expectEqual(@as(c_int, 0), std.c.fcntl(
+        fds[0],
+        posix.F.SETFL,
+        flags | @as(c_int, @bitCast(nonblock)),
+    ));
 
     var client: tls.Client = undefined;
     client.abortBeforeInit(io, streamFor(fds[1]));
