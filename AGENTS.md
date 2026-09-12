@@ -96,6 +96,14 @@ todo and the readiness doc say partial. Never close a todo or upgrade a status o
 the strength of a commit that only moves toward the goal. Honest partial beats
 false done.
 
+**Preserve Git identity.** Agents must not invent author or committer identities.
+Use the configured maintainer identity for agent-authored changes. Preserve real
+contributor attribution. Before each commit, inspect `git var GIT_AUTHOR_IDENT`
+and `git var GIT_COMMITTER_IDENT`. If either identity is missing or unexpected,
+stop and report it. Do not change Git identity configuration or override identity
+through environment variables. Before publication, inspect the raw author and
+committer fields with `git log --format=fuller` for every new commit.
+
 **Respect workspace ownership.** The root is the ztls library workspace; domain
 subprojects such as `conformance/` own their local build/test/fmt/lint workflows
 and should be usable from inside that directory. Root just recipes may delegate
