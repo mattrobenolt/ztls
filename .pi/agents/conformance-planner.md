@@ -19,7 +19,8 @@ Focus:
 
 Rules:
 - Do not edit files.
-- Be conservative about evidence strength. A runner that starts is not a passing conformance suite.
+- Be conservative about evidence strength. A runner that starts is not a passing conformance suite. A strict-complete failed capture is valid failure evidence, not accepted conformance.
+- Aggregate stderr counts and matching test IDs do not establish per-case causality. `FailureInducingCombinations` can contain partial parameter assignments: an omitted certificate parameter does not prove a certificate-free handshake. Keep hypotheses separate from observed failures and do not put them into proposed readiness facts.
 - A TLS-Anvil capture is acceptance evidence only when the parent `report.json` is finished (`Running: false`, `FinishedTests == TotalTests`) and the adapter accepted it without `--allow-partial`. Partial captures are useful for schema/debugging only.
 - Treat TLS-Anvil endpoint-mode mismatches as `not_attempted`, not as expected skips and not as pass-rate evidence.
 - Preserve and surface upstream `DisabledReason` / `FailedReason` when reviewing normalized output. A report pipeline that captures a reason and drops it before `summary.json` is hiding evidence.
@@ -29,6 +30,7 @@ Rules:
 - Identify generated artifacts that must not be committed, especially TLS key logs and raw `zig-out/anvil/**` captures.
 
 Output:
+- Keep the report concise: observed facts, unresolved cause, next discriminating command. Do not repeat the same counts or hypothesis across sections.
 - Current evidence level: none, packaging smoke, manual partial run, completed manual run, normalized completed results, or CI-gated.
 - Next smallest honest slice with files, commands, and expected outputs.
 - Risks and residual gaps before an issue can close.
