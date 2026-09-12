@@ -2,6 +2,7 @@
 const std = @import("std");
 
 const c = @import("c_openssl.zig").openssl;
+const is_boringssl_family = @import("c_openssl.zig").is_boringssl_family;
 const CipherSuite = @import("../cipher_suite.zig").CipherSuite;
 const SignatureScheme = @import("../signature_scheme.zig").SignatureScheme;
 
@@ -543,6 +544,24 @@ pub const SignatureError = error{
     UnsupportedSignatureScheme,
 };
 
+/// signatureSign-only extension: verification and key loading can never
+/// fail this way, so the deterministic-nonce error stays out of their
+/// error sets (mattrobenolt/ztls#82).
+pub const SignError = SignatureError || error{DeterministicNonceUnsupported};
+
+/// ECDSA nonce strategy for the sign seam (mattrobenolt/ztls#82):
+/// `.random` (default) or `.deterministic` RFC 6979 deterministic-k.
+pub const NonceMode = enum {
+    random,
+    deterministic,
+};
+
+/// Whether the translated headers carry the nonce-type signature parameter
+/// (OpenSSL 3.2+; absent from BoringSSL-family headers). Compiled support
+/// only — the provider can still reject the parameter at runtime.
+pub const supports_deterministic_nonce = !is_boringssl_family and
+    @hasDecl(c, "OSSL_SIGNATURE_PARAM_NONCE_TYPE");
+
 pub const EcCurve = enum {
     secp256r1,
     secp384r1,
@@ -633,12 +652,40 @@ pub fn rsaPublicKeyFromDer(pub_key: []const u8) SignatureError!*pkey {
     return key;
 }
 
+// RFC 6979 deterministic ECDSA nonces (mattrobenolt/ztls#82). The comptime
+// gate prunes the provider-parameter path when the headers lack the macro;
+// the per-key settable-params probe stays because compiled support does not
+// bind the provider, and a silently random nonce is the failure this option
+// exists to prevent.
+fn configureDeterministicNonce(
+    pctx: ?*c.EVP_PKEY_CTX,
+    scheme: SignatureScheme,
+) SignError!void {
+    if (comptime !supports_deterministic_nonce)
+        return error.DeterministicNonceUnsupported;
+    switch (scheme) {
+        .ecdsa_secp256r1_sha256, .ecdsa_secp384r1_sha384 => {},
+        else => return error.DeterministicNonceUnsupported,
+    }
+    const settable = c.EVP_PKEY_CTX_settable_params(pctx);
+    if (c.OSSL_PARAM_locate_const(settable, c.OSSL_SIGNATURE_PARAM_NONCE_TYPE) == null)
+        return error.DeterministicNonceUnsupported;
+    var nonce_type: c_uint = 1; // 1 = deterministic-k (RFC 6979).
+    var params = [_]c.OSSL_PARAM{
+        c.OSSL_PARAM_construct_uint(c.OSSL_SIGNATURE_PARAM_NONCE_TYPE, &nonce_type),
+        c.OSSL_PARAM_construct_end(),
+    };
+    if (c.EVP_PKEY_CTX_set_params(pctx, &params) != 1) return error.LibcryptoFailed;
+}
+
+// ziglint-ignore: Z015 -- SignError is a public error-set alias.
 pub fn signatureSign(
     key: *pkey,
     scheme: SignatureScheme,
     msg: []const u8,
     out: []u8,
-) SignatureError![]const u8 {
+    nonce_mode: NonceMode,
+) SignError![]const u8 {
     const md = try signatureDigest(scheme);
     const ctx = c.EVP_MD_CTX_new() orelse return error.LibcryptoFailed;
     defer c.EVP_MD_CTX_free(ctx);
@@ -646,6 +693,7 @@ pub fn signatureSign(
     var pctx: ?*c.EVP_PKEY_CTX = null;
     if (c.EVP_DigestSignInit(ctx, &pctx, md, null, key) != 1) return error.LibcryptoFailed;
     try configureRsaPss(pctx, scheme, md);
+    if (nonce_mode == .deterministic) try configureDeterministicNonce(pctx, scheme);
     if (c.EVP_DigestSignUpdate(ctx, msg.ptr, msg.len) != 1) return error.LibcryptoFailed;
 
     var required_len: usize = 0;

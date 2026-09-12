@@ -291,6 +291,12 @@ pub const aead = struct {
 
 pub const sign = struct {
     pub const Error = sign_impl.SignatureError;
+    pub const SignError = sign_impl.SignError;
+    pub const NonceMode = sign_impl.NonceMode;
+
+    pub inline fn supportsDeterministicNonce() bool {
+        return sign_impl.supports_deterministic_nonce;
+    }
     pub const EcCurve = sign_impl.EcCurve;
     pub const pkey = sign_impl.pkey;
 
@@ -323,8 +329,9 @@ pub const sign = struct {
         scheme: SignatureScheme,
         msg: []const u8,
         out: []u8,
-    ) Error![]const u8 {
-        return sign_impl.signatureSign(key, scheme, msg, out);
+        nonce_mode: NonceMode,
+    ) SignError![]const u8 {
+        return sign_impl.signatureSign(key, scheme, msg, out, nonce_mode);
     }
 
     pub inline fn verify(

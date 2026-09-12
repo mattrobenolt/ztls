@@ -15,8 +15,10 @@ const is_boringssl_backend = build_options.crypto_backend == .boringssl;
 // does ship openssl/params.h but the provider symbols (OSSL_PARAM,
 // EVP_PKEY_fromdata, EVP_PKEY_CTX_new_from_name) are absent, so we exclude
 // it the same as AWS-LC — the legacy EC_KEY/EVP_DigestSign path is the only
-// key-construction/signature path.
-const is_boringssl_family = is_aws_lc_backend or is_boringssl_backend;
+// key-construction/signature path. Pub so backend code can comptime-gate
+// provider-parameter features (e.g. the RFC 6979 nonce-type,
+// mattrobenolt/ztls#82).
+pub const is_boringssl_family = is_aws_lc_backend or is_boringssl_backend;
 
 pub const openssl = @cImport({
     if (is_boringssl_family) @cInclude("openssl/base.h");

@@ -1079,7 +1079,18 @@ each passing the same correctness and interop gates.
   keypair/secret shape to the handshake.
 - `src/signature.zig` keeps the caller-facing `Signer` vtable for server
   signing, and its concrete `PrivateKey` helper now routes PEM/DER/scalar key
-  loading and signing through `src/crypto/backend.zig`.
+  loading and signing through `src/crypto/backend.zig`. `PrivateKey` also
+  carries a `nonce_mode` option (`NonceMode`, RFC 6979, mattrobenolt/ztls#82):
+  default `.random`; `.deterministic` makes an ECDSA CertificateVerify
+  byte-reproducible. Capability is compiled support only
+  (`supportsDeterministicNonce()`: not BoringSSL-family and the nonce-type
+  macro in the headers); the provider can still reject, and unsupported
+  requests fail loudly (`DeterministicNonceUnsupported`, or
+  `LibcryptoFailed` on a provider set-params rejection) — never a silently
+  random nonce. Proven by the RFC 6979 §A.2.5 and §A.2.6 KATs (A.2.6
+  mutation-checked red under a random nonce) plus the AWS-LC rejection
+  assertions; pre-3.2-header compile behavior validated by header-overlay
+  simulation only, not an actual OpenSSL 3.0 runtime.
 - `src/certificate.zig` routes CertificateVerify public-key construction and
   signature verification through `src/crypto/backend.zig`; certificate parsing,
   chain signature verification, and path policy remain ztls/std-derived code.
