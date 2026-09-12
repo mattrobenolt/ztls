@@ -246,20 +246,10 @@ pub fn p256PrivateKeyFromSecret(secret: *const [32]u8) Error!*pkey {
     const priv = c.BN_bin2bn(secret, secret.len, null) orelse return error.LibcryptoFailed;
     defer c.BN_clear_free(priv);
 
-    // Judge the scalar before any point math: it must lie in [1, n-1]
-    // (SEC 1 §3.2.1). The order lookup and its BIGNUM/BN_CTX can fail — that
-    // is the library, `LibcryptoFailed` — but the judgment itself
-    // (`BN_is_zero`/`BN_cmp`) cannot fail, so an `IdentityElement` here is
-    // always the caller's data. That split is what lets a caller tell "draw
-    // again" (`IdentityElement`, ~2^-32 of random secrets) from "this will
-    // fail identically forever" (`LibcryptoFailed`) — the distinction whose
-    // loss livelocked `generate` on a terminal backend failure (#88).
-    const bn_ctx = c.BN_CTX_new() orelse return error.LibcryptoFailed;
-    defer c.BN_CTX_free(bn_ctx);
-    const order = c.BN_new() orelse return error.LibcryptoFailed;
-    defer c.BN_free(order);
-    if (c.EC_GROUP_get_order(group, order, bn_ctx) != 1)
-        return error.LibcryptoFailed;
+    // Scalar range check [1, n-1] (SEC 1 §3.2.1) before any point math, so
+    // `IdentityElement` can only mean an invalid scalar — a library failure
+    // is `LibcryptoFailed` and not retryable (#88).
+    const order = c.EC_GROUP_get0_order(group) orelse return error.LibcryptoFailed;
     if (c.BN_is_zero(priv) == 1 or c.BN_cmp(priv, order) >= 0)
         return error.IdentityElement;
 
@@ -338,14 +328,8 @@ pub fn p384PrivateKeyFromSecret(secret: *const [48]u8) Error!*pkey {
     defer c.BN_clear_free(priv);
 
     // Scalar range check [1, n-1] before point math — see
-    // `p256PrivateKeyFromSecret` (#88) for why the judgment and the order
-    // lookup are split across the two error values.
-    const bn_ctx = c.BN_CTX_new() orelse return error.LibcryptoFailed;
-    defer c.BN_CTX_free(bn_ctx);
-    const order = c.BN_new() orelse return error.LibcryptoFailed;
-    defer c.BN_free(order);
-    if (c.EC_GROUP_get_order(group, order, bn_ctx) != 1)
-        return error.LibcryptoFailed;
+    // `p256PrivateKeyFromSecret` (#88).
+    const order = c.EC_GROUP_get0_order(group) orelse return error.LibcryptoFailed;
     if (c.BN_is_zero(priv) == 1 or c.BN_cmp(priv, order) >= 0)
         return error.IdentityElement;
 

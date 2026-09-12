@@ -18,10 +18,8 @@ pub const SecretKey = memx.Array(secret_length);
 
 pub const Error = backend.p256.Error;
 
-/// Draws `generate` may take before it gives up on the dice. Each one is
-/// independent and fails with probability ~2^-32, so reaching the last is
-/// not a thing that happens — the bound exists because an unbounded retry
-/// is a promise about the future that no code can keep (#88).
+/// Draws `generate` may take: each fails independently with probability
+/// ~2^-32, but an unbounded retry is a promise no code can keep (#88).
 const generate_attempts_max: u8 = 4;
 
 /// Caller-owned P-256 keypair. The public key is SEC1 uncompressed form:
@@ -52,15 +50,8 @@ const EntropyAttempt = struct {
     }
 };
 
-/// The #88 retry policy, on the record: retry only what another draw can
-/// fix. A random secret lands outside [1, n-1] about once in 2^32 draws and
-/// the next draw is independent, so `IdentityElement` earns one more
-/// attempt. `LibcryptoFailed` is the library failing — an exhausted
-/// allocator answers the same way forever — so it propagates on the first
-/// occurrence and the caller sheds the session instead of the process
-/// spinning. The bound keeps even a misclassification from livelocking.
-/// `Attempt` is a comptime type so tests can drive the policy with a
-/// counting draw source; no runtime function pointers involved.
+/// The #88 retry policy: retry a bad draw (an invalid scalar, ~2^-32 of
+/// draws), propagate a backend failure on the first occurrence.
 fn generateRetry(comptime Attempt: type) Error!KeyPair {
     var attempt: u8 = 1;
     while (true) : (attempt += 1) {
@@ -126,16 +117,14 @@ test "sharedSecret: P-256 deterministic peers agree" {
     try testing.expectEqualSlices(u8, &alice_secret, &bob_secret);
 }
 
-// #88 — `generate` retries a bad draw and only a bad draw. This exercises
-// the real entropy path; the policy itself is pinned below through
-// `generateRetry` with counting draw sources.
-test "KeyPair.generate succeeds and terminates" {
-    // The loop is bounded, so this returning at all is the property: the
-    // shipped bug was a `generate` that never came back.
+// Healthy-backend smoke: the real entropy path only. Under a healthy
+// backend this passes with or without the #88 bug — the policy claims are
+// pinned by the `generateRetry` tests below, not here.
+test "KeyPair.generate: healthy entropy path" {
     const keypair = try KeyPair.generate();
     try testing.expectEqual(@as(u8, 0x04), keypair.public_key.data[0]);
-    // Two calls draw independently, so the same secret twice would mean
-    // the entropy source, not the loop, is what is broken.
+    // Two calls draw independently; identical secrets would indict the
+    // entropy source, not the loop.
     const second = try KeyPair.generate();
     try testing.expect(!std.mem.eql(
         u8,
@@ -144,10 +133,8 @@ test "KeyPair.generate succeeds and terminates" {
     ));
 }
 
-// #88 — a terminal backend failure must surface after exactly one attempt.
-// The tripwire makes a regressed retry (the old `catch continue` over the
-// whole error set) fail the error expectation instead of hanging: the
-// second draw hands back a usable keypair.
+// #88 — a terminal backend failure surfaces after exactly one attempt.
+// The tripwire seed makes a regressed retry fail the assertion, not hang.
 test "generateRetry: a LibcryptoFailed attempt is terminal, not retried" {
     const Draw = struct {
         var calls: usize = 0;
@@ -162,9 +149,8 @@ test "generateRetry: a LibcryptoFailed attempt is terminal, not retried" {
     try testing.expectEqual(@as(usize, 1), Draw.calls);
 }
 
-// #88 — an invalid scalar is retryable, but only up to the bound. Past it
-// the draw must not be consulted again; the tripwire seed turns an
-// unbounded-retry regression into a wrong result instead of a hang.
+// #88 — an invalid scalar retries exactly to the bound, no further.
+// The tripwire seed makes an unbounded regression fail the assertion, not hang.
 test "generateRetry: an invalid scalar retries exactly to the bound" {
     const Draw = struct {
         var calls: usize = 0;
@@ -180,8 +166,7 @@ test "generateRetry: an invalid scalar retries exactly to the bound" {
     try testing.expectEqual(@as(usize, generate_attempts_max), Draw.calls);
 }
 
-// #88 — the retry exists to salvage the ~2^-32 bad draw, so one rejection
-// followed by a good draw must succeed on the second attempt.
+// #88 — one bad draw then a good one succeeds on the second attempt.
 test "generateRetry: retries a bad draw and succeeds" {
     const Draw = struct {
         var calls: usize = 0;
@@ -197,10 +182,8 @@ test "generateRetry: retries a bad draw and succeeds" {
     try testing.expectEqual(@as(usize, 2), Draw.calls);
 }
 
-// SEC 1 §3.2.1 / RFC 8446 §4.2.8.2 — the private scalar must lie in
-// [1, n-1]. The backend range-checks it against the group order before any
-// point math (#88), so each class below is judged as a property of the
-// scalar itself, never as a library failure.
+// SEC 1 §3.2.1 — the scalar must lie in [1, n-1]; the backend range-check
+// against the group order judges it before any point math (#88).
 test "KeyPair.generateDeterministic enforces the scalar range [1, n-1]" {
     // n, the P-256 base-point order (SEC 2, "secp256r1").
     const order = hex(32, "ffffffff00000000ffffffffffffffff" ++

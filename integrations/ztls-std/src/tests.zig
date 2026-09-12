@@ -555,6 +555,37 @@ test "accept: empty cert_chain fails and cleans up after itself" {
     conn.deinit();
 }
 
+// #88 — `connect`/`accept` can fail before in-place init (local keygen), and
+// that path cannot be forced without a backend-fault seam, so the pre-init
+// cleanup is pinned directly through `abortBeforeInit`: the owned socket is
+// closed (the peer sees EOF) and the closed sentinel keeps a later `deinit`
+// the documented no-op.
+test "abortBeforeInit: peer sees EOF and deinit stays a no-op" {
+    const io = testIo();
+    // Nonblocking on purpose: if the owned end is ever left open, the read
+    // below must fail with EAGAIN, not block the suite forever.
+    var fds: [2]posix.fd_t = undefined;
+    try testing.expectEqual(@as(c_int, 0), std.c.socketpair(
+        posix.AF.UNIX,
+        posix.SOCK.STREAM | posix.SOCK.NONBLOCK,
+        0,
+        &fds,
+    ));
+    defer _ = std.c.close(fds[0]);
+
+    var client: tls.Client = undefined;
+    client.abortBeforeInit(io, streamFor(fds[1]));
+
+    // Owned end closed: the peer reads EOF, not a leaked fd.
+    var buf: [1]u8 = undefined;
+    try testing.expectEqual(@as(usize, 0), try posix.read(fds[0], &buf));
+
+    // The documented failure contract, twice over: a later `deinit` is
+    // harmless and idempotent.
+    client.deinit();
+    client.deinit();
+}
+
 // A hostname the fixture certificate does not cover must fail verification even
 // with chain anchoring disabled, and the client must not report it as a generic
 // protocol error.

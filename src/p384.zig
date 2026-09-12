@@ -17,10 +17,8 @@ pub const secret_length = 48;
 pub const PublicKey = memx.Array(public_length);
 pub const SecretKey = memx.Array(secret_length);
 
-/// Draws `generate` may take before it gives up on the dice. An out-of-range
-/// draw is ~2^-226 here (far rarer than P-256's ~2^-32) — the bound exists
-/// because an unbounded retry is a promise about the future that no code can
-/// keep (#88); see `p256.generate_attempts_max`.
+/// Draws `generate` may take: an out-of-range draw is ~2^-226 here, but an
+/// unbounded retry is a promise no code can keep (#88).
 const generate_attempts_max: u8 = 4;
 
 /// Caller-owned P-384 keypair. The public key is SEC1 uncompressed form:

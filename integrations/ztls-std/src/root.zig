@@ -970,6 +970,16 @@ fn StreamImpl(comptime Hs: type, comptime role: Role, comptime config: Config) t
             s.writer_impl = .init(s);
         }
 
+        /// The pre-init failure path (`connect`/`accept` keygen, #88): `s.*`
+        /// is still the caller's `undefined`, so the flag word — the one
+        /// field `deinit` reads — is initialized by hand to keep the
+        /// documented failure contract (a later `deinit` is a no-op), and
+        /// the owned socket is closed before the error is returned.
+        pub fn abortBeforeInit(s: *Self, io: Io, sock: net.Stream) void {
+            sock.close(io);
+            s.flags = .initOne(.closed);
+        }
+
         /// Client only. Wrap a CONNECTED `std.Io.net.Stream` and run the TLS
         /// 1.3 handshake to completion. Moves the socket into `s`. Eager: all
         /// handshake errors (cert verification, ALPN no-overlap, alerts)
@@ -977,10 +987,9 @@ fn StreamImpl(comptime Hs: type, comptime role: Role, comptime config: Config) t
         ///
         /// On failure the peer gets a fatal alert where one is warranted, the
         /// socket is closed, and buffers are zeroed — a later `deinit` is
-        /// harmless but unnecessary. A local keygen failure (#88) happens
-        /// before `s` is initialized: the socket is still closed, `s` is
-        /// marked closed so `deinit` stays a no-op, and the buffers never
-        /// held a secret, so there is nothing of ours to zero.
+        /// harmless but unnecessary. A local keygen failure (#88) predates
+        /// in-place init; `abortBeforeInit` keeps the same contract there,
+        /// and no secret has reached the buffers on that path.
         pub fn connect(
             s: *Self,
             io: Io,
@@ -995,15 +1004,11 @@ fn StreamImpl(comptime Hs: type, comptime role: Role, comptime config: Config) t
                     io.random(&random.data);
                     defer random.secureZero();
 
-                    // A local keygen failure is ours, not the peer's (#88):
-                    // no alert, no protocol classification, `InternalError`.
-                    // It also precedes `s.*` init, so the documented teardown
-                    // contract is kept by hand — close the owned socket, and
-                    // set the one field `deinit` reads before returning.
+                    // Ours, not the peer's (#88): no alert, no protocol
+                    // classification.
                     const keypairs: ztls.ClientHandshake.KeyPairs =
                         ztls.ClientHandshake.KeyPairs.init(client_keypair) catch |err| {
-                            sock.close(io);
-                            s.flags = .initOne(.closed);
+                            s.abortBeforeInit(io, sock);
                             return switch (err) {
                                 error.LibcryptoFailed, error.IdentityElement => error.InternalError,
                             };
@@ -1018,11 +1023,8 @@ fn StreamImpl(comptime Hs: type, comptime role: Role, comptime config: Config) t
                         .offer_pq_key_share = options.offer_pq_key_share,
                     });
 
-                    // In-place init before the first fallible step that
-                    // follows it, so no error path past this point can leave
-                    // `s` undefined while the caller holds a pointer to it.
-                    // (The one fallible step above it, keygen, keeps the
-                    // contract by hand instead.)
+                    // In-place init before the next fallible step, so no
+                    // error path past this point leaves `s` undefined.
                     s.* = .init(io, sock, hs);
                     s.finishInit();
                     errdefer s.deinit();
@@ -1076,12 +1078,10 @@ fn StreamImpl(comptime Hs: type, comptime role: Role, comptime config: Config) t
                     io.random(&random.data);
                     defer random.secureZero();
 
-                    // See `connect` — ours, not the peer's; teardown contract
-                    // kept by hand because `s.*` is not initialized yet.
+                    // Ours, not the peer's (#88) — see `connect`.
                     const keypairs: ztls.ServerHandshake.KeyPairs =
                         ztls.ServerHandshake.KeyPairs.init(server_keypair) catch |err| {
-                            sock.close(io);
-                            s.flags = .initOne(.closed);
+                            s.abortBeforeInit(io, sock);
                             return switch (err) {
                                 error.LibcryptoFailed, error.IdentityElement => error.InternalError,
                             };
