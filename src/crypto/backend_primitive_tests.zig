@@ -644,7 +644,7 @@ test "backend.sign: RSA-PSS SHA-256 sign/verify round-trip" {
     const msg = context ++ transcript_hash;
 
     var sig_buf: [256]u8 = undefined;
-    const sig = try backend.sign.sign(private_key, .rsa_pss_rsae_sha256, msg, &sig_buf, false);
+    const sig = try backend.sign.sign(private_key, .rsa_pss_rsae_sha256, msg, &sig_buf, .random);
     try testing.expect(sig.len > 0);
 
     try backend.sign.verify(
@@ -668,7 +668,7 @@ test "backend.sign: RSA-PSS SHA-256 rejects tampered signature" {
     const msg = context ++ transcript_hash;
 
     var sig_buf: [256]u8 = undefined;
-    const sig = try backend.sign.sign(private_key, .rsa_pss_rsae_sha256, msg, &sig_buf, false);
+    const sig = try backend.sign.sign(private_key, .rsa_pss_rsae_sha256, msg, &sig_buf, .random);
     sig_buf[sig.len - 1] ^= 0xff;
 
     try testing.expectError(
@@ -690,7 +690,7 @@ test "backend.sign: RSA-PSS SHA-384 sign/verify round-trip and tamper rejection"
     const msg = context ++ transcript_hash;
 
     var sig_buf: [256]u8 = undefined;
-    const sig = try backend.sign.sign(private_key, .rsa_pss_rsae_sha384, msg, &sig_buf, false);
+    const sig = try backend.sign.sign(private_key, .rsa_pss_rsae_sha384, msg, &sig_buf, .random);
     try testing.expect(sig.len > 0);
 
     try backend.sign.verify(
@@ -730,7 +730,7 @@ test "backend.sign: ECDSA P-256 SHA-256 sign/verify round-trip" {
     const msg = context ++ transcript_hash;
 
     var sig_buf: [256]u8 = undefined;
-    const sig = try backend.sign.sign(priv, .ecdsa_secp256r1_sha256, msg, &sig_buf, false);
+    const sig = try backend.sign.sign(priv, .ecdsa_secp256r1_sha256, msg, &sig_buf, .random);
     try testing.expect(sig.len > 0);
 
     try backend.sign.verify(
@@ -761,7 +761,7 @@ test "backend.sign: ECDSA P-256 SHA-256 rejects tampered signature" {
     const msg = context ++ transcript_hash;
 
     var sig_buf: [256]u8 = undefined;
-    const sig = try backend.sign.sign(priv, .ecdsa_secp256r1_sha256, msg, &sig_buf, false);
+    const sig = try backend.sign.sign(priv, .ecdsa_secp256r1_sha256, msg, &sig_buf, .random);
     sig_buf[0] ^= 0xff;
 
     try testing.expectError(
@@ -798,7 +798,7 @@ test "backend.sign: ECDSA P-384 SHA-384 sign/verify round-trip and tamper reject
     const msg = context ++ transcript_hash;
 
     var sig_buf: [256]u8 = undefined;
-    const sig = try backend.sign.sign(priv, .ecdsa_secp384r1_sha384, msg, &sig_buf, false);
+    const sig = try backend.sign.sign(priv, .ecdsa_secp384r1_sha384, msg, &sig_buf, .random);
     try testing.expect(sig.len > 0);
 
     try backend.sign.verify(
@@ -831,7 +831,7 @@ test "backend.sign: BufferTooShort on undersized output" {
     var sig_buf: [1]u8 = undefined;
     try testing.expectError(
         error.BufferTooShort,
-        backend.sign.sign(key, .rsa_pss_rsae_sha256, "test message", &sig_buf, false),
+        backend.sign.sign(key, .rsa_pss_rsae_sha256, "test message", &sig_buf, .random),
     );
 }
 
@@ -847,7 +847,7 @@ test "backend.sign: key/scheme mismatch is a libcrypto failure" {
     var sig_buf: [256]u8 = undefined;
     try testing.expectError(
         error.LibcryptoFailed,
-        backend.sign.sign(priv, .rsa_pss_rsae_sha256, "test message", &sig_buf, false),
+        backend.sign.sign(priv, .rsa_pss_rsae_sha256, "test message", &sig_buf, .random),
     );
 }
 
