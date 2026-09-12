@@ -449,11 +449,12 @@ test "backend.p256: off-curve point is rejected" {
 // SEC 1 §3.2.1 — a private key scalar must be in [1, n - 1]. Scalar zero is
 // invalid and must not construct a usable backend P-256 key.
 test "backend.p256: zero scalar private key is rejected" {
-    // `IdentityElement`, not `LibcryptoFailed`: zero is a scalar outside
-    // [1, n-1], and that is the one rejection a caller may answer by
-    // drawing again. Keeping it distinct from the library failing is what
-    // stops `KeyPair.generate`'s retry from spinning on an error no draw
-    // can fix (zoxy-io/zoxy#222).
+    // `IdentityElement`, not `LibcryptoFailed`: the backend range-checks the
+    // scalar against [1, n-1] before any point math, so this rejection is a
+    // property of the caller's data — the one rejection a caller may answer
+    // by drawing again. Keeping it distinct from the library failing is what
+    // stops `KeyPair.generate`'s retry from spinning on an error no draw can
+    // fix (#88).
     const scalar: [32]u8 = @splat(0);
     try testing.expectError(
         error.IdentityElement,
@@ -576,7 +577,7 @@ test "backend.p384: off-curve point is rejected" {
 // SEC 1 §3.2.1 — a private key scalar must be in [1, n - 1]. Scalar zero is
 // invalid and must not construct a usable backend P-384 key.
 test "backend.p384: zero scalar private key is rejected" {
-    // `IdentityElement` for the same reason as the P-256 case above.
+    // `IdentityElement` for the same reason as the P-256 case above (#88).
     const scalar: [48]u8 = @splat(0);
     try testing.expectError(
         error.IdentityElement,

@@ -246,6 +246,23 @@ pub fn p256PrivateKeyFromSecret(secret: *const [32]u8) Error!*pkey {
     const priv = c.BN_bin2bn(secret, secret.len, null) orelse return error.LibcryptoFailed;
     defer c.BN_clear_free(priv);
 
+    // Judge the scalar before any point math: it must lie in [1, n-1]
+    // (SEC 1 §3.2.1). The order lookup and its BIGNUM/BN_CTX can fail — that
+    // is the library, `LibcryptoFailed` — but the judgment itself
+    // (`BN_is_zero`/`BN_cmp`) cannot fail, so an `IdentityElement` here is
+    // always the caller's data. That split is what lets a caller tell "draw
+    // again" (`IdentityElement`, ~2^-32 of random secrets) from "this will
+    // fail identically forever" (`LibcryptoFailed`) — the distinction whose
+    // loss livelocked `generate` on a terminal backend failure (#88).
+    const bn_ctx = c.BN_CTX_new() orelse return error.LibcryptoFailed;
+    defer c.BN_CTX_free(bn_ctx);
+    const order = c.BN_new() orelse return error.LibcryptoFailed;
+    defer c.BN_free(order);
+    if (c.EC_GROUP_get_order(group, order, bn_ctx) != 1)
+        return error.LibcryptoFailed;
+    if (c.BN_is_zero(priv) == 1 or c.BN_cmp(priv, order) >= 0)
+        return error.IdentityElement;
+
     const public = c.EC_POINT_new(group) orelse return error.LibcryptoFailed;
     defer c.EC_POINT_free(public);
     if (c.EC_POINT_mul(group, public, priv, null, null, null) != 1)
@@ -254,16 +271,11 @@ pub fn p256PrivateKeyFromSecret(secret: *const [32]u8) Error!*pkey {
     const ec = c.EC_KEY_new_by_curve_name(c.NID_X9_62_prime256v1) orelse
         return error.LibcryptoFailed;
     errdefer c.EC_KEY_free(ec);
-    // These three judge the *scalar*, not the library's health: they are how
-    // a secret outside [1, n-1] is rejected. Separating them from the
-    // allocation failures around them is what lets a caller tell "draw
-    // again" (`IdentityElement`, ~2^-32 of random secrets) from "this will
-    // fail identically forever" (`LibcryptoFailed` — e.g. the fixed arena
-    // behind `mem_hooks` being full). Conflating the two is what let a
-    // retry loop spin on an unfixable error: zoxy-io/zoxy#222.
-    if (c.EC_KEY_set_private_key(ec, priv) != 1) return error.IdentityElement;
-    if (c.EC_KEY_set_public_key(ec, public) != 1) return error.IdentityElement;
-    if (c.EC_KEY_check_key(ec) != 1) return error.IdentityElement;
+    // The scalar is already range-checked, so these three can only fail on
+    // the library side (they allocate internally) — never a retry signal.
+    if (c.EC_KEY_set_private_key(ec, priv) != 1) return error.LibcryptoFailed;
+    if (c.EC_KEY_set_public_key(ec, public) != 1) return error.LibcryptoFailed;
+    if (c.EC_KEY_check_key(ec) != 1) return error.LibcryptoFailed;
 
     const key = c.EVP_PKEY_new() orelse return error.LibcryptoFailed;
     errdefer c.EVP_PKEY_free(key);
@@ -325,6 +337,18 @@ pub fn p384PrivateKeyFromSecret(secret: *const [48]u8) Error!*pkey {
     const priv = c.BN_bin2bn(secret, secret.len, null) orelse return error.LibcryptoFailed;
     defer c.BN_clear_free(priv);
 
+    // Scalar range check [1, n-1] before point math — see
+    // `p256PrivateKeyFromSecret` (#88) for why the judgment and the order
+    // lookup are split across the two error values.
+    const bn_ctx = c.BN_CTX_new() orelse return error.LibcryptoFailed;
+    defer c.BN_CTX_free(bn_ctx);
+    const order = c.BN_new() orelse return error.LibcryptoFailed;
+    defer c.BN_free(order);
+    if (c.EC_GROUP_get_order(group, order, bn_ctx) != 1)
+        return error.LibcryptoFailed;
+    if (c.BN_is_zero(priv) == 1 or c.BN_cmp(priv, order) >= 0)
+        return error.IdentityElement;
+
     const public = c.EC_POINT_new(group) orelse return error.LibcryptoFailed;
     defer c.EC_POINT_free(public);
     if (c.EC_POINT_mul(group, public, priv, null, null, null) != 1)
@@ -333,10 +357,10 @@ pub fn p384PrivateKeyFromSecret(secret: *const [48]u8) Error!*pkey {
     const ec = c.EC_KEY_new_by_curve_name(c.NID_secp384r1) orelse
         return error.LibcryptoFailed;
     errdefer c.EC_KEY_free(ec);
-    // Scalar validity, not library health — see `p256PrivateKeyFromSecret`.
-    if (c.EC_KEY_set_private_key(ec, priv) != 1) return error.IdentityElement;
-    if (c.EC_KEY_set_public_key(ec, public) != 1) return error.IdentityElement;
-    if (c.EC_KEY_check_key(ec) != 1) return error.IdentityElement;
+    // Past the range check these can only fail on the library side (#88).
+    if (c.EC_KEY_set_private_key(ec, priv) != 1) return error.LibcryptoFailed;
+    if (c.EC_KEY_set_public_key(ec, public) != 1) return error.LibcryptoFailed;
+    if (c.EC_KEY_check_key(ec) != 1) return error.LibcryptoFailed;
 
     const key = c.EVP_PKEY_new() orelse return error.LibcryptoFailed;
     errdefer c.EVP_PKEY_free(key);

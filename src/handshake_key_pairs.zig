@@ -16,9 +16,9 @@ pub const KeyPairs = struct {
     p384: ?p384.KeyPair = null,
 
     /// Fallible because generating the P-256 half is: the backend can
-    /// refuse, and a refusal it would repeat is the caller's to handle —
-    /// shed this handshake — not this function's to hide behind a retry
-    /// (zoxy-io/zoxy#222).
+    /// refuse, and a refusal it would repeat is the caller's to handle
+    /// (shed this handshake), not this function's to hide behind a retry
+    /// (#88).
     pub fn init(x25519_keypair: x25519.KeyPair) p256.Error!KeyPairs {
         return .{ .x25519 = x25519_keypair, .p256 = try .generate() };
     }

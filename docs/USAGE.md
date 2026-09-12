@@ -146,7 +146,7 @@ var random: ztls.Random = undefined;
 std.crypto.random.bytes(&random.data);
 
 var hs: ztls.ClientHandshake = .init(.{
-    .keypairs = .init(keypair),
+    .keypairs = try .init(keypair),
     .host_name = "example.com",
     .now_sec = std.time.timestamp(),
     .random = random,
@@ -181,7 +181,7 @@ The server loop is identical in shape, with two differences:
 var random: ztls.Random = undefined;
 std.crypto.random.bytes(&random.data);
 var hs: ztls.ServerHandshake = .init(.{
-    .keypairs = .init(server_keypair),
+    .keypairs = try .init(server_keypair),
     .random = random,
     .alpn_protocols = &.{"h2"},
 });
@@ -333,7 +333,7 @@ Both sides offer protocol lists before the handshake begins:
 ```zig
 // Client — via Config at init time
 var hs: ztls.ClientHandshake = .init(.{
-    .keypairs = .init(keypair),
+    .keypairs = try .init(keypair),
     .host_name = "example.com",
     .now_sec = std.time.timestamp(),
     .random = random,
@@ -357,7 +357,7 @@ overrides after init:
 
 ```zig
 var hs: ztls.ClientHandshake = .init(.{
-    .keypairs = .init(keypair),
+    .keypairs = try .init(keypair),
     .host_name = "example.com",      // SAN/CN check + SNI
     .now_sec = std.time.timestamp(),  // validity-period check
     .bundle = &bundle,                // trust-anchor anchoring
@@ -500,6 +500,7 @@ Low-level in-memory hooks used by `examples/in_memory_handshake.zig`: `acceptCli
 - `SignatureScheme` names the TLS signature scheme used with a loaded key, including `rsa_pss_rsae_sha256`, `ecdsa_secp256r1_sha256`, `ecdsa_secp384r1_sha384`, and `ed25519`.
 - `x25519.KeyPair.generate()` creates a fresh ephemeral X25519 keypair.
 - `x25519.KeyPair.generateDeterministic(seed)` and `x25519.sharedSecret(secret_key, peer_public_key)` are lower-level primitives for tests and fixed-vector paths.
+- `ClientHandshake.KeyPairs.init(x25519_keypair)` generates the P-256 half and is fallible: the backend can refuse (`p256.Error`), which the caller answers by shedding the handshake, not by retrying forever (#88). `initWithP256`/`initWithP256P384` stay infallible for fixed keypairs.
 
 ## Runtime-specific integration notes
 

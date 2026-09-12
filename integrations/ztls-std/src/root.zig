@@ -977,7 +977,10 @@ fn StreamImpl(comptime Hs: type, comptime role: Role, comptime config: Config) t
         ///
         /// On failure the peer gets a fatal alert where one is warranted, the
         /// socket is closed, and buffers are zeroed — a later `deinit` is
-        /// harmless but unnecessary.
+        /// harmless but unnecessary. A local keygen failure (#88) happens
+        /// before `s` is initialized: the socket is still closed, `s` is
+        /// marked closed so `deinit` stays a no-op, and the buffers never
+        /// held a secret, so there is nothing of ours to zero.
         pub fn connect(
             s: *Self,
             io: Io,
@@ -992,8 +995,22 @@ fn StreamImpl(comptime Hs: type, comptime role: Role, comptime config: Config) t
                     io.random(&random.data);
                     defer random.secureZero();
 
+                    // A local keygen failure is ours, not the peer's (#88):
+                    // no alert, no protocol classification, `InternalError`.
+                    // It also precedes `s.*` init, so the documented teardown
+                    // contract is kept by hand — close the owned socket, and
+                    // set the one field `deinit` reads before returning.
+                    const keypairs: ztls.ClientHandshake.KeyPairs =
+                        ztls.ClientHandshake.KeyPairs.init(client_keypair) catch |err| {
+                            sock.close(io);
+                            s.flags = .initOne(.closed);
+                            return switch (err) {
+                                error.LibcryptoFailed, error.IdentityElement => error.InternalError,
+                            };
+                        };
+
                     const hs: ztls.ClientHandshake = .init(.{
-                        .keypairs = try .init(client_keypair),
+                        .keypairs = keypairs,
                         .host_name = options.host,
                         .now_sec = Io.Timestamp.now(io, .real).toSeconds(),
                         .random = random,
@@ -1001,9 +1018,11 @@ fn StreamImpl(comptime Hs: type, comptime role: Role, comptime config: Config) t
                         .offer_pq_key_share = options.offer_pq_key_share,
                     });
 
-                    // In-place init before the first fallible step, so no error
-                    // path can leave `s` undefined while the caller holds a
-                    // pointer to it.
+                    // In-place init before the first fallible step that
+                    // follows it, so no error path past this point can leave
+                    // `s` undefined while the caller holds a pointer to it.
+                    // (The one fallible step above it, keygen, keeps the
+                    // contract by hand instead.)
                     s.* = .init(io, sock, hs);
                     s.finishInit();
                     errdefer s.deinit();
@@ -1041,7 +1060,8 @@ fn StreamImpl(comptime Hs: type, comptime role: Role, comptime config: Config) t
         /// server-side handshake to completion. Moves the socket into `s`.
         /// No allocator: the server presents a chain, it does not anchor one.
         ///
-        /// Same failure contract as `connect`.
+        /// Same failure contract as `connect`, including the keygen path
+        /// (#88).
         pub fn accept(
             s: *Self,
             io: Io,
@@ -1056,8 +1076,19 @@ fn StreamImpl(comptime Hs: type, comptime role: Role, comptime config: Config) t
                     io.random(&random.data);
                     defer random.secureZero();
 
+                    // See `connect` — ours, not the peer's; teardown contract
+                    // kept by hand because `s.*` is not initialized yet.
+                    const keypairs: ztls.ServerHandshake.KeyPairs =
+                        ztls.ServerHandshake.KeyPairs.init(server_keypair) catch |err| {
+                            sock.close(io);
+                            s.flags = .initOne(.closed);
+                            return switch (err) {
+                                error.LibcryptoFailed, error.IdentityElement => error.InternalError,
+                            };
+                        };
+
                     const hs: ztls.ServerHandshake = .init(.{
-                        .keypairs = try .init(server_keypair),
+                        .keypairs = keypairs,
                         .random = random,
                         .alpn_protocols = options.alpn,
                     });

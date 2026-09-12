@@ -219,7 +219,7 @@ The engine has no threads, no callbacks, no I/O. It's a struct you poke.
 ```zig
 // High-level client connection API: caller owns buffers and transport.
 var hs: ztls.ClientHandshake = .init(.{
-    .keypairs = .init(keypair),
+    .keypairs = try .init(keypair),
     .host_name = "example.com",
     .now_sec = std.time.timestamp(),
     .random = random,

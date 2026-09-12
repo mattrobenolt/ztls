@@ -17,8 +17,10 @@ pub const secret_length = 48;
 pub const PublicKey = memx.Array(public_length);
 pub const SecretKey = memx.Array(secret_length);
 
-/// Draws `generate` may take before it gives up on the dice — see
-/// `p256.generate_attempts_max`, which this mirrors.
+/// Draws `generate` may take before it gives up on the dice. An out-of-range
+/// draw is ~2^-226 here (far rarer than P-256's ~2^-32) — the bound exists
+/// because an unbounded retry is a promise about the future that no code can
+/// keep (#88); see `p256.generate_attempts_max`.
 const generate_attempts_max: u8 = 4;
 
 /// Caller-owned P-384 keypair. The public key is SEC1 uncompressed form:
@@ -27,32 +29,42 @@ pub const KeyPair = struct {
     secret_key: SecretKey,
     public_key: PublicKey,
 
-    /// Generate a keypair using the OS CSPRNG. Aborts if the CSPRNG is
-    /// unavailable (see `entropy.fill`); use `generateDeterministic` with your
-    /// own seed if you need to own entropy or handle failure.
-    ///
-    /// Retries a bad draw, propagates a failing library — the split
-    /// `p256.KeyPair.generate` documents (zoxy-io/zoxy#222).
+    /// Generate a keypair using the OS CSPRNG; the draw itself still aborts
+    /// on CSPRNG failure (see `entropy.fill`). Fallible only for the backend
+    /// half — the `p256.KeyPair.generate` retry policy applies unchanged.
     pub fn generate() Error!KeyPair {
-        var attempt: u8 = 1;
-        while (true) : (attempt += 1) {
-            assert(attempt <= generate_attempts_max);
-            var secret_key: [secret_length]u8 = undefined;
-            entropy.fill(&secret_key);
-            return generateDeterministic(.init(secret_key)) catch |err| switch (err) {
-                error.IdentityElement => {
-                    if (attempt == generate_attempts_max) return err;
-                    continue;
-                },
-                error.LibcryptoFailed => return err,
-            };
-        }
+        return generateRetry(EntropyAttempt);
     }
 
     pub fn generateDeterministic(seed: SecretKey) Error!KeyPair {
         return .{ .secret_key = seed, .public_key = try publicFromSecret(seed) };
     }
 };
+
+/// The draw `generate` actually makes — see `p256.EntropyAttempt`.
+const EntropyAttempt = struct {
+    fn next() Error!KeyPair {
+        var secret_key: [secret_length]u8 = undefined;
+        entropy.fill(&secret_key);
+        return KeyPair.generateDeterministic(.init(secret_key));
+    }
+};
+
+/// The #88 retry policy, shared with `p256.generateRetry`: retry a bad draw
+/// (bounded), propagate a failing library on the first occurrence.
+fn generateRetry(comptime Attempt: type) Error!KeyPair {
+    var attempt: u8 = 1;
+    while (true) : (attempt += 1) {
+        assert(attempt <= generate_attempts_max);
+        return Attempt.next() catch |err| switch (err) {
+            error.IdentityElement => {
+                if (attempt == generate_attempts_max) return err;
+                continue;
+            },
+            error.LibcryptoFailed => return err,
+        };
+    }
+}
 
 fn privateKey(secret_key: SecretKey) Error!*backend.p384.pkey {
     return backend.p384.privateKeyFromSecret(&secret_key.data);
@@ -108,6 +120,81 @@ test "sharedSecret: P-384 deterministic peers agree" {
     const alice_secret = try sharedSecret(alice.secret_key, bob.public_key);
     const bob_secret = try sharedSecret(bob.secret_key, alice.public_key);
     try testing.expectEqualSlices(u8, &alice_secret, &bob_secret);
+}
+
+// #88 — the same three policy tests as p256, against this curve's own loop.
+test "generateRetry: a LibcryptoFailed attempt is terminal, not retried" {
+    const Draw = struct {
+        var calls: usize = 0;
+        fn next() Error!KeyPair {
+            calls += 1;
+            if (calls == 1) return error.LibcryptoFailed;
+            return KeyPair.generateDeterministic(.init(test_seed_a));
+        }
+    };
+    Draw.calls = 0;
+    try testing.expectError(error.LibcryptoFailed, generateRetry(Draw));
+    try testing.expectEqual(@as(usize, 1), Draw.calls);
+}
+
+test "generateRetry: an invalid scalar retries exactly to the bound" {
+    const Draw = struct {
+        var calls: usize = 0;
+        fn next() Error!KeyPair {
+            calls += 1;
+            if (calls <= generate_attempts_max)
+                return KeyPair.generateDeterministic(.init(@splat(0)));
+            return KeyPair.generateDeterministic(.init(test_seed_a));
+        }
+    };
+    Draw.calls = 0;
+    try testing.expectError(error.IdentityElement, generateRetry(Draw));
+    try testing.expectEqual(@as(usize, generate_attempts_max), Draw.calls);
+}
+
+test "generateRetry: retries a bad draw and succeeds" {
+    const Draw = struct {
+        var calls: usize = 0;
+        fn next() Error!KeyPair {
+            calls += 1;
+            const seed: SecretKey = if (calls == 1) .init(@splat(0)) else .init(test_seed_a);
+            return KeyPair.generateDeterministic(seed);
+        }
+    };
+    Draw.calls = 0;
+    const keypair: KeyPair = try generateRetry(Draw);
+    try testing.expectEqual(@as(u8, 0x04), keypair.public_key.data[0]);
+    try testing.expectEqual(@as(usize, 2), Draw.calls);
+}
+
+// SEC 1 §3.2.1 / RFC 8446 §4.2.8.2 — the private scalar must lie in [1, n-1];
+// the backend range-checks it against the group order before point math (#88).
+test "KeyPair.generateDeterministic enforces the scalar range [1, n-1]" {
+    // n, the P-384 base-point order (SEC 2, "secp384r1").
+    const order = hex(48, "ffffffffffffffffffffffffffffffff" ++
+        "ffffffffffffffff" ++
+        "c7634d81f4372ddf581a0db248b0a77aecec196accc52973");
+    // zero: below the range.
+    try testing.expectError(
+        error.IdentityElement,
+        KeyPair.generateDeterministic(.init(@splat(0))),
+    );
+    // n: the first scalar above the range.
+    try testing.expectError(
+        error.IdentityElement,
+        KeyPair.generateDeterministic(.init(order)),
+    );
+    // 2^384 - 1: far above the range, still a 48-byte scalar.
+    try testing.expectError(
+        error.IdentityElement,
+        KeyPair.generateDeterministic(.init(@splat(0xff))),
+    );
+    // n - 1: the largest valid scalar, so the upper bound is inclusive-exact.
+    var order_minus_1 = order;
+    order_minus_1[order.len - 1] -= 1; // n ends in 0x73; no borrow.
+    const keypair: KeyPair = try .generateDeterministic(.init(order_minus_1));
+    try testing.expectEqual(@as(u8, 0x04), keypair.public_key.data[0]);
+    try testing.expectEqual(@as(usize, 97), keypair.public_key.data.len);
 }
 
 // RFC 8446 §4.2.8.2 — peers must reject malformed public keys for the group.

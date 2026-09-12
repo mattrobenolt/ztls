@@ -41,6 +41,17 @@ fn die(comptime fmt: []const u8, args: anytype) noreturn {
     std.process.exit(1);
 }
 
+/// Close an accepted socket that was never armed on the loop. Zig 0.16 has
+/// no `std.posix.close`; `Io.net.Socket.close` is the fd-close API. Nothing
+/// is registered with the loop for this fd, so the synchronous close is
+/// safe — the cleanup a failed `Conn.init` or an exhausted pool owes before
+/// the session goes away (#88).
+fn dropSocket(io: std.Io, socket: xev.TCP) void {
+    // `close` reads only `handle`; `address` is never consulted.
+    const sock: std.Io.net.Socket = .{ .handle = socket.fd, .address = undefined };
+    sock.close(io);
+}
+
 /// One connection. The pool owns these; each frees itself in its close
 /// callback, which is the natural lifetime in a completion API.
 const Session = struct {
@@ -125,6 +136,7 @@ const Listener = struct {
         };
         const session = self.pool.create(self.gpa) catch {
             print("[xev] pool exhausted; dropping connection\n", .{});
+            dropSocket(self.io, socket);
             return .rearm;
         };
         session.* = .{ .server = self };
@@ -137,6 +149,10 @@ const Listener = struct {
             session.storage.buffers(),
         ) catch |err| {
             print("[xev] TLS init failed: {t}\n", .{err});
+            // `Conn.init` failed before writing `session.conn.*`, so
+            // `conn.deinit` would read undefined memory; the socket close is
+            // the whole cleanup, then the pooled slot goes back.
+            dropSocket(self.io, socket);
             self.pool.destroy(session);
             return .rearm;
         };

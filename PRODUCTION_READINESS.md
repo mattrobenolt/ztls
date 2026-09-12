@@ -378,14 +378,34 @@ data to openssl s_server and receives the HTTP response.
     §4.2.1.10, instead of being routed through `dnsNameInSubtree` (subtree
     match). Leading-`.` constraints keep subtree semantics. The differential
     test against OpenSSL 3.6.3 now agrees on every case.
+  - #88 (partial) — externally reported availability vulnerability
+    (`p256`/`p384` `KeyPair.generate()` retried a non-retryable backend error
+    forever: 100% CPU livelock when the crypto backend cannot allocate —
+    reported at gh #88, originally zoxy-io/zoxy#222). Finding 1 (livelock) is
+    fixed and regression-tested: the retry is bounded at 4 draws and retries
+    only `IdentityElement` (an invalid scalar, range-checked against the
+    group order through the backend BN/group APIs before any point math);
+    `LibcryptoFailed` propagates on the first occurrence; `KeyPairs.init` is
+    fallible at every call site; ztls-std maps the local failure to
+    `InternalError` with the owned socket closed and `deinit` still a no-op;
+    and the retry policy itself is pinned by comptime-draw tests on both
+    curves, in which a regressed `catch continue` fails the error/count
+    assertions instead of hanging. Finding 2 remains OPEN: the OpenSSL error
+    queue is never drained, so under a persistent allocator-failure condition
+    every subsequent handshake is refused until the embedder intervenes (the
+    reporter measured still-dead at t+120s without an `ERR_clear_error()`);
+    #88 stays open for that error-queue report.
   - H22 — `entropy.fillLinux` panics on an unexpected `getrandom` errno.
-    Decision: keep the fail-stop. For a CSPRNG, proceeding without entropy is
-    never acceptable; the only reachable errnos are EINTR/EAGAIN (handled) or
-    EFAULT/EINVAL/ENOSYS, which indicate a ztls or kernel bug, not a recoverable
-    condition. Converting to an error would make every `.generate()` convenience
-    constructor fallible for no practical embedder benefit. This is consistent
-    with BoringSSL/AWS-LC backends, which abort on RAND failure. The fail-stop
-    contract is now documented on `entropy.fill` and on the `generate()`
+    Decision: keep the fail-stop for the entropy source. For a CSPRNG,
+    proceeding without entropy is never acceptable; the only reachable
+    errnos are EINTR/EAGAIN (handled) or EFAULT/EINVAL/ENOSYS, which indicate
+    a ztls or kernel bug, not a recoverable condition. That is consistent
+    with BoringSSL/AWS-LC backends, which abort on RAND failure. Backend key
+    generation is now separately fallible (#88): `p256`/`p384` `generate()`
+    return `p256.Error` — bounded retry of a bad draw, terminal propagation
+    of a backend failure — as does `KeyPairs.init`; only `x25519.KeyPair.generate()`
+    stays infallible (clamping makes an invalid scalar unreachable). The
+    fail-stop contract is documented on `entropy.fill` and on the `generate()`
     convenience constructors (x25519/p256/p384), and the `getrandom` abort now
     emits an actionable errno message (`ztls: OS CSPRNG getrandom failed with
     errno {d}; cannot generate key material without entropy`) so embedders can
@@ -610,7 +630,13 @@ Four correctness properties are gated by tests rather than asserted in prose:
   adding a core variant is a compile error in the integration until it is
   classified. Two role projections mean the same core error can mean different
   things per role (`UnsupportedCipherSuite` is negotiation for a server,
-  `illegal_parameter` for a client).
+  `illegal_parameter` for a client). A local keygen failure (#88) is
+  deliberately outside that table — it is not a peer event and predates
+  in-place init, so `connect`/`accept` map it straight to `InternalError`
+  after closing the owned socket and marking the Stream closed, keeping the
+  documented `deinit`-is-a-no-op contract on every failure path. That gap is
+  what caught PR #89 shipping with `try` on errors absent from
+  `ConnectError`/`AcceptError`: the 0.16 lane did not compile.
 - **Buffer footprint is configurable and pinned.** `Config` sizes record
   staging, reassembly, read look-ahead, write staging, and optional peer-chain
   retention at comptime. Defaults measure 151_840 bytes (client) and 134_912

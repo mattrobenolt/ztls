@@ -157,7 +157,7 @@ fn clientInitInsecureImpl(
     };
 
     // A backend that cannot produce the P-256 half is a failure this ABI
-    // reports rather than one it retries past (zoxy-io/zoxy#222).
+    // reports rather than one it retries past (#88).
     const keypairs = ClientHandshake.KeyPairs.init(keypair) catch |err| return mapError(err);
     const config: Config = .{
         .keypairs = keypairs,

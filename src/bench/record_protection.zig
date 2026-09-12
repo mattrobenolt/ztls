@@ -163,7 +163,12 @@ fn deterministicServerKeypair() !ztls.x25519.KeyPair {
 
 fn deterministicClientHandshake() ztls.ClientHandshake {
     const client: ztls.ClientHandshake = .init(.{
-        .keypairs = KeyPairs.init(deterministicClientKeypair() catch unreachable) catch unreachable,
+        // Bench-only setup on fixed seeds; the calls cannot fail for these
+        // inputs, but they are fallible now (#88), so a failure must be a
+        // loud panic, not `unreachable` UB in ReleaseFast.
+        .keypairs = KeyPairs.init(
+            deterministicClientKeypair() catch @panic("x25519 keygen failed"),
+        ) catch @panic("p256 keygen failed"),
         .host_name = "ztls.server.test",
         .now_sec = 0,
         .random = rfc8448.client_random,
@@ -174,7 +179,9 @@ fn deterministicClientHandshake() ztls.ClientHandshake {
 
 fn deterministicServerHandshake() ztls.ServerHandshake {
     return .init(.{
-        .keypairs = KeyPairs.init(deterministicServerKeypair() catch unreachable) catch unreachable,
+        .keypairs = KeyPairs.init(
+            deterministicServerKeypair() catch @panic("x25519 keygen failed"),
+        ) catch @panic("p256 keygen failed"),
         .random = rfc8448.server_random,
     });
 }
