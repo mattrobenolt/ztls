@@ -925,9 +925,11 @@ backend, and single-backend coverage is not backend coverage.
 
 **Gaps (tracked under #76's successors):** in-flight cancellation is now covered
 for both reads and writes, abortive and orderly, on io_uring and epoll (#83).
-kqueue remains the unproven island: the abortive read test stalls there for
-reasons still unestablished, and both write variants share the same
-cancel-then-close shape and are skipped for the same reason. The epoll fix works
+kqueue cancellation remains unproven in the shipped dependency: the abortive
+read stall is attributed to libxev's dropped `EV_DELETE` during `tick(0)` by the
+[isolated deletion-flush experiment](docs/research/XEV_KQUEUE_83/20260913-flush/README.md).
+The fix is not adopted. Both write variants remain skipped and were not
+validated by that experiment; #83 stays open. The epoll fix works
 around what looks like an upstream libxev defect: its epoll TCP watcher
 duplicates the fd per operation and the normal completion path closes that
 duplicate, but the cancellation path (`stop_completion`) only does
@@ -970,7 +972,14 @@ after half a record would be un-authenticatable garbage.
 The abortive in-flight-read test stalls on macOS/kqueue: after the server's
 cancellation completes, the client's plain socket close is armed
 (`phase = .released`) but its callback never fires and `Loop.active == 0`.
-Unresolved, and now bounded by evidence rather than by hypothesis.
+CI run `34742256947` reproduces this exact state at diagnostic revision
+`f3d0a0e`; run `34742815211` passes the same enabled test at `7715eb5` with only
+upstream mitchellh/libxev#224's deletion-flush hunk applied to the pinned source.
+The tick-local deletion is otherwise discarded on `wait == 0`. A stale EOF
+can re-fire and decrement `active` again, preventing the loop from reaching
+thread-pool completion migration. Source analysis and the isolated red/green
+experiment establish the abortive-read attribution, not deterministic behavior
+across all interleavings. The production pin and kqueue skips are unchanged.
 
 Two hypotheses were tested against real macOS runs and both are dead: libxev
 mis-accounting `active` on the cancel path (a single-socket probe comes back
@@ -986,10 +995,10 @@ other has a read armed:
       src/backend/kqueue.zig:1285 in perform   (xev_posix.close(op.fd))
       src/backend/kqueue.zig:960 in thread_perform
 
-That is a double close of an already-closed fd in the thread-pool worker.
-Whether it shares a root cause with the `Conn` stall is unestablished: the ztls
-test stalls rather than panicking, so they may be separate defects in the same
-area. Upstream-reportable either way.
+The thread-pool worker attempted to close an invalid fd. The earlier closer or
+possible duplicate scheduling remains unestablished. The deletion-flush
+experiment did not run this probe and does not establish its relationship to
+the `Conn` stall.
 
 **macOS is now CI-gated.** A `macos-15` job runs `just integrations-ci` on kqueue,
 scoped to the 0.16 integrations rather than the whole lane (conformance needs a
@@ -1000,15 +1009,14 @@ manual run — the 21/21 that closed #76 was stale within a day.
 
 The runner immediately narrowed #83, which is the argument for having it. Only
 the **abortive** close with a read in flight stalls on kqueue; the **orderly**
-close passes there and runs normally. The two differ by exactly one thing — the
-close_notify write between the cancel and the socket close — so an extra
-completion cycle at that point is enough to unstick it. That is the sharpest clue
-available and was invisible from a single manual run, which had only ever
-exercised the abortive case.
+close passes there and runs normally. The extra close_notify write changes the
+event path, but timing alone was not accepted as proof of a repair. The isolated
+deletion-flush experiment preserves the abortive test's trigger and timing.
 
-The abortive case is skipped on kqueue rather than asserted-as-failing: a stalled
-loop's teardown crashes, so the failure cannot be caught and asserted. In-flight
-write cancellation remains separately unproven.
+The abortive case remains skipped on kqueue until a dependency fix is adopted.
+Earlier stalled-loop teardowns crashed; the preserved CI baseline instead
+returns `LoopStalled` cleanly. In-flight write cancellation remains separately
+unproven.
 
 
 
