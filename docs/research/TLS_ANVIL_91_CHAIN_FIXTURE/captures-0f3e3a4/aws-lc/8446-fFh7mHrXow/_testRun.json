@@ -1,0 +1,85 @@
+{
+  "TestId" : "8446-fFh7mHrXow",
+  "TestCases" : [ {
+    "Result" : "STRICTLY_SUCCEEDED",
+    "DisplayName" : "[1] Combination{INCLUDE_CHANGE_CIPHER_SPEC=INCLUDE_CHANGE_CIPHER_SPEC = true, NAMED_GROUP=NAMED_GROUP = SECP256R1, CIPHER_SUITE=CIPHER_SUITE = TLS_AES_128_GCM_SHA256, TCP_FRAGMENTATION=TCP_FRAGMENTATION = false, RECORD_LENGTH=RECORD_LENGTH = 16384}",
+    "ParameterCombination" : {
+      "NAMED_GROUP" : "SECP256R1",
+      "TCP_FRAGMENTATION" : false,
+      "CIPHER_SUITE" : "TLS_AES_128_GCM_SHA256",
+      "INCLUDE_CHANGE_CIPHER_SPEC" : true,
+      "RECORD_LENGTH" : 16384
+    },
+    "AdditionalResultInformation" : null,
+    "AdditionalTestInformation" : null,
+    "SrcPort" : 50515,
+    "DstPort" : 60200,
+    "StartTimestamp" : "2026-09-13T02:45:46.346Z",
+    "EndTimestamp" : "2026-09-13T02:45:52.375Z",
+    "Stacktrace" : null,
+    "uuid" : "23E14CF2A270F63928E3B92618793F9E6DB65DC75281557EFDF8D80ED1FC19A6"
+  }, {
+    "Result" : "STRICTLY_SUCCEEDED",
+    "DisplayName" : "[2] Combination{INCLUDE_CHANGE_CIPHER_SPEC=INCLUDE_CHANGE_CIPHER_SPEC = false, NAMED_GROUP=NAMED_GROUP = ECDH_X25519, CIPHER_SUITE=CIPHER_SUITE = TLS_AES_256_GCM_SHA384, TCP_FRAGMENTATION=TCP_FRAGMENTATION = true, RECORD_LENGTH=RECORD_LENGTH = 16384}",
+    "ParameterCombination" : {
+      "NAMED_GROUP" : "ECDH_X25519",
+      "TCP_FRAGMENTATION" : true,
+      "CIPHER_SUITE" : "TLS_AES_256_GCM_SHA384",
+      "INCLUDE_CHANGE_CIPHER_SPEC" : false,
+      "RECORD_LENGTH" : 16384
+    },
+    "AdditionalResultInformation" : null,
+    "AdditionalTestInformation" : null,
+    "SrcPort" : 50515,
+    "DstPort" : 42702,
+    "StartTimestamp" : "2026-09-13T02:45:53.945Z",
+    "EndTimestamp" : "2026-09-13T02:45:59.999Z",
+    "Stacktrace" : null,
+    "uuid" : "D374568DDFD6429005AE2C25F03119F91E938EE7108BDEBFB2511696366E1957"
+  }, {
+    "Result" : "STRICTLY_SUCCEEDED",
+    "DisplayName" : "[3] Combination{INCLUDE_CHANGE_CIPHER_SPEC=INCLUDE_CHANGE_CIPHER_SPEC = true, NAMED_GROUP=NAMED_GROUP = SECP256R1, CIPHER_SUITE=CIPHER_SUITE = TLS_CHACHA20_POLY1305_SHA256, TCP_FRAGMENTATION=TCP_FRAGMENTATION = false, RECORD_LENGTH=RECORD_LENGTH = 16384}",
+    "ParameterCombination" : {
+      "NAMED_GROUP" : "SECP256R1",
+      "TCP_FRAGMENTATION" : false,
+      "CIPHER_SUITE" : "TLS_CHACHA20_POLY1305_SHA256",
+      "INCLUDE_CHANGE_CIPHER_SPEC" : true,
+      "RECORD_LENGTH" : 16384
+    },
+    "AdditionalResultInformation" : null,
+    "AdditionalTestInformation" : null,
+    "SrcPort" : 50515,
+    "DstPort" : 49896,
+    "StartTimestamp" : "2026-09-13T02:46:01.569Z",
+    "EndTimestamp" : "2026-09-13T02:46:07.597Z",
+    "Stacktrace" : null,
+    "uuid" : "5F42951534B5D46219108DD4BE0A7523745C4DA1E39C3AC809E02BA3D0A971E0"
+  } ],
+  "Result" : "STRICTLY_SUCCEEDED",
+  "DisabledReason" : null,
+  "FailedReason" : null,
+  "ExecutionTime" : 22823,
+  "GenerationTime" : 1,
+  "FailureInducingCombinations" : null,
+  "Score" : {
+    "RecordLayer" : 100.0,
+    "Interoperability" : 100.0
+  },
+  "HasStateWithAdditionalResultInformation" : false,
+  "HasVaryingAdditionalResultInformation" : false,
+  "TestMethod" : "appDataUnderNewKeysSucceeds",
+  "TestClass" : "de.rub.nds.tlstest.suite.tests.both.tls13.rfc8446.KeyUpdate",
+  "CaseCount" : 3,
+  "MetaData" : {
+    "description" : "Upon receiving a KeyUpdate, the receiver MUST update its receiving keys.",
+    "severityLevels" : {
+      "RecordLayer" : 80,
+      "Interoperability" : 80
+    },
+    "rfc" : {
+      "number" : 8446,
+      "section" : "4.6.3.  Key and Initialization Vector Update"
+    },
+    "tags" : [ "both", "tls13", "rfc8446", "KeyUpdate", "appDataUnderNewKeysSucceeds" ]
+  }
+}

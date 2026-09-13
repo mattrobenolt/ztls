@@ -59,10 +59,10 @@ ztls is production-ready when all six pillars are `PROVEN`:
 
 | Pillar | Status | One-line |
 |---|---|---|
-| 1. Correctness | `PARTIAL` | Patched-fixture TLS-Anvil captures at `1d900e2` are strict-complete: OpenSSL and BoringSSL have no unexpected results; AWS-LC still has one KeyUpdate failure (#91). Full TLS-Anvil remains scheduled-only; BoGo is explicitly deferred. |
+| 1. Correctness | `PARTIAL` | Patched-fixture OpenSSL/BoringSSL captures at `1d900e2` have no unexpected results. The AWS-LC follow-up at `0f3e3a4` has one client-authentication failure; the earlier KeyUpdate failure remains unexplained (#91). Full TLS-Anvil remains scheduled-only; BoGo is explicitly deferred. |
 | 2. Ergonomics | `PROVEN` | CI-gated deterministic examples cover client and server roles across io_uring, epoll, and `std.net.Stream`; Config setup, server credentials, and `Outbox` cover the supported core ergonomics boundary. Two higher-order integrations are `PARTIAL`, both CI-gated under Zig 0.16: `ztls-std` (#77, `std.Io`) lacks wrapper-level interop, client auth, and concurrent split halves; `ztls-xev` (#76, libxev completions) has both roles on io_uring (CI-gated) and kqueue (CI-gated), with in-flight read and write cancellation proven on io_uring and epoll; kqueue cancellation remains the unproven island (#83). |
 | 3. Performance | `PROVEN` | n=10 captures on x86_64 (c7i.2xlarge), aarch64 (c7g.2xlarge), and macOS (Apple M1 Max) with formal CIs (p=0.000): ztls beats libssl on every comparable app-data row on all three platforms and rustls on all AES-GCM rows; regression gate committed. |
-| 4. Providers | `PARTIAL` | OpenSSL, AWS-LC, and BoringSSL have CI-gated backend lanes and historical clean TLS-Anvil captures. Patched-fixture client captures at `1d900e2` have zero unexpected OpenSSL/BoringSSL failures and one AWS-LC KeyUpdate failure (#91). Cert-chain stays ztls/std; FIPS capability checks are comptime-only; PQ/P-384 is #6. |
+| 4. Providers | `PARTIAL` | OpenSSL, AWS-LC, and BoringSSL have CI-gated backend lanes and historical clean TLS-Anvil captures. Latest patched-fixture captures have zero unexpected OpenSSL/BoringSSL failures (`1d900e2`) and one AWS-LC client-authentication failure (`0f3e3a4`); earlier KeyUpdate failures remain unexplained (#91). Cert-chain stays ztls/std; FIPS capability checks are comptime-only; PQ/P-384 is #6. |
 | 5. Marketing | `PROVEN` | README leads with the proven performance story (n=10, both architectures, honest ChaCha20 loss) and the adversarial security posture; the why-ztls narrative and headline benchmarks are on the front door, backed by PERFORMANCE.md. |
 | 6. User docs | `PROVEN` | Root on-ramp plus `docs/USAGE.md` cover fresh-project setup, supported surface, drive loops, API reference, and CI-gated integration examples. |
 
@@ -70,7 +70,19 @@ ztls is production-ready when all six pillars are `PROVEN`:
 
 ## Pillar 1 — Correctness
 
-**Current captures (2026-09-13 UTC, #91):** all three patched-fixture runs at
+**Latest AWS-LC capture (2026-09-13 UTC, #91):** run `34733530093` at clean
+`0f3e3a4` completed 437/437 with matching patched-fixture provenance, 91 passes,
+six expected DSA failures, and one unexpected client-authentication failure
+(`8446-bejcyb2cLf`). All KeyUpdate tests passed in this run; that does not
+establish a fix for their earlier failures. The per-invocation client log
+immediately preceding the failed case reports `CertificateExpired` during
+server-certificate validation. Actual certificate validity dates have not yet
+been captured, so the cause of that rejection remains under investigation.
+The new trigger changes startup timing; results cannot establish timing-cause
+comparisons with the earlier trigger. Raw summaries, case results, and nearby
+invocation logs: `docs/research/TLS_ANVIL_91_CHAIN_FIXTURE/captures-0f3e3a4/`.
+
+**Earlier patched-fixture captures (2026-09-13 UTC, #91):** all three runs at
 clean `1d900e2` completed 437/437 without partial-run overrides. OpenSSL
 `34728687594` and BoringSSL `34728689625` each have 92 passes, six expected
 DSA failures, and zero unexpected results. AWS-LC `34728688542` has 91 passes,

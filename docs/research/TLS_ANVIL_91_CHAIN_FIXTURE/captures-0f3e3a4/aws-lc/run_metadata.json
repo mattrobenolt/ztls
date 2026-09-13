@@ -1,0 +1,23 @@
+{
+  "generated_at": "2026-09-13T02:42:00.682558+00:00",
+  "host": "runnervmlun5p",
+  "git": {
+    "revision": "0f3e3a4",
+    "dirty": false
+  },
+  "port": 50515,
+  "client_bin": "/home/runner/work/ztls/ztls/conformance/zig-out/bin/anvil_client",
+  "trigger_script": "zig-out/anvil/client/ci-34733530093/logs/trigger_client.py",
+  "tls_anvil_jar": "/home/runner/work/ztls/ztls/conformance/zig-out/tools/TLS-Anvil.jar",
+  "chain_provider": {
+    "tls_test_framework_jar": "/home/runner/work/ztls/ztls/conformance/zig-out/tools/lib/tls-test-framework-1.5.0.jar",
+    "jar_sha256": "ac542f2d760f9e8e4c669802adc7882e937cafffc10fc7f1dd9cfa0ca884fdfb",
+    "chain_provider_class_sha256": "d6646a915721dd15aeb368b5bbfc307a54bbbe37361c1de5a27ed611a048dba0",
+    "patch_source_sha256": "8a9d4c26211a0f87f8a6b40f2c937c94f89d0d39cbb1fcbf74a6a84b229d6e84",
+    "expected_jar_sha256": "ac542f2d760f9e8e4c669802adc7882e937cafffc10fc7f1dd9cfa0ca884fdfb",
+    "expected_class_sha256": "d6646a915721dd15aeb368b5bbfc307a54bbbe37361c1de5a27ed611a048dba0",
+    "expected_source_sha256": "8a9d4c26211a0f87f8a6b40f2c937c94f89d0d39cbb1fcbf74a6a84b229d6e84",
+    "patch_status": "patched"
+  },
+  "command": "java -jar /home/runner/work/ztls/ztls/conformance/zig-out/tools/TLS-Anvil.jar -disableTcpDump -strength 1 -parallelTests 1 -parallelHandshakes 1 -outputFolder zig-out/anvil/client/ci-34733530093 client -port 50515 -triggerScript zig-out/anvil/client/ci-34733530093/logs/trigger_client.py"
+}

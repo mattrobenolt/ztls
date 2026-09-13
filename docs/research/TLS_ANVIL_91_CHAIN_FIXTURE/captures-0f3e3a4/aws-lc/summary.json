@@ -1,0 +1,571 @@
+{
+  "counts": {
+    "total": 437,
+    "expected_skipped": 134,
+    "unexpected_skipped": 0,
+    "passed": 91,
+    "failed": 7,
+    "expected_failed": 6,
+    "errored": 0,
+    "timeout": 0,
+    "not_attempted": 205
+  },
+  "unexpected": [
+    {
+      "id": "de.rub.nds.tlstest.suite.tests.client.tls13.rfc8446.ClientAuthentication.clientSendsCertificateAndFinMessage",
+      "test": "The client MUST send a Certificate message if and only if the server has requested client authentication via a CertificateRequest message (Section 4.3.2).[...] If the server requests client authentication but no suitable certificate is available, the client MUST send a Certificate message containing no certificates [...] A Finished message MUST be sent regardless of whether the Certificate message is empty.",
+      "result": "PARTIALLY_FAILED",
+      "classification": "unexpected_fail",
+      "failure_reason": "org.opentest4j.AssertionFailedError: The workflow could not be executed as planned! ==> expected: <true> but was: <false>",
+      "rationale": "test PARTIALLY_FAILED but no skip-list pattern matched \u2014 regression candidate: org.opentest4j.AssertionFailedError: The workflow could not be executed as planned! ==> expected: <true> but was: <false>",
+      "case_result_counts": {
+        "STRICTLY_SUCCEEDED": 3,
+        "FULLY_FAILED": 1
+      }
+    }
+  ],
+  "expected_failures": [
+    {
+      "id": "de.rub.nds.tlstest.suite.tests.both.tls13.rfc8446.RecordProtocol.sendZeroLengthApplicationRecord",
+      "test": "Zero-length fragments of Application Data MAY be sent, as they are potentially useful as a traffic analysis countermeasure.",
+      "result": "PARTIALLY_FAILED",
+      "classification": "expected_failed",
+      "failure_reason": "org.opentest4j.AssertionFailedError: The workflow could not be executed as planned! ==> expected: <true> but was: <false>",
+      "rationale": "DSA-root certificate parameter combination (#52); ztls correctly rejects DSA under RFC 8446 \u00a74.2.3 / Appendix D",
+      "case_result_counts": {
+        "STRICTLY_SUCCEEDED": 6,
+        "FULLY_FAILED": 6
+      },
+      "failure_combinations": [
+        {
+          "CERTIFICATE": {
+            "ROOT": "DSA",
+            "LEAF": {
+              "keySize": 2048,
+              "keyType": "RSA"
+            }
+          }
+        },
+        {
+          "CERTIFICATE": {
+            "ROOT": "DSA",
+            "LEAF": {
+              "keySize": 4096,
+              "keyType": "RSA"
+            }
+          }
+        },
+        {
+          "CERTIFICATE": {
+            "ROOT": "DSA",
+            "LEAF": {
+              "keySize": 1024,
+              "keyType": "RSA"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "de.rub.nds.tlstest.suite.tests.client.tls13.rfc8446.NewSessionTicket.ignoresUnknownNewSessionTicketExtension",
+      "test": "A set of extension values for the ticket.  The \"Extension\" format is defined in Section 4.2.  Clients MUST ignore unrecognized extensions. [...]In TLS 1.3, a client receiving a CertificateRequest or NewSessionTicket MUST also ignore all unrecognized extensions.",
+      "result": "PARTIALLY_FAILED",
+      "classification": "expected_failed",
+      "failure_reason": "org.opentest4j.AssertionFailedError: The workflow could not be executed as planned! ==> expected: <true> but was: <false>",
+      "rationale": "DSA-root certificate parameter combination (#52); ztls correctly rejects DSA under RFC 8446 \u00a74.2.3 / Appendix D",
+      "case_result_counts": {
+        "STRICTLY_SUCCEEDED": 6,
+        "FULLY_FAILED": 6
+      },
+      "failure_combinations": [
+        {
+          "CERTIFICATE": {
+            "ROOT": "DSA",
+            "LEAF": {
+              "keySize": 2048,
+              "keyType": "RSA"
+            }
+          }
+        },
+        {
+          "CERTIFICATE": {
+            "ROOT": "DSA",
+            "LEAF": {
+              "keySize": 4096,
+              "keyType": "RSA"
+            }
+          }
+        },
+        {
+          "CERTIFICATE": {
+            "ROOT": "DSA",
+            "LEAF": {
+              "keySize": 1024,
+              "keyType": "RSA"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "de.rub.nds.tlstest.suite.tests.both.tls13.rfc8446.RecordProtocol.acceptsOptionalPadding",
+      "test": "All encrypted TLS records can be padded to inflate the size of the TLSCiphertext.",
+      "result": "PARTIALLY_FAILED",
+      "classification": "expected_failed",
+      "failure_reason": "org.opentest4j.AssertionFailedError: The workflow could not be executed as planned! ==> expected: <true> but was: <false>",
+      "rationale": "DSA-root certificate parameter combination (#52); ztls correctly rejects DSA under RFC 8446 \u00a74.2.3 / Appendix D",
+      "case_result_counts": {
+        "STRICTLY_SUCCEEDED": 6,
+        "FULLY_FAILED": 6
+      },
+      "failure_combinations": [
+        {
+          "CERTIFICATE": {
+            "ROOT": "DSA",
+            "LEAF": {
+              "keySize": 4096,
+              "keyType": "RSA"
+            }
+          }
+        },
+        {
+          "CERTIFICATE": {
+            "ROOT": "DSA",
+            "LEAF": {
+              "keySize": 1024,
+              "keyType": "RSA"
+            }
+          }
+        },
+        {
+          "CERTIFICATE": {
+            "ROOT": "DSA",
+            "LEAF": {
+              "keySize": 2048,
+              "keyType": "RSA"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "de.rub.nds.tlstest.suite.tests.both.tls13.rfc8446.HappyFlow.happyFlow",
+      "test": "A benign handshake executed with all parameter combinations  that affect a regular handshake",
+      "result": "PARTIALLY_FAILED",
+      "classification": "expected_failed",
+      "failure_reason": "org.opentest4j.AssertionFailedError: The workflow could not be executed as planned! ==> expected: <true> but was: <false>",
+      "rationale": "DSA-root certificate parameter combination (#52); ztls correctly rejects DSA under RFC 8446 \u00a74.2.3 / Appendix D",
+      "case_result_counts": {
+        "STRICTLY_SUCCEEDED": 6,
+        "FULLY_FAILED": 6
+      },
+      "failure_combinations": [
+        {
+          "CERTIFICATE": {
+            "ROOT": "DSA",
+            "LEAF": {
+              "keySize": 2048,
+              "keyType": "RSA"
+            }
+          }
+        },
+        {
+          "CERTIFICATE": {
+            "ROOT": "DSA",
+            "LEAF": {
+              "keySize": 4096,
+              "keyType": "RSA"
+            }
+          }
+        },
+        {
+          "CERTIFICATE": {
+            "ROOT": "DSA",
+            "LEAF": {
+              "keySize": 1024,
+              "keyType": "RSA"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "de.rub.nds.tlstest.suite.tests.client.tls13.rfc8446.SupportedVersions.invalidLegacyVersion",
+      "test": "If this extension is present, clients MUST ignore the ServerHello.legacy_version value and MUST use only the \"supported_versions\" extension to determine the selected version.",
+      "result": "PARTIALLY_FAILED",
+      "classification": "expected_failed",
+      "failure_reason": "org.opentest4j.AssertionFailedError: Socket was closed but unexpected messages have been received. Received: Alert(FATAL,BAD_CERTIFICATE) ==> expected: <false> but was: <true>",
+      "rationale": "DSA-root certificate parameter combination (#52); ztls correctly rejects DSA under RFC 8446 \u00a74.2.3 / Appendix D",
+      "case_result_counts": {
+        "STRICTLY_SUCCEEDED": 6,
+        "FULLY_FAILED": 6
+      },
+      "failure_combinations": [
+        {
+          "CERTIFICATE": {
+            "ROOT": "DSA",
+            "LEAF": {
+              "keySize": 4096,
+              "keyType": "RSA"
+            }
+          }
+        },
+        {
+          "CERTIFICATE": {
+            "ROOT": "DSA",
+            "LEAF": {
+              "keySize": 2048,
+              "keyType": "RSA"
+            }
+          }
+        },
+        {
+          "CERTIFICATE": {
+            "ROOT": "DSA",
+            "LEAF": {
+              "keySize": 1024,
+              "keyType": "RSA"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "de.rub.nds.tlstest.suite.tests.client.tls13.rfc8701.ServerInitiatedExtensionPoints.advertiseGreaseExtensionsInSessionTicket",
+      "test": "When sending a NewSessionTicket message in TLS 1.3, a server MAY select one or more GREASE extension values and advertise them as extensions with varying length and contents. [...]When processing a CertificateRequest or NewSessionTicket, clients MUST NOT treat GREASE values differently from any unknown value.",
+      "result": "PARTIALLY_FAILED",
+      "classification": "expected_failed",
+      "failure_reason": "org.opentest4j.AssertionFailedError: The workflow could not be executed as planned! ==> expected: <true> but was: <false>",
+      "rationale": "DSA-root certificate parameter combination (#52); ztls correctly rejects DSA under RFC 8446 \u00a74.2.3 / Appendix D",
+      "case_result_counts": {
+        "STRICTLY_SUCCEEDED": 16,
+        "FULLY_FAILED": 9
+      },
+      "failure_combinations": [
+        {
+          "CERTIFICATE": {
+            "ROOT": "DSA",
+            "LEAF": {
+              "keySize": 4096,
+              "keyType": "RSA"
+            }
+          }
+        },
+        {
+          "CERTIFICATE": {
+            "ROOT": "DSA",
+            "LEAF": {
+              "keySize": 2048,
+              "keyType": "RSA"
+            }
+          }
+        },
+        {
+          "CERTIFICATE": {
+            "ROOT": "DSA",
+            "LEAF": {
+              "keySize": 1024,
+              "keyType": "RSA"
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "feature_breakdown": {
+    "ServerKeyExchange": {
+      "expected_skipped": 6,
+      "not_attempted": 1
+    },
+    "E1CompatibilityWithTLS10_11andSSL30": {
+      "not_attempted": 3,
+      "expected_skipped": 1
+    },
+    "Fragmentation": {
+      "not_attempted": 4,
+      "expected_skipped": 9
+    },
+    "SignatureAlgorithms": {
+      "not_attempted": 8,
+      "passed": 1,
+      "expected_skipped": 2
+    },
+    "Resumption": {
+      "not_attempted": 4
+    },
+    "AEADCiphers": {
+      "expected_skipped": 2
+    },
+    "AlertProtocol": {
+      "not_attempted": 3,
+      "expected_skipped": 4,
+      "passed": 7
+    },
+    "TLSRecordProtocol": {
+      "expected_skipped": 2,
+      "not_attempted": 2
+    },
+    "CBCBlockCipher": {
+      "expected_skipped": 4
+    },
+    "ClientHello": {
+      "expected_skipped": 4,
+      "not_attempted": 15,
+      "passed": 4
+    },
+    "ChangeCipherSpecProtocol": {
+      "expected_skipped": 1
+    },
+    "SupportedCiphersuites": {
+      "expected_skipped": 2,
+      "passed": 2
+    },
+    "ClientCertificateMessage": {
+      "expected_skipped": 1
+    },
+    "A5CipherSuite": {
+      "expected_skipped": 2
+    },
+    "ServerHello": {
+      "expected_skipped": 4,
+      "not_attempted": 10,
+      "passed": 3
+    },
+    "RSAEncryptedPremasterSecretMessage": {
+      "not_attempted": 2
+    },
+    "CertificateVerify": {
+      "expected_skipped": 3,
+      "passed": 7,
+      "not_attempted": 1
+    },
+    "HappyFlow": {
+      "expected_skipped": 1,
+      "expected_failed": 1
+    },
+    "CipherSuites": {
+      "expected_skipped": 1
+    },
+    "Finished": {
+      "expected_skipped": 5,
+      "passed": 5,
+      "not_attempted": 9
+    },
+    "MaximumFragmentLength": {
+      "not_attempted": 2,
+      "expected_skipped": 3
+    },
+    "ServerNameIndication": {
+      "expected_skipped": 1,
+      "not_attempted": 1
+    },
+    "CertificateStatusRequest": {
+      "not_attempted": 1
+    },
+    "MaxFragmentLengthExtension": {
+      "expected_skipped": 1
+    },
+    "ProhibitingSSLv2": {
+      "expected_skipped": 3,
+      "not_attempted": 2
+    },
+    "DoS": {
+      "not_attempted": 5,
+      "expected_skipped": 1
+    },
+    "AntiReplay": {
+      "expected_skipped": 2
+    },
+    "EncThenMacExtension": {
+      "expected_skipped": 2,
+      "not_attempted": 2
+    },
+    "RC4Ciphersuites": {
+      "expected_skipped": 2,
+      "not_attempted": 2
+    },
+    "SCSV": {
+      "expected_skipped": 1,
+      "not_attempted": 2
+    },
+    "DoNotUseSSLVersion30": {
+      "not_attempted": 3,
+      "expected_skipped": 1
+    },
+    "PaddingExtension": {
+      "expected_skipped": 1,
+      "not_attempted": 2
+    },
+    "FfDheShare": {
+      "not_attempted": 5,
+      "expected_skipped": 4
+    },
+    "TLSExtensionForECC": {
+      "not_attempted": 8,
+      "expected_skipped": 6
+    },
+    "PointFormatExtension": {
+      "not_attempted": 3
+    },
+    "RespectClientExtensions": {
+      "not_attempted": 3
+    },
+    "PreSharedKey": {
+      "not_attempted": 9,
+      "expected_skipped": 1
+    },
+    "KeyShare": {
+      "not_attempted": 9,
+      "passed": 5,
+      "expected_skipped": 1
+    },
+    "HelloRetryRequest": {
+      "passed": 3,
+      "expected_skipped": 12,
+      "not_attempted": 5
+    },
+    "SupportedVersions": {
+      "not_attempted": 9,
+      "passed": 2,
+      "expected_skipped": 3,
+      "expected_failed": 1
+    },
+    "RecordLayer": {
+      "passed": 3,
+      "expected_skipped": 2,
+      "not_attempted": 5
+    },
+    "EncryptedExtensions": {
+      "expected_skipped": 2,
+      "passed": 4,
+      "not_attempted": 1
+    },
+    "EarlyData": {
+      "expected_skipped": 5
+    },
+    "CryptographicNegotiation": {
+      "not_attempted": 2
+    },
+    "Extensions": {
+      "passed": 2
+    },
+    "NewSessionTicket": {
+      "not_attempted": 1,
+      "expected_failed": 1
+    },
+    "RecordProtocol": {
+      "expected_failed": 2,
+      "passed": 10
+    },
+    "Cookie": {
+      "passed": 1,
+      "not_attempted": 1
+    },
+    "KeyUpdate": {
+      "passed": 4
+    },
+    "ClientAuthentication": {
+      "failed": 1
+    },
+    "MiddleboxCompatibility": {
+      "not_attempted": 2
+    },
+    "Certificate": {
+      "passed": 8,
+      "not_attempted": 1,
+      "expected_skipped": 3
+    },
+    "ComplianceRequirements": {
+      "passed": 2
+    },
+    "PreSharedKeyExchangeModes": {
+      "passed": 1
+    },
+    "ServerInitiatedExtensionPoints": {
+      "expected_skipped": 5,
+      "expected_failed": 1,
+      "passed": 5
+    },
+    "ClientInitiatedExtensionPoints": {
+      "not_attempted": 10
+    },
+    "unknown": {
+      "expected_skipped": 18,
+      "not_attempted": 47,
+      "passed": 12
+    }
+  },
+  "unmatched_skip_patterns": [
+    "*0Rtt*",
+    "*Does not send TLS 1.3 session tickets*",
+    "*PSKModeExtension is not supported*",
+    "*RecordSizeLimit*",
+    "*SUT does not support PSK handshakes*",
+    "*Server does not issue Session Tickets and might ignore the extension*",
+    "*Target does not send a Hello Retry Request*",
+    "No TLS 1.* support"
+  ],
+  "expected_skip_count_by_reason": {
+    "TLS 1.2 is out of scope": 90,
+    "max_fragment_length is intentionally outside the supported surface (#34)": 6,
+    "DTLS is out of scope": 2,
+    "TLS 1.2/DTLS/legacy-version tests are out of scope for the TLS 1.3-only runner (#9)": 5,
+    "P-384, FFDHE, and other unsupported named-group derivations are tracked separately (#6)": 14,
+    "server-side EarlyData tests (RFC 8446 \u00a74.2.10) are deferred (#3); TLS-Anvil @Disabled because ztls does not issue session tickets": 5,
+    "TLS-Anvil client runner cannot derive this record-fragmentation case; no execution evidence": 1,
+    "TLS-Anvil cannot derive this legacy-signature negative case for the TLS 1.3-only client runner (#9)": 2,
+    "FFDHE named groups are outside the current named-group scope (#6)": 1,
+    "legacy compression/cipher-suite compatibility behavior is out of scope for the TLS 1.3-only runner (#9)": 3,
+    "TLS-Anvil disabled sender-restriction test; no execution evidence": 1,
+    "TLS-Anvil disables this client-side PSK test; PSK/resumption is deferred (#2)": 1,
+    "TLS-Anvil configuration-option self-test is not ztls conformance evidence": 1,
+    "TLS compression is outside the TLS 1.3-only runner scope (#9)": 1,
+    "ServerKeyExchange is not a TLS 1.3 message; out of scope for the TLS 1.3-only runner (#9)": 1
+  },
+  "provenance": {
+    "generated_at": "2026-09-13T02:46:14.129483+00:00",
+    "adapter_allow_partial": false,
+    "source_run_dir": "zig-out/anvil/client/ci-34733530093",
+    "host": "runnervmlun5p",
+    "git": {
+      "revision": "0f3e3a4",
+      "dirty": false
+    },
+    "run_metadata": {
+      "generated_at": "2026-09-13T02:42:00.682558+00:00",
+      "host": "runnervmlun5p",
+      "git": {
+        "revision": "0f3e3a4",
+        "dirty": false
+      },
+      "port": 50515,
+      "client_bin": "/home/runner/work/ztls/ztls/conformance/zig-out/bin/anvil_client",
+      "trigger_script": "zig-out/anvil/client/ci-34733530093/logs/trigger_client.py",
+      "tls_anvil_jar": "/home/runner/work/ztls/ztls/conformance/zig-out/tools/TLS-Anvil.jar",
+      "chain_provider": {
+        "tls_test_framework_jar": "/home/runner/work/ztls/ztls/conformance/zig-out/tools/lib/tls-test-framework-1.5.0.jar",
+        "jar_sha256": "ac542f2d760f9e8e4c669802adc7882e937cafffc10fc7f1dd9cfa0ca884fdfb",
+        "chain_provider_class_sha256": "d6646a915721dd15aeb368b5bbfc307a54bbbe37361c1de5a27ed611a048dba0",
+        "patch_source_sha256": "8a9d4c26211a0f87f8a6b40f2c937c94f89d0d39cbb1fcbf74a6a84b229d6e84",
+        "expected_jar_sha256": "ac542f2d760f9e8e4c669802adc7882e937cafffc10fc7f1dd9cfa0ca884fdfb",
+        "expected_class_sha256": "d6646a915721dd15aeb368b5bbfc307a54bbbe37361c1de5a27ed611a048dba0",
+        "expected_source_sha256": "8a9d4c26211a0f87f8a6b40f2c937c94f89d0d39cbb1fcbf74a6a84b229d6e84",
+        "patch_status": "patched"
+      },
+      "command": "java -jar /home/runner/work/ztls/ztls/conformance/zig-out/tools/TLS-Anvil.jar -disableTcpDump -strength 1 -parallelTests 1 -parallelHandshakes 1 -outputFolder zig-out/anvil/client/ci-34733530093 client -port 50515 -triggerScript zig-out/anvil/client/ci-34733530093/logs/trigger_client.py"
+    },
+    "tls_anvil": {
+      "jar": "/home/runner/work/ztls/ztls/conformance/zig-out/tools/TLS-Anvil.jar",
+      "command": "java -jar /home/runner/work/ztls/ztls/conformance/zig-out/tools/TLS-Anvil.jar -disableTcpDump -strength 1 -parallelTests 1 -parallelHandshakes 1 -outputFolder zig-out/anvil/client/ci-34733530093 client -port 50515 -triggerScript zig-out/anvil/client/ci-34733530093/logs/trigger_client.py",
+      "report": {
+        "present": true,
+        "running": false,
+        "total_tests": 437,
+        "finished_tests": 437,
+        "status_count": 437,
+        "complete": true
+      }
+    }
+  },
+  "evidence_blockers": []
+}

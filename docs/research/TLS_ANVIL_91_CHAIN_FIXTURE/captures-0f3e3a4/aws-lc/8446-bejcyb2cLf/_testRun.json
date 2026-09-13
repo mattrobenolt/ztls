@@ -1,0 +1,105 @@
+{
+  "TestId" : "8446-bejcyb2cLf",
+  "TestCases" : [ {
+    "Result" : "STRICTLY_SUCCEEDED",
+    "DisplayName" : "[1] Combination{INCLUDE_CHANGE_CIPHER_SPEC=INCLUDE_CHANGE_CIPHER_SPEC = true, NAMED_GROUP=NAMED_GROUP = SECP256R1, CIPHER_SUITE=CIPHER_SUITE = TLS_AES_128_GCM_SHA256, TCP_FRAGMENTATION=TCP_FRAGMENTATION = false, RECORD_LENGTH=RECORD_LENGTH = 16384}",
+    "ParameterCombination" : {
+      "NAMED_GROUP" : "SECP256R1",
+      "TCP_FRAGMENTATION" : false,
+      "CIPHER_SUITE" : "TLS_AES_128_GCM_SHA256",
+      "INCLUDE_CHANGE_CIPHER_SPEC" : true,
+      "RECORD_LENGTH" : 16384
+    },
+    "AdditionalResultInformation" : null,
+    "AdditionalTestInformation" : null,
+    "SrcPort" : 50515,
+    "DstPort" : 59740,
+    "StartTimestamp" : "2026-09-13T02:45:08.787Z",
+    "EndTimestamp" : "2026-09-13T02:45:08.821Z",
+    "Stacktrace" : null,
+    "uuid" : "DC6BA4BE5CCBFCD50E945AE1E40E0E6671A17B16380D5E4B903B9DCF184CCE05"
+  }, {
+    "Result" : "STRICTLY_SUCCEEDED",
+    "DisplayName" : "[2] Combination{INCLUDE_CHANGE_CIPHER_SPEC=INCLUDE_CHANGE_CIPHER_SPEC = false, NAMED_GROUP=NAMED_GROUP = ECDH_X25519, CIPHER_SUITE=CIPHER_SUITE = TLS_AES_256_GCM_SHA384, TCP_FRAGMENTATION=TCP_FRAGMENTATION = true, RECORD_LENGTH=RECORD_LENGTH = 16384}",
+    "ParameterCombination" : {
+      "NAMED_GROUP" : "ECDH_X25519",
+      "TCP_FRAGMENTATION" : true,
+      "CIPHER_SUITE" : "TLS_AES_256_GCM_SHA384",
+      "INCLUDE_CHANGE_CIPHER_SPEC" : false,
+      "RECORD_LENGTH" : 16384
+    },
+    "AdditionalResultInformation" : null,
+    "AdditionalTestInformation" : null,
+    "SrcPort" : 50515,
+    "DstPort" : 59752,
+    "StartTimestamp" : "2026-09-13T02:45:10.388Z",
+    "EndTimestamp" : "2026-09-13T02:45:10.428Z",
+    "Stacktrace" : null,
+    "uuid" : "FE90274808004E95608844E84DA5D3099DD55F498FC0778D8D217D9823106D4D"
+  }, {
+    "Result" : "FULLY_FAILED",
+    "DisplayName" : "[3] Combination{INCLUDE_CHANGE_CIPHER_SPEC=INCLUDE_CHANGE_CIPHER_SPEC = true, NAMED_GROUP=NAMED_GROUP = SECP256R1, CIPHER_SUITE=CIPHER_SUITE = TLS_CHACHA20_POLY1305_SHA256, TCP_FRAGMENTATION=TCP_FRAGMENTATION = false, RECORD_LENGTH=RECORD_LENGTH = 16384}",
+    "ParameterCombination" : {
+      "NAMED_GROUP" : "SECP256R1",
+      "TCP_FRAGMENTATION" : false,
+      "CIPHER_SUITE" : "TLS_CHACHA20_POLY1305_SHA256",
+      "INCLUDE_CHANGE_CIPHER_SPEC" : true,
+      "RECORD_LENGTH" : 16384
+    },
+    "AdditionalResultInformation" : [ "Received TransportHandler exception", "Received TransportHandler exception", "Failed SendAction:  | \tMessages: SERVER_HELLO, CHANGE_CIPHER_SPEC, ENCRYPTED_EXTENSIONS, CERTIFICATE_REQUEST, CERTIFICATE, CERTIFICATE_VERIFY, FINISHED | " ],
+    "AdditionalTestInformation" : null,
+    "SrcPort" : 50515,
+    "DstPort" : 59774,
+    "StartTimestamp" : "2026-09-13T02:45:12.071Z",
+    "EndTimestamp" : "2026-09-13T02:45:12.087Z",
+    "Stacktrace" : "org.opentest4j.AssertionFailedError: The workflow could not be executed as planned! ==> expected: <true> but was: <false>",
+    "uuid" : "36B641C7A3945CDDB61AB2396AEB74B493C17C4ED2E014854AC9BC8388336DA1"
+  }, {
+    "Result" : "STRICTLY_SUCCEEDED",
+    "DisplayName" : "[4] Combination{INCLUDE_CHANGE_CIPHER_SPEC=INCLUDE_CHANGE_CIPHER_SPEC = false, NAMED_GROUP=NAMED_GROUP = SECP256R1, CIPHER_SUITE=CIPHER_SUITE = TLS_CHACHA20_POLY1305_SHA256, TCP_FRAGMENTATION=TCP_FRAGMENTATION = true, RECORD_LENGTH=RECORD_LENGTH = 16384}",
+    "ParameterCombination" : {
+      "NAMED_GROUP" : "SECP256R1",
+      "TCP_FRAGMENTATION" : true,
+      "CIPHER_SUITE" : "TLS_CHACHA20_POLY1305_SHA256",
+      "INCLUDE_CHANGE_CIPHER_SPEC" : false,
+      "RECORD_LENGTH" : 16384
+    },
+    "AdditionalResultInformation" : null,
+    "AdditionalTestInformation" : null,
+    "SrcPort" : 50515,
+    "DstPort" : 59778,
+    "StartTimestamp" : "2026-09-13T02:45:12.159Z",
+    "EndTimestamp" : "2026-09-13T02:45:12.191Z",
+    "Stacktrace" : null,
+    "uuid" : "044FC7E1E22060927A65830045E7A343CC558E0AAF4CD9EF783095D8B69ADDE5"
+  } ],
+  "Result" : "PARTIALLY_FAILED",
+  "DisabledReason" : null,
+  "FailedReason" : "org.opentest4j.AssertionFailedError: The workflow could not be executed as planned! ==> expected: <true> but was: <false>",
+  "ExecutionTime" : 4977,
+  "GenerationTime" : 1,
+  "FailureInducingCombinations" : [ ],
+  "Score" : {
+    "Interoperability" : 20.0,
+    "Handshake" : 20.0,
+    "Certificate" : 20.0
+  },
+  "HasStateWithAdditionalResultInformation" : true,
+  "HasVaryingAdditionalResultInformation" : false,
+  "TestMethod" : "clientSendsCertificateAndFinMessage",
+  "TestClass" : "de.rub.nds.tlstest.suite.tests.client.tls13.rfc8446.ClientAuthentication",
+  "CaseCount" : 4,
+  "MetaData" : {
+    "description" : "The client MUST send a Certificate message if and only if the server has requested client authentication via a CertificateRequest message (Section 4.3.2).[...] If the server requests client authentication but no suitable certificate is available, the client MUST send a Certificate message containing no certificates [...] A Finished message MUST be sent regardless of whether the Certificate message is empty.",
+    "severityLevels" : {
+      "Handshake" : 60,
+      "Certificate" : 40,
+      "Interoperability" : 80
+    },
+    "rfc" : {
+      "number" : 8446,
+      "section" : "4.4.2. Certificate"
+    },
+    "tags" : [ "client", "tls13", "rfc8446", "ClientAuthentication", "clientSendsCertificateAndFinMessage" ]
+  }
+}

@@ -1,0 +1,32 @@
+anvil_client start utc=2026-09-13T02:45:12.001409Z epoch_ns=1789267512001409041 pid=9743
+error: CertificateExpired
+/home/runner/work/ztls/ztls/src/certificate_parser.zig:603:13: 0x1213a5d in verify (root.zig)
+            return error.CertificateExpired;
+            ^
+/home/runner/work/ztls/ztls/src/certificate.zig:326:13: 0x1202cf4 in parse (root.zig)
+            try subject.verify(parsed, policy.now_sec);
+            ^
+/home/runner/work/ztls/ztls/src/ClientHandshake.zig:1432:16: 0x11fa13f in processServerCertificate (root.zig)
+    const pk = try certificate.parse(msg.raw, policy);
+               ^
+/home/runner/work/ztls/ztls/src/ClientHandshake.zig:1538:23: 0x11e7352 in processFlightMessage (root.zig)
+        .wait_cert => try self.processServerCertificate(msg, policy),
+                      ^
+/home/runner/work/ztls/ztls/src/ClientHandshake.zig:1394:9: 0x1199865 in processFlightBytes (root.zig)
+        try self.processFlightMessage(msg, policy);
+        ^
+/home/runner/work/ztls/ztls/src/ClientHandshake.zig:1377:5: 0x117d5f6 in processFlight (root.zig)
+    return self.processFlightBytes(payload, policy);
+    ^
+/home/runner/work/ztls/ztls/src/ClientHandshake.zig:1094:21: 0x116d17f in processHandshakeRecord (root.zig)
+                    try self.processFlight(dec.content, self.policy);
+                    ^
+/home/runner/work/ztls/ztls/src/ClientHandshake.zig:937:14: 0x11642ac in handleRecord (root.zig)
+    else if (try self.processHandshakeRecord(record, out)) |bytes|
+             ^
+/home/runner/work/ztls/ztls/conformance/src/anvil_client.zig:157:5: 0x1164046 in sendAlertAndReturnError (anvil_client.zig)
+    return err;
+    ^
+/home/runner/work/ztls/ztls/conformance/src/anvil_client.zig:78:17: 0x115cff2 in main (anvil_client.zig)
+                return sendAlertAndReturnError(stream, &hs, err, &out);
+                ^
