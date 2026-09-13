@@ -21,6 +21,7 @@ from scripts.anvil_server import (  # noqa: E402
     git_provenance,
     snapshot_logs,
     terminate,
+    validity_adapter_provenance,
 )
 
 CLIENT_BIN = CONF_DIR / "zig-out" / "bin" / "anvil_client"
@@ -49,6 +50,7 @@ def write_run_metadata(output_folder: Path, command: str, port: int, trigger_scr
         "trigger_script": str(trigger_script),
         "tls_anvil_jar": str(ANVIL_JAR),
         "chain_provider": chain_provider_provenance(),
+        "validity_adapter": validity_adapter_provenance(),
         "command": command,
     }
     (output_folder / "run_metadata.json").write_text(json.dumps(metadata, indent=2) + "\n")

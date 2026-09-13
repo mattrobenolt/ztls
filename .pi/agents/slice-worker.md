@@ -40,7 +40,8 @@ Implementation rules:
 
 Validation:
 - Run the narrowest relevant command first, then the requested broader checks.
-- Report exact commands and outcomes. Do not claim success without evidence.
+- Report exact commands and outcomes. Verify tests executed, not just compiled; count the cases actually checked, not the available population.
+- Match evidence to the claim: model fields do not prove encoded DER values, and equal timestamps within one invocation do not imply equality across a capture.
 - If validation fails, diagnose the root cause before changing more code.
 
 ztls validation gotchas (non-negotiable):

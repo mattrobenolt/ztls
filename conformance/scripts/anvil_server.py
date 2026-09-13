@@ -27,6 +27,22 @@ CHAIN_PROVIDER_PATCH_SOURCE = (
     CONF_DIR / "scripts" / "anvil-chain-provider-patch" / "X509CertificateChainProvider.java"
 )
 CHAIN_PROVIDER_PROVENANCE = Path(f"{TLS_TEST_FRAMEWORK_JAR}.provenance")
+# The conformance build also injects a package-level JAXB DateTime adapter
+# (DateTimeAdapter + package-info) into the installed x509-attacker jar
+# (#91: upstream marshals the config's DateTime validity fields as empty XML
+# elements, so Config.createCopy()/ConfigIO round trips lose the configured
+# validity window). Same provenance discipline: hash the ACTUAL installed
+# artifact, both injected classes, and both patch sources.
+X509_ATTACKER_JAR = ANVIL_JAR.parent / "lib" / "x509-attacker-4.3.10.jar"
+VALIDITY_ADAPTER_CLASS = "de/rub/nds/x509attacker/config/DateTimeAdapter.class"
+VALIDITY_PACKAGE_INFO_CLASS = "de/rub/nds/x509attacker/config/package-info.class"
+VALIDITY_ADAPTER_SOURCE = (
+    CONF_DIR / "scripts" / "anvil-chain-provider-patch" / "DateTimeAdapter.java"
+)
+VALIDITY_PACKAGE_INFO_SOURCE = (
+    CONF_DIR / "scripts" / "anvil-chain-provider-patch" / "package-info.java"
+)
+VALIDITY_PROVENANCE = Path(f"{X509_ATTACKER_JAR}.provenance")
 # TLS-Anvil v1.5.0 writes testsuite/tlsattacker logs beside the jar under
 # `logs/default_<date>_*`. Copy any files changed during a run into that run's
 # output directory so timeout/failure evidence stays attached to the capture.
@@ -73,14 +89,7 @@ def chain_provider_provenance() -> dict[str, str | None]:
         with zipfile.ZipFile(TLS_TEST_FRAMEWORK_JAR) as archive:
             class_sha256 = hashlib.sha256(archive.read(CHAIN_PROVIDER_CLASS)).hexdigest()
     source_sha256 = sha256_file(CHAIN_PROVIDER_PATCH_SOURCE)
-    expected: dict[str, str] = {}
-    try:
-        for line in CHAIN_PROVIDER_PROVENANCE.read_text().splitlines():
-            key, separator, value = line.partition("=")
-            if separator:
-                expected[key.strip()] = value.strip()
-    except OSError:
-        pass
+    expected = _read_stamp(CHAIN_PROVIDER_PROVENANCE)
     if jar_sha256 is None:
         status = "jar_missing"
     elif not expected:
@@ -106,6 +115,82 @@ def chain_provider_provenance() -> dict[str, str | None]:
     }
 
 
+def _read_stamp(path: Path) -> dict[str, str]:
+    expected: dict[str, str] = {}
+    try:
+        for line in path.read_text().splitlines():
+            key, separator, value = line.partition("=")
+            if separator:
+                expected[key.strip()] = value.strip()
+    except OSError:
+        pass
+    return expected
+
+
+def validity_adapter_provenance() -> dict[str, str | None]:
+    """Live provenance of the installed (possibly patched) x509-attacker jar.
+
+    Same discipline as chain_provider_provenance: hashes the installed jar,
+    the effective bytes of BOTH injected classes (adapter and package-info)
+    read from inside it, and both in-repo patch sources, then compares every
+    digest against the stamp apply.sh wrote at patch time. ``patched`` only
+    when every live digest matches; ``stale`` when a stamp exists but any
+    digest is missing or differs (including a patch source edited after the
+    build); ``unpatched`` when no stamp exists (pristine upstream jar).
+    """
+    jar_sha256 = sha256_file(X509_ATTACKER_JAR)
+    classes: dict[str, str | None] = {
+        "adapter_class_sha256": None,
+        "package_info_class_sha256": None,
+    }
+    if jar_sha256 is not None:
+        with zipfile.ZipFile(X509_ATTACKER_JAR) as archive:
+            for key, entry in (
+                ("adapter_class_sha256", VALIDITY_ADAPTER_CLASS),
+                ("package_info_class_sha256", VALIDITY_PACKAGE_INFO_CLASS),
+            ):
+                try:
+                    classes[key] = hashlib.sha256(archive.read(entry)).hexdigest()
+                except KeyError:
+                    pass
+    sources = {
+        "adapter_source_sha256": sha256_file(VALIDITY_ADAPTER_SOURCE),
+        "package_info_source_sha256": sha256_file(VALIDITY_PACKAGE_INFO_SOURCE),
+    }
+    expected = _read_stamp(VALIDITY_PROVENANCE)
+    if jar_sha256 is None:
+        status = "jar_missing"
+    elif not expected:
+        status = "unpatched"
+    elif all(
+        digest is not None and digest == expected.get(key)
+        for digest, key in (
+            (jar_sha256, "jar_sha256"),
+            (classes["adapter_class_sha256"], "adapter_class_sha256"),
+            (classes["package_info_class_sha256"], "package_info_class_sha256"),
+            (sources["adapter_source_sha256"], "adapter_source_sha256"),
+            (sources["package_info_source_sha256"], "package_info_source_sha256"),
+        )
+    ):
+        status = "patched"
+    else:
+        status = "stale"
+    return {
+        "x509_attacker_jar": str(X509_ATTACKER_JAR),
+        "jar_sha256": jar_sha256,
+        "adapter_class_sha256": classes["adapter_class_sha256"],
+        "package_info_class_sha256": classes["package_info_class_sha256"],
+        "adapter_source_sha256": sources["adapter_source_sha256"],
+        "package_info_source_sha256": sources["package_info_source_sha256"],
+        "expected_jar_sha256": expected.get("jar_sha256"),
+        "expected_adapter_class_sha256": expected.get("adapter_class_sha256"),
+        "expected_package_info_class_sha256": expected.get("package_info_class_sha256"),
+        "expected_adapter_source_sha256": expected.get("adapter_source_sha256"),
+        "expected_package_info_source_sha256": expected.get("package_info_source_sha256"),
+        "patch_status": status,
+    }
+
+
 def write_run_metadata(output_folder: Path, command: str, port: int) -> None:
     metadata = {
         "generated_at": datetime.now(UTC).isoformat(),
@@ -115,6 +200,7 @@ def write_run_metadata(output_folder: Path, command: str, port: int) -> None:
         "server_bin": str(SERVER_BIN),
         "tls_anvil_jar": str(ANVIL_JAR),
         "chain_provider": chain_provider_provenance(),
+        "validity_adapter": validity_adapter_provenance(),
         "command": command,
     }
     (output_folder / "run_metadata.json").write_text(json.dumps(metadata, indent=2) + "\n")

@@ -86,6 +86,13 @@ def test_write_run_metadata_records_command_git_and_client_fields(tmp_path: Path
         "stale",
         "jar_missing",
     }
+    assert "validity_adapter" in metadata
+    assert metadata["validity_adapter"]["patch_status"] in {
+        "patched",
+        "unpatched",
+        "stale",
+        "jar_missing",
+    }
 
 
 def test_main_writes_run_metadata_before_launching_tls_anvil():

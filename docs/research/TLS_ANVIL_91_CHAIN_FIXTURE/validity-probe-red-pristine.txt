@@ -1,0 +1,66 @@
+code_source=file:/tmp/ztls-keyupdate-fix/conformance/zig-out/tools/lib/tls-test-framework-1.5.0.jar
+leaf_public_key_types=[dsa, ecdh_ecdsa, rsa, rsaes_oaep, rsassa_pss]
+leaf_rsa_modulus_bits=[1024, 2048, 4096]
+PROBE_OK signing-cert configs carry critical basicConstraints cA=true
+config_code_source=file:/tmp/x509-attacker-4.3.10.pristine.jar
+FAIL X509CertificateConfig loaded from installed x509-attacker-4.3.10.jar
+FAIL DateTimeAdapter not loadable: java.lang.NoClassDefFoundError: de/rub/nds/x509attacker/config/DateTimeAdapter
+FAIL adapter semantics not checkable: java.lang.NoClassDefFoundError: de/rub/nds/x509attacker/config/DateTimeAdapter
+ok   provider chain has leaf and signing configs
+ok   baseline cert 0 notBefore is 2026: 2026-01-01T00:00:00.000Z
+ok   baseline cert 0 notAfter is 2028: 2028-01-01T00:00:00.000Z
+ok   baseline cert 1 notBefore is 2026: 2026-01-01T00:00:00.000Z
+ok   baseline cert 1 notAfter is 2028: 2028-01-01T00:00:00.000Z
+ok   createCopy x3 default window: all chain configs survive
+FAIL createCopy x3 default window: cert 0 notBefore preserved: 2026-09-12T21:57:49.874-07:00
+FAIL createCopy x3 default window: cert 0 notAfter preserved: 2026-09-12T21:57:49.874-07:00
+FAIL createCopy x3 default window: cert 1 notBefore preserved: 2026-09-12T21:57:49.875-07:00
+FAIL createCopy x3 default window: cert 1 notAfter preserved: 2026-09-12T21:57:49.875-07:00
+ok   createCopy default window: built both chain certificates
+ok   createCopy default window: DER cert 0 notBefore=Sat Sep 12 21:57:49 PDT 2026 matches config 2026-09-12T21:57:49.874-07:00
+ok   createCopy default window: DER cert 0 notAfter=Sat Sep 12 21:57:49 PDT 2026 matches config 2026-09-12T21:57:49.874-07:00
+ok   createCopy default window: DER cert 1 notBefore=Sat Sep 12 21:57:49 PDT 2026 matches config 2026-09-12T21:57:49.875-07:00
+ok   createCopy default window: DER cert 1 notAfter=Sat Sep 12 21:57:49 PDT 2026 matches config 2026-09-12T21:57:49.875-07:00
+ok   ConfigIO default window: all chain configs survive
+FAIL ConfigIO default window: cert 0 notBefore preserved: 2026-09-12T21:57:49.951-07:00
+FAIL ConfigIO default window: cert 0 notAfter preserved: 2026-09-12T21:57:49.951-07:00
+FAIL ConfigIO default window: cert 1 notBefore preserved: 2026-09-12T21:57:49.952-07:00
+FAIL ConfigIO default window: cert 1 notAfter preserved: 2026-09-12T21:57:49.952-07:00
+ok   ConfigIO default window: built both chain certificates
+ok   ConfigIO default window: DER cert 0 notBefore=Sat Sep 12 21:57:49 PDT 2026 matches config 2026-09-12T21:57:49.951-07:00
+ok   ConfigIO default window: DER cert 0 notAfter=Sat Sep 12 21:57:49 PDT 2026 matches config 2026-09-12T21:57:49.951-07:00
+ok   ConfigIO default window: DER cert 1 notBefore=Sat Sep 12 21:57:49 PDT 2026 matches config 2026-09-12T21:57:49.952-07:00
+ok   ConfigIO default window: DER cert 1 notAfter=Sat Sep 12 21:57:49 PDT 2026 matches config 2026-09-12T21:57:49.952-07:00
+ok   createCopy x3 custom windows: all chain configs survive
+FAIL createCopy x3 custom windows: cert 0 notBefore preserved: 2026-09-12T21:57:50.077-07:00
+FAIL createCopy x3 custom windows: cert 0 notAfter preserved: 2026-09-12T21:57:50.077-07:00
+FAIL createCopy x3 custom windows: cert 1 notBefore preserved: 2026-09-12T21:57:50.078-07:00
+FAIL createCopy x3 custom windows: cert 1 notAfter preserved: 2026-09-12T21:57:50.078-07:00
+ok   createCopy custom windows: built both chain certificates
+ok   createCopy custom windows: DER cert 0 notBefore=Sat Sep 12 21:57:50 PDT 2026 matches config 2026-09-12T21:57:50.077-07:00
+ok   createCopy custom windows: DER cert 0 notAfter=Sat Sep 12 21:57:50 PDT 2026 matches config 2026-09-12T21:57:50.077-07:00
+ok   createCopy custom windows: DER cert 1 notBefore=Sat Sep 12 21:57:50 PDT 2026 matches config 2026-09-12T21:57:50.078-07:00
+ok   createCopy custom windows: DER cert 1 notAfter=Sat Sep 12 21:57:50 PDT 2026 matches config 2026-09-12T21:57:50.078-07:00
+ok   ConfigIO custom windows: all chain configs survive
+FAIL ConfigIO custom windows: cert 0 notBefore preserved: 2026-09-12T21:57:50.098-07:00
+FAIL ConfigIO custom windows: cert 0 notAfter preserved: 2026-09-12T21:57:50.098-07:00
+FAIL ConfigIO custom windows: cert 1 notBefore preserved: 2026-09-12T21:57:50.098-07:00
+FAIL ConfigIO custom windows: cert 1 notAfter preserved: 2026-09-12T21:57:50.098-07:00
+ok   ConfigIO custom windows: built both chain certificates
+ok   ConfigIO custom windows: DER cert 0 notBefore=Sat Sep 12 21:57:50 PDT 2026 matches config 2026-09-12T21:57:50.098-07:00
+ok   ConfigIO custom windows: DER cert 0 notAfter=Sat Sep 12 21:57:50 PDT 2026 matches config 2026-09-12T21:57:50.098-07:00
+ok   ConfigIO custom windows: DER cert 1 notBefore=Sat Sep 12 21:57:50 PDT 2026 matches config 2026-09-12T21:57:50.098-07:00
+ok   ConfigIO custom windows: DER cert 1 notAfter=Sat Sep 12 21:57:50 PDT 2026 matches config 2026-09-12T21:57:50.098-07:00
+ok   future window: all chain configs survive
+FAIL future window: cert 0 notBefore preserved: 2026-09-12T21:57:50.134-07:00
+FAIL future window: cert 0 notAfter preserved: 2026-09-12T21:57:50.134-07:00
+FAIL future window: cert 1 notBefore preserved: 2026-09-12T21:57:50.134-07:00
+FAIL future window: cert 1 notAfter preserved: 2026-09-12T21:57:50.134-07:00
+ok   future window: built both chain certificates
+ok   future window: DER cert 0 notBefore=Sat Sep 12 21:57:50 PDT 2026 matches config 2026-09-12T21:57:50.134-07:00
+ok   future window: DER cert 0 notAfter=Sat Sep 12 21:57:50 PDT 2026 matches config 2026-09-12T21:57:50.134-07:00
+ok   future window: DER cert 1 notBefore=Sat Sep 12 21:57:50 PDT 2026 matches config 2026-09-12T21:57:50.134-07:00
+ok   future window: DER cert 1 notAfter=Sat Sep 12 21:57:50 PDT 2026 matches config 2026-09-12T21:57:50.134-07:00
+FAILURES=23
+Note: /tmp/ztls-keyupdate-fix/conformance/scripts/anvil-chain-provider-patch/ValidityRoundTripProbe.java uses or overrides a deprecated API.
+Note: Recompile with -Xlint:deprecation for details.

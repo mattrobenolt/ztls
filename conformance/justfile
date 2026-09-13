@@ -127,6 +127,6 @@ anvil-ci-client run_dir timeout_secs="5400": build
 anvil-client-test:
     uv run pytest -q tests/test_anvil_client.py
 
-[doc("Verify the patched TLS-Anvil chain provider generates conforming CA roots")]
+[doc("Verify the patched TLS-Anvil jars: conforming CA roots and preserved validity")]
 anvil-chain-patch-test: build
     bash scripts/anvil-chain-provider-patch/probe.sh

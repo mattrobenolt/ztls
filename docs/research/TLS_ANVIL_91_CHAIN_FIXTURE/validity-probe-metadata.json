@@ -1,0 +1,45 @@
+{
+  "generated_at": "2026-09-13T04:57:50.187886+00:00",
+  "host": "launchpad",
+  "base_revision": "0b875d9a51c0531a4d89245e7b926f80fb74c90c",
+  "dirty": true,
+  "cwd": "conformance",
+  "green_command": "bash scripts/anvil-chain-provider-patch/probe.sh",
+  "red_command": "bash scripts/anvil-chain-provider-patch/probe.sh /tmp/x509-attacker-4.3.10.pristine.jar",
+  "green_exit": 0,
+  "red_exit": 1,
+  "chain_provider": {
+    "tls_test_framework_jar": "/tmp/ztls-keyupdate-fix/conformance/zig-out/tools/lib/tls-test-framework-1.5.0.jar",
+    "jar_sha256": "2761387e445fcea0909a84f11a397737f9b23ca3fad7b0a378e0f9ad37bbfc75",
+    "chain_provider_class_sha256": "d6646a915721dd15aeb368b5bbfc307a54bbbe37361c1de5a27ed611a048dba0",
+    "patch_source_sha256": "8a9d4c26211a0f87f8a6b40f2c937c94f89d0d39cbb1fcbf74a6a84b229d6e84",
+    "expected_jar_sha256": "2761387e445fcea0909a84f11a397737f9b23ca3fad7b0a378e0f9ad37bbfc75",
+    "expected_class_sha256": "d6646a915721dd15aeb368b5bbfc307a54bbbe37361c1de5a27ed611a048dba0",
+    "expected_source_sha256": "8a9d4c26211a0f87f8a6b40f2c937c94f89d0d39cbb1fcbf74a6a84b229d6e84",
+    "patch_status": "patched"
+  },
+  "validity_adapter": {
+    "x509_attacker_jar": "/tmp/ztls-keyupdate-fix/conformance/zig-out/tools/lib/x509-attacker-4.3.10.jar",
+    "jar_sha256": "0f36d942b3a85931019adf41590c48da6d36c904220d016005da11d220a5440b",
+    "adapter_class_sha256": "4b2190bebef9dd7b46d794002010a0da860c5e8cd14f997ced254b8e708621de",
+    "package_info_class_sha256": "9a4308ab19c561dff78d81b5f3dfbc382591d0a3b8b8532c9beb0cbb70e9a6dd",
+    "adapter_source_sha256": "806ff6122f7fc6cb70deb7709e394cdc81c30a0df3d5edfd0d02c3a04cdd1aa2",
+    "package_info_source_sha256": "092bb326cbdb27e9f77e229c28656521671a717fb8970c94dfef215dca8262c6",
+    "expected_jar_sha256": "0f36d942b3a85931019adf41590c48da6d36c904220d016005da11d220a5440b",
+    "expected_adapter_class_sha256": "4b2190bebef9dd7b46d794002010a0da860c5e8cd14f997ced254b8e708621de",
+    "expected_package_info_class_sha256": "9a4308ab19c561dff78d81b5f3dfbc382591d0a3b8b8532c9beb0cbb70e9a6dd",
+    "expected_adapter_source_sha256": "806ff6122f7fc6cb70deb7709e394cdc81c30a0df3d5edfd0d02c3a04cdd1aa2",
+    "expected_package_info_source_sha256": "092bb326cbdb27e9f77e229c28656521671a717fb8970c94dfef215dca8262c6",
+    "patch_status": "patched"
+  },
+  "sources_sha256": {
+    "X509CertificateChainProvider.java": "8a9d4c26211a0f87f8a6b40f2c937c94f89d0d39cbb1fcbf74a6a84b229d6e84",
+    "AnvilChainProviderProbe.java": "b34339307c168e9f45a9222df54e94b49c9c0d808088d05d8b4b100b54a41fe5",
+    "package-info.java": "092bb326cbdb27e9f77e229c28656521671a717fb8970c94dfef215dca8262c6",
+    "probe.sh": "495ca0f75e0ec9116fed3a69406ae9d29d1a1263e3debd2944e674b181c426bc",
+    "ValidityRoundTripProbe.java": "f0027e2c255e4b614d487595d0713aef8729e9dc204f1a6149aac287a5a64379",
+    "DateTimeAdapter.java": "806ff6122f7fc6cb70deb7709e394cdc81c30a0df3d5edfd0d02c3a04cdd1aa2",
+    "apply.sh": "df48a5507dafcb2beaac8c376ddd1ae97f4c835ab2928d867a6ae817df5cc06d"
+  },
+  "pristine_x509_jar_sha256": "3c29768d8818b879de8a948b4d39c8b7ff14e96200042f57fe61b251fdd3fbaa"
+}

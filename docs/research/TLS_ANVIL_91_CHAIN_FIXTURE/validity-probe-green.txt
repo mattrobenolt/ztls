@@ -1,0 +1,71 @@
+Note: /tmp/ztls-keyupdate-fix/conformance/scripts/anvil-chain-provider-patch/ValidityRoundTripProbe.java uses or overrides a deprecated API.
+Note: Recompile with -Xlint:deprecation for details.
+code_source=file:/tmp/ztls-keyupdate-fix/conformance/zig-out/tools/lib/tls-test-framework-1.5.0.jar
+leaf_public_key_types=[dsa, ecdh_ecdsa, rsa, rsaes_oaep, rsassa_pss]
+leaf_rsa_modulus_bits=[1024, 2048, 4096]
+PROBE_OK signing-cert configs carry critical basicConstraints cA=true
+config_code_source=file:/tmp/ztls-keyupdate-fix/conformance/zig-out/tools/lib/x509-attacker-4.3.10.jar
+ok   X509CertificateConfig loaded from installed x509-attacker-4.3.10.jar
+adapter_code_source=file:/tmp/ztls-keyupdate-fix/conformance/zig-out/tools/lib/x509-attacker-4.3.10.jar
+ok   DateTimeAdapter loaded from installed x509-attacker-4.3.10.jar
+ok   package-level @XmlJavaTypeAdapter(DateTimeAdapter) is effective
+ok   unmarshal(null) returns null
+ok   marshal(null) returns null
+ok   adapter round trip preserves millis and +03:00 offset: 2019-07-06T05:06:07.891+03:00
+ok   unmarshal(malformed string) throws IllegalArgumentException
+ok   provider chain has leaf and signing configs
+ok   baseline cert 0 notBefore is 2026: 2026-01-01T00:00:00.000Z
+ok   baseline cert 0 notAfter is 2028: 2028-01-01T00:00:00.000Z
+ok   baseline cert 1 notBefore is 2026: 2026-01-01T00:00:00.000Z
+ok   baseline cert 1 notAfter is 2028: 2028-01-01T00:00:00.000Z
+ok   createCopy x3 default window: all chain configs survive
+ok   createCopy x3 default window: cert 0 notBefore preserved: 2026-01-01T00:00:00.000Z
+ok   createCopy x3 default window: cert 0 notAfter preserved: 2028-01-01T00:00:00.000Z
+ok   createCopy x3 default window: cert 1 notBefore preserved: 2026-01-01T00:00:00.000Z
+ok   createCopy x3 default window: cert 1 notAfter preserved: 2028-01-01T00:00:00.000Z
+ok   createCopy default window: built both chain certificates
+ok   createCopy default window: DER cert 0 notBefore=Wed Dec 31 16:00:00 PST 2025 matches config 2026-01-01T00:00:00.000Z
+ok   createCopy default window: DER cert 0 notAfter=Fri Dec 31 16:00:00 PST 2027 matches config 2028-01-01T00:00:00.000Z
+ok   createCopy default window: DER cert 1 notBefore=Wed Dec 31 16:00:00 PST 2025 matches config 2026-01-01T00:00:00.000Z
+ok   createCopy default window: DER cert 1 notAfter=Fri Dec 31 16:00:00 PST 2027 matches config 2028-01-01T00:00:00.000Z
+ok   ConfigIO default window: all chain configs survive
+ok   ConfigIO default window: cert 0 notBefore preserved: 2026-01-01T00:00:00.000Z
+ok   ConfigIO default window: cert 0 notAfter preserved: 2028-01-01T00:00:00.000Z
+ok   ConfigIO default window: cert 1 notBefore preserved: 2026-01-01T00:00:00.000Z
+ok   ConfigIO default window: cert 1 notAfter preserved: 2028-01-01T00:00:00.000Z
+ok   ConfigIO default window: built both chain certificates
+ok   ConfigIO default window: DER cert 0 notBefore=Wed Dec 31 16:00:00 PST 2025 matches config 2026-01-01T00:00:00.000Z
+ok   ConfigIO default window: DER cert 0 notAfter=Fri Dec 31 16:00:00 PST 2027 matches config 2028-01-01T00:00:00.000Z
+ok   ConfigIO default window: DER cert 1 notBefore=Wed Dec 31 16:00:00 PST 2025 matches config 2026-01-01T00:00:00.000Z
+ok   ConfigIO default window: DER cert 1 notAfter=Fri Dec 31 16:00:00 PST 2027 matches config 2028-01-01T00:00:00.000Z
+ok   createCopy x3 custom windows: all chain configs survive
+ok   createCopy x3 custom windows: cert 0 notBefore preserved: 2019-07-06T05:06:07.891+03:00
+ok   createCopy x3 custom windows: cert 0 notAfter preserved: 2031-02-03T04:05:06.789-09:30
+ok   createCopy x3 custom windows: cert 1 notBefore preserved: 2018-03-04T05:06:07.000Z
+ok   createCopy x3 custom windows: cert 1 notAfter preserved: 2019-12-31T23:59:59.000Z
+ok   createCopy custom windows: built both chain certificates
+ok   createCopy custom windows: DER cert 0 notBefore=Fri Jul 05 19:06:07 PDT 2019 matches config 2019-07-06T05:06:07.891+03:00
+ok   createCopy custom windows: DER cert 0 notAfter=Mon Feb 03 05:35:06 PST 2031 matches config 2031-02-03T04:05:06.789-09:30
+ok   createCopy custom windows: DER cert 1 notBefore=Sat Mar 03 21:06:07 PST 2018 matches config 2018-03-04T05:06:07.000Z
+ok   createCopy custom windows: DER cert 1 notAfter=Tue Dec 31 15:59:59 PST 2019 matches config 2019-12-31T23:59:59.000Z
+ok   ConfigIO custom windows: all chain configs survive
+ok   ConfigIO custom windows: cert 0 notBefore preserved: 2019-07-06T05:06:07.891+03:00
+ok   ConfigIO custom windows: cert 0 notAfter preserved: 2031-02-03T04:05:06.789-09:30
+ok   ConfigIO custom windows: cert 1 notBefore preserved: 2018-03-04T05:06:07.000Z
+ok   ConfigIO custom windows: cert 1 notAfter preserved: 2019-12-31T23:59:59.000Z
+ok   ConfigIO custom windows: built both chain certificates
+ok   ConfigIO custom windows: DER cert 0 notBefore=Fri Jul 05 19:06:07 PDT 2019 matches config 2019-07-06T05:06:07.891+03:00
+ok   ConfigIO custom windows: DER cert 0 notAfter=Mon Feb 03 05:35:06 PST 2031 matches config 2031-02-03T04:05:06.789-09:30
+ok   ConfigIO custom windows: DER cert 1 notBefore=Sat Mar 03 21:06:07 PST 2018 matches config 2018-03-04T05:06:07.000Z
+ok   ConfigIO custom windows: DER cert 1 notAfter=Tue Dec 31 15:59:59 PST 2019 matches config 2019-12-31T23:59:59.000Z
+ok   future window: all chain configs survive
+ok   future window: cert 0 notBefore preserved: 2040-01-01T00:00:00.000Z
+ok   future window: cert 0 notAfter preserved: 2041-01-01T00:00:00.000Z
+ok   future window: cert 1 notBefore preserved: 2018-03-04T05:06:07.000Z
+ok   future window: cert 1 notAfter preserved: 2019-12-31T23:59:59.000Z
+ok   future window: built both chain certificates
+ok   future window: DER cert 0 notBefore=Sat Dec 31 16:00:00 PST 2039 matches config 2040-01-01T00:00:00.000Z
+ok   future window: DER cert 0 notAfter=Mon Dec 31 16:00:00 PST 2040 matches config 2041-01-01T00:00:00.000Z
+ok   future window: DER cert 1 notBefore=Sat Mar 03 21:06:07 PST 2018 matches config 2018-03-04T05:06:07.000Z
+ok   future window: DER cert 1 notAfter=Tue Dec 31 15:59:59 PST 2019 matches config 2019-12-31T23:59:59.000Z
+PASS validity round trip

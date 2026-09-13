@@ -78,7 +78,8 @@ All 28 recovered certificates have identical validity endpoints, exactly one sec
 Seven invocations match recorded case ports and adjacent start times.
 Those cases report four strict successes and three conceptual successes despite rejection before Finished or CertificateVerify validation.
 The green aggregate therefore does not establish the intended negative-test coverage.
-The fixture validity defect requires deterministic reproduction and repair.
+A package-level DateTime adapter now passes local copy-to-DER regressions;
+fresh full captures with that repair are still required.
 Historical KeyUpdate and client-authentication failures remain unexplained without their certificate bytes.
 Raw logs, case reports, PEM certificates, extraction code, and clock associations:
 `docs/research/TLS_ANVIL_91_CHAIN_FIXTURE/captures-7ae6014/`.
@@ -312,7 +313,31 @@ data to openssl s_server and receives the HTTP response.
   before/after per-case JSON, client stderr) lives in
   `docs/research/TLS_ANVIL_91_CHAIN_FIXTURE/`. Full three-backend strict
   captures are still required before any #91 status change; the other five
-  non-DSA test IDs are not yet individually reproduced.
+  non-DSA test IDs are not yet individually reproduced. A second #91 fixture
+  defect is locally reproduced and patched: upstream x509-attacker 4.3.10 has
+  no `package-info` for `de.rub.nds.x509attacker.config`, so JAXB marshals the
+  config's joda `DateTime` `notBefore`/`notAfter` as empty XML elements and
+  `Config.createCopy()`/`ConfigIO` round trips lose the configured
+  2026-01-01..2028-01-01 validity window (the copy acquires current dates).
+  Upstream report: https://github.com/tls-attacker/X509-Attacker/issues/67.
+  The conformance build now injects a package-level
+  `DateTimeAdapter` (`DateTimeAdapter.java` + `package-info.java` in
+  `conformance/scripts/anvil-chain-provider-patch/`) into the installed
+  x509-attacker-4.3.10 jar — atomic per-jar update, pinned-version refusal,
+  and a provenance stamp (live jar, adapter class, package-info class, and
+  both source digests) recorded and validated in client/server run metadata
+  alongside the chain-provider stamp. Regression is CI-gated via `just
+  anvil-chain-patch-test` (`ValidityRoundTripProbe`): green against the
+  installed jars (repeated `createCopy` + `ConfigIO` round trips, both chain
+  certificates, the default 2026–2028 window, non-default windows with
+  milliseconds and UTC offsets, deliberately expired/future windows, and actual DER
+  decoded by the JDK `CertificateFactory`), red against a pristine
+  x509-attacker jar (adapter class absent, dates replaced by "now").
+  Evidence: `docs/research/TLS_ANVIL_91_CHAIN_FIXTURE/`
+  `validity-probe-green.txt` / `validity-probe-red-pristine.txt`, with commands,
+  base revision and artifact/source hashes in `validity-probe-metadata.json`. This is
+  local regression evidence only: no fresh full TLS-Anvil capture has run
+  with the validity patch, so #91 status is unchanged.
 - Wycheproof boundary vectors at the libcrypto seam.
 - Fuzzing on the major parsers plus record decrypt and server `handleRecord`
   pre-auth/post-auth dispatch.

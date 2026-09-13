@@ -205,3 +205,147 @@ def test_write_run_metadata_records_chain_provider_provenance(tmp_path, monkeypa
     assert metadata["chain_provider"]["tls_test_framework_jar"].endswith(
         "tls-test-framework-1.5.0.jar"
     )
+
+
+# ztls #91 validity-patch provenance invariant: run metadata must be able to
+# distinguish a jar with the DateTimeAdapter/package-info patch actually
+# installed from a pristine upstream jar, a tampered patch, or a patch source
+# edited after the jar was built — for BOTH injected classes, not just one.
+def _write_synthetic_validity_state(
+    tmp_path: Path,
+    adapter_bytes: bytes,
+    package_info_bytes: bytes,
+    provenance_lines: list[str] | None,
+) -> None:
+    """Materialize a synthetic installed x509-attacker jar + validity stamp."""
+    import zipfile
+
+    lib = tmp_path / "lib"
+    lib.mkdir(exist_ok=True)
+    jar = lib / "x509-attacker-4.3.10.jar"
+    with zipfile.ZipFile(jar, "w") as archive:
+        archive.writestr("de/rub/nds/x509attacker/config/X509CertificateConfig.class", b"upstream")
+        archive.writestr("de/rub/nds/x509attacker/config/DateTimeAdapter.class", adapter_bytes)
+        archive.writestr("de/rub/nds/x509attacker/config/package-info.class", package_info_bytes)
+    (tmp_path / "DateTimeAdapter.java").write_text("// adapter source\n")
+    (tmp_path / "package-info.java").write_text("// package-info source\n")
+    stamp = tmp_path / "validity-provenance"
+    if provenance_lines is not None:
+        stamp.write_text("\n".join(provenance_lines) + "\n")
+    else:
+        stamp.unlink(missing_ok=True)
+
+
+def _install_synthetic_validity_paths(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(
+        anvil_server, "X509_ATTACKER_JAR", tmp_path / "lib" / "x509-attacker-4.3.10.jar"
+    )
+    monkeypatch.setattr(anvil_server, "VALIDITY_ADAPTER_SOURCE", tmp_path / "DateTimeAdapter.java")
+    monkeypatch.setattr(
+        anvil_server, "VALIDITY_PACKAGE_INFO_SOURCE", tmp_path / "package-info.java"
+    )
+    monkeypatch.setattr(anvil_server, "VALIDITY_PROVENANCE", tmp_path / "validity-provenance")
+
+
+def _validity_stamp(tmp_path: Path, adapter_bytes: bytes, package_info_bytes: bytes) -> list[str]:
+    import hashlib
+
+    jar_path = tmp_path / "lib" / "x509-attacker-4.3.10.jar"
+    return [
+        "patched=true",
+        f"jar_sha256={hashlib.sha256(jar_path.read_bytes()).hexdigest()}",
+        f"adapter_class_sha256={hashlib.sha256(adapter_bytes).hexdigest()}",
+        f"package_info_class_sha256={hashlib.sha256(package_info_bytes).hexdigest()}",
+        f"adapter_source_sha256={hashlib.sha256((tmp_path / 'DateTimeAdapter.java').read_bytes()).hexdigest()}",
+        f"package_info_source_sha256={hashlib.sha256((tmp_path / 'package-info.java').read_bytes()).hexdigest()}",
+    ]
+
+
+def test_validity_adapter_provenance_detects_patched_artifact(tmp_path, monkeypatch):
+    import hashlib
+
+    adapter_bytes = b"adapter-class"
+    package_info_bytes = b"package-info-class"
+    _write_synthetic_validity_state(tmp_path, adapter_bytes, package_info_bytes, None)
+    (tmp_path / "validity-provenance").write_text(
+        "\n".join(_validity_stamp(tmp_path, adapter_bytes, package_info_bytes)) + "\n"
+    )
+    _install_synthetic_validity_paths(monkeypatch, tmp_path)
+
+    provenance = anvil_server.validity_adapter_provenance()
+
+    assert provenance["patch_status"] == "patched"
+    assert provenance["adapter_class_sha256"] == hashlib.sha256(adapter_bytes).hexdigest()
+    assert provenance["package_info_class_sha256"] == hashlib.sha256(package_info_bytes).hexdigest()
+    assert provenance["adapter_source_sha256"] == provenance["expected_adapter_source_sha256"]
+
+
+def test_validity_adapter_provenance_detects_unpatched_tampered_and_stale(tmp_path, monkeypatch):
+    adapter_bytes = b"adapter-class"
+    package_info_bytes = b"package-info-class"
+
+    # No stamp at all: the installed jar is the pristine upstream artifact.
+    _write_synthetic_validity_state(tmp_path, adapter_bytes, package_info_bytes, None)
+    _install_synthetic_validity_paths(monkeypatch, tmp_path)
+    assert anvil_server.validity_adapter_provenance()["patch_status"] == "unpatched"
+
+    # Live adapter class tampered after the stamp was written: stale.
+    _write_synthetic_validity_state(
+        tmp_path,
+        b"tampered-adapter",
+        package_info_bytes,
+        _validity_stamp(tmp_path, adapter_bytes, package_info_bytes),
+    )
+    provenance = anvil_server.validity_adapter_provenance()
+    assert provenance["patch_status"] == "stale"
+    assert provenance["adapter_class_sha256"] != provenance["expected_adapter_class_sha256"]
+
+    # Stamp missing the package-info digest entirely: the stamp cannot prove
+    # the package-level binding is installed, so it is not patched.
+    _write_synthetic_validity_state(
+        tmp_path,
+        adapter_bytes,
+        package_info_bytes,
+        _validity_stamp(tmp_path, adapter_bytes, package_info_bytes),
+    )
+    stamp = tmp_path / "validity-provenance"
+    stamp.write_text(
+        "\n".join(
+            line for line in stamp.read_text().splitlines() if not line.startswith("package_info_")
+        )
+        + "\n"
+    )
+    provenance = anvil_server.validity_adapter_provenance()
+    assert provenance["patch_status"] == "stale"
+    assert provenance["expected_package_info_class_sha256"] is None
+
+    # Adapter source edited after the jar was built: source-only drift is stale.
+    _write_synthetic_validity_state(
+        tmp_path,
+        adapter_bytes,
+        package_info_bytes,
+        _validity_stamp(tmp_path, adapter_bytes, package_info_bytes),
+    )
+    (tmp_path / "DateTimeAdapter.java").write_text("// edited after build\n")
+    provenance = anvil_server.validity_adapter_provenance()
+    assert provenance["patch_status"] == "stale"
+    assert provenance["adapter_source_sha256"] != provenance["expected_adapter_source_sha256"]
+
+    # Installed jar missing entirely.
+    (tmp_path / "lib" / "x509-attacker-4.3.10.jar").unlink()
+    provenance = anvil_server.validity_adapter_provenance()
+    assert provenance["patch_status"] == "jar_missing"
+    assert provenance["jar_sha256"] is None
+
+
+def test_write_run_metadata_records_validity_adapter_provenance(tmp_path, monkeypatch):
+    _write_synthetic_validity_state(tmp_path, b"adapter-class", b"package-info", None)
+    _install_synthetic_validity_paths(monkeypatch, tmp_path)
+    monkeypatch.chdir(tmp_path)
+
+    anvil_server.write_run_metadata(tmp_path, "java -jar TLS-Anvil.jar server", 4433)
+
+    metadata = json.loads((tmp_path / "run_metadata.json").read_text())
+    assert "validity_adapter" in metadata
+    assert metadata["validity_adapter"]["patch_status"] == "unpatched"
+    assert metadata["validity_adapter"]["x509_attacker_jar"].endswith("x509-attacker-4.3.10.jar")

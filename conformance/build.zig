@@ -50,9 +50,8 @@ pub fn build(b: *std.Build) void {
         });
         b.getInstallStep().dependOn(&install_jar.step);
         b.getInstallStep().dependOn(&install_lib.step);
-        // #91: upstream v1.5.0 generates chain signing certs without
-        // basicConstraints (RFC 5280 §4.2.1.9). Apply the in-repo source patch
-        // to the installed tls-test-framework jar after the jars are copied.
+        // #91: repair missing CA constraints and DateTime serialization in
+        // the installed fixture jars, leaving the pinned dependencies intact.
         const patch_chain_provider = b.addSystemCommand(&.{
             "bash",
         });
