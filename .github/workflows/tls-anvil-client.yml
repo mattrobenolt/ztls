@@ -11,6 +11,10 @@ on:
           - aws-lc
           - boringssl
         default: openssl
+      diagnostics:
+        description: Capture client source ports and rejected certificate validity diagnostics
+        type: boolean
+        default: false
   schedule:
     # Weekly Thursday 06:43 UTC. This is real suite evidence, not PR smoke.
     - cron: "43 6 * * 4"
@@ -34,6 +38,7 @@ jobs:
         crypto_backend: ${{ fromJSON(github.event_name == 'workflow_dispatch' && format('["{0}"]', github.event.inputs.crypto_backend) || '["openssl","aws-lc","boringssl"]') }}
     env:
       CRYPTO_BACKEND: ${{ matrix.crypto_backend }}
+      ZTLS_ANVIL_DIAGNOSTICS: ${{ github.event.inputs.diagnostics == 'true' && '1' || '0' }}
       RUN_DIR: zig-out/anvil/client/ci-${{ github.run_id }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

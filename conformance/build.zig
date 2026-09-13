@@ -82,4 +82,23 @@ pub fn build(b: *std.Build) void {
         });
         b.installArtifact(exe);
     }
+
+    // Harness unit tests (#91 diagnostics probe: record reconstruction and
+    // source-port lookup). Run with `zig build test` inside conformance/.
+    const test_step = b.step("test", "Run conformance harness unit tests");
+    {
+        const mod = b.createModule(.{
+            .root_source_file = b.path("src/anvil_client.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{.{ .name = "ztls", .module = ztls_mod }},
+        });
+        mod.addImport("net_compat", net_compat_mod);
+        mod.addImport("fixtures", fixtures_mod);
+        mod.link_libc = true;
+        const unit_tests = b.addTest(.{ .root_module = mod });
+        const run_tests = b.addRunArtifact(unit_tests);
+        run_tests.has_side_effects = true;
+        test_step.dependOn(&run_tests.step);
+    }
 }

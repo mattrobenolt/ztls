@@ -50,6 +50,7 @@ tlsfuzzer *args: build
 
 [doc("Run all CI gates")]
 ci:
+    zig build test
     just tlsfuzzer -v
     just anvil-report-test
     just anvil-adapter-test

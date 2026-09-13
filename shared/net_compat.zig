@@ -152,6 +152,28 @@ pub fn fd(stream: Stream) std.posix.fd_t {
     return if (comptime is_zig_16) stream.socket.handle else stream.handle;
 }
 
+/// Local (source) TCP port of a connected stream. Harness diagnostics use it
+/// to bind a client invocation to the exact connection a peer trace recorded.
+/// Null if the OS lookup fails or the family is not INET/INET6. POSIX-only so
+/// it works identically under 0.15 and 0.16 on Linux and macOS.
+pub fn localPort(stream: Stream) ?u16 {
+    var addr: std.posix.sockaddr.storage = undefined;
+    var addr_len: std.posix.socklen_t = @sizeOf(std.posix.sockaddr.storage);
+    // std.posix.getsockname moved off POSIX in 0.16; the libc symbol is
+    // identical on both versions and every net_compat consumer links libc.
+    if (std.c.getsockname(fd(stream), @ptrCast(&addr), &addr_len) != 0) return null;
+    const bytes: [*]const u8 = @ptrCast(&addr);
+    // sockaddr_in and sockaddr_in6 both carry the port big-endian at offset 2
+    // on Linux and macOS; only the family field layout differs (u16 at 0 on
+    // Linux, len byte + family byte at 1 on macOS).
+    const family: u16 = if (builtin.os.tag == .macos)
+        bytes[1]
+    else
+        std.mem.readInt(u16, bytes[0..2], builtin.cpu.arch.endian());
+    if (family != std.posix.AF.INET and family != std.posix.AF.INET6) return null;
+    return std.mem.readInt(u16, bytes[2..4], .big);
+}
+
 pub fn read(stream: Stream, buf: []u8) !usize {
     if (comptime !is_zig_16) return stream.read(buf);
     var data: [1][]u8 = .{buf};
