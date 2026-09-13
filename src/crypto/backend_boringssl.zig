@@ -130,6 +130,10 @@ pub fn sharedSecretDerive(
 ) Error!void {
     assert(std.meta.activeTag(ours.*) == .private);
     assert(std.meta.activeTag(peer.*) == .public);
+    // Outermost public entry point: the only guard on this path (#88
+    // finding 2 — see the hygiene comment in backend_openssl.zig).
+    compat.errqEnter();
+    defer compat.errqExit();
     if (c.X25519(out, &ours.*.private, &peer.*.public) != 1) return error.IdentityElement;
     // RFC 7748 §6.1 — reject all-zero output from low-order peer public keys.
     if (std.crypto.timing_safe.eql([32]u8, out.*, @splat(0))) return error.IdentityElement;
@@ -191,6 +195,10 @@ fn aeadCipher(suite: CipherSuite) *const c.EVP_AEAD {
 }
 
 pub fn aeadInit(suite: CipherSuite, key_bytes: []const u8) AeadError!AeadContext {
+    // Per key-schedule, not per record: the unconditional guard is free here
+    // (#88 finding 2 — see the hygiene comment in backend_openssl.zig).
+    compat.errqEnter();
+    defer compat.errqExit();
     var ctx: AeadContext = undefined;
     c.EVP_AEAD_CTX_zero(&ctx.ctx);
     if (c.EVP_AEAD_CTX_init(
@@ -221,6 +229,8 @@ pub fn aeadEncrypt(
     ad: []const u8,
     npub: *const [aead_nonce_len]u8,
 ) AeadError!void {
+    compat.errqEnter();
+    defer compat.errqExit();
     assert(ciphertext.len == plaintext.len);
     var tag_len: usize = 0;
     if (c.EVP_AEAD_CTX_seal_scatter(
@@ -249,6 +259,8 @@ pub fn aeadDecrypt(
     ad: []const u8,
     npub: *const [aead_nonce_len]u8,
 ) AeadError!void {
+    compat.errqEnter();
+    defer compat.errqExit();
     assert(plaintext.len == ciphertext.len);
     if (c.EVP_AEAD_CTX_open_gather(
         &ctx.ctx,

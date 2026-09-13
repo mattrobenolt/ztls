@@ -127,6 +127,13 @@ pub fn build(b: *Build) void {
         .test_mod = test_mod,
         .fuzz = fuzz_mode,
         .ztest = ztest_dep,
+        // #88: the errq-alloc-check executable exists only on OpenSSL lanes
+        // (CRYPTO_set_mem_functions is absent from BoringSSL-family
+        // libcrypto).
+        .ztls_mod = if (crypto_backend == .openssl or
+            crypto_backend == .@"openssl-fips") mod else null,
+        .target = target,
+        .optimize = optimize,
     });
 
     bench_mod.addSteps(b, .{

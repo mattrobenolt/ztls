@@ -1,0 +1,8 @@
+# round=1 who=base start=01:30:29 load=3.29
+# round=1 who=cand start=01:30:52 load=3.39
+# round=2 who=cand start=01:31:13 load=3.39
+# round=2 who=base start=01:31:35 load=3.92
+# round=3 who=base start=01:31:57 load=3.64
+# round=3 who=cand start=01:32:20 load=3.20
+# round=4 who=cand start=01:32:42 load=3.93
+# round=4 who=base start=01:33:04 load=3.52

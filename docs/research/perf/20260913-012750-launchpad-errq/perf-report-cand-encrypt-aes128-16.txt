@@ -1,0 +1,30 @@
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 2K of event 'armv8_pmuv3_0/cycles/Pu'
+# Event count (approx.): 1541308092
+#
+# Overhead  Command    Shared Object          Symbol                                                                    
+# ........  .........  .....................  ..........................................................................
+#
+    11.08%  benchmark  libcrypto.so.3         [.] gcm_ghash_v8
+            |
+            ---gcm_ghash_v8
+               |          
+               |--6.41%--CRYPTO_gcm128_encrypt_ctr32
+               |          
+                --4.67%--CRYPTO_gcm128_finish
+
+    10.23%  benchmark  libcrypto.so.3         [.] CRYPTO_gcm128_finish
+            |
+            ---CRYPTO_gcm128_finish
+               CRYPTO_gcm128_tag
+               ossl_gcm_cipher_final
+               ossl_gcm_stream_final
+               EVP_EncryptFinal_ex
+
+     8.45%  benchmark  libcrypto.so.3         [.] CRYPTO_gcm128_encrypt_ctr32
+            |
+            ---CRYPTO_gcm128_encrypt_ctr32

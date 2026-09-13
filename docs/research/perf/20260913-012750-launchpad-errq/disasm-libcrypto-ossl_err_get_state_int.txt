@@ -1,0 +1,90 @@
+
+/nix/store/v89yca35zsb13k51ibz0mcz2rrzjwwrj-openssl-3.6.4/lib/libcrypto.so.3:     file format elf64-littleaarch64
+
+
+Disassembly of section .init:
+
+Disassembly of section .plt:
+
+Disassembly of section .text:
+
+00000000001f6f90 <ossl_err_get_state_int>:
+  1f6f90:	a9bd7bfd 	stp	x29, x30, [sp, #-48]!
+  1f6f94:	910003fd 	mov	x29, sp
+  1f6f98:	a90153f3 	stp	x19, x20, [sp, #16]
+  1f6f9c:	97fbe335 	bl	efc70 <__errno_location@plt>
+  1f6fa0:	aa0003f3 	mov	x19, x0
+  1f6fa4:	d2800001 	mov	x1, #0x0                   	// #0
+  1f6fa8:	d2a00080 	mov	x0, #0x40000               	// #262144
+  1f6fac:	b9400274 	ldr	w20, [x19]
+  1f6fb0:	94019f74 	bl	25ed80 <OPENSSL_init_crypto>
+  1f6fb4:	340005e0 	cbz	w0, 1f7070 <ossl_err_get_state_int+0xe0>
+  1f6fb8:	d2800021 	mov	x1, #0x1                   	// #1
+  1f6fbc:	52800060 	mov	w0, #0x3                   	// #3
+  1f6fc0:	9401f3d8 	bl	273f20 <CRYPTO_THREAD_get_local_ex>
+  1f6fc4:	aa0003e3 	mov	x3, x0
+  1f6fc8:	b100041f 	cmn	x0, #0x1
+  1f6fcc:	54000520 	b.eq	1f7070 <ossl_err_get_state_int+0xe0>  // b.none
+  1f6fd0:	b4000160 	cbz	x0, 1f6ffc <ossl_err_get_state_int+0x6c>
+  1f6fd4:	b9000274 	str	w20, [x19]
+  1f6fd8:	aa0303e0 	mov	x0, x3
+  1f6fdc:	a94153f3 	ldp	x19, x20, [sp, #16]
+  1f6fe0:	a8c37bfd 	ldp	x29, x30, [sp], #48
+  1f6fe4:	d2800001 	mov	x1, #0x0                   	// #0
+  1f6fe8:	d2800002 	mov	x2, #0x0                   	// #0
+  1f6fec:	d2800003 	mov	x3, #0x0                   	// #0
+  1f6ff0:	d2800010 	mov	x16, #0x0                   	// #0
+  1f6ff4:	d2800011 	mov	x17, #0x0                   	// #0
+  1f6ff8:	d65f03c0 	ret
+  1f6ffc:	92800002 	mov	x2, #0xffffffffffffffff    	// #-1
+  1f7000:	d2800021 	mov	x1, #0x1                   	// #1
+  1f7004:	52800060 	mov	w0, #0x3                   	// #3
+  1f7008:	9401f3ee 	bl	273fc0 <CRYPTO_THREAD_set_local_ex>
+  1f700c:	34000320 	cbz	w0, 1f7070 <ossl_err_get_state_int+0xe0>
+  1f7010:	940011bc 	bl	1fb700 <OSSL_ERR_STATE_new>
+  1f7014:	aa0003e3 	mov	x3, x0
+  1f7018:	b40004a0 	cbz	x0, 1f70ac <ossl_err_get_state_int+0x11c>
+  1f701c:	f0ffffe2 	adrp	x2, 1f6000 <engine_pkey_meths_free>
+  1f7020:	d2800001 	mov	x1, #0x0                   	// #0
+  1f7024:	911e3042 	add	x2, x2, #0x78c
+  1f7028:	d2800000 	mov	x0, #0x0                   	// #0
+  1f702c:	f90017e3 	str	x3, [sp, #40]
+  1f7030:	9401a26c 	bl	25f9e0 <ossl_init_thread_start>
+  1f7034:	f94017e3 	ldr	x3, [sp, #40]
+  1f7038:	34000100 	cbz	w0, 1f7058 <ossl_err_get_state_int+0xc8>
+  1f703c:	aa0303e2 	mov	x2, x3
+  1f7040:	d2800021 	mov	x1, #0x1                   	// #1
+  1f7044:	52800060 	mov	w0, #0x3                   	// #3
+  1f7048:	f90017e3 	str	x3, [sp, #40]
+  1f704c:	9401f3dd 	bl	273fc0 <CRYPTO_THREAD_set_local_ex>
+  1f7050:	f94017e3 	ldr	x3, [sp, #40]
+  1f7054:	35000220 	cbnz	w0, 1f7098 <ossl_err_get_state_int+0x108>
+  1f7058:	aa0303e0 	mov	x0, x3
+  1f705c:	97fffd93 	bl	1f66a8 <OSSL_ERR_STATE_free>
+  1f7060:	d2800002 	mov	x2, #0x0                   	// #0
+  1f7064:	d2800021 	mov	x1, #0x1                   	// #1
+  1f7068:	52800060 	mov	w0, #0x3                   	// #3
+  1f706c:	9401f3d5 	bl	273fc0 <CRYPTO_THREAD_set_local_ex>
+  1f7070:	d2800003 	mov	x3, #0x0                   	// #0
+  1f7074:	a94153f3 	ldp	x19, x20, [sp, #16]
+  1f7078:	aa0303e0 	mov	x0, x3
+  1f707c:	a8c37bfd 	ldp	x29, x30, [sp], #48
+  1f7080:	d2800001 	mov	x1, #0x0                   	// #0
+  1f7084:	d2800002 	mov	x2, #0x0                   	// #0
+  1f7088:	d2800003 	mov	x3, #0x0                   	// #0
+  1f708c:	d2800010 	mov	x16, #0x0                   	// #0
+  1f7090:	d2800011 	mov	x17, #0x0                   	// #0
+  1f7094:	d65f03c0 	ret
+  1f7098:	d2800001 	mov	x1, #0x0                   	// #0
+  1f709c:	d2800040 	mov	x0, #0x2                   	// #2
+  1f70a0:	94019f38 	bl	25ed80 <OPENSSL_init_crypto>
+  1f70a4:	f94017e3 	ldr	x3, [sp, #40]
+  1f70a8:	17ffffcb 	b	1f6fd4 <ossl_err_get_state_int+0x44>
+  1f70ac:	d2800002 	mov	x2, #0x0                   	// #0
+  1f70b0:	d2800021 	mov	x1, #0x1                   	// #1
+  1f70b4:	52800060 	mov	w0, #0x3                   	// #3
+  1f70b8:	9401f3c2 	bl	273fc0 <CRYPTO_THREAD_set_local_ex>
+  1f70bc:	d2800003 	mov	x3, #0x0                   	// #0
+  1f70c0:	17ffffed 	b	1f7074 <ossl_err_get_state_int+0xe4>
+
+Disassembly of section .fini:

@@ -1,0 +1,135 @@
+00000000010774bc <RecordLayer.encryptPrepared>:
+ 10774bc:	d10183ff 	sub	sp, sp, #0x60
+ 10774c0:	a9027bfd 	stp	x29, x30, [sp, #32]
+ 10774c4:	a9035ff8 	stp	x24, x23, [sp, #48]
+ 10774c8:	a90457f6 	stp	x22, x21, [sp, #64]
+ 10774cc:	a9054ff4 	stp	x20, x19, [sp, #80]
+ 10774d0:	910083fd 	add	x29, sp, #0x20
+ 10774d4:	f9400028 	ldr	x8, [x1]
+ 10774d8:	b100051f 	cmn	x8, #0x1
+ 10774dc:	54000180 	b.eq	107750c <RecordLayer.encryptPrepared+0x50>  // b.none
+ 10774e0:	f9400429 	ldr	x9, [x1, #8]
+ 10774e4:	eb09011f 	cmp	x8, x9
+ 10774e8:	54000162 	b.cs	1077514 <RecordLayer.encryptPrepared+0x58>  // b.hs, b.nlast
+ 10774ec:	f140107f 	cmp	x3, #0x4, lsl #12
+ 10774f0:	54000229 	b.ls	1077534 <RecordLayer.encryptPrepared+0x78>  // b.plast
+ 10774f4:	f0fffce8 	adrp	x8, 1016000 <fixtures.server_ecdsa_cert_der+0xf7b0>
+ 10774f8:	9129a108 	add	x8, x8, #0xa68
+ 10774fc:	3dc00100 	ldr	q0, [x8]
+ 1077500:	3d800000 	str	q0, [x0]
+ 1077504:	52801128 	mov	w8, #0x89                  	// #137
+ 1077508:	14000013 	b	1077554 <RecordLayer.encryptPrepared+0x98>
+ 107750c:	52800a88 	mov	w8, #0x54                  	// #84
+ 1077510:	14000002 	b	1077518 <RecordLayer.encryptPrepared+0x5c>
+ 1077514:	52800aa8 	mov	w8, #0x55                  	// #85
+ 1077518:	79002008 	strh	w8, [x0, #16]
+ 107751c:	a9454ff4 	ldp	x20, x19, [sp, #80]
+ 1077520:	a94457f6 	ldp	x22, x21, [sp, #64]
+ 1077524:	a9435ff8 	ldp	x24, x23, [sp, #48]
+ 1077528:	a9427bfd 	ldp	x29, x30, [sp, #32]
+ 107752c:	910183ff 	add	sp, sp, #0x60
+ 1077530:	d65f03c0 	ret
+ 1077534:	91005875 	add	x21, x3, #0x16
+ 1077538:	eb1500bf 	cmp	x5, x21
+ 107753c:	540001a2 	b.cs	1077570 <RecordLayer.encryptPrepared+0xb4>  // b.hs, b.nlast
+ 1077540:	90fffd68 	adrp	x8, 1023000 <__anon_76086+0x43ba>
+ 1077544:	91178108 	add	x8, x8, #0x5e0
+ 1077548:	3dc00100 	ldr	q0, [x8]
+ 107754c:	3d800000 	str	q0, [x0]
+ 1077550:	52800668 	mov	w8, #0x33                  	// #51
+ 1077554:	f9000808 	str	x8, [x0, #16]
+ 1077558:	a9454ff4 	ldp	x20, x19, [sp, #80]
+ 107755c:	a94457f6 	ldp	x22, x21, [sp, #64]
+ 1077560:	a9435ff8 	ldp	x24, x23, [sp, #48]
+ 1077564:	a9427bfd 	ldp	x29, x30, [sp, #32]
+ 1077568:	910183ff 	add	sp, sp, #0x60
+ 107756c:	d65f03c0 	ret
+ 1077570:	aa0003f6 	mov	x22, x0
+ 1077574:	91001494 	add	x20, x4, #0x5
+ 1077578:	11004468 	add	w8, w3, #0x11
+ 107757c:	5ac00908 	rev	w8, w8
+ 1077580:	53107d08 	lsr	w8, w8, #16
+ 1077584:	528002e9 	mov	w9, #0x17                  	// #23
+ 1077588:	39000089 	strb	w9, [x4]
+ 107758c:	52806069 	mov	w9, #0x303                 	// #771
+ 1077590:	78001089 	sturh	w9, [x4, #1]
+ 1077594:	aa0403f3 	mov	x19, x4
+ 1077598:	78003088 	sturh	w8, [x4, #3]
+ 107759c:	aa0303f7 	mov	x23, x3
+ 10775a0:	38236a82 	strb	w2, [x20, x3]
+ 10775a4:	f9400028 	ldr	x8, [x1]
+ 10775a8:	91014829 	add	x9, x1, #0x52
+ 10775ac:	fc44a020 	ldur	d0, [x1, #74]
+ 10775b0:	4d408120 	ld1	{v0.s}[2], [x9]
+ 10775b4:	dac00d08 	rev	x8, x8
+ 10775b8:	9e670101 	fmov	d1, x8
+ 10775bc:	6e016001 	ext	v1.16b, v0.16b, v1.16b, #12
+ 10775c0:	4e041fe1 	mov	v1.s[0], wzr
+ 10775c4:	6e201c20 	eor	v0.16b, v1.16b, v0.16b
+ 10775c8:	910043e8 	add	x8, sp, #0x10
+ 10775cc:	b27d0108 	orr	x8, x8, #0x8
+ 10775d0:	4d008100 	st1	{v0.s}[2], [x8]
+ 10775d4:	fd000be0 	str	d0, [sp, #16]
+ 10775d8:	b81fc3bf 	stur	wzr, [x29, #-4]
+ 10775dc:	aa0103f8 	mov	x24, x1
+ 10775e0:	f9400820 	ldr	x0, [x1, #16]
+ 10775e4:	910043e4 	add	x4, sp, #0x10
+ 10775e8:	d2800001 	mov	x1, #0x0                   	// #0
+ 10775ec:	d2800002 	mov	x2, #0x0                   	// #0
+ 10775f0:	d2800003 	mov	x3, #0x0                   	// #0
+ 10775f4:	94018e6b 	bl	10dafa0 <EVP_EncryptInit_ex@plt>
+ 10775f8:	7100041f 	cmp	w0, #0x1
+ 10775fc:	540005a1 	b.ne	10776b0 <RecordLayer.encryptPrepared+0x1f4>  // b.any
+ 1077600:	f9400b00 	ldr	x0, [x24, #16]
+ 1077604:	d10013a2 	sub	x2, x29, #0x4
+ 1077608:	d2800001 	mov	x1, #0x0                   	// #0
+ 107760c:	aa1303e3 	mov	x3, x19
+ 1077610:	528000a4 	mov	w4, #0x5                   	// #5
+ 1077614:	94018e77 	bl	10daff0 <EVP_EncryptUpdate@plt>
+ 1077618:	7100041f 	cmp	w0, #0x1
+ 107761c:	540004a1 	b.ne	10776b0 <RecordLayer.encryptPrepared+0x1f4>  // b.any
+ 1077620:	f9400b00 	ldr	x0, [x24, #16]
+ 1077624:	d10013a2 	sub	x2, x29, #0x4
+ 1077628:	110006e4 	add	w4, w23, #0x1
+ 107762c:	aa1403e1 	mov	x1, x20
+ 1077630:	aa1403e3 	mov	x3, x20
+ 1077634:	94018e6f 	bl	10daff0 <EVP_EncryptUpdate@plt>
+ 1077638:	7100041f 	cmp	w0, #0x1
+ 107763c:	540003a1 	b.ne	10776b0 <RecordLayer.encryptPrepared+0x1f4>  // b.any
+ 1077640:	b85fc3a8 	ldur	w8, [x29, #-4]
+ 1077644:	f9400b00 	ldr	x0, [x24, #16]
+ 1077648:	8b080281 	add	x1, x20, x8
+ 107764c:	d10013a2 	sub	x2, x29, #0x4
+ 1077650:	94018e6c 	bl	10db000 <EVP_EncryptFinal_ex@plt>
+ 1077654:	7100041f 	cmp	w0, #0x1
+ 1077658:	540002c1 	b.ne	10776b0 <RecordLayer.encryptPrepared+0x1f4>  // b.any
+ 107765c:	f9400b00 	ldr	x0, [x24, #16]
+ 1077660:	910003e3 	mov	x3, sp
+ 1077664:	52800201 	mov	w1, #0x10                  	// #16
+ 1077668:	52800202 	mov	w2, #0x10                  	// #16
+ 107766c:	94018e51 	bl	10dafb0 <EVP_CIPHER_CTX_ctrl@plt>
+ 1077670:	7100041f 	cmp	w0, #0x1
+ 1077674:	540001e1 	b.ne	10776b0 <RecordLayer.encryptPrepared+0x1f4>  // b.any
+ 1077678:	8b170268 	add	x8, x19, x23
+ 107767c:	3dc003e0 	ldr	q0, [sp]
+ 1077680:	3c806100 	stur	q0, [x8, #6]
+ 1077684:	f9400308 	ldr	x8, [x24]
+ 1077688:	91000508 	add	x8, x8, #0x1
+ 107768c:	f9000308 	str	x8, [x24]
+ 1077690:	790022df 	strh	wzr, [x22, #16]
+ 1077694:	a90056d3 	stp	x19, x21, [x22]
+ 1077698:	a9454ff4 	ldp	x20, x19, [sp, #80]
+ 107769c:	a94457f6 	ldp	x22, x21, [sp, #64]
+ 10776a0:	a9435ff8 	ldp	x24, x23, [sp, #48]
+ 10776a4:	a9427bfd 	ldp	x29, x30, [sp, #32]
+ 10776a8:	910183ff 	add	sp, sp, #0x60
+ 10776ac:	d65f03c0 	ret
+ 10776b0:	52800a08 	mov	w8, #0x50                  	// #80
+ 10776b4:	790022c8 	strh	w8, [x22, #16]
+ 10776b8:	a9454ff4 	ldp	x20, x19, [sp, #80]
+ 10776bc:	a94457f6 	ldp	x22, x21, [sp, #64]
+ 10776c0:	a9435ff8 	ldp	x24, x23, [sp, #48]
+ 10776c4:	a9427bfd 	ldp	x29, x30, [sp, #32]
+ 10776c8:	910183ff 	add	sp, sp, #0x60
+ 10776cc:	d65f03c0 	ret
+

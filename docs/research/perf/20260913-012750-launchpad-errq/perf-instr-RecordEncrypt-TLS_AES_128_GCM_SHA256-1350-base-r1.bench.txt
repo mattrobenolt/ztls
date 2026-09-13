@@ -1,0 +1,1 @@
+BenchmarkRecordEncrypt/TLS_AES_128_GCM_SHA256/1350	  300000	       272.1 ns/op	4962.28 MB/s

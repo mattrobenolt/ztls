@@ -84,6 +84,59 @@ pub const capabilities_fips = struct {
 
 pub const Error = error{ LibcryptoFailed, IdentityElement };
 
+// ---------------------------------------------------------------------------
+// Error-queue hygiene (#88 finding 2)
+// ---------------------------------------------------------------------------
+//
+// Failed libcrypto calls may push per-thread error-queue entries, and
+// nothing in ztls ever reads the queue: without a guard, every
+// attacker-reachable failure (malformed key_share, bad CertificateVerify,
+// failed record decrypt) leaves residue for the life of the thread. Every
+// outermost public fallible wrapper — AEAD seal/open included — brackets
+// its libcrypto calls with ERR_set_mark / ERR_pop_to_mark so it removes
+// exactly the entries it pushed and preserves the caller's.
+//
+// Bounds, verified against the pinned err sources (OpenSSL err_mark.c:
+// counted marks; aws-lc 5.5.0 / boringssl 0.20260803.0 err.c: per-entry
+// boolean mark flag):
+// - Caller entries survive only within the per-thread ring (16 slots, 15
+//   usable); a queue the caller has already filled is evicted by libcrypto
+//   itself, taking the caller's oldest entries.
+// - DER/PEM key loads (privateKeyFromDer/Pem) cannot preserve pre-existing
+//   caller entries on the BoringSSL-family backends: their d2i key parsers
+//   call ERR_clear_error between parse fallbacks, destroying the caller's
+//   entries and ztls's mark before errqExit runs. The wrapper still leaves
+//   no residue of its own there; pinned by a lane-dependent test.
+// - A caller's pending ERR_set_mark is consumed on the BoringSSL-family
+//   backends even when the wrapper pushes nothing: errqEnter re-marks the
+//   caller's top entry (idempotent flag) and errqExit clears it, so the
+//   caller's own later pop_to_mark then drains the caller's entries.
+//   OpenSSL's counted marks are immune.
+// - Nesting rule (load-bearing convention): mark/pop is safe only at an
+//   outermost entry point — a nested pair on the same entry lets the outer
+//   pop drain the caller's entries on the flag-marking forks. Internal
+//   helpers stay unguarded, and any future public front that calls another
+//   fallible wrapper must call the unguarded impl instead (the
+//   privateKeyFromP256Scalar → p256PrivateKeyFromSecretImpl split is the
+//   pattern) and add the same nesting pin.
+// - The guard is defer, not errdefer, as a forward-looking contract: no
+//   current wrapper pushes on success, but a future one that
+//   pushes-and-recovers internally must still clean up. No wrapper in the
+//   exercised set distinguishes defer from errdefer today.
+
+/// Enter a guarded public wrapper: mark the queue's current top so
+/// `errqExit` can drop everything this wrapper pushes above it. On an empty
+/// queue the mark is a no-op and `errqExit` then drains everything the
+/// wrapper pushed — exactly the as-found (empty) state.
+pub inline fn errqEnter() void {
+    _ = c.ERR_set_mark();
+}
+
+/// Exit a guarded public wrapper: pop everything pushed since `errqEnter`.
+pub inline fn errqExit() void {
+    _ = c.ERR_pop_to_mark();
+}
+
 /// ML-KEM hybrid KEX types (RFC 9180 + draft-ietf-tls-ecdhe-mlkem).
 /// OpenSSL 3.5+ and AWS-LC expose these as provider-backed KEM algorithms
 /// (encap/decap, not key-agreement derive).
@@ -93,12 +146,16 @@ pub const KemPeerKey = *pkey;
 /// Generate an ML-KEM hybrid keypair (e.g. X25519MLKEM768).
 /// Caller must freeKey the result.
 pub fn kemKeygen(name: [*:0]const u8) Error!KemKey {
+    errqEnter();
+    defer errqExit();
     const key = c.EVP_PKEY_Q_keygen(null, null, name) orelse return error.LibcryptoFailed;
     return key;
 }
 
 /// Extract the raw public key (TLS key_share bytes) from a KEM key.
 pub fn kemPublic(key: KemKey, out: []u8) Error![]u8 {
+    errqEnter();
+    defer errqExit();
     var len: usize = out.len;
     if (c.EVP_PKEY_get_octet_string_param(
         key,
@@ -115,6 +172,8 @@ pub fn kemLoadPublic(
     name: [*:0]const u8,
     pub_key: []const u8,
 ) Error!KemPeerKey {
+    errqEnter();
+    defer errqExit();
     var params: [2]c.OSSL_PARAM = undefined;
     params[0] = c.OSSL_PARAM_construct_octet_string(
         c.OSSL_PKEY_PARAM_PUB_KEY,
@@ -146,6 +205,8 @@ pub fn kemEncapsulate(
     enc_out: []u8,
     sec_out: []u8,
 ) Error!struct { enc: []u8, sec: []u8 } {
+    errqEnter();
+    defer errqExit();
     const ctx = c.EVP_PKEY_CTX_new(peer_key, null) orelse
         return error.LibcryptoFailed;
     defer c.EVP_PKEY_CTX_free(ctx);
@@ -171,6 +232,8 @@ pub fn kemDecapsulate(
     enc: []const u8,
     sec_out: []u8,
 ) Error![]u8 {
+    errqEnter();
+    defer errqExit();
     const ctx = c.EVP_PKEY_CTX_new(our_key, null) orelse
         return error.LibcryptoFailed;
     defer c.EVP_PKEY_CTX_free(ctx);
@@ -196,6 +259,8 @@ pub const pkey = c.EVP_PKEY;
 pub const x25519_pkey = *pkey;
 
 pub fn privateKeyFromSecret(secret: *const [32]u8) Error!x25519_pkey {
+    errqEnter();
+    defer errqExit();
     return c.EVP_PKEY_new_raw_private_key(
         c.EVP_PKEY_X25519,
         null,
@@ -205,6 +270,8 @@ pub fn privateKeyFromSecret(secret: *const [32]u8) Error!x25519_pkey {
 }
 
 pub fn publicKeyFromRaw(public_key: *const [32]u8) Error!x25519_pkey {
+    errqEnter();
+    defer errqExit();
     return c.EVP_PKEY_new_raw_public_key(
         c.EVP_PKEY_X25519,
         null,
@@ -214,6 +281,8 @@ pub fn publicKeyFromRaw(public_key: *const [32]u8) Error!x25519_pkey {
 }
 
 pub fn rawPublicKeyFromPrivate(key: *const x25519_pkey) Error![32]u8 {
+    errqEnter();
+    defer errqExit();
     var public_key: [32]u8 = undefined;
     var len: usize = public_key.len;
     if (c.EVP_PKEY_get_raw_public_key(key.*, &public_key, &len) != 1) return error.LibcryptoFailed;
@@ -226,6 +295,8 @@ pub fn sharedSecretDerive(
     peer: *const x25519_pkey,
     out: *[32]u8,
 ) Error!void {
+    errqEnter();
+    defer errqExit();
     const ctx = c.EVP_PKEY_CTX_new(ours.*, null) orelse return error.LibcryptoFailed;
     defer c.EVP_PKEY_CTX_free(ctx);
     if (c.EVP_PKEY_derive_init(ctx) != 1) return error.LibcryptoFailed;
@@ -239,7 +310,12 @@ pub fn sharedSecretDerive(
     if (std.crypto.timing_safe.eql([32]u8, out.*, @splat(0))) return error.IdentityElement;
 }
 
-pub fn p256PrivateKeyFromSecret(secret: *const [32]u8) Error!*pkey {
+/// Unguarded impl — the body shared by `p256PrivateKeyFromSecret` and
+/// `privateKeyFromP256Scalar`. Both are outermost public entry points, so
+/// each guards on its own and calls this impl directly; a guard here would
+/// nest behind theirs and (on the flag-marking BoringSSL-family queues) let
+/// the outer pop drain the caller's entries (#88 finding 2).
+fn p256PrivateKeyFromSecretImpl(secret: *const [32]u8) Error!*pkey {
     const group = c.EC_GROUP_new_by_curve_name(c.NID_X9_62_prime256v1) orelse
         return error.LibcryptoFailed;
     defer c.EC_GROUP_free(group);
@@ -274,7 +350,15 @@ pub fn p256PrivateKeyFromSecret(secret: *const [32]u8) Error!*pkey {
     return key;
 }
 
+pub fn p256PrivateKeyFromSecret(secret: *const [32]u8) Error!*pkey {
+    errqEnter();
+    defer errqExit();
+    return p256PrivateKeyFromSecretImpl(secret);
+}
+
 pub fn p256PublicKeyFromRaw(public_key: *const [65]u8) Error!*pkey {
+    errqEnter();
+    defer errqExit();
     if (public_key[0] != 0x04) return error.IdentityElement;
 
     var ec: ?*c.EC_KEY = c.EC_KEY_new_by_curve_name(c.NID_X9_62_prime256v1) orelse
@@ -293,6 +377,8 @@ pub fn p256PublicKeyFromRaw(public_key: *const [65]u8) Error!*pkey {
 }
 
 pub fn p256RawPublicKeyFromPrivate(key: *pkey) Error![65]u8 {
+    errqEnter();
+    defer errqExit();
     const ec = c.EVP_PKEY_get1_EC_KEY(key) orelse return error.LibcryptoFailed;
     defer c.EC_KEY_free(ec);
 
@@ -307,6 +393,8 @@ pub fn p256RawPublicKeyFromPrivate(key: *pkey) Error![65]u8 {
 }
 
 pub fn p256SharedSecretDerive(ours: *pkey, peer: *pkey, out: *[32]u8) Error!void {
+    errqEnter();
+    defer errqExit();
     const ctx = c.EVP_PKEY_CTX_new(ours, null) orelse return error.LibcryptoFailed;
     defer c.EVP_PKEY_CTX_free(ctx);
     if (c.EVP_PKEY_derive_init(ctx) != 1) return error.LibcryptoFailed;
@@ -321,6 +409,8 @@ pub fn p256SharedSecretDerive(ours: *pkey, peer: *pkey, out: *[32]u8) Error!void
 // 0x04 || X(48) || Y(48) = 97 bytes; the shared secret is the 48-byte
 // x-coordinate.
 pub fn p384PrivateKeyFromSecret(secret: *const [48]u8) Error!*pkey {
+    errqEnter();
+    defer errqExit();
     const group = c.EC_GROUP_new_by_curve_name(c.NID_secp384r1) orelse
         return error.LibcryptoFailed;
     defer c.EC_GROUP_free(group);
@@ -354,6 +444,8 @@ pub fn p384PrivateKeyFromSecret(secret: *const [48]u8) Error!*pkey {
 }
 
 pub fn p384PublicKeyFromRaw(public_key: *const [97]u8) Error!*pkey {
+    errqEnter();
+    defer errqExit();
     if (public_key[0] != 0x04) return error.IdentityElement;
 
     var ec: ?*c.EC_KEY = c.EC_KEY_new_by_curve_name(c.NID_secp384r1) orelse
@@ -372,6 +464,8 @@ pub fn p384PublicKeyFromRaw(public_key: *const [97]u8) Error!*pkey {
 }
 
 pub fn p384RawPublicKeyFromPrivate(key: *pkey) Error![97]u8 {
+    errqEnter();
+    defer errqExit();
     const ec = c.EVP_PKEY_get1_EC_KEY(key) orelse return error.LibcryptoFailed;
     defer c.EC_KEY_free(ec);
 
@@ -386,6 +480,8 @@ pub fn p384RawPublicKeyFromPrivate(key: *pkey) Error![97]u8 {
 }
 
 pub fn p384SharedSecretDerive(ours: *pkey, peer: *pkey, out: *[48]u8) Error!void {
+    errqEnter();
+    defer errqExit();
     const ctx = c.EVP_PKEY_CTX_new(ours, null) orelse return error.LibcryptoFailed;
     defer c.EVP_PKEY_CTX_free(ctx);
     if (c.EVP_PKEY_derive_init(ctx) != 1) return error.LibcryptoFailed;
@@ -424,6 +520,8 @@ fn aeadCipher(suite: CipherSuite) *const c.EVP_CIPHER {
 }
 
 pub fn aeadInit(suite: CipherSuite, key_bytes: []const u8) AeadError!AeadContext {
+    errqEnter();
+    defer errqExit();
     const cipher = aeadCipher(suite);
     const key_len: usize = @intCast(c.EVP_CIPHER_key_length(cipher));
     if (key_bytes.len != key_len) return error.AeadSetupFailed;
@@ -480,6 +578,8 @@ pub fn aeadEncrypt(
     ad: []const u8,
     npub: *const [aead_nonce_len]u8,
 ) AeadError!void {
+    errqEnter();
+    defer errqExit();
     var len: c_int = 0;
     var out_len: c_int = 0;
     if (c.EVP_EncryptInit_ex(ctx.enc, null, null, null, npub) != 1)
@@ -508,6 +608,8 @@ pub fn aeadDecrypt(
     ad: []const u8,
     npub: *const [aead_nonce_len]u8,
 ) AeadError!void {
+    errqEnter();
+    defer errqExit();
     var len: c_int = 0;
     var out_len: c_int = 0;
     if (c.EVP_DecryptInit_ex(ctx.dec, null, null, null, npub) != 1)
@@ -602,19 +704,28 @@ fn configureRsaPss(
 }
 
 pub fn privateKeyFromDer(der: []const u8) SignatureError!*pkey {
+    errqEnter();
+    defer errqExit();
     var ptr: ?[*]const u8 = der.ptr;
     return c.d2i_AutoPrivateKey(null, &ptr, @intCast(der.len)) orelse error.LibcryptoFailed;
 }
 
 pub fn privateKeyFromPem(pem: []const u8) SignatureError!*pkey {
+    errqEnter();
+    defer errqExit();
     const bio = c.BIO_new_mem_buf(pem.ptr, @intCast(pem.len)) orelse
         return error.LibcryptoFailed;
     defer _ = c.BIO_free(bio);
     return c.PEM_read_bio_PrivateKey(bio, null, null, null) orelse error.LibcryptoFailed;
 }
 
+/// Outermost entry point (key load for signing): guards on its own and calls
+/// the unguarded p256 impl — a guard in the impl would nest behind this one
+/// (#88 finding 2, see the hygiene comment above).
 pub fn privateKeyFromP256Scalar(scalar: *const [32]u8) SignatureError!*pkey {
-    return p256PrivateKeyFromSecret(scalar) catch |err| switch (err) {
+    errqEnter();
+    defer errqExit();
+    return p256PrivateKeyFromSecretImpl(scalar) catch |err| switch (err) {
         error.LibcryptoFailed, error.IdentityElement => error.LibcryptoFailed,
     };
 }
@@ -623,6 +734,8 @@ pub fn ecPublicKeyFromSec1(
     comptime curve: EcCurve,
     pub_key: []const u8,
 ) SignatureError!*pkey {
+    errqEnter();
+    defer errqExit();
     var ec: ?*c.EC_KEY = c.EC_KEY_new_by_curve_name(curve.nid()) orelse
         return error.InvalidEncoding;
     errdefer c.EC_KEY_free(ec);
@@ -640,6 +753,8 @@ pub fn ecPublicKeyFromSec1(
 }
 
 pub fn rsaPublicKeyFromDer(pub_key: []const u8) SignatureError!*pkey {
+    errqEnter();
+    defer errqExit();
     var ptr: ?[*]const u8 = pub_key.ptr;
     const rsa = c.d2i_RSAPublicKey(null, &ptr, @intCast(pub_key.len)) orelse
         return error.InvalidEncoding;
@@ -686,6 +801,8 @@ pub fn signatureSign(
     out: []u8,
     nonce_mode: NonceMode,
 ) SignError![]const u8 {
+    errqEnter();
+    defer errqExit();
     const md = try signatureDigest(scheme);
     const ctx = c.EVP_MD_CTX_new() orelse return error.LibcryptoFailed;
     defer c.EVP_MD_CTX_free(ctx);
@@ -712,6 +829,8 @@ pub fn signatureVerify(
     transcript_hash: []const u8,
     sig: []const u8,
 ) SignatureError!void {
+    errqEnter();
+    defer errqExit();
     const md = try signatureDigest(scheme);
     const ctx = c.EVP_MD_CTX_new() orelse return error.SignatureVerificationFailed;
     defer c.EVP_MD_CTX_free(ctx);

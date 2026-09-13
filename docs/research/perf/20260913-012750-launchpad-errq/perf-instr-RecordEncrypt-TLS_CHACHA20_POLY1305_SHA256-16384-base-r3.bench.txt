@@ -1,0 +1,1 @@
+BenchmarkRecordEncrypt/TLS_CHACHA20_POLY1305_SHA256/16384	   30000	      9080 ns/op	1804.33 MB/s
