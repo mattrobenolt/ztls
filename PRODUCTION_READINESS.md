@@ -87,6 +87,12 @@ unexpected failures. Both also completed 437/437 from clean `7c5049e`, with
 zero expected failures, 134 expected skips, and 205 not attempted. Their
 per-case causes require separate reproduction.
 
+The #91 investigation also exposed an alert-mapping defect:
+`CertificateIssuerNotCa` fell through to `internal_error`. It now maps to
+`bad_certificate` (RFC 8446 §6.2), with a regression assertion observed failing
+before the fix and passing afterwards. Issuer rejection is unchanged; this
+alert correction does not resolve the TLS-Anvil failures.
+
 **Target:** every RFC 8446 MUST is mapped to evidence or an explicit
 out-of-scope decision; the things that must *fail* are enumerated and tested as
 rigorously as the things that must succeed.

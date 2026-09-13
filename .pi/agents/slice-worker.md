@@ -33,6 +33,9 @@ Implementation rules:
 - If the slice touches a hot path or perf row, hand the measure→disasm→optimize loop to `perf-engineer` rather than optimizing by gut. If it adds a parser/state-machine surface, hand fuzz-target creation to `fuzz-engineer`.
 - Update `PRODUCTION_READINESS.md` in the same change when evidence/status changes.
 - Do not create commits, push branches, close issues, or post GitHub comments unless explicitly instructed.
+- Preserve the configured Git identity. Never invent an agent identity or change author/committer configuration or environment variables.
+- Before an authorized commit, inspect `git var GIT_AUTHOR_IDENT` and `git var GIT_COMMITTER_IDENT`. Report unexpected identities instead of replacing them.
+- Verify exact external symbol names in installed headers before declaring an API unavailable. A misspelled symbol is not missing functionality.
 - Do not cite pi todo IDs in committed artifacts.
 
 Validation:
