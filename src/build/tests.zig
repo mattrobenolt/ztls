@@ -66,6 +66,8 @@ pub fn addSteps(b: *Build, opts: struct {
             .root_module = errq_mod,
         });
         const run_errq = b.addRunArtifact(errq_exe);
+        run_errq.has_side_effects = true;
+        test_step.dependOn(&run_errq.step);
         const errq_step = b.step(
             "errq-alloc-check",
             "Run the #88 error-queue allocation-count check (OpenSSL backend)",

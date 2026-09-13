@@ -2,9 +2,6 @@
 [group("check")]
 test:
     zig build test --summary all
-    # #88: standalone allocation-count check (OpenSSL lane only; the step
-    # is not registered for BoringSSL-family backends).
-    zig build errq-alloc-check --summary all
 
 [doc("Build, test, benchmark-smoke, and tlsfuzzer-smoke with AWS-LC libcrypto")]
 [group("check")]

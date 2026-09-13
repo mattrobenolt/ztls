@@ -422,7 +422,7 @@ data to openssl s_server and receives the HTTP response.
     failure removes exactly the queue entries it pushed and preserves the
     caller's, up to the per-thread ring capacity (16 slots, 15 usable —
     beyond that libcrypto itself evicts the oldest entries, including the
-    caller's). Two bounds are documented on the guard and pinned by tests:
+    caller's). Backend limitations are documented on the guard:
     DER/PEM key loads cannot preserve pre-existing caller entries on the
     BoringSSL-family backends (their d2i key parsers call `ERR_clear_error`
     between parse fallbacks, destroying the caller's entries and the mark
@@ -439,7 +439,7 @@ data to openssl s_server and receives the HTTP response.
     caller's entries; that convention is load-bearing and pinned by a test
     that goes red on the AWS-LC lane under a nesting mutation (OpenSSL's
     counted marks make the same mutation benign there). Queue hygiene is
-    proven by facade tests that were red pre-fix on every lane (OpenSSL
+    proven by facade tests that were red pre-fix on OpenSSL and AWS-LC (OpenSSL
     3.6.4 — the devshell version actually linked for these runs: EC
     residue, caller-preservation, repeated-failures-empty; AWS-LC
     additionally: bad-signature, bad-tag-decrypt, and DER-key-load

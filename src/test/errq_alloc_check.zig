@@ -162,18 +162,13 @@ fn runChecks() CheckError!void {
     while (round < 100) : (round += 1) try checkRound(failBadTagRecord, aead_baseline);
 }
 
-pub fn main() !void {
-    var buf: [512]u8 = undefined;
-    var out = std.fs.File.stdout().writer(&buf);
-    defer out.interface.flush() catch {};
-
+pub fn main() void {
     runChecks() catch |err| {
-        try out.interface.print("errq-alloc-check: FAILED: {s}\n", .{@errorName(err)});
-        try out.interface.flush();
+        std.debug.print("errq-alloc-check: FAILED: {s}\n", .{@errorName(err)});
         std.process.exit(1);
     };
 
-    try out.interface.print(
+    std.debug.print(
         "errq-alloc-check: ok (allocs {d}, frees {d}, live {d})\n",
         .{ alloc_count, free_count, liveCount() },
     );
