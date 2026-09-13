@@ -1,0 +1,341 @@
+{
+  "TestId" : "8701-9F3St2di12",
+  "TestCases" : [ {
+    "Result" : "STRICTLY_SUCCEEDED",
+    "DisplayName" : "[1] Combination{INCLUDE_CHANGE_CIPHER_SPEC=INCLUDE_CHANGE_CIPHER_SPEC = true, NAMED_GROUP=NAMED_GROUP = SECP256R1, GREASE_SIG_HASH=GREASE_SIG_HASH = GREASE_00, CIPHER_SUITE=CIPHER_SUITE = TLS_AES_128_GCM_SHA256, TCP_FRAGMENTATION=TCP_FRAGMENTATION = false, RECORD_LENGTH=RECORD_LENGTH = 16384}",
+    "ParameterCombination" : {
+      "NAMED_GROUP" : "SECP256R1",
+      "TCP_FRAGMENTATION" : false,
+      "GREASE_SIG_HASH" : "GREASE_00",
+      "CIPHER_SUITE" : "TLS_AES_128_GCM_SHA256",
+      "INCLUDE_CHANGE_CIPHER_SPEC" : true,
+      "RECORD_LENGTH" : 16384
+    },
+    "AdditionalResultInformation" : null,
+    "AdditionalTestInformation" : null,
+    "SrcPort" : 59805,
+    "DstPort" : 54334,
+    "StartTimestamp" : "2026-09-13T03:27:19.760Z",
+    "EndTimestamp" : "2026-09-13T03:27:19.790Z",
+    "Stacktrace" : null,
+    "uuid" : "F2940908FE34D0B674C915B10E658559BB4D9D3051830FE5CFEACA552A2E8329"
+  }, {
+    "Result" : "STRICTLY_SUCCEEDED",
+    "DisplayName" : "[2] Combination{INCLUDE_CHANGE_CIPHER_SPEC=INCLUDE_CHANGE_CIPHER_SPEC = false, NAMED_GROUP=NAMED_GROUP = ECDH_X25519, GREASE_SIG_HASH=GREASE_SIG_HASH = GREASE_01, CIPHER_SUITE=CIPHER_SUITE = TLS_AES_256_GCM_SHA384, TCP_FRAGMENTATION=TCP_FRAGMENTATION = true, RECORD_LENGTH=RECORD_LENGTH = 16384}",
+    "ParameterCombination" : {
+      "NAMED_GROUP" : "ECDH_X25519",
+      "TCP_FRAGMENTATION" : true,
+      "GREASE_SIG_HASH" : "GREASE_01",
+      "CIPHER_SUITE" : "TLS_AES_256_GCM_SHA384",
+      "INCLUDE_CHANGE_CIPHER_SPEC" : false,
+      "RECORD_LENGTH" : 16384
+    },
+    "AdditionalResultInformation" : null,
+    "AdditionalTestInformation" : null,
+    "SrcPort" : 59805,
+    "DstPort" : 34058,
+    "StartTimestamp" : "2026-09-13T03:27:19.878Z",
+    "EndTimestamp" : "2026-09-13T03:27:19.930Z",
+    "Stacktrace" : null,
+    "uuid" : "9352D1146323238FC82B5417B4F93971E8F498B825B9CD40319C86800FC92850"
+  }, {
+    "Result" : "STRICTLY_SUCCEEDED",
+    "DisplayName" : "[3] Combination{INCLUDE_CHANGE_CIPHER_SPEC=INCLUDE_CHANGE_CIPHER_SPEC = true, NAMED_GROUP=NAMED_GROUP = SECP256R1, GREASE_SIG_HASH=GREASE_SIG_HASH = GREASE_02, CIPHER_SUITE=CIPHER_SUITE = TLS_CHACHA20_POLY1305_SHA256, TCP_FRAGMENTATION=TCP_FRAGMENTATION = false, RECORD_LENGTH=RECORD_LENGTH = 16384}",
+    "ParameterCombination" : {
+      "NAMED_GROUP" : "SECP256R1",
+      "TCP_FRAGMENTATION" : false,
+      "GREASE_SIG_HASH" : "GREASE_02",
+      "CIPHER_SUITE" : "TLS_CHACHA20_POLY1305_SHA256",
+      "INCLUDE_CHANGE_CIPHER_SPEC" : true,
+      "RECORD_LENGTH" : 16384
+    },
+    "AdditionalResultInformation" : null,
+    "AdditionalTestInformation" : null,
+    "SrcPort" : 59805,
+    "DstPort" : 34064,
+    "StartTimestamp" : "2026-09-13T03:27:20.076Z",
+    "EndTimestamp" : "2026-09-13T03:27:20.110Z",
+    "Stacktrace" : null,
+    "uuid" : "12402F3C09A12250FAA2BAA694C4997FDE16AAD500A6085F50B490BBF464987E"
+  }, {
+    "Result" : "STRICTLY_SUCCEEDED",
+    "DisplayName" : "[4] Combination{INCLUDE_CHANGE_CIPHER_SPEC=INCLUDE_CHANGE_CIPHER_SPEC = true, NAMED_GROUP=NAMED_GROUP = SECP256R1, GREASE_SIG_HASH=GREASE_SIG_HASH = GREASE_03, CIPHER_SUITE=CIPHER_SUITE = TLS_AES_128_GCM_SHA256, TCP_FRAGMENTATION=TCP_FRAGMENTATION = false, RECORD_LENGTH=RECORD_LENGTH = 16384}",
+    "ParameterCombination" : {
+      "NAMED_GROUP" : "SECP256R1",
+      "TCP_FRAGMENTATION" : false,
+      "GREASE_SIG_HASH" : "GREASE_03",
+      "CIPHER_SUITE" : "TLS_AES_128_GCM_SHA256",
+      "INCLUDE_CHANGE_CIPHER_SPEC" : true,
+      "RECORD_LENGTH" : 16384
+    },
+    "AdditionalResultInformation" : null,
+    "AdditionalTestInformation" : null,
+    "SrcPort" : 59805,
+    "DstPort" : 34072,
+    "StartTimestamp" : "2026-09-13T03:27:20.189Z",
+    "EndTimestamp" : "2026-09-13T03:27:20.217Z",
+    "Stacktrace" : null,
+    "uuid" : "062B6B7C6C9CBF0E2505429B062A225A0A18DFAD476D81621C75ECB3996F8B28"
+  }, {
+    "Result" : "STRICTLY_SUCCEEDED",
+    "DisplayName" : "[5] Combination{INCLUDE_CHANGE_CIPHER_SPEC=INCLUDE_CHANGE_CIPHER_SPEC = true, NAMED_GROUP=NAMED_GROUP = SECP256R1, GREASE_SIG_HASH=GREASE_SIG_HASH = GREASE_04, CIPHER_SUITE=CIPHER_SUITE = TLS_AES_128_GCM_SHA256, TCP_FRAGMENTATION=TCP_FRAGMENTATION = false, RECORD_LENGTH=RECORD_LENGTH = 16384}",
+    "ParameterCombination" : {
+      "NAMED_GROUP" : "SECP256R1",
+      "TCP_FRAGMENTATION" : false,
+      "GREASE_SIG_HASH" : "GREASE_04",
+      "CIPHER_SUITE" : "TLS_AES_128_GCM_SHA256",
+      "INCLUDE_CHANGE_CIPHER_SPEC" : true,
+      "RECORD_LENGTH" : 16384
+    },
+    "AdditionalResultInformation" : null,
+    "AdditionalTestInformation" : null,
+    "SrcPort" : 59805,
+    "DstPort" : 34074,
+    "StartTimestamp" : "2026-09-13T03:27:20.319Z",
+    "EndTimestamp" : "2026-09-13T03:27:20.347Z",
+    "Stacktrace" : null,
+    "uuid" : "102855E93AE96396322D512E4F14D2B7475546E30BB91A809EDF7EFEF3C2D63A"
+  }, {
+    "Result" : "STRICTLY_SUCCEEDED",
+    "DisplayName" : "[6] Combination{INCLUDE_CHANGE_CIPHER_SPEC=INCLUDE_CHANGE_CIPHER_SPEC = true, NAMED_GROUP=NAMED_GROUP = SECP256R1, GREASE_SIG_HASH=GREASE_SIG_HASH = GREASE_05, CIPHER_SUITE=CIPHER_SUITE = TLS_AES_128_GCM_SHA256, TCP_FRAGMENTATION=TCP_FRAGMENTATION = false, RECORD_LENGTH=RECORD_LENGTH = 16384}",
+    "ParameterCombination" : {
+      "NAMED_GROUP" : "SECP256R1",
+      "TCP_FRAGMENTATION" : false,
+      "GREASE_SIG_HASH" : "GREASE_05",
+      "CIPHER_SUITE" : "TLS_AES_128_GCM_SHA256",
+      "INCLUDE_CHANGE_CIPHER_SPEC" : true,
+      "RECORD_LENGTH" : 16384
+    },
+    "AdditionalResultInformation" : null,
+    "AdditionalTestInformation" : null,
+    "SrcPort" : 59805,
+    "DstPort" : 34080,
+    "StartTimestamp" : "2026-09-13T03:27:20.449Z",
+    "EndTimestamp" : "2026-09-13T03:27:20.480Z",
+    "Stacktrace" : null,
+    "uuid" : "F1EA7F7605C4FA45E6B59E6C359DEC9A9A4878BB62BA286B44DA39EE04004457"
+  }, {
+    "Result" : "STRICTLY_SUCCEEDED",
+    "DisplayName" : "[7] Combination{INCLUDE_CHANGE_CIPHER_SPEC=INCLUDE_CHANGE_CIPHER_SPEC = true, NAMED_GROUP=NAMED_GROUP = SECP256R1, GREASE_SIG_HASH=GREASE_SIG_HASH = GREASE_06, CIPHER_SUITE=CIPHER_SUITE = TLS_AES_128_GCM_SHA256, TCP_FRAGMENTATION=TCP_FRAGMENTATION = false, RECORD_LENGTH=RECORD_LENGTH = 16384}",
+    "ParameterCombination" : {
+      "NAMED_GROUP" : "SECP256R1",
+      "TCP_FRAGMENTATION" : false,
+      "GREASE_SIG_HASH" : "GREASE_06",
+      "CIPHER_SUITE" : "TLS_AES_128_GCM_SHA256",
+      "INCLUDE_CHANGE_CIPHER_SPEC" : true,
+      "RECORD_LENGTH" : 16384
+    },
+    "AdditionalResultInformation" : null,
+    "AdditionalTestInformation" : null,
+    "SrcPort" : 59805,
+    "DstPort" : 34082,
+    "StartTimestamp" : "2026-09-13T03:27:20.537Z",
+    "EndTimestamp" : "2026-09-13T03:27:20.560Z",
+    "Stacktrace" : null,
+    "uuid" : "D2927FF30D62D53810B01694C299C34D5EE403BDB3BC8BF29033615563AA8291"
+  }, {
+    "Result" : "STRICTLY_SUCCEEDED",
+    "DisplayName" : "[8] Combination{INCLUDE_CHANGE_CIPHER_SPEC=INCLUDE_CHANGE_CIPHER_SPEC = true, NAMED_GROUP=NAMED_GROUP = SECP256R1, GREASE_SIG_HASH=GREASE_SIG_HASH = GREASE_07, CIPHER_SUITE=CIPHER_SUITE = TLS_AES_128_GCM_SHA256, TCP_FRAGMENTATION=TCP_FRAGMENTATION = false, RECORD_LENGTH=RECORD_LENGTH = 16384}",
+    "ParameterCombination" : {
+      "NAMED_GROUP" : "SECP256R1",
+      "TCP_FRAGMENTATION" : false,
+      "GREASE_SIG_HASH" : "GREASE_07",
+      "CIPHER_SUITE" : "TLS_AES_128_GCM_SHA256",
+      "INCLUDE_CHANGE_CIPHER_SPEC" : true,
+      "RECORD_LENGTH" : 16384
+    },
+    "AdditionalResultInformation" : null,
+    "AdditionalTestInformation" : null,
+    "SrcPort" : 59805,
+    "DstPort" : 34090,
+    "StartTimestamp" : "2026-09-13T03:27:20.659Z",
+    "EndTimestamp" : "2026-09-13T03:27:20.694Z",
+    "Stacktrace" : null,
+    "uuid" : "96B3F82E30151C6465EB985CEB9502B757A2FBD4506B2203383E7C497B18DE8A"
+  }, {
+    "Result" : "STRICTLY_SUCCEEDED",
+    "DisplayName" : "[9] Combination{INCLUDE_CHANGE_CIPHER_SPEC=INCLUDE_CHANGE_CIPHER_SPEC = true, NAMED_GROUP=NAMED_GROUP = SECP256R1, GREASE_SIG_HASH=GREASE_SIG_HASH = GREASE_08, CIPHER_SUITE=CIPHER_SUITE = TLS_AES_128_GCM_SHA256, TCP_FRAGMENTATION=TCP_FRAGMENTATION = false, RECORD_LENGTH=RECORD_LENGTH = 16384}",
+    "ParameterCombination" : {
+      "NAMED_GROUP" : "SECP256R1",
+      "TCP_FRAGMENTATION" : false,
+      "GREASE_SIG_HASH" : "GREASE_08",
+      "CIPHER_SUITE" : "TLS_AES_128_GCM_SHA256",
+      "INCLUDE_CHANGE_CIPHER_SPEC" : true,
+      "RECORD_LENGTH" : 16384
+    },
+    "AdditionalResultInformation" : null,
+    "AdditionalTestInformation" : null,
+    "SrcPort" : 59805,
+    "DstPort" : 34102,
+    "StartTimestamp" : "2026-09-13T03:27:20.768Z",
+    "EndTimestamp" : "2026-09-13T03:27:20.791Z",
+    "Stacktrace" : null,
+    "uuid" : "1A546B4381C999A541256079338D9CF2AA05568F83477D70633B87800C7AB953"
+  }, {
+    "Result" : "STRICTLY_SUCCEEDED",
+    "DisplayName" : "[10] Combination{INCLUDE_CHANGE_CIPHER_SPEC=INCLUDE_CHANGE_CIPHER_SPEC = true, NAMED_GROUP=NAMED_GROUP = SECP256R1, GREASE_SIG_HASH=GREASE_SIG_HASH = GREASE_09, CIPHER_SUITE=CIPHER_SUITE = TLS_AES_128_GCM_SHA256, TCP_FRAGMENTATION=TCP_FRAGMENTATION = false, RECORD_LENGTH=RECORD_LENGTH = 16384}",
+    "ParameterCombination" : {
+      "NAMED_GROUP" : "SECP256R1",
+      "TCP_FRAGMENTATION" : false,
+      "GREASE_SIG_HASH" : "GREASE_09",
+      "CIPHER_SUITE" : "TLS_AES_128_GCM_SHA256",
+      "INCLUDE_CHANGE_CIPHER_SPEC" : true,
+      "RECORD_LENGTH" : 16384
+    },
+    "AdditionalResultInformation" : null,
+    "AdditionalTestInformation" : null,
+    "SrcPort" : 59805,
+    "DstPort" : 34112,
+    "StartTimestamp" : "2026-09-13T03:27:20.870Z",
+    "EndTimestamp" : "2026-09-13T03:27:20.901Z",
+    "Stacktrace" : null,
+    "uuid" : "79CD649AF43C1466EE50EB87F5B1B85FC998618B8B46BCAE38A3224EAB96CFF2"
+  }, {
+    "Result" : "STRICTLY_SUCCEEDED",
+    "DisplayName" : "[11] Combination{INCLUDE_CHANGE_CIPHER_SPEC=INCLUDE_CHANGE_CIPHER_SPEC = true, NAMED_GROUP=NAMED_GROUP = SECP256R1, GREASE_SIG_HASH=GREASE_SIG_HASH = GREASE_10, CIPHER_SUITE=CIPHER_SUITE = TLS_AES_128_GCM_SHA256, TCP_FRAGMENTATION=TCP_FRAGMENTATION = false, RECORD_LENGTH=RECORD_LENGTH = 16384}",
+    "ParameterCombination" : {
+      "NAMED_GROUP" : "SECP256R1",
+      "TCP_FRAGMENTATION" : false,
+      "GREASE_SIG_HASH" : "GREASE_10",
+      "CIPHER_SUITE" : "TLS_AES_128_GCM_SHA256",
+      "INCLUDE_CHANGE_CIPHER_SPEC" : true,
+      "RECORD_LENGTH" : 16384
+    },
+    "AdditionalResultInformation" : [ "Received TransportHandler exception", "Received TransportHandler exception" ],
+    "AdditionalTestInformation" : null,
+    "SrcPort" : 59805,
+    "DstPort" : 34136,
+    "StartTimestamp" : "2026-09-13T03:27:21.117Z",
+    "EndTimestamp" : "2026-09-13T03:27:21.146Z",
+    "Stacktrace" : null,
+    "uuid" : "49EFB188CD9DACEB78E5F05071676A44D9F6A96A81CDF388D29881FA1C964F41"
+  }, {
+    "Result" : "STRICTLY_SUCCEEDED",
+    "DisplayName" : "[12] Combination{INCLUDE_CHANGE_CIPHER_SPEC=INCLUDE_CHANGE_CIPHER_SPEC = true, NAMED_GROUP=NAMED_GROUP = SECP256R1, GREASE_SIG_HASH=GREASE_SIG_HASH = GREASE_11, CIPHER_SUITE=CIPHER_SUITE = TLS_AES_128_GCM_SHA256, TCP_FRAGMENTATION=TCP_FRAGMENTATION = false, RECORD_LENGTH=RECORD_LENGTH = 16384}",
+    "ParameterCombination" : {
+      "NAMED_GROUP" : "SECP256R1",
+      "TCP_FRAGMENTATION" : false,
+      "GREASE_SIG_HASH" : "GREASE_11",
+      "CIPHER_SUITE" : "TLS_AES_128_GCM_SHA256",
+      "INCLUDE_CHANGE_CIPHER_SPEC" : true,
+      "RECORD_LENGTH" : 16384
+    },
+    "AdditionalResultInformation" : null,
+    "AdditionalTestInformation" : null,
+    "SrcPort" : 59805,
+    "DstPort" : 34146,
+    "StartTimestamp" : "2026-09-13T03:27:21.269Z",
+    "EndTimestamp" : "2026-09-13T03:27:21.300Z",
+    "Stacktrace" : null,
+    "uuid" : "BDD1B0917D996C2D0D6AB4811B3F5D42361F7F9465F943EF7F74BE17F51A3048"
+  }, {
+    "Result" : "STRICTLY_SUCCEEDED",
+    "DisplayName" : "[13] Combination{INCLUDE_CHANGE_CIPHER_SPEC=INCLUDE_CHANGE_CIPHER_SPEC = true, NAMED_GROUP=NAMED_GROUP = SECP256R1, GREASE_SIG_HASH=GREASE_SIG_HASH = GREASE_12, CIPHER_SUITE=CIPHER_SUITE = TLS_AES_128_GCM_SHA256, TCP_FRAGMENTATION=TCP_FRAGMENTATION = false, RECORD_LENGTH=RECORD_LENGTH = 16384}",
+    "ParameterCombination" : {
+      "NAMED_GROUP" : "SECP256R1",
+      "TCP_FRAGMENTATION" : false,
+      "GREASE_SIG_HASH" : "GREASE_12",
+      "CIPHER_SUITE" : "TLS_AES_128_GCM_SHA256",
+      "INCLUDE_CHANGE_CIPHER_SPEC" : true,
+      "RECORD_LENGTH" : 16384
+    },
+    "AdditionalResultInformation" : null,
+    "AdditionalTestInformation" : null,
+    "SrcPort" : 59805,
+    "DstPort" : 34154,
+    "StartTimestamp" : "2026-09-13T03:27:21.376Z",
+    "EndTimestamp" : "2026-09-13T03:27:21.409Z",
+    "Stacktrace" : null,
+    "uuid" : "487C4A9DA4BF81D103006F6B59A8D0C5E23AC09D3588C163A48E8FF4E0AE45E0"
+  }, {
+    "Result" : "STRICTLY_SUCCEEDED",
+    "DisplayName" : "[14] Combination{INCLUDE_CHANGE_CIPHER_SPEC=INCLUDE_CHANGE_CIPHER_SPEC = true, NAMED_GROUP=NAMED_GROUP = SECP256R1, GREASE_SIG_HASH=GREASE_SIG_HASH = GREASE_13, CIPHER_SUITE=CIPHER_SUITE = TLS_AES_128_GCM_SHA256, TCP_FRAGMENTATION=TCP_FRAGMENTATION = false, RECORD_LENGTH=RECORD_LENGTH = 16384}",
+    "ParameterCombination" : {
+      "NAMED_GROUP" : "SECP256R1",
+      "TCP_FRAGMENTATION" : false,
+      "GREASE_SIG_HASH" : "GREASE_13",
+      "CIPHER_SUITE" : "TLS_AES_128_GCM_SHA256",
+      "INCLUDE_CHANGE_CIPHER_SPEC" : true,
+      "RECORD_LENGTH" : 16384
+    },
+    "AdditionalResultInformation" : null,
+    "AdditionalTestInformation" : null,
+    "SrcPort" : 59805,
+    "DstPort" : 34162,
+    "StartTimestamp" : "2026-09-13T03:27:21.516Z",
+    "EndTimestamp" : "2026-09-13T03:27:21.545Z",
+    "Stacktrace" : null,
+    "uuid" : "D3FE6C40FF9399C680B963A18FCF2C52F2797EE1659D0690FD394CC1EBC31A76"
+  }, {
+    "Result" : "STRICTLY_SUCCEEDED",
+    "DisplayName" : "[15] Combination{INCLUDE_CHANGE_CIPHER_SPEC=INCLUDE_CHANGE_CIPHER_SPEC = true, NAMED_GROUP=NAMED_GROUP = SECP256R1, GREASE_SIG_HASH=GREASE_SIG_HASH = GREASE_14, CIPHER_SUITE=CIPHER_SUITE = TLS_AES_128_GCM_SHA256, TCP_FRAGMENTATION=TCP_FRAGMENTATION = false, RECORD_LENGTH=RECORD_LENGTH = 16384}",
+    "ParameterCombination" : {
+      "NAMED_GROUP" : "SECP256R1",
+      "TCP_FRAGMENTATION" : false,
+      "GREASE_SIG_HASH" : "GREASE_14",
+      "CIPHER_SUITE" : "TLS_AES_128_GCM_SHA256",
+      "INCLUDE_CHANGE_CIPHER_SPEC" : true,
+      "RECORD_LENGTH" : 16384
+    },
+    "AdditionalResultInformation" : null,
+    "AdditionalTestInformation" : null,
+    "SrcPort" : 59805,
+    "DstPort" : 34176,
+    "StartTimestamp" : "2026-09-13T03:27:21.609Z",
+    "EndTimestamp" : "2026-09-13T03:27:21.636Z",
+    "Stacktrace" : null,
+    "uuid" : "8B5543BAC99D5DBB90149502237C8F80CF069F52EAE93A7E9A491CD207BDCFFF"
+  }, {
+    "Result" : "STRICTLY_SUCCEEDED",
+    "DisplayName" : "[16] Combination{INCLUDE_CHANGE_CIPHER_SPEC=INCLUDE_CHANGE_CIPHER_SPEC = true, NAMED_GROUP=NAMED_GROUP = SECP256R1, GREASE_SIG_HASH=GREASE_SIG_HASH = GREASE_15, CIPHER_SUITE=CIPHER_SUITE = TLS_AES_128_GCM_SHA256, TCP_FRAGMENTATION=TCP_FRAGMENTATION = false, RECORD_LENGTH=RECORD_LENGTH = 16384}",
+    "ParameterCombination" : {
+      "NAMED_GROUP" : "SECP256R1",
+      "TCP_FRAGMENTATION" : false,
+      "GREASE_SIG_HASH" : "GREASE_15",
+      "CIPHER_SUITE" : "TLS_AES_128_GCM_SHA256",
+      "INCLUDE_CHANGE_CIPHER_SPEC" : true,
+      "RECORD_LENGTH" : 16384
+    },
+    "AdditionalResultInformation" : null,
+    "AdditionalTestInformation" : null,
+    "SrcPort" : 59805,
+    "DstPort" : 34182,
+    "StartTimestamp" : "2026-09-13T03:27:21.741Z",
+    "EndTimestamp" : "2026-09-13T03:27:21.770Z",
+    "Stacktrace" : null,
+    "uuid" : "120F42A065712521B01330AA45E010EB2B85197D3E26D9CB4DC4F5EE64D93AB7"
+  } ],
+  "Result" : "STRICTLY_SUCCEEDED",
+  "DisabledReason" : null,
+  "FailedReason" : null,
+  "ExecutionTime" : 2091,
+  "GenerationTime" : 6,
+  "FailureInducingCombinations" : null,
+  "Score" : {
+    "Crypto" : 100.0,
+    "Alert" : 100.0,
+    "Interoperability" : 100.0,
+    "Handshake" : 100.0,
+    "Certificate" : 100.0
+  },
+  "HasStateWithAdditionalResultInformation" : true,
+  "HasVaryingAdditionalResultInformation" : false,
+  "TestMethod" : "sendCertificateVerifyGreaseSignatureAlgorithm",
+  "TestClass" : "de.rub.nds.tlstest.suite.tests.client.tls13.rfc8701.ServerInitiatedExtensionPoints",
+  "CaseCount" : 16,
+  "MetaData" : {
+    "description" : "Clients MUST reject GREASE values when negotiated by the server. In particular, the client MUST fail the connection if a GREASE value appears in any of the following: [...] The signature algorithm in a server CertificateVerify signature in TLS 1.3",
+    "severityLevels" : {
+      "Crypto" : 100,
+      "Handshake" : 100,
+      "Certificate" : 100,
+      "Interoperability" : 100,
+      "Alert" : 40
+    },
+    "rfc" : {
+      "number" : 8701,
+      "section" : "4. Server-Initiated Extension Points"
+    },
+    "tags" : [ "client", "tls13", "rfc8701", "ServerInitiatedExtensionPoints", "sendCertificateVerifyGreaseSignatureAlgorithm" ]
+  }
+}

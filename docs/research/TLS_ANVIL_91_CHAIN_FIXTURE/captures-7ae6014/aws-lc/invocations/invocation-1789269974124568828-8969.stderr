@@ -1,0 +1,87 @@
+anvil_client start utc=2026-09-13T03:26:14.124568Z epoch_ns=1789269974124568828 pid=8969
+anvil_client diag local_port=51224
+anvil_client diag validity err=CertificateExpired policy_now_sec=1789269974 real_now_sec=1789269974 record_len=1688 plaintext_len=1666 handshake_buf_len=0
+anvil_client diag cert_hex=0b00067e0000067a00031d3082031930820201a00302010202140f1f2f34f5f6
+anvil_client diag cert_hex=f7f8f9f0f0f9f8f7f6f5f4f3f2f1300d06092a864886f70d01010b0500305731
+anvil_client diag cert_hex=31302f06035504030c2841747461636b6572204341202d20476c6f62616c2049
+anvil_client diag cert_hex=6e73656375726974792050726f7669646572310b300906035504061302444531
+anvil_client diag cert_hex=153013060355040a0c0c544c532d41747461636b6572301e170d323630393133
+anvil_client diag cert_hex=3033323631335a170d3236303931333033323631335a30323119301706035504
+anvil_client diag cert_hex=030c10746c732d61747461636b65722e636f6d31153013060355040a0c0c544c
+anvil_client diag cert_hex=532d41747461636b657230820122300d06092a864886f70d0101010500038201
+anvil_client diag cert_hex=0f003082010a0282010100c8820d6c3ce84c8430f6835abfc7d7a912e1664f44
+anvil_client diag cert_hex=578751f376501a8c68476c3072d919c5d39bd0dbe080e71db83bd4ab2f2f9bde
+anvil_client diag cert_hex=3dffb0080f510a5f6929c196551f2b3c369be051054c877573195558fd282035
+anvil_client diag cert_hex=934dc86edab8d4b1b7f555e5b2fee7275384a756ef86cb86793b5d1333f09732
+anvil_client diag cert_hex=03cb96966766e655cd2cccae1940e4494b8e9fb5279593b75afd0b378243e51a
+anvil_client diag cert_hex=88f6eb88def522a8cd5c6c082286a04269a2879760fcba45005d7f2672dd2288
+anvil_client diag cert_hex=09d47274f0fe0ea5531c2bd95366c05bf69edc0f3c3189866edca0c57adcca93
+anvil_client diag cert_hex=250ae78d9eaca0393a95ff9952fc47fb7679dd3803e6a7a6fa771861e3d99e4b
+anvil_client diag cert_hex=551a4084668b111b7eef7d0203010001a3023000300d06092a864886f70d0101
+anvil_client diag cert_hex=0b0500038201010010a99e0bf6d39b081db4928280ebb865449d9511e5e57509
+anvil_client diag cert_hex=18012809b74db532d59a922ef511a398003d1ba66ac1fa0dbb1c800e894f9b5e
+anvil_client diag cert_hex=a0ad83ea74897be9b82613f3d283c6b7ade9d4466b5f587a7143ee6fa1b1569d
+anvil_client diag cert_hex=2c8793e9c67a6f279e0d56658471e444261b13b43e2b8436b56b685d7be433b0
+anvil_client diag cert_hex=84ffe9dc3de98179049b7d01b5fa98e2fe42d7841b7f3ba035427f8a536fef68
+anvil_client diag cert_hex=4f33d366d04763701dc8c88ea56431c584e12eb4c9264961f1af5e86533b972a
+anvil_client diag cert_hex=47b8498c089b0700c9c95b6471518deda5fe319d03c19f3578b2488a8633ec78
+anvil_client diag cert_hex=3c3ae57be0111a593aa82089296b016cccde59f56cf9800551c3231b90440158
+anvil_client diag cert_hex=f8b9277f25dd4b1000000003533082034f30820237a00302010202140fcacaca
+anvil_client diag cert_hex=0fcacaca0fcacaca0fcacaca0fcacaca300d06092a864886f70d01010b050030
+anvil_client diag cert_hex=573131302f06035504030c2841747461636b6572204341202d20476c6f62616c
+anvil_client diag cert_hex=20496e73656375726974792050726f7669646572310b30090603550406130244
+anvil_client diag cert_hex=4531153013060355040a0c0c544c532d41747461636b6572301e170d32363039
+anvil_client diag cert_hex=31333033323631335a170d3236303931333033323631335a30573131302f0603
+anvil_client diag cert_hex=5504030c2841747461636b6572204341202d20476c6f62616c20496e73656375
+anvil_client diag cert_hex=726974792050726f7669646572310b3009060355040613024445311530130603
+anvil_client diag cert_hex=55040a0c0c544c532d41747461636b657230820122300d06092a864886f70d01
+anvil_client diag cert_hex=010105000382010f003082010a0282010100c8820d6c3ce84c8430f6835abfc7
+anvil_client diag cert_hex=d7a912e1664f44578751f376501a8c68476c3072d919c5d39bd0dbe080e71db8
+anvil_client diag cert_hex=3bd4ab2f2f9bde3dffb0080f510a5f6929c196551f2b3c369be051054c877573
+anvil_client diag cert_hex=195558fd282035934dc86edab8d4b1b7f555e5b2fee7275384a756ef86cb8679
+anvil_client diag cert_hex=3b5d1333f0973203cb96966766e655cd2cccae1940e4494b8e9fb5279593b75a
+anvil_client diag cert_hex=fd0b378243e51a88f6eb88def522a8cd5c6c082286a04269a2879760fcba4500
+anvil_client diag cert_hex=5d7f2672dd228809d47274f0fe0ea5531c2bd95366c05bf69edc0f3c3189866e
+anvil_client diag cert_hex=dca0c57adcca93250ae78d9eaca0393a95ff9952fc47fb7679dd3803e6a7a6fa
+anvil_client diag cert_hex=771861e3d99e4b551a4084668b111b7eef7d0203010001a3133011300f060355
+anvil_client diag cert_hex=1d130101ff040530030101ff300d06092a864886f70d01010b05000382010100
+anvil_client diag cert_hex=8b4a689b49cca73fa376b52a9f0b6e490389ecd4ca7c409369f11c2286e8fb39
+anvil_client diag cert_hex=01cb8a1e790b9daf99d840d24c5d8f4a5e7b74cf86cbbea376732c87441e803f
+anvil_client diag cert_hex=46b20108402e41810a1bb98da20d98be4a745a6a0ed429abfe9f947c6ecbbc13
+anvil_client diag cert_hex=23d1da4ad81174c2106d9c9e1030d53f487a0261b3106c71699291a8f11109ec
+anvil_client diag cert_hex=2be1cd114950731c7bb01d33ace48e98f992e9478dc56c67ab7b8df06a01deb2
+anvil_client diag cert_hex=a7e323c5c52dd70f9488ae0e873b8475b43e94f817717578e29a541e882f5393
+anvil_client diag cert_hex=8996c74bb2f604be750299a0b7ddad7b0ebf7373375476b38e7316b6db4ed3da
+anvil_client diag cert_hex=94a36ba7fa0deebcb0637499e16690749236ba5df84b6a147605ab9baef459ad
+anvil_client diag cert_hex=0000
+error: CertificateExpired
+/home/runner/work/ztls/ztls/src/certificate_parser.zig:603:13: 0x121802d in verify (root.zig)
+            return error.CertificateExpired;
+            ^
+/home/runner/work/ztls/ztls/src/certificate.zig:326:13: 0x12072c4 in parse (root.zig)
+            try subject.verify(parsed, policy.now_sec);
+            ^
+/home/runner/work/ztls/ztls/src/ClientHandshake.zig:1432:16: 0x11fe70f in processServerCertificate (root.zig)
+    const pk = try certificate.parse(msg.raw, policy);
+               ^
+/home/runner/work/ztls/ztls/src/ClientHandshake.zig:1522:29: 0x11ea169 in processFlightMessage (root.zig)
+            .certificate => try self.processServerCertificate(msg, policy),
+                            ^
+/home/runner/work/ztls/ztls/src/ClientHandshake.zig:1394:9: 0x119c465 in processFlightBytes (root.zig)
+        try self.processFlightMessage(msg, policy);
+        ^
+/home/runner/work/ztls/ztls/src/ClientHandshake.zig:1377:5: 0x117f476 in processFlight (root.zig)
+    return self.processFlightBytes(payload, policy);
+    ^
+/home/runner/work/ztls/ztls/src/ClientHandshake.zig:1094:21: 0x116e03f in processHandshakeRecord (root.zig)
+                    try self.processFlight(dec.content, self.policy);
+                    ^
+/home/runner/work/ztls/ztls/src/ClientHandshake.zig:937:14: 0x116466c in handleRecord (root.zig)
+    else if (try self.processHandshakeRecord(record, out)) |bytes|
+             ^
+/home/runner/work/ztls/ztls/conformance/src/anvil_client.zig:172:5: 0x1164406 in sendAlertAndReturnError (anvil_client.zig)
+    return err;
+    ^
+/home/runner/work/ztls/ztls/conformance/src/anvil_client.zig:93:17: 0x115d1da in main (anvil_client.zig)
+                return sendAlertAndReturnError(stream, &hs, err, &out);
+                ^

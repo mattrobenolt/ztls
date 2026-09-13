@@ -1,0 +1,84 @@
+{
+  "TestId" : "XSM-tGmYudnsgE",
+  "TestCases" : [ {
+    "Result" : "STRICTLY_SUCCEEDED",
+    "DisplayName" : "[1] Combination{INCLUDE_CHANGE_CIPHER_SPEC=INCLUDE_CHANGE_CIPHER_SPEC = true, NAMED_GROUP=NAMED_GROUP = SECP256R1, CIPHER_SUITE=CIPHER_SUITE = TLS_AES_128_GCM_SHA256, TCP_FRAGMENTATION=TCP_FRAGMENTATION = false, RECORD_LENGTH=RECORD_LENGTH = 16384}",
+    "ParameterCombination" : {
+      "NAMED_GROUP" : "SECP256R1",
+      "TCP_FRAGMENTATION" : false,
+      "CIPHER_SUITE" : "TLS_AES_128_GCM_SHA256",
+      "INCLUDE_CHANGE_CIPHER_SPEC" : true,
+      "RECORD_LENGTH" : 16384
+    },
+    "AdditionalResultInformation" : null,
+    "AdditionalTestInformation" : null,
+    "SrcPort" : 59805,
+    "DstPort" : 60270,
+    "StartTimestamp" : "2026-09-13T03:25:59.787Z",
+    "EndTimestamp" : "2026-09-13T03:25:59.828Z",
+    "Stacktrace" : null,
+    "uuid" : "952901D7C1FFFF68DA560DE2623F9B39ECACBDDB6E445EA478D46BB042D5191D"
+  }, {
+    "Result" : "STRICTLY_SUCCEEDED",
+    "DisplayName" : "[2] Combination{INCLUDE_CHANGE_CIPHER_SPEC=INCLUDE_CHANGE_CIPHER_SPEC = false, NAMED_GROUP=NAMED_GROUP = ECDH_X25519, CIPHER_SUITE=CIPHER_SUITE = TLS_AES_256_GCM_SHA384, TCP_FRAGMENTATION=TCP_FRAGMENTATION = true, RECORD_LENGTH=RECORD_LENGTH = 16384}",
+    "ParameterCombination" : {
+      "NAMED_GROUP" : "ECDH_X25519",
+      "TCP_FRAGMENTATION" : true,
+      "CIPHER_SUITE" : "TLS_AES_256_GCM_SHA384",
+      "INCLUDE_CHANGE_CIPHER_SPEC" : false,
+      "RECORD_LENGTH" : 16384
+    },
+    "AdditionalResultInformation" : [ "Received TransportHandler exception", "Received TransportHandler exception" ],
+    "AdditionalTestInformation" : null,
+    "SrcPort" : 59805,
+    "DstPort" : 49470,
+    "StartTimestamp" : "2026-09-13T03:26:00.192Z",
+    "EndTimestamp" : "2026-09-13T03:26:00.269Z",
+    "Stacktrace" : null,
+    "uuid" : "50EA8ABB12A012E1FE5A841371DE715457A9A790B295B60455B0C152F16AA663"
+  }, {
+    "Result" : "STRICTLY_SUCCEEDED",
+    "DisplayName" : "[3] Combination{INCLUDE_CHANGE_CIPHER_SPEC=INCLUDE_CHANGE_CIPHER_SPEC = true, NAMED_GROUP=NAMED_GROUP = SECP256R1, CIPHER_SUITE=CIPHER_SUITE = TLS_CHACHA20_POLY1305_SHA256, TCP_FRAGMENTATION=TCP_FRAGMENTATION = false, RECORD_LENGTH=RECORD_LENGTH = 16384}",
+    "ParameterCombination" : {
+      "NAMED_GROUP" : "SECP256R1",
+      "TCP_FRAGMENTATION" : false,
+      "CIPHER_SUITE" : "TLS_CHACHA20_POLY1305_SHA256",
+      "INCLUDE_CHANGE_CIPHER_SPEC" : true,
+      "RECORD_LENGTH" : 16384
+    },
+    "AdditionalResultInformation" : null,
+    "AdditionalTestInformation" : null,
+    "SrcPort" : 59805,
+    "DstPort" : 49472,
+    "StartTimestamp" : "2026-09-13T03:26:00.484Z",
+    "EndTimestamp" : "2026-09-13T03:26:00.520Z",
+    "Stacktrace" : null,
+    "uuid" : "AE143D6F417388BCBF08B0885B5A8424E8DEC3B225F65D45E9A8B21667C0B0C7"
+  } ],
+  "Result" : "STRICTLY_SUCCEEDED",
+  "DisabledReason" : null,
+  "FailedReason" : null,
+  "ExecutionTime" : 935,
+  "GenerationTime" : 147,
+  "FailureInducingCombinations" : null,
+  "Score" : {
+    "Alert" : 100.0,
+    "Security" : 100.0,
+    "Interoperability" : 100.0
+  },
+  "HasStateWithAdditionalResultInformation" : true,
+  "HasVaryingAdditionalResultInformation" : false,
+  "TestMethod" : "sendEmptyRecordFinished",
+  "TestClass" : "de.rub.nds.tlstest.suite.tests.both.tls13.statemachine.ClientServerStateMachine",
+  "CaseCount" : 3,
+  "MetaData" : {
+    "description" : "Send a record without any content",
+    "severityLevels" : {
+      "Security" : 100,
+      "Interoperability" : 80,
+      "Alert" : 40
+    },
+    "rfc" : null,
+    "tags" : [ "both", "tls13", "statemachine", "ClientServerStateMachine", "sendEmptyRecordFinished" ]
+  }
+}

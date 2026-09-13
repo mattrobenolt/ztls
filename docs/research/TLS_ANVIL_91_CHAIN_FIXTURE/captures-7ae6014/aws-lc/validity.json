@@ -1,0 +1,341 @@
+{
+  "openssl_version": "OpenSSL 3.6.4 25 Aug 2026 (Library: OpenSSL 3.6.4 25 Aug 2026)",
+  "rows": [
+    {
+      "invocation": "invocation-1789269960040314092-8866.stderr",
+      "local_port": 49456,
+      "policy_now_sec": 1789269960,
+      "real_now_sec": 1789269960,
+      "recorded_cases": [],
+      "certificates": [
+        {
+          "pem": "certificates/49456-0.pem",
+          "der_sha256": "73b5f7f3348c74f02cbe602d9a695f4a3065217ba4cb62f05cd92b3d50db307e",
+          "openssl_output": "notBefore=Sep 13 03:25:59 2026 GMT\nnotAfter=Sep 13 03:25:59 2026 GMT\nsubject=CN=tls-attacker.com, O=TLS-Attacker\nissuer=CN=Attacker CA - Global Insecurity Provider, C=DE, O=TLS-Attacker\n"
+        },
+        {
+          "pem": "certificates/49456-1.pem",
+          "der_sha256": "579d23c41b6f3ea91a1bcf4511b3871217db77c78ab20c176d5cb3caddd51fb5",
+          "openssl_output": "notBefore=Sep 13 03:25:59 2026 GMT\nnotAfter=Sep 13 03:25:59 2026 GMT\nsubject=CN=Attacker CA - Global Insecurity Provider, C=DE, O=TLS-Attacker\nissuer=CN=Attacker CA - Global Insecurity Provider, C=DE, O=TLS-Attacker\n"
+        }
+      ],
+      "invocation_epoch_ns": 1789269960040314092
+    },
+    {
+      "invocation": "invocation-1789269960189334699-8867.stderr",
+      "local_port": 49470,
+      "policy_now_sec": 1789269960,
+      "real_now_sec": 1789269960,
+      "recorded_cases": [
+        {
+          "method": "sendEmptyRecordFinished",
+          "result": "STRICTLY_SUCCEEDED",
+          "start": "2026-09-13T03:26:00.192Z",
+          "uuid": null,
+          "case_start_after_invocation_ms": 2.665
+        }
+      ],
+      "certificates": [
+        {
+          "pem": "certificates/49470-0.pem",
+          "der_sha256": "73b5f7f3348c74f02cbe602d9a695f4a3065217ba4cb62f05cd92b3d50db307e",
+          "openssl_output": "notBefore=Sep 13 03:25:59 2026 GMT\nnotAfter=Sep 13 03:25:59 2026 GMT\nsubject=CN=tls-attacker.com, O=TLS-Attacker\nissuer=CN=Attacker CA - Global Insecurity Provider, C=DE, O=TLS-Attacker\n"
+        },
+        {
+          "pem": "certificates/49470-1.pem",
+          "der_sha256": "579d23c41b6f3ea91a1bcf4511b3871217db77c78ab20c176d5cb3caddd51fb5",
+          "openssl_output": "notBefore=Sep 13 03:25:59 2026 GMT\nnotAfter=Sep 13 03:25:59 2026 GMT\nsubject=CN=Attacker CA - Global Insecurity Provider, C=DE, O=TLS-Attacker\nissuer=CN=Attacker CA - Global Insecurity Provider, C=DE, O=TLS-Attacker\n"
+        }
+      ],
+      "invocation_epoch_ns": 1789269960189334699
+    },
+    {
+      "invocation": "invocation-1789269972038713115-8949.stderr",
+      "local_port": 51042,
+      "policy_now_sec": 1789269972,
+      "real_now_sec": 1789269972,
+      "recorded_cases": [],
+      "certificates": [
+        {
+          "pem": "certificates/51042-0.pem",
+          "der_sha256": "9a324467700d2978a5065cfc1446f404beab103493796a3b450fe138915d607c",
+          "openssl_output": "notBefore=Sep 13 03:26:11 2026 GMT\nnotAfter=Sep 13 03:26:11 2026 GMT\nsubject=CN=tls-attacker.com, O=TLS-Attacker\nissuer=CN=Attacker CA - Global Insecurity Provider, C=DE, O=TLS-Attacker\n"
+        },
+        {
+          "pem": "certificates/51042-1.pem",
+          "der_sha256": "eada5f3eaace302e6a5294f7f879f301c271e9aea200898334103aac5e324158",
+          "openssl_output": "notBefore=Sep 13 03:26:11 2026 GMT\nnotAfter=Sep 13 03:26:11 2026 GMT\nsubject=CN=Attacker CA - Global Insecurity Provider, C=DE, O=TLS-Attacker\nissuer=CN=Attacker CA - Global Insecurity Provider, C=DE, O=TLS-Attacker\n"
+        }
+      ],
+      "invocation_epoch_ns": 1789269972038713115
+    },
+    {
+      "invocation": "invocation-1789269972132672110-8950.stderr",
+      "local_port": 51054,
+      "policy_now_sec": 1789269972,
+      "real_now_sec": 1789269972,
+      "recorded_cases": [
+        {
+          "method": "verifyFinishedMessageCorrect",
+          "result": "CONCEPTUALLY_SUCCEEDED",
+          "start": "2026-09-13T03:26:12.136Z",
+          "uuid": null,
+          "case_start_after_invocation_ms": 3.328
+        }
+      ],
+      "certificates": [
+        {
+          "pem": "certificates/51054-0.pem",
+          "der_sha256": "9a324467700d2978a5065cfc1446f404beab103493796a3b450fe138915d607c",
+          "openssl_output": "notBefore=Sep 13 03:26:11 2026 GMT\nnotAfter=Sep 13 03:26:11 2026 GMT\nsubject=CN=tls-attacker.com, O=TLS-Attacker\nissuer=CN=Attacker CA - Global Insecurity Provider, C=DE, O=TLS-Attacker\n"
+        },
+        {
+          "pem": "certificates/51054-1.pem",
+          "der_sha256": "eada5f3eaace302e6a5294f7f879f301c271e9aea200898334103aac5e324158",
+          "openssl_output": "notBefore=Sep 13 03:26:11 2026 GMT\nnotAfter=Sep 13 03:26:11 2026 GMT\nsubject=CN=Attacker CA - Global Insecurity Provider, C=DE, O=TLS-Attacker\nissuer=CN=Attacker CA - Global Insecurity Provider, C=DE, O=TLS-Attacker\n"
+        }
+      ],
+      "invocation_epoch_ns": 1789269972132672110
+    },
+    {
+      "invocation": "invocation-1789269974012395876-8968.stderr",
+      "local_port": 51210,
+      "policy_now_sec": 1789269974,
+      "real_now_sec": 1789269974,
+      "recorded_cases": [],
+      "certificates": [
+        {
+          "pem": "certificates/51210-0.pem",
+          "der_sha256": "ef78bde04b15f97cd64f7e76358c5f2bdd4bd76766416602616dc1dc83ce3e2e",
+          "openssl_output": "notBefore=Sep 13 03:26:13 2026 GMT\nnotAfter=Sep 13 03:26:13 2026 GMT\nsubject=CN=tls-attacker.com, O=TLS-Attacker\nissuer=CN=Attacker CA - Global Insecurity Provider, C=DE, O=TLS-Attacker\n"
+        },
+        {
+          "pem": "certificates/51210-1.pem",
+          "der_sha256": "d6faf343be38aea063d5d4ccaefc8e1a3c807503ddd88526ded32a5a98d2b603",
+          "openssl_output": "notBefore=Sep 13 03:26:13 2026 GMT\nnotAfter=Sep 13 03:26:13 2026 GMT\nsubject=CN=Attacker CA - Global Insecurity Provider, C=DE, O=TLS-Attacker\nissuer=CN=Attacker CA - Global Insecurity Provider, C=DE, O=TLS-Attacker\n"
+        }
+      ],
+      "invocation_epoch_ns": 1789269974012395876
+    },
+    {
+      "invocation": "invocation-1789269974124568828-8969.stderr",
+      "local_port": 51224,
+      "policy_now_sec": 1789269974,
+      "real_now_sec": 1789269974,
+      "recorded_cases": [
+        {
+          "method": "verifyFinishedMessageCorrect",
+          "result": "CONCEPTUALLY_SUCCEEDED",
+          "start": "2026-09-13T03:26:14.127Z",
+          "uuid": null,
+          "case_start_after_invocation_ms": 2.431
+        }
+      ],
+      "certificates": [
+        {
+          "pem": "certificates/51224-0.pem",
+          "der_sha256": "ef78bde04b15f97cd64f7e76358c5f2bdd4bd76766416602616dc1dc83ce3e2e",
+          "openssl_output": "notBefore=Sep 13 03:26:13 2026 GMT\nnotAfter=Sep 13 03:26:13 2026 GMT\nsubject=CN=tls-attacker.com, O=TLS-Attacker\nissuer=CN=Attacker CA - Global Insecurity Provider, C=DE, O=TLS-Attacker\n"
+        },
+        {
+          "pem": "certificates/51224-1.pem",
+          "der_sha256": "d6faf343be38aea063d5d4ccaefc8e1a3c807503ddd88526ded32a5a98d2b603",
+          "openssl_output": "notBefore=Sep 13 03:26:13 2026 GMT\nnotAfter=Sep 13 03:26:13 2026 GMT\nsubject=CN=Attacker CA - Global Insecurity Provider, C=DE, O=TLS-Attacker\nissuer=CN=Attacker CA - Global Insecurity Provider, C=DE, O=TLS-Attacker\n"
+        }
+      ],
+      "invocation_epoch_ns": 1789269974124568828
+    },
+    {
+      "invocation": "invocation-1789269975027965975-8977.stderr",
+      "local_port": 51276,
+      "policy_now_sec": 1789269975,
+      "real_now_sec": 1789269975,
+      "recorded_cases": [],
+      "certificates": [
+        {
+          "pem": "certificates/51276-0.pem",
+          "der_sha256": "e19ce04e2b849d1e38cff634f1e93d45fa60a6c03860f814e72a1da860bf8f1f",
+          "openssl_output": "notBefore=Sep 13 03:26:14 2026 GMT\nnotAfter=Sep 13 03:26:14 2026 GMT\nsubject=CN=tls-attacker.com, O=TLS-Attacker\nissuer=CN=Attacker CA - Global Insecurity Provider, C=DE, O=TLS-Attacker\n"
+        },
+        {
+          "pem": "certificates/51276-1.pem",
+          "der_sha256": "5aa8b13d1c6b6725a4ec20fc5cc69e9fe190ca4be953828ead1b209e7f184e3a",
+          "openssl_output": "notBefore=Sep 13 03:26:14 2026 GMT\nnotAfter=Sep 13 03:26:14 2026 GMT\nsubject=CN=Attacker CA - Global Insecurity Provider, C=DE, O=TLS-Attacker\nissuer=CN=Attacker CA - Global Insecurity Provider, C=DE, O=TLS-Attacker\n"
+        }
+      ],
+      "invocation_epoch_ns": 1789269975027965975
+    },
+    {
+      "invocation": "invocation-1789269975110647194-8978.stderr",
+      "local_port": 51282,
+      "policy_now_sec": 1789269975,
+      "real_now_sec": 1789269975,
+      "recorded_cases": [
+        {
+          "method": "verifyFinishedMessageCorrect",
+          "result": "CONCEPTUALLY_SUCCEEDED",
+          "start": "2026-09-13T03:26:15.112Z",
+          "uuid": null,
+          "case_start_after_invocation_ms": 1.353
+        }
+      ],
+      "certificates": [
+        {
+          "pem": "certificates/51282-0.pem",
+          "der_sha256": "e19ce04e2b849d1e38cff634f1e93d45fa60a6c03860f814e72a1da860bf8f1f",
+          "openssl_output": "notBefore=Sep 13 03:26:14 2026 GMT\nnotAfter=Sep 13 03:26:14 2026 GMT\nsubject=CN=tls-attacker.com, O=TLS-Attacker\nissuer=CN=Attacker CA - Global Insecurity Provider, C=DE, O=TLS-Attacker\n"
+        },
+        {
+          "pem": "certificates/51282-1.pem",
+          "der_sha256": "5aa8b13d1c6b6725a4ec20fc5cc69e9fe190ca4be953828ead1b209e7f184e3a",
+          "openssl_output": "notBefore=Sep 13 03:26:14 2026 GMT\nnotAfter=Sep 13 03:26:14 2026 GMT\nsubject=CN=Attacker CA - Global Insecurity Provider, C=DE, O=TLS-Attacker\nissuer=CN=Attacker CA - Global Insecurity Provider, C=DE, O=TLS-Attacker\n"
+        }
+      ],
+      "invocation_epoch_ns": 1789269975110647194
+    },
+    {
+      "invocation": "invocation-1789270041018415477-9390.stderr",
+      "local_port": 34128,
+      "policy_now_sec": 1789270041,
+      "real_now_sec": 1789270041,
+      "recorded_cases": [],
+      "certificates": [
+        {
+          "pem": "certificates/34128-0.pem",
+          "der_sha256": "b53696242eaabd4dcef50c8532082f0ccb6aee3600f99dabbd0bd015b244e0e8",
+          "openssl_output": "notBefore=Sep 13 03:27:20 2026 GMT\nnotAfter=Sep 13 03:27:20 2026 GMT\nsubject=CN=tls-attacker.com, O=TLS-Attacker\nissuer=CN=Attacker CA - Global Insecurity Provider, C=DE, O=TLS-Attacker\n"
+        },
+        {
+          "pem": "certificates/34128-1.pem",
+          "der_sha256": "9a8a5d1d41498b6c489b66ff9942d4694ce31ecfcc45f37ec782bf0593088574",
+          "openssl_output": "notBefore=Sep 13 03:27:20 2026 GMT\nnotAfter=Sep 13 03:27:20 2026 GMT\nsubject=CN=Attacker CA - Global Insecurity Provider, C=DE, O=TLS-Attacker\nissuer=CN=Attacker CA - Global Insecurity Provider, C=DE, O=TLS-Attacker\n"
+        }
+      ],
+      "invocation_epoch_ns": 1789270041018415477
+    },
+    {
+      "invocation": "invocation-1789270041110772189-9391.stderr",
+      "local_port": 34136,
+      "policy_now_sec": 1789270041,
+      "real_now_sec": 1789270041,
+      "recorded_cases": [
+        {
+          "method": "sendCertificateVerifyGreaseSignatureAlgorithm",
+          "result": "STRICTLY_SUCCEEDED",
+          "start": "2026-09-13T03:27:21.117Z",
+          "uuid": null,
+          "case_start_after_invocation_ms": 6.228
+        }
+      ],
+      "certificates": [
+        {
+          "pem": "certificates/34136-0.pem",
+          "der_sha256": "b53696242eaabd4dcef50c8532082f0ccb6aee3600f99dabbd0bd015b244e0e8",
+          "openssl_output": "notBefore=Sep 13 03:27:20 2026 GMT\nnotAfter=Sep 13 03:27:20 2026 GMT\nsubject=CN=tls-attacker.com, O=TLS-Attacker\nissuer=CN=Attacker CA - Global Insecurity Provider, C=DE, O=TLS-Attacker\n"
+        },
+        {
+          "pem": "certificates/34136-1.pem",
+          "der_sha256": "9a8a5d1d41498b6c489b66ff9942d4694ce31ecfcc45f37ec782bf0593088574",
+          "openssl_output": "notBefore=Sep 13 03:27:20 2026 GMT\nnotAfter=Sep 13 03:27:20 2026 GMT\nsubject=CN=Attacker CA - Global Insecurity Provider, C=DE, O=TLS-Attacker\nissuer=CN=Attacker CA - Global Insecurity Provider, C=DE, O=TLS-Attacker\n"
+        }
+      ],
+      "invocation_epoch_ns": 1789270041110772189
+    },
+    {
+      "invocation": "invocation-1789270164007509610-9926.stderr",
+      "local_port": 56906,
+      "policy_now_sec": 1789270164,
+      "real_now_sec": 1789270164,
+      "recorded_cases": [],
+      "certificates": [
+        {
+          "pem": "certificates/56906-0.pem",
+          "der_sha256": "a5b4a9b68fc4b6d106542176def82d26e4502e304157c23b4ca6060ea220509a",
+          "openssl_output": "notBefore=Sep 13 03:29:23 2026 GMT\nnotAfter=Sep 13 03:29:23 2026 GMT\nsubject=CN=tls-attacker.com, O=TLS-Attacker\nissuer=CN=Attacker CA - Global Insecurity Provider, C=DE, O=TLS-Attacker\n"
+        },
+        {
+          "pem": "certificates/56906-1.pem",
+          "der_sha256": "2f172c88e6902e05c532762d5d781d40de894f61262b4d80e8e07752fdd9a01a",
+          "openssl_output": "notBefore=Sep 13 03:29:23 2026 GMT\nnotAfter=Sep 13 03:29:23 2026 GMT\nsubject=CN=Attacker CA - Global Insecurity Provider, C=DE, O=TLS-Attacker\nissuer=CN=Attacker CA - Global Insecurity Provider, C=DE, O=TLS-Attacker\n"
+        }
+      ],
+      "invocation_epoch_ns": 1789270164007509610
+    },
+    {
+      "invocation": "invocation-1789270164085898365-9927.stderr",
+      "local_port": 56918,
+      "policy_now_sec": 1789270164,
+      "real_now_sec": 1789270164,
+      "recorded_cases": [
+        {
+          "method": "treatsFatalAlertsAsFatalHandshake",
+          "result": "STRICTLY_SUCCEEDED",
+          "start": "2026-09-13T03:29:24.088Z",
+          "uuid": null,
+          "case_start_after_invocation_ms": 2.102
+        }
+      ],
+      "certificates": [
+        {
+          "pem": "certificates/56918-0.pem",
+          "der_sha256": "a5b4a9b68fc4b6d106542176def82d26e4502e304157c23b4ca6060ea220509a",
+          "openssl_output": "notBefore=Sep 13 03:29:23 2026 GMT\nnotAfter=Sep 13 03:29:23 2026 GMT\nsubject=CN=tls-attacker.com, O=TLS-Attacker\nissuer=CN=Attacker CA - Global Insecurity Provider, C=DE, O=TLS-Attacker\n"
+        },
+        {
+          "pem": "certificates/56918-1.pem",
+          "der_sha256": "2f172c88e6902e05c532762d5d781d40de894f61262b4d80e8e07752fdd9a01a",
+          "openssl_output": "notBefore=Sep 13 03:29:23 2026 GMT\nnotAfter=Sep 13 03:29:23 2026 GMT\nsubject=CN=Attacker CA - Global Insecurity Provider, C=DE, O=TLS-Attacker\nissuer=CN=Attacker CA - Global Insecurity Provider, C=DE, O=TLS-Attacker\n"
+        }
+      ],
+      "invocation_epoch_ns": 1789270164085898365
+    },
+    {
+      "invocation": "invocation-1789270165043368934-9936.stderr",
+      "local_port": 57006,
+      "policy_now_sec": 1789270165,
+      "real_now_sec": 1789270165,
+      "recorded_cases": [],
+      "certificates": [
+        {
+          "pem": "certificates/57006-0.pem",
+          "der_sha256": "a1238a3e93ba8bae6b5ac4ed19394a18e676ebb11c95b4e737fda2a594409583",
+          "openssl_output": "notBefore=Sep 13 03:29:24 2026 GMT\nnotAfter=Sep 13 03:29:24 2026 GMT\nsubject=CN=tls-attacker.com, O=TLS-Attacker\nissuer=CN=Attacker CA - Global Insecurity Provider, C=DE, O=TLS-Attacker\n"
+        },
+        {
+          "pem": "certificates/57006-1.pem",
+          "der_sha256": "acead3d16a1a2c5f2be719eb41a495470a483e878db312db79d431c996fecae3",
+          "openssl_output": "notBefore=Sep 13 03:29:24 2026 GMT\nnotAfter=Sep 13 03:29:24 2026 GMT\nsubject=CN=Attacker CA - Global Insecurity Provider, C=DE, O=TLS-Attacker\nissuer=CN=Attacker CA - Global Insecurity Provider, C=DE, O=TLS-Attacker\n"
+        }
+      ],
+      "invocation_epoch_ns": 1789270165043368934
+    },
+    {
+      "invocation": "invocation-1789270165125428437-9937.stderr",
+      "local_port": 57008,
+      "policy_now_sec": 1789270165,
+      "real_now_sec": 1789270165,
+      "recorded_cases": [
+        {
+          "method": "treatsFatalAlertsAsFatalHandshake",
+          "result": "STRICTLY_SUCCEEDED",
+          "start": "2026-09-13T03:29:25.128Z",
+          "uuid": null,
+          "case_start_after_invocation_ms": 2.572
+        }
+      ],
+      "certificates": [
+        {
+          "pem": "certificates/57008-0.pem",
+          "der_sha256": "a1238a3e93ba8bae6b5ac4ed19394a18e676ebb11c95b4e737fda2a594409583",
+          "openssl_output": "notBefore=Sep 13 03:29:24 2026 GMT\nnotAfter=Sep 13 03:29:24 2026 GMT\nsubject=CN=tls-attacker.com, O=TLS-Attacker\nissuer=CN=Attacker CA - Global Insecurity Provider, C=DE, O=TLS-Attacker\n"
+        },
+        {
+          "pem": "certificates/57008-1.pem",
+          "der_sha256": "acead3d16a1a2c5f2be719eb41a495470a483e878db312db79d431c996fecae3",
+          "openssl_output": "notBefore=Sep 13 03:29:24 2026 GMT\nnotAfter=Sep 13 03:29:24 2026 GMT\nsubject=CN=Attacker CA - Global Insecurity Provider, C=DE, O=TLS-Attacker\nissuer=CN=Attacker CA - Global Insecurity Provider, C=DE, O=TLS-Attacker\n"
+        }
+      ],
+      "invocation_epoch_ns": 1789270165125428437
+    }
+  ]
+}

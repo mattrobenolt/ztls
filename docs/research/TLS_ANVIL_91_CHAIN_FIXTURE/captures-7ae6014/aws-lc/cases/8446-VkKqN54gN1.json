@@ -1,0 +1,506 @@
+{
+  "TestId" : "8446-VkKqN54gN1",
+  "TestCases" : [ {
+    "Result" : "STRICTLY_SUCCEEDED",
+    "DisplayName" : "[1] Combination{INCLUDE_CHANGE_CIPHER_SPEC=INCLUDE_CHANGE_CIPHER_SPEC = true, NAMED_GROUP=NAMED_GROUP = SECP256R1, CIPHER_SUITE=CIPHER_SUITE = TLS_AES_128_GCM_SHA256, TCP_FRAGMENTATION=TCP_FRAGMENTATION = false, RECORD_LENGTH=RECORD_LENGTH = 16384, ALERT=ALERT = AlertDescription{value=UNEXPECTED_MESSAGE}}",
+    "ParameterCombination" : {
+      "NAMED_GROUP" : "SECP256R1",
+      "TCP_FRAGMENTATION" : false,
+      "CIPHER_SUITE" : "TLS_AES_128_GCM_SHA256",
+      "INCLUDE_CHANGE_CIPHER_SPEC" : true,
+      "ALERT" : "UNEXPECTED_MESSAGE",
+      "RECORD_LENGTH" : 16384
+    },
+    "AdditionalResultInformation" : null,
+    "AdditionalTestInformation" : null,
+    "SrcPort" : 59805,
+    "DstPort" : 56874,
+    "StartTimestamp" : "2026-09-13T03:29:23.491Z",
+    "EndTimestamp" : "2026-09-13T03:29:23.515Z",
+    "Stacktrace" : null,
+    "uuid" : "9D3A86F0F00AC03FB7349923940155BCFA0F77CF1C47BB9DB08DACFC39E9A04A"
+  }, {
+    "Result" : "STRICTLY_SUCCEEDED",
+    "DisplayName" : "[2] Combination{INCLUDE_CHANGE_CIPHER_SPEC=INCLUDE_CHANGE_CIPHER_SPEC = false, NAMED_GROUP=NAMED_GROUP = ECDH_X25519, CIPHER_SUITE=CIPHER_SUITE = TLS_AES_256_GCM_SHA384, TCP_FRAGMENTATION=TCP_FRAGMENTATION = true, RECORD_LENGTH=RECORD_LENGTH = 16384, ALERT=ALERT = AlertDescription{value=BAD_RECORD_MAC}}",
+    "ParameterCombination" : {
+      "NAMED_GROUP" : "ECDH_X25519",
+      "TCP_FRAGMENTATION" : true,
+      "CIPHER_SUITE" : "TLS_AES_256_GCM_SHA384",
+      "INCLUDE_CHANGE_CIPHER_SPEC" : false,
+      "ALERT" : "BAD_RECORD_MAC",
+      "RECORD_LENGTH" : 16384
+    },
+    "AdditionalResultInformation" : null,
+    "AdditionalTestInformation" : null,
+    "SrcPort" : 59805,
+    "DstPort" : 56884,
+    "StartTimestamp" : "2026-09-13T03:29:23.588Z",
+    "EndTimestamp" : "2026-09-13T03:29:23.643Z",
+    "Stacktrace" : null,
+    "uuid" : "02AEC9A92E2C1B47A8488F8ADA632F722E08B2A478BE207772FDFC04C0E077B2"
+  }, {
+    "Result" : "STRICTLY_SUCCEEDED",
+    "DisplayName" : "[3] Combination{INCLUDE_CHANGE_CIPHER_SPEC=INCLUDE_CHANGE_CIPHER_SPEC = true, NAMED_GROUP=NAMED_GROUP = SECP256R1, CIPHER_SUITE=CIPHER_SUITE = TLS_CHACHA20_POLY1305_SHA256, TCP_FRAGMENTATION=TCP_FRAGMENTATION = false, RECORD_LENGTH=RECORD_LENGTH = 16384, ALERT=ALERT = AlertDescription{value=RECORD_OVERFLOW}}",
+    "ParameterCombination" : {
+      "NAMED_GROUP" : "SECP256R1",
+      "TCP_FRAGMENTATION" : false,
+      "CIPHER_SUITE" : "TLS_CHACHA20_POLY1305_SHA256",
+      "INCLUDE_CHANGE_CIPHER_SPEC" : true,
+      "ALERT" : "RECORD_OVERFLOW",
+      "RECORD_LENGTH" : 16384
+    },
+    "AdditionalResultInformation" : null,
+    "AdditionalTestInformation" : null,
+    "SrcPort" : 59805,
+    "DstPort" : 56886,
+    "StartTimestamp" : "2026-09-13T03:29:23.699Z",
+    "EndTimestamp" : "2026-09-13T03:29:23.721Z",
+    "Stacktrace" : null,
+    "uuid" : "E0BEB0693CB37139CE0173A6C54AA3B9466767CBBAEC93E77DFBD9A78743C9DA"
+  }, {
+    "Result" : "STRICTLY_SUCCEEDED",
+    "DisplayName" : "[4] Combination{INCLUDE_CHANGE_CIPHER_SPEC=INCLUDE_CHANGE_CIPHER_SPEC = true, NAMED_GROUP=NAMED_GROUP = SECP256R1, CIPHER_SUITE=CIPHER_SUITE = TLS_AES_128_GCM_SHA256, TCP_FRAGMENTATION=TCP_FRAGMENTATION = false, RECORD_LENGTH=RECORD_LENGTH = 16384, ALERT=ALERT = AlertDescription{value=HANDSHAKE_FAILURE}}",
+    "ParameterCombination" : {
+      "NAMED_GROUP" : "SECP256R1",
+      "TCP_FRAGMENTATION" : false,
+      "CIPHER_SUITE" : "TLS_AES_128_GCM_SHA256",
+      "INCLUDE_CHANGE_CIPHER_SPEC" : true,
+      "ALERT" : "HANDSHAKE_FAILURE",
+      "RECORD_LENGTH" : 16384
+    },
+    "AdditionalResultInformation" : null,
+    "AdditionalTestInformation" : null,
+    "SrcPort" : 59805,
+    "DstPort" : 56888,
+    "StartTimestamp" : "2026-09-13T03:29:23.794Z",
+    "EndTimestamp" : "2026-09-13T03:29:23.828Z",
+    "Stacktrace" : null,
+    "uuid" : "FCCEB357AAE199308604B3A98EA3743F14CC12CDFCC787F301A181FD70BFBC34"
+  }, {
+    "Result" : "STRICTLY_SUCCEEDED",
+    "DisplayName" : "[5] Combination{INCLUDE_CHANGE_CIPHER_SPEC=INCLUDE_CHANGE_CIPHER_SPEC = true, NAMED_GROUP=NAMED_GROUP = SECP256R1, CIPHER_SUITE=CIPHER_SUITE = TLS_AES_128_GCM_SHA256, TCP_FRAGMENTATION=TCP_FRAGMENTATION = false, RECORD_LENGTH=RECORD_LENGTH = 16384, ALERT=ALERT = AlertDescription{value=BAD_CERTIFICATE}}",
+    "ParameterCombination" : {
+      "NAMED_GROUP" : "SECP256R1",
+      "TCP_FRAGMENTATION" : false,
+      "CIPHER_SUITE" : "TLS_AES_128_GCM_SHA256",
+      "INCLUDE_CHANGE_CIPHER_SPEC" : true,
+      "ALERT" : "BAD_CERTIFICATE",
+      "RECORD_LENGTH" : 16384
+    },
+    "AdditionalResultInformation" : null,
+    "AdditionalTestInformation" : null,
+    "SrcPort" : 59805,
+    "DstPort" : 56894,
+    "StartTimestamp" : "2026-09-13T03:29:23.912Z",
+    "EndTimestamp" : "2026-09-13T03:29:23.935Z",
+    "Stacktrace" : null,
+    "uuid" : "9A50E77FA1929A7C591308D55E9AA915E118234374C9574662B11190A10C108F"
+  }, {
+    "Result" : "STRICTLY_SUCCEEDED",
+    "DisplayName" : "[6] Combination{INCLUDE_CHANGE_CIPHER_SPEC=INCLUDE_CHANGE_CIPHER_SPEC = true, NAMED_GROUP=NAMED_GROUP = SECP256R1, CIPHER_SUITE=CIPHER_SUITE = TLS_AES_128_GCM_SHA256, TCP_FRAGMENTATION=TCP_FRAGMENTATION = false, RECORD_LENGTH=RECORD_LENGTH = 16384, ALERT=ALERT = AlertDescription{value=UNSUPPORTED_CERTIFICATE}}",
+    "ParameterCombination" : {
+      "NAMED_GROUP" : "SECP256R1",
+      "TCP_FRAGMENTATION" : false,
+      "CIPHER_SUITE" : "TLS_AES_128_GCM_SHA256",
+      "INCLUDE_CHANGE_CIPHER_SPEC" : true,
+      "ALERT" : "UNSUPPORTED_CERTIFICATE",
+      "RECORD_LENGTH" : 16384
+    },
+    "AdditionalResultInformation" : [ "Received TransportHandler exception", "Received TransportHandler exception" ],
+    "AdditionalTestInformation" : null,
+    "SrcPort" : 59805,
+    "DstPort" : 56918,
+    "StartTimestamp" : "2026-09-13T03:29:24.088Z",
+    "EndTimestamp" : "2026-09-13T03:29:24.103Z",
+    "Stacktrace" : null,
+    "uuid" : "62FE7C5387FF2DCDAE2911596F86959728D027B29C6FF095C59DEA2AC3643175"
+  }, {
+    "Result" : "STRICTLY_SUCCEEDED",
+    "DisplayName" : "[7] Combination{INCLUDE_CHANGE_CIPHER_SPEC=INCLUDE_CHANGE_CIPHER_SPEC = true, NAMED_GROUP=NAMED_GROUP = SECP256R1, CIPHER_SUITE=CIPHER_SUITE = TLS_AES_128_GCM_SHA256, TCP_FRAGMENTATION=TCP_FRAGMENTATION = false, RECORD_LENGTH=RECORD_LENGTH = 16384, ALERT=ALERT = AlertDescription{value=CERTIFICATE_REVOKED}}",
+    "ParameterCombination" : {
+      "NAMED_GROUP" : "SECP256R1",
+      "TCP_FRAGMENTATION" : false,
+      "CIPHER_SUITE" : "TLS_AES_128_GCM_SHA256",
+      "INCLUDE_CHANGE_CIPHER_SPEC" : true,
+      "ALERT" : "CERTIFICATE_REVOKED",
+      "RECORD_LENGTH" : 16384
+    },
+    "AdditionalResultInformation" : null,
+    "AdditionalTestInformation" : null,
+    "SrcPort" : 59805,
+    "DstPort" : 56930,
+    "StartTimestamp" : "2026-09-13T03:29:24.175Z",
+    "EndTimestamp" : "2026-09-13T03:29:24.206Z",
+    "Stacktrace" : null,
+    "uuid" : "7B9964FD2FC2B5B3EC585F617649BEC0653F55D3E591BEDD69C7BA8C60BBE877"
+  }, {
+    "Result" : "STRICTLY_SUCCEEDED",
+    "DisplayName" : "[8] Combination{INCLUDE_CHANGE_CIPHER_SPEC=INCLUDE_CHANGE_CIPHER_SPEC = true, NAMED_GROUP=NAMED_GROUP = SECP256R1, CIPHER_SUITE=CIPHER_SUITE = TLS_AES_128_GCM_SHA256, TCP_FRAGMENTATION=TCP_FRAGMENTATION = false, RECORD_LENGTH=RECORD_LENGTH = 16384, ALERT=ALERT = AlertDescription{value=CERTIFICATE_EXPIRED}}",
+    "ParameterCombination" : {
+      "NAMED_GROUP" : "SECP256R1",
+      "TCP_FRAGMENTATION" : false,
+      "CIPHER_SUITE" : "TLS_AES_128_GCM_SHA256",
+      "INCLUDE_CHANGE_CIPHER_SPEC" : true,
+      "ALERT" : "CERTIFICATE_EXPIRED",
+      "RECORD_LENGTH" : 16384
+    },
+    "AdditionalResultInformation" : null,
+    "AdditionalTestInformation" : null,
+    "SrcPort" : 59805,
+    "DstPort" : 56944,
+    "StartTimestamp" : "2026-09-13T03:29:24.284Z",
+    "EndTimestamp" : "2026-09-13T03:29:24.318Z",
+    "Stacktrace" : null,
+    "uuid" : "8252F9BDEDC636C05690E428C5BD93095B38A46E3BE5E591836FD0C9B5F30773"
+  }, {
+    "Result" : "STRICTLY_SUCCEEDED",
+    "DisplayName" : "[9] Combination{INCLUDE_CHANGE_CIPHER_SPEC=INCLUDE_CHANGE_CIPHER_SPEC = true, NAMED_GROUP=NAMED_GROUP = SECP256R1, CIPHER_SUITE=CIPHER_SUITE = TLS_AES_128_GCM_SHA256, TCP_FRAGMENTATION=TCP_FRAGMENTATION = false, RECORD_LENGTH=RECORD_LENGTH = 16384, ALERT=ALERT = AlertDescription{value=CERTIFICATE_UNKNOWN}}",
+    "ParameterCombination" : {
+      "NAMED_GROUP" : "SECP256R1",
+      "TCP_FRAGMENTATION" : false,
+      "CIPHER_SUITE" : "TLS_AES_128_GCM_SHA256",
+      "INCLUDE_CHANGE_CIPHER_SPEC" : true,
+      "ALERT" : "CERTIFICATE_UNKNOWN",
+      "RECORD_LENGTH" : 16384
+    },
+    "AdditionalResultInformation" : null,
+    "AdditionalTestInformation" : null,
+    "SrcPort" : 59805,
+    "DstPort" : 56950,
+    "StartTimestamp" : "2026-09-13T03:29:24.416Z",
+    "EndTimestamp" : "2026-09-13T03:29:24.444Z",
+    "Stacktrace" : null,
+    "uuid" : "F757BC8F7F809B5DBADA9B5FC0991F356F858893310B23506FFAB557EBA364B4"
+  }, {
+    "Result" : "STRICTLY_SUCCEEDED",
+    "DisplayName" : "[10] Combination{INCLUDE_CHANGE_CIPHER_SPEC=INCLUDE_CHANGE_CIPHER_SPEC = true, NAMED_GROUP=NAMED_GROUP = SECP256R1, CIPHER_SUITE=CIPHER_SUITE = TLS_AES_128_GCM_SHA256, TCP_FRAGMENTATION=TCP_FRAGMENTATION = false, RECORD_LENGTH=RECORD_LENGTH = 16384, ALERT=ALERT = AlertDescription{value=ILLEGAL_PARAMETER}}",
+    "ParameterCombination" : {
+      "NAMED_GROUP" : "SECP256R1",
+      "TCP_FRAGMENTATION" : false,
+      "CIPHER_SUITE" : "TLS_AES_128_GCM_SHA256",
+      "INCLUDE_CHANGE_CIPHER_SPEC" : true,
+      "ALERT" : "ILLEGAL_PARAMETER",
+      "RECORD_LENGTH" : 16384
+    },
+    "AdditionalResultInformation" : null,
+    "AdditionalTestInformation" : null,
+    "SrcPort" : 59805,
+    "DstPort" : 56956,
+    "StartTimestamp" : "2026-09-13T03:29:24.517Z",
+    "EndTimestamp" : "2026-09-13T03:29:24.545Z",
+    "Stacktrace" : null,
+    "uuid" : "5C43D12C6F91782A812CE9CA03092477BED1D3D431B70681E367C18574F2F5A6"
+  }, {
+    "Result" : "STRICTLY_SUCCEEDED",
+    "DisplayName" : "[11] Combination{INCLUDE_CHANGE_CIPHER_SPEC=INCLUDE_CHANGE_CIPHER_SPEC = true, NAMED_GROUP=NAMED_GROUP = SECP256R1, CIPHER_SUITE=CIPHER_SUITE = TLS_AES_128_GCM_SHA256, TCP_FRAGMENTATION=TCP_FRAGMENTATION = false, RECORD_LENGTH=RECORD_LENGTH = 16384, ALERT=ALERT = AlertDescription{value=UNKNOWN_CA}}",
+    "ParameterCombination" : {
+      "NAMED_GROUP" : "SECP256R1",
+      "TCP_FRAGMENTATION" : false,
+      "CIPHER_SUITE" : "TLS_AES_128_GCM_SHA256",
+      "INCLUDE_CHANGE_CIPHER_SPEC" : true,
+      "ALERT" : "UNKNOWN_CA",
+      "RECORD_LENGTH" : 16384
+    },
+    "AdditionalResultInformation" : null,
+    "AdditionalTestInformation" : null,
+    "SrcPort" : 59805,
+    "DstPort" : 56966,
+    "StartTimestamp" : "2026-09-13T03:29:24.623Z",
+    "EndTimestamp" : "2026-09-13T03:29:24.651Z",
+    "Stacktrace" : null,
+    "uuid" : "D14014E616C1C06B35C80B1CE42C84FDE29198C4A3F0F70F754A5271CBDA6CBA"
+  }, {
+    "Result" : "STRICTLY_SUCCEEDED",
+    "DisplayName" : "[12] Combination{INCLUDE_CHANGE_CIPHER_SPEC=INCLUDE_CHANGE_CIPHER_SPEC = true, NAMED_GROUP=NAMED_GROUP = SECP256R1, CIPHER_SUITE=CIPHER_SUITE = TLS_AES_128_GCM_SHA256, TCP_FRAGMENTATION=TCP_FRAGMENTATION = false, RECORD_LENGTH=RECORD_LENGTH = 16384, ALERT=ALERT = AlertDescription{value=ACCESS_DENIED}}",
+    "ParameterCombination" : {
+      "NAMED_GROUP" : "SECP256R1",
+      "TCP_FRAGMENTATION" : false,
+      "CIPHER_SUITE" : "TLS_AES_128_GCM_SHA256",
+      "INCLUDE_CHANGE_CIPHER_SPEC" : true,
+      "ALERT" : "ACCESS_DENIED",
+      "RECORD_LENGTH" : 16384
+    },
+    "AdditionalResultInformation" : null,
+    "AdditionalTestInformation" : null,
+    "SrcPort" : 59805,
+    "DstPort" : 56980,
+    "StartTimestamp" : "2026-09-13T03:29:24.724Z",
+    "EndTimestamp" : "2026-09-13T03:29:24.752Z",
+    "Stacktrace" : null,
+    "uuid" : "F754A6B06698B7CBD0B90157C8465C82727751A8A589FA065C61660AE58EFB79"
+  }, {
+    "Result" : "STRICTLY_SUCCEEDED",
+    "DisplayName" : "[13] Combination{INCLUDE_CHANGE_CIPHER_SPEC=INCLUDE_CHANGE_CIPHER_SPEC = true, NAMED_GROUP=NAMED_GROUP = SECP256R1, CIPHER_SUITE=CIPHER_SUITE = TLS_AES_128_GCM_SHA256, TCP_FRAGMENTATION=TCP_FRAGMENTATION = false, RECORD_LENGTH=RECORD_LENGTH = 16384, ALERT=ALERT = AlertDescription{value=DECODE_ERROR}}",
+    "ParameterCombination" : {
+      "NAMED_GROUP" : "SECP256R1",
+      "TCP_FRAGMENTATION" : false,
+      "CIPHER_SUITE" : "TLS_AES_128_GCM_SHA256",
+      "INCLUDE_CHANGE_CIPHER_SPEC" : true,
+      "ALERT" : "DECODE_ERROR",
+      "RECORD_LENGTH" : 16384
+    },
+    "AdditionalResultInformation" : null,
+    "AdditionalTestInformation" : null,
+    "SrcPort" : 59805,
+    "DstPort" : 56994,
+    "StartTimestamp" : "2026-09-13T03:29:24.817Z",
+    "EndTimestamp" : "2026-09-13T03:29:24.839Z",
+    "Stacktrace" : null,
+    "uuid" : "B724EB496A77498668E55B4279791116ED843C710AFF379EFDAF8F3912BE78E0"
+  }, {
+    "Result" : "STRICTLY_SUCCEEDED",
+    "DisplayName" : "[14] Combination{INCLUDE_CHANGE_CIPHER_SPEC=INCLUDE_CHANGE_CIPHER_SPEC = true, NAMED_GROUP=NAMED_GROUP = SECP256R1, CIPHER_SUITE=CIPHER_SUITE = TLS_AES_128_GCM_SHA256, TCP_FRAGMENTATION=TCP_FRAGMENTATION = false, RECORD_LENGTH=RECORD_LENGTH = 16384, ALERT=ALERT = AlertDescription{value=DECRYPT_ERROR}}",
+    "ParameterCombination" : {
+      "NAMED_GROUP" : "SECP256R1",
+      "TCP_FRAGMENTATION" : false,
+      "CIPHER_SUITE" : "TLS_AES_128_GCM_SHA256",
+      "INCLUDE_CHANGE_CIPHER_SPEC" : true,
+      "ALERT" : "DECRYPT_ERROR",
+      "RECORD_LENGTH" : 16384
+    },
+    "AdditionalResultInformation" : null,
+    "AdditionalTestInformation" : null,
+    "SrcPort" : 59805,
+    "DstPort" : 56996,
+    "StartTimestamp" : "2026-09-13T03:29:24.941Z",
+    "EndTimestamp" : "2026-09-13T03:29:24.974Z",
+    "Stacktrace" : null,
+    "uuid" : "82841EAF2A64B9D9B22C7CF9E6D527F9CE1625F08CE116F0E1F72BE91AC8C041"
+  }, {
+    "Result" : "STRICTLY_SUCCEEDED",
+    "DisplayName" : "[15] Combination{INCLUDE_CHANGE_CIPHER_SPEC=INCLUDE_CHANGE_CIPHER_SPEC = true, NAMED_GROUP=NAMED_GROUP = SECP256R1, CIPHER_SUITE=CIPHER_SUITE = TLS_AES_128_GCM_SHA256, TCP_FRAGMENTATION=TCP_FRAGMENTATION = false, RECORD_LENGTH=RECORD_LENGTH = 16384, ALERT=ALERT = AlertDescription{value=PROTOCOL_VERSION}}",
+    "ParameterCombination" : {
+      "NAMED_GROUP" : "SECP256R1",
+      "TCP_FRAGMENTATION" : false,
+      "CIPHER_SUITE" : "TLS_AES_128_GCM_SHA256",
+      "INCLUDE_CHANGE_CIPHER_SPEC" : true,
+      "ALERT" : "PROTOCOL_VERSION",
+      "RECORD_LENGTH" : 16384
+    },
+    "AdditionalResultInformation" : [ "Received TransportHandler exception", "Received TransportHandler exception" ],
+    "AdditionalTestInformation" : null,
+    "SrcPort" : 59805,
+    "DstPort" : 57008,
+    "StartTimestamp" : "2026-09-13T03:29:25.128Z",
+    "EndTimestamp" : "2026-09-13T03:29:25.148Z",
+    "Stacktrace" : null,
+    "uuid" : "B4A0070D830A0DEA19E1ED3957D5805529ECD92BB3C47BB62BB8D4BFF33DD79A"
+  }, {
+    "Result" : "STRICTLY_SUCCEEDED",
+    "DisplayName" : "[16] Combination{INCLUDE_CHANGE_CIPHER_SPEC=INCLUDE_CHANGE_CIPHER_SPEC = true, NAMED_GROUP=NAMED_GROUP = SECP256R1, CIPHER_SUITE=CIPHER_SUITE = TLS_AES_128_GCM_SHA256, TCP_FRAGMENTATION=TCP_FRAGMENTATION = false, RECORD_LENGTH=RECORD_LENGTH = 16384, ALERT=ALERT = AlertDescription{value=INSUFFICIENT_SECURITY}}",
+    "ParameterCombination" : {
+      "NAMED_GROUP" : "SECP256R1",
+      "TCP_FRAGMENTATION" : false,
+      "CIPHER_SUITE" : "TLS_AES_128_GCM_SHA256",
+      "INCLUDE_CHANGE_CIPHER_SPEC" : true,
+      "ALERT" : "INSUFFICIENT_SECURITY",
+      "RECORD_LENGTH" : 16384
+    },
+    "AdditionalResultInformation" : null,
+    "AdditionalTestInformation" : null,
+    "SrcPort" : 59805,
+    "DstPort" : 57012,
+    "StartTimestamp" : "2026-09-13T03:29:25.220Z",
+    "EndTimestamp" : "2026-09-13T03:29:25.248Z",
+    "Stacktrace" : null,
+    "uuid" : "925820AC1FBB83A63CE6C8B598C181E881BDCF1AF86425D686B1361591C9A8EE"
+  }, {
+    "Result" : "STRICTLY_SUCCEEDED",
+    "DisplayName" : "[17] Combination{INCLUDE_CHANGE_CIPHER_SPEC=INCLUDE_CHANGE_CIPHER_SPEC = true, NAMED_GROUP=NAMED_GROUP = SECP256R1, CIPHER_SUITE=CIPHER_SUITE = TLS_AES_128_GCM_SHA256, TCP_FRAGMENTATION=TCP_FRAGMENTATION = false, RECORD_LENGTH=RECORD_LENGTH = 16384, ALERT=ALERT = AlertDescription{value=INTERNAL_ERROR}}",
+    "ParameterCombination" : {
+      "NAMED_GROUP" : "SECP256R1",
+      "TCP_FRAGMENTATION" : false,
+      "CIPHER_SUITE" : "TLS_AES_128_GCM_SHA256",
+      "INCLUDE_CHANGE_CIPHER_SPEC" : true,
+      "ALERT" : "INTERNAL_ERROR",
+      "RECORD_LENGTH" : 16384
+    },
+    "AdditionalResultInformation" : null,
+    "AdditionalTestInformation" : null,
+    "SrcPort" : 59805,
+    "DstPort" : 57018,
+    "StartTimestamp" : "2026-09-13T03:29:25.320Z",
+    "EndTimestamp" : "2026-09-13T03:29:25.342Z",
+    "Stacktrace" : null,
+    "uuid" : "D2A8684665E1ABEE8CEFDCC143DB5BA175C650B214F47FC0DE7FB8445F193D79"
+  }, {
+    "Result" : "STRICTLY_SUCCEEDED",
+    "DisplayName" : "[18] Combination{INCLUDE_CHANGE_CIPHER_SPEC=INCLUDE_CHANGE_CIPHER_SPEC = true, NAMED_GROUP=NAMED_GROUP = SECP256R1, CIPHER_SUITE=CIPHER_SUITE = TLS_AES_128_GCM_SHA256, TCP_FRAGMENTATION=TCP_FRAGMENTATION = false, RECORD_LENGTH=RECORD_LENGTH = 16384, ALERT=ALERT = AlertDescription{value=INAPPROPRIATE_FALLBACK}}",
+    "ParameterCombination" : {
+      "NAMED_GROUP" : "SECP256R1",
+      "TCP_FRAGMENTATION" : false,
+      "CIPHER_SUITE" : "TLS_AES_128_GCM_SHA256",
+      "INCLUDE_CHANGE_CIPHER_SPEC" : true,
+      "ALERT" : "INAPPROPRIATE_FALLBACK",
+      "RECORD_LENGTH" : 16384
+    },
+    "AdditionalResultInformation" : null,
+    "AdditionalTestInformation" : null,
+    "SrcPort" : 59805,
+    "DstPort" : 57020,
+    "StartTimestamp" : "2026-09-13T03:29:25.455Z",
+    "EndTimestamp" : "2026-09-13T03:29:25.482Z",
+    "Stacktrace" : null,
+    "uuid" : "00E663242A0454FB8709D314D20A742444D6726699884E6D3BD250294078E74F"
+  }, {
+    "Result" : "STRICTLY_SUCCEEDED",
+    "DisplayName" : "[19] Combination{INCLUDE_CHANGE_CIPHER_SPEC=INCLUDE_CHANGE_CIPHER_SPEC = true, NAMED_GROUP=NAMED_GROUP = SECP256R1, CIPHER_SUITE=CIPHER_SUITE = TLS_AES_128_GCM_SHA256, TCP_FRAGMENTATION=TCP_FRAGMENTATION = false, RECORD_LENGTH=RECORD_LENGTH = 16384, ALERT=ALERT = AlertDescription{value=MISSING_EXTENSION}}",
+    "ParameterCombination" : {
+      "NAMED_GROUP" : "SECP256R1",
+      "TCP_FRAGMENTATION" : false,
+      "CIPHER_SUITE" : "TLS_AES_128_GCM_SHA256",
+      "INCLUDE_CHANGE_CIPHER_SPEC" : true,
+      "ALERT" : "MISSING_EXTENSION",
+      "RECORD_LENGTH" : 16384
+    },
+    "AdditionalResultInformation" : null,
+    "AdditionalTestInformation" : null,
+    "SrcPort" : 59805,
+    "DstPort" : 57028,
+    "StartTimestamp" : "2026-09-13T03:29:25.537Z",
+    "EndTimestamp" : "2026-09-13T03:29:25.560Z",
+    "Stacktrace" : null,
+    "uuid" : "F2DAFDCABCF7FFF9FBBD2CF9CFFE3C1FFCE34330349B0578E7E34831CECAD646"
+  }, {
+    "Result" : "STRICTLY_SUCCEEDED",
+    "DisplayName" : "[20] Combination{INCLUDE_CHANGE_CIPHER_SPEC=INCLUDE_CHANGE_CIPHER_SPEC = true, NAMED_GROUP=NAMED_GROUP = SECP256R1, CIPHER_SUITE=CIPHER_SUITE = TLS_AES_128_GCM_SHA256, TCP_FRAGMENTATION=TCP_FRAGMENTATION = false, RECORD_LENGTH=RECORD_LENGTH = 16384, ALERT=ALERT = AlertDescription{value=UNSUPPORTED_EXTENSION}}",
+    "ParameterCombination" : {
+      "NAMED_GROUP" : "SECP256R1",
+      "TCP_FRAGMENTATION" : false,
+      "CIPHER_SUITE" : "TLS_AES_128_GCM_SHA256",
+      "INCLUDE_CHANGE_CIPHER_SPEC" : true,
+      "ALERT" : "UNSUPPORTED_EXTENSION",
+      "RECORD_LENGTH" : 16384
+    },
+    "AdditionalResultInformation" : null,
+    "AdditionalTestInformation" : null,
+    "SrcPort" : 59805,
+    "DstPort" : 57038,
+    "StartTimestamp" : "2026-09-13T03:29:25.636Z",
+    "EndTimestamp" : "2026-09-13T03:29:25.664Z",
+    "Stacktrace" : null,
+    "uuid" : "92678618180DE4BE0458E72ADF57B96ADCA669A29E98D25C6BF5FFED2D99149F"
+  }, {
+    "Result" : "STRICTLY_SUCCEEDED",
+    "DisplayName" : "[21] Combination{INCLUDE_CHANGE_CIPHER_SPEC=INCLUDE_CHANGE_CIPHER_SPEC = true, NAMED_GROUP=NAMED_GROUP = SECP256R1, CIPHER_SUITE=CIPHER_SUITE = TLS_AES_128_GCM_SHA256, TCP_FRAGMENTATION=TCP_FRAGMENTATION = false, RECORD_LENGTH=RECORD_LENGTH = 16384, ALERT=ALERT = AlertDescription{value=UNRECOGNIZED_NAME}}",
+    "ParameterCombination" : {
+      "NAMED_GROUP" : "SECP256R1",
+      "TCP_FRAGMENTATION" : false,
+      "CIPHER_SUITE" : "TLS_AES_128_GCM_SHA256",
+      "INCLUDE_CHANGE_CIPHER_SPEC" : true,
+      "ALERT" : "UNRECOGNIZED_NAME",
+      "RECORD_LENGTH" : 16384
+    },
+    "AdditionalResultInformation" : null,
+    "AdditionalTestInformation" : null,
+    "SrcPort" : 59805,
+    "DstPort" : 57042,
+    "StartTimestamp" : "2026-09-13T03:29:25.736Z",
+    "EndTimestamp" : "2026-09-13T03:29:25.768Z",
+    "Stacktrace" : null,
+    "uuid" : "A803F119CC3D23257FD925533A27F9FE2F15A397A78B0E998861BE806E18409C"
+  }, {
+    "Result" : "STRICTLY_SUCCEEDED",
+    "DisplayName" : "[22] Combination{INCLUDE_CHANGE_CIPHER_SPEC=INCLUDE_CHANGE_CIPHER_SPEC = true, NAMED_GROUP=NAMED_GROUP = SECP256R1, CIPHER_SUITE=CIPHER_SUITE = TLS_AES_128_GCM_SHA256, TCP_FRAGMENTATION=TCP_FRAGMENTATION = false, RECORD_LENGTH=RECORD_LENGTH = 16384, ALERT=ALERT = AlertDescription{value=BAD_CERTIFICATE_STATUS_RESPONSE}}",
+    "ParameterCombination" : {
+      "NAMED_GROUP" : "SECP256R1",
+      "TCP_FRAGMENTATION" : false,
+      "CIPHER_SUITE" : "TLS_AES_128_GCM_SHA256",
+      "INCLUDE_CHANGE_CIPHER_SPEC" : true,
+      "ALERT" : "BAD_CERTIFICATE_STATUS_RESPONSE",
+      "RECORD_LENGTH" : 16384
+    },
+    "AdditionalResultInformation" : null,
+    "AdditionalTestInformation" : null,
+    "SrcPort" : 59805,
+    "DstPort" : 57046,
+    "StartTimestamp" : "2026-09-13T03:29:25.840Z",
+    "EndTimestamp" : "2026-09-13T03:29:25.868Z",
+    "Stacktrace" : null,
+    "uuid" : "7C38E5EFBB894CB0C41A0628ACBBFCB727D0C98A7381592531EB64DC76604A39"
+  }, {
+    "Result" : "STRICTLY_SUCCEEDED",
+    "DisplayName" : "[23] Combination{INCLUDE_CHANGE_CIPHER_SPEC=INCLUDE_CHANGE_CIPHER_SPEC = true, NAMED_GROUP=NAMED_GROUP = SECP256R1, CIPHER_SUITE=CIPHER_SUITE = TLS_AES_128_GCM_SHA256, TCP_FRAGMENTATION=TCP_FRAGMENTATION = false, RECORD_LENGTH=RECORD_LENGTH = 16384, ALERT=ALERT = AlertDescription{value=UNKNOWN_PSK_IDENTITY}}",
+    "ParameterCombination" : {
+      "NAMED_GROUP" : "SECP256R1",
+      "TCP_FRAGMENTATION" : false,
+      "CIPHER_SUITE" : "TLS_AES_128_GCM_SHA256",
+      "INCLUDE_CHANGE_CIPHER_SPEC" : true,
+      "ALERT" : "UNKNOWN_PSK_IDENTITY",
+      "RECORD_LENGTH" : 16384
+    },
+    "AdditionalResultInformation" : null,
+    "AdditionalTestInformation" : null,
+    "SrcPort" : 59805,
+    "DstPort" : 57048,
+    "StartTimestamp" : "2026-09-13T03:29:25.967Z",
+    "EndTimestamp" : "2026-09-13T03:29:25.996Z",
+    "Stacktrace" : null,
+    "uuid" : "2E997477BA5C2FEE93E27565C342EF8F9D6DF45CF36BFE5B90B0ACBACEFA9EB9"
+  }, {
+    "Result" : "STRICTLY_SUCCEEDED",
+    "DisplayName" : "[24] Combination{INCLUDE_CHANGE_CIPHER_SPEC=INCLUDE_CHANGE_CIPHER_SPEC = true, NAMED_GROUP=NAMED_GROUP = SECP256R1, CIPHER_SUITE=CIPHER_SUITE = TLS_AES_128_GCM_SHA256, TCP_FRAGMENTATION=TCP_FRAGMENTATION = false, RECORD_LENGTH=RECORD_LENGTH = 16384, ALERT=ALERT = AlertDescription{value=CERTIFICATE_REQUIRED}}",
+    "ParameterCombination" : {
+      "NAMED_GROUP" : "SECP256R1",
+      "TCP_FRAGMENTATION" : false,
+      "CIPHER_SUITE" : "TLS_AES_128_GCM_SHA256",
+      "INCLUDE_CHANGE_CIPHER_SPEC" : true,
+      "ALERT" : "CERTIFICATE_REQUIRED",
+      "RECORD_LENGTH" : 16384
+    },
+    "AdditionalResultInformation" : null,
+    "AdditionalTestInformation" : null,
+    "SrcPort" : 59805,
+    "DstPort" : 57054,
+    "StartTimestamp" : "2026-09-13T03:29:26.069Z",
+    "EndTimestamp" : "2026-09-13T03:29:26.097Z",
+    "Stacktrace" : null,
+    "uuid" : "26C9176D3C0623C729C941AEAFBB5B7C88A6EF2E05D229F2EC855F0298120736"
+  }, {
+    "Result" : "STRICTLY_SUCCEEDED",
+    "DisplayName" : "[25] Combination{INCLUDE_CHANGE_CIPHER_SPEC=INCLUDE_CHANGE_CIPHER_SPEC = true, NAMED_GROUP=NAMED_GROUP = SECP256R1, CIPHER_SUITE=CIPHER_SUITE = TLS_AES_128_GCM_SHA256, TCP_FRAGMENTATION=TCP_FRAGMENTATION = false, RECORD_LENGTH=RECORD_LENGTH = 16384, ALERT=ALERT = AlertDescription{value=NO_APPLICATION_PROTOCOL}}",
+    "ParameterCombination" : {
+      "NAMED_GROUP" : "SECP256R1",
+      "TCP_FRAGMENTATION" : false,
+      "CIPHER_SUITE" : "TLS_AES_128_GCM_SHA256",
+      "INCLUDE_CHANGE_CIPHER_SPEC" : true,
+      "ALERT" : "NO_APPLICATION_PROTOCOL",
+      "RECORD_LENGTH" : 16384
+    },
+    "AdditionalResultInformation" : null,
+    "AdditionalTestInformation" : null,
+    "SrcPort" : 59805,
+    "DstPort" : 57070,
+    "StartTimestamp" : "2026-09-13T03:29:26.169Z",
+    "EndTimestamp" : "2026-09-13T03:29:26.198Z",
+    "Stacktrace" : null,
+    "uuid" : "12B578FB8532DD1505A9F14B00DB2BA9EACF8150A1A777FFB8F47756B412B058"
+  } ],
+  "Result" : "STRICTLY_SUCCEEDED",
+  "DisabledReason" : null,
+  "FailedReason" : null,
+  "ExecutionTime" : 2822,
+  "GenerationTime" : 11,
+  "FailureInducingCombinations" : null,
+  "Score" : {
+    "Alert" : 100.0,
+    "Interoperability" : 100.0
+  },
+  "HasStateWithAdditionalResultInformation" : true,
+  "HasVaryingAdditionalResultInformation" : false,
+  "TestMethod" : "treatsFatalAlertsAsFatalHandshake",
+  "TestClass" : "de.rub.nds.tlstest.suite.tests.both.tls13.rfc8446.AlertProtocol",
+  "CaseCount" : 25,
+  "MetaData" : {
+    "description" : "All the alerts listed in Section 6.2 MUST be sent with AlertLevel=fatal and MUST be treated as error alerts when received regardless of the AlertLevel in the message.",
+    "severityLevels" : {
+      "Interoperability" : 60,
+      "Alert" : 60
+    },
+    "rfc" : {
+      "number" : 8446,
+      "section" : "6. Alert Protocol"
+    },
+    "tags" : [ "both", "tls13", "rfc8446", "AlertProtocol", "treatsFatalAlertsAsFatalHandshake" ]
+  }
+}
