@@ -15,6 +15,7 @@ from scripts.anvil_server import (  # noqa: E402
     ANVIL_JAR,
     ANVIL_TOOL_LOG_DIR,
     CONF_DIR,
+    chain_provider_provenance,
     copy_new_logs,
     free_port,
     git_provenance,
@@ -34,6 +35,7 @@ def write_run_metadata(output_folder: Path, command: str, port: int, trigger_scr
         "client_bin": str(CLIENT_BIN),
         "trigger_script": str(trigger_script),
         "tls_anvil_jar": str(ANVIL_JAR),
+        "chain_provider": chain_provider_provenance(),
         "command": command,
     }
     (output_folder / "run_metadata.json").write_text(json.dumps(metadata, indent=2) + "\n")

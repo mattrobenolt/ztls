@@ -1,0 +1,11 @@
+# mutation check — 2026-09-13T00:25:31Z — patched source temporarily truncated getAllLeafConfigs to one leaf; provenance pre-rebuild: stale; rebuilt probe must fail count/diversity guards
+code_source=file:/Users/matt/code/worktrees/ztls/pi-worktree-f70a0434-2b8f-4cde-b3ab-68a98c36ca48-s0-0/conformance/zig-out/tools/lib/tls-test-framework-1.5.0.jar
+FAIL RSA: chain count 1 != 38
+FAIL ECDSA: chain count 1 != 38
+FAIL DSA: chain count 1 != 38
+leaf_public_key_types=[rsassa_pss]
+leaf_rsa_modulus_bits=[2048]
+FAIL: leaf key types [rsassa_pss] != [rsassa_pss, ecdh_ecdsa, dsa, rsaes_oaep, rsa]
+FAIL: leaf RSA modulus bits [2048] != [2048, 1024, 4096]
+PROBE_FAILED failures=5
+exit=1

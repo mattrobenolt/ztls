@@ -249,6 +249,29 @@ data to openssl s_server and receives the HTTP response.
   accepted client execution. BoGo is
   explicitly deferred in
   `docs/research/BOGO_DEFERRED.md` with re-entry criteria tracked by #50.
+- **#91 root-cause evidence is partial but reproducible for one case class.**
+  The scheduled client run `34447449765` failed with non-DSA unexpected
+  failures on all three backends. A single-case reproduction (HappyFlow
+  `8446-jVohiUKi4u`, `ROOT=RSA` leaf RSA-1024 combination) attributes the
+  failure to the TLS-Anvil fixture, not ztls: the pinned upstream
+  `tls-test-framework-1.5.0` `X509CertificateChainProvider` generates chain
+  signing (root) certificates without a basicConstraints extension, violating
+  RFC 5280 §4.2.1.9; ztls's issuer-usage check rejects them with
+  `CertificateIssuerNotCa` (observed on the tested backend; the other backends
+  are unproven for this path). Upstream v1.5.2 and `main` have the same gap
+  (no upstream fix or config option). A minimal in-repo conformance-tools
+  patch (`conformance/scripts/anvil-chain-provider-patch/`, wired into the
+  conformance build) adds a critical basicConstraints cA=true to the generated
+  signing certs only; leaf configs and chain diversity are untouched. Red→green
+  is proven for the reproduced case (RSA/ECDH_ECDSA-root HappyFlow cases flip
+  from FULLY_FAILED to STRICTLY_SUCCEEDED; the DSA-root #52 class is
+  unchanged), the regression is CI-gated (`just anvil-chain-patch-test`),
+  provenance digests of the installed jar/class/patch source are recorded in
+  client and server run metadata, and evidence (PEMs, probe red/green outputs,
+  before/after per-case JSON, client stderr) lives in
+  `docs/research/TLS_ANVIL_91_CHAIN_FIXTURE/`. Full three-backend strict
+  captures are still required before any #91 status change; the other five
+  non-DSA test IDs are not yet individually reproduced.
 - Wycheproof boundary vectors at the libcrypto seam.
 - Fuzzing on the major parsers plus record decrypt and server `handleRecord`
   pre-auth/post-auth dispatch.

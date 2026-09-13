@@ -50,6 +50,17 @@ pub fn build(b: *std.Build) void {
         });
         b.getInstallStep().dependOn(&install_jar.step);
         b.getInstallStep().dependOn(&install_lib.step);
+        // #91: upstream v1.5.0 generates chain signing certs without
+        // basicConstraints (RFC 5280 §4.2.1.9). Apply the in-repo source patch
+        // to the installed tls-test-framework jar after the jars are copied.
+        const patch_chain_provider = b.addSystemCommand(&.{
+            "bash",
+        });
+        patch_chain_provider.addFileArg(b.path("scripts/anvil-chain-provider-patch/apply.sh"));
+        patch_chain_provider.addArg(b.getInstallPath(.{ .custom = "tools" }, "lib"));
+        patch_chain_provider.step.dependOn(&install_jar.step);
+        patch_chain_provider.step.dependOn(&install_lib.step);
+        b.getInstallStep().dependOn(&patch_chain_provider.step);
     }
 
     inline for (.{

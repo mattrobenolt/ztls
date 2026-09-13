@@ -1,0 +1,543 @@
+{
+  "TestId" : "8446-jVohiUKi4u",
+  "TestCases" : [ {
+    "Result" : "FULLY_FAILED",
+    "DisplayName" : "[1] Combination{NAMED_GROUP=NAMED_GROUP = ECDH_X25519, SIG_HASH_ALGORIHTM=SIG_HASH_ALGORIHTM = RSA_PSS_RSAE_SHA256, CIPHER_SUITE=CIPHER_SUITE = TLS_AES_128_GCM_SHA256, TCP_FRAGMENTATION=TCP_FRAGMENTATION = false, CERTIFICATE=Public Key Type: RSA,RSA Modulus: 2048,Certificate Signature Type: SHA256_WITH_RSA_ENCRYPTION, INCLUDE_CHANGE_CIPHER_SPEC=INCLUDE_CHANGE_CIPHER_SPEC = true, RECORD_LENGTH=RECORD_LENGTH = 16384}",
+    "ParameterCombination" : {
+      "SIG_HASH_ALGORIHTM" : "RSA_PSS_RSAE_SHA256",
+      "NAMED_GROUP" : "ECDH_X25519",
+      "TCP_FRAGMENTATION" : false,
+      "CERTIFICATE" : {
+        "ROOT" : "RSA",
+        "LEAF" : {
+          "keySize" : 2048,
+          "keyType" : "RSA"
+        }
+      },
+      "CIPHER_SUITE" : "TLS_AES_128_GCM_SHA256",
+      "INCLUDE_CHANGE_CIPHER_SPEC" : true,
+      "RECORD_LENGTH" : 16384
+    },
+    "AdditionalResultInformation" : [ "Received TransportHandler exception", "Received TransportHandler exception", "Failed SendAction:  | \tMessages: SERVER_HELLO, CHANGE_CIPHER_SPEC, ENCRYPTED_EXTENSIONS, CERTIFICATE, CERTIFICATE_VERIFY, FINISHED | " ],
+    "AdditionalTestInformation" : null,
+    "SrcPort" : 39411,
+    "DstPort" : 52646,
+    "StartTimestamp" : "2026-09-13T00:03:20.835Z",
+    "EndTimestamp" : "2026-09-13T00:03:20.879Z",
+    "Stacktrace" : "org.opentest4j.AssertionFailedError: The workflow could not be executed as planned! ==> expected: <true> but was: <false>",
+    "uuid" : "BC847FE57D745895962AA449210EC8E785B0E68A02E02E9A3438CAF46EFB50F3"
+  }, {
+    "Result" : "FULLY_FAILED",
+    "DisplayName" : "[2] Combination{NAMED_GROUP=NAMED_GROUP = SECP256R1, SIG_HASH_ALGORIHTM=SIG_HASH_ALGORIHTM = RSA_PSS_RSAE_SHA384, CIPHER_SUITE=CIPHER_SUITE = TLS_AES_256_GCM_SHA384, TCP_FRAGMENTATION=TCP_FRAGMENTATION = true, CERTIFICATE=Public Key Type: RSA,RSA Modulus: 1024,Certificate Signature Type: SHA256_WITH_RSA_ENCRYPTION, INCLUDE_CHANGE_CIPHER_SPEC=INCLUDE_CHANGE_CIPHER_SPEC = false, RECORD_LENGTH=RECORD_LENGTH = 16384}",
+    "ParameterCombination" : {
+      "SIG_HASH_ALGORIHTM" : "RSA_PSS_RSAE_SHA384",
+      "NAMED_GROUP" : "SECP256R1",
+      "TCP_FRAGMENTATION" : true,
+      "CERTIFICATE" : {
+        "ROOT" : "RSA",
+        "LEAF" : {
+          "keySize" : 1024,
+          "keyType" : "RSA"
+        }
+      },
+      "CIPHER_SUITE" : "TLS_AES_256_GCM_SHA384",
+      "INCLUDE_CHANGE_CIPHER_SPEC" : false,
+      "RECORD_LENGTH" : 16384
+    },
+    "AdditionalResultInformation" : [ "Received TransportHandler exception", "Received TransportHandler exception", "Failed SendAction:  | \tMessages: SERVER_HELLO, ENCRYPTED_EXTENSIONS, CERTIFICATE, CERTIFICATE_VERIFY, FINISHED | " ],
+    "AdditionalTestInformation" : null,
+    "SrcPort" : 39411,
+    "DstPort" : 52672,
+    "StartTimestamp" : "2026-09-13T00:03:21.040Z",
+    "EndTimestamp" : "2026-09-13T00:03:21.059Z",
+    "Stacktrace" : "org.opentest4j.AssertionFailedError: The workflow could not be executed as planned! ==> expected: <true> but was: <false>",
+    "uuid" : "9048F8E8B5F37E20435921B75DBC571484CEED77549BF69E79FDF8F6950E3DC9"
+  }, {
+    "Result" : "FULLY_FAILED",
+    "DisplayName" : "[3] Combination{NAMED_GROUP=NAMED_GROUP = ECDH_X25519, SIG_HASH_ALGORIHTM=SIG_HASH_ALGORIHTM = RSA_PSS_RSAE_SHA256, CIPHER_SUITE=CIPHER_SUITE = TLS_CHACHA20_POLY1305_SHA256, TCP_FRAGMENTATION=TCP_FRAGMENTATION = false, CERTIFICATE=Public Key Type: RSA,RSA Modulus: 4096,Certificate Signature Type: SHA256_WITH_RSA_ENCRYPTION, INCLUDE_CHANGE_CIPHER_SPEC=INCLUDE_CHANGE_CIPHER_SPEC = true, RECORD_LENGTH=RECORD_LENGTH = 16384}",
+    "ParameterCombination" : {
+      "SIG_HASH_ALGORIHTM" : "RSA_PSS_RSAE_SHA256",
+      "NAMED_GROUP" : "ECDH_X25519",
+      "TCP_FRAGMENTATION" : false,
+      "CERTIFICATE" : {
+        "ROOT" : "RSA",
+        "LEAF" : {
+          "keySize" : 4096,
+          "keyType" : "RSA"
+        }
+      },
+      "CIPHER_SUITE" : "TLS_CHACHA20_POLY1305_SHA256",
+      "INCLUDE_CHANGE_CIPHER_SPEC" : true,
+      "RECORD_LENGTH" : 16384
+    },
+    "AdditionalResultInformation" : [ "Received TransportHandler exception", "Received TransportHandler exception", "Failed SendAction:  | \tMessages: SERVER_HELLO, CHANGE_CIPHER_SPEC, ENCRYPTED_EXTENSIONS, CERTIFICATE, CERTIFICATE_VERIFY, FINISHED | " ],
+    "AdditionalTestInformation" : null,
+    "SrcPort" : 39411,
+    "DstPort" : 52684,
+    "StartTimestamp" : "2026-09-13T00:03:21.193Z",
+    "EndTimestamp" : "2026-09-13T00:03:21.240Z",
+    "Stacktrace" : "org.opentest4j.AssertionFailedError: The workflow could not be executed as planned! ==> expected: <true> but was: <false>",
+    "uuid" : "3934FC717F34DEED64BC41D5EB75CC4C7B579DBC072A4E4ED2EF90C2C532BF87"
+  }, {
+    "Result" : "FULLY_FAILED",
+    "DisplayName" : "[4] Combination{NAMED_GROUP=NAMED_GROUP = ECDH_X25519, SIG_HASH_ALGORIHTM=SIG_HASH_ALGORIHTM = RSA_PSS_RSAE_SHA256, CIPHER_SUITE=CIPHER_SUITE = TLS_AES_128_GCM_SHA256, TCP_FRAGMENTATION=TCP_FRAGMENTATION = false, CERTIFICATE=Public Key Type: RSA,RSA Modulus: 2048,Certificate Signature Type: ECDSA_WITH_SHA256, INCLUDE_CHANGE_CIPHER_SPEC=INCLUDE_CHANGE_CIPHER_SPEC = true, RECORD_LENGTH=RECORD_LENGTH = 16384}",
+    "ParameterCombination" : {
+      "SIG_HASH_ALGORIHTM" : "RSA_PSS_RSAE_SHA256",
+      "NAMED_GROUP" : "ECDH_X25519",
+      "TCP_FRAGMENTATION" : false,
+      "CERTIFICATE" : {
+        "ROOT" : "ECDH_ECDSA",
+        "LEAF" : {
+          "keySize" : 2048,
+          "keyType" : "RSA"
+        }
+      },
+      "CIPHER_SUITE" : "TLS_AES_128_GCM_SHA256",
+      "INCLUDE_CHANGE_CIPHER_SPEC" : true,
+      "RECORD_LENGTH" : 16384
+    },
+    "AdditionalResultInformation" : [ "Received TransportHandler exception", "Received TransportHandler exception", "Failed SendAction:  | \tMessages: SERVER_HELLO, CHANGE_CIPHER_SPEC, ENCRYPTED_EXTENSIONS, CERTIFICATE, CERTIFICATE_VERIFY, FINISHED | " ],
+    "AdditionalTestInformation" : null,
+    "SrcPort" : 39411,
+    "DstPort" : 52700,
+    "StartTimestamp" : "2026-09-13T00:03:21.379Z",
+    "EndTimestamp" : "2026-09-13T00:03:21.399Z",
+    "Stacktrace" : "org.opentest4j.AssertionFailedError: The workflow could not be executed as planned! ==> expected: <true> but was: <false>",
+    "uuid" : "B460EACE2365700704C79498698B60F9014334E644CC986817E3A786BA700072"
+  }, {
+    "Result" : "FULLY_FAILED",
+    "DisplayName" : "[5] Combination{NAMED_GROUP=NAMED_GROUP = ECDH_X25519, SIG_HASH_ALGORIHTM=SIG_HASH_ALGORIHTM = RSA_PSS_RSAE_SHA256, CIPHER_SUITE=CIPHER_SUITE = TLS_AES_128_GCM_SHA256, TCP_FRAGMENTATION=TCP_FRAGMENTATION = false, CERTIFICATE=Public Key Type: RSA,RSA Modulus: 1024,Certificate Signature Type: ECDSA_WITH_SHA256, INCLUDE_CHANGE_CIPHER_SPEC=INCLUDE_CHANGE_CIPHER_SPEC = true, RECORD_LENGTH=RECORD_LENGTH = 16384}",
+    "ParameterCombination" : {
+      "SIG_HASH_ALGORIHTM" : "RSA_PSS_RSAE_SHA256",
+      "NAMED_GROUP" : "ECDH_X25519",
+      "TCP_FRAGMENTATION" : false,
+      "CERTIFICATE" : {
+        "ROOT" : "ECDH_ECDSA",
+        "LEAF" : {
+          "keySize" : 1024,
+          "keyType" : "RSA"
+        }
+      },
+      "CIPHER_SUITE" : "TLS_AES_128_GCM_SHA256",
+      "INCLUDE_CHANGE_CIPHER_SPEC" : true,
+      "RECORD_LENGTH" : 16384
+    },
+    "AdditionalResultInformation" : [ "Received TransportHandler exception", "Received TransportHandler exception", "Failed SendAction:  | \tMessages: SERVER_HELLO, CHANGE_CIPHER_SPEC, ENCRYPTED_EXTENSIONS, CERTIFICATE, CERTIFICATE_VERIFY, FINISHED | " ],
+    "AdditionalTestInformation" : null,
+    "SrcPort" : 39411,
+    "DstPort" : 52722,
+    "StartTimestamp" : "2026-09-13T00:03:21.507Z",
+    "EndTimestamp" : "2026-09-13T00:03:21.534Z",
+    "Stacktrace" : "org.opentest4j.AssertionFailedError: The workflow could not be executed as planned! ==> expected: <true> but was: <false>",
+    "uuid" : "287CC2119C2C3A38A37837FB01098590F4CB214815C2F3AE5936F7E92ED51C84"
+  }, {
+    "Result" : "FULLY_FAILED",
+    "DisplayName" : "[6] Combination{NAMED_GROUP=NAMED_GROUP = ECDH_X25519, SIG_HASH_ALGORIHTM=SIG_HASH_ALGORIHTM = RSA_PSS_RSAE_SHA256, CIPHER_SUITE=CIPHER_SUITE = TLS_AES_128_GCM_SHA256, TCP_FRAGMENTATION=TCP_FRAGMENTATION = false, CERTIFICATE=Public Key Type: RSA,RSA Modulus: 4096,Certificate Signature Type: ECDSA_WITH_SHA256, INCLUDE_CHANGE_CIPHER_SPEC=INCLUDE_CHANGE_CIPHER_SPEC = true, RECORD_LENGTH=RECORD_LENGTH = 16384}",
+    "ParameterCombination" : {
+      "SIG_HASH_ALGORIHTM" : "RSA_PSS_RSAE_SHA256",
+      "NAMED_GROUP" : "ECDH_X25519",
+      "TCP_FRAGMENTATION" : false,
+      "CERTIFICATE" : {
+        "ROOT" : "ECDH_ECDSA",
+        "LEAF" : {
+          "keySize" : 4096,
+          "keyType" : "RSA"
+        }
+      },
+      "CIPHER_SUITE" : "TLS_AES_128_GCM_SHA256",
+      "INCLUDE_CHANGE_CIPHER_SPEC" : true,
+      "RECORD_LENGTH" : 16384
+    },
+    "AdditionalResultInformation" : [ "Received TransportHandler exception", "Received TransportHandler exception", "Failed SendAction:  | \tMessages: SERVER_HELLO, CHANGE_CIPHER_SPEC, ENCRYPTED_EXTENSIONS, CERTIFICATE, CERTIFICATE_VERIFY, FINISHED | " ],
+    "AdditionalTestInformation" : null,
+    "SrcPort" : 39411,
+    "DstPort" : 52736,
+    "StartTimestamp" : "2026-09-13T00:03:21.693Z",
+    "EndTimestamp" : "2026-09-13T00:03:21.724Z",
+    "Stacktrace" : "org.opentest4j.AssertionFailedError: The workflow could not be executed as planned! ==> expected: <true> but was: <false>",
+    "uuid" : "33328DBA7955983F72CA811DAABAC48F20861B0C0ABB97248EB5FE8F2CB5D15D"
+  }, {
+    "Result" : "FULLY_FAILED",
+    "DisplayName" : "[7] Combination{NAMED_GROUP=NAMED_GROUP = ECDH_X25519, SIG_HASH_ALGORIHTM=SIG_HASH_ALGORIHTM = RSA_PSS_RSAE_SHA256, CIPHER_SUITE=CIPHER_SUITE = TLS_AES_128_GCM_SHA256, TCP_FRAGMENTATION=TCP_FRAGMENTATION = false, CERTIFICATE=Public Key Type: RSA,RSA Modulus: 2048,Certificate Signature Type: DSA_WITH_SHA256, INCLUDE_CHANGE_CIPHER_SPEC=INCLUDE_CHANGE_CIPHER_SPEC = true, RECORD_LENGTH=RECORD_LENGTH = 16384}",
+    "ParameterCombination" : {
+      "SIG_HASH_ALGORIHTM" : "RSA_PSS_RSAE_SHA256",
+      "NAMED_GROUP" : "ECDH_X25519",
+      "TCP_FRAGMENTATION" : false,
+      "CERTIFICATE" : {
+        "ROOT" : "DSA",
+        "LEAF" : {
+          "keySize" : 2048,
+          "keyType" : "RSA"
+        }
+      },
+      "CIPHER_SUITE" : "TLS_AES_128_GCM_SHA256",
+      "INCLUDE_CHANGE_CIPHER_SPEC" : true,
+      "RECORD_LENGTH" : 16384
+    },
+    "AdditionalResultInformation" : [ "Received TransportHandler exception", "Received TransportHandler exception", "Failed SendAction:  | \tMessages: SERVER_HELLO, CHANGE_CIPHER_SPEC, ENCRYPTED_EXTENSIONS, CERTIFICATE, CERTIFICATE_VERIFY, FINISHED | " ],
+    "AdditionalTestInformation" : null,
+    "SrcPort" : 39411,
+    "DstPort" : 52766,
+    "StartTimestamp" : "2026-09-13T00:03:21.803Z",
+    "EndTimestamp" : "2026-09-13T00:03:21.835Z",
+    "Stacktrace" : "org.opentest4j.AssertionFailedError: The workflow could not be executed as planned! ==> expected: <true> but was: <false>",
+    "uuid" : "39B17D79C34536C15CFACA87F814FB257F1912F9AEFDF4D7B8CF46E3B4360712"
+  }, {
+    "Result" : "FULLY_FAILED",
+    "DisplayName" : "[8] Combination{NAMED_GROUP=NAMED_GROUP = ECDH_X25519, SIG_HASH_ALGORIHTM=SIG_HASH_ALGORIHTM = RSA_PSS_RSAE_SHA256, CIPHER_SUITE=CIPHER_SUITE = TLS_AES_128_GCM_SHA256, TCP_FRAGMENTATION=TCP_FRAGMENTATION = false, CERTIFICATE=Public Key Type: RSA,RSA Modulus: 1024,Certificate Signature Type: DSA_WITH_SHA256, INCLUDE_CHANGE_CIPHER_SPEC=INCLUDE_CHANGE_CIPHER_SPEC = true, RECORD_LENGTH=RECORD_LENGTH = 16384}",
+    "ParameterCombination" : {
+      "SIG_HASH_ALGORIHTM" : "RSA_PSS_RSAE_SHA256",
+      "NAMED_GROUP" : "ECDH_X25519",
+      "TCP_FRAGMENTATION" : false,
+      "CERTIFICATE" : {
+        "ROOT" : "DSA",
+        "LEAF" : {
+          "keySize" : 1024,
+          "keyType" : "RSA"
+        }
+      },
+      "CIPHER_SUITE" : "TLS_AES_128_GCM_SHA256",
+      "INCLUDE_CHANGE_CIPHER_SPEC" : true,
+      "RECORD_LENGTH" : 16384
+    },
+    "AdditionalResultInformation" : [ "Received TransportHandler exception", "Received TransportHandler exception", "Failed SendAction:  | \tMessages: SERVER_HELLO, CHANGE_CIPHER_SPEC, ENCRYPTED_EXTENSIONS, CERTIFICATE, CERTIFICATE_VERIFY, FINISHED | " ],
+    "AdditionalTestInformation" : null,
+    "SrcPort" : 39411,
+    "DstPort" : 52790,
+    "StartTimestamp" : "2026-09-13T00:03:21.928Z",
+    "EndTimestamp" : "2026-09-13T00:03:21.950Z",
+    "Stacktrace" : "org.opentest4j.AssertionFailedError: The workflow could not be executed as planned! ==> expected: <true> but was: <false>",
+    "uuid" : "6F06058A4A8E0FCFF38508E38AA02DFFDAE07D31F1D6732ECA37A48A0C2B82CE"
+  }, {
+    "Result" : "FULLY_FAILED",
+    "DisplayName" : "[9] Combination{NAMED_GROUP=NAMED_GROUP = ECDH_X25519, SIG_HASH_ALGORIHTM=SIG_HASH_ALGORIHTM = RSA_PSS_RSAE_SHA256, CIPHER_SUITE=CIPHER_SUITE = TLS_AES_128_GCM_SHA256, TCP_FRAGMENTATION=TCP_FRAGMENTATION = false, CERTIFICATE=Public Key Type: RSA,RSA Modulus: 4096,Certificate Signature Type: DSA_WITH_SHA256, INCLUDE_CHANGE_CIPHER_SPEC=INCLUDE_CHANGE_CIPHER_SPEC = true, RECORD_LENGTH=RECORD_LENGTH = 16384}",
+    "ParameterCombination" : {
+      "SIG_HASH_ALGORIHTM" : "RSA_PSS_RSAE_SHA256",
+      "NAMED_GROUP" : "ECDH_X25519",
+      "TCP_FRAGMENTATION" : false,
+      "CERTIFICATE" : {
+        "ROOT" : "DSA",
+        "LEAF" : {
+          "keySize" : 4096,
+          "keyType" : "RSA"
+        }
+      },
+      "CIPHER_SUITE" : "TLS_AES_128_GCM_SHA256",
+      "INCLUDE_CHANGE_CIPHER_SPEC" : true,
+      "RECORD_LENGTH" : 16384
+    },
+    "AdditionalResultInformation" : [ "Received TransportHandler exception", "Received TransportHandler exception", "Failed SendAction:  | \tMessages: SERVER_HELLO, CHANGE_CIPHER_SPEC, ENCRYPTED_EXTENSIONS, CERTIFICATE, CERTIFICATE_VERIFY, FINISHED | " ],
+    "AdditionalTestInformation" : null,
+    "SrcPort" : 39411,
+    "DstPort" : 52796,
+    "StartTimestamp" : "2026-09-13T00:03:22.102Z",
+    "EndTimestamp" : "2026-09-13T00:03:22.133Z",
+    "Stacktrace" : "org.opentest4j.AssertionFailedError: The workflow could not be executed as planned! ==> expected: <true> but was: <false>",
+    "uuid" : "8A10354EF793675B2BCAEE66D6FA64AF4F5ADA1A29287CBFB529E00A4E6E6ACE"
+  }, {
+    "Result" : "FULLY_FAILED",
+    "DisplayName" : "[10] Combination{NAMED_GROUP=NAMED_GROUP = SECP256R1, SIG_HASH_ALGORIHTM=SIG_HASH_ALGORIHTM = RSA_PSS_RSAE_SHA384, CIPHER_SUITE=CIPHER_SUITE = TLS_AES_256_GCM_SHA384, TCP_FRAGMENTATION=TCP_FRAGMENTATION = false, CERTIFICATE=Public Key Type: RSA,RSA Modulus: 2048,Certificate Signature Type: SHA256_WITH_RSA_ENCRYPTION, INCLUDE_CHANGE_CIPHER_SPEC=INCLUDE_CHANGE_CIPHER_SPEC = false, RECORD_LENGTH=RECORD_LENGTH = 16384}",
+    "ParameterCombination" : {
+      "SIG_HASH_ALGORIHTM" : "RSA_PSS_RSAE_SHA384",
+      "NAMED_GROUP" : "SECP256R1",
+      "TCP_FRAGMENTATION" : false,
+      "CERTIFICATE" : {
+        "ROOT" : "RSA",
+        "LEAF" : {
+          "keySize" : 2048,
+          "keyType" : "RSA"
+        }
+      },
+      "CIPHER_SUITE" : "TLS_AES_256_GCM_SHA384",
+      "INCLUDE_CHANGE_CIPHER_SPEC" : false,
+      "RECORD_LENGTH" : 16384
+    },
+    "AdditionalResultInformation" : [ "Received TransportHandler exception", "Received TransportHandler exception", "Failed SendAction:  | \tMessages: SERVER_HELLO, ENCRYPTED_EXTENSIONS, CERTIFICATE, CERTIFICATE_VERIFY, FINISHED | " ],
+    "AdditionalTestInformation" : null,
+    "SrcPort" : 39411,
+    "DstPort" : 56526,
+    "StartTimestamp" : "2026-09-13T00:03:22.258Z",
+    "EndTimestamp" : "2026-09-13T00:03:22.286Z",
+    "Stacktrace" : "org.opentest4j.AssertionFailedError: The workflow could not be executed as planned! ==> expected: <true> but was: <false>",
+    "uuid" : "65CB4563C1AB968C33F0427409D4ECC86DADB4B0BA8E5895AEAAA7987EBD5AC6"
+  }, {
+    "Result" : "FULLY_FAILED",
+    "DisplayName" : "[11] Combination{NAMED_GROUP=NAMED_GROUP = SECP256R1, SIG_HASH_ALGORIHTM=SIG_HASH_ALGORIHTM = RSA_PSS_RSAE_SHA384, CIPHER_SUITE=CIPHER_SUITE = TLS_AES_256_GCM_SHA384, TCP_FRAGMENTATION=TCP_FRAGMENTATION = true, CERTIFICATE=Public Key Type: RSA,RSA Modulus: 2048,Certificate Signature Type: SHA256_WITH_RSA_ENCRYPTION, INCLUDE_CHANGE_CIPHER_SPEC=INCLUDE_CHANGE_CIPHER_SPEC = true, RECORD_LENGTH=RECORD_LENGTH = 16384}",
+    "ParameterCombination" : {
+      "SIG_HASH_ALGORIHTM" : "RSA_PSS_RSAE_SHA384",
+      "NAMED_GROUP" : "SECP256R1",
+      "TCP_FRAGMENTATION" : true,
+      "CERTIFICATE" : {
+        "ROOT" : "RSA",
+        "LEAF" : {
+          "keySize" : 2048,
+          "keyType" : "RSA"
+        }
+      },
+      "CIPHER_SUITE" : "TLS_AES_256_GCM_SHA384",
+      "INCLUDE_CHANGE_CIPHER_SPEC" : true,
+      "RECORD_LENGTH" : 16384
+    },
+    "AdditionalResultInformation" : [ "Received TransportHandler exception", "Received TransportHandler exception", "Failed SendAction:  | \tMessages: SERVER_HELLO, CHANGE_CIPHER_SPEC, ENCRYPTED_EXTENSIONS, CERTIFICATE, CERTIFICATE_VERIFY, FINISHED | " ],
+    "AdditionalTestInformation" : null,
+    "SrcPort" : 39411,
+    "DstPort" : 56540,
+    "StartTimestamp" : "2026-09-13T00:03:22.437Z",
+    "EndTimestamp" : "2026-09-13T00:03:22.460Z",
+    "Stacktrace" : "org.opentest4j.AssertionFailedError: The workflow could not be executed as planned! ==> expected: <true> but was: <false>",
+    "uuid" : "BA081AD5AE50CBEF16BFE21103C2F49A29F6F0647F9132F5D162004E071F2014"
+  }, {
+    "Result" : "FULLY_FAILED",
+    "DisplayName" : "[12] Combination{NAMED_GROUP=NAMED_GROUP = SECP256R1, SIG_HASH_ALGORIHTM=SIG_HASH_ALGORIHTM = RSA_PSS_RSAE_SHA384, CIPHER_SUITE=CIPHER_SUITE = TLS_CHACHA20_POLY1305_SHA256, TCP_FRAGMENTATION=TCP_FRAGMENTATION = true, CERTIFICATE=Public Key Type: RSA,RSA Modulus: 2048,Certificate Signature Type: SHA256_WITH_RSA_ENCRYPTION, INCLUDE_CHANGE_CIPHER_SPEC=INCLUDE_CHANGE_CIPHER_SPEC = true, RECORD_LENGTH=RECORD_LENGTH = 16384}",
+    "ParameterCombination" : {
+      "SIG_HASH_ALGORIHTM" : "RSA_PSS_RSAE_SHA384",
+      "NAMED_GROUP" : "SECP256R1",
+      "TCP_FRAGMENTATION" : true,
+      "CERTIFICATE" : {
+        "ROOT" : "RSA",
+        "LEAF" : {
+          "keySize" : 2048,
+          "keyType" : "RSA"
+        }
+      },
+      "CIPHER_SUITE" : "TLS_CHACHA20_POLY1305_SHA256",
+      "INCLUDE_CHANGE_CIPHER_SPEC" : true,
+      "RECORD_LENGTH" : 16384
+    },
+    "AdditionalResultInformation" : [ "Received TransportHandler exception", "Received TransportHandler exception", "Failed SendAction:  | \tMessages: SERVER_HELLO, CHANGE_CIPHER_SPEC, ENCRYPTED_EXTENSIONS, CERTIFICATE, CERTIFICATE_VERIFY, FINISHED | " ],
+    "AdditionalTestInformation" : null,
+    "SrcPort" : 39411,
+    "DstPort" : 56564,
+    "StartTimestamp" : "2026-09-13T00:03:22.560Z",
+    "EndTimestamp" : "2026-09-13T00:03:22.584Z",
+    "Stacktrace" : "org.opentest4j.AssertionFailedError: The workflow could not be executed as planned! ==> expected: <true> but was: <false>",
+    "uuid" : "4241FA73B1B81509D50B0FDE88EEC6E76C1CD24625D90B86E6B977A800505C28"
+  }, {
+    "Result" : "FULLY_FAILED",
+    "DisplayName" : "[13] Combination{NAMED_GROUP=NAMED_GROUP = SECP256R1, SIG_HASH_ALGORIHTM=SIG_HASH_ALGORIHTM = RSA_PSS_RSAE_SHA384, CIPHER_SUITE=CIPHER_SUITE = TLS_CHACHA20_POLY1305_SHA256, TCP_FRAGMENTATION=TCP_FRAGMENTATION = true, CERTIFICATE=Public Key Type: RSA,RSA Modulus: 2048,Certificate Signature Type: SHA256_WITH_RSA_ENCRYPTION, INCLUDE_CHANGE_CIPHER_SPEC=INCLUDE_CHANGE_CIPHER_SPEC = false, RECORD_LENGTH=RECORD_LENGTH = 16384}",
+    "ParameterCombination" : {
+      "SIG_HASH_ALGORIHTM" : "RSA_PSS_RSAE_SHA384",
+      "NAMED_GROUP" : "SECP256R1",
+      "TCP_FRAGMENTATION" : true,
+      "CERTIFICATE" : {
+        "ROOT" : "RSA",
+        "LEAF" : {
+          "keySize" : 2048,
+          "keyType" : "RSA"
+        }
+      },
+      "CIPHER_SUITE" : "TLS_CHACHA20_POLY1305_SHA256",
+      "INCLUDE_CHANGE_CIPHER_SPEC" : false,
+      "RECORD_LENGTH" : 16384
+    },
+    "AdditionalResultInformation" : [ "Received TransportHandler exception", "Received TransportHandler exception", "Failed SendAction:  | \tMessages: SERVER_HELLO, ENCRYPTED_EXTENSIONS, CERTIFICATE, CERTIFICATE_VERIFY, FINISHED | " ],
+    "AdditionalTestInformation" : null,
+    "SrcPort" : 39411,
+    "DstPort" : 56586,
+    "StartTimestamp" : "2026-09-13T00:03:22.671Z",
+    "EndTimestamp" : "2026-09-13T00:03:22.697Z",
+    "Stacktrace" : "org.opentest4j.AssertionFailedError: The workflow could not be executed as planned! ==> expected: <true> but was: <false>",
+    "uuid" : "470112F68B5A080E9F9560EA7A215A00DA9296F2CE42A0909228FCEC3BD19F33"
+  }, {
+    "Result" : "FULLY_FAILED",
+    "DisplayName" : "[14] Combination{NAMED_GROUP=NAMED_GROUP = ECDH_X25519, SIG_HASH_ALGORIHTM=SIG_HASH_ALGORIHTM = RSA_PSS_RSAE_SHA384, CIPHER_SUITE=CIPHER_SUITE = TLS_AES_256_GCM_SHA384, TCP_FRAGMENTATION=TCP_FRAGMENTATION = true, CERTIFICATE=Public Key Type: RSA,RSA Modulus: 2048,Certificate Signature Type: SHA256_WITH_RSA_ENCRYPTION, INCLUDE_CHANGE_CIPHER_SPEC=INCLUDE_CHANGE_CIPHER_SPEC = false, RECORD_LENGTH=RECORD_LENGTH = 16384}",
+    "ParameterCombination" : {
+      "SIG_HASH_ALGORIHTM" : "RSA_PSS_RSAE_SHA384",
+      "NAMED_GROUP" : "ECDH_X25519",
+      "TCP_FRAGMENTATION" : true,
+      "CERTIFICATE" : {
+        "ROOT" : "RSA",
+        "LEAF" : {
+          "keySize" : 2048,
+          "keyType" : "RSA"
+        }
+      },
+      "CIPHER_SUITE" : "TLS_AES_256_GCM_SHA384",
+      "INCLUDE_CHANGE_CIPHER_SPEC" : false,
+      "RECORD_LENGTH" : 16384
+    },
+    "AdditionalResultInformation" : [ "Received TransportHandler exception", "Received TransportHandler exception", "Failed SendAction:  | \tMessages: SERVER_HELLO, ENCRYPTED_EXTENSIONS, CERTIFICATE, CERTIFICATE_VERIFY, FINISHED | " ],
+    "AdditionalTestInformation" : null,
+    "SrcPort" : 39411,
+    "DstPort" : 56616,
+    "StartTimestamp" : "2026-09-13T00:03:22.809Z",
+    "EndTimestamp" : "2026-09-13T00:03:22.841Z",
+    "Stacktrace" : "org.opentest4j.AssertionFailedError: The workflow could not be executed as planned! ==> expected: <true> but was: <false>",
+    "uuid" : "5330AC57761A2FB1E88E38BA8AF27C805745DC3816EC5715CDCA862C2DC26CAB"
+  }, {
+    "Result" : "FULLY_FAILED",
+    "DisplayName" : "[15] Combination{NAMED_GROUP=NAMED_GROUP = SECP256R1, SIG_HASH_ALGORIHTM=SIG_HASH_ALGORIHTM = RSA_PSS_RSAE_SHA256, CIPHER_SUITE=CIPHER_SUITE = TLS_AES_256_GCM_SHA384, TCP_FRAGMENTATION=TCP_FRAGMENTATION = false, CERTIFICATE=Public Key Type: RSA,RSA Modulus: 2048,Certificate Signature Type: SHA256_WITH_RSA_ENCRYPTION, INCLUDE_CHANGE_CIPHER_SPEC=INCLUDE_CHANGE_CIPHER_SPEC = false, RECORD_LENGTH=RECORD_LENGTH = 16384}",
+    "ParameterCombination" : {
+      "SIG_HASH_ALGORIHTM" : "RSA_PSS_RSAE_SHA256",
+      "NAMED_GROUP" : "SECP256R1",
+      "TCP_FRAGMENTATION" : false,
+      "CERTIFICATE" : {
+        "ROOT" : "RSA",
+        "LEAF" : {
+          "keySize" : 2048,
+          "keyType" : "RSA"
+        }
+      },
+      "CIPHER_SUITE" : "TLS_AES_256_GCM_SHA384",
+      "INCLUDE_CHANGE_CIPHER_SPEC" : false,
+      "RECORD_LENGTH" : 16384
+    },
+    "AdditionalResultInformation" : [ "Received TransportHandler exception", "Received TransportHandler exception", "Failed SendAction:  | \tMessages: SERVER_HELLO, ENCRYPTED_EXTENSIONS, CERTIFICATE, CERTIFICATE_VERIFY, FINISHED | " ],
+    "AdditionalTestInformation" : null,
+    "SrcPort" : 39411,
+    "DstPort" : 56626,
+    "StartTimestamp" : "2026-09-13T00:03:22.964Z",
+    "EndTimestamp" : "2026-09-13T00:03:22.980Z",
+    "Stacktrace" : "org.opentest4j.AssertionFailedError: The workflow could not be executed as planned! ==> expected: <true> but was: <false>",
+    "uuid" : "707CFAE55692D4CCE9A9802A839398533EA0B5BFC8006D5A88869B6613687212"
+  }, {
+    "Result" : "FULLY_FAILED",
+    "DisplayName" : "[16] Combination{NAMED_GROUP=NAMED_GROUP = SECP256R1, SIG_HASH_ALGORIHTM=SIG_HASH_ALGORIHTM = RSA_PSS_RSAE_SHA384, CIPHER_SUITE=CIPHER_SUITE = TLS_CHACHA20_POLY1305_SHA256, TCP_FRAGMENTATION=TCP_FRAGMENTATION = true, CERTIFICATE=Public Key Type: RSA,RSA Modulus: 1024,Certificate Signature Type: SHA256_WITH_RSA_ENCRYPTION, INCLUDE_CHANGE_CIPHER_SPEC=INCLUDE_CHANGE_CIPHER_SPEC = false, RECORD_LENGTH=RECORD_LENGTH = 16384}",
+    "ParameterCombination" : {
+      "SIG_HASH_ALGORIHTM" : "RSA_PSS_RSAE_SHA384",
+      "NAMED_GROUP" : "SECP256R1",
+      "TCP_FRAGMENTATION" : true,
+      "CERTIFICATE" : {
+        "ROOT" : "RSA",
+        "LEAF" : {
+          "keySize" : 1024,
+          "keyType" : "RSA"
+        }
+      },
+      "CIPHER_SUITE" : "TLS_CHACHA20_POLY1305_SHA256",
+      "INCLUDE_CHANGE_CIPHER_SPEC" : false,
+      "RECORD_LENGTH" : 16384
+    },
+    "AdditionalResultInformation" : [ "Received TransportHandler exception", "Received TransportHandler exception", "Failed SendAction:  | \tMessages: SERVER_HELLO, ENCRYPTED_EXTENSIONS, CERTIFICATE, CERTIFICATE_VERIFY, FINISHED | " ],
+    "AdditionalTestInformation" : null,
+    "SrcPort" : 39411,
+    "DstPort" : 56636,
+    "StartTimestamp" : "2026-09-13T00:03:23.081Z",
+    "EndTimestamp" : "2026-09-13T00:03:23.107Z",
+    "Stacktrace" : "org.opentest4j.AssertionFailedError: The workflow could not be executed as planned! ==> expected: <true> but was: <false>",
+    "uuid" : "0164BBAB5D80F825FAFB7A6D6D6E9FDCEE133704E9C90A163DFC4013ACB8F7C0"
+  } ],
+  "Result" : "FULLY_FAILED",
+  "DisabledReason" : null,
+  "FailedReason" : "org.opentest4j.AssertionFailedError: The workflow could not be executed as planned! ==> expected: <true> but was: <false>",
+  "ExecutionTime" : 2415,
+  "GenerationTime" : 381,
+  "FailureInducingCombinations" : [ {
+    "RECORD_LENGTH" : 16384
+  }, {
+    "NAMED_GROUP" : "SECP256R1"
+  }, {
+    "SIG_HASH_ALGORIHTM" : "RSA_PSS_RSAE_SHA384"
+  }, {
+    "INCLUDE_CHANGE_CIPHER_SPEC" : true
+  }, {
+    "TCP_FRAGMENTATION" : true
+  }, {
+    "TCP_FRAGMENTATION" : false
+  }, {
+    "NAMED_GROUP" : "ECDH_X25519"
+  }, {
+    "CERTIFICATE" : {
+      "ROOT" : "RSA",
+      "LEAF" : {
+        "keySize" : 2048,
+        "keyType" : "RSA"
+      }
+    }
+  }, {
+    "INCLUDE_CHANGE_CIPHER_SPEC" : false
+  }, {
+    "SIG_HASH_ALGORIHTM" : "RSA_PSS_RSAE_SHA256"
+  }, {
+    "CIPHER_SUITE" : "TLS_CHACHA20_POLY1305_SHA256"
+  }, {
+    "CIPHER_SUITE" : "TLS_AES_256_GCM_SHA384"
+  }, {
+    "CERTIFICATE" : {
+      "ROOT" : "RSA",
+      "LEAF" : {
+        "keySize" : 1024,
+        "keyType" : "RSA"
+      }
+    }
+  }, {
+    "CIPHER_SUITE" : "TLS_AES_128_GCM_SHA256"
+  }, {
+    "CERTIFICATE" : {
+      "ROOT" : "ECDH_ECDSA",
+      "LEAF" : {
+        "keySize" : 4096,
+        "keyType" : "RSA"
+      }
+    }
+  }, {
+    "CERTIFICATE" : {
+      "ROOT" : "DSA",
+      "LEAF" : {
+        "keySize" : 1024,
+        "keyType" : "RSA"
+      }
+    }
+  }, {
+    "CERTIFICATE" : {
+      "ROOT" : "DSA",
+      "LEAF" : {
+        "keySize" : 2048,
+        "keyType" : "RSA"
+      }
+    }
+  }, {
+    "CERTIFICATE" : {
+      "ROOT" : "RSA",
+      "LEAF" : {
+        "keySize" : 4096,
+        "keyType" : "RSA"
+      }
+    }
+  }, {
+    "CERTIFICATE" : {
+      "ROOT" : "ECDH_ECDSA",
+      "LEAF" : {
+        "keySize" : 1024,
+        "keyType" : "RSA"
+      }
+    }
+  }, {
+    "CERTIFICATE" : {
+      "ROOT" : "DSA",
+      "LEAF" : {
+        "keySize" : 4096,
+        "keyType" : "RSA"
+      }
+    }
+  }, {
+    "CERTIFICATE" : {
+      "ROOT" : "ECDH_ECDSA",
+      "LEAF" : {
+        "keySize" : 2048,
+        "keyType" : "RSA"
+      }
+    }
+  } ],
+  "Score" : {
+    "Interoperability" : 0.0,
+    "Handshake" : 0.0
+  },
+  "HasStateWithAdditionalResultInformation" : true,
+  "HasVaryingAdditionalResultInformation" : true,
+  "TestMethod" : "happyFlow",
+  "TestClass" : "de.rub.nds.tlstest.suite.tests.both.tls13.rfc8446.HappyFlow",
+  "CaseCount" : 16,
+  "MetaData" : {
+    "description" : "A benign handshake executed with all parameter combinations  that affect a regular handshake",
+    "severityLevels" : {
+      "Handshake" : 80,
+      "Interoperability" : 100
+    },
+    "rfc" : {
+      "number" : 8446,
+      "section" : "2.  Protocol Overview"
+    },
+    "tags" : [ "both", "tls13", "rfc8446", "HappyFlow", "happyFlow" ]
+  }
+}

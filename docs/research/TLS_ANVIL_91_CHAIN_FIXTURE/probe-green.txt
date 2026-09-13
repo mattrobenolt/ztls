@@ -1,0 +1,6 @@
+# probe green (installed patched jar; hardened exact-count/diversity/includeCA assertions) — 2026-09-13T00:25:43Z — exit 0
+code_source=file:/Users/matt/code/worktrees/ztls/pi-worktree-f70a0434-2b8f-4cde-b3ab-68a98c36ca48-s0-0/conformance/zig-out/tools/lib/tls-test-framework-1.5.0.jar
+leaf_public_key_types=[dsa, ecdh_ecdsa, rsa, rsaes_oaep, rsassa_pss]
+leaf_rsa_modulus_bits=[1024, 2048, 4096]
+PROBE_OK signing-cert configs carry critical basicConstraints cA=true
+exit=0

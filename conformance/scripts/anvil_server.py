@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import hashlib
 import json
 import os
 import platform
@@ -8,12 +9,24 @@ import socket
 import subprocess
 import sys
 import time
+import zipfile
 from datetime import UTC, datetime
 from pathlib import Path
 
 CONF_DIR = Path(__file__).resolve().parents[1]
 SERVER_BIN = CONF_DIR / "zig-out" / "bin" / "tlsfuzzer_server"
 ANVIL_JAR = CONF_DIR / "zig-out" / "tools" / "TLS-Anvil.jar"
+# The conformance build patches X509CertificateChainProvider inside the
+# installed tls-test-framework jar (#91: upstream v1.5.0 generates chain
+# signing certs without basicConstraints). Run metadata must hash the ACTUAL
+# installed artifact and its effective class bytes, plus the patch source —
+# a source hash alone cannot prove the patch was applied.
+TLS_TEST_FRAMEWORK_JAR = ANVIL_JAR.parent / "lib" / "tls-test-framework-1.5.0.jar"
+CHAIN_PROVIDER_CLASS = "de/rub/nds/tlstest/framework/utils/X509CertificateChainProvider.class"
+CHAIN_PROVIDER_PATCH_SOURCE = (
+    CONF_DIR / "scripts" / "anvil-chain-provider-patch" / "X509CertificateChainProvider.java"
+)
+CHAIN_PROVIDER_PROVENANCE = Path(f"{TLS_TEST_FRAMEWORK_JAR}.provenance")
 # TLS-Anvil v1.5.0 writes testsuite/tlsattacker logs beside the jar under
 # `logs/default_<date>_*`. Copy any files changed during a run into that run's
 # output directory so timeout/failure evidence stays attached to the capture.
@@ -35,6 +48,64 @@ def git_provenance() -> dict[str, object]:
     return {"revision": revision or "unknown", "dirty": bool(status)}
 
 
+def sha256_file(path: Path) -> str | None:
+    try:
+        with path.open("rb") as handle:
+            return hashlib.sha256(handle.read()).hexdigest()
+    except OSError:
+        return None
+
+
+def chain_provider_provenance() -> dict[str, str | None]:
+    """Live provenance of the installed (possibly patched) tls-test-framework jar.
+
+    Hashes the installed jar file, the effective class bytes read from inside
+    it, and the in-repo patch source, and compares ALL THREE against the
+    digests recorded by apply.sh at patch time. Any drift — including a patch
+    source edited after the jar was built — reports a non-patched status:
+    ``patched`` only when every live digest matches the stamp, ``stale`` when
+    a stamp exists but any digest is missing or differs, ``unpatched`` when
+    no stamp exists at all.
+    """
+    jar_sha256 = sha256_file(TLS_TEST_FRAMEWORK_JAR)
+    class_sha256 = None
+    if jar_sha256 is not None:
+        with zipfile.ZipFile(TLS_TEST_FRAMEWORK_JAR) as archive:
+            class_sha256 = hashlib.sha256(archive.read(CHAIN_PROVIDER_CLASS)).hexdigest()
+    source_sha256 = sha256_file(CHAIN_PROVIDER_PATCH_SOURCE)
+    expected: dict[str, str] = {}
+    try:
+        for line in CHAIN_PROVIDER_PROVENANCE.read_text().splitlines():
+            key, separator, value = line.partition("=")
+            if separator:
+                expected[key.strip()] = value.strip()
+    except OSError:
+        pass
+    if jar_sha256 is None:
+        status = "jar_missing"
+    elif not expected:
+        status = "unpatched"
+    elif (
+        jar_sha256 == expected.get("jar_sha256")
+        and class_sha256 == expected.get("class_sha256")
+        and source_sha256 is not None
+        and source_sha256 == expected.get("source_sha256")
+    ):
+        status = "patched"
+    else:
+        status = "stale"
+    return {
+        "tls_test_framework_jar": str(TLS_TEST_FRAMEWORK_JAR),
+        "jar_sha256": jar_sha256,
+        "chain_provider_class_sha256": class_sha256,
+        "patch_source_sha256": source_sha256,
+        "expected_jar_sha256": expected.get("jar_sha256"),
+        "expected_class_sha256": expected.get("class_sha256"),
+        "expected_source_sha256": expected.get("source_sha256"),
+        "patch_status": status,
+    }
+
+
 def write_run_metadata(output_folder: Path, command: str, port: int) -> None:
     metadata = {
         "generated_at": datetime.now(UTC).isoformat(),
@@ -43,6 +114,7 @@ def write_run_metadata(output_folder: Path, command: str, port: int) -> None:
         "port": port,
         "server_bin": str(SERVER_BIN),
         "tls_anvil_jar": str(ANVIL_JAR),
+        "chain_provider": chain_provider_provenance(),
         "command": command,
     }
     (output_folder / "run_metadata.json").write_text(json.dumps(metadata, indent=2) + "\n")

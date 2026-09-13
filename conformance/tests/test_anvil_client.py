@@ -19,6 +19,13 @@ def test_write_run_metadata_records_command_git_and_client_fields(tmp_path: Path
     assert metadata["trigger_script"] == str(trigger)
     assert "revision" in metadata["git"]
     assert "dirty" in metadata["git"]
+    assert "chain_provider" in metadata
+    assert metadata["chain_provider"]["patch_status"] in {
+        "patched",
+        "unpatched",
+        "stale",
+        "jar_missing",
+    }
 
 
 def test_main_writes_run_metadata_before_launching_tls_anvil():

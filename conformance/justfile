@@ -55,6 +55,7 @@ ci:
     just anvil-adapter-test
     just anvil-server-test
     just anvil-client-test
+    just anvil-chain-patch-test
 
 [doc("Run TLS-Anvil server tests against the ztls server harness")]
 anvil-server *args: build
@@ -124,3 +125,7 @@ anvil-ci-client run_dir timeout_secs="5400": build
 [doc("Run TLS-Anvil client wrapper helper tests")]
 anvil-client-test:
     uv run pytest -q tests/test_anvil_client.py
+
+[doc("Verify the patched TLS-Anvil chain provider generates conforming CA roots")]
+anvil-chain-patch-test: build
+    bash scripts/anvil-chain-provider-patch/probe.sh
