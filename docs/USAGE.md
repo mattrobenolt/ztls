@@ -401,6 +401,36 @@ try stream.writeAll(rec);
 
 Before the handshake is encrypted (`.wait_ch` state), `sendAlert` emits a plaintext alert record. Once handshake keys are installed, all alerts are encrypted.
 
+## Peer alert diagnostics
+
+When the peer sends a non-close_notify alert — a fatal error alert, or a warning-level `user_canceled` — `handleRecord` returns `error.PeerAlert` (RFC 8446 §6.2). The engine retains the exact level and description so you can log it:
+
+```zig
+_ = engine.handleRecord(record, &out) catch |err| switch (err) {
+    error.PeerAlert => {
+        if (engine.lastPeerAlert()) |peer_alert| {
+            // Level/Description are non-exhaustive: unknown codes are legal
+            // on the wire, so tagName can return null. Fall back to the code.
+            const level_name = std.enums.tagName(ztls.alert.Level, peer_alert.level)
+                orelse "unknown";
+            const desc_name = std.enums.tagName(ztls.alert.Description, peer_alert.description)
+                orelse "unknown";
+            // e.g. "peer alert: fatal(2)/handshake_failure(40)"
+            std.log.err("peer alert: {s}({d})/{s}({d})", .{
+                level_name,
+                @intFromEnum(peer_alert.level),
+                desc_name,
+                @intFromEnum(peer_alert.description),
+            });
+        }
+        return err; // the connection is dead
+    },
+    else => return err,
+};
+```
+
+`lastPeerAlert()` returns null until the first peer alert; a later peer alert replaces an earlier one, while `close_notify` (§6.1) and malformed records leave it unchanged, and reinitialization clears it. Do not use `@tagName` directly on these values — unknown codes would panic. The engine still returns `error.PeerAlert`; only the detail is new.
+
 ## Buffer sizing
 
 | Buffer     | Minimum recommended | Why                                      |
@@ -436,6 +466,7 @@ Common drive methods:
 - `txKtlsInfo()` / `rxKtlsInfo()` — copy current traffic-key epoch material for caller-owned Linux kTLS setup.
 - `completeWrite()` — acknowledge the previous emitted record.
 - `selectedAlpnProtocol()` — negotiated ALPN protocol, or `null`.
+- `lastPeerAlert()` — the most recent non-close_notify peer alert (RFC 8446 §6.2), or `null`; see Peer alert diagnostics.
 
 Policy fields (seeded from `Config` at init, overridable after):
 
@@ -469,6 +500,7 @@ Common drive methods:
 - `isConnected()` — true after the client Finished verifies and application keys are installed.
 - `clientServerName()` — SNI hostname, or `null`.
 - `selectedAlpnProtocol()` — negotiated ALPN protocol, or `null`.
+- `lastPeerAlert()` — the most recent non-close_notify peer alert (RFC 8446 §6.2), or `null`; see Peer alert diagnostics.
 - `sendApplicationData(plaintext, out)` / `sendPreparedApplicationData(len, out)` — emit one encrypted application-data record.
 - `sendAlert(description, out)` and `sendKeyUpdate(request, out)` — post-handshake emits.
 - `txKtlsInfo()` / `rxKtlsInfo()` — copy current traffic-key epoch material for caller-owned Linux kTLS setup.

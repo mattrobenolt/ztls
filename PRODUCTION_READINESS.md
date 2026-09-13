@@ -788,7 +788,7 @@ rejection, close_notify half-close, multi-record writes, coalesced-record
 draining, write-after-close rejection, teardown after a failed `accept`), 5 unit
 tests on error classification and buffer sizing, and 2 on the example's helpers.
 
-Four correctness properties are gated by tests rather than asserted in prose:
+The following correctness properties are gated by tests rather than asserted in prose:
 
 - **The reader honors the whole `Io.Reader` contract.** An earlier revision
   repointed `interface.buffer` at the decrypted record in place — zero copy, and
@@ -805,6 +805,17 @@ Four correctness properties are gated by tests rather than asserted in prose:
   CertificateVerificationFailed` asserts the ztls server peer observes
   `TlsAlertReceived` rather than a truncated connection; manual verification
   against `openssl s_server` shows `SSL alert number 42` (`bad_certificate`).
+- **Peer alert detail is observable (#85).** Both handshake engines retain
+  the most recent non-close_notify peer alert and expose it via
+  `lastPeerAlert()` (RFC 8446 §6.2). Tested per return site (3 client, 4
+  server): exact level/description on plaintext, encrypted-handshake, and
+  connected paths for both roles; unknown non-exhaustive codes preserved
+  verbatim; a later alert replaces an earlier one while close_notify (§6.1)
+  and malformed records leave the stored value unchanged; deinit+reinit
+  starts null. Mutation-checked red/green (storage removed → detail
+  assertions fail with `TestExpectedEqual`). Green under Zig 0.15.2 and
+  0.16.0 (`zig build test`). Wrappers (ztls-std/ztls-xev, C ABI) do not
+  propagate the detail; open scope.
 - **Error classification is exhaustive by construction.** One `classify` table
   covers the union of every core handshake error set with no `else` arm, so
   adding a core variant is a compile error in the integration until it is

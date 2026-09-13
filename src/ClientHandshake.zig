@@ -452,6 +452,9 @@ peer_chain: ArrayBuffer([]const u8, 8) = .empty,
 post_handshake_key_update_count: u8 = 0,
 /// Consecutive NewSessionTickets seen with no intervening application data.
 post_handshake_new_session_ticket_count: u8 = 0,
+/// Most recent non-close_notify peer alert (RFC 8446 §6.2); close_notify (§6.1)
+/// never sets it.
+last_peer_alert: ?alert.Alert = null,
 /// Ordered verification progress through the server flight. Finished emission
 /// requires Certificate, CertificateVerify, and Finished to verify in sequence.
 server_flight_progress: ServerFlightProgress = .none,
@@ -589,6 +592,13 @@ pub fn deinit(self: *ClientHandshake) void {
 /// `.write` event or send-method result.
 pub fn completeWrite(self: *ClientHandshake) void {
     self.pending_write.clear();
+}
+
+/// Most recent non-close_notify peer alert (RFC 8446 §6.2), or null if none.
+/// A later peer alert replaces an earlier one; close_notify (§6.1) and
+/// malformed records leave it unchanged.
+pub fn lastPeerAlert(self: *const ClientHandshake) ?alert.Alert {
+    return self.last_peer_alert;
 }
 
 // ziglint-ignore: Z024, Z015
@@ -1096,14 +1106,18 @@ fn processHandshakeRecord(
                 },
                 .alert => {
                     const a = try alert.parse(dec.content);
-                    return if (a.isCloseNotify()) null else error.PeerAlert;
+                    if (a.isCloseNotify()) return null;
+                    self.last_peer_alert = a;
+                    return error.PeerAlert;
                 },
                 else => return error.UnexpectedRecord,
             }
         },
         .alert => {
             const a = try alert.parse(record[frame.header_len..][0..hdr.length()]);
-            return if (a.isCloseNotify()) null else error.PeerAlert;
+            if (a.isCloseNotify()) return null;
+            self.last_peer_alert = a;
+            return error.PeerAlert;
         },
         else => return error.UnexpectedRecord,
     }
@@ -1831,7 +1845,9 @@ fn receiveConnected(self: *ClientHandshake, record: []u8, out: []u8) ReceiveErro
         },
         .alert => {
             const a = try alert.parse(dec.content);
-            return if (a.isCloseNotify()) .closed else error.PeerAlert;
+            if (a.isCloseNotify()) return .closed;
+            self.last_peer_alert = a;
+            return error.PeerAlert;
         },
         else => return error.UnexpectedRecord,
     }
@@ -2647,16 +2663,94 @@ test "processFlight: rejects wrong server Finished verify_data" {
     try expectEncryptedAlert(&peer, rec, .decrypt_error);
 }
 
-// RFC 8446 §6 — a fatal plaintext alert during wait_sh aborts the handshake.
+// RFC 8446 §6 — a fatal plaintext alert during wait_sh aborts the handshake
+// and records the peer's exact level/description for lastPeerAlert (#85).
 test "handleRecord: plaintext fatal alert in wait_sh" {
     var hs: ClientHandshake = .init(try testConfig(rfc8448_client_keypair));
     defer hs.deinit();
     hs.injectClientHello(&rfc8448_client_hello);
+    try testing.expect(hs.lastPeerAlert() == null);
 
     var alert_record = [_]u8{ 0x15, 0x03, 0x03, 0x00, 0x02, 0x02, 0x28 };
     var out: [64]u8 = undefined;
     try testing.expectError(error.PeerAlert, hs.handleRecord(&alert_record, &out));
     try testing.expectEqual(.wait_sh, hs.state);
+    try testing.expectEqual(
+        @as(?alert.Alert, .{ .level = .fatal, .description = .handshake_failure }),
+        hs.lastPeerAlert(),
+    );
+
+    // Deinit + reinitialization of the same engine starts null (#85).
+    hs.deinit();
+    hs = .init(try testConfig(rfc8448_client_keypair));
+    try testing.expect(hs.lastPeerAlert() == null);
+}
+
+// RFC 8446 §6 — Alert messages are exactly two bytes. A malformed alert
+// record is a parse error, not a peer alert: it must not invent or replace
+// the stored lastPeerAlert (#85).
+test "handleRecord: malformed alert record does not set or replace lastPeerAlert" {
+    var hs: ClientHandshake = .init(try testConfig(rfc8448_client_keypair));
+    defer hs.deinit();
+    hs.injectClientHello(&rfc8448_client_hello);
+
+    // 3-byte alert body: rejected by alert.parse as InvalidAlertLength.
+    var bad = [_]u8{ 0x15, 0x03, 0x03, 0x00, 0x03, 0x02, 0x0a, 0x00 };
+    var out: [64]u8 = undefined;
+    try testing.expectError(error.InvalidAlertLength, hs.handleRecord(&bad, &out));
+    try testing.expect(hs.lastPeerAlert() == null);
+
+    var fatal = [_]u8{ 0x15, 0x03, 0x03, 0x00, 0x02, 0x02, 0x28 };
+    try testing.expectError(error.PeerAlert, hs.handleRecord(&fatal, &out));
+    try testing.expectError(error.InvalidAlertLength, hs.handleRecord(&bad, &out));
+    try testing.expectEqual(
+        @as(?alert.Alert, .{ .level = .fatal, .description = .handshake_failure }),
+        hs.lastPeerAlert(),
+    );
+}
+
+// RFC 8446 §6 — AlertLevel and AlertDescription are non-exhaustive; unknown
+// codes are legal on the wire and must be preserved verbatim for diagnostics.
+test "handleRecord: unknown alert codes are preserved" {
+    var hs: ClientHandshake = .init(try testConfig(rfc8448_client_keypair));
+    defer hs.deinit();
+    hs.injectClientHello(&rfc8448_client_hello);
+
+    var unknown = [_]u8{ 0x15, 0x03, 0x03, 0x00, 0x02, 0x05, 0xee };
+    var out: [64]u8 = undefined;
+    try testing.expectError(error.PeerAlert, hs.handleRecord(&unknown, &out));
+    try testing.expect(hs.lastPeerAlert() != null);
+    const got = hs.lastPeerAlert().?;
+    try testing.expectEqual(@as(u8, 5), @intFromEnum(got.level));
+    try testing.expectEqual(@as(u8, 0xee), @intFromEnum(got.description));
+}
+
+// RFC 8446 §6 — a later non-close_notify alert replaces an earlier one;
+// close_notify (§6.1) and malformed records leave the stored detail unchanged.
+test "handleRecord: lastPeerAlert replaced by later alert, preserved by close/malformed" {
+    var hs: ClientHandshake = .init(try testConfig(rfc8448_client_keypair));
+    defer hs.deinit();
+    hs.injectClientHello(&rfc8448_client_hello);
+    var out: [64]u8 = undefined;
+
+    var first = [_]u8{ 0x15, 0x03, 0x03, 0x00, 0x02, 0x02, 0x28 }; // fatal handshake_failure
+    try testing.expectError(error.PeerAlert, hs.handleRecord(&first, &out));
+    // user_canceled is warning-level but not close_notify (§6.1).
+    var second = [_]u8{ 0x15, 0x03, 0x03, 0x00, 0x02, 0x01, 0x5a };
+    try testing.expectError(error.PeerAlert, hs.handleRecord(&second, &out));
+    try testing.expectEqual(
+        @as(?alert.Alert, .{ .level = .warning, .description = .user_canceled }),
+        hs.lastPeerAlert(),
+    );
+
+    var close = [_]u8{ 0x15, 0x03, 0x03, 0x00, 0x02, 0x01, 0x00 };
+    try testing.expectEqual(Event.none, try hs.handleRecord(&close, &out));
+    var bad = [_]u8{ 0x15, 0x03, 0x03, 0x00, 0x03, 0x02, 0x28, 0x00 };
+    try testing.expectError(error.InvalidAlertLength, hs.handleRecord(&bad, &out));
+    try testing.expectEqual(
+        @as(?alert.Alert, .{ .level = .warning, .description = .user_canceled }),
+        hs.lastPeerAlert(),
+    );
 }
 
 // RFC 8446 §D.4 — CCS before the first ClientHello is outside the compatibility window.
@@ -2709,6 +2803,10 @@ test "handleRecord: encrypted fatal alert during server flight" {
     var out: [64]u8 = undefined;
     try testing.expectError(error.PeerAlert, hs.handleRecord(wire[0..rec.len], &out));
     try testing.expectEqual(.wait_ee, hs.state);
+    try testing.expectEqual(
+        @as(?alert.Alert, .{ .level = .fatal, .description = .handshake_failure }),
+        hs.lastPeerAlert(),
+    );
 }
 
 // RFC 8446 §4.6.3 — KeyUpdate is post-handshake only.
@@ -3274,7 +3372,11 @@ test "handleRecord: close_notify returns closed" {
     var rx_buf: [64]u8 = undefined;
     @memcpy(rx_buf[0..wire_rec.len], wire_rec);
     var out: [64]u8 = undefined;
+    try testing.expect(hs.lastPeerAlert() == null);
     try testing.expectEqual(Event.closed, try hs.handleRecord(rx_buf[0..wire_rec.len], &out));
+    // RFC 8446 §6.1 — close_notify is a clean close, not a peer error alert;
+    // it must not set lastPeerAlert (#85).
+    try testing.expect(hs.lastPeerAlert() == null);
 }
 
 // RFC 8446 §6.2 — fatal alerts abort; they are not clean close_notify.
@@ -3291,6 +3393,10 @@ test "handleRecord: fatal alert returns PeerAlert" {
     @memcpy(rx_buf[0..wire_rec.len], wire_rec);
     var out: [64]u8 = undefined;
     try testing.expectError(error.PeerAlert, hs.handleRecord(rx_buf[0..wire_rec.len], &out));
+    try testing.expectEqual(
+        @as(?alert.Alert, .{ .level = .fatal, .description = .unexpected_message }),
+        hs.lastPeerAlert(),
+    );
 }
 
 // RFC 8446 §4.6.1 — a post-handshake NewSessionTicket is parsed and surfaced
