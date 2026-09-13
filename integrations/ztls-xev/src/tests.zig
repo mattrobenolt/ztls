@@ -970,7 +970,7 @@ fn expectCancelThenClose(comptime Xev: type, shutdown: anytype) !void {
 }
 
 test "close: closeReset with a read in flight cancels it, then closes" {
-    if (!kqueue_abortive_close_broken) try expectCancelThenClose(xev, .abortive);
+    try expectCancelThenClose(xev, .abortive);
     if (builtin.os.tag == .linux) try expectCancelThenClose(xev.Epoll, .abortive);
 }
 
