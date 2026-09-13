@@ -1065,3 +1065,244 @@ test "backend.sign: Wycheproof ECDSA P-384 tcId 6 invalid signature" {
         backend.sign.verify(pub_key, .ecdsa_secp384r1_sha384, &msg, &.{}, &sig),
     );
 }
+
+// ---------------------------------------------------------------------------
+// Error-queue hygiene (#88 finding 2) — a public backend wrapper owns the
+// libcrypto error-queue entries it pushes and preserves the caller's
+// ---------------------------------------------------------------------------
+//
+// Failed libcrypto calls may push per-thread error-queue entries. Nothing in
+// ztls reads the queue, so without a guard every attacker-reachable failure
+// (malformed key_share, bad CertificateVerify, failed record decrypt) leaves
+// residue that persists for the life of the thread. Every outermost public
+// fallible wrapper — AEAD seal/open included — brackets its libcrypto calls
+// with ERR_set_mark/ERR_pop_to_mark (see backend_openssl.zig for the bounds,
+// including the DER/PEM key-load caveat on BoringSSL-family lanes). These
+// tests pin the contract through the facade so they run under every backend
+// lane.
+
+const c = @import("c_openssl.zig").openssl;
+const c_openssl = @import("c_openssl.zig");
+
+/// A malformed uncompressed P-256 point (0x04 || 0xff×64): the same shape an
+/// attacker sends in a bad key_share. Rejected by `o2i_ECPublicKey`.
+fn malformedP256Point() [65]u8 {
+    var point: [65]u8 = @splat(0xff);
+    point[0] = 0x04;
+    return point;
+}
+
+/// Push real caller-owned entries with a failed libcrypto call of the
+/// embedder's own (garbage DER through d2i_AutoPrivateKey), so preservation
+/// is proven against genuine queue state, not synthetic plumbing.
+fn pushCallerQueueEntries() void {
+    const bad_der = [_]u8{ 0x30, 0x03, 0x02, 0x01, 0x00 }; // Truncated DER.
+    var ptr: ?[*]const u8 = &bad_der;
+    _ = c.d2i_AutoPrivateKey(null, &ptr, bad_der.len);
+}
+
+/// libcrypto ring capacity per thread (16 slots, 15 usable) — the loop bound
+/// for draining. `ERR_get_error` pops the oldest entry first, so the drained
+/// sequence is the queue's FIFO order.
+const queue_capacity = 16;
+
+fn drainQueueCodes(codes: *[queue_capacity]u64) usize {
+    var count: usize = 0;
+    while (count < queue_capacity) : (count += 1) {
+        const code = c.ERR_get_error();
+        if (code == 0) return count;
+        codes[count] = @intCast(code);
+    }
+    return count;
+}
+
+/// The exact preservation contract: the queue as the wrapper left it (captured
+/// FIRST, before anything clears or pushes) must equal the FIFO code sequence
+/// of one fresh caller push on a quiet queue. Entries the wrapper pushed must
+/// be gone; entries the caller pushed must all survive.
+fn expectQueueMatchesCallerResidue() !void {
+    // Capture what the wrapper left before touching the queue: draining is
+    // destructive, so any later clear/push would destroy the evidence.
+    var got: [queue_capacity]u64 = undefined;
+    const got_count = drainQueueCodes(&got);
+
+    // Canonical FIFO sequence of one fresh caller push on a quiet queue.
+    c.ERR_clear_error();
+    pushCallerQueueEntries();
+    var want: [queue_capacity]u64 = undefined;
+    const want_count = drainQueueCodes(&want);
+    try testing.expect(want_count > 0);
+
+    try testing.expectEqual(want_count, got_count);
+    try testing.expectEqualSlices(u64, want[0..want_count], got[0..got_count]);
+}
+
+// #88 finding 2 — a handled backend failure must leave the error queue as it
+// found it; residue would otherwise accumulate for the thread's lifetime.
+test "backend error-queue hygiene: malformed EC public key leaves no residue (#88)" {
+    c.ERR_clear_error();
+    const point = malformedP256Point();
+
+    try testing.expectError(error.IdentityElement, backend.p256.publicKeyFromRaw(&point));
+    try testing.expect(c.ERR_get_error() == 0);
+}
+
+// #88 finding 2 — pre-existing caller entries (an embedder's own unread
+// errors) must survive a failing ztls wrapper call, and the wrapper's own
+// entries must not linger above them.
+test "backend error-queue hygiene: caller queue entries survive a failing wrapper (#88)" {
+    c.ERR_clear_error();
+    pushCallerQueueEntries();
+    const point = malformedP256Point();
+    try testing.expectError(error.IdentityElement, backend.p256.publicKeyFromRaw(&point));
+
+    try expectQueueMatchesCallerResidue();
+}
+
+// #88 finding 2 — the guard is only safe at outermost wrappers: BoringSSL
+// family queues mark with a per-entry boolean flag, so a nested mark/pop
+// pair would let the outer pop drain the caller's entries. This pins the
+// non-nesting rule on the one wrapper that would nest
+// (privateKeyFromP256Scalar → p256PrivateKeyFromSecret).
+test "backend error-queue hygiene: scalar key load does not nest guards (#88)" {
+    c.ERR_clear_error();
+    pushCallerQueueEntries();
+    const zero_scalar: [32]u8 = @splat(0);
+    try testing.expectError(
+        error.LibcryptoFailed,
+        backend.sign.privateKeyFromP256Scalar(&zero_scalar),
+    );
+
+    try expectQueueMatchesCallerResidue();
+}
+
+// #88 finding 2 — every round must return the queue empty. 32 rounds (> the
+// 16-slot ring) give a leaked or stale mark room to manifest: a mark that is
+// set but never popped would make a later round's errqExit stop above the
+// residue instead of draining it.
+test "backend error-queue hygiene: repeated failures leave the queue empty each round (#88)" {
+    c.ERR_clear_error();
+    const point = malformedP256Point();
+
+    var round: usize = 0;
+    while (round < 32) : (round += 1) {
+        try testing.expectError(error.IdentityElement, backend.p256.publicKeyFromRaw(&point));
+        try testing.expect(c.ERR_get_error() == 0);
+    }
+}
+
+// #88 finding 2 — pins over-drain on the success path: a successful guarded
+// call must leave the caller's entries intact (red if errqExit ever clears
+// the whole queue). No current wrapper pushes on success, so this test does
+// not distinguish defer from errdefer — the defer choice is a documented
+// forward-looking contract in backend_openssl.zig, not a pinned behavior.
+test "backend error-queue hygiene: successful key load preserves caller entries (#88)" {
+    c.ERR_clear_error();
+    pushCallerQueueEntries();
+    // Any in-range scalar: 0x0101…01 < the P-256 group order.
+    const scalar: [32]u8 = @splat(0x01);
+    const key = try backend.p256.privateKeyFromSecret(&scalar);
+    defer backend.p256.freeKey(key);
+
+    try expectQueueMatchesCallerResidue();
+}
+
+// #88 finding 2 — a rejected CertificateVerify signature is an
+// attacker-reachable per-handshake failure; it must leave no residue either.
+test "backend error-queue hygiene: failed signature verification leaves no residue (#88)" {
+    c.ERR_clear_error();
+    const scalar: [32]u8 = @splat(0x01);
+    const priv = try backend.sign.privateKeyFromP256Scalar(&scalar);
+    defer backend.sign.freeKey(priv);
+
+    const bad_sig: [32]u8 = @splat(0);
+    const msg = "error-queue hygiene verify failure";
+    try testing.expectError(
+        error.SignatureVerificationFailed,
+        backend.sign.verify(priv, .ecdsa_secp256r1_sha256, msg, "", &bad_sig),
+    );
+    try testing.expect(c.ERR_get_error() == 0);
+}
+
+// #88 finding 2 — the per-record decrypt path is guarded like every other
+// outermost wrapper: a failed record decrypt must leave nothing behind. On
+// lanes whose EVP pushes on a bad tag (BoringSSL-family) this is red without
+// the guard; OpenSSL's EVP pushes nothing on a bad tag, so there the
+// assertion is vacuous and the fork lanes carry the red.
+test "backend error-queue hygiene: failed record decrypt leaves no residue (#88)" {
+    inline for (backend.capabilities.cipher_suites) |suite| {
+        c.ERR_clear_error();
+        const key_bytes: [keyLenForSuite(suite)]u8 = @splat(0xab);
+        const nonce: [backend.aead.nonce_len]u8 = @splat(0xcd);
+        const ad = "tls-record-header";
+        const plaintext = "backend-aead-contract";
+
+        var ctx: backend.aead.Context = try backend.aead.init(suite, &key_bytes);
+        defer backend.aead.deinit(&ctx);
+
+        var ciphertext: [plaintext.len]u8 = undefined;
+        var tag: [backend.aead.tag_len]u8 = undefined;
+        try backend.aead.encrypt(&ctx, &ciphertext, &tag, plaintext, ad, &nonce);
+
+        tag[0] ^= 0xff;
+        var decrypted: [plaintext.len]u8 = undefined;
+        try testing.expectError(
+            error.AuthenticationFailed,
+            backend.aead.decrypt(&ctx, &decrypted, &ciphertext, &tag, ad, &nonce),
+        );
+        try testing.expect(c.ERR_get_error() == 0);
+    }
+}
+
+// #88 finding 2 — the exact preservation contract on the per-record path:
+// after a failed decrypt the queue holds exactly the caller's entries and
+// nothing above them. Red under over-drain (an unconditional clear wipes the
+// caller's entries) and, on lanes whose EVP pushes on a bad tag, under guard
+// removal.
+test "backend error-queue hygiene: failed decrypt preserves caller entries exactly (#88)" {
+    c.ERR_clear_error();
+    pushCallerQueueEntries();
+
+    const key_bytes: [keyLenForSuite(.aes_128_gcm_sha256)]u8 = @splat(0xab);
+    const nonce: [backend.aead.nonce_len]u8 = @splat(0xcd);
+    const plaintext = "backend-aead-contract";
+    var ctx: backend.aead.Context = try backend.aead.init(.aes_128_gcm_sha256, &key_bytes);
+    defer backend.aead.deinit(&ctx);
+
+    var ciphertext: [plaintext.len]u8 = undefined;
+    var tag: [backend.aead.tag_len]u8 = undefined;
+    try backend.aead.encrypt(&ctx, &ciphertext, &tag, plaintext, "", &nonce);
+
+    tag[0] ^= 0xff;
+    var decrypted: [plaintext.len]u8 = undefined;
+    try testing.expectError(
+        error.AuthenticationFailed,
+        backend.aead.decrypt(&ctx, &decrypted, &ciphertext, &tag, "", &nonce),
+    );
+
+    try expectQueueMatchesCallerResidue();
+}
+
+// #88 finding 2 — pins the actual lane behavior for DER key loads. The
+// BoringSSL-family d2i key parsers call ERR_clear_error between parse
+// fallbacks (aws-lc 5.5.0 evp_asn1.c, boringssl evp_asn1.cc), destroying
+// pre-existing caller entries — and the guard's mark — before errqExit
+// runs: caller preservation is impossible on that path there, and the
+// pinned result is an empty queue (the wrapper leaves no residue of its
+// own). OpenSSL's d2i path does not clear between fallbacks, so the
+// caller's entries survive exactly there.
+test "backend error-queue hygiene: DER key load preservation is lane-dependent (#88)" {
+    c.ERR_clear_error();
+    pushCallerQueueEntries();
+    const bad_der = [_]u8{ 0x30, 0x03, 0x02, 0x01, 0x00 }; // Truncated DER.
+    try testing.expectError(
+        error.LibcryptoFailed,
+        backend.sign.privateKeyFromDer(&bad_der),
+    );
+
+    if (comptime c_openssl.is_boringssl_family) {
+        try testing.expect(c.ERR_get_error() == 0);
+    } else {
+        try expectQueueMatchesCallerResidue();
+    }
+}

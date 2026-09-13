@@ -10,6 +10,16 @@ pub fn addSteps(b: *Build, opts: struct {
     /// test to stderr instead of Zig's TUI. Null when the lazy dependency has
     /// not been fetched (e.g. when building non-test steps).
     ztest: ?*Build.Dependency = null,
+    /// The ztls library module, for standalone check executables that must
+    /// control the process environment before any libcrypto call. Null when
+    /// no such executable applies to the selected backend.
+    ztls_mod: ?*Build.Module = null,
+    /// Build target for standalone check executables. Required: the only
+    /// caller (build.zig) always passes it.
+    target: Build.ResolvedTarget,
+    /// Optimization mode for standalone check executables. Required: the
+    /// only caller (build.zig) always passes it.
+    optimize: std.builtin.OptimizeMode,
 }) void {
     const mod_tests = b.addTest(.{
         .root_module = opts.test_mod,
@@ -32,4 +42,34 @@ pub fn addSteps(b: *Build, opts: struct {
         "Install the test binary for external tooling (valgrind, etc.)",
     );
     valgrind_step.dependOn(&install_tests.step);
+
+    // #88 finding 2 — allocation-count evidence for the error-queue guards.
+    // CRYPTO_set_mem_functions must be installed before the first libcrypto
+    // allocation, so this check is a standalone executable with its own
+    // build step, never part of the shared test binary. Registered only for
+    // OpenSSL-lane builds: BoringSSL-family libcrypto has no
+    // CRYPTO_set_mem_functions (its err queue uses system malloc directly),
+    // so the counting-hook check cannot exist there; queue hygiene still
+    // applies on those lanes.
+    if (opts.ztls_mod) |ztls_mod| {
+        const errq_mod = b.createModule(.{
+            .root_source_file = b.path("src/test/errq_alloc_check.zig"),
+            .target = opts.target,
+            .optimize = opts.optimize,
+        });
+        errq_mod.addImport("ztls", ztls_mod);
+        errq_mod.link_libc = true;
+        errq_mod.linkSystemLibrary("crypto", .{});
+
+        const errq_exe = b.addExecutable(.{
+            .name = "errq-alloc-check",
+            .root_module = errq_mod,
+        });
+        const run_errq = b.addRunArtifact(errq_exe);
+        const errq_step = b.step(
+            "errq-alloc-check",
+            "Run the #88 error-queue allocation-count check (OpenSSL backend)",
+        );
+        errq_step.dependOn(&run_errq.step);
+    }
 }

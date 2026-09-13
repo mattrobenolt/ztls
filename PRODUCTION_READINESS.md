@@ -413,11 +413,57 @@ data to openssl s_server and receives the HTTP response.
     `InternalError` with the owned socket closed and `deinit` still a no-op;
     and the retry policy itself is pinned by comptime-draw tests on both
     curves, in which a regressed `catch continue` fails the error/count
-    assertions instead of hanging. Finding 2 remains OPEN: the OpenSSL error
-    queue is never drained, so under a persistent allocator-failure condition
-    every subsequent handshake is refused until the embedder intervenes (the
-    reporter measured still-dead at t+120s without an `ERR_clear_error()`);
-    #88 stays open for that error-queue report.
+    assertions instead of hanging. Finding 2 is PARTIAL: the
+    library-side residue is eliminated and regression-tested on all three
+    backends — every outermost public fallible backend wrapper (shared EC
+    P-256/P-384 key construction and ECDH, X25519, key loading, signature
+    sign/verify, KEM, and the per-record AEAD seal/open paths) brackets its
+    libcrypto calls with `ERR_set_mark`/`ERR_pop_to_mark`, so a handled
+    failure removes exactly the queue entries it pushed and preserves the
+    caller's, up to the per-thread ring capacity (16 slots, 15 usable —
+    beyond that libcrypto itself evicts the oldest entries, including the
+    caller's). Two bounds are documented on the guard and pinned by tests:
+    DER/PEM key loads cannot preserve pre-existing caller entries on the
+    BoringSSL-family backends (their d2i key parsers call `ERR_clear_error`
+    between parse fallbacks, destroying the caller's entries and the mark
+    before the guard's pop runs; the wrapper still leaves no residue of its
+    own there — pinned by a lane-dependent test), and a caller's pending
+    `ERR_set_mark` is consumed on those backends even when the wrapper
+    pushes nothing (per-entry boolean flag; the caller's entries survive
+    until the caller's own later pop). The guard is non-nested by
+    construction (the one nesting case, `privateKeyFromP256Scalar` → the
+    shared p256 secret-loading impl, is factored into an unguarded impl
+    behind two guarded fronts) because the pinned BoringSSL-family err
+    sources (aws-lc 5.5.0, boringssl 0.20260803.0) mark with a per-entry
+    boolean flag, which nested mark/pop would let the outer pop drain the
+    caller's entries; that convention is load-bearing and pinned by a test
+    that goes red on the AWS-LC lane under a nesting mutation (OpenSSL's
+    counted marks make the same mutation benign there). Queue hygiene is
+    proven by facade tests that were red pre-fix on every lane (OpenSSL
+    3.6.4 — the devshell version actually linked for these runs: EC
+    residue, caller-preservation, repeated-failures-empty; AWS-LC
+    additionally: bad-signature, bad-tag-decrypt, and DER-key-load
+    residue) and by mutation checks (guard removal, over-drain to
+    `ERR_clear_error`, reintroduced nesting). Allocation behavior is
+    asserted by a dedicated standalone executable (`zig build
+    errq-alloc-check`, OpenSSL lane only; wired into `just test`) that
+    installs counting `CRYPTO_set_mem_functions` hooks before any libcrypto
+    call and, after fully warming the exact failing operation and clearing
+    the warmup errors, asserts that each further failing guarded call
+    returns the live-allocation count to the baseline snapshot — the
+    memory assertion runs before the queue assertion, and with the guards
+    removed the executable fails on the memory axis (`AllocationGrowth`),
+    as it also does under a deliberate per-call libcrypto-allocated leak in
+    `errqExit`. This is allocation-count retention evidence, not
+    recovery-after-exhaustion: the hooks count and never fail, and
+    realloc-based byte growth is invisible to the counts (documented in the
+    executable). BoringSSL-family libcrypto has no
+    `CRYPTO_set_mem_functions`, so the counting-hook check cannot exist
+    there (queue hygiene still applies). #88 stays open: these checks do
+    not reproduce the embedder's permanent 4 MiB arena retention or prove
+    recovery from allocation failure. The reporter observed recovery after
+    clearing the queue; the guarded library still needs the embedder's
+    arena workload retested before closure.
   - H22 — `entropy.fillLinux` panics on an unexpected `getrandom` errno.
     Decision: keep the fail-stop for the entropy source. For a CSPRNG,
     proceeding without entropy is never acceptable; the only reachable
