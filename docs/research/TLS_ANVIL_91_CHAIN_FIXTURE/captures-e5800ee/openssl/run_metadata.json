@@ -1,0 +1,37 @@
+{
+  "generated_at": "2026-09-13T05:12:36.792433+00:00",
+  "host": "runnervmlun5p",
+  "git": {
+    "revision": "e5800ee",
+    "dirty": false
+  },
+  "port": 50235,
+  "client_bin": "/home/runner/work/ztls/ztls/conformance/zig-out/bin/anvil_client",
+  "trigger_script": "zig-out/anvil/client/ci-34739623436/logs/trigger_client.py",
+  "tls_anvil_jar": "/home/runner/work/ztls/ztls/conformance/zig-out/tools/TLS-Anvil.jar",
+  "chain_provider": {
+    "tls_test_framework_jar": "/home/runner/work/ztls/ztls/conformance/zig-out/tools/lib/tls-test-framework-1.5.0.jar",
+    "jar_sha256": "073a470f783794b83d6712db873789d7594d24d2d9baf2a0376eb3b768cf6eaf",
+    "chain_provider_class_sha256": "d6646a915721dd15aeb368b5bbfc307a54bbbe37361c1de5a27ed611a048dba0",
+    "patch_source_sha256": "8a9d4c26211a0f87f8a6b40f2c937c94f89d0d39cbb1fcbf74a6a84b229d6e84",
+    "expected_jar_sha256": "073a470f783794b83d6712db873789d7594d24d2d9baf2a0376eb3b768cf6eaf",
+    "expected_class_sha256": "d6646a915721dd15aeb368b5bbfc307a54bbbe37361c1de5a27ed611a048dba0",
+    "expected_source_sha256": "8a9d4c26211a0f87f8a6b40f2c937c94f89d0d39cbb1fcbf74a6a84b229d6e84",
+    "patch_status": "patched"
+  },
+  "validity_adapter": {
+    "x509_attacker_jar": "/home/runner/work/ztls/ztls/conformance/zig-out/tools/lib/x509-attacker-4.3.10.jar",
+    "jar_sha256": "534c4ed10cb0c4e1a9edc65083e725a1ea8c63a75a865ceb18dd0aca45f1aedf",
+    "adapter_class_sha256": "4b2190bebef9dd7b46d794002010a0da860c5e8cd14f997ced254b8e708621de",
+    "package_info_class_sha256": "9a4308ab19c561dff78d81b5f3dfbc382591d0a3b8b8532c9beb0cbb70e9a6dd",
+    "adapter_source_sha256": "806ff6122f7fc6cb70deb7709e394cdc81c30a0df3d5edfd0d02c3a04cdd1aa2",
+    "package_info_source_sha256": "092bb326cbdb27e9f77e229c28656521671a717fb8970c94dfef215dca8262c6",
+    "expected_jar_sha256": "534c4ed10cb0c4e1a9edc65083e725a1ea8c63a75a865ceb18dd0aca45f1aedf",
+    "expected_adapter_class_sha256": "4b2190bebef9dd7b46d794002010a0da860c5e8cd14f997ced254b8e708621de",
+    "expected_package_info_class_sha256": "9a4308ab19c561dff78d81b5f3dfbc382591d0a3b8b8532c9beb0cbb70e9a6dd",
+    "expected_adapter_source_sha256": "806ff6122f7fc6cb70deb7709e394cdc81c30a0df3d5edfd0d02c3a04cdd1aa2",
+    "expected_package_info_source_sha256": "092bb326cbdb27e9f77e229c28656521671a717fb8970c94dfef215dca8262c6",
+    "patch_status": "patched"
+  },
+  "command": "java -jar /home/runner/work/ztls/ztls/conformance/zig-out/tools/TLS-Anvil.jar -disableTcpDump -strength 1 -parallelTests 1 -parallelHandshakes 1 -outputFolder zig-out/anvil/client/ci-34739623436 client -port 50235 -triggerScript zig-out/anvil/client/ci-34739623436/logs/trigger_client.py"
+}

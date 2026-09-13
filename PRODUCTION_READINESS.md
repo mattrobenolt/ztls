@@ -59,10 +59,10 @@ ztls is production-ready when all six pillars are `PROVEN`:
 
 | Pillar | Status | One-line |
 |---|---|---|
-| 1. Correctness | `PARTIAL` | AWS-LC capture `7ae6014` has zero unexpected results, but port-bound diagnostics expose certificate-expiry rejections in nominally successful negative tests. Fixture validity and historical failures remain unresolved (#91). Full TLS-Anvil remains scheduled-only; BoGo is explicitly deferred. |
+| 1. Correctness | `PROVEN` | Both #91 fixture defects have red/green regressions and fresh strict-complete captures on all three backends at `e5800ee`: zero unexpected results and zero validity rejections. Historical failure causality remains bounded by the retained evidence. Full TLS-Anvil remains scheduled-only; BoGo is explicitly deferred. |
 | 2. Ergonomics | `PROVEN` | CI-gated deterministic examples cover client and server roles across io_uring, epoll, and `std.net.Stream`; Config setup, server credentials, and `Outbox` cover the supported core ergonomics boundary. Two higher-order integrations are `PARTIAL`, both CI-gated under Zig 0.16: `ztls-std` (#77, `std.Io`) lacks wrapper-level interop, client auth, and concurrent split halves; `ztls-xev` (#76, libxev completions) has both roles on io_uring (CI-gated) and kqueue (CI-gated), with in-flight read and write cancellation proven on io_uring and epoll; kqueue cancellation remains the unproven island (#83). |
 | 3. Performance | `PROVEN` | n=10 captures on x86_64 (c7i.2xlarge), aarch64 (c7g.2xlarge), and macOS (Apple M1 Max) with formal CIs (p=0.000): ztls beats libssl on every comparable app-data row on all three platforms and rustls on all AES-GCM rows; regression gate committed. |
-| 4. Providers | `PARTIAL` | OpenSSL, AWS-LC, and BoringSSL have CI-gated backend lanes and historical clean TLS-Anvil captures. The green AWS-LC aggregate at `7ae6014` masks expiry rejections in negative tests. Fixture validity and historical KeyUpdate/client-authentication failures remain unresolved (#91). Cert-chain stays ztls/std; FIPS capability checks are comptime-only; PQ/P-384 is #6. |
+| 4. Providers | `PROVEN` | OpenSSL, AWS-LC, and BoringSSL have CI-gated backend lanes and fresh strict-complete TLS-Anvil captures at `e5800ee`, with both fixture patches verified and no unexpected results (#91). Cert-chain stays ztls/std; FIPS capability checks are comptime-only; PQ/P-384 is #6. |
 | 5. Marketing | `PROVEN` | README leads with the proven performance story (n=10, both architectures, honest ChaCha20 loss) and the adversarial security posture; the why-ztls narrative and headline benchmarks are on the front door, backed by PERFORMANCE.md. |
 | 6. User docs | `PROVEN` | Root on-ramp plus `docs/USAGE.md` cover fresh-project setup, supported surface, drive loops, API reference, and CI-gated integration examples. |
 
@@ -70,7 +70,26 @@ ztls is production-ready when all six pillars are `PROVEN`:
 
 ## Pillar 1 — Correctness
 
-**Diagnostic AWS-LC capture (2026-09-13 UTC, #91):** run `34735309314` at clean
+**Accepted three-backend captures (2026-09-13 UTC, #91):** OpenSSL
+`34739623436`, AWS-LC `34739624161`, and BoringSSL `34739624962` ran at clean
+`e5800ee`. Each completed 437/437: 92 passes, six expected DSA failures (#52),
+134 expected skips, 205 not attempted, and zero unexpected results. No partial
+override was used. Both fixture patches' live jar/class/source digests match
+their build stamps. All 3,410 client invocations carry the enabled local-port
+diagnostic; none reports a certificate-validity rejection. The raw KeyUpdate
+and client-authentication cases strictly succeed on every backend; non-DSA
+HappyFlow cases also strictly succeed. An independent evidence review accepted
+these captures against #91's criteria. Summaries, provenance, all invocation
+logs and all per-test reports are preserved with verified archive manifests in
+`docs/research/TLS_ANVIL_91_CHAIN_FIXTURE/captures-e5800ee/`.
+
+The reproduced missing-CA-constraint case, serialization regression, unchanged
+issuer validation and narrow #52 classifier, and fresh captures satisfy #91's
+acceptance. This restores the bounded correctness/provider conformance claim;
+it does not establish a unique retrospective cause for the earlier KeyUpdate
+or client-authentication failures, whose original certificate bytes are absent.
+
+**Earlier diagnostic AWS-LC capture (2026-09-13 UTC, #91):** run `34735309314` at clean
 `7ae6014` completed 437/437 with matching patched-fixture provenance.
 The aggregate reports 92 passes, six expected DSA failures, and zero unexpected results.
 Fourteen client invocations reject expired server chains.
@@ -78,8 +97,8 @@ All 28 recovered certificates have identical validity endpoints, exactly one sec
 Seven invocations match recorded case ports and adjacent start times.
 Those cases report four strict successes and three conceptual successes despite rejection before Finished or CertificateVerify validation.
 The green aggregate therefore does not establish the intended negative-test coverage.
-A package-level DateTime adapter now passes local copy-to-DER regressions;
-fresh full captures with that repair are still required.
+The DateTime adapter's copy-to-DER regressions and the accepted captures above
+address this fixture defect without relaxing certificate validation.
 Historical KeyUpdate and client-authentication failures remain unexplained without their certificate bytes.
 Raw logs, case reports, PEM certificates, extraction code, and clock associations:
 `docs/research/TLS_ANVIL_91_CHAIN_FIXTURE/captures-7ae6014/`.
@@ -104,7 +123,8 @@ six expected DSA failures, and one unexpected KeyUpdate failure. Each has 134
 expected skips and 205 not attempted. Actual jar/class/source hashes match
 build provenance. Summaries and metadata are preserved under
 `docs/research/TLS_ANVIL_91_CHAIN_FIXTURE/captures-1d900e2/`.
-The remaining KeyUpdate failure is unresolved; #91 stays open.
+The earlier KeyUpdate failure remains forensically unattributed; current acceptance
+uses the fresh captures above, not a claim that this old failure is explained.
 
 **Earlier failed capture (2026-09-12, #91):** scheduled client run
 [`34447449765`](https://github.com/mattrobenolt/ztls/actions/runs/34447449765)
@@ -116,8 +136,8 @@ DSA classifier correctly leaves them unexpected. Client stderr includes
 `CertificateIssuerNotCa`; the aggregate log does not establish per-case
 causality. No issuer-policy relaxation or broader exception is justified.
 The historical clean-capture descriptions below are provenance, not proof
-of current correctness. Restore `PROVEN` only after #91's reproduction and
-fresh strict-complete backend captures. The same run's AWS-LC summary has
+of current correctness. The reproduction and fresh strict-complete captures
+required to restore `PROVEN` are recorded above. The same run's AWS-LC summary has
 92 passed and six unexpected failures; OpenSSL has 91 passed and seven
 unexpected failures. Both also completed 437/437 from clean `7c5049e`, with
 zero expected failures, 134 expected skips, and 205 not attempted. Their
@@ -291,7 +311,7 @@ data to openssl s_server and receives the HTTP response.
   accepted client execution. BoGo is
   explicitly deferred in
   `docs/research/BOGO_DEFERRED.md` with re-entry criteria tracked by #50.
-- **#91 root-cause evidence is partial but reproducible for one case class.**
+- **#91 acceptance is satisfied; historical causality has explicit limits.**
   The scheduled client run `34447449765` failed with non-DSA unexpected
   failures on all three backends. A single-case reproduction (HappyFlow
   `8446-jVohiUKi4u`, `ROOT=RSA` leaf RSA-1024 combination) attributes the
@@ -311,9 +331,9 @@ data to openssl s_server and receives the HTTP response.
   provenance digests of the installed jar/class/patch source are recorded in
   client and server run metadata, and evidence (PEMs, probe red/green outputs,
   before/after per-case JSON, client stderr) lives in
-  `docs/research/TLS_ANVIL_91_CHAIN_FIXTURE/`. Full three-backend strict
-  captures are still required before any #91 status change; the other five
-  non-DSA test IDs are not yet individually reproduced. A second #91 fixture
+  `docs/research/TLS_ANVIL_91_CHAIN_FIXTURE/`. Fresh strict-complete captures
+  at `e5800ee` satisfy the all-backend acceptance requirement. The other five
+  original non-DSA test IDs were not individually reproduced. A second #91 fixture
   defect is locally reproduced and patched: upstream x509-attacker 4.3.10 has
   no `package-info` for `de.rub.nds.x509attacker.config`, so JAXB marshals the
   config's joda `DateTime` `notBefore`/`notAfter` as empty XML elements and
@@ -336,8 +356,8 @@ data to openssl s_server and receives the HTTP response.
   Evidence: `docs/research/TLS_ANVIL_91_CHAIN_FIXTURE/`
   `validity-probe-green.txt` / `validity-probe-red-pristine.txt`, with commands,
   base revision and artifact/source hashes in `validity-probe-metadata.json`. This is
-  local regression evidence only: no fresh full TLS-Anvil capture has run
-  with the validity patch, so #91 status is unchanged.
+  local regression evidence; the fresh full captures with both patches are
+  preserved in `captures-e5800ee/` and accepted above.
 - Wycheproof boundary vectors at the libcrypto seam.
 - Fuzzing on the major parsers plus record decrypt and server `handleRecord`
   pre-auth/post-auth dispatch.
@@ -595,7 +615,9 @@ data to openssl s_server and receives the HTTP response.
   unsupported-subtree rejection, and a differential test corpus against OpenSSL
   3.6.3 covering all four GeneralName forms (#75 resolved).
 
-**Status:** `PARTIAL` — current external conformance failures require #91.
+**Status:** `PROVEN` — #91's fixture regressions and fresh strict-complete
+three-backend captures satisfy the stated acceptance; historical causality
+limits and the #52 DSA exception remain explicit.
 
 **Evidence and design decisions:**
 
@@ -1180,11 +1202,13 @@ in sync without re-running the capture.
 
 ## Pillar 4 — Providers
 
-**Earlier failed-capture evidence (2026-09-12, #91):** the historical captures below
-do not supersede scheduled run `34447449765`: seven unexpected OpenSSL
-client failures and six each on AWS-LC and BoringSSL. All three completed
-437/437 with zero expected failures. Backend availability and primitive
-tests remain separate from end-to-end conformance.
+**Current conformance evidence (2026-09-13 UTC, #91):** clean `e5800ee`
+captures completed 437/437 on all three backends with zero unexpected results,
+six expected DSA failures each, verified fixture provenance, and no validity
+rejections in the enabled diagnostics. Full evidence is recorded under Pillar 1.
+This supersedes the earlier failing aggregate for current acceptance, without
+claiming a unique cause for every historical failure. Backend availability and
+primitive tests remain separate from end-to-end conformance.
 
 **Target:** aws-lc, BoringSSL, and bring-your-own libcrypto behind a clean seam,
 each passing the same correctness and interop gates.
@@ -1314,7 +1338,8 @@ each passing the same correctness and interop gates.
   row-perf evidence). *(#63, #70, #71 — server capture clean; client
   capture KeyUpdate failure root-caused and fixed, CI-confirmed)*
 
-**Status:** `PARTIAL` — current client conformance is unresolved (#91).
+**Status:** `PROVEN` — fresh strict-complete client captures at `e5800ee`
+pass the #91 acceptance bar on OpenSSL, AWS-LC, and BoringSSL.
 
 Historical baseline: three libcrypto backends (OpenSSL default, AWS-LC, BoringSSL) are selectable
 via `-Dcrypto-backend=...` / devshells, compile and pass the full test suite,

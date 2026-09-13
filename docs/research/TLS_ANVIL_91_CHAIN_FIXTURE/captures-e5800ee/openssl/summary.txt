@@ -1,0 +1,138 @@
+TLS-Anvil Conformance Summary
+Generated: 2026-09-13T05:16:24.642127+00:00
+
+Provenance:
+  source_run_dir       : zig-out/anvil/client/ci-34739623436
+  git_revision         : e5800ee
+  git_dirty            : False
+  adapter_allow_partial: False
+  report_complete      : True
+  report_finished      : 437/437
+
+Counts:
+  total              :    437
+  expected_skipped   :    134
+  unexpected_skipped :      0
+  passed             :     92
+  failed             :      6
+  expected_failed    :      6
+  errored            :      0
+  timeout            :      0
+  not_attempted      :    205
+
+Pass rate (total): 92/437 = 21.1%
+Pass rate (attempted): 92/98 = 93.9%
+
+Expected skip count by reason:
+  -    2 DTLS is out of scope
+  -    1 FFDHE named groups are outside the current named-group scope (#6)
+  -   14 P-384, FFDHE, and other unsupported named-group derivations are tracked separately (#6)
+  -    1 ServerKeyExchange is not a TLS 1.3 message; out of scope for the TLS 1.3-only runner (#9)
+  -   90 TLS 1.2 is out of scope
+  -    5 TLS 1.2/DTLS/legacy-version tests are out of scope for the TLS 1.3-only runner (#9)
+  -    1 TLS compression is outside the TLS 1.3-only runner scope (#9)
+  -    2 TLS-Anvil cannot derive this legacy-signature negative case for the TLS 1.3-only client runner (#9)
+  -    1 TLS-Anvil client runner cannot derive this record-fragmentation case; no execution evidence
+  -    1 TLS-Anvil configuration-option self-test is not ztls conformance evidence
+  -    1 TLS-Anvil disabled sender-restriction test; no execution evidence
+  -    1 TLS-Anvil disables this client-side PSK test; PSK/resumption is deferred (#2)
+  -    3 legacy compression/cipher-suite compatibility behavior is out of scope for the TLS 1.3-only runner (#9)
+  -    6 max_fragment_length is intentionally outside the supported surface (#34)
+  -    5 server-side EarlyData tests (RFC 8446 §4.2.10) are deferred (#3); TLS-Anvil @Disabled because ztls does not issue session tickets
+
+Unmatched skip-list patterns (no test matched):
+  - *0Rtt*
+  - *Does not send TLS 1.3 session tickets*
+  - *PSKModeExtension is not supported*
+  - *RecordSizeLimit*
+  - *SUT does not support PSK handshakes*
+  - *Server does not issue Session Tickets and might ignore the extension*
+  - *Target does not send a Hello Retry Request*
+  - No TLS 1.* support
+
+Expected failures (6):
+  [expected_failed] Zero-length fragments of Application Data MAY be sent, as they are potentially useful as a traffic analysis countermeasure.
+    DSA-root certificate parameter combination (#52); ztls correctly rejects DSA under RFC 8446 §4.2.3 / Appendix D
+    failure_reason: org.opentest4j.AssertionFailedError: The workflow could not be executed as planned! ==> expected: <true> but was: <false>
+    case_result_counts: FULLY_FAILED=6, STRICTLY_SUCCEEDED=6
+  [expected_failed] A set of extension values for the ticket.  The "Extension" format is defined in Section 4.2.  Clients MUST ignore unrecognized extensions. [...]In TLS 1.3, a client receiving a CertificateRequest or NewSessionTicket MUST also ignore all unrecognized extensions.
+    DSA-root certificate parameter combination (#52); ztls correctly rejects DSA under RFC 8446 §4.2.3 / Appendix D
+    failure_reason: org.opentest4j.AssertionFailedError: The workflow could not be executed as planned! ==> expected: <true> but was: <false>
+    case_result_counts: FULLY_FAILED=6, STRICTLY_SUCCEEDED=6
+  [expected_failed] All encrypted TLS records can be padded to inflate the size of the TLSCiphertext.
+    DSA-root certificate parameter combination (#52); ztls correctly rejects DSA under RFC 8446 §4.2.3 / Appendix D
+    failure_reason: org.opentest4j.AssertionFailedError: The workflow could not be executed as planned! ==> expected: <true> but was: <false>
+    case_result_counts: FULLY_FAILED=6, STRICTLY_SUCCEEDED=6
+  [expected_failed] A benign handshake executed with all parameter combinations  that affect a regular handshake
+    DSA-root certificate parameter combination (#52); ztls correctly rejects DSA under RFC 8446 §4.2.3 / Appendix D
+    failure_reason: org.opentest4j.AssertionFailedError: The workflow could not be executed as planned! ==> expected: <true> but was: <false>
+    case_result_counts: FULLY_FAILED=6, STRICTLY_SUCCEEDED=6
+  [expected_failed] If this extension is present, clients MUST ignore the ServerHello.legacy_version value and MUST use only the "supported_versions" extension to determine the selected version.
+    DSA-root certificate parameter combination (#52); ztls correctly rejects DSA under RFC 8446 §4.2.3 / Appendix D
+    failure_reason: org.opentest4j.AssertionFailedError: Socket was closed but unexpected messages have been received. Received: Alert(FATAL,BAD_CERTIFICATE) ==> expected: <false> but was: <true>
+    case_result_counts: FULLY_FAILED=6, STRICTLY_SUCCEEDED=6
+  [expected_failed] When sending a NewSessionTicket message in TLS 1.3, a server MAY select one or more GREASE extension values and advertise them as extensions with varying length and contents. [...]When processing a CertificateRequest or NewSessionTicket, clients MUST NOT treat GREASE values differently from any unknown value.
+    DSA-root certificate parameter combination (#52); ztls correctly rejects DSA under RFC 8446 §4.2.3 / Appendix D
+    failure_reason: org.opentest4j.AssertionFailedError: The workflow could not be executed as planned! ==> expected: <true> but was: <false>
+    case_result_counts: FULLY_FAILED=9, STRICTLY_SUCCEEDED=16
+
+Per-feature breakdown:
+  A5CipherSuite: expected_skipped=2
+  AEADCiphers: expected_skipped=2
+  AlertProtocol: expected_skipped=4, not_attempted=3, passed=7
+  AntiReplay: expected_skipped=2
+  CBCBlockCipher: expected_skipped=4
+  Certificate: expected_skipped=3, not_attempted=1, passed=8
+  CertificateStatusRequest: not_attempted=1
+  CertificateVerify: expected_skipped=3, not_attempted=1, passed=7
+  ChangeCipherSpecProtocol: expected_skipped=1
+  CipherSuites: expected_skipped=1
+  ClientAuthentication: passed=1
+  ClientCertificateMessage: expected_skipped=1
+  ClientHello: expected_skipped=4, not_attempted=15, passed=4
+  ClientInitiatedExtensionPoints: not_attempted=10
+  ComplianceRequirements: passed=2
+  Cookie: not_attempted=1, passed=1
+  CryptographicNegotiation: not_attempted=2
+  DoNotUseSSLVersion30: expected_skipped=1, not_attempted=3
+  DoS: expected_skipped=1, not_attempted=5
+  E1CompatibilityWithTLS10_11andSSL30: expected_skipped=1, not_attempted=3
+  EarlyData: expected_skipped=5
+  EncThenMacExtension: expected_skipped=2, not_attempted=2
+  EncryptedExtensions: expected_skipped=2, not_attempted=1, passed=4
+  Extensions: passed=2
+  FfDheShare: expected_skipped=4, not_attempted=5
+  Finished: expected_skipped=5, not_attempted=9, passed=5
+  Fragmentation: expected_skipped=9, not_attempted=4
+  HappyFlow: expected_failed=1, expected_skipped=1
+  HelloRetryRequest: expected_skipped=12, not_attempted=5, passed=3
+  KeyShare: expected_skipped=1, not_attempted=9, passed=5
+  KeyUpdate: passed=4
+  MaxFragmentLengthExtension: expected_skipped=1
+  MaximumFragmentLength: expected_skipped=3, not_attempted=2
+  MiddleboxCompatibility: not_attempted=2
+  NewSessionTicket: expected_failed=1, not_attempted=1
+  PaddingExtension: expected_skipped=1, not_attempted=2
+  PointFormatExtension: not_attempted=3
+  PreSharedKey: expected_skipped=1, not_attempted=9
+  PreSharedKeyExchangeModes: passed=1
+  ProhibitingSSLv2: expected_skipped=3, not_attempted=2
+  RC4Ciphersuites: expected_skipped=2, not_attempted=2
+  RSAEncryptedPremasterSecretMessage: not_attempted=2
+  RecordLayer: expected_skipped=2, not_attempted=5, passed=3
+  RecordProtocol: expected_failed=2, passed=10
+  RespectClientExtensions: not_attempted=3
+  Resumption: not_attempted=4
+  SCSV: expected_skipped=1, not_attempted=2
+  ServerHello: expected_skipped=4, not_attempted=10, passed=3
+  ServerInitiatedExtensionPoints: expected_failed=1, expected_skipped=5, passed=5
+  ServerKeyExchange: expected_skipped=6, not_attempted=1
+  ServerNameIndication: expected_skipped=1, not_attempted=1
+  SignatureAlgorithms: expected_skipped=2, not_attempted=8, passed=1
+  SupportedCiphersuites: expected_skipped=2, passed=2
+  SupportedVersions: expected_failed=1, expected_skipped=3, not_attempted=9, passed=2
+  TLSExtensionForECC: expected_skipped=6, not_attempted=8
+  TLSRecordProtocol: expected_skipped=2, not_attempted=2
+  unknown: expected_skipped=18, not_attempted=47, passed=12
+
+Note: 134/437 tests (30.7%) were expected-skipped by the configured skip list. 6 failed test(s) were classified as expected_failed (DSA-root certificate parameter combinations, #52; ztls correctly rejects DSA under RFC 8446 §4.2.3 / Appendix D) and remain visible, not hidden as expected_skipped. not_attempted tests are runner-direction gaps, not conformance passes. Review unexpected_pass entries as license-to-claim signals and unmatched_skip_patterns as stale-skip candidates.

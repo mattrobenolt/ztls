@@ -1,0 +1,39 @@
+{
+  "ElapsedTime" : 252174,
+  "Identifier" : "client_ 52539",
+  "Strength" : 1,
+  "Date" : "2026-09-13T05:12:22.563+00:00",
+  "TotalTests" : 437,
+  "FinishedTests" : 437,
+  "StrictlySucceededTests" : 83,
+  "ConceptuallySucceededTests" : 9,
+  "DisabledTests" : 339,
+  "PartiallyFailedTests" : 6,
+  "FullyFailedTests" : 0,
+  "DetailsFailedTestCases" : {
+    "failure reason: The workflow could not be executed as planned! ==> expected: <true> but was: <false>. Additional result info: [Received TransportHandler exception, Received TransportHandler exception, Failed SendAction:  | \tMessages: SERVER_HELLO, CHANGE_CIPHER_SPEC, ENCRYPTED_EXTENSIONS, CERTIFICATE, CERTIFICATE_VERIFY, FINISHED | ]." : 15,
+    "failure reason: The workflow could not be executed as planned! ==> expected: <true> but was: <false>. Additional result info: [Received TransportHandler exception, Received TransportHandler exception, Failed SendAction:  | \tMessages: SERVER_HELLO, ENCRYPTED_EXTENSIONS, CERTIFICATE, CERTIFICATE_VERIFY, FINISHED | ]." : 13,
+    "failure reason: Socket was closed but unexpected messages have been received. Received: Alert(FATAL,BAD_CERTIFICATE) ==> expected: <false> but was: <true>. Additional result info: [Received TransportHandler exception, Received TransportHandler exception]." : 5,
+    "failure reason: The workflow could not be executed as planned! ==> expected: <true> but was: <false>. Additional result info: [Received TransportHandler exception, Failed ReceiveAction: | Expected: CHANGE_CIPHER_SPEC, FINISHED, APPLICATION| Actual: Alert(FATAL,BAD_CERTIFICATE) |]." : 1,
+    "failure reason: Socket was closed but unexpected messages have been received. Received: Alert(FATAL,BAD_CERTIFICATE) ==> expected: <false> but was: <true>." : 1,
+    "failure reason: The workflow could not be executed as planned! ==> expected: <true> but was: <false>. Additional result info: [Failed ReceiveAction: | Expected: CHANGE_CIPHER_SPEC, FINISHED, APPLICATION| Actual: Alert(FATAL,BAD_CERTIFICATE) |]." : 4
+  },
+  "TestSuiteErrorTests" : 0,
+  "AdditionalConfig" : "{\"anvilTestConfig\":{\"expectedResults\":null,\"profiles\":[],\"profileFolder\":\"/home/runner/work/ztls/ztls/conformance\",\"tags\":[],\"testPackage\":\"de.rub.nds.tlstest.suite\",\"ignoreCache\":false,\"outputFolder\":\"/home/runner/work/ztls/ztls/conformance/zig-out/anvil/client/ci-34739624161\",\"parallelTests\":1,\"restartServerAfter\":0,\"timeoutActionCommand\":[\"zig-out/anvil/client/ci-34739624161/logs/trigger_client.py\"],\"identifier\":\"client_ 52539\",\"strength\":1,\"connectionTimeout\":1500,\"prettyPrintJSON\":false,\"networkInterface\":\"any\",\"disableTcpDump\":true,\"doZip\":false,\"endpointMode\":\"CLIENT\",\"generalPcapFilter\":\"tcp port 52539\"},\"clientConfig\":{\"port\":52539,\"triggerScriptCommand\":[\"zig-out/anvil/client/ci-34739624161/logs/trigger_client.py\"]},\"serverConfig\":{\"host\":null,\"sniHostname\":null,\"doNotSendSNIExtension\":false},\"exportTraces\":false,\"parallelHandshakes\":1}",
+  "AnvilConfig" : "{\"expectedResults\":null,\"profiles\":[],\"profileFolder\":\"/home/runner/work/ztls/ztls/conformance\",\"tags\":[],\"testPackage\":\"de.rub.nds.tlstest.suite\",\"ignoreCache\":false,\"outputFolder\":\"/home/runner/work/ztls/ztls/conformance/zig-out/anvil/client/ci-34739624161\",\"parallelTests\":1,\"restartServerAfter\":0,\"timeoutActionCommand\":[\"zig-out/anvil/client/ci-34739624161/logs/trigger_client.py\"],\"identifier\":\"client_ 52539\",\"strength\":1,\"connectionTimeout\":1500,\"prettyPrintJSON\":false,\"networkInterface\":\"any\",\"disableTcpDump\":true,\"doZip\":false,\"endpointMode\":\"CLIENT\",\"generalPcapFilter\":\"tcp port 52539\"}",
+  "TestCaseCount" : 770,
+  "TestEndpointType" : "CLIENT",
+  "Running" : false,
+  "Score" : {
+    "DeprecatedFeature" : 100.0,
+    "Crypto" : 93.75,
+    "CVE" : 100.0,
+    "MessageStructure" : 100.0,
+    "Alert" : 97.16,
+    "Security" : 92.66,
+    "RecordLayer" : 80.62,
+    "Interoperability" : 92.01,
+    "Handshake" : 95.0,
+    "Certificate" : 97.78
+  }
+}
