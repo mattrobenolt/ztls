@@ -59,10 +59,10 @@ ztls is production-ready when all six pillars are `PROVEN`:
 
 | Pillar | Status | One-line |
 |---|---|---|
-| 1. Correctness | `PARTIAL` | Unit, interop, and tlsfuzzer gates pass, but scheduled TLS-Anvil client run `34447449765` has unexpected failures on all three backends (#91). Historical clean captures do not establish current conformance. Full TLS-Anvil remains scheduled-only; BoGo is explicitly deferred. |
+| 1. Correctness | `PARTIAL` | Patched-fixture TLS-Anvil captures at `1d900e2` are strict-complete: OpenSSL and BoringSSL have no unexpected results; AWS-LC still has one KeyUpdate failure (#91). Full TLS-Anvil remains scheduled-only; BoGo is explicitly deferred. |
 | 2. Ergonomics | `PROVEN` | CI-gated deterministic examples cover client and server roles across io_uring, epoll, and `std.net.Stream`; Config setup, server credentials, and `Outbox` cover the supported core ergonomics boundary. Two higher-order integrations are `PARTIAL`, both CI-gated under Zig 0.16: `ztls-std` (#77, `std.Io`) lacks wrapper-level interop, client auth, and concurrent split halves; `ztls-xev` (#76, libxev completions) has both roles on io_uring (CI-gated) and kqueue (CI-gated), with in-flight read and write cancellation proven on io_uring and epoll; kqueue cancellation remains the unproven island (#83). |
 | 3. Performance | `PROVEN` | n=10 captures on x86_64 (c7i.2xlarge), aarch64 (c7g.2xlarge), and macOS (Apple M1 Max) with formal CIs (p=0.000): ztls beats libssl on every comparable app-data row on all three platforms and rustls on all AES-GCM rows; regression gate committed. |
-| 4. Providers | `PARTIAL` | OpenSSL, AWS-LC, and BoringSSL have CI-gated backend lanes and historical clean TLS-Anvil captures. Current client captures have seven unexpected OpenSSL failures and six each on AWS-LC and BoringSSL (#91). Cert-chain stays ztls/std; FIPS capability checks are comptime-only; PQ/P-384 is #6. |
+| 4. Providers | `PARTIAL` | OpenSSL, AWS-LC, and BoringSSL have CI-gated backend lanes and historical clean TLS-Anvil captures. Patched-fixture client captures at `1d900e2` have zero unexpected OpenSSL/BoringSSL failures and one AWS-LC KeyUpdate failure (#91). Cert-chain stays ztls/std; FIPS capability checks are comptime-only; PQ/P-384 is #6. |
 | 5. Marketing | `PROVEN` | README leads with the proven performance story (n=10, both architectures, honest ChaCha20 loss) and the adversarial security posture; the why-ztls narrative and headline benchmarks are on the front door, backed by PERFORMANCE.md. |
 | 6. User docs | `PROVEN` | Root on-ramp plus `docs/USAGE.md` cover fresh-project setup, supported surface, drive loops, API reference, and CI-gated integration examples. |
 
@@ -70,7 +70,17 @@ ztls is production-ready when all six pillars are `PROVEN`:
 
 ## Pillar 1 — Correctness
 
-**Current evidence override (2026-09-12, #91):** scheduled client run
+**Current captures (2026-09-13 UTC, #91):** all three patched-fixture runs at
+clean `1d900e2` completed 437/437 without partial-run overrides. OpenSSL
+`34728687594` and BoringSSL `34728689625` each have 92 passes, six expected
+DSA failures, and zero unexpected results. AWS-LC `34728688542` has 91 passes,
+six expected DSA failures, and one unexpected KeyUpdate failure. Each has 134
+expected skips and 205 not attempted. Actual jar/class/source hashes match
+build provenance. Summaries and metadata are preserved under
+`docs/research/TLS_ANVIL_91_CHAIN_FIXTURE/captures-1d900e2/`.
+The remaining KeyUpdate failure is unresolved; #91 stays open.
+
+**Earlier failed capture (2026-09-12, #91):** scheduled client run
 [`34447449765`](https://github.com/mattrobenolt/ztls/actions/runs/34447449765)
 on clean `7c5049e` completed 437/437 BoringSSL tests: 92 passed, six
 unexpected failures, zero expected failures, 134 expected skips, and 205
@@ -1068,7 +1078,7 @@ in sync without re-running the capture.
 
 ## Pillar 4 — Providers
 
-**Current evidence override (2026-09-12, #91):** the historical captures below
+**Earlier failed-capture evidence (2026-09-12, #91):** the historical captures below
 do not supersede scheduled run `34447449765`: seven unexpected OpenSSL
 client failures and six each on AWS-LC and BoringSSL. All three completed
 437/437 with zero expected failures. Backend availability and primitive
