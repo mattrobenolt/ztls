@@ -1,0 +1,17 @@
+    11.58%  benchmark  libcrypto.so.3         [.] gcm_ghash_v8
+    10.79%  benchmark  libcrypto.so.3         [.] aes_v8_encrypt
+     8.70%  benchmark  libcrypto.so.3         [.] CRYPTO_gcm128_finish
+     8.24%  benchmark  libcrypto.so.3         [.] CRYPTO_gcm128_decrypt_ctr32
+     6.15%  benchmark  libcrypto.so.3         [.] EVP_CIPHER_CTX_ctrl
+     5.82%  benchmark  libcrypto.so.3         [.] ossl_gcm_set_ctx_params
+     5.17%  benchmark  libcrypto.so.3         [.] EVP_DecryptUpdate
+     3.42%  benchmark  libcrypto.so.3         [.] gcm_cipher_internal
+     1.75%  benchmark  libcrypto.so.3         [.] ossl_err_get_state_int
+     1.58%  benchmark  libcrypto.so.3         [.] ERR_set_mark
+     1.45%  benchmark  libc.so.6              [.] pthread_getspecific@@GLIBC_2.34
+     1.10%  benchmark  libcrypto.so.3         [.] CRYPTO_THREAD_get_local_ex
+     0.52%  benchmark  libcrypto.so.3         [.] ERR_pop_to_mark
+     0.40%  benchmark  libcrypto.so.3         [.] pthread_getspecific@plt
+     0.31%  benchmark  libcrypto.so.3         [.] CRYPTO_THREAD_get_local
+     0.21%  benchmark  benchmark              [.] ERR_pop_to_mark@plt
+     0.09%  benchmark  benchmark              [.] ERR_set_mark@plt

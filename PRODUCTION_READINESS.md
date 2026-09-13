@@ -463,7 +463,13 @@ data to openssl s_server and receives the HTTP response.
     not reproduce the embedder's permanent 4 MiB arena retention or prove
     recovery from allocation failure. The reporter observed recovery after
     clearing the queue; the guarded library still needs the embedder's
-    arena workload retested before closure.
+    arena workload retested before closure. The full-cleanup guard is
+    accepted with a measured local record-path cost: approximately 18–24 ns
+    on 10 of 12 rows, with two noisier 16 KiB decrypt rows at 34–37 ns;
+    the smallest AES-GCM rows regress about 19–21%. Minimality of that cost
+    is unproven. Raw capture and independently audited corrections:
+    `docs/research/perf/20260913-012750-launchpad-errq/` and
+    `docs/research/perf/20260913-020140-launchpad-errq-addendum/`.
   - H22 — `entropy.fillLinux` panics on an unexpected `getrandom` errno.
     Decision: keep the fail-stop for the entropy source. For a CSPRNG,
     proceeding without entropy is never acceptable; the only reachable

@@ -1,0 +1,110 @@
+
+/nix/store/v89yca35zsb13k51ibz0mcz2rrzjwwrj-openssl-3.6.4/lib/libcrypto.so.3:     file format elf64-littleaarch64
+
+
+Disassembly of section .init:
+
+Disassembly of section .plt:
+
+Disassembly of section .text:
+
+00000000001fad40 <ERR_pop_to_mark>:
+  1fad40:	a9bc7bfd 	stp	x29, x30, [sp, #-64]!
+  1fad44:	910003fd 	mov	x29, sp
+  1fad48:	97fff092 	bl	1f6f90 <ossl_err_get_state_int>
+  1fad4c:	b40009e0 	cbz	x0, 1fae88 <ERR_pop_to_mark+0x148>
+  1fad50:	a90153f3 	stp	x19, x20, [sp, #16]
+  1fad54:	aa0003f4 	mov	x20, x0
+  1fad58:	b9438000 	ldr	w0, [x0, #896]
+  1fad5c:	b9438682 	ldr	w2, [x20, #900]
+  1fad60:	6b00005f 	cmp	w2, w0
+  1fad64:	54000aa0 	b.eq	1faeb8 <ERR_pop_to_mark+0x178>  // b.none
+  1fad68:	a9025bf5 	stp	x21, x22, [sp, #32]
+  1fad6c:	90001095 	adrp	x21, 40a000 <Td4+0xafd0>
+  1fad70:	12800016 	mov	w22, #0xffffffff            	// #-1
+  1fad74:	913282b5 	add	x21, x21, #0xca0
+  1fad78:	f9001bf7 	str	x23, [sp, #48]
+  1fad7c:	52800037 	mov	w23, #0x1                   	// #1
+  1fad80:	1400001d 	b	1fadf4 <ERR_pop_to_mark+0xb4>
+  1fad84:	f8677a80 	ldr	x0, [x20, x7, lsl #3]
+  1fad88:	b4000060 	cbz	x0, 1fad94 <ERR_pop_to_mark+0x54>
+  1fad8c:	3900001f 	strb	wzr, [x0]
+  1fad90:	b9020077 	str	w23, [x3, #512]
+  1fad94:	8b010e93 	add	x19, x20, x1, lsl #3
+  1fad98:	b900407f 	str	wzr, [x3, #64]
+  1fad9c:	b8256a9f 	str	wzr, [x20, x5]
+  1fada0:	aa1503e1 	mov	x1, x21
+  1fada4:	52800b82 	mov	w2, #0x5c                  	// #92
+  1fada8:	f900427f 	str	xzr, [x19, #128]
+  1fadac:	b902c076 	str	w22, [x3, #704]
+  1fadb0:	f9412260 	ldr	x0, [x19, #576]
+  1fadb4:	940193db 	bl	25fd20 <CRYPTO_free>
+  1fadb8:	f901227f 	str	xzr, [x19, #576]
+  1fadbc:	f9418260 	ldr	x0, [x19, #768]
+  1fadc0:	aa1503e1 	mov	x1, x21
+  1fadc4:	52800bc2 	mov	w2, #0x5e                  	// #94
+  1fadc8:	940193d6 	bl	25fd20 <CRYPTO_free>
+  1fadcc:	f901827f 	str	xzr, [x19, #768]
+  1fadd0:	528001e1 	mov	w1, #0xf                   	// #15
+  1fadd4:	b9438280 	ldr	w0, [x20, #896]
+  1fadd8:	b9438682 	ldr	w2, [x20, #900]
+  1faddc:	7100001f 	cmp	w0, #0x0
+  1fade0:	51000400 	sub	w0, w0, #0x1
+  1fade4:	1a81c000 	csel	w0, w0, w1, gt
+  1fade8:	b9038280 	str	w0, [x20, #896]
+  1fadec:	6b00005f 	cmp	w2, w0
+  1fadf0:	54000460 	b.eq	1fae7c <ERR_pop_to_mark+0x13c>  // b.none
+  1fadf4:	93407c01 	sxtw	x1, w0
+  1fadf8:	91004024 	add	x4, x1, #0x10
+  1fadfc:	91008027 	add	x7, x1, #0x20
+  1fae00:	8b010a83 	add	x3, x20, x1, lsl #2
+  1fae04:	8b010e86 	add	x6, x20, x1, lsl #3
+  1fae08:	d37ef425 	lsl	x5, x1, #2
+  1fae0c:	b8647a84 	ldr	w4, [x20, x4, lsl #2]
+  1fae10:	350000e4 	cbnz	w4, 1fae2c <ERR_pop_to_mark+0xec>
+  1fae14:	b9420060 	ldr	w0, [x3, #512]
+  1fae18:	3707fb60 	tbnz	w0, #0, 1fad84 <ERR_pop_to_mark+0x44>
+  1fae1c:	f90080df 	str	xzr, [x6, #256]
+  1fae20:	f900c0df 	str	xzr, [x6, #384]
+  1fae24:	b902007f 	str	wzr, [x3, #512]
+  1fae28:	17ffffdb 	b	1fad94 <ERR_pop_to_mark+0x54>
+  1fae2c:	6b00005f 	cmp	w2, w0
+  1fae30:	54000260 	b.eq	1fae7c <ERR_pop_to_mark+0x13c>  // b.none
+  1fae34:	b9404062 	ldr	w2, [x3, #64]
+  1fae38:	52800020 	mov	w0, #0x1                   	// #1
+  1fae3c:	f9401bf7 	ldr	x23, [sp, #48]
+  1fae40:	51000442 	sub	w2, w2, #0x1
+  1fae44:	b9004062 	str	w2, [x3, #64]
+  1fae48:	a94153f3 	ldp	x19, x20, [sp, #16]
+  1fae4c:	a9425bf5 	ldp	x21, x22, [sp, #32]
+  1fae50:	a8c47bfd 	ldp	x29, x30, [sp], #64
+  1fae54:	d2800001 	mov	x1, #0x0                   	// #0
+  1fae58:	d2800002 	mov	x2, #0x0                   	// #0
+  1fae5c:	d2800003 	mov	x3, #0x0                   	// #0
+  1fae60:	d2800004 	mov	x4, #0x0                   	// #0
+  1fae64:	d2800005 	mov	x5, #0x0                   	// #0
+  1fae68:	d2800006 	mov	x6, #0x0                   	// #0
+  1fae6c:	d2800007 	mov	x7, #0x0                   	// #0
+  1fae70:	d2800010 	mov	x16, #0x0                   	// #0
+  1fae74:	d2800011 	mov	x17, #0x0                   	// #0
+  1fae78:	d65f03c0 	ret
+  1fae7c:	a94153f3 	ldp	x19, x20, [sp, #16]
+  1fae80:	a9425bf5 	ldp	x21, x22, [sp, #32]
+  1fae84:	f9401bf7 	ldr	x23, [sp, #48]
+  1fae88:	52800000 	mov	w0, #0x0                   	// #0
+  1fae8c:	a8c47bfd 	ldp	x29, x30, [sp], #64
+  1fae90:	d2800001 	mov	x1, #0x0                   	// #0
+  1fae94:	d2800002 	mov	x2, #0x0                   	// #0
+  1fae98:	d2800003 	mov	x3, #0x0                   	// #0
+  1fae9c:	d2800004 	mov	x4, #0x0                   	// #0
+  1faea0:	d2800005 	mov	x5, #0x0                   	// #0
+  1faea4:	d2800006 	mov	x6, #0x0                   	// #0
+  1faea8:	d2800007 	mov	x7, #0x0                   	// #0
+  1faeac:	d2800010 	mov	x16, #0x0                   	// #0
+  1faeb0:	d2800011 	mov	x17, #0x0                   	// #0
+  1faeb4:	d65f03c0 	ret
+  1faeb8:	a94153f3 	ldp	x19, x20, [sp, #16]
+  1faebc:	52800000 	mov	w0, #0x0                   	// #0
+  1faec0:	17fffff3 	b	1fae8c <ERR_pop_to_mark+0x14c>
+
+Disassembly of section .fini:

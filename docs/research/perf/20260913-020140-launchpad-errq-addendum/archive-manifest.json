@@ -1,0 +1,14 @@
+[
+  {
+    "original": "perf-record-cand-decrypt-aes128-16.data",
+    "original_sha256": "c560454a5d1fef52e108db7ef7e902690a6bf7cf7bc46bae21c7e4697dd43a28",
+    "archive": "perf-record-cand-decrypt-aes128-16.data.xz",
+    "archive_sha256": "3f5cf373430341a0f89f9c2efbca2a7f6eebdfb60a9406d2c3c5c6ff182499ce"
+  },
+  {
+    "original": "perf-record-cand-encrypt-aes128-16.data",
+    "original_sha256": "ebdc88656f78736e0342aba962405a31ae0e5c161074b46381cbbcdf7123acea",
+    "archive": "perf-record-cand-encrypt-aes128-16.data.xz",
+    "archive_sha256": "84bfcb7e1fe377dc3924d9e84dbb11b6227f1012a808a6c95806a16d1e24a5a2"
+  }
+]

@@ -1,0 +1,44 @@
+
+/nix/store/v89yca35zsb13k51ibz0mcz2rrzjwwrj-openssl-3.6.4/lib/libcrypto.so.3:     file format elf64-littleaarch64
+
+
+Disassembly of section .init:
+
+Disassembly of section .plt:
+
+Disassembly of section .text:
+
+00000000001fab80 <ERR_set_mark>:
+  1fab80:	a9bf7bfd 	stp	x29, x30, [sp, #-16]!
+  1fab84:	910003fd 	mov	x29, sp
+  1fab88:	97fff102 	bl	1f6f90 <ossl_err_get_state_int>
+  1fab8c:	b4000260 	cbz	x0, 1fabd8 <ERR_set_mark+0x58>
+  1fab90:	b9438001 	ldr	w1, [x0, #896]
+  1fab94:	52800002 	mov	w2, #0x0                   	// #0
+  1fab98:	b9438403 	ldr	w3, [x0, #900]
+  1fab9c:	6b01007f 	cmp	w3, w1
+  1faba0:	540000c0 	b.eq	1fabb8 <ERR_set_mark+0x38>  // b.none
+  1faba4:	8b21c801 	add	x1, x0, w1, sxtw #2
+  1faba8:	52800022 	mov	w2, #0x1                   	// #1
+  1fabac:	b9404020 	ldr	w0, [x1, #64]
+  1fabb0:	0b020000 	add	w0, w0, w2
+  1fabb4:	b9004020 	str	w0, [x1, #64]
+  1fabb8:	2a0203e0 	mov	w0, w2
+  1fabbc:	a8c17bfd 	ldp	x29, x30, [sp], #16
+  1fabc0:	d2800001 	mov	x1, #0x0                   	// #0
+  1fabc4:	d2800002 	mov	x2, #0x0                   	// #0
+  1fabc8:	d2800003 	mov	x3, #0x0                   	// #0
+  1fabcc:	d2800010 	mov	x16, #0x0                   	// #0
+  1fabd0:	d2800011 	mov	x17, #0x0                   	// #0
+  1fabd4:	d65f03c0 	ret
+  1fabd8:	52800002 	mov	w2, #0x0                   	// #0
+  1fabdc:	2a0203e0 	mov	w0, w2
+  1fabe0:	a8c17bfd 	ldp	x29, x30, [sp], #16
+  1fabe4:	d2800001 	mov	x1, #0x0                   	// #0
+  1fabe8:	d2800002 	mov	x2, #0x0                   	// #0
+  1fabec:	d2800003 	mov	x3, #0x0                   	// #0
+  1fabf0:	d2800010 	mov	x16, #0x0                   	// #0
+  1fabf4:	d2800011 	mov	x17, #0x0                   	// #0
+  1fabf8:	d65f03c0 	ret
+
+Disassembly of section .fini:

@@ -1,0 +1,1 @@
+BenchmarkRecordDecrypt/TLS_CHACHA20_POLY1305_SHA256/16	 4000000	       319.8 ns/op	  50.03 MB/s

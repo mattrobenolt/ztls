@@ -1,0 +1,191 @@
+0000000001077428 <RecordLayer.decrypt>:
+ 1077428:	d10183ff 	sub	sp, sp, #0x60
+ 107742c:	a9027bfd 	stp	x29, x30, [sp, #32]
+ 1077430:	a9035ff8 	stp	x24, x23, [sp, #48]
+ 1077434:	a90457f6 	stp	x22, x21, [sp, #64]
+ 1077438:	a9054ff4 	stp	x20, x19, [sp, #80]
+ 107743c:	910083fd 	add	x29, sp, #0x20
+ 1077440:	f9400028 	ldr	x8, [x1]
+ 1077444:	b100051f 	cmn	x8, #0x1
+ 1077448:	54000100 	b.eq	1077468 <RecordLayer.decrypt+0x40>  // b.none
+ 107744c:	f9400429 	ldr	x9, [x1, #8]
+ 1077450:	eb09011f 	cmp	x8, x9
+ 1077454:	540000e2 	b.cs	1077470 <RecordLayer.decrypt+0x48>  // b.hs, b.nlast
+ 1077458:	f100146a 	subs	x10, x3, #0x5
+ 107745c:	540001a2 	b.cs	1077490 <RecordLayer.decrypt+0x68>  // b.hs, b.nlast
+ 1077460:	52800668 	mov	w8, #0x33                  	// #51
+ 1077464:	14000004 	b	1077474 <RecordLayer.decrypt+0x4c>
+ 1077468:	52800a88 	mov	w8, #0x54                  	// #84
+ 107746c:	14000002 	b	1077474 <RecordLayer.decrypt+0x4c>
+ 1077470:	52800aa8 	mov	w8, #0x55                  	// #85
+ 1077474:	79003008 	strh	w8, [x0, #24]
+ 1077478:	a9454ff4 	ldp	x20, x19, [sp, #80]
+ 107747c:	a94457f6 	ldp	x22, x21, [sp, #64]
+ 1077480:	a9435ff8 	ldp	x24, x23, [sp, #48]
+ 1077484:	a9427bfd 	ldp	x29, x30, [sp, #32]
+ 1077488:	910183ff 	add	sp, sp, #0x60
+ 107748c:	d65f03c0 	ret
+ 1077490:	78403049 	ldurh	w9, [x2, #3]
+ 1077494:	5ac00529 	rev16	w9, w9
+ 1077498:	5288202b 	mov	w11, #0x4101                	// #16641
+ 107749c:	6b0b013f 	cmp	w9, w11
+ 10774a0:	54000063 	b.cc	10774ac <RecordLayer.decrypt+0x84>  // b.lo, b.ul, b.last
+ 10774a4:	52800688 	mov	w8, #0x34                  	// #52
+ 10774a8:	17fffff3 	b	1077474 <RecordLayer.decrypt+0x4c>
+ 10774ac:	3940004b 	ldrb	w11, [x2]
+ 10774b0:	71005d7f 	cmp	w11, #0x17
+ 10774b4:	540000c1 	b.ne	10774cc <RecordLayer.decrypt+0xa4>  // b.any
+ 10774b8:	eb09015f 	cmp	x10, x9
+ 10774bc:	540001c2 	b.cs	10774f4 <RecordLayer.decrypt+0xcc>  // b.hs, b.nlast
+ 10774c0:	b0fffda8 	adrp	x8, 102c000 <__anon_8895+0x1>
+ 10774c4:	91142108 	add	x8, x8, #0x508
+ 10774c8:	14000003 	b	10774d4 <RecordLayer.decrypt+0xac>
+ 10774cc:	b0fffda8 	adrp	x8, 102c000 <__anon_8895+0x1>
+ 10774d0:	91162108 	add	x8, x8, #0x588
+ 10774d4:	ad400500 	ldp	q0, q1, [x8]
+ 10774d8:	ad000400 	stp	q0, q1, [x0]
+ 10774dc:	a9454ff4 	ldp	x20, x19, [sp, #80]
+ 10774e0:	a94457f6 	ldp	x22, x21, [sp, #64]
+ 10774e4:	a9435ff8 	ldp	x24, x23, [sp, #48]
+ 10774e8:	a9427bfd 	ldp	x29, x30, [sp, #32]
+ 10774ec:	910183ff 	add	sp, sp, #0x60
+ 10774f0:	d65f03c0 	ret
+ 10774f4:	71004129 	subs	w9, w9, #0x10
+ 10774f8:	54000088 	b.hi	1077508 <RecordLayer.decrypt+0xe0>  // b.pmore
+ 10774fc:	b0fffda8 	adrp	x8, 102c000 <__anon_8895+0x1>
+ 1077500:	91132108 	add	x8, x8, #0x4c8
+ 1077504:	17fffff4 	b	10774d4 <RecordLayer.decrypt+0xac>
+ 1077508:	aa0003f7 	mov	x23, x0
+ 107750c:	aa0203f5 	mov	x21, x2
+ 1077510:	91001453 	add	x19, x2, #0x5
+ 1077514:	92403d34 	and	x20, x9, #0xffff
+ 1077518:	3cf46a60 	ldr	q0, [x19, x20]
+ 107751c:	91014829 	add	x9, x1, #0x52
+ 1077520:	fc44a021 	ldur	d1, [x1, #74]
+ 1077524:	4d408121 	ld1	{v1.s}[2], [x9]
+ 1077528:	3d8003e0 	str	q0, [sp]
+ 107752c:	dac00d08 	rev	x8, x8
+ 1077530:	9e670100 	fmov	d0, x8
+ 1077534:	6e006000 	ext	v0.16b, v0.16b, v0.16b, #12
+ 1077538:	4e041fe0 	mov	v0.s[0], wzr
+ 107753c:	6e201c20 	eor	v0.16b, v1.16b, v0.16b
+ 1077540:	910043e8 	add	x8, sp, #0x10
+ 1077544:	b27d0108 	orr	x8, x8, #0x8
+ 1077548:	4d008100 	st1	{v0.s}[2], [x8]
+ 107754c:	fd000be0 	str	d0, [sp, #16]
+ 1077550:	aa0103f6 	mov	x22, x1
+ 1077554:	94018eff 	bl	10db150 <ERR_set_mark@plt>
+ 1077558:	b81fc3bf 	stur	wzr, [x29, #-4]
+ 107755c:	aa1603f8 	mov	x24, x22
+ 1077560:	f9400ec0 	ldr	x0, [x22, #24]
+ 1077564:	910043e4 	add	x4, sp, #0x10
+ 1077568:	d2800001 	mov	x1, #0x0                   	// #0
+ 107756c:	d2800002 	mov	x2, #0x0                   	// #0
+ 1077570:	d2800003 	mov	x3, #0x0                   	// #0
+ 1077574:	94018f6b 	bl	10db320 <EVP_DecryptInit_ex@plt>
+ 1077578:	7100041f 	cmp	w0, #0x1
+ 107757c:	540008c1 	b.ne	1077694 <RecordLayer.decrypt+0x26c>  // b.any
+ 1077580:	f9400f00 	ldr	x0, [x24, #24]
+ 1077584:	d10013a2 	sub	x2, x29, #0x4
+ 1077588:	d2800001 	mov	x1, #0x0                   	// #0
+ 107758c:	aa1503e3 	mov	x3, x21
+ 1077590:	528000a4 	mov	w4, #0x5                   	// #5
+ 1077594:	94018f67 	bl	10db330 <EVP_DecryptUpdate@plt>
+ 1077598:	7100041f 	cmp	w0, #0x1
+ 107759c:	540007c1 	b.ne	1077694 <RecordLayer.decrypt+0x26c>  // b.any
+ 10775a0:	f9400f00 	ldr	x0, [x24, #24]
+ 10775a4:	d10013a2 	sub	x2, x29, #0x4
+ 10775a8:	aa1303e1 	mov	x1, x19
+ 10775ac:	aa1303e3 	mov	x3, x19
+ 10775b0:	aa1403e4 	mov	x4, x20
+ 10775b4:	94018f5f 	bl	10db330 <EVP_DecryptUpdate@plt>
+ 10775b8:	7100041f 	cmp	w0, #0x1
+ 10775bc:	540006c1 	b.ne	1077694 <RecordLayer.decrypt+0x26c>  // b.any
+ 10775c0:	b85fc3b6 	ldur	w22, [x29, #-4]
+ 10775c4:	f9400f00 	ldr	x0, [x24, #24]
+ 10775c8:	910003e3 	mov	x3, sp
+ 10775cc:	52800221 	mov	w1, #0x11                  	// #17
+ 10775d0:	52800202 	mov	w2, #0x10                  	// #16
+ 10775d4:	94018f4f 	bl	10db310 <EVP_CIPHER_CTX_ctrl@plt>
+ 10775d8:	7100041f 	cmp	w0, #0x1
+ 10775dc:	540005c1 	b.ne	1077694 <RecordLayer.decrypt+0x26c>  // b.any
+ 10775e0:	f9400f00 	ldr	x0, [x24, #24]
+ 10775e4:	8b160261 	add	x1, x19, x22
+ 10775e8:	d10013a2 	sub	x2, x29, #0x4
+ 10775ec:	94018f55 	bl	10db340 <EVP_DecryptFinal_ex@plt>
+ 10775f0:	aa0003f6 	mov	x22, x0
+ 10775f4:	94018edb 	bl	10db160 <ERR_pop_to_mark@plt>
+ 10775f8:	710006df 	cmp	w22, #0x1
+ 10775fc:	540004e1 	b.ne	1077698 <RecordLayer.decrypt+0x270>  // b.any
+ 1077600:	f9400308 	ldr	x8, [x24]
+ 1077604:	91000508 	add	x8, x8, #0x1
+ 1077608:	f9000308 	str	x8, [x24]
+ 107760c:	d100068c 	sub	x12, x20, #0x1
+ 1077610:	386c6a6a 	ldrb	w10, [x19, x12]
+ 1077614:	aa1703e8 	mov	x8, x23
+ 1077618:	3500070a 	cbnz	w10, 10776f8 <RecordLayer.decrypt+0x2d0>
+ 107761c:	910012a9 	add	x9, x21, #0x4
+ 1077620:	92400d8b 	and	x11, x12, #0xf
+ 1077624:	8b15028a 	add	x10, x20, x21
+ 1077628:	91004d4a 	add	x10, x10, #0x13
+ 107762c:	91003a8c 	add	x12, x20, #0xe
+ 1077630:	90fffc6d 	adrp	x13, 1003000 <__anon_22801+0x90>
+ 1077634:	3dc005a0 	ldr	q0, [x13, #16]
+ 1077638:	d1003d8d 	sub	x13, x12, #0xf
+ 107763c:	f1003dbf 	cmp	x13, #0xf
+ 1077640:	54000449 	b.ls	10776c8 <RecordLayer.decrypt+0x2a0>  // b.plast
+ 1077644:	3cde1141 	ldur	q1, [x10, #-31]
+ 1077648:	4e218c22 	cmtst	v2.16b, v1.16b, v1.16b
+ 107764c:	6e30a842 	umaxv	b2, v2.16b
+ 1077650:	1e26004d 	fmov	w13, s2
+ 1077654:	d100414a 	sub	x10, x10, #0x10
+ 1077658:	d100418c 	sub	x12, x12, #0x10
+ 107765c:	3607feed 	tbz	w13, #0, 1077638 <RecordLayer.decrypt+0x210>
+ 1077660:	4e209821 	cmeq	v1.16b, v1.16b, #0
+ 1077664:	4e611c00 	bic	v0.16b, v0.16b, v1.16b
+ 1077668:	6e004001 	ext	v1.16b, v0.16b, v0.16b, #8
+ 107766c:	4e013800 	zip1	v0.16b, v0.16b, v1.16b
+ 1077670:	4e71b800 	addv	h0, v0.8h
+ 1077674:	1e260009 	fmov	w9, s0
+ 1077678:	53103d29 	lsl	w9, w9, #16
+ 107767c:	5ac01129 	clz	w9, w9
+ 1077680:	4b0903e9 	neg	w9, w9
+ 1077684:	93407d29 	sxtw	x9, w9
+ 1077688:	8b0c012c 	add	x12, x9, x12
+ 107768c:	3869694a 	ldrb	w10, [x10, x9]
+ 1077690:	1400001a 	b	10776f8 <RecordLayer.decrypt+0x2d0>
+ 1077694:	94018eb3 	bl	10db160 <ERR_pop_to_mark@plt>
+ 1077698:	528009c8 	mov	w8, #0x4e                  	// #78
+ 107769c:	790032e8 	strh	w8, [x23, #24]
+ 10776a0:	a9454ff4 	ldp	x20, x19, [sp, #80]
+ 10776a4:	a94457f6 	ldp	x22, x21, [sp, #64]
+ 10776a8:	a9435ff8 	ldp	x24, x23, [sp, #48]
+ 10776ac:	a9427bfd 	ldp	x29, x30, [sp, #32]
+ 10776b0:	910183ff 	add	sp, sp, #0x60
+ 10776b4:	d65f03c0 	ret
+ 10776b8:	d100056c 	sub	x12, x11, #0x1
+ 10776bc:	386b692a 	ldrb	w10, [x9, x11]
+ 10776c0:	aa0c03eb 	mov	x11, x12
+ 10776c4:	3500018a 	cbnz	w10, 10776f4 <RecordLayer.decrypt+0x2cc>
+ 10776c8:	b5ffff8b 	cbnz	x11, 10776b8 <RecordLayer.decrypt+0x290>
+ 10776cc:	b0fffda8 	adrp	x8, 102c000 <__anon_8895+0x1>
+ 10776d0:	910fa108 	add	x8, x8, #0x3e8
+ 10776d4:	ad400500 	ldp	q0, q1, [x8]
+ 10776d8:	ad0006e0 	stp	q0, q1, [x23]
+ 10776dc:	a9454ff4 	ldp	x20, x19, [sp, #80]
+ 10776e0:	a94457f6 	ldp	x22, x21, [sp, #64]
+ 10776e4:	a9435ff8 	ldp	x24, x23, [sp, #48]
+ 10776e8:	a9427bfd 	ldp	x29, x30, [sp, #32]
+ 10776ec:	910183ff 	add	sp, sp, #0x60
+ 10776f0:	d65f03c0 	ret
+ 10776f4:	aa1703e8 	mov	x8, x23
+ 10776f8:	7900311f 	strh	wzr, [x8, #24]
+ 10776fc:	3900410a 	strb	w10, [x8, #16]
+ 1077700:	a9003113 	stp	x19, x12, [x8]
+ 1077704:	a9454ff4 	ldp	x20, x19, [sp, #80]
+ 1077708:	a94457f6 	ldp	x22, x21, [sp, #64]
+ 107770c:	a9435ff8 	ldp	x24, x23, [sp, #48]
+ 1077710:	a9427bfd 	ldp	x29, x30, [sp, #32]
+ 1077714:	910183ff 	add	sp, sp, #0x60
+ 1077718:	d65f03c0 	ret
+

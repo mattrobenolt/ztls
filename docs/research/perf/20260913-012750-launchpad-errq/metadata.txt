@@ -1,0 +1,62 @@
+timestamp_utc=20260913-012750
+scope=#88 acceptance measurement: record-path cost of unified unconditional ERR_set_mark/ERR_pop_to_mark (candidate) vs no queue guard (baseline)
+classification=LOCAL within-host acceptance measurement; NOT an EC2 production comparison
+baseline_revision=ba4a10f67045b829a8f18be7ae716c7dcb61bfb0
+baseline_dirty=false
+candidate_revision=da799269498a02a4befc25da90ba01865070cf78
+candidate_dirty=false
+crypto_backend=openssl
+openssl_version=OpenSSL 3.6.4 25 Aug 2026 (Library: OpenSSL 3.6.4 25 Aug 2026)
+libcrypto_path=/nix/store/v89yca35zsb13k51ibz0mcz2rrzjwwrj-openssl-3.6.4/lib/libcrypto.so.3
+libcrypto_sha256=56f4369cd7d5c441363a8f3678b5463f457744035e4fadf93ca416ffccfed79a
+zig_version=0.15.2
+optimize=ReleaseFast
+target_cpu=apple_m1 (build.zig native-aarch64 workaround)
+baseline_binary_sha256=a97c1fd4a839ecc1f3b79979c84e41feda2f4c0c82ad74fdbe9c207e18d81401
+candidate_binary_sha256=b04751976c9609f2e29da67dbf40a9f7d9ecc62785d4e5b2aad1ac81a2d240d9
+kernel=7.2.3
+uname=Linux launchpad 7.2.3 #1-NixOS SMP PREEMPT Wed Sep  2 12:33:21 UTC 2026 aarch64 GNU/Linux
+perf_event_paranoid=2
+pin_command=taskset -c 3
+wall_rounds=6 (ABBA alternation), count=5 samples/row/invocation, benchtime=300ms
+instr_iters: size16=4000000x size1350=300000x size16384=30000x, 3 reps, alternating
+[lscpu]
+Architecture:                            aarch64
+CPU op-mode(s):                          64-bit
+Byte Order:                              Little Endian
+CPU(s):                                  4
+On-line CPU(s) list:                     0-3
+Vendor ID:                               ARM
+Model name:                              Neoverse-V3
+Model:                                   1
+Thread(s) per core:                      1
+Core(s) per socket:                      4
+Socket(s):                               1
+Stepping:                                r0p1
+BogoMIPS:                                2000.00
+Flags:                                   fp asimd evtstrm aes pmull sha1 sha2 crc32 atomics fphp asimdhp cpuid asimdrdm jscvt fcma lrcpc dcpop sha3 asimddp sha512 sve asimdfhm dit uscat ilrcpc flagm sb paca pacg dcpodp sve2 sveaes svepmull svebitperm svesha3 flagm2 frint svei8mm svebf16 i8mm bf16 dgh rng bti ecv afp wfxt
+L1d cache:                               256 KiB (4 instances)
+L1i cache:                               256 KiB (4 instances)
+L2 cache:                                8 MiB (4 instances)
+L3 cache:                                48 MiB (1 instance)
+NUMA node(s):                            1
+NUMA node0 CPU(s):                       0-3
+Vulnerability Gather data sampling:      Not affected
+Vulnerability Ghostwrite:                Not affected
+Vulnerability Indirect target selection: Not affected
+Vulnerability Itlb multihit:             Not affected
+Vulnerability L1tf:                      Not affected
+Vulnerability Mds:                       Not affected
+Vulnerability Meltdown:                  Not affected
+Vulnerability Mmio stale data:           Not affected
+Vulnerability Old microcode:             Not affected
+Vulnerability Reg file data sampling:    Not affected
+Vulnerability Retbleed:                  Not affected
+Vulnerability Spec rstack overflow:      Not affected
+Vulnerability Spec store bypass:         Mitigation; Speculative Store Bypass disabled via prctl
+Vulnerability Spectre v1:                Mitigation; __user pointer sanitization
+Vulnerability Spectre v2:                Mitigation; CSV2, BHB
+Vulnerability Srbds:                     Not affected
+Vulnerability Tsa:                       Not affected
+Vulnerability Tsx async abort:           Not affected
+Vulnerability Vmscape:                   Not affected
