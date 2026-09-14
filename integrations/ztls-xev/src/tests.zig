@@ -970,7 +970,7 @@ fn expectCancelThenClose(comptime Xev: type, shutdown: anytype) !void {
 }
 
 test "close: closeReset with a read in flight cancels it, then closes" {
-    if (!kqueue_abortive_close_broken) try expectCancelThenClose(xev, .abortive);
+    try expectCancelThenClose(xev, .abortive);
     if (builtin.os.tag == .linux) try expectCancelThenClose(xev.Epoll, .abortive);
 }
 
@@ -1225,7 +1225,7 @@ fn expectWriteCancelThenClose(comptime Xev: type, shutdown: anytype) !void {
 // cancel-then-close shape as the abortive read, and that shape is the one that
 // stalls on kqueue for reasons still unestablished (see CloseWhileReading).
 test "close: closeReset with a write in flight cancels it, then closes" {
-    if (!kqueue_abortive_close_broken) try expectWriteCancelThenClose(xev, .abortive);
+    try expectWriteCancelThenClose(xev, .abortive);
     if (builtin.os.tag == .linux) try expectWriteCancelThenClose(xev.Epoll, .abortive);
 }
 
