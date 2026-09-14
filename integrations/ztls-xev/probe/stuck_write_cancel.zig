@@ -138,6 +138,19 @@ fn probe(
     // peer end. Linux doubles this to ~4.6KB, far short of the 16KB payload.
     try std.posix.setsockopt(fds[0], std.posix.SOL.SOCKET, std.posix.SO.SNDBUF, &std.mem.toBytes(@as(c_int, 2048)));
 
+    // kqueue probes readiness and requires a nonblocking descriptor. Otherwise
+    // send(2) can stall inside `loop.run(.no_wait)`, outside the spin bound.
+    if (builtin.os.tag == .macos) {
+        const flags = std.c.fcntl(fds[0], std.posix.F.GETFL);
+        if (flags < 0) return error.FcntlFailed;
+        const nonblock: std.posix.O = .{ .NONBLOCK = true };
+        if (std.c.fcntl(
+            fds[0],
+            std.posix.F.SETFL,
+            flags | @as(c_int, @bitCast(nonblock)),
+        ) != 0) return error.FcntlFailed;
+    }
+
     if (comptime prefill) {
         var fill: [4096]u8 = [_]u8{0xcd} ** 4096;
         var filled: usize = 0;

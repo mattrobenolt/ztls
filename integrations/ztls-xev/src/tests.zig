@@ -1213,7 +1213,7 @@ fn expectWriteCancelThenClose(comptime Xev: type, shutdown: anytype) !void {
 
 // #83 — a close on top of an armed write, on every backend available here.
 // On kqueue both variants depend on the same deletion flush as the abortive
-// read. Reverting the libxev pin makes each test underflow `Loop.active`.
+// read. Reverting the libxev pin makes each test panic on integer overflow.
 test "close: closeReset with a write in flight cancels it, then closes" {
     try expectWriteCancelThenClose(xev, .abortive);
     if (builtin.os.tag == .linux) try expectWriteCancelThenClose(xev.Epoll, .abortive);

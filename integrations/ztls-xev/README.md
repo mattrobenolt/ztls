@@ -190,11 +190,11 @@ than plain arrays — `secureZero` comes with it.
 `peek`/`consume`/`writeNegotiationPlaintext` for StartTLS-style protocol
 detection are absent, which is why the first state is `handshaking` rather than
 `negotiating`; `isTls()` is provided for callers doing their own pre-TLS
-peeking. Client authentication, kqueue/IOCP validation, key-update initiation,
-and session resumption are all still open under #76.
+peeking. Client authentication, key-update initiation, and session resumption
+are not implemented. Current status lives in `PRODUCTION_READINESS.md`.
 
 In-flight cancellation of both reads and writes is covered for abortive and
-orderly close on the default backend and explicitly on epoll (#83).
+orderly close on io_uring, epoll, and kqueue (#83).
 
 The epoll path carries a workaround for what looks like an upstream libxev bug.
 Its epoll TCP watcher duplicates the fd per operation (`flags.dup`), and the
@@ -224,13 +224,13 @@ testing the cancel's own state instead of the target's) and
 matching reused `user_data`) from the same investigation; the kqueue close
 abort is [#232](https://github.com/mitchellh/libxev/issues/232).
 
-kqueue does not use the duplicate at all, and its cancellation path is the one
-remaining unproven surface: the abortive close with a read in flight stalls
-there for reasons still unestablished, and the write variants share that shape
-and are skipped with it. That keeps
-[#83](https://github.com/mattrobenolt/ztls/issues/83) open.
+kqueue does not use the duplicate. Its former stall came from libxev discarding
+tick-local `EV_DELETE` changes on `wait == 0`. ztls-xev pins libxev `7497c85`
+from [mitchellh/libxev#224](https://github.com/mitchellh/libxev/pull/224).
+The regression and mutation evidence lives in `PRODUCTION_READINESS.md` and
+`docs/research/XEV_KQUEUE_83/20260914-production/`.
 
-Backends: io_uring and macOS/kqueue are CI-gated, IOCP is untouched.
+Backends: io_uring and macOS/kqueue are CI-gated. IOCP is out of scope.
 
 ## Build
 
