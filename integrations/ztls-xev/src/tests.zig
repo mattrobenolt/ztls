@@ -936,17 +936,8 @@ fn CloseWhileReading(comptime Xev: type) type {
 // #83 — an abortive close on top of an armed read, on every backend available
 // here. io_uring completes an fd's pending operations when it closes, so it
 // forgives a missing cancel entirely; epoll does not, which is why the same
-// scenario runs twice.
-/// #83 — kqueue stalls the *abortive* close with a read in flight: the client's
-/// socket close is armed and its callback never fires, with `Loop.active == 0`.
-/// Tearing the stalled loop down then crashes, so it cannot even be asserted as
-/// failing; it has to be skipped.
-///
-/// The orderly variant is NOT affected and runs normally on kqueue. That
-/// asymmetry is the sharpest clue available: the only difference is the
-/// close_notify write between the cancel and the socket close, so an extra
-/// completion cycle there is enough to unstick it.
-const kqueue_abortive_close_broken = xev.backend == .kqueue;
+// scenario runs twice. The pinned libxev includes mitchellh/libxev#224's
+// kqueue deletion flush; reverting that pin makes this test stall.
 
 fn expectCancelThenClose(comptime Xev: type, shutdown: anytype) !void {
     const Scenario = CloseWhileReading(Xev);
@@ -970,7 +961,7 @@ fn expectCancelThenClose(comptime Xev: type, shutdown: anytype) !void {
 }
 
 test "close: closeReset with a read in flight cancels it, then closes" {
-    if (!kqueue_abortive_close_broken) try expectCancelThenClose(xev, .abortive);
+    try expectCancelThenClose(xev, .abortive);
     if (builtin.os.tag == .linux) try expectCancelThenClose(xev.Epoll, .abortive);
 }
 
@@ -1220,12 +1211,11 @@ fn expectWriteCancelThenClose(comptime Xev: type, shutdown: anytype) !void {
     try testing.expectEqual(@as(usize, 0), s.loop_active_after_close);
 }
 
-// #83 — a close on top of an armed write, on every backend available here. Both
-// variants are skipped on kqueue: the orderly one degrades to the same
-// cancel-then-close shape as the abortive read, and that shape is the one that
-// stalls on kqueue for reasons still unestablished (see CloseWhileReading).
+// #83 — a close on top of an armed write, on every backend available here.
+// On kqueue both variants depend on the same deletion flush as the abortive
+// read. Reverting the libxev pin makes each test underflow `Loop.active`.
 test "close: closeReset with a write in flight cancels it, then closes" {
-    if (!kqueue_abortive_close_broken) try expectWriteCancelThenClose(xev, .abortive);
+    try expectWriteCancelThenClose(xev, .abortive);
     if (builtin.os.tag == .linux) try expectWriteCancelThenClose(xev.Epoll, .abortive);
 }
 
@@ -1233,6 +1223,6 @@ test "close: closeReset with a write in flight cancels it, then closes" {
 // half-sent record and the engine's pending-write latch still set, no
 // close_notify is owed or sent — the close proceeds straight to the socket.
 test "close: orderly close with a write in flight abandons close_notify" {
-    if (!kqueue_abortive_close_broken) try expectWriteCancelThenClose(xev, .orderly);
+    try expectWriteCancelThenClose(xev, .orderly);
     if (builtin.os.tag == .linux) try expectWriteCancelThenClose(xev.Epoll, .orderly);
 }
