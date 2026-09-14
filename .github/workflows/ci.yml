@@ -52,8 +52,6 @@ jobs:
       - uses: DeterminateSystems/magic-nix-cache-action@908b263ff629f4cc17666315b7fd3ec127c6244d # v14
       - name: Run the 0.16 integration gates on kqueue
         run: nix develop .#zig-0_16 --command just integrations-ci
-      - name: Run bounded libxev probes for #83
-        run: nix develop .#zig-0_16 --command bash -c 'cd integrations/ztls-xev && zig build probe-cancel'
 
   test-zig-0_16:
     runs-on: ubuntu-latest
