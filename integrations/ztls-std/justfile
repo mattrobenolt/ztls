@@ -20,7 +20,7 @@ build:
 build-examples:
     zig build build-examples
 
-[doc("Run unit, round-trip, and example tests")]
+[doc("Run unit, round-trip, OpenSSL interop, and example tests")]
 test:
     zig build test --summary all
 
@@ -54,7 +54,7 @@ flake-check n="20":
     #!/usr/bin/env bash
     set -euo pipefail
     # Compilation caches but test runs do not, so each iteration really
-    # re-executes. Cheap enough to be routine: these suites are milliseconds.
+    # re-executes, including both external OpenSSL peers.
     for i in $(seq 1 {{ n }}); do
         if ! zig build test > /dev/null 2>&1; then
             echo "flaked on run $i of {{ n }}" >&2

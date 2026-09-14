@@ -158,6 +158,23 @@ pub fn build(b: *std.Build) void {
     const run_roundtrip_tests = b.addRunArtifact(roundtrip_tests);
     run_roundtrip_tests.has_side_effects = true;
 
+    const interop_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/interop_tests.zig"),
+            .target = target,
+            .optimize = optimize,
+            .link_libc = true,
+            .imports = &.{
+                .{ .name = "ztls_std", .module = mod },
+                .{ .name = "ztls", .module = ztls_mod },
+                .{ .name = "fixtures", .module = fixtures_mod },
+            },
+        }),
+        .test_runner = test_runner,
+    });
+    const run_interop_tests = b.addRunArtifact(interop_tests);
+    run_interop_tests.has_side_effects = true;
+
     const exe_tests = b.addTest(.{
         .root_module = exe.root_module,
         .test_runner = test_runner,
@@ -168,6 +185,7 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Run tests");
     test_step.dependOn(&run_mod_tests.step);
     test_step.dependOn(&run_roundtrip_tests.step);
+    test_step.dependOn(&run_interop_tests.step);
     test_step.dependOn(&run_exe_tests.step);
     for (example_test_runs) |maybe_run| {
         if (maybe_run) |test_run| test_step.dependOn(&test_run.step);

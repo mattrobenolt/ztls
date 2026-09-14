@@ -519,11 +519,15 @@ backend), or just `cd` into this directory — direnv loads it via `.envrc`.
 
 ```
 just build             # smoke executable
-just test              # unit + round-trip + example tests
+just test              # unit + round-trip + OpenSSL interop + example tests
 just build-examples    # compile every example (no peer required)
 just lint              # zig fmt, ziglint, workspace std-alias rules
 just ci                # everything above
 ```
+
+The OpenSSL CLI supplied by the devshell is a required test dependency. The
+interop suite runs real TCP exchanges against `openssl s_server` and `s_client`
+in both directions; an absent executable is a test failure, not a skip.
 
 The root workspace delegates to this subproject through `just integrations-ci`,
 which is wired into `just ci-0_16` (the Zig 0.16 CI lane). The 0.15 lane cannot
