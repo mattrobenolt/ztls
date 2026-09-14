@@ -84,6 +84,8 @@ const Step = union(enum) {
     /// RFC 8446 §5.1 permits and rate-limits nowhere. Goes through the engine
     /// directly because the public Writer (correctly) drops empty writes.
     send_empty_records: usize,
+    /// Send a post-handshake KeyUpdate. RFC 8446 §4.6.3.
+    send_key_update: ztls.ServerHandshake.KeyUpdateRequest,
     /// Hostile peer: emit a record whose ciphertext has one flipped bit, so the
     /// AEAD tag cannot verify. RFC 8446 §5.2.
     send_corrupt_record,
@@ -101,6 +103,7 @@ const ServerCtx = struct {
     alpn: []const []const u8 = &.{},
     read_total: usize = 0,
     err: ?anyerror = null,
+    done: Gate = .{},
 
     fn fail(ctx: *ServerCtx, err: anyerror) void {
         ctx.err = err;
@@ -108,6 +111,7 @@ const ServerCtx = struct {
 };
 
 fn serverRun(ctx: *ServerCtx) void {
+    defer ctx.done.open();
     const io = testIo();
 
     var key: ztls.signature.PrivateKey = ztls.signature.PrivateKey.fromP256Scalar(
@@ -160,6 +164,13 @@ fn serverRun(ctx: *ServerCtx) void {
         },
         .send_empty_records => |count| for (0..count) |_| {
             const record = conn.hs.sendApplicationData("", &conn.out.buffer) catch |err|
+                return ctx.fail(err);
+            const written = std.c.write(ctx.fd, record.ptr, record.len);
+            conn.hs.completeWrite();
+            if (written != @as(isize, @intCast(record.len))) return ctx.fail(error.ShortWrite);
+        },
+        .send_key_update => |request| {
+            const record = conn.hs.sendKeyUpdate(&conn.out.buffer, request) catch |err|
                 return ctx.fail(err);
             const written = std.c.write(ctx.fd, record.ptr, record.len);
             conn.hs.completeWrite();
@@ -301,6 +312,268 @@ fn authServerExchange(comptime Server: type, ctx: *AuthServerCtx) !void {
 }
 
 // ───────────────────────────────
+// Split-half test gates
+// ───────────────────────────────
+
+const Gate = struct {
+    const State = enum(u8) { closed, open };
+    state: std.atomic.Value(State) = .init(.closed),
+
+    fn open(gate: *Gate) void {
+        gate.state.store(.open, .release);
+    }
+
+    fn isOpen(gate: *const Gate) bool {
+        return gate.state.load(.acquire) == .open;
+    }
+
+    fn wait(gate: *const Gate) !void {
+        for (0..1_000_000) |_| {
+            if (gate.isOpen()) return;
+            std.Thread.yield() catch return error.TestGateFailed;
+        }
+        return error.TestGateTimedOut;
+    }
+};
+
+// These masks intentionally mirror the private state word. They let tests wait
+// for exact operation boundaries without sleeps or scheduler guesses.
+const state_tx_update_pending: u8 = 1 << 4;
+const state_tx_poisoned: u8 = 1 << 5;
+const state_rx_busy: u8 = 1 << 6;
+const state_tx_busy: u8 = 1 << 7;
+
+const TearWriteState = enum { idle, armed, fail };
+threadlocal var tear_write_state: TearWriteState = .idle;
+
+const AbortWriteHarness = struct {
+    const State = enum(u8) { idle, armed, blocked };
+    const Shutdown = enum(u8) { none, recv, send, both };
+    state: std.atomic.Value(State) = .init(.idle),
+    shutdown: std.atomic.Value(Shutdown) = .init(.none),
+    entered: Gate = .{},
+    aborted: Gate = .{},
+};
+var abort_write_harness: *AbortWriteHarness = undefined;
+
+fn tearingNetWrite(
+    userdata: ?*anyopaque,
+    handle: net.Socket.Handle,
+    header: []const u8,
+    data: []const []const u8,
+    splat: usize,
+) net.Stream.Writer.Error!usize {
+    switch (tear_write_state) {
+        .idle => return testIo().vtable.netWrite(userdata, handle, header, data, splat),
+        .armed => {
+            assert(header.len == 0);
+            assert(data.len == 1);
+            assert(splat == 1);
+            assert(data[0].len > 7);
+            tear_write_state = .fail;
+            return 7;
+        },
+        .fail => {
+            tear_write_state = .idle;
+            return error.SocketUnconnected;
+        },
+    }
+}
+
+fn blockingNetWrite(
+    userdata: ?*anyopaque,
+    handle: net.Socket.Handle,
+    header: []const u8,
+    data: []const []const u8,
+    splat: usize,
+) net.Stream.Writer.Error!usize {
+    if (abort_write_harness.state.cmpxchgStrong(
+        .armed,
+        .blocked,
+        .acq_rel,
+        .acquire,
+    ) == null) {
+        abort_write_harness.entered.open();
+        abort_write_harness.aborted.wait() catch return error.Unexpected;
+        return error.SocketUnconnected;
+    }
+    return testIo().vtable.netWrite(userdata, handle, header, data, splat);
+}
+
+fn blockingNetShutdown(
+    userdata: ?*anyopaque,
+    handle: net.Socket.Handle,
+    how: net.ShutdownHow,
+) net.ShutdownError!void {
+    abort_write_harness.shutdown.store(switch (how) {
+        .recv => .recv,
+        .send => .send,
+        .both => .both,
+    }, .release);
+    abort_write_harness.aborted.open();
+    return testIo().vtable.netShutdown(userdata, handle, how);
+}
+
+fn waitState(conn: *const tls.Client, mask: u8) !void {
+    for (0..1_000_000) |_| {
+        if (conn.state.load(.acquire) & mask != 0) return;
+        std.Thread.yield() catch return error.TestGateFailed;
+    }
+    return error.TestGateTimedOut;
+}
+
+const ClientReadCtx = struct {
+    conn: *tls.Client,
+    data: [16]u8 = undefined,
+    len: usize = 0,
+    err: ?anyerror = null,
+    done: Gate = .{},
+};
+
+fn clientReadRun(ctx: *ClientReadCtx) void {
+    defer ctx.done.open();
+    ctx.len = ctx.conn.reader().readSliceShort(&ctx.data) catch |err| {
+        ctx.err = if (err == error.ReadFailed)
+            ctx.conn.readError() orelse err
+        else
+            err;
+        return;
+    };
+}
+
+const ClientWriteCtx = struct {
+    conn: *tls.Client,
+    data: []const u8,
+    err: ?anyerror = null,
+    done: Gate = .{},
+};
+
+fn clientWriteRun(ctx: *ClientWriteCtx) void {
+    defer ctx.done.open();
+    const w = ctx.conn.writer();
+    w.writeAll(ctx.data) catch |err| {
+        ctx.err = if (err == error.WriteFailed)
+            ctx.conn.writeError() orelse err
+        else
+            err;
+        return;
+    };
+    w.flush() catch |err| {
+        ctx.err = if (err == error.WriteFailed)
+            ctx.conn.writeError() orelse err
+        else
+            err;
+    };
+}
+
+const KeyUpdateExpectation = enum { application_data, close_notify };
+const KeyUpdateSource = enum { peer_request, published_request };
+
+const KeyUpdateServerCtx = struct {
+    fd: posix.fd_t,
+    expectation: KeyUpdateExpectation = .application_data,
+    source: KeyUpdateSource = .peer_request,
+    ready: Gate = .{},
+    release: Gate = .{},
+    done: Gate = .{},
+    err: ?anyerror = null,
+};
+
+fn keyUpdateServerRun(ctx: *KeyUpdateServerCtx) void {
+    defer ctx.done.open();
+    keyUpdateServerExchange(ctx) catch |err| {
+        ctx.err = err;
+    };
+}
+
+fn keyUpdateServerExchange(ctx: *KeyUpdateServerCtx) !void {
+    const io = testIo();
+    var key: ztls.signature.PrivateKey = try .fromP256Scalar(
+        @ptrCast(test_scalar[0..32]),
+    );
+    defer key.deinit();
+
+    var conn: tls.Server = undefined;
+    try conn.accept(io, streamFor(ctx.fd), .{
+        .cert_chain = &.{test_cert_der},
+        .signer = key.signer(),
+    });
+    defer conn.deinit();
+
+    ctx.ready.open();
+    try ctx.release.wait();
+
+    // RFC 8446 §4.6.3 — request a reciprocal key update. The client must
+    // answer before its next application-data record.
+    if (ctx.source == .peer_request) {
+        const update = try conn.hs.sendKeyUpdate(
+            &conn.out.buffer,
+            .update_requested,
+        );
+        const written = std.c.write(ctx.fd, update.ptr, update.len);
+        if (written != @as(isize, @intCast(update.len))) return error.ShortWrite;
+        conn.hs.completeWrite();
+    }
+
+    var storage: [ztls.RecordBuffer.recommended_storage]u8 = undefined;
+    var rb: ztls.RecordBuffer = .init(&storage);
+    var stage: enum { response, application, done } = .response;
+    while (stage != .done) {
+        while (try rb.next()) |record| {
+            const event = try conn.hs.receiveRecord(record);
+            switch (event) {
+                .key_update => |request| {
+                    if (stage != .response or request != .update_not_requested)
+                        return error.BadKeyUpdateOrder;
+                    stage = .application;
+                },
+                .application_data => |data| {
+                    if (ctx.expectation != .application_data or
+                        stage != .application or
+                        !mem.eql(u8, data, "payload"))
+                    {
+                        return error.BadApplicationOrder;
+                    }
+                    stage = .done;
+                },
+                .none => {},
+                .closed => {
+                    if (ctx.expectation != .close_notify or stage != .application)
+                        return error.UnexpectedEof;
+                    stage = .done;
+                },
+            }
+            if (stage == .done) break;
+        }
+        if (stage == .done) break;
+        const n = try posix.read(ctx.fd, rb.writable());
+        if (n == 0) return error.UnexpectedEof;
+        rb.advance(n);
+    }
+
+    if (ctx.expectation == .application_data) {
+        const w = conn.writer();
+        try w.writeAll("go");
+        try w.flush();
+    }
+    conn.close();
+}
+
+const ClientCloseCtx = struct {
+    conn: *tls.Client,
+    started: Gate = .{},
+    done: Gate = .{},
+    err: ?tls.WriteError = null,
+};
+
+fn clientCloseRun(ctx: *ClientCloseCtx) void {
+    defer ctx.done.open();
+    ctx.started.open();
+    ctx.conn.closeWrite();
+    ctx.err = ctx.conn.writeError();
+}
+
+// ───────────────────────────────
 // Tests
 // ───────────────────────────────
 
@@ -347,6 +620,355 @@ test "round-trip: handshake, both directions, ALPN, close_notify" {
 
     conn.close();
     server.join();
+    if (sctx.err) |err| return err;
+}
+
+// RFC 8446 §5.2 — a blocked RX half does not own the TX sequence or output
+// buffer. One writer can therefore send the record that unblocks its peer.
+test "split halves: blocked read permits write progress" {
+    const io = testIo();
+    const fds = try socketPair();
+    defer _ = std.c.close(fds[0]);
+
+    var sctx: ServerCtx = .{
+        .fd = fds[1],
+        .steps = &.{ .{ .expect_bytes = 4 }, .{ .send = "pong" }, .close },
+    };
+    const server = try spawnServer(&sctx);
+    defer server.join();
+
+    var conn: tls.Client = undefined;
+    try conn.connect(io, streamFor(fds[0]), .{
+        .host = test_host,
+        .verify = .insecure,
+    });
+    defer conn.deinit();
+
+    var read_ctx: ClientReadCtx = .{ .conn = &conn };
+    const reader_thread = try std.Thread.spawn(.{}, clientReadRun, .{&read_ctx});
+    defer reader_thread.join();
+    errdefer conn.abort();
+    try waitState(&conn, state_rx_busy);
+
+    var write_ctx: ClientWriteCtx = .{ .conn = &conn, .data = "ping" };
+    const writer_thread = try std.Thread.spawn(.{}, clientWriteRun, .{&write_ctx});
+    defer writer_thread.join();
+    errdefer conn.abort();
+
+    try write_ctx.done.wait();
+    try read_ctx.done.wait();
+    try sctx.done.wait();
+    if (write_ctx.err) |err| return err;
+    if (read_ctx.err) |err| return err;
+    if (sctx.err) |err| return err;
+    try testing.expectEqualStrings("pong", read_ctx.data[0..read_ctx.len]);
+    try testing.expectEqual(@as(usize, 4), sctx.read_total);
+
+    conn.close();
+}
+
+// RFC 8446 §4.6.3 — after RX accepts update_requested, the reciprocal
+// KeyUpdate precedes the next application record and both use correct epochs.
+test "split halves: KeyUpdate response precedes concurrent application data" {
+    const io = testIo();
+    const fds = try socketPair();
+    defer _ = std.c.close(fds[0]);
+
+    var sctx: KeyUpdateServerCtx = .{ .fd = fds[1] };
+    const server_thread = try std.Thread.spawn(.{}, keyUpdateServerRun, .{&sctx});
+    defer server_thread.join();
+
+    var conn: tls.Client = undefined;
+    try conn.connect(io, streamFor(fds[0]), .{
+        .host = test_host,
+        .verify = .insecure,
+    });
+    defer conn.deinit();
+    try sctx.ready.wait();
+
+    // Hold TX so the reader must publish the update request before either half
+    // can write. This forces the ordering without sleeps.
+    conn.tx_mutex.lockUncancelable(io);
+    var lease_held = true;
+
+    var read_ctx: ClientReadCtx = .{ .conn = &conn };
+    const reader_thread = try std.Thread.spawn(.{}, clientReadRun, .{&read_ctx});
+    defer reader_thread.join();
+    errdefer conn.abort();
+    sctx.release.open();
+    waitState(&conn, state_tx_update_pending) catch |err| {
+        conn.tx_mutex.unlock(io);
+        lease_held = false;
+        conn.abort();
+        return err;
+    };
+
+    var write_ctx: ClientWriteCtx = .{ .conn = &conn, .data = "payload" };
+    const writer_thread = std.Thread.spawn(.{}, clientWriteRun, .{&write_ctx}) catch |err| {
+        conn.tx_mutex.unlock(io);
+        lease_held = false;
+        conn.abort();
+        return err;
+    };
+    defer writer_thread.join();
+    defer if (lease_held) conn.tx_mutex.unlock(io);
+    errdefer conn.abort();
+
+    try waitState(&conn, state_tx_busy);
+    conn.tx_mutex.unlock(io);
+    lease_held = false;
+
+    try write_ctx.done.wait();
+    try read_ctx.done.wait();
+    try sctx.done.wait();
+    if (write_ctx.err) |err| return err;
+    if (read_ctx.err) |err| return err;
+    if (sctx.err) |err| return err;
+    try testing.expectEqualStrings("go", read_ctx.data[0..read_ctx.len]);
+
+    conn.close();
+}
+
+// RFC 8446 §4.6.3 — every application-data boundary drains a KeyUpdate
+// request that RX published before the writer acquired TX.
+test "split halves: writer drains a published KeyUpdate request" {
+    const io = testIo();
+    const fds = try socketPair();
+    defer _ = std.c.close(fds[0]);
+
+    var sctx: KeyUpdateServerCtx = .{
+        .fd = fds[1],
+        .source = .published_request,
+    };
+    const server_thread = try std.Thread.spawn(.{}, keyUpdateServerRun, .{&sctx});
+    defer server_thread.join();
+
+    var conn: tls.Client = undefined;
+    try conn.connect(io, streamFor(fds[0]), .{
+        .host = test_host,
+        .verify = .insecure,
+    });
+    defer conn.deinit();
+    try sctx.ready.wait();
+
+    _ = conn.state.fetchOr(state_tx_update_pending, .release);
+    sctx.release.open();
+    const w = conn.writer();
+    try w.writeAll("payload");
+    try w.flush();
+
+    try sctx.done.wait();
+    if (sctx.err) |err| return err;
+    conn.close();
+}
+
+// RFC 8446 §4.6.3, §6.1 — close_notify drains an already published KeyUpdate
+// request before it closes TX.
+test "split halves: closeWrite drains a published KeyUpdate request" {
+    const io = testIo();
+    const fds = try socketPair();
+    defer _ = std.c.close(fds[0]);
+
+    var sctx: KeyUpdateServerCtx = .{
+        .fd = fds[1],
+        .expectation = .close_notify,
+        .source = .published_request,
+    };
+    const server_thread = try std.Thread.spawn(.{}, keyUpdateServerRun, .{&sctx});
+    defer server_thread.join();
+
+    var conn: tls.Client = undefined;
+    try conn.connect(io, streamFor(fds[0]), .{
+        .host = test_host,
+        .verify = .insecure,
+    });
+    defer conn.deinit();
+    try sctx.ready.wait();
+
+    _ = conn.state.fetchOr(state_tx_update_pending, .release);
+    sctx.release.open();
+    conn.closeWrite();
+
+    try sctx.done.wait();
+    if (sctx.err) |err| return err;
+    conn.close();
+}
+
+// RFC 8446 §4.6.3, §6.1 — a pending KeyUpdate response precedes close_notify
+// when the read half and close half compete for TX.
+test "split halves: KeyUpdate response precedes concurrent close_notify" {
+    const io = testIo();
+    const fds = try socketPair();
+    defer _ = std.c.close(fds[0]);
+
+    var sctx: KeyUpdateServerCtx = .{
+        .fd = fds[1],
+        .expectation = .close_notify,
+    };
+    const server_thread = try std.Thread.spawn(.{}, keyUpdateServerRun, .{&sctx});
+    defer server_thread.join();
+
+    var conn: tls.Client = undefined;
+    try conn.connect(io, streamFor(fds[0]), .{
+        .host = test_host,
+        .verify = .insecure,
+    });
+    defer conn.deinit();
+    try sctx.ready.wait();
+
+    conn.tx_mutex.lockUncancelable(io);
+    var lease_held = true;
+
+    var read_ctx: ClientReadCtx = .{ .conn = &conn };
+    const reader_thread = try std.Thread.spawn(.{}, clientReadRun, .{&read_ctx});
+    defer reader_thread.join();
+    errdefer conn.abort();
+    sctx.release.open();
+    waitState(&conn, state_tx_update_pending) catch |err| {
+        conn.tx_mutex.unlock(io);
+        lease_held = false;
+        conn.abort();
+        return err;
+    };
+
+    var close_ctx: ClientCloseCtx = .{ .conn = &conn };
+    const close_thread = std.Thread.spawn(.{}, clientCloseRun, .{&close_ctx}) catch |err| {
+        conn.tx_mutex.unlock(io);
+        lease_held = false;
+        conn.abort();
+        return err;
+    };
+    defer close_thread.join();
+    defer if (lease_held) conn.tx_mutex.unlock(io);
+    errdefer conn.abort();
+
+    try close_ctx.started.wait();
+    conn.tx_mutex.unlock(io);
+    lease_held = false;
+
+    try close_ctx.done.wait();
+    try read_ctx.done.wait();
+    try sctx.done.wait();
+    if (close_ctx.err) |err| return err;
+    if (read_ctx.err) |err| try testing.expectEqual(error.EndOfStream, err);
+    try testing.expectEqual(@as(usize, 0), read_ctx.len);
+    if (sctx.err) |err| return err;
+
+    conn.close();
+}
+
+// RFC 8446 §5.3 — a failed transport write cannot release the record latch or
+// reuse its sequence number. Later writes report TxPoisoned.
+test "split halves: torn TX poisons later writes" {
+    const base_io = testIo();
+    var vtable = base_io.vtable.*;
+    vtable.netWrite = tearingNetWrite;
+    const io: Io = .{ .userdata = base_io.userdata, .vtable = &vtable };
+    const fds = try socketPair();
+    defer _ = std.c.close(fds[0]);
+
+    var sctx: ServerCtx = .{ .fd = fds[1], .steps = &.{.drain} };
+    const server = try spawnServer(&sctx);
+    defer server.join();
+
+    var conn: tls.Client = undefined;
+    try conn.connect(io, streamFor(fds[0]), .{
+        .host = test_host,
+        .verify = .insecure,
+    });
+    defer conn.deinit();
+
+    const w = conn.writer();
+    try w.writeAll("first");
+    tear_write_state = .armed;
+    try testing.expectError(error.WriteFailed, w.flush());
+    try testing.expectEqual(error.SocketUnconnected, conn.writeError().?);
+    try testing.expectEqual(TearWriteState.idle, tear_write_state);
+    try testing.expect(conn.state.load(.acquire) & state_tx_poisoned != 0);
+    try testing.expect(conn.hs.pending_write.isPending());
+
+    try testing.expectError(error.WriteFailed, w.flush());
+    try testing.expectEqual(error.TxPoisoned, conn.writeError().?);
+
+    conn.close();
+    try sctx.done.wait();
+    if (sctx.err) |err| return err;
+}
+
+// RFC 8446 §6.1 — abort wakes a blocked half but does not tear down its state.
+// The owner joins that half before deinit clears the connection.
+test "split halves: abort wakes blocked read before teardown" {
+    const io = testIo();
+    const fds = try socketPair();
+    defer _ = std.c.close(fds[0]);
+
+    var sctx: ServerCtx = .{ .fd = fds[1], .steps = &.{.drain} };
+    const server = try spawnServer(&sctx);
+    defer server.join();
+
+    var conn: tls.Client = undefined;
+    try conn.connect(io, streamFor(fds[0]), .{
+        .host = test_host,
+        .verify = .insecure,
+    });
+    defer conn.deinit();
+
+    var read_ctx: ClientReadCtx = .{ .conn = &conn };
+    const reader_thread = try std.Thread.spawn(.{}, clientReadRun, .{&read_ctx});
+    defer reader_thread.join();
+    errdefer conn.abort();
+    try waitState(&conn, state_rx_busy);
+
+    conn.abort();
+    try read_ctx.done.wait();
+    try sctx.done.wait();
+    try testing.expectEqual(error.TlsAborted, read_ctx.err.?);
+    if (sctx.err) |err| return err;
+}
+
+// RFC 8446 §5.3, §6.1 — abort reaches the transport provider and wakes a
+// writer after encryption but before transport progress.
+test "split halves: abort wakes blocked write before teardown" {
+    const base_io = testIo();
+    var vtable = base_io.vtable.*;
+    vtable.netWrite = blockingNetWrite;
+    vtable.netShutdown = blockingNetShutdown;
+    const io: Io = .{ .userdata = base_io.userdata, .vtable = &vtable };
+    const fds = try socketPair();
+    defer _ = std.c.close(fds[0]);
+
+    var harness: AbortWriteHarness = .{};
+    abort_write_harness = &harness;
+
+    var sctx: ServerCtx = .{ .fd = fds[1], .steps = &.{.drain} };
+    const server = try spawnServer(&sctx);
+    defer server.join();
+
+    var conn: tls.Client = undefined;
+    try conn.connect(io, streamFor(fds[0]), .{
+        .host = test_host,
+        .verify = .insecure,
+    });
+    defer conn.deinit();
+
+    harness.state.store(.armed, .release);
+    var write_ctx: ClientWriteCtx = .{ .conn = &conn, .data = "blocked" };
+    const writer_thread = try std.Thread.spawn(.{}, clientWriteRun, .{&write_ctx});
+    defer writer_thread.join();
+    errdefer conn.abort();
+
+    try harness.entered.wait();
+    conn.abort();
+    try testing.expect(harness.aborted.isOpen());
+    try testing.expectEqual(
+        AbortWriteHarness.Shutdown.both,
+        harness.shutdown.load(.acquire),
+    );
+    try write_ctx.done.wait();
+    try sctx.done.wait();
+    try testing.expectEqual(error.TlsAborted, write_ctx.err.?);
+    try testing.expect(conn.hs.pending_write.isPending());
+    try testing.expect(conn.state.load(.acquire) & state_tx_poisoned != 0);
     if (sctx.err) |err| return err;
 }
 
@@ -566,6 +1188,39 @@ test "closeWrite: preserves the peer's response" {
     if (sctx.err) |err| return err;
 }
 
+// RFC 8446 §4.6.3, §6.1 — a KeyUpdate request after our close_notify does not
+// require a response when no later application record can be sent.
+test "closeWrite: reads through a later KeyUpdate request" {
+    const io = testIo();
+    const fds = try socketPair();
+    defer _ = std.c.close(fds[0]);
+
+    var sctx: ServerCtx = .{
+        .fd = fds[1],
+        .steps = &.{
+            .drain,
+            .{ .send_key_update = .update_requested },
+            .{ .send = "after" },
+            .close,
+        },
+    };
+    const server = try spawnServer(&sctx);
+
+    var conn: tls.Client = undefined;
+    try conn.connect(io, streamFor(fds[0]), .{ .host = test_host, .verify = .insecure });
+    defer conn.deinit();
+    conn.closeWrite();
+
+    const r = conn.reader();
+    var response: [5]u8 = undefined;
+    try r.readSliceAll(&response);
+    try testing.expectEqualStrings("after", &response);
+    try testing.expectError(error.EndOfStream, r.fillMore());
+
+    server.join();
+    if (sctx.err) |err| return err;
+}
+
 // Staged plaintext the caller already handed to the Writer must reach the peer
 // before close_notify, not get zeroed with the rest of the buffers.
 test "close: flushes staged plaintext before close_notify" {
@@ -702,8 +1357,9 @@ test "abortBeforeInit: peer sees EOF and deinit stays a no-op" {
     var buf: [1]u8 = undefined;
     try testing.expectEqual(@as(usize, 0), try posix.read(fds[0], &buf));
 
-    // The documented failure contract, twice over: a later `deinit` is
+    // The documented failure contract: later abort and deinit calls are
     // harmless and idempotent.
+    client.abort();
     client.deinit();
     client.deinit();
 }

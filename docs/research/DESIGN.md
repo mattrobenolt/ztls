@@ -239,7 +239,20 @@ while (!hs.isConnected()) {
 
 const selected_alpn = hs.selectedAlpnProtocol();
 const app_wire = try hs.sendApplicationData(plaintext, &out);
+
+// A split driver's RX task can use this while its TX task drains app_wire.
+const receive_event = try hs.receiveRecord(record);
+
+// The TX task acknowledges app_wire only after the transport write completes.
 hs.completeWrite();
+if (receive_event == .key_update and
+    receive_event.key_update == .update_requested)
+{
+    // Serialize this response before the next application-data TX record.
+    const response = try hs.sendKeyUpdate(&out, .update_not_requested);
+    // Write response completely to the transport.
+    hs.completeWrite();
+}
 
 // Low-level record layer remains available for callers that need it.
 var rl = hkdf.makeRecordLayer(.{ .aes128_gcm = key }, traffic_secret);
@@ -247,10 +260,18 @@ const wire = try rl.encrypt(.application_data, plaintext, &out);
 const dec = try rl.decrypt(wire);
 ```
 
-The state machine owns the transcript, handshake key schedule, post-handshake
-KeyUpdate receive path, optional caller-backed handshake reassembly, and
-pending-write invariant. It still does no allocation and no I/O; callers provide
-all storage and decide how bytes move.
+The state machine owns the transcript, handshake key schedule, and
+post-handshake KeyUpdate receive path. It also owns optional caller-backed
+handshake reassembly and the pending-write invariant.
+
+`handleRecord` preserves the single-loop API and returns `error.PendingWrite`
+while TX remains pending.
+Connected drivers can use `receiveRecord` instead. That function mutates RX only
+and returns the KeyUpdate request value. The caller serializes any required
+response with other TX records.
+
+The state machine still performs no allocation or I/O. Callers provide all
+storage and decide how bytes move.
 
 ### Crypto backends
 

@@ -60,7 +60,7 @@ ztls is production-ready when all six pillars are `PROVEN`:
 | Pillar | Status | One-line |
 |---|---|---|
 | 1. Correctness | `PROVEN` | Both #91 fixture defects have red/green regressions and fresh strict-complete captures on all three backends at `e5800ee`: zero unexpected results and zero validity rejections. Historical failure causality remains bounded by the retained evidence. Full TLS-Anvil remains scheduled-only; BoGo is explicitly deferred. |
-| 2. Ergonomics | `PROVEN` | CI-gated deterministic examples cover client and server roles across io_uring, epoll, and `std.net.Stream`; Config setup, server credentials, and `Outbox` cover the supported core ergonomics boundary. `ztls-std` (#77, `std.Io`) remains `PARTIAL`: wrapper-level OpenSSL interop and client authentication are CI-gated in both directions, but concurrent split halves are absent. `ztls-xev` satisfies #76's Linux/macOS contract: both roles and in-flight read/write cancellation are CI-gated on io_uring, epoll, and kqueue (#83). |
+| 2. Ergonomics | `PROVEN` | CI-gated examples cover both roles across io_uring, epoll, kqueue, and `std.Io`. `ztls-std` (#77) gates plain and mTLS OpenSSL interop in both directions, concurrent split halves, KeyUpdate handoff, TX poisoning, and abort-before-join teardown. `ztls-xev` satisfies #76's Linux/macOS contract, including in-flight cancellation (#83). |
 | 3. Performance | `PROVEN` | n=10 captures on x86_64 (c7i.2xlarge), aarch64 (c7g.2xlarge), and macOS (Apple M1 Max) with formal CIs (p=0.000): ztls beats libssl on every comparable app-data row on all three platforms and rustls on all AES-GCM rows; regression gate committed. |
 | 4. Providers | `PROVEN` | OpenSSL, AWS-LC, and BoringSSL have CI-gated backend lanes and fresh strict-complete TLS-Anvil captures at `e5800ee`, with both fixture patches verified and no unexpected results (#91). Cert-chain stays ztls/std; FIPS capability checks are comptime-only; PQ/P-384 is #6. |
 | 5. Marketing | `PROVEN` | README leads with the proven performance story (n=10, both architectures, honest ChaCha20 loss) and the adversarial security posture; the why-ztls narrative and headline benchmarks are on the front door, backed by PERFORMANCE.md. |
@@ -730,7 +730,7 @@ Sans-I/O API is pleasant across every I/O model ztls claims to support.
   unavailable, so they cannot be mistaken for proof if wired into a gate later.
 
 **Status:** `PROVEN` for the core Sans-I/O surface. The higher-order
-`std.Io.net` wrapper is tracked separately below as `PARTIAL`.
+`std.Io.net` wrapper is tracked separately below as `PROVEN`.
 
 **Gaps:** none for the supported adoption path through the core engine.
 
@@ -785,7 +785,7 @@ conformance harness integration (TLS-Anvil through the C ABI per
 
 ---
 
-### `std.Io.net` wrapper — ztls-std (#77) — PARTIAL
+### `std.Io.net` wrapper — ztls-std (#77) — PROVEN
 
 `integrations/ztls-std/` is the reference higher-order integration: an
 opinionated TLS 1.3 stream over Zig 0.16 `std.Io.net`. It is a separate
@@ -797,9 +797,9 @@ lane cannot build a 0.16-only integration and does not gate it.
 **Landed and gated.** `Client`/`Server` are the connection types
 (`StreamImpl(Hs, role, config)`), with eager `connect`/`accept`, `Io.Reader`/
 `Io.Writer` interfaces, `socketHandle`, `hasBuffered`, `info`, and the
-`closeWrite`/`close`/`deinit` teardown triple, and client authentication
-(mTLS) on both roles. `just integrations-ci` runs lint plus 40 tests: 26
-fixture-backed round-trips over a socketpair (21 general + 5 client-auth),
+`closeWrite`/`abort`/`close`/`deinit` lifecycle, and client authentication
+(mTLS) on both roles. `just integrations-ci` runs lint plus 49 tests: 35
+fixture-backed round-trips over a socketpair (30 general + 5 client-auth),
 6 wrapper-level OpenSSL interoperability tests over TCP (plain both
 directions + successful and rejected mTLS in both directions), 5 unit tests
 on error classification, alert fidelity, and buffer sizing, 2 on the client
@@ -861,6 +861,24 @@ rather than asserted in prose:
 
 The following correctness properties are gated by tests rather than asserted in prose:
 
+- **Connected streams support split halves.** One reader and one writer can run
+  concurrently. RX never owns TX state. One `std.Io.Mutex` serializes each TX
+  record through encryption, transport completion, and `completeWrite()`.
+  Deterministic gates force a blocked read before the writer starts.
+- **KeyUpdate handoff preserves wire order.** RX publishes
+  `update_requested` before it waits for TX. The reader, writer, and
+  `closeWrite` all drain that request under the TX lease. Peer-side core
+  decryption proves that the response precedes application data and
+  `close_notify`. It also proves that each record uses the correct key epoch.
+- **Incomplete TX is terminal.** A test transport reports seven bytes of
+  progress and then `SocketUnconnected`. The first flush reports that exact
+  cause. The pending-write latch remains set. Later sends report `TxPoisoned`
+  and cannot reuse the sequence number.
+- **Abort precedes teardown.** `abort()` shuts down both transport directions
+  and wakes blocked reads and writes as `TlsAborted`. A test transport blocks
+  after record encryption and wakes only through `netShutdown`. Both tests join
+  the active half before `deinit()` clears the connection. `close()` and
+  `deinit()` assert that no reader or writer vtable call remains active.
 - **The reader honors the whole `Io.Reader` contract.** An earlier revision
   repointed `interface.buffer` at the decrypted record in place — zero copy, and
   legal per the vtable contract — which made the reader's capacity equal to the
@@ -901,7 +919,7 @@ The following correctness properties are gated by tests rather than asserted in 
   `ConnectError`/`AcceptError`: the 0.16 lane did not compile.
 - **Buffer footprint is configurable and pinned.** `Config` sizes record
   staging, reassembly, read look-ahead, write staging, and optional peer-chain
-  retention at comptime. Defaults measure 151_840 bytes (client) and 134_912
+  retention at comptime. Defaults measure 151_856 bytes (client) and 134_928
   (server); `Config: buffer sizing is the whole story of the Stream footprint`
   asserts each knob's exact `@sizeOf` delta.
 - **Post-handshake failures are diagnosable.** The `Io.Reader`/`Io.Writer`
@@ -910,8 +928,8 @@ The following correctness properties are gated by tests rather than asserted in 
   cause is now recorded before the narrow error is returned and recovered with
   `readError()`/`writeError()`, following the `std.Io.net.Stream.Reader.err`
   convention. Gated by four tests covering `TlsDecryptError` (forged record),
-  `TlsAlertReceived` (peer abort), `IdleRecordFlood`, and `TlsClosed`, plus a
-  null-on-healthy-connection case.
+  `TlsAlertReceived` (peer abort), `IdleRecordFlood`, `TlsClosed`,
+  `TlsAborted`, and `TxPoisoned`, plus a null-on-healthy-connection case.
 
 **Runs on any `std.Io`, proven not asserted.** zio
 (<https://github.com/lalinsky/zio>) is a stackful-coroutine runtime that ships a
@@ -1098,18 +1116,15 @@ Client authentication is wrapper-supported and CI-gated (socketpair + both
 OpenSSL mTLS directions above). Server-side retention is deliberately leaf-only
 (no full client chain).
 
-**Remaining gap (tracked under #77):** Concurrent split halves are not
-supported: `reader()` and `writer()` share the handshake engine
-and outbound record buffer, and both yield mid-operation while that buffer holds a half-written
-record, so the two directions must be driven from one task. This is a reentrancy
-constraint rather than a threading one — a single-threaded green-thread scheduler
-still interleaves at every I/O point — and Debug/ReleaseSafe builds now assert on
-reentry instead of corrupting silently. No deadline is imposed by the wrapper;
-`std.Io` cancellation is the mechanism and is now exercised by
-`examples/zio_client.zig` rather than untested. Session resumption / 0-RTT are out of scope for v1.
-`ztls-xev` satisfies the closed #76 contract; `ztls-ktls` (#78) is unstarted,
-and distribution as an independently fetchable package is #79. ztls-std is not
-claimed done.
+The supported concurrency boundary is one reader task and one writer task.
+Multiple readers or multiple writers share mutable stdlib staging state and are
+not supported. `abort()` wakes active halves. The owner joins both halves before
+`close()` or `deinit()` clears state.
+
+No wrapper deadline is imposed. `std.Io` cancellation is the mechanism, and
+`examples/zio_client.zig` exercises it. Session resumption and 0-RTT wrappers are
+outside the #77 contract. `ztls-ktls` (#78) and independent distribution (#79)
+remain separate expansion work.
 
 ---
 

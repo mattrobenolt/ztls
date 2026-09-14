@@ -596,7 +596,8 @@ pub fn completeWrite(self: *ClientHandshake) void {
 
 /// Most recent non-close_notify peer alert (RFC 8446 §6.2), or null if none.
 /// A later peer alert replaces an earlier one; close_notify (§6.1) and
-/// malformed records leave it unchanged.
+/// malformed records leave it unchanged. If another task owns RX through
+/// `receiveRecord`, read this only after that task joins.
 pub fn lastPeerAlert(self: *const ClientHandshake) ?alert.Alert {
     return self.last_peer_alert;
 }
@@ -905,6 +906,19 @@ pub const Event = union(enum) {
     closed,
 };
 
+/// Connected-state receive result. This path owns only RX state, so callers can
+/// process inbound records while an unrelated TX record remains in flight.
+pub const ReceiveEvent = union(enum) {
+    application_data: []const u8,
+    /// The RX key is already ratcheted. For `update_requested`, the caller MUST
+    /// send `update_not_requested` before its next application-data record.
+    /// RFC 8446 §4.6.3, §7.2.
+    key_update: KeyUpdateRequest,
+    new_session_ticket: NewSessionTicket,
+    none,
+    closed,
+};
+
 /// Surfaced when a peer KeyUpdate changes one or both traffic-key epochs.
 /// RFC 8446 §4.6.3. For kTLS callers: `rx` means the kernel RX path is paused
 /// (EKEYEXPIRED) until the new key is installed via `setsockopt(TLS_RX)`;
@@ -925,7 +939,7 @@ pub const KeyUpdateEvent = struct {
     tx: bool,
 };
 
-pub const HandleError = ProcessError || ReceiveError || error{PendingWrite};
+pub const HandleError = ProcessError || ReceiveError || SendError || error{PendingWrite};
 
 /// True once the handshake completes and application keys are installed.
 pub fn isConnected(self: *const ClientHandshake) bool {
@@ -943,7 +957,7 @@ pub fn isConnected(self: *const ClientHandshake) bool {
 pub fn handleRecord(self: *ClientHandshake, record: []u8, out: []u8) HandleError!Event {
     if (self.pending_write.isPending()) return error.PendingWrite;
     const ev: Event = if (self.state == .connected)
-        try self.receiveConnected(record, out)
+        try self.handleConnected(record, out)
     else if (try self.processHandshakeRecord(record, out)) |bytes|
         .{ .write = bytes }
     else
@@ -1753,7 +1767,7 @@ pub fn clientFinished(self: *ClientHandshake, out: []u8) ClientFinishedError![]c
     return out[0 .. out_pos + record.len];
 }
 
-pub const ReceiveError = RecordLayer.DecryptError || SendError || alert.ParseError ||
+pub const ReceiveError = RecordLayer.DecryptError || alert.ParseError ||
     NewSessionTicket.ParseError ||
     error{
         UnexpectedEof,
@@ -1765,15 +1779,11 @@ pub const ReceiveError = RecordLayer.DecryptError || SendError || alert.ParseErr
         PeerAlert,
     };
 
-// Connected-phase inbound: the engine owns the receive path so post-handshake
-// control messages are routed and answered correctly and the separate flood
-// counters see the full record stream. RFC 8446 §4.6.1, §4.6.3, §7.2.
-//
-// Decrypts with rx and dispatches on the inner content type: application data
-// is returned to the caller; a requested KeyUpdate is answered with our own
-// (encrypted under the old key, then our send key ratchets) and the receive
-// key ratchets after the KeyUpdate is consumed.
-fn receiveConnected(self: *ClientHandshake, record: []u8, out: []u8) ReceiveError!Event {
+/// Process one connected-state record without touching TX state or the
+/// pending-write latch. The caller owns any KeyUpdate response. This permits a
+/// full-duplex driver to continue RX while a TX record drains. RFC 8446 §4.6.3.
+// ziglint-ignore: Z015 -- ReceiveError is a public error-set alias.
+pub fn receiveRecord(self: *ClientHandshake, record: []u8) ReceiveError!ReceiveEvent {
     assert(self.state == .connected);
     const dec = try handshake.decryptProtected(&self.rx, record);
     switch (dec.content_type) {
@@ -1831,21 +1841,12 @@ fn receiveConnected(self: *ClientHandshake, record: []u8, out: []u8) ReceiveErro
                     else => return error.UnexpectedMessage,
                 }
             }
-            // One response covers any number of update_requested KeyUpdates.
-            // RFC 8446 §4.6.3, §7.2 — surface the epoch changes so kTLS callers
-            // can reinstall kernel keys. The response record is encrypted
-            // under the OLD TX key inside sendKeyUpdate (which then ratchets
-            // TX), so the caller must write it before reinstalling TLS_TX.
-            // A KeyUpdate must be the last message in its record (§5.1), so a
-            // NewSessionTicket in the same record would precede it; the key
-            // epoch change takes priority over surfacing the ticket.
-            if (saw_key_update) {
-                if (respond) {
-                    const resp = try self.sendKeyUpdate(out, .update_not_requested);
-                    return .{ .key_update = .{ .response = resp, .rx = true, .tx = true } };
-                }
-                return .{ .key_update = .{ .response = null, .rx = true, .tx = false } };
-            }
+            // A KeyUpdate must be last in its record (§5.1). A preceding
+            // NewSessionTicket is therefore secondary to the epoch change.
+            if (saw_key_update) return .{ .key_update = if (respond)
+                .update_requested
+            else
+                .update_not_requested };
             if (nst_event) |nst| return .{ .new_session_ticket = nst };
             return .none;
         },
@@ -1857,6 +1858,23 @@ fn receiveConnected(self: *ClientHandshake, record: []u8, out: []u8) ReceiveErro
         },
         else => return error.UnexpectedRecord,
     }
+}
+
+fn handleConnected(
+    self: *ClientHandshake,
+    record: []u8,
+    out: []u8,
+) (ReceiveError || SendError)!Event {
+    return switch (try self.receiveRecord(record)) {
+        .application_data => |data| .{ .application_data = data },
+        .key_update => |request| if (request == .update_requested) blk: {
+            const response = try self.sendKeyUpdate(out, .update_not_requested);
+            break :blk .{ .key_update = .{ .response = response, .rx = true, .tx = true } };
+        } else .{ .key_update = .{ .response = null, .rx = true, .tx = false } },
+        .new_session_ticket => |ticket| .{ .new_session_ticket = ticket },
+        .none => .none,
+        .closed => .closed,
+    };
 }
 
 /// Send a KeyUpdate. Encrypts the message under the current (old) send key,
@@ -3144,6 +3162,40 @@ test "handleRecord: application data resets both post-handshake flood counters" 
     try testing.expectEqualSlices(u8, "ping", ev.application_data);
     try testing.expectEqual(@as(u8, 0), hs.post_handshake_key_update_count);
     try testing.expectEqual(@as(u8, 0), hs.post_handshake_new_session_ticket_count);
+}
+
+// RFC 8446 §4.6.3, §5.2 — RX state is independent from an outstanding TX
+// record; a KeyUpdate request ratchets RX without changing TX.
+test "receiveRecord: RX progresses while a client TX record is pending" {
+    var hs = try connectedTestClient();
+    defer hs.deinit();
+
+    var server_tx = try hs.rx.clone();
+    defer server_tx.deinit();
+
+    var client_out: [64]u8 = undefined;
+    _ = try hs.sendApplicationData("blocked", &client_out);
+    const tx_before = hs.txKtlsInfo();
+
+    var peer_out: [128]u8 = undefined;
+    const app = try server_tx.encrypt(.application_data, "ping", &peer_out);
+    var app_record: [64]u8 = undefined;
+    @memcpy(app_record[0..app.len], app);
+    const app_event = try hs.receiveRecord(app_record[0..app.len]);
+    try testing.expectEqualSlices(u8, "ping", app_event.application_data);
+
+    const ku = [_]u8{ 0x18, 0x00, 0x00, 0x01, 0x01 };
+    const update = try server_tx.encrypt(.handshake, &ku, &peer_out);
+    var update_record: [64]u8 = undefined;
+    @memcpy(update_record[0..update.len], update);
+    const update_event = try hs.receiveRecord(update_record[0..update.len]);
+    try testing.expectEqual(KeyUpdateRequest.update_requested, update_event.key_update);
+    try testing.expectEqual(tx_before, hs.txKtlsInfo());
+
+    try testing.expectError(
+        error.PendingWrite,
+        hs.handleRecord(update_record[0..update.len], &client_out),
+    );
 }
 
 // RFC 8446 §4.6.3 — a server KeyUpdate(update_requested) must ratchet our

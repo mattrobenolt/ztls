@@ -11,17 +11,15 @@
 //! comptime-sized caller-visible buffers so the ~200 KB default is a choice
 //! rather than a tax.
 //!
-//! NOT reentrant across concurrent tasks — including cooperatively scheduled
-//! ones on a single thread. `reader()` and `writer()` share the handshake engine
-//! and one outbound record buffer, and both yield to the runtime mid-operation
-//! while that buffer holds a half-written record, so a second task entering the
-//! other half corrupts it. "Not thread-safe" understates this: on a
-//! green-thread runtime like zio a single-threaded scheduler still interleaves
-//! at every I/O point, so it looks safe and is not. Debug and ReleaseSafe builds
-//! assert on reentry rather than corrupting silently.
+//! One reader task and one writer task can use a connected Stream concurrently.
+//! TX operations share an `Io.Mutex` because record encryption advances the TX
+//! sequence before the transport write completes. Reader-side KeyUpdate
+//! responses use the same lease, so their wire order matches the TX key epoch.
+//! Multiple readers or multiple writers remain unsupported because each
+//! `Io.Reader` or `Io.Writer` interface owns mutable staging state.
 //!
-//! Drive both directions from one task (see `hasBuffered` and `socketHandle`),
-//! or serialize access yourself.
+//! Call `abort()` to wake blocked halves. Join both tasks before `close()` or
+//! `deinit()` tears down the socket and secret storage.
 const std = @import("std");
 const assert = std.debug.assert;
 const Io = std.Io;
@@ -208,6 +206,11 @@ pub const AcceptError = error{
 /// one happened with `Stream.readError()`. Same convention as
 /// `std.Io.net.Stream.Reader.err`.
 pub const ReadError = error{
+    /// `abort` stopped the connection before the peer closed it.
+    TlsAborted,
+    /// The TX epoch is unusable after an encrypted record failed to reach the
+    /// transport completely. This can surface while RX answers KeyUpdate.
+    TxPoisoned,
     /// The peer sent a fatal alert.
     TlsAlertReceived,
     /// A record failed to authenticate: AEAD tag or MAC mismatch.
@@ -228,15 +231,23 @@ pub const ReadError = error{
 
 /// The real cause behind an `error.WriteFailed` from `writer()`. Recover it
 /// with `Stream.writeError()`.
-pub const WriteError = error{
-    /// The write side is already closed by `closeWrite` or `close`.
-    TlsClosed,
+const ControlWriteError = error{
+    /// `abort` stopped the connection before the write completed.
+    TlsAborted,
+    /// An encrypted record failed to reach the transport completely. Its
+    /// sequence number cannot be reused, so all later TX operations fail.
+    TxPoisoned,
     /// The peer sent a malformed record, or application data was written
     /// before the handshake completed.
     TlsProtocolError,
     /// Backend failure, counter overflow, or a broken invariant on our side.
     InternalError,
 } || net.Stream.Writer.Error || Io.Cancelable || Io.UnexpectedError;
+
+pub const WriteError = ControlWriteError || error{
+    /// The write side is already closed by `closeWrite` or `close`.
+    TlsClosed,
+};
 
 /// Negotiated connection properties. Slices are borrowed and valid until
 /// `deinit`.
@@ -337,7 +348,7 @@ fn mapReadError(err: HandshakeError) ReadError {
     };
 }
 
-fn mapWriteError(err: HandshakeError) WriteError {
+fn mapWriteError(err: HandshakeError) error{ TlsProtocolError, InternalError } {
     return switch (classify(err)) {
         .certificate,
         .protocol,
@@ -456,28 +467,24 @@ fn StreamImpl(comptime Hs: type, comptime role: Role, comptime config: Config) t
         if (config.write_buffer == 0) @compileError("Config.write_buffer must be nonzero");
     }
 
-    const Flag = enum {
+    const Flag = enum(u3) {
         /// close_notify received, or the transport hit EOF: reads are done.
         rx_closed,
         /// close_notify sent: writes are done.
         tx_closed,
         /// Socket released and buffers zeroed.
         closed,
-        /// A read or write is in flight. Both paths share `out` and the engine,
-        /// and both yield to the runtime while that buffer holds a half-written
-        /// record, so a second task entering the other half is a data race even
-        /// on a single-threaded green-thread scheduler. Asserted rather than
-        /// locked: serializing here would hide the caller's bug and deadlock the
-        /// moment a reader blocks while a writer waits.
-        busy,
+        /// `abort` requested transport shutdown.
+        aborted,
+        /// RX received KeyUpdate(update_requested), but TX has not answered.
+        tx_update_pending,
+        /// An encrypted record did not reach the transport completely.
+        tx_poisoned,
+        /// A reader vtable call is active.
+        rx_busy,
+        /// A writer vtable call is active.
+        tx_busy,
     };
-    const Flags = std.EnumSet(Flag);
-
-    // Both directions end for more than one reason, so "is this side finished"
-    // is a set-membership question rather than one flag. Naming the sets keeps
-    // that out of the call sites.
-    const write_done: Flags = .initMany(&.{ .tx_closed, .closed });
-    const read_done: Flags = .initMany(&.{ .rx_closed, .closed });
 
     const RecordStorage = ztls.Array(config.record_storage);
     const Reassembly = ztls.Array(config.reassembly_storage orelse Hs.Storage.capacity);
@@ -500,25 +507,22 @@ fn StreamImpl(comptime Hs: type, comptime role: Role, comptime config: Config) t
         const Self = @This();
         const ReaderEvent = union(enum) {
             application_data: []const u8,
-            write: []const u8,
-            key_update: ?[]const u8,
+            key_update: Hs.KeyUpdateRequest,
             none,
             closed,
         };
 
         // The client alone receives NewSessionTicket. Normalize that difference
         // at the engine boundary so the record loop has one event switch.
-        fn normalizeReaderEvent(event: Hs.Event) ReaderEvent {
+        fn normalizeReaderEvent(event: Hs.ReceiveEvent) ReaderEvent {
             return if (role == .client) switch (event) {
                 .application_data => |data| .{ .application_data = data },
-                .write => |data| .{ .write = data },
-                .key_update => |update| .{ .key_update = update.response },
+                .key_update => |request| .{ .key_update = request },
                 .new_session_ticket, .none => .none,
                 .closed => .closed,
             } else switch (event) {
                 .application_data => |data| .{ .application_data = data },
-                .write => |data| .{ .write = data },
-                .key_update => |update| .{ .key_update = update.response },
+                .key_update => |request| .{ .key_update = request },
                 .none => .none,
                 .closed => .closed,
             };
@@ -547,7 +551,8 @@ fn StreamImpl(comptime Hs: type, comptime role: Role, comptime config: Config) t
         pending: []const u8 = &.{},
         reader_impl: Reader,
         writer_impl: Writer,
-        flags: Flags = .initEmpty(),
+        state: std.atomic.Value(u8) = .init(0),
+        tx_mutex: Io.Mutex = .init,
         /// Set by `finishInit` to catch a moved or copied Stream. `rb`, the
         /// reassembly buffer, and both `Io` interfaces point into this struct,
         /// so relocating the value silently corrupts memory. Checked with
@@ -557,31 +562,45 @@ fn StreamImpl(comptime Hs: type, comptime role: Role, comptime config: Config) t
             assert(s.pinned == s);
         }
 
+        fn flagMask(flag: Flag) u8 {
+            return @as(u8, 1) << @intFromEnum(flag);
+        }
+
+        fn hasFlag(s: *const Self, flag: Flag) bool {
+            return s.state.load(.acquire) & flagMask(flag) != 0;
+        }
+
+        fn setFlag(s: *Self, flag: Flag) void {
+            _ = s.state.fetchOr(flagMask(flag), .acq_rel);
+        }
+
+        fn clearFlag(s: *Self, flag: Flag) void {
+            _ = s.state.fetchAnd(~flagMask(flag), .release);
+        }
+
+        fn acquireHalf(s: *Self, flag: Flag) void {
+            assert(flag == .rx_busy or flag == .tx_busy);
+            const previous = s.state.fetchOr(flagMask(flag), .acq_rel);
+            assert(previous & flagMask(flag) == 0);
+        }
+
+        fn releaseHalf(s: *Self, flag: Flag) void {
+            assert(s.hasFlag(flag));
+            s.clearFlag(flag);
+        }
+
         /// True once no further application data can be sent: `close_notify`
         /// went out, or the whole connection was torn down. RFC 8446 §6.1 lets
         /// each direction close independently, which is why this is one of two.
         fn writeClosed(s: *const Self) bool {
-            return s.flags.intersectWith(write_done).count() != 0;
+            return s.hasFlag(.tx_closed) or s.hasFlag(.closed);
         }
 
         /// True once no further application data can arrive: the peer's
         /// `close_notify` landed, the transport hit EOF, or the connection was
         /// torn down.
         fn readClosed(s: *const Self) bool {
-            return s.flags.intersectWith(read_done).count() != 0;
-        }
-
-        /// Claim exclusive use of the engine for one read or write. Pair with
-        /// `release`.
-        fn acquire(s: *Self) void {
-            // Concurrent use of one Stream; see the module docs.
-            assert(!s.flags.contains(.busy));
-            s.flags.insert(.busy);
-        }
-
-        fn release(s: *Self) void {
-            assert(s.flags.contains(.busy));
-            s.flags.remove(.busy);
+            return s.hasFlag(.rx_closed) or s.hasFlag(.closed);
         }
 
         pub const Reader = struct {
@@ -623,9 +642,10 @@ fn StreamImpl(comptime Hs: type, comptime role: Role, comptime config: Config) t
                 const r: *Reader = @alignCast(@fieldParentPtr("interface", io_r));
                 const s: *Self = @alignCast(@fieldParentPtr("reader_impl", r));
                 s.assertPinned();
-                s.acquire();
-                defer s.release();
+                s.acquireHalf(.rx_busy);
+                defer s.releaseHalf(.rx_busy);
 
+                if (s.hasFlag(.aborted)) return s.failRead(error.TlsAborted);
                 if (s.pending.len == 0) s.pending = try nextApplicationData(s);
                 // A short or zero-length write leaves the remainder pending for
                 // the next call; nothing is dropped on error either, because
@@ -656,25 +676,24 @@ fn StreamImpl(comptime Hs: type, comptime role: Role, comptime config: Config) t
                         if (idle == max_idle_records_per_refill)
                             return s.failRead(error.IdleRecordFlood);
                         idle += 1;
-                        const ev = s.hs.handleRecord(record, &s.out.buffer) catch |err| {
+                        const ev = s.hs.receiveRecord(record) catch |err| {
                             return s.failRead(mapReadError(err));
                         };
                         switch (normalizeReaderEvent(ev)) {
                             .none => continue,
-                            .write => |bytes| {
-                                s.writeControlRecord(bytes) catch |err|
-                                    return s.failRead(err);
-                                continue;
-                            },
-                            .key_update => |response| {
-                                if (response) |bytes| {
-                                    s.writeControlRecord(bytes) catch |err|
+                            .key_update => |request| {
+                                if (request == .update_requested) {
+                                    // Publish before waiting for the TX lease.
+                                    // A writer that owns the lease already is
+                                    // the previous record in wire order.
+                                    s.setFlag(.tx_update_pending);
+                                    s.flushRequestedKeyUpdate() catch |err|
                                         return s.failRead(err);
                                 }
                                 continue;
                             },
                             .closed => {
-                                s.flags.insert(.rx_closed);
+                                s.setFlag(.rx_closed);
                                 return error.EndOfStream;
                             },
                             .application_data => |app_data| {
@@ -690,9 +709,13 @@ fn StreamImpl(comptime Hs: type, comptime role: Role, comptime config: Config) t
                         s.io,
                         s.sock.socket.handle,
                         s.rb.writable(),
-                    ) catch |err| return s.failRead(err);
+                    ) catch |err| {
+                        if (s.hasFlag(.aborted)) return s.failRead(error.TlsAborted);
+                        return s.failRead(err);
+                    };
                     if (n == 0) {
-                        s.flags.insert(.rx_closed);
+                        if (s.hasFlag(.aborted)) return s.failRead(error.TlsAborted);
+                        s.setFlag(.rx_closed);
                         return error.EndOfStream;
                     }
                     s.rb.advance(n);
@@ -717,13 +740,15 @@ fn StreamImpl(comptime Hs: type, comptime role: Role, comptime config: Config) t
             }
         };
 
-        /// Borrowed `*Io.Reader` — drop-in for any `*Io.Reader` consumer.
+        /// Borrowed `*Io.Reader` for one reader task. It can run concurrently
+        /// with the single writer task.
         pub fn reader(s: *Self) *Io.Reader {
             s.assertPinned();
             return &s.reader_impl.interface;
         }
 
-        /// Borrowed `*Io.Writer` — drop-in for any `*Io.Writer` consumer.
+        /// Borrowed `*Io.Writer` for one writer task. It can run concurrently
+        /// with the single reader task.
         pub fn writer(s: *Self) *Io.Writer {
             s.assertPinned();
             return &s.writer_impl.interface;
@@ -732,7 +757,8 @@ fn StreamImpl(comptime Hs: type, comptime role: Role, comptime config: Config) t
         /// Why the last read failed. `Io.Reader` collapses every failure into
         /// `error.ReadFailed`, so cancellation (`error.Canceled`), a dead
         /// transport, and a TLS failure are otherwise indistinguishable. Call
-        /// this after `ReadFailed`; the value is stale at any other time.
+        /// this after `ReadFailed`; the value is stale at any other time. Read
+        /// it from the reader task or after that task joins.
         ///
         ///     r.fillMore() catch |err| switch (err) {
         ///         error.EndOfStream => {},           // clean close_notify
@@ -746,7 +772,8 @@ fn StreamImpl(comptime Hs: type, comptime role: Role, comptime config: Config) t
             return s.reader_impl.err;
         }
 
-        /// Why the last write failed. Same contract as `readError`.
+        /// Why the last write failed. Same contract as `readError`. Read it
+        /// from the writer task or after that task joins.
         pub fn writeError(s: *const Self) ?WriteError {
             return s.writer_impl.err;
         }
@@ -783,8 +810,8 @@ fn StreamImpl(comptime Hs: type, comptime role: Role, comptime config: Config) t
 
         /// True when a read can return data without touching the transport:
         /// decrypted bytes are pending, or a complete record is already
-        /// buffered. Poll-style loops use this to drain coalesced records
-        /// without blocking.
+        /// buffered. The reader task owns this query. Poll-style loops use it
+        /// to drain coalesced records without a transport read.
         pub fn hasBuffered(s: *Self) bool {
             s.assertPinned();
             return s.pending.len > 0 or
@@ -795,50 +822,84 @@ fn StreamImpl(comptime Hs: type, comptime role: Role, comptime config: Config) t
         /// Flush staged plaintext, send `close_notify`, and keep the read side
         /// open for the peer's response. Idempotent.
         ///
-        /// The flush is a safety net, not a substitute for flushing: teardown
-        /// is infallible by contract, so a caller who must know that staged
-        /// bytes reached the peer flushes explicitly first and checks.
+        /// The flush is a safety net, not a substitute for flushing. Callers
+        /// inspect `writeError()` when delivery matters.
         ///
-        /// RFC 8446 §6.1 permits each direction to close independently.
+        /// The writer task owns this operation. RFC 8446 §6.1 permits each
+        /// direction to close independently.
         pub fn closeWrite(s: *Self) void {
             s.assertPinned();
-            if (s.writeClosed()) return;
+            if (s.writeClosed() or s.hasFlag(.aborted)) return;
 
             // Staged plaintext goes out before close_notify. Discarding bytes
             // the caller already handed to the Writer would be silent data
             // loss, and close_notify must be the last record we send.
-            // ziglint-ignore: Z026 -- teardown is infallible; a failed flush
-            // has nowhere to go and the socket is about to close regardless.
-            s.writer_impl.interface.flush() catch {};
-            s.flags.insert(.tx_closed);
+            s.writer_impl.interface.flush() catch {
+                s.setFlag(.tx_closed);
+                return;
+            };
 
-            // The alert goes through the same shared `out` buffer as a write.
-            s.acquire();
-            defer s.release();
+            s.tx_mutex.lockUncancelable(s.io);
+            defer s.tx_mutex.unlock(s.io);
 
-            if (s.hs.sendAlert(.close_notify, &s.out.buffer)) |alert_record| {
-                transportWriteAll(s.io, s.sock.socket.handle, alert_record) catch return;
-                s.hs.completeWrite();
-            } else |_| return;
+            if (s.writeClosed() or s.hasFlag(.aborted)) return;
+            if (s.hasFlag(.tx_poisoned)) {
+                s.writer_impl.err = error.TxPoisoned;
+                s.setFlag(.tx_closed);
+                return;
+            }
+            s.flushRequestedKeyUpdateLocked() catch |err| {
+                s.writer_impl.err = err;
+                s.setFlag(.tx_closed);
+                return;
+            };
+
+            s.setFlag(.tx_closed);
+            const record = s.hs.sendAlert(.close_notify, &s.out.buffer) catch |err| {
+                s.writer_impl.err = mapWriteError(err);
+                return;
+            };
+            s.writePreparedRecord(record) catch |err| {
+                s.writer_impl.err = err;
+            };
+        }
+
+        /// Wake blocked read and write operations without destroying their
+        /// state. This function is idempotent and safe during either half.
+        /// Join both tasks before `close()` or `deinit()`; do not race abort
+        /// against either teardown operation.
+        pub fn abort(s: *Self) void {
+            if (s.hasFlag(.closed)) return;
+            s.assertPinned();
+            if (s.hasFlag(.aborted)) return;
+            s.setFlag(.aborted);
+            // ziglint-ignore: Z026 -- the state records abort even if the
+            // platform reports that the socket is already down.
+            s.sock.shutdown(s.io, .both) catch {};
         }
 
         /// Flush, send `close_notify`, and close the underlying socket.
         /// Idempotent. Does not drain application data the peer may still be
-        /// sending; callers who want that read to `error.EndOfStream` first.
+        /// sending. The caller must join both halves before this call. This
+        /// ownership check is an assertion and is absent in ReleaseFast.
         pub fn close(s: *Self) void {
             s.assertPinned();
-            if (s.flags.contains(.closed)) return;
+            if (s.hasFlag(.closed)) return;
+            assert(!s.hasFlag(.rx_busy));
+            assert(!s.hasFlag(.tx_busy));
             s.closeWrite();
             s.teardown();
         }
 
-        /// Always-callable teardown: closes the socket without an alert and
-        /// secure-zeros every wrapper-owned buffer — record storage, read and
-        /// write staging, reassembly, and the retained chain. Idempotent, and
-        /// safe (a no-op) after a failed `connect`/`accept`, which cleans up
-        /// after itself.
+        /// Always-callable teardown after both halves join. It closes the
+        /// socket and clears every wrapper-owned buffer. It is idempotent after
+        /// a failed `connect` or `accept`. The join precondition is checked by
+        /// assertions outside ReleaseFast.
         pub fn deinit(s: *Self) void {
-            if (s.flags.contains(.closed)) return;
+            if (s.hasFlag(.closed)) return;
+            s.assertPinned();
+            assert(!s.hasFlag(.rx_busy));
+            assert(!s.hasFlag(.tx_busy));
             s.teardown();
         }
 
@@ -847,7 +908,7 @@ fn StreamImpl(comptime Hs: type, comptime role: Role, comptime config: Config) t
         /// declared by the Stream. The record and read buffers held decrypted
         /// application plaintext, so nobody else is going to do it.
         fn teardown(s: *Self) void {
-            s.flags.insert(.closed);
+            s.setFlag(.closed);
             s.pending = &.{};
             s.sock.close(s.io);
             s.storage.secureZero();
@@ -874,11 +935,50 @@ fn StreamImpl(comptime Hs: type, comptime role: Role, comptime config: Config) t
             return error.WriteFailed;
         }
 
-        /// Send an engine-produced control record (client Finished, KeyUpdate
-        /// response) and settle the engine's pending-write latch.
-        fn writeControlRecord(s: *Self, bytes: []const u8) net.Stream.Writer.Error!void {
-            defer s.hs.completeWrite();
-            try transportWriteAll(s.io, s.sock.socket.handle, bytes);
+        /// Send an engine-produced record and settle the pending-write latch
+        /// only after every wire byte reaches the transport.
+        fn writePreparedRecord(s: *Self, bytes: []const u8) ControlWriteError!void {
+            transportWriteAll(s.io, s.sock.socket.handle, bytes) catch |err| {
+                s.setFlag(.tx_poisoned);
+                if (s.hasFlag(.aborted)) return error.TlsAborted;
+                return err;
+            };
+            s.hs.completeWrite();
+        }
+
+        /// Answer a received KeyUpdate request. RFC 8446 §4.6.3, §5.2.
+        /// RX publishes before it waits for this mutex. The active lease is
+        /// therefore earlier in wire order. Every later TX boundary observes
+        /// the flag under this lease before application data or close_notify.
+        fn flushRequestedKeyUpdate(s: *Self) ControlWriteError!void {
+            s.tx_mutex.lock(s.io) catch |err| {
+                if (s.hasFlag(.aborted)) return error.TlsAborted;
+                return err;
+            };
+            defer s.tx_mutex.unlock(s.io);
+            return s.flushRequestedKeyUpdateLocked();
+        }
+
+        fn flushRequestedKeyUpdateLocked(s: *Self) ControlWriteError!void {
+            if (!s.hasFlag(.tx_update_pending)) return;
+            if (s.hasFlag(.aborted)) return error.TlsAborted;
+            if (s.hasFlag(.tx_poisoned)) return error.TxPoisoned;
+            if (s.writeClosed()) {
+                // RFC 8446 §4.6.3 requires the response only before the next
+                // application record. close_notify was already our last TX.
+                s.clearFlag(.tx_update_pending);
+                return;
+            }
+
+            const record = s.hs.sendKeyUpdate(
+                &s.out.buffer,
+                .update_not_requested,
+            ) catch |err| {
+                s.setFlag(.tx_poisoned);
+                return mapWriteError(err);
+            };
+            try s.writePreparedRecord(record);
+            s.clearFlag(.tx_update_pending);
         }
 
         /// RFC 8446 §6.2 — best effort. A failed alert write cannot change the
@@ -888,7 +988,7 @@ fn StreamImpl(comptime Hs: type, comptime role: Role, comptime config: Config) t
             if (s.hs.sendAlert(description, &s.out.buffer)) |record| {
                 // ziglint-ignore: Z026 -- the handshake already failed; a
                 // failed courtesy alert cannot change the reported error.
-                s.writeControlRecord(record) catch {};
+                s.writePreparedRecord(record) catch {};
             } else |_| {}
         }
 
@@ -998,9 +1098,17 @@ fn StreamImpl(comptime Hs: type, comptime role: Role, comptime config: Config) t
             const w: *Writer = @alignCast(@fieldParentPtr("interface", io_w));
             const s: *Self = @alignCast(@fieldParentPtr("writer_impl", w));
             s.assertPinned();
-            s.acquire();
-            defer s.release();
+            s.acquireHalf(.tx_busy);
+            defer s.releaseHalf(.tx_busy);
 
+            s.tx_mutex.lock(s.io) catch |err| {
+                if (s.hasFlag(.aborted)) return s.failWrite(error.TlsAborted);
+                return s.failWrite(err);
+            };
+            defer s.tx_mutex.unlock(s.io);
+
+            if (s.hasFlag(.aborted)) return s.failWrite(error.TlsAborted);
+            if (s.hasFlag(.tx_poisoned)) return s.failWrite(error.TxPoisoned);
             if (s.writeClosed()) return s.failWrite(error.TlsClosed);
 
             var total: usize = 0;
@@ -1031,14 +1139,12 @@ fn StreamImpl(comptime Hs: type, comptime role: Role, comptime config: Config) t
         /// TLS record. RFC 8446 §5.2.
         fn sendPlaintext(s: *Self, plaintext: []const u8) WriterError!void {
             assert(plaintext.len <= frame.max_plaintext_len);
+            s.flushRequestedKeyUpdateLocked() catch |err| return s.failWrite(err);
             const record = s.hs.sendApplicationData(
                 plaintext,
                 &s.out.buffer,
             ) catch |err| return s.failWrite(mapWriteError(err));
-            defer s.hs.completeWrite();
-            transportWriteAll(s.io, s.sock.socket.handle, record) catch |err| {
-                return s.failWrite(err);
-            };
+            s.writePreparedRecord(record) catch |err| return s.failWrite(err);
         }
 
         /// Split plaintext across records when it exceeds one record payload.
@@ -1105,7 +1211,7 @@ fn StreamImpl(comptime Hs: type, comptime role: Role, comptime config: Config) t
         /// Never use on an initialized stream; use `deinit` instead.
         pub fn abortBeforeInit(s: *Self, io: Io, sock: net.Stream) void {
             sock.close(io);
-            s.flags = .initOne(.closed);
+            s.state = .init(flagMask(.closed));
         }
 
         /// Client only. Wrap a CONNECTED `std.Io.net.Stream` and run the TLS

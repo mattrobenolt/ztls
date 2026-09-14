@@ -44,11 +44,10 @@ tracked by [#77](https://github.com/mattrobenolt/ztls/issues/77).
    no caller gets an unverified connection by omission. `.system_bundle` carries
    the allocator it needs, `.bundle` pins your own store, and `.insecure` is an
    explicit, greppable opt-out.
-6. **Comptime-sized buffers.** ztls core is built on caller-owned buffers, and
-   `Config` is where that surfaces in the wrapper. Defaults accept anything the
-   core accepts (~148 KB client / ~132 KB server); a caller opening thousands of
-   connections trades look-ahead and reassembly headroom for footprint. Nothing
-   is hidden and nothing is mandatory.
+6. **Comptime-sized buffers.** ztls core uses caller-owned buffers. `Config`
+   exposes each size. The defaults accept the largest supported records and
+   handshakes. A caller with thousands of connections can reduce
+   look-ahead and reassembly capacity. Nothing is hidden or mandatory.
 7. **In-place init.** `Client`/`Server` are large and self-referential — the
    record buffer, handshake reassembly buffer, and both `Io` interfaces point
    into the struct. Declare `undefined`, `connect`/`accept` in place, never move
@@ -60,21 +59,29 @@ tracked by [#77](https://github.com/mattrobenolt/ztls/issues/77).
    `illegal_parameter` / `no_application_protocol` as appropriate, then closes,
    so the peer logs a reason instead of a bare FIN.
 
-## Not reentrant across concurrent tasks
+## Concurrent split halves
 
-`reader()` and `writer()` share the handshake engine and one outbound record
-buffer, and both yield to the runtime mid-operation while that buffer holds a
-half-written record. A second task entering the other half corrupts it, so the
-two halves cannot be driven concurrently the way `tokio-rustls` split halves can.
+One reader task and one writer task can use a connected `Stream` concurrently.
+This includes green-thread runtimes such as [zio](https://github.com/lalinsky/zio).
+Multiple readers or multiple writers remain unsupported.
 
-"Not thread-safe" understates it. On a green-thread runtime like
-[zio](https://github.com/lalinsky/zio), a *single-threaded* scheduler still
-interleaves at every I/O point, so splitting the halves across two fibers looks
-safe and isn't. Debug and ReleaseSafe builds assert on reentry rather than
-corrupting silently.
+RX uses only the receive record layer and its own staging buffers. TX operations
+share one `std.Io.Mutex`, one record buffer, and one pending-write latch. The TX
+lease covers encryption, the full transport write, and `completeWrite()`.
+Therefore, wire order always matches the sequence-number order.
 
-Drive both directions from one task (`socketHandle()` + `hasBuffered()`, as
-`examples/tls_client.zig` does), or serialize access yourself.
+A received `KeyUpdate(update_requested)` publishes an atomic pending request.
+The reader or the next writer sends `KeyUpdate(update_not_requested)` under the
+old TX key. Application data and `close_notify` wait behind that response.
+
+A failed transport write permanently poisons TX. The first operation reports the
+transport cause. Later operations report `TxPoisoned`, because the connection
+cannot determine how many encrypted bytes reached the peer.
+
+Call `abort()` to wake blocked halves without clearing their state. Do not race
+`abort()` with `close()` or `deinit()`. Join both tasks first. The join and
+single-reader/single-writer rules use assertions; ReleaseFast does not check
+violations and cannot make premature teardown memory-safe.
 
 ## Public API
 
@@ -139,15 +146,15 @@ const IntrospectingClient = tls.ClientWith(.{
 ```
 
 `test "Config: buffer sizing is the whole story of the Stream footprint"` pins
-each knob to an exact `@sizeOf` delta, so the numbers above are gated rather
-than aspirational.
+each knob to an exact `@sizeOf` delta and keeps the default types below their
+stated ceilings.
 
 ### Client / Server
 
 `Client` and `Server` ARE the connection types — not namespaces around one.
 They share an implementation (`StreamImpl(Hs, role, config)`), so
 `reader`/`writer`/`socketHandle`/`hasBuffered`/`selectedAlpn`/`info`/
-`closeWrite`/`close`/`deinit` exist on both; `connect` is client-only and
+`closeWrite`/`abort`/`close`/`deinit` exist on both; `connect` is client-only and
 `accept` is server-only (calling the wrong one is a compile error, not a runtime
 surprise).
 
@@ -203,14 +210,15 @@ pub const Client = /* ClientWith(.{}) */ struct {
     /// response. Idempotent.
     pub fn closeWrite(s: *Client) void;
 
-    /// Flush, send close_notify, close the socket. Idempotent. Does not drain
-    /// pending peer app data (callers wanting that read until
-    /// `error.EndOfStream`, then close).
+    /// Wake blocked halves without clearing connection state. Idempotent.
+    pub fn abort(s: *Client) void;
+
+    /// Flush, send close_notify, close the socket. Idempotent. Join both halves
+    /// before this call.
     pub fn close(s: *Client) void;
 
-    /// Always-callable teardown: closes the socket (no alert) and secure-zeros
-    /// every wrapper-owned buffer. Idempotent, and a no-op after a failed
-    /// connect.
+    /// Close the socket and clear every wrapper-owned buffer. Join both halves
+    /// before this call. A failed connect makes this function a no-op.
     pub fn deinit(s: *Client) void;
 };
 ```
@@ -342,6 +350,8 @@ narrow error is returned, and `readError()` / `writeError()` recover it:
 
 ```zig
 pub const ReadError = error{
+    TlsAborted,         // abort stopped the connection
+    TxPoisoned,         // an earlier encrypted write did not complete
     TlsAlertReceived,   // peer sent a fatal alert
     TlsDecryptError,    // record failed to authenticate (AEAD tag / MAC)
     TlsProtocolError,   // malformed, unexpected, or illegal record
@@ -353,6 +363,8 @@ pub const ReadError = error{
   || std.Io.Cancelable || std.Io.UnexpectedError;
 
 pub const WriteError = error{
+    TlsAborted,         // abort stopped the connection
+    TxPoisoned,         // an earlier encrypted write did not complete
     TlsClosed,          // closeWrite/close already ran
     TlsProtocolError,
     InternalError,
@@ -381,7 +393,7 @@ the stdlib's.
 TLS records don't align with `read()` calls: one transport read can deliver a
 partial record, multiple records, or app data plus a `key_update` /
 `new_session_ticket` together. The `Reader` vtable adapts the record-oriented
-`Event` loop to a flat byte stream, and the whole event union stays invisible to
+`ReceiveEvent` loop to a flat byte stream. The event union stays invisible to
 the caller:
 
 1. While the reader's buffer holds bytes, the generic `Io.Reader` serves them —
@@ -389,14 +401,13 @@ the caller:
 2. On exhaustion, `stream` copies from the pending decrypted record into the
    destination the generic layer supplied. When nothing is pending it drives the
    record loop: read transport into `RecordBuffer.writable()`, `advance(n)`,
-   loop `rb.next()` → `handleRecord`, and switch on the `Event`:
+   loop `rb.next()` → `receiveRecord`, and switch on the `ReceiveEvent`:
    - `.application_data` → becomes the pending plaintext window and is copied
      out (zero-length fragments are skipped; RFC 8446 §5.1 allows them).
-   - `.key_update` → if `response` non-null, write it + `completeWrite`; loop.
-     Never surfaced.
+   - `.key_update` → publishes a response request, acquires TX, and sends it.
+     The event never reaches the caller.
    - `.new_session_ticket` → swallow (a later `onTicket` hook is a non-stub
      future field, not a v1 knob); loop.
-   - `.write` (post-handshake control) → write + `completeWrite`; loop.
    - `.none` → loop.
    - `.closed` → return `error.EndOfStream`.
    - Transport returns 0 without `.closed` → `error.EndOfStream` (abrupt
@@ -552,13 +563,11 @@ seam, and it is the reason the zero-copy read path had to go.
   the verified client leaf DER only (for `info().client_identity`), not the
   full client chain.
 - **Session resumption / 0-RTT surface** — cut from v1.
-- **Concurrent split halves** — see the reentrancy note above.
 - **Timeouts** — nothing here imposes a deadline. A slow peer can stall
   `connect` or a read indefinitely. `std.Io` cancellation is the intended
-  mechanism and belongs to whoever owns the runtime;
-  `examples/zio_client.zig` shows the whole exchange raced against a sleep
-  through `Io.Select`, with the resulting `error.Canceled` recovered via
-  `readError()`.
+  mechanism and belongs to whoever owns the runtime. `abort()` provides manual
+  wakeup for blocked halves. `examples/zio_client.zig` races the exchange
+  against an `Io.Select` deadline. `readError()` then returns `error.Canceled`.
 - **0.15 support** — 0.16 only.
 - **Distribution as an independently `zig fetch`-able package** — tracked by #79.
 

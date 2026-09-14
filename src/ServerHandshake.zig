@@ -38,7 +38,7 @@ const fuzz_compat = @import("fuzz_compat.zig");
 const handshake = @import("handshake.zig");
 const HandshakeReader = handshake.Reader;
 const HandshakeType = handshake.Type;
-const KeyUpdateRequest = handshake.KeyUpdateRequest;
+pub const KeyUpdateRequest = handshake.KeyUpdateRequest;
 const max_post_handshake_messages = handshake.max_post_handshake_messages;
 const HashArm = @import("suite_state.zig").HashArm;
 const hkdf = @import("hkdf.zig");
@@ -555,7 +555,8 @@ pub fn completeWrite(self: *ServerHandshake) void {
 
 /// Most recent non-close_notify peer alert (RFC 8446 §6.2), or null if none.
 /// A later peer alert replaces an earlier one; close_notify (§6.1) and
-/// malformed records leave it unchanged.
+/// malformed records leave it unchanged. If another task owns RX through
+/// `receiveRecord`, read this only after that task joins.
 pub fn lastPeerAlert(self: *const ServerHandshake) ?alert.Alert {
     return self.last_peer_alert;
 }
@@ -574,6 +575,18 @@ pub const Event = union(enum) {
     /// The peer's KeyUpdate ratcheted one or both traffic keys. See
     /// `KeyUpdateEvent` for details. RFC 8446 §4.6.3, §7.2.
     key_update: KeyUpdateEvent,
+    none,
+    closed,
+};
+
+/// Connected-state receive result. This path owns only RX state, so callers can
+/// process inbound records while an unrelated TX record remains in flight.
+pub const ReceiveEvent = union(enum) {
+    application_data: []const u8,
+    /// The RX key is already ratcheted. For `update_requested`, the caller MUST
+    /// send `update_not_requested` before its next application-data record.
+    /// RFC 8446 §4.6.3, §7.2.
+    key_update: KeyUpdateRequest,
     none,
     closed,
 };
@@ -634,12 +647,12 @@ pub const ClientFinishedError =
 
 pub const SendError = RecordLayer.EncryptError || error{PendingWrite};
 pub const ReceiveError =
-    RecordLayer.DecryptError || SendError || alert.ParseError ||
+    RecordLayer.DecryptError || alert.ParseError ||
     error{ UnexpectedEof, UnexpectedRecord, UnexpectedMessage, IllegalParameter } ||
     error{ TooManyKeyUpdates, PeerAlert };
 pub const HandleError =
     AcceptError || FlightError || ClientFinishedError ||
-    ReceiveError || alert.ParseError || error{PendingWrite};
+    ReceiveError || SendError || alert.ParseError || error{PendingWrite};
 pub const AlertError = RecordLayer.EncryptError || error{ BufferTooShort, PendingWrite };
 
 /// Consume a plaintext ClientHello record and emit a plaintext ServerHello
@@ -1883,7 +1896,12 @@ fn handleWaitClientFinished(self: *ServerHandshake, record: []u8) HandleError!Ev
     };
 }
 
-fn handleConnected(self: *ServerHandshake, record: []u8, out: []u8) ReceiveError!Event {
+/// Process one connected-state record without touching TX state or the
+/// pending-write latch. The caller owns any KeyUpdate response. This permits a
+/// full-duplex driver to continue RX while a TX record drains. RFC 8446 §4.6.3.
+// ziglint-ignore: Z015 -- ReceiveError is a public error-set alias.
+pub fn receiveRecord(self: *ServerHandshake, record: []u8) ReceiveError!ReceiveEvent {
+    assert(self.state == .connected);
     const dec = try handshake.decryptProtected(&self.rx, record);
     switch (dec.content_type) {
         .application_data => {
@@ -1949,11 +1967,7 @@ fn handleConnected(self: *ServerHandshake, record: []u8, out: []u8) ReceiveError
                 self.rx = next_rx;
                 self.ku_frag.clear();
 
-                if (request == .update_requested) {
-                    const resp = try self.sendKeyUpdate(out, .update_not_requested);
-                    return .{ .key_update = .{ .response = resp, .rx = true, .tx = true } };
-                }
-                return .{ .key_update = .{ .response = null, .rx = true, .tx = false } };
+                return .{ .key_update = request };
             }
             return .none;
         },
@@ -1969,6 +1983,22 @@ fn handleConnected(self: *ServerHandshake, record: []u8, out: []u8) ReceiveError
         },
         else => return error.UnexpectedRecord,
     }
+}
+
+fn handleConnected(
+    self: *ServerHandshake,
+    record: []u8,
+    out: []u8,
+) (ReceiveError || SendError)!Event {
+    return switch (try self.receiveRecord(record)) {
+        .application_data => |data| .{ .application_data = data },
+        .key_update => |request| if (request == .update_requested) blk: {
+            const response = try self.sendKeyUpdate(out, .update_not_requested);
+            break :blk .{ .key_update = .{ .response = response, .rx = true, .tx = true } };
+        } else .{ .key_update = .{ .response = null, .rx = true, .tx = false } },
+        .none => .none,
+        .closed => .closed,
+    };
 }
 
 // ziglint-ignore: Z015 -- SendError is a public error-set alias.
@@ -3968,6 +3998,43 @@ test "handleRecord: rejects client KeyUpdate before Finished" {
         server.handleRecord(rx_buf[0..wire_rec.len], &out),
     );
     try testing.expectEqual(.wait_client_finished, server.state);
+}
+
+// RFC 8446 §4.6.3, §5.2 — RX state is independent from an outstanding TX
+// record; a KeyUpdate request ratchets RX without changing TX.
+test "receiveRecord: RX progresses while a server TX record is pending" {
+    var server = try connectedTestServer();
+    defer server.deinit();
+
+    var client_tx = try server.rx.clone();
+    defer client_tx.deinit();
+
+    var server_out: [64]u8 = undefined;
+    _ = try server.sendApplicationData("blocked", &server_out);
+    const tx_before = server.txKtlsInfo();
+
+    var peer_out: [128]u8 = undefined;
+    const app = try client_tx.encrypt(.application_data, "ping", &peer_out);
+    var app_record: [64]u8 = undefined;
+    @memcpy(app_record[0..app.len], app);
+    const app_event = try server.receiveRecord(app_record[0..app.len]);
+    try testing.expectEqualSlices(u8, "ping", app_event.application_data);
+
+    const ku = [_]u8{
+        @intFromEnum(HandshakeType.key_update),          0x00, 0x00, 0x01,
+        @intFromEnum(KeyUpdateRequest.update_requested),
+    };
+    const update = try client_tx.encrypt(.handshake, &ku, &peer_out);
+    var update_record: [64]u8 = undefined;
+    @memcpy(update_record[0..update.len], update);
+    const update_event = try server.receiveRecord(update_record[0..update.len]);
+    try testing.expectEqual(KeyUpdateRequest.update_requested, update_event.key_update);
+    try testing.expectEqual(tx_before, server.txKtlsInfo());
+
+    try testing.expectError(
+        error.PendingWrite,
+        server.handleRecord(update_record[0..update.len], &server_out),
+    );
 }
 
 // RFC 8446 §4.6.3 — a client KeyUpdate(update_requested) ratchets the
