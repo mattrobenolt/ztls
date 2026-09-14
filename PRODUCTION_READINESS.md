@@ -60,7 +60,7 @@ ztls is production-ready when all six pillars are `PROVEN`:
 | Pillar | Status | One-line |
 |---|---|---|
 | 1. Correctness | `PROVEN` | Both #91 fixture defects have red/green regressions and fresh strict-complete captures on all three backends at `e5800ee`: zero unexpected results and zero validity rejections. Historical failure causality remains bounded by the retained evidence. Full TLS-Anvil remains scheduled-only; BoGo is explicitly deferred. |
-| 2. Ergonomics | `PROVEN` | CI-gated deterministic examples cover client and server roles across io_uring, epoll, and `std.net.Stream`; Config setup, server credentials, and `Outbox` cover the supported core ergonomics boundary. Two higher-order integrations are `PARTIAL`, both CI-gated under Zig 0.16: `ztls-std` (#77, `std.Io`) lacks wrapper-level interop, client auth, and concurrent split halves; `ztls-xev` (#76, libxev completions) has both roles on io_uring (CI-gated) and kqueue (CI-gated), with in-flight read and write cancellation proven on io_uring and epoll; kqueue cancellation remains the unproven island (#83). |
+| 2. Ergonomics | `PROVEN` | CI-gated deterministic examples cover client and server roles across io_uring, epoll, and `std.net.Stream`; Config setup, server credentials, and `Outbox` cover the supported core ergonomics boundary. Two higher-order integrations are `PARTIAL`, both CI-gated under Zig 0.16: `ztls-std` (#77, `std.Io`) lacks wrapper-level interop, client auth, and concurrent split halves; `ztls-xev` (#76, libxev completions) has both roles on io_uring (CI-gated) and kqueue (CI-gated), with in-flight read and write cancellation gated on io_uring, epoll, and kqueue (#83). |
 | 3. Performance | `PROVEN` | n=10 captures on x86_64 (c7i.2xlarge), aarch64 (c7g.2xlarge), and macOS (Apple M1 Max) with formal CIs (p=0.000): ztls beats libssl on every comparable app-data row on all three platforms and rustls on all AES-GCM rows; regression gate committed. |
 | 4. Providers | `PROVEN` | OpenSSL, AWS-LC, and BoringSSL have CI-gated backend lanes and fresh strict-complete TLS-Anvil captures at `e5800ee`, with both fixture patches verified and no unexpected results (#91). Cert-chain stays ztls/std; FIPS capability checks are comptime-only; PQ/P-384 is #6. |
 | 5. Marketing | `PROVEN` | README leads with the proven performance story (n=10, both architectures, honest ChaCha20 loss) and the adversarial security posture; the why-ztls narrative and headline benchmarks are on the front door, backed by PERFORMANCE.md. |
@@ -923,13 +923,12 @@ guesswork, and fixed by requiring a pool with an assert at `Conn.init` on the
 backends that need one. The lesson is the durable part: io_uring is the permissive
 backend, and single-backend coverage is not backend coverage.
 
-**Gaps (tracked under #76's successors):** in-flight cancellation is now covered
-for both reads and writes, abortive and orderly, on io_uring and epoll (#83).
-kqueue cancellation remains unproven in the shipped dependency: the abortive
-read stall is attributed to libxev's dropped `EV_DELETE` during `tick(0)` by the
-[isolated deletion-flush experiment](docs/research/XEV_KQUEUE_83/20260913-flush/README.md).
-The fix is not adopted. Both write variants remain skipped and were not
-validated by that experiment; #83 stays open. The epoll fix works
+**In-flight cancellation (#83):** regression tests cover reads and writes,
+abortive and orderly, on io_uring, epoll, and kqueue. ztls-xev pins libxev
+`7497c85`, the exact head of mitchellh/libxev#224. Its kqueue deletion flush
+prevents stale events after `tick(0)`. The macOS lane executes all four variants;
+[the acceptance capture](docs/research/XEV_KQUEUE_83/20260914-production/README.md)
+preserves the pin, mutation, test, and probe evidence. The epoll fix works
 around what looks like an upstream libxev defect: its epoll TCP watcher
 duplicates the fd per operation and the normal completion path closes that
 duplicate, but the cancellation path (`stop_completion`) only does
@@ -969,17 +968,14 @@ desynced the peer's stream and the engine's pending-write latch stays set, so
 `sendAlert` refuses and the close proceeds to the socket; a `close_notify`
 after half a record would be un-authenticatable garbage.
 
-The abortive in-flight-read test stalls on macOS/kqueue: after the server's
-cancellation completes, the client's plain socket close is armed
-(`phase = .released`) but its callback never fires and `Loop.active == 0`.
-CI run `34742256947` reproduces this exact state at diagnostic revision
-`f3d0a0e`; run `34742815211` passes the same enabled test at `7715eb5` with only
-upstream mitchellh/libxev#224's deletion-flush hunk applied to the pinned source.
-The tick-local deletion is otherwise discarded on `wait == 0`. A stale EOF
-can re-fire and decrement `active` again, preventing the loop from reaching
-thread-pool completion migration. Source analysis and the isolated red/green
-experiment establish the abortive-read attribution, not deterministic behavior
-across all interleavings. The production pin and kqueue skips are unchanged.
+The former abortive-read failure reached `phase = .released`, but its socket
+close callback never fired and `Loop.active` reached zero. Run `34742256947`
+reproduces that state at diagnostic revision `f3d0a0e`. The tick-local deletion
+was discarded on `wait == 0`. A stale EOF then re-fired and decremented `active`
+for an already retired read. The loop gate blocked thread-pool completion
+migration. Run `34742815211` passes the same test with only the deletion-flush
+hunk. The production pin adopts the reviewed upstream revision that contains
+that hunk.
 
 Two hypotheses were tested against real macOS runs and both are dead: libxev
 mis-accounting `active` on the cancel path (a single-socket probe comes back
@@ -995,10 +991,11 @@ other has a read armed:
       src/backend/kqueue.zig:1285 in perform   (xev_posix.close(op.fd))
       src/backend/kqueue.zig:960 in thread_perform
 
-The thread-pool worker attempted to close an invalid fd. The earlier closer or
-possible duplicate scheduling remains unestablished. The deletion-flush
-experiment did not run this probe and does not establish its relationship to
-the `Conn` stall.
+The thread-pool worker attempted to close an invalid fd. The earlier closer was
+not identified from the failure. With libxev `7497c85`, the same probe reports
+both close callbacks, peer EOF, `active=0`, and four spins. This proves that the
+pinned revision removes the reproduction. It does not attribute that result to
+one of the revision's three kqueue changes.
 
 **macOS is now CI-gated.** A `macos-15` job runs `just integrations-ci` on kqueue,
 scoped to the 0.16 integrations rather than the whole lane (conformance needs a
@@ -1007,16 +1004,11 @@ defects here were invisible under io_uring and every one was found because a
 person ran a Mac by hand, so the coverage was only ever as fresh as the last
 manual run — the 21/21 that closed #76 was stale within a day.
 
-The runner immediately narrowed #83, which is the argument for having it. Only
-the **abortive** close with a read in flight stalls on kqueue; the **orderly**
-close passes there and runs normally. The extra close_notify write changes the
-event path, but timing alone was not accepted as proof of a repair. The isolated
-deletion-flush experiment preserves the abortive test's trigger and timing.
-
-The abortive case remains skipped on kqueue until a dependency fix is adopted.
-Earlier stalled-loop teardowns crashed; the preserved CI baseline instead
-returns `LoopStalled` cleanly. In-flight write cancellation remains separately
-unproven.
+The macOS runner first narrowed the failure to the abortive read. The isolated
+hunk then established the deletion-flush mechanism without a timing change.
+Separate mutations remove that hunk and fail each write variant with an integer
+overflow. The final production-pin run executes all four tests and passes. No
+kqueue cancellation skip remains.
 
 
 

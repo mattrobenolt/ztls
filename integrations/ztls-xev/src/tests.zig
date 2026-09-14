@@ -968,7 +968,7 @@ test "close: closeReset with a read in flight cancels it, then closes" {
 // The same, but orderly: the close_notify is still owed after the cancel, so the
 // sequence has one more step to get through before the fd goes. RFC 8446 §6.1.
 test "close: orderly close with a read in flight still sends close_notify" {
-    // Runs on every backend including kqueue; only the abortive path is broken.
+    // Runs on every backend including kqueue.
     try expectCancelThenClose(xev, .orderly);
     if (builtin.os.tag == .linux) try expectCancelThenClose(xev.Epoll, .orderly);
 }
