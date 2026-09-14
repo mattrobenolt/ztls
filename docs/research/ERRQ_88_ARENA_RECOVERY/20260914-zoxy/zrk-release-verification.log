@@ -1,0 +1,7 @@
+verified_utc=2026-09-14T10:34:30Z
+url=https://github.com/zoxy-io/zrk/releases/download/v1.4.1/zrk-1.4.1-aarch64-linux.tar.gz
+command=grep aarch64-linux.tar.gz SHA256SUMS.txt | sha256sum -c -
+zrk-1.4.1-aarch64-linux.tar.gz: OK
+archive_sha256=bc0f34ae13749d0a1062de1d8c9034e001f91f31911264a6cdd5dea68b302c7e
+extracted_binary_sha256=0f2c5fe657a82076b58535337317294e2baffc3b3637b35dae69e1206178db63
+zrk 1.4.1

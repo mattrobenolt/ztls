@@ -504,7 +504,7 @@ data to openssl s_server and receives the HTTP response.
     §4.2.1.10, instead of being routed through `dnsNameInSubtree` (subtree
     match). Leading-`.` constraints keep subtree semantics. The differential
     test against OpenSSL 3.6.3 now agrees on every case.
-  - #88 (partial) — externally reported availability vulnerability
+  - #88 (fixed) — externally reported availability vulnerability
     (`p256`/`p384` `KeyPair.generate()` retried a non-retryable backend error
     forever: 100% CPU livelock when the crypto backend cannot allocate —
     reported at gh #88, originally zoxy-io/zoxy#222). Finding 1 (livelock) is
@@ -516,8 +516,8 @@ data to openssl s_server and receives the HTTP response.
     `InternalError` with the owned socket closed and `deinit` still a no-op;
     and the retry policy itself is pinned by comptime-draw tests on both
     curves, in which a regressed `catch continue` fails the error/count
-    assertions instead of hanging. Finding 2 is PARTIAL: the
-    library-side residue is eliminated and regression-tested on all three
+    assertions instead of hanging. Finding 2 is fixed: the library-side
+    residue is eliminated and regression-tested on all three
     backends — every outermost public fallible backend wrapper (shared EC
     P-256/P-384 key construction and ECDH, X25519, key loading, signature
     sign/verify, KEM, and the per-record AEAD seal/open paths) brackets its
@@ -557,18 +557,34 @@ data to openssl s_server and receives the HTTP response.
     memory assertion runs before the queue assertion, and with the guards
     removed the executable fails on the memory axis (`AllocationGrowth`),
     as it also does under a deliberate per-call libcrypto-allocated leak in
-    `errqExit`. This is allocation-count retention evidence, not
+    `errqExit`. That check remains allocation-count retention evidence, not
     recovery-after-exhaustion: the hooks count and never fail, and
     realloc-based byte growth is invisible to the counts (documented in the
     executable). BoringSSL-family libcrypto has no
     `CRYPTO_set_mem_functions`, so the counting-hook check cannot exist
-    there (queue hygiene still applies). #88 stays open: these checks do
-    not reproduce the embedder's permanent 4 MiB arena retention or prove
-    recovery from allocation failure. The reporter observed recovery after
-    clearing the queue; the guarded library still needs the embedder's
-    arena workload retested before closure. The full-cleanup guard is
-    accepted with a measured local record-path cost: approximately 18–24 ns
-    on 10 of 12 rows, with two noisier 16 KiB decrypt rows at 34–37 ns;
+    there (queue hygiene still applies).
+
+    End-to-end fixed-arena recovery is separately proven against public
+    historical zoxy commit `6e13999` (the bounded-keygen revision before
+    zoxy v0.2.1 enlarged its 4 MiB heap). Under the original 700-connection,
+    5,000 request/s, 15-second trigger dimensions, the same one-CPU zoxy
+    configuration with baseline zoxy-io/ztls `634567a` recorded 46,204
+    crypto-allocation sheds after load and failed all three later TLS probes;
+    each probe added another shed. The guarded Zig 0.16 port of this source
+    recorded 10,075 sheds, then answered TLS, plaintext, and admin probes after
+    cumulative waits of 6, 21, and 51 seconds; its shed count stayed fixed and
+    completed TLS handshakes advanced from 676 to 678. A diagnostic one MiB
+    A/B also counted allocator-hook null returns directly: the guarded build
+    returned null 46,310 times during load and still completed all later TLS
+    probes, while the baseline counted 115,749 failures and completed none.
+    The one MiB heap and hook counter are diagnostic only, not proposed zoxy
+    changes. Current zoxy no longer embeds ztls, so the historical revision is
+    the closest public reproduction of zoxy-io/zoxy#222. Harness, source
+    patches, complete logs, metrics, and checksums:
+    `docs/research/ERRQ_88_ARENA_RECOVERY/20260914-zoxy/`.
+    The full-cleanup guard is accepted with a measured local record-path cost:
+    approximately 18–24 ns on 10 of 12 rows, with two noisier 16 KiB decrypt
+    rows at 34–37 ns;
     the smallest AES-GCM rows regress about 19–21%. Minimality of that cost
     is unproven. Raw capture and independently audited corrections:
     `docs/research/perf/20260913-012750-launchpad-errq/` and
