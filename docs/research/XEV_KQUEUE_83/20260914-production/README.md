@@ -5,7 +5,7 @@ Project status lives in
 This directory preserves the macOS evidence for the libxev update and the
 kqueue cancellation gates.
 
-`SHA256SUMS` covers five losslessly compressed job logs. Each decompressed file
+`SHA256SUMS` covers six losslessly compressed job logs. Each decompressed file
 matched its original download byte-for-byte after archive creation.
 
 ## Dependency
@@ -28,6 +28,8 @@ The first change fixes the ztls cancellation tests. The other changes are part
 of the pinned revision, but they are not load-bearing for those tests.
 The upstream revision adds ten kqueue regression tests.
 On Linux with Zig 0.16.0, its suite reports 146 passes and three platform skips.
+The pin targets an open PR commit. If GitHub no longer serves that object,
+mirror the exact commit or repin to its merged successor before the next build.
 
 ## Write-test mutation
 
@@ -89,6 +91,15 @@ The combined step then enters `stuck_write_cancel` and prints
 after 30 minutes.
 
 The stuck-write probe socket lacks `O_NONBLOCK`, and the probe calls
-`loop.run(.no_wait)`. Its outer spin count does not bound that loop call. Therefore, this run provides
-no kqueue write-cancel result from that probe. The temporary workflow step was
-removed. The integration write tests provide the accepted wrapper evidence.
+`loop.run(.no_wait)`. Its outer spin count does not bound that loop call.
+Therefore, this run provides no kqueue write-cancel result from that probe.
+
+Revision `db47b03` sets `O_NONBLOCK` for this macOS probe only. Run
+`34827062097` tests that change at temporary workflow revision `050c194`.
+The write first reports a 2,048-byte partial result. Cancellation then reports
+success, and the target reports `Canceled` in spin 51. The close callback fires
+in spin 102. `active` stays zero after the close and after the peer closes.
+The full probe step completes in nine seconds.
+
+The final branch removes both temporary workflow steps. The integration write
+tests remain the accepted wrapper evidence.

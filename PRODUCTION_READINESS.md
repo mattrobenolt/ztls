@@ -995,7 +995,9 @@ The thread-pool worker attempted to close an invalid fd. The earlier closer was
 not identified from the failure. With libxev `7497c85`, the same probe reports
 both close callbacks, peer EOF, `active=0`, and four spins. This proves that the
 pinned revision removes the reproduction. It does not attribute that result to
-one of the revision's three kqueue changes.
+one of the revision's three kqueue changes. The stuck-write probe originally
+hung before cancellation because its socket lacked `O_NONBLOCK`. With the probe
+fixed, kqueue reports `Canceled`, the close callback, and `active=0`.
 
 **macOS is now CI-gated.** A `macos-15` job runs `just integrations-ci` on kqueue,
 scoped to the 0.16 integrations rather than the whole lane (conformance needs a
