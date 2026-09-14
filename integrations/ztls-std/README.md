@@ -108,7 +108,8 @@ pub const Config = struct {
     reassembly_storage: ?usize = null, // null = the core's recommendation
     read_buffer: usize = ztls.frame.max_plaintext_len,
     write_buffer: usize = ztls.frame.max_plaintext_len,
-    peer_chain_storage: ?usize = null, // null = do not retain the chain
+    peer_chain_storage: ?usize = null, // client: retain the peer chain
+    client_identity_storage: ?usize = null, // server: retain the client leaf
 };
 
 pub fn ClientWith(comptime config: Config) type;
@@ -121,6 +122,11 @@ pub const Server = ServerWith(.{});
 `takeDelimiterInclusive` line length; past it those report
 `error.StreamTooLong`. It must be at least one record payload
 (`ztls.frame.max_plaintext_len`).
+
+`client_identity_storage` is the server-side counterpart: bytes reserved for
+the verified client leaf DER behind `info().client_identity`. `null` verifies
+and discards the leaf; too small for the presented leaf surfaces as
+`error.HandshakeBufferTooShort` from `accept`.
 
 `peer_chain_storage` is `null` by default because retaining the verified chain
 for `info().peer_chain` costs one handshake-sized (64 KiB) buffer, and most
@@ -157,6 +163,10 @@ pub const Client = /* ClientWith(.{}) */ struct {
         alpn: []const []const u8 = &.{},
         /// Offer an X25519MLKEM768 hybrid key share (PQ). False by default.
         offer_pq_key_share: bool = false,
+        /// Present this chain + signer when the server sends a
+        /// CertificateRequest. An empty chain is `InvalidOptions` before any
+        /// wire I/O. Borrowed for the handshake. RFC 8446 §4.4.2, §4.4.3.
+        client_credentials: ?ClientCredentials = null,
     };
 
     /// Wrap a CONNECTED `std.Io.net.Stream` and run the TLS 1.3 handshake to
@@ -223,6 +233,8 @@ pub const Options = struct {
     signer: ztls.signature.Signer,
     /// ALPN protocols supported. Borrowed.
     alpn: []const []const u8 = &.{},
+    /// Client-certificate policy. Default `.none`. RFC 8446 §4.4.2.
+    client_auth: ClientAuth = .none,
 };
 ```
 
@@ -233,9 +245,49 @@ handshake state:
 pub const Info = struct {
     cipher_suite: ztls.CipherSuite,
     alpn: ?[]const u8,
-    peer_chain: []const []const u8, // verified DER, leaf first; see Config
+    peer_chain: []const []const u8, // client-side verified DER; see Config
+    client_identity: ?[]const u8,   // server-side verified client leaf DER
 };
 ```
+
+### Client authentication (mTLS)
+
+Both directions are supported and CI-gated against `openssl s_server -Verify`
+and `openssl s_client -cert -key`, including required-certificate rejection
+when either client omits credentials:
+
+```zig
+pub const ClientCredentials = struct {
+    cert_chain: []const []const u8, // DER, leaf first; borrowed
+    signer: ztls.signature.Signer,  // signs CertificateVerify; borrowed
+};
+
+pub const ClientTrust = union(enum) {
+    bundle: *const std.crypto.Certificate.Bundle, // caller-owned anchors
+    insecure,                                     // demo/test opt-out
+};
+
+pub const ClientAuth = union(enum) {
+    none,                        // default
+    optional: ClientTrust,       // empty client Certificate is accepted
+    required: ClientTrust,       // empty client Certificate is rejected
+};
+```
+
+A client passes `Options.client_credentials`; a server passes
+`Options.client_auth`. There is deliberately no server-side system-bundle mode
+and no separate `insecure` bool — a server authenticating clients pins its own
+CA, which is the normal mTLS deployment shape. A non-none server mode uses the
+real `Io.Timestamp` clock for client-certificate validity.
+
+Two wrapper-side classification details are pinned by tests: a client signer
+whose scheme the server's CertificateRequest cannot carry, and a client chain
+too large for one record, are `InvalidOptions` (caller configuration), while a
+verified client leaf that does not fit `client_identity_storage` is
+`HandshakeBufferTooShort` (sizing). Handshake failure alerts go through the
+canonical per-error ztls table, so a peer logging the failure sees
+`unknown_ca` / `certificate_expired` / `decrypt_error` rather than a generic
+`bad_certificate`.
 
 ### Error sets
 
@@ -496,10 +548,9 @@ seam, and it is the reason the zero-copy read path had to go.
 
 - **`std.http` integration** — `std.http` is not the target; community HTTP
   libs compose via the `*Io.Reader`/`*Io.Writer` seam instead.
-- **Client-auth** — the ztls core marks full client-cert verification as a
-  later slice; exposing a non-functional knob now would be dishonest.
-  `AcceptError.ClientCertificateRejected` exists because the core can produce
-  those errors, not because the surface is supported.
+- **Client-auth server-side retention beyond the leaf** — the wrapper retains
+  the verified client leaf DER only (for `info().client_identity`), not the
+  full client chain.
 - **Session resumption / 0-RTT surface** — cut from v1.
 - **Concurrent split halves** — see the reentrancy note above.
 - **Timeouts** — nothing here imposes a deadline. A slow peer can stall
@@ -527,7 +578,8 @@ just ci                # everything above
 
 The OpenSSL CLI supplied by the devshell is a required test dependency. The
 interop suite runs real TCP exchanges against `openssl s_server` and `s_client`
-in both directions; an absent executable is a test failure, not a skip.
+in both directions, including mTLS success and rejection paths; an absent
+executable is a test failure, not a skip.
 
 The root workspace delegates to this subproject through `just integrations-ci`,
 which is wired into `just ci-0_16` (the Zig 0.16 CI lane). The 0.15 lane cannot

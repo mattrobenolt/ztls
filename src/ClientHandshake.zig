@@ -1615,7 +1615,9 @@ pub const ClientFinishedError = SendError || signature.SignError || aead.Error |
 /// CertificateVerify carry client authentication when the server sent
 /// CertificateRequest and the client has credentials (RFC 8446 §4.4.2,
 /// §4.4.3). A client with no credentials sends an empty Certificate, matching
-/// the pre-client-auth behavior. `out` receives the encrypted record.
+/// the pre-client-auth behavior. `out` receives the encrypted record. Any
+/// error is terminal for this handshake because flight assembly advances the
+/// transcript; send an alert when possible, then deinit.
 // ziglint-ignore: Z015 -- ClientFinishedError is a public error-set alias.
 pub fn clientFinished(self: *ClientHandshake, out: []u8) ClientFinishedError![]const u8 {
     assert(self.state == .send_finished);
@@ -1723,13 +1725,17 @@ pub fn clientFinished(self: *ClientHandshake, out: []u8) ClientFinishedError![]c
         }
     }
 
-    const keys = self.suite.finishHandshake(
+    var keys = self.suite.finishHandshake(
         plain_buf[plain_len..],
         self.server_finished_hash[0..self.server_finished_hash_len],
     ) catch |err| switch (err) {
         error.BufferTooShort => return error.BufferTooShort,
         else => |e| return e,
     };
+    errdefer {
+        keys.tx.deinit();
+        keys.rx.deinit();
+    }
     plain_len += keys.finished.len;
 
     // Encrypt under the handshake-traffic key that is still installed, then

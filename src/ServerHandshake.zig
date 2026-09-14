@@ -182,8 +182,7 @@ pub const Config = struct {
     supported_suites: []const CipherSuite = default_supported_suites,
     /// ALPN protocols supported by this server. Caller-owned.
     alpn_protocols: root.AlpnProtocols = &.{},
-    /// Server-side client certificate policy. Full non-empty client
-    /// certificate verification is a later #4 slice.
+    /// Server-side handshake-time client certificate policy.
     client_auth: ClientAuthPolicy = .none,
     /// Trust anchors for client certificate chain validation. Required when
     /// client_auth is .optional or .required and the client sends a non-empty
@@ -282,6 +281,8 @@ psk_lookup: ?PskLookup = null,
 /// Signer must outlive this handshake. ztls stores references and does not copy
 /// or own credential memory.
 server_credentials: ?ServerCredentials = null,
+/// Set before server-flight assembly mutates the transcript, so a terminal
+/// failure cannot be retried into a duplicate Finished or key/nonce reuse.
 server_flight_sent: bool = false,
 
 /// Caller-owned storage for reassembling a fragmented plaintext
@@ -481,6 +482,21 @@ pub fn useHandshakeBuffer(self: *ServerHandshake, storage: []u8) void {
     assert(self.state == .wait_ch);
     assert(self.ch_buf.len == 0);
     self.ch_buf = .init(storage);
+}
+
+/// Provide caller-owned storage for retaining the verified client leaf
+/// certificate DER (see `clientCertificateDer`). Without it the leaf is
+/// verified and discarded: `clientCertificateDer` returns null after the
+/// handshake. Equivalent to `Config.client_cert_buffer`, for callers that
+/// construct the engine before they own the storage. Must be called before
+/// the handshake starts; the storage must outlive the engine. The caller owns
+/// clearing it (#81): the retained DER survives `deinit` untouched.
+///
+/// RFC 8446 §4.4.2, §4.4.3.
+pub fn useClientCertificateBuffer(self: *ServerHandshake, storage: []u8) void {
+    assert(self.state == .wait_ch);
+    assert(self.client_cert.buffer.len == 0);
+    self.client_cert = .init(storage);
 }
 
 /// Return the selected ALPN protocol after the first ClientHello is processed.
@@ -1134,6 +1150,8 @@ fn makeHandshakeArm(
 // identity into the transcript. RFC 8446 §4.3.1, §4.4.4.
 fn sendAnonymousFlightForTest(self: *ServerHandshake, out: []u8) FlightError![]const u8 {
     assert(self.state == .wait_client_finished);
+    assert(!self.server_flight_sent);
+    self.server_flight_sent = true;
     var plaintext: [256]u8 = undefined;
     var pos: usize = 0;
     const ee = try encrypted_extensions.encode(
@@ -1162,13 +1180,15 @@ fn sendAnonymousFlightForTest(self: *ServerHandshake, out: []u8) FlightError![]c
             pos += fin.len;
         },
     }
-    return self.tx.encrypt(.handshake, plaintext[0..pos], out);
+    return self.encryptServerFlight(plaintext[0..pos], out);
 }
 
 /// Emit an authenticated encrypted server flight: EncryptedExtensions,
 /// Certificate, CertificateVerify, Finished. The signer receives the exact TLS
 /// 1.3 CertificateVerify input (`64*SP || context || 0 || transcript_hash`) and
 /// writes a DER signature into caller-provided scratch. RFC 8446 §4.3-§4.4.
+/// Any error is terminal for this handshake because flight assembly advances
+/// the transcript; send an alert when possible, then deinit.
 // ziglint-ignore: Z015 -- FlightError is a public error-set alias.
 pub fn sendAuthenticatedFlight(
     self: *ServerHandshake,
@@ -1188,8 +1208,11 @@ pub fn sendCertificateChainFlight(
     plaintext: []u8,
     out: []u8,
 ) FlightError![]const u8 {
+    assert(self.state == .wait_client_finished);
+    assert(!self.server_flight_sent);
+    self.server_flight_sent = true;
     const flight = try self.encodeAuthenticatedFlight(chain, signer, plaintext);
-    return self.tx.encrypt(.handshake, flight, out);
+    return self.encryptServerFlight(flight, out);
 }
 
 // ziglint-ignore: Z015 -- FlightError is a public error-set alias.
@@ -1209,9 +1232,12 @@ pub fn sendPreparedCertificateChainFlight(
     signer: Signer,
     out: []u8,
 ) FlightError![]const u8 {
+    assert(self.state == .wait_client_finished);
+    assert(!self.server_flight_sent);
     if (out.len < frame.header_len) return error.BufferTooShort;
+    self.server_flight_sent = true;
     const flight = try self.encodeAuthenticatedFlight(chain, signer, out[frame.header_len..]);
-    return self.tx.encryptPrepared(.handshake, flight.len, out);
+    return self.encryptPreparedServerFlight(flight.len, out);
 }
 
 // ziglint-ignore: Z015 -- FlightError is a public error-set alias.
@@ -1234,19 +1260,21 @@ pub fn sendAuthenticatedFlightBuffered(
 /// Returns null before ServerHello has installed handshake keys, or after the
 /// flight has already been emitted. A non-null result sets the pending-write
 /// latch; callers must write the returned bytes and then call completeWrite().
+/// Any error is terminal for this handshake because flight assembly advances
+/// the transcript; send an alert when possible, then deinit.
 // ziglint-ignore: Z015 -- FlightError is a public error-set alias.
 pub fn sendPreparedServerFlight(self: *ServerHandshake, out: []u8) FlightError!?[]const u8 {
     if (self.pending_write.isPending()) return error.PendingWrite;
     if (self.state != .wait_client_finished or self.server_flight_sent) return null;
     const credentials = self.server_credentials orelse return error.MissingServerCredentials;
     if (out.len < frame.header_len) return error.BufferTooShort;
+    self.server_flight_sent = true;
     const flight = try self.encodeAuthenticatedFlight(
         credentials.chain,
         credentials.signer,
         out[frame.header_len..],
     );
-    const record = try self.tx.encryptPrepared(.handshake, flight.len, out);
-    self.server_flight_sent = true;
+    const record = try self.encryptPreparedServerFlight(flight.len, out);
     self.pending_write.mark();
     return record;
 }
@@ -1331,6 +1359,65 @@ fn encodeAuthenticatedFlight(
     return plaintext[0..pos];
 }
 
+/// Encrypt the server flight with the handshake write key, then advance only
+/// the write direction to application traffic keys. RFC 8446 §4.4.4 requires
+/// every subsequent server record — specifically including client-auth
+/// rejection alerts — to use application keys, while the client flight that
+/// follows is still received under handshake keys.
+fn encryptServerFlight(
+    self: *ServerHandshake,
+    plaintext: []const u8,
+    out: []u8,
+) FlightError![]const u8 {
+    var next_tx = try self.prepareServerApplicationWriteKey();
+    errdefer {
+        next_tx.deinit();
+        self.clearServerApplicationWriteSecret();
+    }
+    const record = try self.tx.encrypt(.handshake, plaintext, out);
+    self.tx.deinit();
+    self.tx = next_tx;
+    return record;
+}
+
+fn encryptPreparedServerFlight(
+    self: *ServerHandshake,
+    plaintext_len: usize,
+    out: []u8,
+) FlightError![]const u8 {
+    var next_tx = try self.prepareServerApplicationWriteKey();
+    errdefer {
+        next_tx.deinit();
+        self.clearServerApplicationWriteSecret();
+    }
+    const record = try self.tx.encryptPrepared(.handshake, plaintext_len, out);
+    self.tx.deinit();
+    self.tx = next_tx;
+    return record;
+}
+
+fn prepareServerApplicationWriteKey(self: *ServerHandshake) aead.Error!RecordLayer {
+    assert(self.server_finished_hash_len != 0);
+    return switch (self.suite_state) {
+        inline .sha256, .sha384 => |*s| blk: {
+            const H = @TypeOf(s.*).Hkdf;
+            var app_th: H.TranscriptHash = undefined;
+            @memcpy(app_th.data[0..], self.server_finished_hash[0..self.server_finished_hash_len]);
+            var master = H.masterSecret(s.handshake_secret);
+            defer master.secureZero();
+            s.server_app_secret = H.serverApplicationTrafficSecret(master, &app_th);
+            errdefer s.server_app_secret.secureZero();
+            break :blk try H.makeRecordLayer(s.aead, s.server_app_secret);
+        },
+    };
+}
+
+fn clearServerApplicationWriteSecret(self: *ServerHandshake) void {
+    switch (self.suite_state) {
+        inline .sha256, .sha384 => |*s| s.server_app_secret.secureZero(),
+    }
+}
+
 /// Consume the client's encrypted Finished, verify it against the transcript
 /// through server Finished, then install application traffic keys. RFC 8446
 /// §4.4.4, §7.1.
@@ -1413,11 +1500,14 @@ fn processClientFinishedPlaintext(
 
     if (msg.type != .finished) return error.UnexpectedMessage;
     if (try hr.next() != null) return error.UnexpectedMessage;
+    if (authenticated_leaf_der) |der| {
+        if (self.client_cert.buffer.len != 0 and der.len > self.client_cert.buffer.len)
+            return error.ClientCertificateTooLarge;
+    }
     try self.verifyClientFinished(msg.raw);
     if (authenticated_leaf_der) |der| {
-        if (self.client_cert.buffer.len != 0) {
-            self.client_cert.retainFrom(der) catch return error.ClientCertificateTooLarge;
-        }
+        if (self.client_cert.buffer.len != 0)
+            self.client_cert.retainFrom(der) catch unreachable;
     }
 }
 
@@ -1445,14 +1535,10 @@ fn verifyClientFinished(
             var master = H.masterSecret(s.handshake_secret);
             defer master.secureZero();
             s.client_app_secret = H.clientApplicationTrafficSecret(master, &app_th);
-            s.server_app_secret = H.serverApplicationTrafficSecret(master, &app_th);
-            var next_rx = try H.makeRecordLayer(s.aead, s.client_app_secret);
-            errdefer next_rx.deinit();
-            const next_tx = try H.makeRecordLayer(s.aead, s.server_app_secret);
+            errdefer s.client_app_secret.secureZero();
+            const next_rx = try H.makeRecordLayer(s.aead, s.client_app_secret);
             self.rx.deinit();
-            self.tx.deinit();
             self.rx = next_rx;
-            self.tx = next_tx;
             s.transcript.update(msg_raw);
             s.forgetHandshakeSecrets();
         },
@@ -2915,6 +3001,75 @@ test "sendPreparedServerFlight: credentials and pending write are enforced" {
     );
 }
 
+// RFC 8446 §4.4.4 — if server-flight record encryption fails, the peer never
+// observes Finished, so the server must retain its handshake write key and
+// clear the uncommitted application secret. A subsequent fatal alert remains
+// decryptable by the client in its pre-Finished epoch.
+test "sendPreparedServerFlight: encryption failure preserves handshake write epoch" {
+    const client_keypair: x25519.KeyPair = .generate();
+    const server_keypair: x25519.KeyPair = .generate();
+
+    var client: ClientHandshake = .init(.{
+        .keypairs = try .init(client_keypair),
+        .host_name = "ztls.server.test",
+        .now_sec = 0,
+        .random = .zero,
+    });
+    defer client.deinit();
+    var client_out: [1024]u8 = undefined;
+    const ch_record = try client.start(&client_out);
+    client.completeWrite();
+
+    var signer: signature.PrivateKey = try .fromP256Scalar(serverEcdsaScalar()[0..32]);
+    defer signer.deinit();
+    const signer_api = signer.signer();
+
+    var server: ServerHandshake = .init(try testConfig(server_keypair));
+    defer server.deinit();
+    server.setCredentials(&.{serverEcdsaCertDer()}, signer_api);
+    var server_sh: [256]u8 = undefined;
+    const sh_record = try server.acceptClientHello(ch_record, &server_sh);
+    try client.processServerHello(sh_record[frame.header_len..]);
+
+    // The certificate makes the encoded flight larger than one record header,
+    // so encryption cannot fit while flight assembly itself still succeeds.
+    var plaintext: [4096]u8 = undefined;
+    var full_out: [4096]u8 = undefined;
+    try testing.expectError(
+        error.BufferTooShort,
+        server.sendCertificateChainFlight(
+            .init(&.{serverEcdsaCertDer()}),
+            signer_api,
+            &plaintext,
+            full_out[0..frame.header_len],
+        ),
+    );
+    // Flight assembly advanced the transcript. Retrying would emit a duplicate
+    // Finished and reuse the handshake write nonce, so every public path is
+    // one-shot after assembly begins even when no record was produced.
+    try testing.expect(server.server_flight_sent);
+    try testing.expectEqual(
+        @as(?[]const u8, null),
+        try server.sendPreparedServerFlight(&full_out),
+    );
+    try testing.expectEqual(Suite.sha256, std.meta.activeTag(server.suite_state));
+    try testing.expectEqualSlices(
+        u8,
+        &([_]u8{0} ** hkdf.HkdfSha256.prk_len),
+        &server.suite_state.sha256.server_app_secret.data,
+    );
+
+    const alert_record = try server.sendAlert(.internal_error, &full_out);
+    try testing.expectError(
+        error.PeerAlert,
+        client.handleRecord(full_out[0..alert_record.len], &client_out),
+    );
+    try testing.expectEqual(
+        @as(?alert.Alert, .{ .level = .fatal, .description = .internal_error }),
+        client.lastPeerAlert(),
+    );
+}
+
 test "sendAuthenticatedFlight: client decrypts authenticated server flight" {
     const client_keypair: x25519.KeyPair = .generate();
     const server_keypair: x25519.KeyPair = .generate();
@@ -2949,6 +3104,11 @@ test "sendAuthenticatedFlight: client decrypts authenticated server flight" {
         signer_api,
         &plaintext,
         &flight_out,
+    );
+    try testing.expect(server.server_flight_sent);
+    try testing.expectEqual(
+        @as(?[]const u8, null),
+        try server.sendPreparedServerFlight(&flight_out),
     );
 
     var client: ClientHandshake = .init(.{
@@ -3227,6 +3387,8 @@ test "processClientFinished: required client auth rejects empty Certificate" {
 
     var signer = try signature.PrivateKey.fromP256Scalar(serverEcdsaScalar()[0..32]);
     defer signer.deinit();
+    var handshake_tx = try server.tx.clone();
+    defer handshake_tx.deinit();
     var plaintext: [4096]u8 = undefined;
     const flight_record = try server.sendAuthenticatedFlight(
         &.{serverEcdsaCertDer()},
@@ -3239,12 +3401,32 @@ test "processClientFinished: required client auth rejects empty Certificate" {
         .write => |w| w,
         else => return error.UnexpectedEvent,
     };
+    client.completeWrite();
 
     try testing.expectError(
         error.ClientCertificateRequired,
         server.processClientFinished(client_out[0..client_finished_record.len]),
     );
     try testing.expectEqual(.wait_client_finished, server.state);
+
+    // RFC 8446 §4.4.4 — records after the server Finished, including alerts
+    // rejecting client authentication, use application traffic keys even
+    // though the client flight was received with the handshake read key.
+    const alert_record = try server.sendAlert(.certificate_required, &server_out);
+    var handshake_copy: [64]u8 = undefined;
+    @memcpy(handshake_copy[0..alert_record.len], alert_record);
+    try testing.expectError(
+        error.AuthenticationFailed,
+        handshake_tx.decrypt(handshake_copy[0..alert_record.len]),
+    );
+    try testing.expectError(
+        error.PeerAlert,
+        client.handleRecord(server_out[0..alert_record.len], &client_out),
+    );
+    try testing.expectEqual(
+        @as(?alert.Alert, .{ .level = .fatal, .description = .certificate_required }),
+        client.lastPeerAlert(),
+    );
 }
 
 // RFC 8446 §4.4.2, §4.4.3, §4.4.4 — required client auth with real client

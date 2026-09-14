@@ -42,7 +42,6 @@ const errors = ztls.errors;
 const Class = errors.Class;
 const HandshakeError = errors.HandshakeError;
 const classify = errors.classify;
-const alertForClass = errors.alertForClass;
 const RecordBuffer = ztls.RecordBuffer;
 
 // ───────────────────────────────
@@ -63,6 +62,44 @@ pub const Verify = union(enum) {
     /// Skip chain-anchor verification (sets ztls `insecure_no_chain_anchor`).
     /// Hostname verification still runs unless `host` is null. Demo/test only.
     insecure,
+};
+
+// ───────────────────────────────
+// Client authentication (mTLS)
+// ───────────────────────────────
+
+/// Client credentials for TLS client authentication. `cert_chain` is DER,
+/// leaf first; `signer` signs the client CertificateVerify. All borrowed for
+/// the handshake: the DER bytes, the slice-of-slices, and the `PrivateKey`
+/// backing the signer must outlive `connect`. RFC 8446 §4.4.2, §4.4.3.
+pub const ClientCredentials = struct {
+    cert_chain: []const []const u8,
+    signer: ztls.signature.Signer,
+};
+
+/// Trust anchors for verifying a client certificate chain. A server
+/// authenticating clients must decide where its anchors come from — there is
+/// deliberately no system-bundle mode here, because pinning your own CA is
+/// the normal mTLS deployment shape, not a fallback.
+pub const ClientTrust = union(enum) {
+    /// Verify the client chain against a caller-owned bundle. Borrowed for
+    /// the duration of the handshake.
+    bundle: *const crypto.Certificate.Bundle,
+    /// Skip chain-anchor verification. The client CertificateVerify signature
+    /// still proves possession of the private key. Demo/test only.
+    insecure,
+};
+
+/// Server-side client-certificate policy. RFC 8446 §4.4.2. Default `.none`.
+pub const ClientAuth = union(enum) {
+    /// Do not request a client certificate.
+    none,
+    /// Request one; an empty client Certificate is accepted and
+    /// `info().client_identity` is null.
+    optional: ClientTrust,
+    /// Request one; an empty client Certificate aborts the handshake with
+    /// `ClientCertificateRejected`.
+    required: ClientTrust,
 };
 
 // ───────────────────────────────
@@ -97,9 +134,15 @@ pub const Config = struct {
     /// `info().peer_chain`. `null` (the default) does not retain it:
     /// `peer_chain` is empty and a client Stream is ~64 KB smaller. Set to
     /// `ztls.ClientHandshake.recommended_handshake_storage` to hold any chain
-    /// the core will accept. Client-side only; server-side client-certificate
-    /// retention is not wired yet.
+    /// the core will accept. Client-side only.
     peer_chain_storage: ?usize = null,
+    /// Bytes reserved to retain the verified client leaf certificate DER for
+    /// `info().client_identity` on a server that requested client
+    /// authentication. `null` (the default) verifies and discards the leaf:
+    /// `client_identity` is null. Server-side only; a client Stream is
+    /// unaffected. Too small for the presented leaf surfaces as
+    /// `error.HandshakeBufferTooShort` from `accept`.
+    client_identity_storage: ?usize = null,
 };
 
 // ───────────────────────────────
@@ -125,7 +168,9 @@ pub const ConnectError = error{
     /// This Stream's `Config` buffers cannot hold the peer's handshake. Raise
     /// `record_storage` / `reassembly_storage`.
     HandshakeBufferTooShort,
-    /// Caller-supplied `Options` are unusable (ALPN list shape, host length).
+    /// Caller-supplied `Options` are unusable: ALPN list shape, host length,
+    /// an empty `client_credentials.cert_chain`, or a client signer whose
+    /// scheme the server's CertificateRequest cannot carry.
     InvalidOptions,
     /// The libcrypto backend failed, a counter overflowed, or a ztls-std
     /// invariant was violated. Not attributable to the peer.
@@ -137,8 +182,10 @@ pub const ConnectError = error{
 pub const AcceptError = error{
     /// `Options.cert_chain` is empty, or the core rejected the credentials.
     MissingCredentials,
-    /// The client presented a certificate that was required, unsupported, or
-    /// too large. Client authentication is not a supported surface yet.
+    /// The client sent no certificate when one was required, or one the
+    /// policy cannot accept. A verified certificate that does not fit
+    /// `Config.client_identity_storage` is `HandshakeBufferTooShort`, not
+    /// this.
     ClientCertificateRejected,
     /// The client certificate chain did not authenticate.
     CertificateVerificationFailed,
@@ -197,9 +244,13 @@ pub const Info = struct {
     cipher_suite: ztls.CipherSuite,
     alpn: ?[]const u8,
     /// Verified peer certificates, leaf first. Empty unless
-    /// `Config.peer_chain_storage` was set (and, server-side, always empty
-    /// until client-certificate retention is wired).
+    /// `Config.peer_chain_storage` was set (client-side).
     peer_chain: []const []const u8,
+    /// Verified client leaf certificate DER, server-side only, when client
+    /// authentication was requested, the client presented a certificate, and
+    /// `Config.client_identity_storage` was set. Null otherwise — including
+    /// on a client Stream and after an optional client sent no certificate.
+    client_identity: ?[]const u8,
 };
 
 // ───────────────────────────────
@@ -236,6 +287,19 @@ fn transportWriteAll(
 // ───────────────────────────────
 
 fn mapClientHandshakeError(err: HandshakeError) ConnectError {
+    // Client-credential faults are the caller's configuration, not the peer's
+    // and not a buffer-sizing problem: a signer whose scheme the server never
+    // offered, a signature larger than its scratch, or a chain that cannot fit
+    // one record's plaintext (RFC 8446 §4.3.2, §5.2). `BufferTooShort` is
+    // reachable on this path only from the credential flight — the wrapper's
+    // own buffers are comptime-sized to the
+    // core's needs — so it is pinned here rather than left in the generic
+    // `.buffer` bucket, where it would misreport a bad `client_credentials`
+    // as `HandshakeBufferTooShort`.
+    switch (err) {
+        error.SignatureSchemeNotOffered, error.BufferTooShort => return error.InvalidOptions,
+        else => {},
+    }
     return switch (classify(err)) {
         .certificate => error.CertificateVerificationFailed,
         .decrypt => error.TlsDecryptError,
@@ -292,6 +356,20 @@ fn mapWriteError(err: HandshakeError) WriteError {
     };
 }
 
+/// The peer-visible reason for a handshake failure, or null when nothing
+/// should be sent: the peer already aborted, and RFC 8446 §6.2 says close
+/// without more data. Goes through the canonical per-error ztls table rather
+/// than the coarse `classify` bucket, so the peer receives the specific alert
+/// TLS defines — `unknown_ca` for an untrusted chain, `certificate_expired`
+/// for an expired one, `decrypt_error` for a failed CertificateVerify —
+/// instead of a generic `bad_certificate`.
+fn alertForHandshakeError(err: HandshakeError) ?alert.Description {
+    return switch (err) {
+        error.PeerAlert => null,
+        else => alert.alertForError(err),
+    };
+}
+
 fn mapServerHandshakeError(err: HandshakeError) AcceptError {
     return switch (classify(err)) {
         .certificate => error.CertificateVerificationFailed,
@@ -342,6 +420,12 @@ const ClientOptions = struct {
     alpn: []const []const u8 = &.{},
     /// Offer an X25519MLKEM768 hybrid key share (PQ). False by default.
     offer_pq_key_share: bool = false,
+    /// Present this certificate chain (DER, leaf first) and sign
+    /// CertificateVerify when the server sends a CertificateRequest. Without
+    /// credentials the client sends an empty Certificate instead. An empty
+    /// chain is rejected as `InvalidOptions` before any wire I/O. Borrowed
+    /// for the handshake. RFC 8446 §4.4.2, §4.4.3.
+    client_credentials: ?ClientCredentials = null,
 };
 
 /// Server connection options. See `Server.accept`.
@@ -355,6 +439,10 @@ const ServerOptions = struct {
     signer: ztls.signature.Signer,
     /// ALPN protocols supported. Borrowed.
     alpn: []const []const u8 = &.{},
+    /// Client-certificate authentication policy. Default `.none`. A non-none
+    /// mode requires a `ClientTrust` decision — no system-bundle path, no
+    /// separate insecure flag. RFC 8446 §4.4.2.
+    client_auth: ClientAuth = .none,
 };
 
 fn StreamImpl(comptime Hs: type, comptime role: Role, comptime config: Config) type {
@@ -402,6 +490,12 @@ fn StreamImpl(comptime Hs: type, comptime role: Role, comptime config: Config) t
     else
         void;
 
+    const retain_client_identity = role == .server and config.client_identity_storage != null;
+    const ClientIdentityStorage = if (retain_client_identity)
+        ztls.Array(config.client_identity_storage.?)
+    else
+        void;
+
     return struct {
         const Self = @This();
         const ReaderEvent = union(enum) {
@@ -445,6 +539,7 @@ fn StreamImpl(comptime Hs: type, comptime role: Role, comptime config: Config) t
         read_storage: ReadStorage = .empty,
         write_storage: WriteStorage = .empty,
         peer_chain_storage: PeerChainStorage = if (retain_peer_chain) .empty else {},
+        client_identity_storage: ClientIdentityStorage = if (retain_client_identity) .empty else {},
         /// Decrypted application data from the current record that has not been
         /// handed to the caller yet. Slices into `storage`, which `rb.next()`
         /// and `rb.writable()` invalidate — so the record loop must not run
@@ -677,6 +772,12 @@ fn StreamImpl(comptime Hs: type, comptime role: Role, comptime config: Config) t
                 .cipher_suite = s.hs.cipherSuite(),
                 .alpn = s.hs.selectedAlpnProtocol(),
                 .peer_chain = if (retain_peer_chain) s.hs.peerCertificateChain() else &.{},
+                // The core only retains the leaf after the authenticated
+                // connected state, and only into storage `finishInit` lent it.
+                .client_identity = if (retain_client_identity)
+                    s.hs.clientCertificateDer()
+                else
+                    null,
             };
         }
 
@@ -755,6 +856,7 @@ fn StreamImpl(comptime Hs: type, comptime role: Role, comptime config: Config) t
             s.read_storage.secureZero();
             s.write_storage.secureZero();
             if (retain_peer_chain) s.peer_chain_storage.secureZero();
+            if (retain_client_identity) s.client_identity_storage.secureZero();
             s.hs.deinit();
         }
 
@@ -798,7 +900,7 @@ fn StreamImpl(comptime Hs: type, comptime role: Role, comptime config: Config) t
         /// Report a handshake failure to the peer (RFC 8446 §6.2), then coarsen
         /// it for the caller.
         fn handshakeFailure(s: *Self, err: HandshakeError) HandshakeFailure {
-            if (alertForClass(classify(err))) |description| s.sendFatalAlert(description);
+            if (alertForHandshakeError(err)) |description| s.sendFatalAlert(description);
             return if (role == .client)
                 mapClientHandshakeError(err)
             else
@@ -860,8 +962,13 @@ fn StreamImpl(comptime Hs: type, comptime role: Role, comptime config: Config) t
                     // belongs to the Reader.
                     if (s.hs.isConnected()) break;
                     const record = s.rb.next() catch |err| return s.handshakeFailure(err);
-                    const ev = s.hs.handleRecord(record orelse break, &s.out.buffer) catch |err|
+                    const ev = s.hs.handleRecord(record orelse break, &s.out.buffer) catch |err| {
+                        // A failed handshake cannot expose connected APIs. In
+                        // particular, local client-identity retention failure
+                        // must happen before the core commits its state.
+                        assert(!s.hs.isConnected());
                         return s.handshakeFailure(err);
+                    };
                     switch (ev) {
                         .write => |hello| {
                             try transportWriteAll(io, handle, hello);
@@ -946,6 +1053,24 @@ fn StreamImpl(comptime Hs: type, comptime role: Role, comptime config: Config) t
 
         // ── Init helpers ──────────────
 
+        /// Apply one client-auth mode's core wiring: the policy tag, the
+        /// trust anchors, and the wall clock client-certificate validity is
+        /// checked against. RFC 8446 §4.4.2. Server role only (accept is the
+        /// only caller, so a client instantiation never analyzes this).
+        fn wireClientAuth(
+            s: *Self,
+            mode: ztls.ServerHandshake.ClientAuthPolicy,
+            trust: ClientTrust,
+            io: Io,
+        ) void {
+            s.hs.client_auth = mode;
+            switch (trust) {
+                .bundle => |b| s.hs.client_cert_policy.bundle = b,
+                .insecure => s.hs.client_cert_policy.insecure_no_chain_anchor = true,
+            }
+            s.hs.client_cert_policy.now_sec = Io.Timestamp.now(io, .real).toSeconds();
+        }
+
         fn init(io: Io, sock: net.Stream, hs: Hs) Self {
             return .{
                 .sock = sock,
@@ -966,6 +1091,8 @@ fn StreamImpl(comptime Hs: type, comptime role: Role, comptime config: Config) t
             s.rb = .init(&s.storage.data);
             s.hs.useHandshakeBuffer(&s.reassembly.data);
             if (retain_peer_chain) s.hs.usePeerCertificateBuffer(&s.peer_chain_storage.data);
+            if (retain_client_identity)
+                s.hs.useClientCertificateBuffer(&s.client_identity_storage.data);
             s.reader_impl = .init(s);
             s.writer_impl = .init(s);
         }
@@ -1029,6 +1156,16 @@ fn StreamImpl(comptime Hs: type, comptime role: Role, comptime config: Config) t
                     s.* = .init(io, sock, hs);
                     s.finishInit();
                     errdefer s.deinit();
+
+                    // RFC 8446 §4.4.2, §4.4.3 — credentials before any wire I/O.
+                    // An empty chain is not a credential set; rejecting it
+                    // here keeps the failure local (the server never sees a
+                    // ClientHello) while the errdefer preserves the owned
+                    // socket close and the deinit-is-a-no-op contract.
+                    if (options.client_credentials) |creds| {
+                        if (creds.cert_chain.len == 0) return error.InvalidOptions;
+                        s.hs.setCredentials(creds.cert_chain, creds.signer);
+                    }
 
                     // Defers unwind in reverse: policy pointer cleared first,
                     // then the bundle memory it referenced.
@@ -1103,6 +1240,16 @@ fn StreamImpl(comptime Hs: type, comptime role: Role, comptime config: Config) t
                     if (options.cert_chain.len == 0) return error.MissingCredentials;
                     s.hs.setCredentials(options.cert_chain, options.signer);
 
+                    // Client trust is borrowed only while accept drives the
+                    // handshake; the established connection retains the
+                    // verified leaf, not the caller's trust bundle.
+                    defer s.hs.client_cert_policy.bundle = null;
+                    switch (options.client_auth) {
+                        .none => {},
+                        .optional => |trust| s.wireClientAuth(.optional, trust, io),
+                        .required => |trust| s.wireClientAuth(.required, trust, io),
+                    }
+
                     try s.driveServerHandshake();
                 },
                 .client => @compileError("accept is server-only; use connect on ztls_std.Client"),
@@ -1173,6 +1320,65 @@ test "public error mapping: a cert failure never degrades to a protocol error" {
     );
 }
 
+// RFC 8446 §4.3.2, §5.2 — client-credential faults are caller configuration:
+// a signer scheme the server never offered, or a chain that cannot fit one
+// record's plaintext. Reported as InvalidOptions, not blamed on the peer or
+// on wrapper buffer sizing.
+test "public error mapping: client-credential faults are InvalidOptions" {
+    try testing.expectEqual(
+        ConnectError.InvalidOptions,
+        mapClientHandshakeError(error.SignatureSchemeNotOffered),
+    );
+    // The credential-flight BufferTooShort: a chain too large for one record.
+    try testing.expectEqual(
+        ConnectError.InvalidOptions,
+        mapClientHandshakeError(error.BufferTooShort),
+    );
+    // Reassembly shortfalls stay a sizing fault (HandshakeBufferTooShort).
+    try testing.expectEqual(
+        ConnectError.HandshakeBufferTooShort,
+        mapClientHandshakeError(error.HandshakeBufferTooShort),
+    );
+}
+
+// RFC 8446 §4.4.2 — a verified client leaf that cannot fit the caller's
+// retention storage is a sizing fault, not a rejected certificate.
+test "public error mapping: undersized client-identity storage is HandshakeBufferTooShort" {
+    try testing.expectEqual(
+        AcceptError.HandshakeBufferTooShort,
+        mapServerHandshakeError(error.ClientCertificateTooLarge),
+    );
+    // ... while a missing required certificate stays a rejection.
+    try testing.expectEqual(
+        AcceptError.ClientCertificateRejected,
+        mapServerHandshakeError(error.ClientCertificateRequired),
+    );
+}
+
+// RFC 8446 §6.2 — the peer receives the specific alert TLS defines for the
+// failure that occurred, not the coarse class bucket; and a peer that already
+// aborted gets silence.
+test "alert fidelity: specific descriptions, silence after a peer alert" {
+    try testing.expectEqual(
+        alert.Description.decrypt_error,
+        alertForHandshakeError(error.SignatureVerificationFailed).?,
+    );
+    try testing.expectEqual(
+        alert.Description.bad_record_mac,
+        alertForHandshakeError(error.AuthenticationFailed).?,
+    );
+    try testing.expectEqual(
+        alert.Description.unknown_ca,
+        alertForHandshakeError(error.MissingTrustAnchor).?,
+    );
+    try testing.expectEqual(
+        alert.Description.certificate_expired,
+        alertForHandshakeError(error.CertificateExpired).?,
+    );
+    // The peer already sent a fatal alert; §6.2 says close without replying.
+    try testing.expectEqual(@as(?alert.Description, null), alertForHandshakeError(error.PeerAlert));
+}
+
 test "Config: buffer sizing is the whole story of the Stream footprint" {
     // Measured on this revision: Client 151_856, Server 134_928. These are a
     // coarse backstop; the exact-delta assertions below are what actually guard
@@ -1197,6 +1403,16 @@ test "Config: buffer sizing is the whole story of the Stream footprint" {
         @as(usize, frame.max_plaintext_len),
         @sizeOf(BiggerRead) - @sizeOf(Client),
     );
+
+    // Server-side client-identity retention costs exactly its storage, and
+    // nothing on the client.
+    const Identifying = ServerWith(.{ .client_identity_storage = 2048 });
+    try testing.expectEqual(
+        @as(usize, 2048),
+        @sizeOf(Identifying) - @sizeOf(Server),
+    );
+    const IdentifyingClient = ClientWith(.{ .client_identity_storage = 2048 });
+    try testing.expectEqual(@sizeOf(Client), @sizeOf(IdentifyingClient));
 
     // So a caller opening thousands of connections can trade look-ahead and
     // reassembly headroom for footprint.

@@ -5,12 +5,18 @@
 //! ones, so the table lives here rather than being copied per wrapper: one
 //! exhaustive switch, one compile-time gate, N thin projections.
 //!
-//! This is pure logic over `ClientHandshake`/`ServerHandshake` error sets plus
-//! the RFC 8446 §6.2 alert each failure warrants. No allocation, no I/O.
+//! This is pure logic over `ClientHandshake`/`ServerHandshake` error sets.
+//! No allocation, no I/O.
+//!
+//! Alert selection is deliberately NOT here: `alert.alertForError` is the
+//! canonical per-error RFC 8446 table, and a coarse class bucket cannot
+//! represent it — one `certificate` failure can warrant `unknown_ca`,
+//! `certificate_expired`, or `bad_certificate` depending on which check
+//! failed. Integrations project errors through `classify` and alerts through
+//! `alert.alertForError`.
 const std = @import("std");
 const testing = std.testing;
 
-const alert = @import("alert.zig");
 const ClientHandshake = @import("ClientHandshake.zig");
 const ServerHandshake = @import("ServerHandshake.zig");
 
@@ -40,7 +46,9 @@ pub const Class = enum {
     protocol,
     /// Peer record exceeded the RFC 8446 §5.1 limit.
     record_overflow,
-    /// Our configured buffers were too small.
+    /// Our configured buffers were too small — including undersized
+    /// client-certificate retention storage (`ClientCertificateTooLarge`: the
+    /// leaf DER was verified fine, only the caller's buffer cannot hold it).
     buffer,
     /// Caller-supplied options were unusable.
     options,
@@ -52,7 +60,9 @@ pub const Class = enum {
     unsupported_suite,
     /// Server credentials missing or unusable (server only).
     missing_credentials,
-    /// Client certificate required, unsupported, or oversized (server only).
+    /// Client certificate required or unsupported by policy (server only).
+    /// An oversized-but-verified leaf is `.buffer`, not here: the failure is
+    /// the caller's retention storage, not the peer's certificate.
     client_certificate,
 };
 
@@ -152,6 +162,7 @@ pub fn classify(err: HandshakeError) Class {
         error.RecordTooLarge => .record_overflow,
 
         error.BufferTooShort,
+        error.ClientCertificateTooLarge,
         error.HandshakeBufferTooShort,
         => .buffer,
 
@@ -186,29 +197,8 @@ pub fn classify(err: HandshakeError) Class {
         error.MissingServerCredentials => .missing_credentials,
 
         error.ClientCertificateRequired,
-        error.ClientCertificateTooLarge,
         error.UnsupportedClientCertificate,
         => .client_certificate,
-    };
-}
-
-/// RFC 8446 §6.2 — a fatal error SHOULD be reported to the peer with an alert
-/// before the connection closes, so the peer logs `bad_certificate` instead of
-/// a bare FIN. `null` means send nothing: either the peer already aborted, or
-/// the transport is gone and an alert cannot reach it.
-pub fn alertForClass(class: Class) ?alert.Description {
-    return switch (class) {
-        .certificate => .bad_certificate,
-        .decrypt => .decrypt_error,
-        // The peer already sent a fatal alert; RFC 8446 §6.2 says close
-        // without sending more data.
-        .alert => null,
-        .protocol => .illegal_parameter,
-        .record_overflow => .record_overflow,
-        .buffer, .options, .internal, .missing_credentials => .internal_error,
-        .no_alpn => .no_application_protocol,
-        .unsupported_suite => .handshake_failure,
-        .client_certificate => .certificate_required,
     };
 }
 
@@ -234,6 +224,9 @@ test "classify: remaining buckets" {
     try testing.expectEqual(Class.protocol, classify(error.IllegalParameter));
     try testing.expectEqual(Class.record_overflow, classify(error.RecordTooLarge));
     try testing.expectEqual(Class.buffer, classify(error.HandshakeBufferTooShort));
+    // A verified client leaf that cannot fit the caller's retention storage is
+    // a sizing fault, not a rejected certificate.
+    try testing.expectEqual(Class.buffer, classify(error.ClientCertificateTooLarge));
     try testing.expectEqual(Class.options, classify(error.AlpnProtocolTooLong));
     try testing.expectEqual(Class.options, classify(error.DeterministicNonceUnsupported));
     try testing.expectEqual(Class.internal, classify(error.LibcryptoFailed));
@@ -241,18 +234,4 @@ test "classify: remaining buckets" {
     try testing.expectEqual(Class.unsupported_suite, classify(error.UnsupportedCipherSuite));
     try testing.expectEqual(Class.missing_credentials, classify(error.MissingServerCredentials));
     try testing.expectEqual(Class.client_certificate, classify(error.ClientCertificateRequired));
-}
-
-// RFC 8446 §6.2 — the peer gets a reason, not a bare FIN.
-test "alertForClass: peer-visible reason matches the failure" {
-    try testing.expectEqual(alert.Description.bad_certificate, alertForClass(.certificate).?);
-    try testing.expectEqual(alert.Description.decrypt_error, alertForClass(.decrypt).?);
-    try testing.expectEqual(alert.Description.illegal_parameter, alertForClass(.protocol).?);
-    try testing.expectEqual(alert.Description.record_overflow, alertForClass(.record_overflow).?);
-    try testing.expectEqual(
-        alert.Description.no_application_protocol,
-        alertForClass(.no_alpn).?,
-    );
-    // The peer already aborted; §6.2 says close without replying.
-    try testing.expectEqual(@as(?alert.Description, null), alertForClass(.alert));
 }

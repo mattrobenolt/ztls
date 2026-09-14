@@ -9,6 +9,7 @@ const Io = std.Io;
 const net = Io.net;
 const mem = std.mem;
 const posix = std.posix;
+const assert = std.debug.assert;
 const testing = std.testing;
 
 const fixtures = @import("fixtures");
@@ -19,6 +20,8 @@ const frame = ztls.frame;
 const test_cert_der: []const u8 = &fixtures.server_ecdsa_cert_der;
 const test_scalar: []const u8 = &fixtures.server_ecdsa_scalar;
 const test_host = "ztls.server.test";
+const client_cert_der: []const u8 = &fixtures.client_ecdsa_cert_der;
+const client_scalar: []const u8 = &fixtures.client_ecdsa_scalar;
 
 /// A client that retains the peer chain, to exercise `info().peer_chain`.
 const IntrospectingClient = tls.ClientWith(.{
@@ -186,6 +189,115 @@ fn serverRun(ctx: *ServerCtx) void {
 
 fn spawnServer(ctx: *ServerCtx) !std.Thread {
     return std.Thread.spawn(.{}, serverRun, .{ctx});
+}
+
+// ───────────────────────────────
+// Client-authenticated server thread
+// ───────────────────────────────
+
+/// Servers with client-identity retention storage: enough for the fixture
+/// leaf (420 bytes DER), and deliberately too small for it.
+const IdentityServer = tls.ServerWith(.{ .client_identity_storage = 1024 });
+const TinyIdentityServer = tls.ServerWith(.{ .client_identity_storage = 8 });
+
+/// Thread context for client-authentication cases. `identity` and
+/// `identity_zeroed` mirror server-side state for main-thread assertions
+/// after `join`.
+const AuthServerCtx = struct {
+    fd: posix.fd_t,
+    client_auth: tls.ClientAuth,
+    steps: []const Step,
+    /// Copy of the retained client leaf DER (`info().client_identity` points
+    /// into Stream storage that teardown zeroes, so a borrowed slice cannot
+    /// cross the join). Empty means no identity was retained.
+    identity_buf: [1024]u8 = undefined,
+    identity_len: usize = 0,
+    /// Set after teardown: the wrapper zeroed its identity storage.
+    identity_zeroed: bool = false,
+    err: ?anyerror = null,
+
+    fn fail(ctx: *AuthServerCtx, err: anyerror) void {
+        ctx.err = err;
+    }
+
+    fn identity(ctx: *const AuthServerCtx) ?[]const u8 {
+        return if (ctx.identity_len == 0) null else ctx.identity_buf[0..ctx.identity_len];
+    }
+};
+
+/// A client presenting the fixture credentials (or none) to a server with a
+/// `client_auth` policy. RFC 8446 §4.4.2, §4.4.3.
+fn clientCredentials() !ztls.signature.PrivateKey {
+    return ztls.signature.PrivateKey.fromP256Scalar(@ptrCast(client_scalar[0..32]));
+}
+
+fn authServerRun(comptime Server: type) fn (*AuthServerCtx) void {
+    return struct {
+        fn run(ctx: *AuthServerCtx) void {
+            authServerExchange(Server, ctx) catch |err| {
+                ctx.err = err;
+            };
+        }
+    }.run;
+}
+
+fn authServerExchange(comptime Server: type, ctx: *AuthServerCtx) !void {
+    const io = testIo();
+    var key: ztls.signature.PrivateKey = ztls.signature.PrivateKey.fromP256Scalar(
+        @ptrCast(test_scalar[0..32]),
+    ) catch |err| {
+        ctx.err = err;
+        _ = std.c.close(ctx.fd);
+        return;
+    };
+    defer key.deinit();
+
+    var conn: Server = undefined;
+    conn.accept(io, streamFor(ctx.fd), .{
+        .cert_chain = &.{test_cert_der},
+        .signer = key.signer(),
+        .client_auth = ctx.client_auth,
+    }) catch |err| {
+        ctx.err = err;
+        return;
+    };
+    defer {
+        conn.deinit();
+        ctx.identity_zeroed = mem.allEqual(u8, &conn.client_identity_storage.data, 0);
+    }
+    if (conn.info().client_identity) |der| {
+        assert(der.len <= ctx.identity_buf.len);
+        @memcpy(ctx.identity_buf[0..der.len], der);
+        ctx.identity_len = der.len;
+    }
+
+    const r = conn.reader();
+    const w = conn.writer();
+    for (ctx.steps) |step| switch (step) {
+        .send => |bytes| {
+            w.writeAll(bytes) catch |err| return ctx.fail(err);
+            w.flush() catch |err| return ctx.fail(err);
+        },
+        .expect_bytes => |n| {
+            var buf: [4096]u8 = undefined;
+            var got: usize = 0;
+            while (got < n) {
+                const want = @min(buf.len, n - got);
+                const read = r.readSliceShort(buf[0..want]) catch |err| return ctx.fail(err);
+                if (read == 0) return ctx.fail(error.UnexpectedEof);
+                got += read;
+            }
+        },
+        .drain => while (true) {
+            r.fillMore() catch |err| switch (err) {
+                error.EndOfStream => break,
+                else => return ctx.fail(err),
+            };
+            r.toss(r.bufferedLen());
+        },
+        .close => conn.close(),
+        else => return ctx.fail(error.UnsupportedStep),
+    };
 }
 
 // ───────────────────────────────
@@ -808,4 +920,188 @@ test "hasBuffered: drains coalesced records without a transport read" {
     conn.close();
     server.join();
     if (sctx.err) |err| return err;
+}
+
+// ───────────────────────────────
+// Client authentication (mTLS)
+// ───────────────────────────────
+
+// RFC 8446 §4.4.2, §4.4.3, §4.4.4 — required client auth over a socketpair:
+// the client presents the fixture chain, the server verifies it (insecure
+// anchoring: the self-signed fixture is its own root) and retains the exact
+// leaf DER, and application data flows both directions. The wrapper zeroes
+// its identity storage on teardown (#81: the core never clears lent buffers).
+test "client auth: required insecure mTLS retains the exact client leaf DER" {
+    const io = testIo();
+    const fds = try socketPair();
+    defer _ = std.c.close(fds[0]);
+
+    var sctx: AuthServerCtx = .{
+        .fd = fds[1],
+        .client_auth = .{ .required = .insecure },
+        .steps = &.{ .{ .expect_bytes = 4 }, .{ .send = "pong" }, .close },
+    };
+    const server = try std.Thread.spawn(.{}, authServerRun(IdentityServer), .{&sctx});
+
+    var client_key = try clientCredentials();
+    defer client_key.deinit();
+    var conn: tls.Client = undefined;
+    try conn.connect(io, streamFor(fds[0]), .{
+        .host = test_host,
+        .verify = .insecure,
+        .client_credentials = .{
+            .cert_chain = &.{client_cert_der},
+            .signer = client_key.signer(),
+        },
+    });
+    defer conn.deinit();
+
+    // A client Stream never carries a client identity, credentials or not.
+    try testing.expectEqual(@as(?[]const u8, null), conn.info().client_identity);
+
+    const w = conn.writer();
+    try w.writeAll("ping");
+    try w.flush();
+    const r = conn.reader();
+    var buf: [4]u8 = undefined;
+    try r.readSliceAll(&buf);
+    try testing.expectEqualStrings("pong", &buf);
+    conn.close();
+
+    server.join();
+    if (sctx.err) |err| return err;
+    // The retained identity is the exact fixture DER, byte for byte.
+    try testing.expectEqualSlices(u8, client_cert_der, sctx.identity().?);
+    // And teardown zeroed the wrapper-owned storage that held it.
+    try testing.expect(sctx.identity_zeroed);
+}
+
+// RFC 8446 §4.4.2 — optional client auth accepts an empty client
+// Certificate: the handshake completes and no identity is retained.
+test "client auth: optional with no client certificate succeeds, identity null" {
+    const io = testIo();
+    const fds = try socketPair();
+    defer _ = std.c.close(fds[0]);
+
+    var sctx: AuthServerCtx = .{
+        .fd = fds[1],
+        .client_auth = .{ .optional = .insecure },
+        .steps = &.{ .{ .send = "ok" }, .close },
+    };
+    const server = try std.Thread.spawn(.{}, authServerRun(IdentityServer), .{&sctx});
+
+    var conn: tls.Client = undefined;
+    try conn.connect(io, streamFor(fds[0]), .{
+        .host = test_host,
+        .verify = .insecure,
+    });
+    defer conn.deinit();
+
+    const r = conn.reader();
+    var buf: [2]u8 = undefined;
+    try r.readSliceAll(&buf);
+    try testing.expectEqualStrings("ok", &buf);
+    conn.close();
+
+    server.join();
+    if (sctx.err) |err| return err;
+    try testing.expectEqual(@as(?[]const u8, null), sctx.identity());
+}
+
+// RFC 8446 §4.4.2 — required client auth with no client certificate is a
+// rejection on the server and a certificate_required alert on the client.
+test "client auth: required with no client certificate is rejected" {
+    const io = testIo();
+    const fds = try socketPair();
+    defer _ = std.c.close(fds[0]);
+
+    var sctx: AuthServerCtx = .{
+        .fd = fds[1],
+        .client_auth = .{ .required = .insecure },
+        .steps = &.{.drain},
+    };
+    const server = try std.Thread.spawn(.{}, authServerRun(IdentityServer), .{&sctx});
+
+    var conn: tls.Client = undefined;
+    // The client's Finished is already on the wire when the server verifies
+    // the (missing) certificate, so connect cannot carry the verdict: the
+    // rejection surfaces on the read path. RFC 8446 §4.4.2, §4.4.4. The
+    // server's post-Finished alert uses application traffic keys, so the
+    // client receives a peer alert rather than reporting an AEAD failure.
+    try conn.connect(io, streamFor(fds[0]), .{
+        .host = test_host,
+        .verify = .insecure,
+    });
+    defer conn.deinit();
+
+    try testing.expectError(error.ReadFailed, conn.reader().fillMore());
+    try testing.expectEqual(tls.ReadError.TlsAlertReceived, conn.readError().?);
+
+    server.join();
+    try testing.expectEqual(@as(?anyerror, error.ClientCertificateRejected), sctx.err);
+}
+
+// An empty credential chain is unusable caller configuration: rejected as
+// InvalidOptions before any wire I/O, so the peer sees a bare EOF (the owned
+// socket is closed by the failure path), and a later deinit stays a no-op.
+test "client credentials: empty chain is InvalidOptions before wire I/O" {
+    const io = testIo();
+    const fds = try socketPair();
+    defer _ = std.c.close(fds[0]);
+
+    var sctx: ServerCtx = .{ .fd = fds[1], .steps = &.{.drain} };
+    const server = try spawnServer(&sctx);
+
+    var client_key = try clientCredentials();
+    defer client_key.deinit();
+    var conn: tls.Client = undefined;
+    try testing.expectError(error.InvalidOptions, conn.connect(io, streamFor(fds[0]), .{
+        .host = test_host,
+        .verify = .insecure,
+        .client_credentials = .{ .cert_chain = &.{}, .signer = client_key.signer() },
+    }));
+    conn.deinit();
+
+    server.join();
+    // The server thread observed EOF (a truncated handshake), not a hang.
+    try testing.expectEqual(@as(?anyerror, error.HandshakeProtocolError), sctx.err);
+}
+
+// RFC 8446 §4.4.2 — a verified client leaf that cannot fit
+// `Config.client_identity_storage` is a sizing fault, not a rejected
+// certificate: the server reports HandshakeBufferTooShort and the client sees
+// the resulting fatal alert.
+test "client auth: undersized identity storage surfaces HandshakeBufferTooShort" {
+    const io = testIo();
+    const fds = try socketPair();
+    defer _ = std.c.close(fds[0]);
+
+    var sctx: AuthServerCtx = .{
+        .fd = fds[1],
+        .client_auth = .{ .required = .insecure },
+        .steps = &.{.drain},
+    };
+    const server = try std.Thread.spawn(.{}, authServerRun(TinyIdentityServer), .{&sctx});
+
+    var client_key = try clientCredentials();
+    defer client_key.deinit();
+    var conn: tls.Client = undefined;
+    // Same verdict timing as the no-certificate case: the client's flight was
+    // already sent, so the fatal alert lands on the read path.
+    try conn.connect(io, streamFor(fds[0]), .{
+        .host = test_host,
+        .verify = .insecure,
+        .client_credentials = .{
+            .cert_chain = &.{client_cert_der},
+            .signer = client_key.signer(),
+        },
+    });
+    defer conn.deinit();
+
+    try testing.expectError(error.ReadFailed, conn.reader().fillMore());
+    try testing.expectEqual(tls.ReadError.TlsAlertReceived, conn.readError().?);
+
+    server.join();
+    try testing.expectEqual(@as(?anyerror, error.HandshakeBufferTooShort), sctx.err);
+    try testing.expectEqual(@as(?[]const u8, null), sctx.identity());
 }

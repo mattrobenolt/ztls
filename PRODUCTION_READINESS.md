@@ -60,7 +60,7 @@ ztls is production-ready when all six pillars are `PROVEN`:
 | Pillar | Status | One-line |
 |---|---|---|
 | 1. Correctness | `PROVEN` | Both #91 fixture defects have red/green regressions and fresh strict-complete captures on all three backends at `e5800ee`: zero unexpected results and zero validity rejections. Historical failure causality remains bounded by the retained evidence. Full TLS-Anvil remains scheduled-only; BoGo is explicitly deferred. |
-| 2. Ergonomics | `PROVEN` | CI-gated deterministic examples cover client and server roles across io_uring, epoll, and `std.net.Stream`; Config setup, server credentials, and `Outbox` cover the supported core ergonomics boundary. Two higher-order integrations are `PARTIAL`, both CI-gated under Zig 0.16: `ztls-std` (#77, `std.Io`) has wrapper-level OpenSSL interop in both directions but lacks client auth and concurrent split halves; `ztls-xev` (#76, libxev completions) has both roles on io_uring (CI-gated) and kqueue (CI-gated), with in-flight read and write cancellation gated on io_uring, epoll, and kqueue (#83). |
+| 2. Ergonomics | `PROVEN` | CI-gated deterministic examples cover client and server roles across io_uring, epoll, and `std.net.Stream`; Config setup, server credentials, and `Outbox` cover the supported core ergonomics boundary. `ztls-std` (#77, `std.Io`) remains `PARTIAL`: wrapper-level OpenSSL interop and client authentication are CI-gated in both directions, but concurrent split halves are absent. `ztls-xev` satisfies #76's Linux/macOS contract: both roles and in-flight read/write cancellation are CI-gated on io_uring, epoll, and kqueue (#83). |
 | 3. Performance | `PROVEN` | n=10 captures on x86_64 (c7i.2xlarge), aarch64 (c7g.2xlarge), and macOS (Apple M1 Max) with formal CIs (p=0.000): ztls beats libssl on every comparable app-data row on all three platforms and rustls on all AES-GCM rows; regression gate committed. |
 | 4. Providers | `PROVEN` | OpenSSL, AWS-LC, and BoringSSL have CI-gated backend lanes and fresh strict-complete TLS-Anvil captures at `e5800ee`, with both fixture patches verified and no unexpected results (#91). Cert-chain stays ztls/std; FIPS capability checks are comptime-only; PQ/P-384 is #6. |
 | 5. Marketing | `PROVEN` | README leads with the proven performance story (n=10, both architectures, honest ChaCha20 loss) and the adversarial security posture; the why-ztls narrative and headline benchmarks are on the front door, backed by PERFORMANCE.md. |
@@ -797,19 +797,67 @@ lane cannot build a 0.16-only integration and does not gate it.
 **Landed and gated.** `Client`/`Server` are the connection types
 (`StreamImpl(Hs, role, config)`), with eager `connect`/`accept`, `Io.Reader`/
 `Io.Writer` interfaces, `socketHandle`, `hasBuffered`, `info`, and the
-`closeWrite`/`close`/`deinit` teardown triple. `just integrations-ci` runs lint
-plus 28 tests: 21 fixture-backed round-trips over a socketpair, 2 wrapper-level
-OpenSSL interoperability tests over TCP, 2 unit tests on error classification
-and buffer sizing, 2 on the client example's helpers, and 1 smoke test.
+`closeWrite`/`close`/`deinit` teardown triple, and client authentication
+(mTLS) on both roles. `just integrations-ci` runs lint plus 40 tests: 26
+fixture-backed round-trips over a socketpair (21 general + 5 client-auth),
+6 wrapper-level OpenSSL interoperability tests over TCP (plain both
+directions + successful and rejected mTLS in both directions), 5 unit tests
+on error classification, alert fidelity, and buffer sizing, 2 on the client
+example's helpers, and 1 smoke test.
 
-**Wrapper interop is CI-gated in both directions.** `ztls_std.Client` negotiates
+**Wrapper interop is CI-gated in both directions, including mTLS.**
+`ztls_std.Client` negotiates
 TLS 1.3, AES-128-GCM, and `http/1.1` with `openssl s_server`, then exchanges an
 HTTP request and response through the public Reader/Writer surface.
 `openssl s_client` verifies the fixture-backed `ztls_std.Server` certificate and
 hostname with `-CAfile -verify_return_error -verify_hostname`, negotiates the
 same suite and ALPN, exchanges application data, and exits cleanly. Neither test
 has a skip path when OpenSSL is absent, and the test run is marked side-effectful
-so the build graph cannot substitute a cached non-execution.
+so the build graph cannot substitute a cached non-execution. The same holds for
+the two mTLS directions: `ztls_std.Client` presents the client fixture
+certificate to `openssl s_server -Verify -verifyCAfile -verify_return_error`
+(a failed client-cert verification aborts the handshake, so a completed
+exchange proves OpenSSL verified the wrapper's credentials), and
+`openssl s_client -cert -key` with a generated clientAuth certificate
+interoperates with a requiring `ztls_std.Server` that verifies against a
+caller-owned `Bundle` with the real clock, retains the leaf, and surfaces the
+exact generated DER through `info().client_identity`. Negative interop is
+also gated: a credential-less wrapper client receives OpenSSL's fatal alert,
+and a credential-less `openssl s_client` decrypts the requiring wrapper
+server's post-Finished `certificate_required` alert (number 116) while the
+server reports `ClientCertificateRejected`.
+
+The following client-authentication properties are gated by socketpair tests
+rather than asserted in prose:
+
+- **Client credentials are caller configuration.** An empty
+  `client_credentials.cert_chain` is rejected as `InvalidOptions` before any
+  wire I/O (the peer sees a bare EOF, and the failure path keeps the
+  owned-socket close and deinit-is-a-no-op contract); a signer scheme the
+  server's CertificateRequest cannot carry maps to `InvalidOptions` too.
+- **Server-side identity retention is exact and bounded.** A requiring server
+  with `Config.client_identity_storage` retains the exact client leaf DER
+  (`client auth: required insecure mTLS retains the exact client leaf DER`),
+  zeroes that storage on teardown, reports a null identity when an optional
+  client sends no certificate, and surfaces undersized storage as
+  `HandshakeBufferTooShort` rather than `ClientCertificateRejected`
+  (`ClientCertificateTooLarge` reclassified `.buffer` in the core `classify`
+  table for exactly this reason).
+- **Fatal alerts are specific and use the correct key epoch.** The wrapper
+  deleted the coarse `errors.alertForClass` (wrapper-only since the
+  integrations stopped sharing it) and sends alerts through the canonical
+  per-error `ztls.alert.alertForError` table — pinned for
+  `SignatureVerificationFailed` -> `decrypt_error`, `AuthenticationFailed`
+  -> `bad_record_mac`, `MissingTrustAnchor` -> `unknown_ca`,
+  `CertificateExpired` -> `certificate_expired`, and silence after
+  `PeerAlert` (RFC 8446 §6.2 says do not reply to a peer that already
+  aborted). The core advances the server write direction to application keys
+  immediately after encrypting its Finished while retaining the client
+  handshake read key until the client Finished verifies. A core pair test
+  proves a `certificate_required` rejection decrypts only under the client's
+  application receive key, and a rollback test proves failed flight encryption
+  keeps the handshake write epoch and clears the uncommitted application
+  secret (RFC 8446 §4.4.4).
 
 The following correctness properties are gated by tests rather than asserted in prose:
 
@@ -884,7 +932,7 @@ phases: `handshake cancelled by the deadline` and `transfer cancelled by the
 deadline (recovered as error.Canceled)`. Before the `err` convention landed, the
 identical experiment reported a bare `ReadFailed`.
 
-### libxev — ztls-xev (#76) — PARTIAL
+### libxev — ztls-xev (#76) — PROVEN
 
 `integrations/ztls-xev/` is the completion-driven integration. libxev does not
 implement `std.Io` — it borrows `std.Io.net.IpAddress` as a type and nothing else
@@ -1039,26 +1087,29 @@ kqueue cancellation skip remains.
 
 Not gaps, recorded here so they are not mistaken for debt: IOCP/Windows is an
 explicit non-goal (`AGENTS.md`: "Target platforms: Linux and macOS. No Windows
-support, no portability tax."), and client authentication is a core slice ztls-xev
-cannot wire ahead of the engine. `peek`/`consume`/`writeNegotiationPlaintext` for
-StartTLS-style detection, key-update initiation, and session resumption are
-unrequested features rather than missing work. ztls-xev is not claimed done.
+support, no portability tax."). Client authentication,
+`peek`/`consume`/`writeNegotiationPlaintext` for StartTLS-style detection,
+key-update initiation, and session resumption are unrequested ztls-xev features
+rather than missing work. ztls-xev satisfies the supported #76 contract.
 
 ---
 
-**Gaps (tracked under #77):** Client authentication is not a supported surface
-(`AcceptError.ClientCertificateRejected` exists because the core can produce
-those errors, not because the path is proven). Concurrent split halves are not
-supported: `reader()` and `writer()` share the handshake engine and outbound
-record buffer, and both yield mid-operation while that buffer holds a half-written
+Client authentication is wrapper-supported and CI-gated (socketpair + both
+OpenSSL mTLS directions above). Server-side retention is deliberately leaf-only
+(no full client chain).
+
+**Remaining gap (tracked under #77):** Concurrent split halves are not
+supported: `reader()` and `writer()` share the handshake engine
+and outbound record buffer, and both yield mid-operation while that buffer holds a half-written
 record, so the two directions must be driven from one task. This is a reentrancy
 constraint rather than a threading one — a single-threaded green-thread scheduler
 still interleaves at every I/O point — and Debug/ReleaseSafe builds now assert on
 reentry instead of corrupting silently. No deadline is imposed by the wrapper;
 `std.Io` cancellation is the mechanism and is now exercised by
 `examples/zio_client.zig` rather than untested. Session resumption / 0-RTT are out of scope for v1.
-`ztls-xev` (#76) is partial, `ztls-ktls` (#78) is unstarted, and distribution as
-an independently fetchable package is #79. ztls-std is not claimed done.
+`ztls-xev` satisfies the closed #76 contract; `ztls-ktls` (#78) is unstarted,
+and distribution as an independently fetchable package is #79. ztls-std is not
+claimed done.
 
 ---
 

@@ -55,9 +55,7 @@ Everything else is ours.
   small constant-time/zeroing/random helpers are not excluded by this rule.
 - TLS 1.2 or earlier.
 - DTLS.
-- 0-RTT (initially — nice to add later, but adds replay complexity).
-- Client certificates (initially — server auth only for v1).
-- Custom DHE groups (only X25519 and P-256 to start).
+- Post-handshake client authentication.
 
 ---
 
