@@ -36,7 +36,6 @@ const SignatureScheme = @import("signature_scheme.zig").SignatureScheme;
 const wire = @import("wire.zig");
 const array_buffer = @import("array_buffer.zig");
 const ArrayBuffer = array_buffer.ArrayBuffer;
-const server_hello = @import("server_hello.zig");
 const x25519 = @import("x25519.zig");
 
 /// RFC 8446 §4.1.2 — legacy_version is frozen at TLS 1.2.
@@ -93,10 +92,13 @@ fn sniExtLen(name: []const u8) u16 {
     return ext_header_len + sni_overhead + @as(u16, @intCast(name.len));
 }
 
-fn groupCount(include_p256: bool, include_p384: bool, has_kem: bool) usize {
+fn groupCount(
+    include_p256: bool,
+    include_p384: bool,
+    hybrid_groups: []const NamedGroup,
+) usize {
     return 1 + @as(usize, @intFromBool(include_p256)) +
-        @as(usize, @intFromBool(include_p384)) +
-        @as(usize, @intFromBool(has_kem));
+        @as(usize, @intFromBool(include_p384)) + hybrid_groups.len;
 }
 
 fn keySharesLen(include_p256: bool, include_p384: bool, kem: ?KemShare) usize {
@@ -111,6 +113,7 @@ fn extensionsLen(
     alpn_protocols: AlpnProtocols,
     include_p256: bool,
     include_p384: bool,
+    hybrid_groups: []const NamedGroup,
     kem: ?KemShare,
 ) AlpnError!u16 {
     const sni: u16 = if (server_name) |n| sniExtLen(n) else 0;
@@ -118,7 +121,7 @@ fn extensionsLen(
     const total = sni +
         alpn +
         ext_supported_versions_len +
-        ext_header_len + 2 + groupCount(include_p256, include_p384, kem != null) * 2 +
+        ext_header_len + 2 + groupCount(include_p256, include_p384, hybrid_groups) * 2 +
         ext_sig_algs_len +
         ext_sig_algs_cert_len +
         ext_psk_kem_len +
@@ -129,7 +132,7 @@ fn extensionsLen(
 
 pub fn encodedLen(server_name: ?[]const u8, alpn_protocols: AlpnProtocols) AlpnError!usize {
     return handshake_header_len + body_fixed_len +
-        try extensionsLen(server_name, alpn_protocols, false, false, null);
+        try extensionsLen(server_name, alpn_protocols, false, false, &.{}, null);
 }
 
 pub fn encodedLenWithP256(
@@ -137,7 +140,7 @@ pub fn encodedLenWithP256(
     alpn_protocols: AlpnProtocols,
 ) AlpnError!usize {
     return handshake_header_len + body_fixed_len +
-        try extensionsLen(server_name, alpn_protocols, true, false, null);
+        try extensionsLen(server_name, alpn_protocols, true, false, &.{}, null);
 }
 
 pub fn encodedLenWithP256P384(
@@ -145,22 +148,48 @@ pub fn encodedLenWithP256P384(
     alpn_protocols: AlpnProtocols,
 ) AlpnError!usize {
     return handshake_header_len + body_fixed_len +
-        try extensionsLen(server_name, alpn_protocols, true, true, null);
+        try extensionsLen(server_name, alpn_protocols, true, true, &.{}, null);
 }
 
 /// Errors from ClientHello2 encoding after a HelloRetryRequest.
 pub const RetryEncodeError = error{
     BufferTooShort,
     ServerNameTooLong,
+    IdentityTooLong,
+    InvalidBinderLength,
     UnsupportedGroup,
 } || AlpnError;
 
+/// PSK fields retained when constructing ClientHello2 after HRR. The binder is
+/// emitted as zeroes for the caller to patch through `PskEncodeResult`.
+pub const RetryPsk = struct {
+    identity: []const u8,
+    obfuscated_ticket_age: u32,
+    binder_len: u8,
+    mode: PskKeyExchangeMode,
+};
+
 /// Compute the key_share extension body length for a single selected group.
-fn singleKeyShareLen(selected_group: NamedGroup) RetryEncodeError!usize {
+fn singleKeyShareLen(
+    selected_group: NamedGroup,
+    hybrid_share: ?KemShare,
+) RetryEncodeError!usize {
     return switch (selected_group) {
         .x25519 => 2 + 2 + x25519.public_length,
         .secp256r1 => 2 + 2 + p256.public_length,
         .secp384r1 => 2 + 2 + p384.public_length,
+        .x25519_mlkem768,
+        .secp256r1_mlkem768,
+        .secp384r1_mlkem1024,
+        => {
+            const share = hybrid_share orelse return error.UnsupportedGroup;
+            if (share.group != selected_group or
+                share.data.len != selected_group.publicKeyLen().?)
+            {
+                return error.UnsupportedGroup;
+            }
+            return 2 + 2 + share.data.len;
+        },
         else => return error.UnsupportedGroup,
     };
 }
@@ -173,19 +202,28 @@ fn retryExtensionsLen(
     selected_group: NamedGroup,
     cookie: ?[]const u8,
     include_p384: bool,
+    hybrid_groups: []const NamedGroup,
+    hybrid_share: ?KemShare,
+    psk: ?RetryPsk,
 ) RetryEncodeError!u16 {
     const sni: u16 = if (server_name) |n| sniExtLen(n) else 0;
     const alpn: u16 = if (alpn_protocols.len == 0) 0 else try alpnExtLen(alpn_protocols);
     const cookie_len: u16 = if (cookie) |c| ext_header_len + 2 + @as(u16, @intCast(c.len)) else 0;
-    const ks = try singleKeyShareLen(selected_group);
+    const psk_len: usize = if (psk) |offer|
+        ext_header_len + 2 + 2 + offer.identity.len + 4 + 2 + 1 + offer.binder_len
+    else
+        0;
+    const ks = try singleKeyShareLen(selected_group, hybrid_share);
     const total = sni +
         alpn +
         ext_supported_versions_len +
-        ext_header_len + 2 + groupCount(true, include_p384, false) * 2 +
+        ext_header_len + 2 + groupCount(true, include_p384, hybrid_groups) * 2 +
         ext_sig_algs_len +
         ext_sig_algs_cert_len +
         ext_header_len + 2 + ks +
-        cookie_len;
+        ext_psk_kem_len +
+        cookie_len +
+        psk_len;
     assert(total <= std.math.maxInt(u16));
     return @intCast(total);
 }
@@ -212,11 +250,77 @@ pub fn encodeRetryAfterHrr(
     server_name: ?[]const u8,
     alpn_protocols: AlpnProtocols,
 ) RetryEncodeError![]u8 {
+    return encodeRetryAfterHrrWithHybrid(
+        out,
+        random,
+        x25519_public_key,
+        p256_public_key,
+        p384_public_key,
+        selected_group,
+        cookie,
+        server_name,
+        alpn_protocols,
+        &.{},
+        null,
+    );
+}
+
+// ziglint-ignore: Z015 -- RetryEncodeError is a public error-set alias.
+pub fn encodeRetryAfterHrrWithHybrid(
+    out: []u8,
+    random: Random,
+    x25519_public_key: x25519.PublicKey,
+    p256_public_key: p256.PublicKey,
+    p384_public_key: ?p384.PublicKey,
+    selected_group: NamedGroup,
+    cookie: ?[]const u8,
+    server_name: ?[]const u8,
+    alpn_protocols: AlpnProtocols,
+    hybrid_groups: []const NamedGroup,
+    hybrid_share: ?KemShare,
+) RetryEncodeError![]u8 {
+    return (try encodeRetryAfterHrrWithHybridAndPsk(
+        out,
+        random,
+        x25519_public_key,
+        p256_public_key,
+        p384_public_key,
+        selected_group,
+        cookie,
+        server_name,
+        alpn_protocols,
+        hybrid_groups,
+        hybrid_share,
+        null,
+    )).msg;
+}
+
+// ziglint-ignore: Z015 -- RetryEncodeError is a public error-set alias.
+pub fn encodeRetryAfterHrrWithHybridAndPsk(
+    out: []u8,
+    random: Random,
+    x25519_public_key: x25519.PublicKey,
+    p256_public_key: p256.PublicKey,
+    p384_public_key: ?p384.PublicKey,
+    selected_group: NamedGroup,
+    cookie: ?[]const u8,
+    server_name: ?[]const u8,
+    alpn_protocols: AlpnProtocols,
+    hybrid_groups: []const NamedGroup,
+    hybrid_share: ?KemShare,
+    psk: ?RetryPsk,
+) RetryEncodeError!PskEncodeResult {
     if (server_name) |name| if (name.len > 253) return error.ServerNameTooLong;
     if (cookie) |c| {
         if (c.len == 0 or c.len > std.math.maxInt(u16)) return error.BufferTooShort;
     }
+    if (psk) |offer| {
+        if (offer.identity.len > 256) return error.IdentityTooLong;
+        if (offer.binder_len != 32 and offer.binder_len != 48)
+            return error.InvalidBinderLength;
+    }
     if (selected_group == .secp384r1 and p384_public_key == null) return error.UnsupportedGroup;
+    try validateHybridGroups(hybrid_groups, hybrid_share);
     const include_p384 = p384_public_key != null;
     const ext_len = try retryExtensionsLen(
         server_name,
@@ -224,6 +328,9 @@ pub fn encodeRetryAfterHrr(
         selected_group,
         cookie,
         include_p384,
+        hybrid_groups,
+        hybrid_share,
+        psk,
     );
     const encoded_len = handshake_header_len + body_fixed_len + ext_len;
     if (out.len < encoded_len) return error.BufferTooShort;
@@ -278,11 +385,12 @@ pub fn encodeRetryAfterHrr(
 
     // supported_groups (RFC 8446 §4.2.7) — unchanged from ClientHello1.
     w.append(ExtensionType, .supported_groups);
-    w.append(u16, @intCast(2 + groupCount(true, include_p384, false) * 2));
-    w.append(u16, @intCast(groupCount(true, include_p384, false) * 2));
+    w.append(u16, @intCast(2 + groupCount(true, include_p384, hybrid_groups) * 2));
+    w.append(u16, @intCast(groupCount(true, include_p384, hybrid_groups) * 2));
     w.append(NamedGroup, .x25519);
     w.append(NamedGroup, .secp256r1);
     if (include_p384) w.append(NamedGroup, .secp384r1);
+    for (hybrid_groups) |group| w.append(NamedGroup, group);
 
     // signature_algorithms (RFC 8446 §4.2.3)
     w.append(ExtensionType, .signature_algorithms);
@@ -297,7 +405,7 @@ pub fn encodeRetryAfterHrr(
     inline for (supported_certificate_signature_schemes) |s| w.append(SignatureScheme, s);
 
     // key_share (RFC 8446 §4.2.8) — only the selected group's KeyShareEntry.
-    const ks_len = try singleKeyShareLen(selected_group);
+    const ks_len = try singleKeyShareLen(selected_group, hybrid_share);
     w.append(ExtensionType, .key_share);
     w.append(u16, @intCast(2 + ks_len));
     w.append(u16, @intCast(ks_len));
@@ -318,8 +426,27 @@ pub fn encodeRetryAfterHrr(
             w.append(u16, p384.public_length);
             w.appendSlice(&public_key.data);
         },
+        .x25519_mlkem768,
+        .secp256r1_mlkem768,
+        .secp384r1_mlkem1024,
+        => {
+            const share = hybrid_share orelse return error.UnsupportedGroup;
+            w.append(NamedGroup, share.group);
+            w.append(u16, @intCast(share.data.len));
+            w.appendSlice(share.data);
+        },
         else => return error.UnsupportedGroup,
     }
+
+    // psk_key_exchange_modes (RFC 8446 §4.2.9) is present in every
+    // ClientHello1 so it remains unchanged in ClientHello2.
+    w.append(ExtensionType, .psk_key_exchange_modes);
+    w.append(u16, 2);
+    w.append(u8, 1);
+    w.append(
+        PskKeyExchangeMode,
+        if (psk) |offer| offer.mode else .psk_dhe_ke,
+    );
 
     // cookie (RFC 8446 §4.2.2) — echoed verbatim from HelloRetryRequest.
     if (cookie) |c| {
@@ -329,7 +456,37 @@ pub fn encodeRetryAfterHrr(
         w.appendSlice(c);
     }
 
-    return w.written();
+    var prefix_len: usize = w.pos;
+    var binder_offset: usize = w.pos;
+    var binder_len: u8 = 0;
+    if (psk) |offer| {
+        const identities_len: usize = 2 + 2 + offer.identity.len + 4;
+        const binders_len: usize = 2 + 1 + offer.binder_len;
+        const psk_ext_data_len: usize = identities_len + binders_len;
+
+        // RFC 8446 §4.1.2, §4.2.11 — ClientHello2 retains pre_shared_key,
+        // recomputes its binder, and keeps it as the final extension.
+        w.append(ExtensionType, .pre_shared_key);
+        w.append(u16, @intCast(psk_ext_data_len));
+        w.append(u16, @intCast(identities_len - 2));
+        w.append(u16, @intCast(offer.identity.len));
+        w.appendSlice(offer.identity);
+        w.append(u32, offer.obfuscated_ticket_age);
+        prefix_len = w.pos;
+        w.append(u16, @intCast(binders_len - 2));
+        w.append(u8, offer.binder_len);
+        binder_offset = w.pos;
+        var binder_buf: [48]u8 = @splat(0);
+        w.appendSlice(binder_buf[0..offer.binder_len]);
+        binder_len = offer.binder_len;
+    }
+
+    return .{
+        .msg = w.written(),
+        .prefix_len = prefix_len,
+        .binder_offset = binder_offset,
+        .binder_len = binder_len,
+    };
 }
 
 /// PskKeyExchangeMode (RFC 8446 §4.2.9).
@@ -338,18 +495,35 @@ pub const PskKeyExchangeMode = enum(u8) {
     psk_dhe_ke = 1,
 };
 
-/// Optional KEM hybrid key_share for the ClientHello.
-/// draft-ietf-tls-ecdhe-mlkem-05 §4.1.
+/// Optional RFC 10024 §4.1 hybrid key_share for the ClientHello.
 pub const KemShare = struct {
     group: NamedGroup,
     data: []const u8,
 };
-/// number of bytes from the start of the message that the binder transcript
-/// hash covers (up to and including the identities, excluding the binders
-/// list). `binder_offset` is where the binder value (of `binder_len` bytes)
-/// must be written after the caller computes it. RFC 8446 §4.2.11.2.
-/// Result of `encodeWithPsk`: the encoded ClientHello plus the offsets the
-/// caller needs to compute and patch in the PSK binder. `prefix_len` is the
+
+fn validateHybridGroups(
+    groups: []const NamedGroup,
+    share: ?KemShare,
+) error{UnsupportedGroup}!void {
+    if (groups.len > 3) return error.UnsupportedGroup;
+    for (groups, 0..) |group, i| {
+        if (group.hybridSpec() == null or !backend.supportsClientHybridGroup(group))
+            return error.UnsupportedGroup;
+        for (groups[0..i]) |earlier| {
+            if (earlier == group) return error.UnsupportedGroup;
+        }
+    }
+    if (share) |value| {
+        if (mem.indexOfScalar(NamedGroup, groups, value.group) == null)
+            return error.UnsupportedGroup;
+        const expected_len = value.group.publicKeyLen() orelse return error.UnsupportedGroup;
+        if (value.data.len != @as(usize, expected_len)) return error.UnsupportedGroup;
+    }
+}
+
+/// Encoded ClientHello plus the offsets needed to patch its PSK binder.
+/// `prefix_len` covers the message through the identities and excludes the
+/// binders list. RFC 8446 §4.2.11.2.
 pub const PskEncodeResult = struct {
     msg: []u8,
     prefix_len: usize,
@@ -379,9 +553,59 @@ pub fn encodeWithPsk(
     obfuscated_ticket_age: u32,
     binder_len: u8,
     offer_early_data: bool,
-) (error{ BufferTooShort, ServerNameTooLong, IdentityTooLong } || AlpnError)!PskEncodeResult {
+) (error{
+    BufferTooShort,
+    ServerNameTooLong,
+    IdentityTooLong,
+    InvalidBinderLength,
+    UnsupportedGroup,
+} || AlpnError)!PskEncodeResult {
+    return encodeWithPskAndHybridGroups(
+        out,
+        random,
+        public_key,
+        public_key_p256,
+        public_key_p384,
+        server_name,
+        alpn_protocols,
+        &.{},
+        null,
+        psk_mode,
+        identity,
+        obfuscated_ticket_age,
+        binder_len,
+        offer_early_data,
+    );
+}
+
+/// Encode a PSK ClientHello with the same RFC 10024 supported-groups and
+/// optional initial key-share policy as a full handshake.
+pub fn encodeWithPskAndHybridGroups(
+    out: []u8,
+    random: Random,
+    public_key: x25519.PublicKey,
+    public_key_p256: ?p256.PublicKey,
+    public_key_p384: ?p384.PublicKey,
+    server_name: ?[]const u8,
+    alpn_protocols: AlpnProtocols,
+    hybrid_groups: []const NamedGroup,
+    hybrid_share: ?KemShare,
+    psk_mode: PskKeyExchangeMode,
+    identity: []const u8,
+    obfuscated_ticket_age: u32,
+    binder_len: u8,
+    offer_early_data: bool,
+) (error{
+    BufferTooShort,
+    ServerNameTooLong,
+    IdentityTooLong,
+    InvalidBinderLength,
+    UnsupportedGroup,
+} || AlpnError)!PskEncodeResult {
     if (server_name) |name| if (name.len > 253) return error.ServerNameTooLong;
     if (identity.len > 256) return error.IdentityTooLong;
+    if (binder_len != 32 and binder_len != 48) return error.InvalidBinderLength;
+    try validateHybridGroups(hybrid_groups, hybrid_share);
     const include_p256 = public_key_p256 != null;
     const include_p384 = public_key_p384 != null;
 
@@ -400,7 +624,8 @@ pub fn encodeWithPsk(
         alpn_protocols,
         include_p256,
         include_p384,
-        null,
+        hybrid_groups,
+        hybrid_share,
     );
     // base_ext_len already includes psk_key_exchange_modes (added in slice E).
     // early_data ext (if offered): 4 bytes (ext header + 0-length ext_data).
@@ -457,11 +682,12 @@ pub fn encodeWithPsk(
     w.append(ProtocolVersion, .tls_1_3);
 
     w.append(ExtensionType, .supported_groups);
-    w.append(u16, @intCast(2 + groupCount(include_p256, include_p384, false) * 2));
-    w.append(u16, @intCast(groupCount(include_p256, include_p384, false) * 2));
+    w.append(u16, @intCast(2 + groupCount(include_p256, include_p384, hybrid_groups) * 2));
+    w.append(u16, @intCast(groupCount(include_p256, include_p384, hybrid_groups) * 2));
     w.append(NamedGroup, .x25519);
     if (include_p256) w.append(NamedGroup, .secp256r1);
     if (include_p384) w.append(NamedGroup, .secp384r1);
+    for (hybrid_groups) |group| w.append(NamedGroup, group);
 
     w.append(ExtensionType, .signature_algorithms);
     w.append(u16, 2 + sig_scheme_count * 2);
@@ -473,7 +699,7 @@ pub fn encodeWithPsk(
     w.append(u16, cert_sig_scheme_count * 2);
     inline for (supported_certificate_signature_schemes) |s| w.append(SignatureScheme, s);
 
-    const shares_len = keySharesLen(include_p256, include_p384, null);
+    const shares_len = keySharesLen(include_p256, include_p384, hybrid_share);
     w.append(ExtensionType, .key_share);
     w.append(u16, @intCast(2 + shares_len));
     w.append(u16, @intCast(shares_len));
@@ -489,6 +715,11 @@ pub fn encodeWithPsk(
         w.append(NamedGroup, .secp384r1);
         w.append(u16, p384.public_length);
         w.appendSlice(&key.data);
+    }
+    if (hybrid_share) |share| {
+        w.append(NamedGroup, share.group);
+        w.append(u16, @intCast(share.data.len));
+        w.appendSlice(share.data);
     }
 
     // psk_key_exchange_modes (RFC 8446 §4.2.9). Not the last extension.
@@ -564,9 +795,8 @@ pub const Parsed = struct {
     public_key: ?x25519.PublicKey = null,
     public_key_p256: ?p256.PublicKey = null,
     public_key_p384: ?p384.PublicKey = null,
-    /// KEM hybrid key_share from the client (raw bytes). Variable-length.
-    /// draft-ietf-tls-ecdhe-mlkem-05 §4.1.
-    kem_key_share: ?ParsedKemKeyShare = null,
+    /// RFC 10024 hybrid key_share values borrowed from the ClientHello.
+    hybrid_key_shares: ArrayBuffer(ParsedKemKeyShare, 3) = .empty,
     /// Offered ClientHello extensions tracked for validating server responses.
     offered_extensions: OfferedExtensions = .initEmpty(),
     /// pre_shared_key extension (RFC 8446 §4.2.11), if present. `psk_ext`
@@ -615,7 +845,17 @@ pub fn encode(
     server_name: ?[]const u8,
     alpn_protocols: AlpnProtocols,
 ) (error{ BufferTooShort, ServerNameTooLong } || AlpnError)![]u8 {
-    return encodeInternal(out, random, public_key, null, null, server_name, alpn_protocols, null);
+    return encodeInternal(
+        out,
+        random,
+        public_key,
+        null,
+        null,
+        server_name,
+        alpn_protocols,
+        &.{},
+        null,
+    );
 }
 
 pub fn encodeWithP256(
@@ -635,6 +875,7 @@ pub fn encodeWithP256(
         null,
         server_name,
         alpn_protocols,
+        &.{},
         null,
     );
 }
@@ -648,7 +889,7 @@ pub fn encodeWithP256P384(
     server_name: ?[]const u8,
     alpn_protocols: AlpnProtocols,
 ) (error{ BufferTooShort, ServerNameTooLong } || AlpnError)![]u8 {
-    return encodeWithKem(
+    return encodeInternal(
         out,
         random,
         public_key,
@@ -656,14 +897,15 @@ pub fn encodeWithP256P384(
         public_key_p384,
         server_name,
         alpn_protocols,
+        &.{},
         null,
     );
 }
 
-/// Encode a ClientHello with an optional KEM hybrid key_share.
-/// draft-ietf-tls-ecdhe-mlkem-05 §4.1. When `kem_share` is non-null, the
-/// KEM group is added to supported_groups and the KEM public key is added
-/// to the key_share extension.
+/// Encode a ClientHello with an optional RFC 10024 hybrid key_share. This
+/// compatibility entry point advertises only the hybrid group carried by the
+/// share. Use encodeWithHybridGroups to advertise a group without sending its
+/// share, which is required to exercise HelloRetryRequest.
 pub fn encodeWithKem(
     out: []u8,
     random: Random,
@@ -673,9 +915,35 @@ pub fn encodeWithKem(
     server_name: ?[]const u8,
     alpn_protocols: AlpnProtocols,
     kem_share: ?KemShare,
-) (error{ BufferTooShort, ServerNameTooLong } || AlpnError)![]u8 {
+) (error{ BufferTooShort, ServerNameTooLong, UnsupportedGroup } || AlpnError)![]u8 {
+    const groups: []const NamedGroup = if (kem_share) |share| &.{share.group} else &.{};
+    return encodeWithHybridGroups(
+        out,
+        random,
+        public_key,
+        public_key_p256,
+        public_key_p384,
+        server_name,
+        alpn_protocols,
+        groups,
+        kem_share,
+    );
+}
+
+pub fn encodeWithHybridGroups(
+    out: []u8,
+    random: Random,
+    public_key: x25519.PublicKey,
+    public_key_p256: p256.PublicKey,
+    public_key_p384: ?p384.PublicKey,
+    server_name: ?[]const u8,
+    alpn_protocols: AlpnProtocols,
+    hybrid_groups: []const NamedGroup,
+    kem_share: ?KemShare,
+) (error{ BufferTooShort, ServerNameTooLong, UnsupportedGroup } || AlpnError)![]u8 {
     assert(backend.capabilities.client_p256);
     if (public_key_p384 != null) assert(backend.capabilities.client_p384);
+    try validateHybridGroups(hybrid_groups, kem_share);
     return encodeInternal(
         out,
         random,
@@ -684,6 +952,7 @@ pub fn encodeWithKem(
         public_key_p384,
         server_name,
         alpn_protocols,
+        hybrid_groups,
         kem_share,
     );
 }
@@ -696,6 +965,7 @@ fn encodeInternal(
     public_key_p384: ?p384.PublicKey,
     server_name: ?[]const u8,
     alpn_protocols: AlpnProtocols,
+    hybrid_groups: []const NamedGroup,
     kem_share: ?KemShare,
 ) (error{ BufferTooShort, ServerNameTooLong } || AlpnError)![]u8 {
     // RFC 6066 §3: HostName is a DNS name, max 253 octets.
@@ -707,6 +977,7 @@ fn encodeInternal(
         alpn_protocols,
         include_p256,
         include_p384,
+        hybrid_groups,
         kem_share,
     );
     const encoded_len = handshake_header_len + body_fixed_len + ext_len;
@@ -762,12 +1033,12 @@ fn encodeInternal(
 
     // supported_groups (RFC 8446 §4.2.7)
     w.append(ExtensionType, .supported_groups);
-    w.append(u16, @intCast(2 + groupCount(include_p256, include_p384, kem_share != null) * 2));
-    w.append(u16, @intCast(groupCount(include_p256, include_p384, kem_share != null) * 2));
+    w.append(u16, @intCast(2 + groupCount(include_p256, include_p384, hybrid_groups) * 2));
+    w.append(u16, @intCast(groupCount(include_p256, include_p384, hybrid_groups) * 2));
     w.append(NamedGroup, .x25519);
     if (include_p256) w.append(NamedGroup, .secp256r1);
     if (include_p384) w.append(NamedGroup, .secp384r1);
-    if (kem_share) |k| w.append(NamedGroup, k.group);
+    for (hybrid_groups) |group| w.append(NamedGroup, group);
 
     // signature_algorithms (RFC 8446 §4.2.3)
     w.append(ExtensionType, .signature_algorithms);
@@ -806,7 +1077,7 @@ fn encodeInternal(
         w.append(u16, p384.public_length); // key_exchange length
         w.appendSlice(&key.data);
     }
-    // KEM hybrid key_share (draft-ietf-tls-ecdhe-mlkem-05 §4.1).
+    // RFC 10024 §4.1 hybrid key_share.
     if (kem_share) |k| {
         w.append(NamedGroup, k.group);
         w.append(u16, @intCast(k.data.len));
@@ -906,7 +1177,7 @@ pub fn parse(msg: []const u8) ParseError!Parsed {
                 parsed.public_key = shares.x25519;
                 parsed.public_key_p256 = shares.p256;
                 parsed.public_key_p384 = shares.p384;
-                parsed.kem_key_share = shares.kem;
+                parsed.hybrid_key_shares = shares.hybrid;
                 got_key_share = true;
             },
             .record_size_limit => {
@@ -957,6 +1228,9 @@ pub fn parse(msg: []const u8) ParseError!Parsed {
         return error.IllegalParameter;
     if (parsed.public_key_p384 != null and !parsed.groups.contains(.secp384r1))
         return error.IllegalParameter;
+    for (parsed.hybrid_key_shares.constSlice()) |share| {
+        if (!parsed.groups.contains(share.group)) return error.IllegalParameter;
+    }
     return parsed;
 }
 
@@ -1044,7 +1318,13 @@ pub const SupportedGroups = struct {
     fn hasImplemented(self: SupportedGroups) bool {
         return (backend.supportsServerX25519() and self.contains(.x25519)) or
             (backend.supportsServerP256() and self.contains(.secp256r1)) or
-            (backend.supportsServerP384() and self.contains(.secp384r1));
+            (backend.supportsServerP384() and self.contains(.secp384r1)) or
+            (backend.supportsServerHybridGroup(.x25519_mlkem768) and
+                self.contains(.x25519_mlkem768)) or
+            (backend.supportsServerHybridGroup(.secp256r1_mlkem768) and
+                self.contains(.secp256r1_mlkem768)) or
+            (backend.supportsServerHybridGroup(.secp384r1_mlkem1024) and
+                self.contains(.secp384r1_mlkem1024));
     }
 };
 
@@ -1086,15 +1366,13 @@ const ParsedKeyShares = struct {
     x25519: ?x25519.PublicKey = null,
     p256: ?p256.PublicKey = null,
     p384: ?p384.PublicKey = null,
-    /// KEM hybrid key_share (raw bytes, group + data). Variable-length.
-    /// draft-ietf-tls-ecdhe-mlkem-05 §4.1.
-    kem: ?ParsedKemKeyShare = null,
+    hybrid: ArrayBuffer(ParsedKemKeyShare, 3) = .empty,
 };
 
-/// KEM key_share stored in both ParsedKeyShares and Parsed.
+/// RFC 10024 hybrid key_share stored in both ParsedKeyShares and Parsed.
 pub const ParsedKemKeyShare = struct {
     group: NamedGroup,
-    data: ArrayBuffer(u8, server_hello.max_kem_share_len),
+    data: []const u8,
 };
 
 fn parseKeyShare(ext: []const u8) ParseError!ParsedKeyShares {
@@ -1127,15 +1405,20 @@ fn parseKeyShare(ext: []const u8) ParseError!ParsedKeyShares {
                 if (key[0] != 0x04) return error.MalformedKeyShare;
                 shares.p384 = .init(key[0..p384.public_length].*);
             },
-            // KEM hybrid groups — store raw key_share bytes.
-            // draft-ietf-tls-ecdhe-mlkem-05 §4.1.
+            // RFC 10024 §4.1 — role-specific exact lengths; NIST-curve
+            // components use uncompressed SEC1 points.
             .x25519_mlkem768, .secp256r1_mlkem768, .secp384r1_mlkem1024 => {
-                if (shares.kem != null) return error.DuplicateKeyShare;
-                if (key.len > server_hello.max_kem_share_len)
+                for (shares.hybrid.constSlice()) |share| {
+                    if (share.group == group) return error.DuplicateKeyShare;
+                }
+                if (key.len != group.publicKeyLen().?) return error.MalformedKeyShare;
+                if ((group == .secp256r1_mlkem768 or
+                    group == .secp384r1_mlkem1024) and key[0] != 0x04)
+                {
                     return error.MalformedKeyShare;
-                var kem_data: ArrayBuffer(u8, server_hello.max_kem_share_len) = .empty;
-                kem_data.appendSliceAssumeCapacity(key);
-                shares.kem = .{ .group = group, .data = kem_data };
+                }
+                shares.hybrid.append(.{ .group = group, .data = key }) catch
+                    return error.MalformedKeyShare;
             },
             else => {},
         }
@@ -1202,6 +1485,29 @@ test "encodeWithPsk: pre_shared_key is last, binder prefix and offset are correc
     // length field). prefix_len + 2 (binders list len) + 1 (binder entry len)
     // + binder_len == msg.len.
     try testing.expectEqual(r.prefix_len + 2 + 1 + r.binder_len, r.msg.len);
+}
+
+// RFC 8446 §4.2.11.2 — binders use the associated PSK hash length. Reject an
+// unsupported caller-provided length instead of slicing past fixed storage.
+test "encodeWithPsk: rejects unsupported binder length" {
+    var buf: [1024]u8 = undefined;
+    try testing.expectError(
+        error.InvalidBinderLength,
+        encodeWithPsk(
+            &buf,
+            .zero,
+            .zero,
+            null,
+            null,
+            null,
+            &.{},
+            .psk_dhe_ke,
+            &.{0x01},
+            0,
+            255,
+            false,
+        ),
+    );
 }
 
 // RFC 8446 §4.2.11 — parse() extracts the pre_shared_key extension, records
@@ -1644,13 +1950,11 @@ test "parse: accepts secp256r1 supported group and key share" {
     );
 }
 
-// RFC 8446 §4.2.7 — known future groups are recorded without making them
-// negotiable before key-share and provider support exist.
-test "parseSupportedGroups: records future groups but requires implemented overlap" {
-    try testing.expectError(
-        error.UnsupportedKeyShare,
-        parseSupportedGroups(&.{ 0x00, 0x02, 0x11, 0xec }),
-    );
+// RFC 10024 §7 — standardized hybrid groups are implemented groups when the
+// selected backend advertises the required pure ML-KEM parameter set.
+test "parseSupportedGroups: records RFC 10024 groups" {
+    const hybrid_only = try parseSupportedGroups(&.{ 0x00, 0x02, 0x11, 0xec });
+    try testing.expect(hybrid_only.contains(.x25519_mlkem768));
 
     const groups = try parseSupportedGroups(&.{
         0x00, 0x04,
@@ -1842,14 +2146,14 @@ test "parse: no shared supported group is rejected" {
     const encoded = try encode(&buf, .zero, .zero, null, &.{});
     const msg = buf[0..encoded.len];
 
-    // Rewrite every implemented group id to x25519_mlkem768 (0x11ec), a named
-    // but not-yet-implemented group. With .zero public key bytes these
-    // occurrences are supported_groups/key_share ids.
+    // Rewrite every implemented group id to the unsupported secp521r1
+    // codepoint. With .zero public key bytes these occurrences are
+    // supported_groups/key_share ids.
     var i: usize = 0;
     while (i + 1 < msg.len) : (i += 1) {
         if (msg[i] == 0x00 and (msg[i + 1] == 0x1d or msg[i + 1] == 0x17)) {
-            msg[i] = 0x11;
-            msg[i + 1] = 0xec;
+            msg[i] = 0x00;
+            msg[i + 1] = 0x19;
         }
     }
     try testing.expectError(error.UnsupportedKeyShare, parse(msg));
@@ -1861,6 +2165,38 @@ test "parse: rejects duplicate x25519 key share entries" {
         [_]u8{ 0x00, 0x1d, 0x00, 0x20 } ++ [_]u8{0xaa} ** 32 ++
         [_]u8{ 0x00, 0x1d, 0x00, 0x20 } ++ [_]u8{0xbb} ** 32;
     try testing.expectError(error.DuplicateKeyShare, parseKeyShare(&key_shares));
+}
+
+// RFC 8446 §4.2.8 / RFC 10024 §4.1 — a ClientHello may carry one share for
+// each hybrid group. The server retains all of them so its preference, rather
+// than the client's first hybrid entry, determines negotiation.
+test "parseKeyShare: retains all RFC 10024 hybrid entries" {
+    const shares_len = 3 * 4 + 1216 + 1249 + 1665;
+    var encoded: [2 + shares_len]u8 = undefined;
+    var w: wire.Writer = .init(&encoded);
+    w.append(u16, shares_len);
+
+    w.append(NamedGroup, .secp256r1_mlkem768);
+    w.append(u16, 1249);
+    const p256_mlkem = w.reserve(1249);
+    @memset(p256_mlkem, 0x11);
+    p256_mlkem[0] = 0x04;
+
+    w.append(NamedGroup, .x25519_mlkem768);
+    w.append(u16, 1216);
+    @memset(w.reserve(1216), 0x22);
+
+    w.append(NamedGroup, .secp384r1_mlkem1024);
+    w.append(u16, 1665);
+    const p384_mlkem = w.reserve(1665);
+    @memset(p384_mlkem, 0x33);
+    p384_mlkem[0] = 0x04;
+
+    const parsed = try parseKeyShare(w.written());
+    try testing.expectEqual(@as(usize, 3), parsed.hybrid.len);
+    try testing.expectEqual(.secp256r1_mlkem768, parsed.hybrid.get(0).group);
+    try testing.expectEqual(.x25519_mlkem768, parsed.hybrid.get(1).group);
+    try testing.expectEqual(.secp384r1_mlkem1024, parsed.hybrid.get(2).group);
 }
 
 test "encode: buffer too short" {
@@ -2035,6 +2371,40 @@ test "encodeRetryAfterHrr: X25519 selected, no cookie" {
     try testing.expect(parsed.groups.contains(.secp384r1));
 }
 
+// RFC 8446 §4.1.2, §4.2.9 — ClientHello2 preserves the PSK key-exchange mode
+// offered in ClientHello1 rather than changing it during retry.
+test "encodeRetryAfterHrr: preserves PSK key exchange mode" {
+    const x_key: x25519.PublicKey = .init(@splat(0x11));
+    var p_key: p256.PublicKey = .init(@splat(0x22));
+    p_key.data[0] = 0x04;
+    var buf: [1024]u8 = undefined;
+    const encoded = try encodeRetryAfterHrrWithHybridAndPsk(
+        &buf,
+        .zero,
+        x_key,
+        p_key,
+        null,
+        .x25519,
+        null,
+        null,
+        &.{},
+        &.{},
+        null,
+        .{
+            .identity = &.{0x01},
+            .obfuscated_ticket_age = 7,
+            .binder_len = 32,
+            .mode = .psk_ke,
+        },
+    );
+    const parsed = try parse(encoded.msg);
+    try testing.expectEqualSlices(
+        u8,
+        &.{@intFromEnum(PskKeyExchangeMode.psk_ke)},
+        parsed.psk_key_exchange_modes.?,
+    );
+}
+
 // RFC 8446 §4.1.4, §4.2.8 — ClientHello2 key_share uses the HRR selected group.
 test "encodeRetryAfterHrr: secp256r1 selected, no cookie" {
     const x_key: x25519.PublicKey = .init(@splat(0x11));
@@ -2140,7 +2510,31 @@ test "encodeRetryAfterHrr: rejects unsupported group" {
     );
 }
 
-// draft-ietf-tls-ecdhe-mlkem-05 §4.1 — KEM public key (1216 bytes for
+// RFC 10024 §4.1 — public hybrid encoders reject a share for an unknown group
+// through their explicit error set rather than unwrapping a null group size.
+test "encodeWithHybridGroups: rejects unknown share group without panic" {
+    if (!backend.supportsClientHybridGroup(.x25519_mlkem768))
+        return error.SkipZigTest;
+
+    const unknown: NamedGroup = @enumFromInt(0x1234);
+    var buf: [4096]u8 = undefined;
+    try testing.expectError(
+        error.UnsupportedGroup,
+        encodeWithHybridGroups(
+            &buf,
+            .zero,
+            .zero,
+            .init(@splat(0)),
+            null,
+            null,
+            &.{},
+            &.{.x25519_mlkem768},
+            .{ .group = unknown, .data = &.{} },
+        ),
+    );
+}
+
+// RFC 10024 §4.1 — KEM public key (1216 bytes for
 // X25519MLKEM768) round-trips through encode → parse without corruption.
 // This test is pure-Zig (no OpenSSL) and isolates the ClientHello wire path
 // from the backend. It runs on all architectures to catch any struct-return /
@@ -2167,10 +2561,10 @@ test "KEM key_share round-trip: ClientHello encode → parse preserves 1216-byte
         kem_share,
     );
     const parsed = try parse(encoded);
-    try testing.expect(parsed.kem_key_share != null);
-    const kem = parsed.kem_key_share.?;
+    try testing.expectEqual(@as(usize, 1), parsed.hybrid_key_shares.len);
+    const kem = parsed.hybrid_key_shares.get(0);
     try testing.expectEqual(.x25519_mlkem768, kem.group);
-    const parsed_data = kem.data.constSlice();
+    const parsed_data = kem.data;
     try testing.expectEqual(@as(usize, 1216), parsed_data.len);
     try testing.expectEqualSlices(u8, &original, parsed_data);
 }

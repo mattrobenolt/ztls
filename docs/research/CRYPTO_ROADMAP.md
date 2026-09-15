@@ -146,15 +146,11 @@ facade and run the existing RFC 8448 Finished/HKDF vectors against it.
 
 ### 5. Key exchange
 
-X25519 uses OpenSSL EVP raw-key APIs for public-key derivation and shared
-secret calculation. The remaining work is turning the single hard-coded group
-into provider-backed named groups:
-
-- P-256/P-384 where supported by the selected provider;
-- capability queries for supported groups;
-- shared-secret slices sized by group rather than fixed 32-byte assumptions;
-- multiple key-share and HelloRetryRequest work only when more than one useful
-  group exists.
+Classical X25519, P-256, and P-384 operations dispatch through the selected
+libcrypto-family backend. Handshakes carry explicit named groups, group-sized
+key shares and shared-secret slices, and HelloRetryRequest state for a group
+advertised without an initial share. Backend capability tables control wire
+advertisement and server selection.
 
 ### 6. Signatures and certificates
 
@@ -169,17 +165,11 @@ policy and I/O stay outside ztls:
 
 ### 7. PQ/hybrid groups
 
-Post-quantum support should come from provider-backed KEX/signature mechanisms,
-not ztls-owned PQ primitives.
-
-Requirements:
-
-- named-group abstraction for hybrid groups such as X25519MLKEM768 where the
-  backend supports them;
-- backend capability reporting for experimental/FIPS/provider-specific support;
-- multiple key shares and HelloRetryRequest retry path;
-- careful version-specific testing because AWS-LC, OpenSSL, and BoringSSL differ
-  in API surface, naming, and maturity.
+Post-quantum support uses provider-backed pure ML-KEM primitives, not ztls-owned
+primitive crypto. ztls owns the RFC 10024 composition, component order, exact
+length validation, shared-secret concatenation, and handshake state. OpenSSL,
+AWS-LC, and BoringSSL keep their API differences inside backend modules; FIPS
+backend identities exclude every hybrid group at the capability boundary.
 
 ## Success criteria
 

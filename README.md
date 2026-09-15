@@ -133,8 +133,8 @@ passes local tests but isn't validated against an external conformance peer yet.
 | DTLS | Out of scope | |
 | Cipher suites | Supported | AES-128-GCM, AES-256-GCM, ChaCha20-Poly1305 |
 | Key exchange: X25519, P-256 | Supported | ECDHE |
-| Key exchange: P-384 | Partial | Local primitive tests; no external conformance yet ([#6](https://github.com/mattrobenolt/ztls/issues/6)) |
-| Post-quantum: X25519MLKEM768 | Partial | Hybrid KEM, OpenSSL 3.6+ only, in-memory tested ([#6](https://github.com/mattrobenolt/ztls/issues/6)) |
+| Key exchange: P-384 | Supported | Opt-in; bidirectional OpenSSL 3.6 interop on every non-FIPS backend |
+| Post-quantum: RFC 10024 hybrid groups | Supported | X25519MLKEM768, SecP256r1MLKEM768, and SecP384r1MLKEM1024; opt-in, OpenSSL-interoperable, upstream tlsfuzzer matrix |
 | Server certificate auth | Supported | Hostname verification, chain validation, leaf policy |
 | Client certificate auth | Supported | Both roles, EKU/KU enforcement, OpenSSL interop |
 | Session resumption (PSK) | Supported | NewSessionTicket + PSK ClientHello; OpenSSL interop gated |
@@ -153,11 +153,11 @@ Crypto primitives come from a libcrypto backend, selected at build time:
 | AWS-LC | Supported (`-Dcrypto-backend=aws-lc`) |
 | BoringSSL | Supported (`-Dcrypto-backend=boringssl`) |
 
-Beyond the current surface: broader named groups and the other PQ/hybrid
-combinations (P-384+ML-KEM-1024, SecP256r1+ML-KEM-768) wait on backend library
-support, tracked by [#6](https://github.com/mattrobenolt/ztls/issues/6). A BoGo
-conformance runner is deferred, and FIPS mode has compile-time capability tables
-but no runtime FIPS-provider verification.
+All three RFC 10024 groups use provider-backed pure ML-KEM with ztls-owned
+hybrid composition on OpenSSL, AWS-LC, and BoringSSL. The FIPS backend
+identities do not advertise them. A BoGo conformance runner is deferred, and
+FIPS mode has compile-time capability tables but no runtime FIPS-provider
+verification.
 
 ## Fresh project
 
@@ -258,8 +258,8 @@ release means anything:
   C-callable surface is what makes non-Zig callers exist at all. A first release
   without it would ship to almost nobody.
 
-Broader named groups and post-quantum key exchange
-([#6](https://github.com/mattrobenolt/ztls/issues/6)) are on the way but are not
-gates — they can land before or after `v0.1.0`. The changelog
+The RFC 10024 hybrid groups landed without becoming a release gate. Future
+named groups can do the same: they should follow provider capability and real
+interop evidence, not hold `v0.1.0` hostage. The changelog
 ([`CHANGELOG.md`](CHANGELOG.md)) tracks what's on `main` in the meantime.
 Depend on `main` if you want; just know the ground moves.

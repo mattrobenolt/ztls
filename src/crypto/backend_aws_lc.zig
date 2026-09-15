@@ -18,6 +18,7 @@ const assert = std.debug.assert;
 const c = @import("c_openssl.zig").openssl;
 const compat = @import("backend_openssl.zig");
 const CipherSuite = @import("../cipher_suite.zig").CipherSuite;
+const ParameterSet = @import("mlkem_parameters.zig").ParameterSet;
 const SignatureScheme = @import("../signature_scheme.zig").SignatureScheme;
 
 pub const capabilities = struct {
@@ -30,11 +31,15 @@ pub const capabilities = struct {
     pub const client_x25519 = true;
     pub const client_p256 = true;
     pub const client_p384 = true;
-    pub const client_x25519_mlkem768 = false;
+    pub const client_x25519_mlkem768 = true;
+    pub const client_secp256r1_mlkem768 = true;
+    pub const client_secp384r1_mlkem1024 = true;
     pub const server_x25519 = true;
     pub const server_p256 = true;
     pub const server_p384 = true;
-    pub const server_x25519_mlkem768 = false;
+    pub const server_x25519_mlkem768 = true;
+    pub const server_secp256r1_mlkem768 = true;
+    pub const server_secp384r1_mlkem1024 = true;
 
     pub const certificate_verify_schemes: []const SignatureScheme = &.{
         .ecdsa_secp256r1_sha256,
@@ -78,10 +83,14 @@ pub const capabilities_fips = struct {
     // FIPS 140-3 does not approve ML-KEM (NIST FIPS 203 is not yet in the
     // 140-3 validated algorithms list as of 2026-07).
     pub const client_x25519_mlkem768 = false;
+    pub const client_secp256r1_mlkem768 = false;
+    pub const client_secp384r1_mlkem1024 = false;
     pub const server_x25519 = true;
     pub const server_p256 = true;
     pub const server_p384 = true;
     pub const server_x25519_mlkem768 = false;
+    pub const server_secp256r1_mlkem768 = false;
+    pub const server_secp384r1_mlkem1024 = false;
 
     pub const certificate_verify_schemes: []const SignatureScheme = &.{
         .ecdsa_secp256r1_sha256,
@@ -100,42 +109,100 @@ pub const capabilities_fips = struct {
 
 pub const Error = compat.Error;
 pub const pkey = compat.pkey;
-// KEM functions are OpenSSL-only for now. AWS-LC 5.0 has the NID for
-// X25519MLKEM768 but the EVP_PKEY keygen path doesn't support hybrid KEM
-// yet. These stubs ensure the backend compiles; the capability flags are
-// false so the KEM path is never reached under AWS-LC.
 pub const KemKey = *c.EVP_PKEY;
 pub const KemPeerKey = *c.EVP_PKEY;
-pub fn kemKeygen(name: [*:0]const u8) compat.Error!KemKey {
-    _ = name;
-    return error.LibcryptoFailed;
+
+fn kemNid(parameter_set: ParameterSet) c_int {
+    return switch (parameter_set) {
+        .mlkem768 => c.NID_MLKEM768,
+        .mlkem1024 => c.NID_MLKEM1024,
+    };
 }
-pub fn kemPublic(key: KemKey, out: []u8) compat.Error![]u8 {
-    _ = key;
-    _ = out;
-    return error.LibcryptoFailed;
+
+pub fn kemKeygen(parameter_set: ParameterSet) Error!KemKey {
+    compat.errqEnter();
+    defer compat.errqExit();
+    const ctx = c.EVP_PKEY_CTX_new_id(c.EVP_PKEY_KEM, null) orelse
+        return error.LibcryptoFailed;
+    defer c.EVP_PKEY_CTX_free(ctx);
+    if (c.EVP_PKEY_CTX_kem_set_params(ctx, kemNid(parameter_set)) != 1)
+        return error.LibcryptoFailed;
+    if (c.EVP_PKEY_keygen_init(ctx) != 1) return error.LibcryptoFailed;
+    var key: ?*c.EVP_PKEY = null;
+    if (c.EVP_PKEY_keygen(ctx, &key) != 1) return error.LibcryptoFailed;
+    return key.?;
 }
-pub fn kemLoadPublic(name: [*:0]const u8, pub_key: []const u8) compat.Error!KemPeerKey {
-    _ = name;
-    _ = pub_key;
-    return error.LibcryptoFailed;
+
+pub fn kemPublic(key: KemKey, out: []u8) Error![]u8 {
+    compat.errqEnter();
+    defer compat.errqExit();
+    var len: usize = out.len;
+    if (c.EVP_PKEY_get_raw_public_key(key, out.ptr, &len) != 1)
+        return error.LibcryptoFailed;
+    return out[0..len];
 }
+
+pub fn kemLoadPublic(
+    parameter_set: ParameterSet,
+    public_key: []const u8,
+) Error!KemPeerKey {
+    compat.errqEnter();
+    defer compat.errqExit();
+    return c.EVP_PKEY_kem_new_raw_public_key(
+        kemNid(parameter_set),
+        public_key.ptr,
+        public_key.len,
+    ) orelse error.IdentityElement;
+}
+
 pub fn kemEncapsulate(
+    parameter_set: ParameterSet,
     peer: KemPeerKey,
-    enc_out: []u8,
-    sec_out: []u8,
-) compat.Error!struct { enc: []u8, sec: []u8 } {
-    _ = peer;
-    _ = enc_out;
-    _ = sec_out;
-    return error.LibcryptoFailed;
+    ciphertext_out: []u8,
+    secret_out: []u8,
+) Error!struct { ciphertext: []u8, secret: []u8 } {
+    _ = parameter_set;
+    compat.errqEnter();
+    defer compat.errqExit();
+    const ctx = c.EVP_PKEY_CTX_new(peer, null) orelse return error.LibcryptoFailed;
+    defer c.EVP_PKEY_CTX_free(ctx);
+    var ciphertext_len: usize = ciphertext_out.len;
+    var secret_len: usize = secret_out.len;
+    if (c.EVP_PKEY_encapsulate(
+        ctx,
+        ciphertext_out.ptr,
+        &ciphertext_len,
+        secret_out.ptr,
+        &secret_len,
+    ) != 1) return error.LibcryptoFailed;
+    return .{
+        .ciphertext = ciphertext_out[0..ciphertext_len],
+        .secret = secret_out[0..secret_len],
+    };
 }
-pub fn kemDecapsulate(key: KemKey, enc: []const u8, sec_out: []u8) compat.Error![]u8 {
-    _ = key;
-    _ = enc;
-    _ = sec_out;
-    return error.LibcryptoFailed;
+
+pub fn kemDecapsulate(
+    parameter_set: ParameterSet,
+    key: KemKey,
+    ciphertext: []const u8,
+    secret_out: []u8,
+) Error![]u8 {
+    _ = parameter_set;
+    compat.errqEnter();
+    defer compat.errqExit();
+    const ctx = c.EVP_PKEY_CTX_new(key, null) orelse return error.LibcryptoFailed;
+    defer c.EVP_PKEY_CTX_free(ctx);
+    var secret_len: usize = secret_out.len;
+    if (c.EVP_PKEY_decapsulate(
+        ctx,
+        secret_out.ptr,
+        &secret_len,
+        ciphertext.ptr,
+        ciphertext.len,
+    ) != 1) return error.LibcryptoFailed;
+    return secret_out[0..secret_len];
 }
+
 pub const freeKey = compat.freeKey;
 
 pub const x25519_pkey = union(enum) {

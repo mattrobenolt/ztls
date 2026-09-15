@@ -301,17 +301,34 @@ pub fn ConnWith(comptime Xev: type, comptime role: root.Role) type {
             io.random(&random.data);
             defer random.secureZero();
 
+            var keypairs: Handshake.KeyPairs = try .init(keypair);
+            defer keypairs.secureZero();
+            if (role == .client) {
+                if (mem.indexOfScalar(
+                    ztls.kex.NamedGroup,
+                    config.hybrid.supported_groups,
+                    .secp384r1_mlkem1024,
+                ) != null) keypairs.p384 = try .generate();
+            } else {
+                if (mem.indexOfScalar(
+                    ztls.kex.NamedGroup,
+                    config.hybrid_groups,
+                    .secp384r1_mlkem1024,
+                ) != null) keypairs.p384 = try .generate();
+            }
+
             const engine: Handshake = if (role == .client) .init(.{
-                .keypairs = try .init(keypair),
+                .keypairs = keypairs,
                 .host_name = host,
                 .now_sec = std.Io.Timestamp.now(io, .real).toSeconds(),
                 .random = random,
                 .alpn_protocols = config.alpn,
-                .offer_pq_key_share = config.offer_pq_key_share,
+                .hybrid = config.hybrid,
             }) else .init(.{
-                .keypairs = try .init(keypair),
+                .keypairs = keypairs,
                 .random = random,
                 .alpn_protocols = config.alpn,
+                .hybrid_groups = config.hybrid_groups,
             });
 
             self.* = .{

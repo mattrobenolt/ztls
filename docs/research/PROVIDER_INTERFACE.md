@@ -161,21 +161,21 @@ Backend mapping: AWS-LC/BoringSSL implement KEX with flat allocation-free funcs
 `EVP_PKEY` derive dance (backend-owned alloc, see lifetime audit). P-256 needs
 `EVP_PKEY` on OpenSSL regardless.
 
-**KEM seam (design now, implement later).** PQ/hybrid key exchange is
-encapsulate/decapsulate, not DH-derive, so the KEX facade reserves a second
-shape rather than being a DH-only dead end:
+**KEM seam.** PQ/hybrid key exchange is encapsulate/decapsulate, not
+DH-derive. The backend facade therefore exposes pure ML-KEM key generation,
+public-key import, encapsulation, and decapsulation parameterized by ML-KEM-768
+or ML-KEM-1024. Every operation writes into caller-owned fixed-capacity output
+buffers and verifies the provider-returned length.
 
-```zig
-pub fn kemKeypair(group: NamedGroup) Error!KeyPair;
-pub fn kemEncapsulate(peer_public: []const u8, ct_out: []u8, ss_out: []u8) Error!void;
-pub fn kemDecapsulate(self: *const KeyPair, ct: []const u8, ss_out: []u8) Error!void;
-```
-
-ztls owns the hybrid combiner (concat order, length checks, FIPS-203 §7.2
-encap-key validation) and calls the backend for the raw ML-KEM and X25519/P-256
-pieces separately, keeping PQ portable across backends. Groups:
-X25519MLKEM768 (`0x11ec`), SecP256r1MLKEM768 (`0x11eb`), SecP384r1MLKEM1024
-(`0x11ed`). Driven via `EVP_PKEY_encapsulate/decapsulate` on OpenSSL 3.5 / AWS-LC.
+ztls owns the RFC 10024 hybrid combiner: exact role-specific component order,
+length and point-format checks, FIPS 203 §7.2 encapsulation-key validation via
+the provider import, and classical/ML-KEM shared-secret concatenation. The
+three implemented groups are X25519MLKEM768 (`0x11ec`),
+SecP256r1MLKEM768 (`0x11eb`), and SecP384r1MLKEM1024 (`0x11ed`). OpenSSL uses
+its provider EVP KEM API; AWS-LC and BoringSSL use their pure ML-KEM EVP APIs.
+The non-FIPS capability tables advertise all three groups. The
+`openssl-fips` and `aws-lc-fips` identities advertise none and reject explicit
+hybrid configuration instead of downgrading.
 
 ### 4. Signatures and signing
 

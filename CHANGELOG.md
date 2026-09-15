@@ -24,7 +24,12 @@ This section describes what exists on `main` today. It is not a release.
   OpenSSL (default), AWS-LC, and BoringSSL. Each compiles, passes the full test
   suite, and has clean TLS-Anvil captures.
 - Cipher suites: AES-128-GCM, AES-256-GCM, ChaCha20-Poly1305.
-- Key exchange: X25519 and P-256 ECDHE.
+- Key exchange: X25519, P-256, and opt-in P-384 ECDHE, plus the three RFC
+  10024 hybrid groups: X25519MLKEM768, SecP256r1MLKEM768, and
+  SecP384r1MLKEM1024. Hybrid KEX is provider-backed on OpenSSL, AWS-LC, and
+  BoringSSL and disabled by the FIPS backend identities. Plain P-384 and all
+  three hybrids have bidirectional OpenSSL 3.6 interop on every non-FIPS
+  backend; the hybrids additionally pass the pinned upstream tlsfuzzer matrix.
 - Server certificate authentication (hostname verification, chain validation,
   leaf policy) and client certificate authentication (both roles, EKU/KU
   enforcement, OpenSSL interop). Chain validation anchors at the highest
@@ -53,10 +58,6 @@ This section describes what exists on `main` today. It is not a release.
 - **No C ABI.** ztls is only callable from Zig today. A C-callable surface so
   non-Zig callers exist is tracked by
   [#30](https://github.com/mattrobenolt/ztls/issues/30).
-- **No post-quantum or broader named groups locked in.** P-384 and the
-  X25519MLKEM768 hybrid exist but are not yet validated against an external
-  conformance peer; wider named-group and PQ/hybrid work is tracked by
-  [#6](https://github.com/mattrobenolt/ztls/issues/6).
 - **No stable API contract.** Function signatures, type names, and module
   layout can and will change without notice.
 - **No release tag.** Nothing has been published. Depend on `main` with eyes

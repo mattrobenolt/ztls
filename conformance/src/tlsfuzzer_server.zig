@@ -7,6 +7,12 @@ const harness = @import("harness.zig");
 const net = @import("net_compat");
 const Address = net.Address;
 
+const hybrid_groups = [_]ztls.kex.NamedGroup{
+    .x25519_mlkem768,
+    .secp256r1_mlkem768,
+    .secp384r1_mlkem1024,
+};
+
 pub fn main() !void {
     const port = try readPort();
     const address: Address = try net.parseIp("127.0.0.1", port);
@@ -41,8 +47,13 @@ fn handleConnection(stream: net.Stream) !void {
     // RFC 8446 §5.1 — provide storage for fragmented ClientHello reassembly.
     var reassembly_buf: [ztls.ServerHandshake.ch_reassembly_buffer_size]u8 = undefined;
     var hs: ztls.ServerHandshake = .init(.{
-        .keypairs = try .init(.generate()),
+        .keypairs = .initWithP256P384(
+            .generate(),
+            try .generate(),
+            try .generate(),
+        ),
         .random = random,
+        .hybrid_groups = &hybrid_groups,
         .alpn_protocols = &.{ "http/1.1", "h2" },
         .reassembly = &reassembly_buf,
     });

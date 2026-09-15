@@ -36,14 +36,14 @@ pub const Options = struct {
     /// ALPN protocols to offer, in preference order. Borrowed for the `ClientConfig`'s
     /// life, so it must outlive every `Conn` using it.
     alpn: []const []const u8 = &.{},
-    /// Offer an X25519MLKEM768 hybrid key share (post-quantum). False by
-    /// default: it adds ~1.2 KB to every ClientHello.
-    offer_pq_key_share: bool = false,
+    /// RFC 10024 hybrid supported-groups and initial key-share policy.
+    /// Disabled by default; borrowed slices must outlive every connection.
+    hybrid: ztls.ClientHandshake.HybridPolicy = .{},
 };
 
 verify: Verify,
 alpn: []const []const u8,
-offer_pq_key_share: bool,
+hybrid: ztls.ClientHandshake.HybridPolicy,
 /// Owned only when `verify == .owned_bundle`; `deinit` frees it.
 bundle: crypto.Certificate.Bundle = .empty,
 gpa: ?mem.Allocator = null,
@@ -54,7 +54,7 @@ pub fn init(options: Options) ClientConfig {
     return .{
         .verify = options.verify,
         .alpn = options.alpn,
-        .offer_pq_key_share = options.offer_pq_key_share,
+        .hybrid = options.hybrid,
     };
 }
 
@@ -71,7 +71,7 @@ pub fn initSystemBundle(
     return .{
         .verify = .owned_bundle,
         .alpn = options.alpn,
-        .offer_pq_key_share = options.offer_pq_key_share,
+        .hybrid = options.hybrid,
         .bundle = bundle,
         .gpa = gpa,
     };
@@ -122,7 +122,7 @@ test "config is reusable across connections: no per-connection state" {
     inline for (@typeInfo(ClientConfig).@"struct".fields) |field| {
         const ok = comptime std.mem.eql(u8, field.name, "verify") or
             std.mem.eql(u8, field.name, "alpn") or
-            std.mem.eql(u8, field.name, "offer_pq_key_share") or
+            std.mem.eql(u8, field.name, "hybrid") or
             std.mem.eql(u8, field.name, "bundle") or
             std.mem.eql(u8, field.name, "gpa");
         if (!ok) @compileError("new ClientConfig field '" ++ field.name ++

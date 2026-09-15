@@ -298,8 +298,8 @@ honestly and kept behind the crypto backend boundary. Do not describe OpenSSL
 EVP/provider paths as no-allocation.
 
 The Sans-I/O boundary is preserved. The backend supplies provider-sensitive
-primitive operations: AEAD, key exchange, signature verification/signing, and
-later provider-backed PQ/hybrid KEX and signatures. Hashing/HMAC/HKDF may stay
+primitive operations: AEAD, classical key exchange, pure ML-KEM for ztls-owned
+RFC 10024 hybrid KEX, and signature verification/signing. Hashing/HMAC/HKDF may stay
 on Zig stdlib unless measurement or provider-policy requirements justify a
 facade. The backend does not own sockets, BIOs, trust-store loading,
 certificate policy I/O, application buffers, or handshake state-machine

@@ -3,19 +3,19 @@
   "skip": [
     {
       "pattern": "*Target does not send a Hello Retry Request*",
-      "reason": "HelloRetryRequest is deferred (#1)"
+      "reason": "TLS-Anvil disables cases when its configured peer path does not trigger HRR; ztls HRR has separate local and external coverage"
     },
     {
       "pattern": "*SUT does not support PSK handshakes*",
-      "reason": "PSK/resumption is deferred (#2)"
+      "reason": "TLS-Anvil runner does not provision caller-owned PSK/ticket state; resumption has separate local and OpenSSL coverage"
     },
     {
       "pattern": "*Server does not issue Session Tickets and might ignore the extension*",
-      "reason": "PSK/session-ticket resumption is deferred (#2)"
+      "reason": "ztls accepts externally managed PSKs but does not issue server tickets through this TLS-Anvil runner"
     },
     {
       "pattern": "*0Rtt*",
-      "reason": "0-RTT is deferred (#3)"
+      "reason": "TLS-Anvil runner does not provision the PSK/ticket state required for 0-RTT; core coverage is separate"
     },
     {
       "pattern": "*RecordSizeLimit*",
@@ -23,7 +23,7 @@
     },
     {
       "pattern": "*de.rub.nds.tlstest.suite.tests.server.tls13.rfc8446.EarlyData*",
-      "reason": "server-side EarlyData tests (RFC 8446 \u00a74.2.10) are deferred (#3); TLS-Anvil @Disabled because ztls does not issue session tickets"
+      "reason": "TLS-Anvil @Disabled because this runner does not issue the session tickets needed for server-side EarlyData tests"
     },
     {
       "pattern": "*MaxFragmentLength*",
@@ -55,11 +55,7 @@
     },
     {
       "pattern": "*ffdhe*",
-      "reason": "FFDHE named groups are outside the current named-group scope (#6)"
-    },
-    {
-      "pattern": "*Specific features required for the test have not been met by the SUT for derivation parameter NAMED_GROUP*",
-      "reason": "P-384, FFDHE, and other unsupported named-group derivations are tracked separately (#6)"
+      "reason": "FFDHE named groups are outside the supported TLS 1.3 surface"
     },
     {
       "pattern": "*Sender restrictions are not expected to be enforced*",
@@ -75,15 +71,15 @@
     },
     {
       "pattern": "*Does not send TLS 1.3 session tickets*",
-      "reason": "NewSessionTicket issuance/resumption is deferred (#2)"
+      "reason": "ztls accepts externally managed PSKs but this server runner does not issue NewSessionTicket messages"
     },
     {
       "pattern": "*public void de.rub.nds.tlstest.suite.tests.client.tls13.rfc8446.PreSharedKey.isLastExtension() is @Disabled*",
-      "reason": "TLS-Anvil disables this client-side PSK test; PSK/resumption is deferred (#2)"
+      "reason": "TLS-Anvil disables this client-side PSK test; pre_shared_key ordering has separate local coverage"
     },
     {
       "pattern": "*PSKModeExtension is not supported*",
-      "reason": "PSK/resumption is deferred (#2)"
+      "reason": "TLS-Anvil runner does not provision caller-owned PSK/ticket state; PSK mode coverage is separate"
     },
     {
       "pattern": "*The DisablePsk config option is not tested.*",

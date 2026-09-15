@@ -132,6 +132,12 @@ mirror `Server.Config` is `ServerConfig`: one certificate chain and signer,
 shared the same way. Both are borrowed for the life of every connection using
 them, and neither owns per-connection state.
 
+RFC 10024 hybrid key exchange is opt-in through
+`ClientConfig.Options.hybrid` and `ServerConfig.Options.hybrid_groups`. The
+configuration slices are borrowed and must outlive every connection using the
+config. The three supported groups and the fail-closed/FIPS behavior are
+covered in [`docs/USAGE.md`](../../docs/USAGE.md#rfc-10024-hybrid-key-exchange).
+
 ```zig
 const server_config: tls.ServerConfig = .init(.{
     .cert_chain = &.{cert_der},   // leaf first

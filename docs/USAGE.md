@@ -131,11 +131,11 @@ the generated hash; do not hand-write dependency hashes.
 
 ztls is TLS 1.3 only. The supported user-facing path is server-authenticated 1-RTT over caller-owned buffers.
 
-| Area | Supported path | Not covered here |
+| Area | Supported path | Notes |
 |---|---|---|
 | TLS versions | TLS 1.3 | TLS 1.2 and DTLS are out of scope. |
 | Cipher suites | `TLS_AES_128_GCM_SHA256`, `TLS_AES_256_GCM_SHA384`, `TLS_CHACHA20_POLY1305_SHA256` | Suite expansion is provider work. |
-| Key exchange | X25519 or P-256 ECDHE on both client and server; examples use X25519 | P-384 and PQ/hybrid groups are tracked by #6. |
+| Key exchange | X25519, P-256, opt-in P-384, and the three opt-in RFC 10024 hybrid groups on both roles | P-384 and the hybrids have bidirectional OpenSSL 3.6 interop on every non-FIPS backend. The hybrids also pass the pinned upstream tlsfuzzer matrix. FIPS backend identities reject hybrid configuration. |
 | Authentication | Server certificate authentication and client certificate authentication (formerly #4) | |
 | Resumption | PSK/session resumption (formerly #2) and 0-RTT with caller-owned anti-replay (formerly #3) | |
 | HRR | In-memory and TLS-Anvil; OpenSSL forced-HRR interop is ungated (formerly #1) | |
@@ -402,6 +402,60 @@ server.supportAlpn(&.{"h2"});
 
 After the handshake, `selectedAlpnProtocol()` returns the negotiated protocol (or `null` if none was agreed). The server picks the first entry from its list that the client also offered; if both sides sent ALPN but no protocol matches, `acceptClientHello` returns `error.NoApplicationProtocol`. The client rejects a server-selected protocol that was not offered (`error.UnofferedAlpnProtocol`).
 
+## RFC 10024 hybrid key exchange
+
+Hybrid groups are opt-in. The non-FIPS OpenSSL, AWS-LC, and BoringSSL backends
+support `x25519_mlkem768`, `secp256r1_mlkem768`, and
+`secp384r1_mlkem1024`. These are ztls state-machine capabilities: only pure
+ML-KEM comes from the linked provider; ztls, not backend libssl, negotiates the
+codepoints and composes each classical ECDHE secret in RFC 10024 order. The
+FIPS backend identities advertise none of these groups.
+
+```zig
+const hybrid_groups = [_]ztls.kex.NamedGroup{
+    .x25519_mlkem768,
+    .secp256r1_mlkem768,
+    .secp384r1_mlkem1024,
+};
+
+var client_keypairs: ztls.ClientHandshake.KeyPairs = try .init(.generate());
+client_keypairs.p384 = try .generate();
+var client: ztls.ClientHandshake = .init(.{
+    .keypairs = client_keypairs,
+    .host_name = "example.com",
+    .now_sec = std.time.timestamp(),
+    .random = client_random,
+    .hybrid = .{
+        .supported_groups = &hybrid_groups,
+        .initial_key_share = .x25519_mlkem768,
+    },
+});
+
+var server_keypairs: ztls.ServerHandshake.KeyPairs = try .init(.generate());
+server_keypairs.p384 = try .generate();
+var server: ztls.ServerHandshake = .init(.{
+    .keypairs = server_keypairs,
+    .random = server_random,
+    .hybrid_groups = &hybrid_groups,
+});
+```
+
+Set `initial_key_share = null` to advertise the groups without sending a hybrid
+share in ClientHello1; the server can then select one through
+HelloRetryRequest. `secp384r1_mlkem1024` requires a P-384 keypair on the role
+that enables it. The group slices are borrowed and must outlive the handshake.
+The `ztls-std` client/server options use the same `hybrid` and `hybrid_groups`
+fields. `ztls-xev.ClientConfig.Options` and `ServerConfig.Options` expose those
+fields for reusable configurations, so their borrowed slices must outlive every
+connection using the config.
+
+Explicit configuration fails closed: duplicates, non-RFC groups, backend-
+unsupported groups, or a missing P-384 keypair return `error.UnsupportedGroup`
+instead of silently falling back to classical key exchange. Resumed
+`psk_dhe_ke` handshakes retain the same client hybrid policy and negotiate a
+fresh hybrid secret. If that negotiation uses HelloRetryRequest, ClientHello2
+retains the PSK identity and recomputes its binder over the retry transcript.
+
 ## Certificate policy
 
 The client validates the server certificate chain against a caller-owned policy.
@@ -615,7 +669,6 @@ ztls covers PSK/session resumption, 0-RTT, client certificate authentication,
 and HRR in the supported surface. These features are intentionally out of scope
 for the examples above:
 
-- P-384 and PQ/hybrid key shares (#6, open)
 - Exporters — not implemented; not on the timeline until a feature request earns it.
 - A general io_uring or arbitrary-runtime wrapper. In-tree integration packages
   cover `std.Io`, libxev, and Linux kTLS without moving transport I/O into the

@@ -10,6 +10,7 @@ const assert = std.debug.assert;
 const build_options = @import("build_options");
 
 const CipherSuite = @import("../cipher_suite.zig").CipherSuite;
+const NamedGroup = @import("../kex.zig").NamedGroup;
 const SignatureScheme = @import("../signature_scheme.zig").SignatureScheme;
 const backend_aws_lc = @import("backend_aws_lc.zig");
 const backend_boringssl = @import("backend_boringssl.zig");
@@ -83,6 +84,14 @@ comptime {
     assert(capabilities.client_p384 == capabilities.server_p384);
     assert(
         capabilities.client_x25519_mlkem768 == capabilities.server_x25519_mlkem768,
+    );
+    assert(
+        capabilities.client_secp256r1_mlkem768 ==
+            capabilities.server_secp256r1_mlkem768,
+    );
+    assert(
+        capabilities.client_secp384r1_mlkem1024 ==
+            capabilities.server_secp384r1_mlkem1024,
     );
 
     // FIPS capability tables must be a strict subset of their non-FIPS
@@ -161,8 +170,30 @@ pub fn supportsServerP384() bool {
     return capabilities.server_p384;
 }
 
+pub fn supportsClientP384() bool {
+    return capabilities.client_p384;
+}
+
+pub fn supportsClientHybridGroup(group: NamedGroup) bool {
+    return switch (group) {
+        .x25519_mlkem768 => capabilities.client_x25519_mlkem768,
+        .secp256r1_mlkem768 => capabilities.client_secp256r1_mlkem768,
+        .secp384r1_mlkem1024 => capabilities.client_secp384r1_mlkem1024,
+        else => false,
+    };
+}
+
+pub fn supportsServerHybridGroup(group: NamedGroup) bool {
+    return switch (group) {
+        .x25519_mlkem768 => capabilities.server_x25519_mlkem768,
+        .secp256r1_mlkem768 => capabilities.server_secp256r1_mlkem768,
+        .secp384r1_mlkem1024 => capabilities.server_secp384r1_mlkem1024,
+        else => false,
+    };
+}
+
 pub fn supportsServerX25519Mlkem768() bool {
-    return capabilities.server_x25519_mlkem768;
+    return supportsServerHybridGroup(.x25519_mlkem768);
 }
 
 pub fn supportsCertificateVerifyScheme(scheme: SignatureScheme) bool {
@@ -484,8 +515,15 @@ test "fips: ML-KEM disabled in FIPS capability table" {
         .@"aws-lc", .@"aws-lc-fips" => backend_aws_lc.capabilities_fips,
         .boringssl => return error.SkipZigTest,
     };
-    try testing.expect(!fips_caps.client_x25519_mlkem768);
-    try testing.expect(!fips_caps.server_x25519_mlkem768);
+    const hybrid_capabilities = [_]bool{
+        fips_caps.client_x25519_mlkem768,
+        fips_caps.server_x25519_mlkem768,
+        fips_caps.client_secp256r1_mlkem768,
+        fips_caps.server_secp256r1_mlkem768,
+        fips_caps.client_secp384r1_mlkem1024,
+        fips_caps.server_secp384r1_mlkem1024,
+    };
+    for (hybrid_capabilities) |enabled| try testing.expect(!enabled);
 }
 
 // The FIPS table must be a strict subset of the non-FIPS table. The comptime

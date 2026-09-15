@@ -4,6 +4,7 @@ const std = @import("std");
 const c = @import("c_openssl.zig").openssl;
 const is_boringssl_family = @import("c_openssl.zig").is_boringssl_family;
 const CipherSuite = @import("../cipher_suite.zig").CipherSuite;
+const ParameterSet = @import("mlkem_parameters.zig").ParameterSet;
 const SignatureScheme = @import("../signature_scheme.zig").SignatureScheme;
 
 pub const capabilities = struct {
@@ -17,10 +18,14 @@ pub const capabilities = struct {
     pub const client_p256 = true;
     pub const client_p384 = true;
     pub const client_x25519_mlkem768 = true;
+    pub const client_secp256r1_mlkem768 = true;
+    pub const client_secp384r1_mlkem1024 = true;
     pub const server_x25519 = true;
     pub const server_p256 = true;
     pub const server_p384 = true;
     pub const server_x25519_mlkem768 = true;
+    pub const server_secp256r1_mlkem768 = true;
+    pub const server_secp384r1_mlkem1024 = true;
 
     pub const certificate_verify_schemes: []const SignatureScheme = &.{
         .ecdsa_secp256r1_sha256,
@@ -62,10 +67,14 @@ pub const capabilities_fips = struct {
     // FIPS 140-3 does not approve ML-KEM (NIST FIPS 203 is not yet in the
     // 140-3 validated algorithms list as of 2026-07).
     pub const client_x25519_mlkem768 = false;
+    pub const client_secp256r1_mlkem768 = false;
+    pub const client_secp384r1_mlkem1024 = false;
     pub const server_x25519 = true;
     pub const server_p256 = true;
     pub const server_p384 = true;
     pub const server_x25519_mlkem768 = false;
+    pub const server_secp256r1_mlkem768 = false;
+    pub const server_secp384r1_mlkem1024 = false;
 
     pub const certificate_verify_schemes: []const SignatureScheme = &.{
         .ecdsa_secp256r1_sha256,
@@ -137,74 +146,60 @@ pub inline fn errqExit() void {
     _ = c.ERR_pop_to_mark();
 }
 
-/// ML-KEM hybrid KEX types (RFC 9180 + draft-ietf-tls-ecdhe-mlkem).
-/// OpenSSL 3.5+ and AWS-LC expose these as provider-backed KEM algorithms
-/// (encap/decap, not key-agreement derive).
+/// Provider-backed pure ML-KEM types. TLS hybrid composition remains in ztls
+/// so the three RFC 10024 groups have identical wire behavior across backends.
 pub const KemKey = *pkey;
 pub const KemPeerKey = *pkey;
 
-/// Generate an ML-KEM hybrid keypair (e.g. X25519MLKEM768).
-/// Caller must freeKey the result.
-pub fn kemKeygen(name: [*:0]const u8) Error!KemKey {
-    errqEnter();
-    defer errqExit();
-    const key = c.EVP_PKEY_Q_keygen(null, null, name) orelse return error.LibcryptoFailed;
-    return key;
+fn kemName(parameter_set: ParameterSet) [*:0]const u8 {
+    return switch (parameter_set) {
+        .mlkem768 => "ML-KEM-768",
+        .mlkem1024 => "ML-KEM-1024",
+    };
 }
 
-/// Extract the raw public key (TLS key_share bytes) from a KEM key.
+/// Generate a pure ML-KEM keypair. Caller must freeKey the result.
+pub fn kemKeygen(parameter_set: ParameterSet) Error!KemKey {
+    errqEnter();
+    defer errqExit();
+    return c.EVP_PKEY_Q_keygen(null, null, kemName(parameter_set)) orelse
+        error.LibcryptoFailed;
+}
+
+/// Extract the raw ML-KEM encapsulation key.
 pub fn kemPublic(key: KemKey, out: []u8) Error![]u8 {
     errqEnter();
     defer errqExit();
     var len: usize = out.len;
-    if (c.EVP_PKEY_get_octet_string_param(
-        key,
-        "encoded-pub-key",
-        out.ptr,
-        out.len,
-        &len,
-    ) != 1) return error.LibcryptoFailed;
+    if (c.EVP_PKEY_get_raw_public_key(key, out.ptr, &len) != 1)
+        return error.LibcryptoFailed;
     return out[0..len];
 }
 
-/// Load a peer's raw public key into an EVP_PKEY for encapsulation.
+/// Load and validate a peer's raw ML-KEM encapsulation key.
 pub fn kemLoadPublic(
-    name: [*:0]const u8,
-    pub_key: []const u8,
+    parameter_set: ParameterSet,
+    public_key: []const u8,
 ) Error!KemPeerKey {
     errqEnter();
     defer errqExit();
-    var params: [2]c.OSSL_PARAM = undefined;
-    params[0] = c.OSSL_PARAM_construct_octet_string(
-        c.OSSL_PKEY_PARAM_PUB_KEY,
-        @constCast(pub_key.ptr),
-        pub_key.len,
-    );
-    params[1] = c.OSSL_PARAM_construct_end();
-
-    const ctx = c.EVP_PKEY_CTX_new_from_name(null, name, null) orelse
-        return error.LibcryptoFailed;
-    defer c.EVP_PKEY_CTX_free(ctx);
-    if (c.EVP_PKEY_fromdata_init(ctx) != 1) return error.LibcryptoFailed;
-
-    var peer: ?*pkey = null;
-    if (c.EVP_PKEY_fromdata(
-        ctx,
-        &peer,
-        c.EVP_PKEY_PUBLIC_KEY,
-        &params,
-    ) != 1) return error.LibcryptoFailed;
-    return peer.?;
+    return c.EVP_PKEY_new_raw_public_key_ex(
+        null,
+        kemName(parameter_set),
+        null,
+        public_key.ptr,
+        public_key.len,
+    ) orelse error.IdentityElement;
 }
 
-/// Server: encapsulate using the client's public key.
-/// `enc_out` receives the ciphertext (sent as server key_share).
-/// `sec_out` receives the shared secret (fed to the key schedule).
+/// Encapsulate using the peer's pure ML-KEM public key.
 pub fn kemEncapsulate(
+    parameter_set: ParameterSet,
     peer_key: KemPeerKey,
-    enc_out: []u8,
-    sec_out: []u8,
-) Error!struct { enc: []u8, sec: []u8 } {
+    ciphertext_out: []u8,
+    secret_out: []u8,
+) Error!struct { ciphertext: []u8, secret: []u8 } {
+    _ = parameter_set;
     errqEnter();
     defer errqExit();
     const ctx = c.EVP_PKEY_CTX_new(peer_key, null) orelse
@@ -213,25 +208,29 @@ pub fn kemEncapsulate(
     if (c.EVP_PKEY_encapsulate_init(ctx, null) != 1)
         return error.LibcryptoFailed;
 
-    var enc_len: usize = enc_out.len;
-    var sec_len: usize = sec_out.len;
+    var ciphertext_len: usize = ciphertext_out.len;
+    var secret_len: usize = secret_out.len;
     if (c.EVP_PKEY_encapsulate(
         ctx,
-        enc_out.ptr,
-        &enc_len,
-        sec_out.ptr,
-        &sec_len,
+        ciphertext_out.ptr,
+        &ciphertext_len,
+        secret_out.ptr,
+        &secret_len,
     ) != 1) return error.LibcryptoFailed;
-    return .{ .enc = enc_out[0..enc_len], .sec = sec_out[0..sec_len] };
+    return .{
+        .ciphertext = ciphertext_out[0..ciphertext_len],
+        .secret = secret_out[0..secret_len],
+    };
 }
 
-/// Client: decapsulate using our private key + server's ciphertext.
-/// `sec_out` receives the shared secret.
+/// Decapsulate a pure ML-KEM ciphertext.
 pub fn kemDecapsulate(
+    parameter_set: ParameterSet,
     our_key: KemKey,
-    enc: []const u8,
-    sec_out: []u8,
+    ciphertext: []const u8,
+    secret_out: []u8,
 ) Error![]u8 {
+    _ = parameter_set;
     errqEnter();
     defer errqExit();
     const ctx = c.EVP_PKEY_CTX_new(our_key, null) orelse
@@ -240,15 +239,15 @@ pub fn kemDecapsulate(
     if (c.EVP_PKEY_decapsulate_init(ctx, null) != 1)
         return error.LibcryptoFailed;
 
-    var sec_len: usize = sec_out.len;
+    var secret_len: usize = secret_out.len;
     if (c.EVP_PKEY_decapsulate(
         ctx,
-        sec_out.ptr,
-        &sec_len,
-        @constCast(enc.ptr),
-        enc.len,
+        secret_out.ptr,
+        &secret_len,
+        ciphertext.ptr,
+        ciphertext.len,
     ) != 1) return error.LibcryptoFailed;
-    return sec_out[0..sec_len];
+    return secret_out[0..secret_len];
 }
 
 pub fn freeKey(key: anytype) void {

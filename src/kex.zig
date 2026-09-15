@@ -1,16 +1,30 @@
-//! TLS 1.3 named group identifiers.
+//! TLS 1.3 named group identifiers and fixed wire sizes.
 //!
-//! RFC 8446 §4.2.7 (supported_groups), §4.2.8 (key_share)
+//! RFC 8446 §4.2.7, §4.2.8 and RFC 10024 §4, §7.
 const std = @import("std");
 const testing = std.testing;
 
+const mlkem_parameters = @import("crypto/mlkem_parameters.zig");
 const x25519 = @import("x25519.zig");
 const p256 = @import("p256.zig");
 const p384 = @import("p384.zig");
 
-/// RFC 8446 §4.2.7 — named group / curve identifiers used in supported_groups
-/// and key_share. Non-exhaustive: unknown peer groups parse without UB and are
-/// rejected by negotiation rather than crashing.
+pub const ComponentOrder = enum {
+    mlkem_first,
+    classical_first,
+};
+
+pub const HybridSpec = struct {
+    classical_group: NamedGroup,
+    parameter_set: mlkem_parameters.ParameterSet,
+    client_share_len: u16,
+    server_share_len: u16,
+    shared_secret_len: u8,
+    component_order: ComponentOrder,
+};
+
+/// Non-exhaustive so unknown peer groups parse without UB and are rejected by
+/// negotiation rather than crashing.
 pub const NamedGroup = enum(u16) {
     x25519 = 0x001d,
     secp256r1 = 0x0017,
@@ -20,43 +34,83 @@ pub const NamedGroup = enum(u16) {
     secp384r1_mlkem1024 = 0x11ed,
     _,
 
-    /// Wire length of the public key (key_exchange field), or null if the group
-    /// is named but not implemented yet.
+    /// Client KeyShareEntry key_exchange length for an implemented group.
     pub fn publicKeyLen(self: NamedGroup) ?u16 {
         return switch (self) {
             .x25519 => x25519.public_length,
             .secp256r1 => p256.public_length,
             .secp384r1 => p384.public_length,
+            .secp256r1_mlkem768,
+            .x25519_mlkem768,
+            .secp384r1_mlkem1024,
+            => self.hybridSpec().?.client_share_len,
             else => null,
         };
     }
 
-    /// Wire length for known future groups, even before backend math is available.
-    /// Values for the ML-KEM hybrids come from draft-ietf-tls-ecdhe-mlkem-05 §3.
-    pub fn plannedPublicKeyLen(self: NamedGroup) ?u16 {
+    /// Server KeyShareEntry key_exchange length for an implemented group.
+    pub fn serverKeyShareLen(self: NamedGroup) ?u16 {
         return switch (self) {
             .x25519 => x25519.public_length,
-            .secp256r1 => 65,
-            .secp384r1 => 97,
-            .x25519_mlkem768 => 32 + 1184,
-            .secp256r1_mlkem768 => 65 + 1184,
-            .secp384r1_mlkem1024 => 97 + 1568,
+            .secp256r1 => p256.public_length,
+            .secp384r1 => p384.public_length,
+            .secp256r1_mlkem768,
+            .x25519_mlkem768,
+            .secp384r1_mlkem1024,
+            => self.hybridSpec().?.server_share_len,
             else => null,
         };
     }
 
-    pub fn plannedSharedSecretLen(self: NamedGroup) ?u8 {
+    pub fn sharedSecretLen(self: NamedGroup) ?u8 {
         return switch (self) {
             .x25519, .secp256r1 => 32,
             .secp384r1 => 48,
-            .x25519_mlkem768, .secp256r1_mlkem768 => 32 + 32,
-            .secp384r1_mlkem1024 => 48 + 32,
+            .secp256r1_mlkem768,
+            .x25519_mlkem768,
+            .secp384r1_mlkem1024,
+            => self.hybridSpec().?.shared_secret_len,
+            else => null,
+        };
+    }
+
+    pub fn hybridSpec(self: NamedGroup) ?HybridSpec {
+        return switch (self) {
+            // RFC 10024 §4.1-§4.3 — historical X25519 ordering is ML-KEM
+            // first in both shares and in the combined shared secret.
+            .x25519_mlkem768 => .{
+                .classical_group = .x25519,
+                .parameter_set = .mlkem768,
+                .client_share_len = 1184 + 32,
+                .server_share_len = 1088 + 32,
+                .shared_secret_len = 32 + 32,
+                .component_order = .mlkem_first,
+            },
+            // RFC 10024 §4.1-§4.3 — NIST-curve groups put the classical
+            // component first in both shares and in the combined secret.
+            .secp256r1_mlkem768 => .{
+                .classical_group = .secp256r1,
+                .parameter_set = .mlkem768,
+                .client_share_len = 65 + 1184,
+                .server_share_len = 65 + 1088,
+                .shared_secret_len = 32 + 32,
+                .component_order = .classical_first,
+            },
+            .secp384r1_mlkem1024 => .{
+                .classical_group = .secp384r1,
+                .parameter_set = .mlkem1024,
+                .client_share_len = 97 + 1568,
+                .server_share_len = 97 + 1568,
+                .shared_secret_len = 48 + 32,
+                .component_order = .classical_first,
+            },
             else => null,
         };
     }
 };
 
-// RFC 8446 §4.2.7 — group identifiers match the IANA-assigned wire values.
+// RFC 8446 §4.2.7 and RFC 10024 §7 — group identifiers match their assigned
+// TLS Supported Groups registry values.
 test "NamedGroup wire identifiers" {
     try testing.expectEqual(@as(u16, 0x001d), @intFromEnum(NamedGroup.x25519));
     try testing.expectEqual(@as(u16, 0x0017), @intFromEnum(NamedGroup.secp256r1));
@@ -66,12 +120,22 @@ test "NamedGroup wire identifiers" {
     try testing.expectEqual(@as(u16, 0x11ed), @intFromEnum(NamedGroup.secp384r1_mlkem1024));
 }
 
-// draft-ietf-tls-ecdhe-mlkem-05 §3 / §7 — hybrid group key_share sizes are
-// named now so parser/negotiation code can size buffers before backend support lands.
-test "planned future group sizes" {
-    try testing.expectEqual(@as(?u16, 1216), NamedGroup.x25519_mlkem768.plannedPublicKeyLen());
-    try testing.expectEqual(@as(?u16, 1249), NamedGroup.secp256r1_mlkem768.plannedPublicKeyLen());
-    try testing.expectEqual(@as(?u16, 1665), NamedGroup.secp384r1_mlkem1024.plannedPublicKeyLen());
-    try testing.expectEqual(@as(?u8, 64), NamedGroup.x25519_mlkem768.plannedSharedSecretLen());
-    try testing.expectEqual(@as(?u8, 80), NamedGroup.secp384r1_mlkem1024.plannedSharedSecretLen());
+// RFC 10024 §4.1-§4.3 — each hybrid has distinct role-specific key_share
+// lengths and a fixed combined shared-secret length.
+test "RFC 10024 hybrid group sizes" {
+    const cases = [_]struct {
+        group: NamedGroup,
+        client: u16,
+        server: u16,
+        secret: u8,
+    }{
+        .{ .group = .x25519_mlkem768, .client = 1216, .server = 1120, .secret = 64 },
+        .{ .group = .secp256r1_mlkem768, .client = 1249, .server = 1153, .secret = 64 },
+        .{ .group = .secp384r1_mlkem1024, .client = 1665, .server = 1665, .secret = 80 },
+    };
+    for (cases) |case| {
+        try testing.expectEqual(@as(?u16, case.client), case.group.publicKeyLen());
+        try testing.expectEqual(@as(?u16, case.server), case.group.serverKeyShareLen());
+        try testing.expectEqual(@as(?u8, case.secret), case.group.sharedSecretLen());
+    }
 }

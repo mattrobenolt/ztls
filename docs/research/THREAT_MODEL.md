@@ -17,7 +17,8 @@ lives in `RFC8446_MUST_MATRIX.md`.
 The current threat model covers the implemented TLS 1.3 surface:
 
 - TLS 1.3 only. No TLS 1.2 fallback, no DTLS.
-- X25519 and P-256 key exchange.
+- X25519, P-256, opt-in P-384, and the three opt-in RFC 10024 hybrid key
+  exchanges. Hybrid composition is ztls-owned; pure ML-KEM is provider-backed.
 - The three mandatory TLS 1.3 AEAD suites:
   `TLS_AES_128_GCM_SHA256`, `TLS_AES_256_GCM_SHA384`, and
   `TLS_CHACHA20_POLY1305_SHA256`.
@@ -32,9 +33,9 @@ The current threat model covers the implemented TLS 1.3 surface:
 - Application data, alerts, `close_notify`, and KeyUpdate in both directions.
 - NewSessionTicket is parsed, surfaces an `early_data` `max_early_data_size`,
   and feeds the resumption-decision surface (formerly #2).
-- P-384/P-521/PQ named groups remain outside the current supported surface (#6).
-  Extension behavior beyond the supported surface is tracked by the feature
-  issue that introduces that extension.
+- P-521, FFDHE, and named groups beyond the documented classical and RFC 10024
+  set remain outside the current supported surface. Extension behavior beyond
+  the supported surface is tracked by the feature issue that introduces it.
 
 ## In-scope adversary capabilities
 
@@ -245,10 +246,9 @@ requests are replay-safe or reject 0-RTT.
 
 ### Unsupported TLS features
 
-P-384/PQ key exchange, exporters, and broader extension negotiation beyond
-the implemented surface are not defended as implemented features. P-384/PQ
-key exchange waits on #6; exporters and unscheduled extensions are not on the
-timeline.
+P-521/FFDHE key exchange, exporters, and broader extension negotiation beyond
+the implemented surface are not defended as implemented features. Exporters
+and unscheduled extensions are not on the timeline.
 
 ## Open threat-relevant gaps
 
@@ -260,7 +260,7 @@ timeline.
 | Server Certificate non-empty `request_context` needs rejection evidence | Parser/state-machine hardening | `NEGATIVE_SPACE.md` gap |
 | Server-side bad client-Finished negative unit tests are partial | Server state-machine evidence | `NEGATIVE_SPACE.md` gap |
 | Certificate and EncryptedExtensions standalone fuzz targets are absent | Parser fuzz breadth | `NEGATIVE_SPACE.md` gap |
-| Provider matrix still lacks FIPS/version divergence and full facade-direct Wycheproof coverage | Backend diversity | #60 (closed for OpenSSL/AWS-LC; FIPS divergence rows remain) |
+| Provider matrix lacks runtime FIPS-provider verification and full facade-direct Wycheproof coverage | Backend diversity | `PRODUCTION_READINESS.md` provider residuals |
 
 ## Boundary diagram
 

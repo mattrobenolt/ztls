@@ -134,20 +134,32 @@ needed and the work-edges that were cleared.
 
 ---
 
-## Future / PQ named groups — #6
+## RFC 10024 hybrid named groups — #6
 
-**Prerequisites:** named-group abstraction from PROVIDER_INTERFACE §3
-(`NamedGroup` enum, `max_public_key_len`/`max_shared_secret_len` sizing, removal
-of the hard-wired `x25519.KeyPair` in the handshakes) and the KEM seam from §
-"KEM seam." X25519MLKEM768 (`0x11ec`) is the lead target, gated on backend
-support (capabilities, PROVIDER_INTERFACE §5).
+The named-group abstraction and KEM seam are described in
+PROVIDER_INTERFACE §3. X25519MLKEM768 (`0x11ec`), SecP256r1MLKEM768 (`0x11eb`),
+and SecP384r1MLKEM1024 (`0x11ed`) use backend-provided pure ML-KEM primitives
+with ztls-owned hybrid composition. `PRODUCTION_READINESS.md` is the authority
+for current evidence and status.
 
 **Acceptance criteria:**
-- Group negotiation selects among ≥2 groups; HRR (formerly #1) handles the
-  no-shared-group case.
-- Hybrid X25519MLKEM768 shared secret matches the backend reference and interops
-  with an OpenSSL build that supports it.
-- Capability gating so a backend without the group never advertises it.
+- Group negotiation and HRR cover all three groups, including selected-group-
+  only ClientHello2 key shares and transcript collapse.
+- Both ztls roles interoperate with an independent OpenSSL peer for every
+  group, proving exact key-share layout and matching traffic secrets.
+- The pinned upstream tlsfuzzer ML-KEM driver covers sanity, each group, HRR,
+  malformed ML-KEM coefficients, truncated/padded shares, and invalid NIST
+  point formats. The CI lane uses its bounded `--no-fuzz` matrix (35
+  conversations); exhaustive coefficient fuzzing remains an explicit manual
+  mode rather than a per-change gate.
+- OpenSSL, AWS-LC, and BoringSSL backend lanes exercise the same handshake
+  matrix; FIPS identities advertise no hybrid group.
+- Explicit unsupported or malformed configuration fails closed rather than
+  silently downgrading to classical key exchange.
+
+TLS-Anvil does not currently catalogue RFC 10024. The upstream tlsfuzzer driver
+is the external malformed-wire oracle; the OpenSSL matrix is the independent
+bidirectional traffic-key oracle.
 
 ---
 

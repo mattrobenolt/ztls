@@ -54,8 +54,10 @@ pub const ParseError = error{
     InvalidSessionIdEcho,
     /// legacy_compression_method is not null compression.
     InvalidCompressionMethod,
-    /// key_share extension uses an unsupported group or wrong key encoding.
+    /// key_share extension uses an unsupported group.
     UnsupportedKeyShareGroup,
+    /// key_share length or point encoding does not match the selected group.
+    MalformedKeyShare,
     /// A recognized extension appeared in a message where TLS 1.3 does not allow it.
     UnexpectedExtension,
     /// Server sent an extension the client did not request (RFC 8446 §4.2).
@@ -264,19 +266,14 @@ pub fn parseHelloRetryRequestWithSessionIdEcho(
 
 pub const encoded_len = 4 + 2 + 32 + 1 + 2 + 1 + 2 + (4 + 2 + 2 + 32) + (4 + 2);
 
-/// Maximum KEM key_share size (client or server) across all hybrid groups.
-/// SecP384r1MLKEM1024 client share = 1665, server share = 1665.
-/// draft-ietf-tls-ecdhe-mlkem-05 §4.
+/// RFC 10024 §4 — maximum client or server hybrid key_share size.
 pub const max_kem_share_len = 1665;
 
 pub const KeyShare = union(enum) {
     x25519: x25519.PublicKey,
     secp256r1: p256.PublicKey,
     secp384r1: p384.PublicKey,
-    /// KEM hybrid key_share (server side: the ciphertext from encapsulate).
-    /// draft-ietf-tls-ecdhe-mlkem-05 §4.2. The bytes are the concatenation
-    /// of the ML-KEM ciphertext and the server's ECDHE share, in the order
-    /// specified by the group.
+    /// RFC 10024 §4.2 hybrid server share. Component order is group-specific.
     kem: struct {
         group: NamedGroup,
         data: ArrayBuffer(u8, max_kem_share_len),
@@ -545,12 +542,18 @@ pub fn parseWithSessionIdEcho(
                         if (key[0] != 0x04) return error.UnsupportedKeyShareGroup;
                         key_share = .{ .secp384r1 = .init(key[0..p384.public_length].*) };
                     },
-                    // KEM hybrid groups — variable-length key_share.
-                    // draft-ietf-tls-ecdhe-mlkem-05 §4.2.
+                    // RFC 10024 §4.2 — server shares have role-specific exact
+                    // lengths; NIST-curve components are uncompressed points.
                     .x25519_mlkem768, .secp256r1_mlkem768, .secp384r1_mlkem1024 => {
-                        if (key_len > max_kem_share_len) return error.UnsupportedKeyShareGroup;
+                        if (key_len != group.serverKeyShareLen().?)
+                            return error.MalformedKeyShare;
                         if (ext_end - r.pos < key_len) return error.InvalidExtensionLength;
                         const key = r.assumeReadSlice(key_len);
+                        if ((group == .secp256r1_mlkem768 or
+                            group == .secp384r1_mlkem1024) and key[0] != 0x04)
+                        {
+                            return error.MalformedKeyShare;
+                        }
                         var kem_data: ArrayBuffer(u8, max_kem_share_len) = .empty;
                         kem_data.appendSliceAssumeCapacity(key);
                         key_share = .{ .kem = .{
@@ -1222,7 +1225,7 @@ test "parseHelloRetryRequest: rejects record_size_limit" {
     try testing.expectError(error.UnexpectedExtension, parseHelloRetryRequest(&with_rsl));
 }
 
-// draft-ietf-tls-ecdhe-mlkem-05 §4.2 — KEM ciphertext (1120 bytes for
+// RFC 10024 §4.2 — KEM ciphertext (1120 bytes for
 // X25519MLKEM768) round-trips through encode → parse without corruption.
 // This test is pure-Zig (no OpenSSL) and isolates the wire path from the
 // backend. It runs on all architectures to catch any struct-return / ArrayBuffer

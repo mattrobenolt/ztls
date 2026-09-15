@@ -33,6 +33,15 @@ wheels = [
 ]
 
 [[package]]
+name = "kyber-py"
+version = "1.2.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/ce/38/83a33d2bbb3e7d0b2d13ffd7e1438e513622dc652cf4c00865e9f925ee08/kyber_py-1.2.0.tar.gz", hash = "sha256:9062b7c307b4b84980ec6b775091558d60c488985c4e8081eeb66fd4bb29a354", size = 2384774, upload-time = "2025-12-17T19:07:44.796Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/eb/50/0eda99082660ead34aebe2c212e40ff371ce7dd327d80c0980a7398f2d43/kyber_py-1.2.0-py3-none-any.whl", hash = "sha256:517f4c8f5009f5b4dfb8f4bfd0f6d631bf56e0cad3f709282e6450e5d8eda6aa", size = 33749, upload-time = "2025-12-17T19:07:43.476Z" },
+]
+
+[[package]]
 name = "packaging"
 version = "26.2"
 source = { registry = "https://pypi.org/simple" }
@@ -156,6 +165,7 @@ name = "ztls-conformance"
 version = "0.0.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "kyber-py" },
     { name = "pytest" },
     { name = "tlsfuzzer" },
     { name = "tlslite-ng" },
@@ -169,6 +179,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "kyber-py", specifier = ">=1.2.0" },
     { name = "pytest", specifier = ">=8" },
     { name = "tlsfuzzer", git = "https://github.com/tlsfuzzer/tlsfuzzer.git?rev=bf7f579dc0e65498cfb21b60e9b152f6bd84a3bf" },
     { name = "tlslite-ng", git = "https://github.com/tlsfuzzer/tlslite-ng.git?rev=02d1506badb16473faf50ebc3a413c6d789fe31f" },

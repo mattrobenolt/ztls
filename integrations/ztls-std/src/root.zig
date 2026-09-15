@@ -429,8 +429,9 @@ const ClientOptions = struct {
     verify: Verify,
     /// ALPN protocols to offer (e.g. &.{ "h2", "http/1.1" }). Borrowed.
     alpn: []const []const u8 = &.{},
-    /// Offer an X25519MLKEM768 hybrid key share (PQ). False by default.
-    offer_pq_key_share: bool = false,
+    /// RFC 10024 hybrid supported-groups and initial key-share policy.
+    /// Disabled by default; borrowed slices must outlive the handshake.
+    hybrid: ztls.ClientHandshake.HybridPolicy = .{},
     /// Present this certificate chain (DER, leaf first) and sign
     /// CertificateVerify when the server sends a CertificateRequest. Without
     /// credentials the client sends an empty Certificate instead. An empty
@@ -450,6 +451,9 @@ const ServerOptions = struct {
     signer: ztls.signature.Signer,
     /// ALPN protocols supported. Borrowed.
     alpn: []const []const u8 = &.{},
+    /// RFC 10024 hybrid groups accepted in server preference order. Empty
+    /// disables hybrid negotiation. Borrowed for the handshake.
+    hybrid_groups: []const ztls.kex.NamedGroup = &.{},
     /// Client-certificate authentication policy. Default `.none`. A non-none
     /// mode requires a `ClientTrust` decision — no system-bundle path, no
     /// separate insecure flag. RFC 8446 §4.4.2.
@@ -1240,13 +1244,26 @@ fn StreamImpl(comptime Hs: type, comptime role: Role, comptime config: Config) t
 
                     // Ours, not the peer's (#88): no alert, no protocol
                     // classification.
-                    const keypairs: ztls.ClientHandshake.KeyPairs =
+                    var keypairs: ztls.ClientHandshake.KeyPairs =
                         ztls.ClientHandshake.KeyPairs.init(client_keypair) catch |err| {
                             s.abortBeforeInit(io, sock);
                             return switch (err) {
                                 error.LibcryptoFailed, error.IdentityElement => error.InternalError,
                             };
                         };
+                    defer keypairs.secureZero();
+                    if (std.mem.indexOfScalar(
+                        ztls.kex.NamedGroup,
+                        options.hybrid.supported_groups,
+                        .secp384r1_mlkem1024,
+                    ) != null) {
+                        keypairs.p384 = ztls.p384.KeyPair.generate() catch |err| {
+                            s.abortBeforeInit(io, sock);
+                            return switch (err) {
+                                error.LibcryptoFailed, error.IdentityElement => error.InternalError,
+                            };
+                        };
+                    }
 
                     const hs: ztls.ClientHandshake = .init(.{
                         .keypairs = keypairs,
@@ -1254,7 +1271,7 @@ fn StreamImpl(comptime Hs: type, comptime role: Role, comptime config: Config) t
                         .now_sec = Io.Timestamp.now(io, .real).toSeconds(),
                         .random = random,
                         .alpn_protocols = options.alpn,
-                        .offer_pq_key_share = options.offer_pq_key_share,
+                        .hybrid = options.hybrid,
                     });
 
                     // In-place init before the next fallible step, so no
@@ -1323,18 +1340,32 @@ fn StreamImpl(comptime Hs: type, comptime role: Role, comptime config: Config) t
                     defer random.secureZero();
 
                     // Ours, not the peer's (#88) — see `connect`.
-                    const keypairs: ztls.ServerHandshake.KeyPairs =
+                    var keypairs: ztls.ServerHandshake.KeyPairs =
                         ztls.ServerHandshake.KeyPairs.init(server_keypair) catch |err| {
                             s.abortBeforeInit(io, sock);
                             return switch (err) {
                                 error.LibcryptoFailed, error.IdentityElement => error.InternalError,
                             };
                         };
+                    defer keypairs.secureZero();
+                    if (std.mem.indexOfScalar(
+                        ztls.kex.NamedGroup,
+                        options.hybrid_groups,
+                        .secp384r1_mlkem1024,
+                    ) != null) {
+                        keypairs.p384 = ztls.p384.KeyPair.generate() catch |err| {
+                            s.abortBeforeInit(io, sock);
+                            return switch (err) {
+                                error.LibcryptoFailed, error.IdentityElement => error.InternalError,
+                            };
+                        };
+                    }
 
                     const hs: ztls.ServerHandshake = .init(.{
                         .keypairs = keypairs,
                         .random = random,
                         .alpn_protocols = options.alpn,
+                        .hybrid_groups = options.hybrid_groups,
                     });
 
                     s.* = .init(io, sock, hs);

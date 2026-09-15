@@ -184,8 +184,9 @@ pub const Client = /* ClientWith(.{}) */ struct {
         verify: Verify,
         /// ALPN protocols to offer (e.g. &.{ "h2", "http/1.1" }). Borrowed.
         alpn: []const []const u8 = &.{},
-        /// Offer an X25519MLKEM768 hybrid key share (PQ). False by default.
-        offer_pq_key_share: bool = false,
+        /// RFC 10024 hybrid supported-groups and initial key-share policy.
+        /// Disabled by default; borrowed slices must outlive the handshake.
+        hybrid: ztls.ClientHandshake.HybridPolicy = .{},
         /// Present this chain + signer when the server sends a
         /// CertificateRequest. An empty chain is `InvalidOptions` before any
         /// wire I/O. Borrowed for the handshake. RFC 8446 §4.4.2, §4.4.3.
@@ -257,6 +258,8 @@ pub const Options = struct {
     signer: ztls.signature.Signer,
     /// ALPN protocols supported. Borrowed.
     alpn: []const []const u8 = &.{},
+    /// RFC 10024 hybrid groups accepted in server preference order.
+    hybrid_groups: []const ztls.kex.NamedGroup = &.{},
     /// Client-certificate policy. Default `.none`. RFC 8446 §4.4.2.
     client_auth: ClientAuth = .none,
 };

@@ -9,6 +9,7 @@ const builtin = @import("builtin");
 
 const fixtures = @import("fixtures");
 
+const backend = @import("crypto/backend.zig");
 const entropy = @import("entropy.zig");
 const ztls = @import("root.zig");
 
@@ -42,6 +43,22 @@ const server_suites = [_]ServerSuite{
     .{ .openssl_name = "TLS_AES_256_GCM_SHA384", .ztls_suite = .aes_256_gcm_sha384 },
 };
 
+const InteropGroup = struct {
+    openssl_name: []const u8,
+    ztls_group: ztls.kex.NamedGroup,
+};
+
+const p384_group: InteropGroup = .{
+    .openssl_name = "P-384",
+    .ztls_group = .secp384r1,
+};
+
+const hybrid_groups = [_]InteropGroup{
+    .{ .openssl_name = "X25519MLKEM768", .ztls_group = .x25519_mlkem768 },
+    .{ .openssl_name = "SecP256r1MLKEM768", .ztls_group = .secp256r1_mlkem768 },
+    .{ .openssl_name = "SecP384r1MLKEM1024", .ztls_group = .secp384r1_mlkem1024 },
+};
+
 test "OpenSSL s_server interoperates with ztls client" {
     var arena_allocator: heap.ArenaAllocator = .init(testing.allocator);
     defer arena_allocator.deinit();
@@ -58,6 +75,54 @@ test "OpenSSL s_server interoperates with ztls client" {
     for (client_suites, 0..) |suite, i| {
         try runClientSuite(arena, cert_path, key_path, suite, 14433 + @as(u16, @intCast(i)));
     }
+}
+
+// RFC 8446 §4.2.8.2, §7.4 — OpenSSL independently validates the ztls
+// secp384r1 ClientHello share and derives matching handshake/traffic keys.
+test "OpenSSL s_server interoperates with ztls P-384 client" {
+    if (!backend.supportsClientP384()) return error.SkipZigTest;
+
+    var arena_allocator: heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_allocator.deinit();
+    const arena = arena_allocator.allocator();
+
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const dir = try tmpDirPath(arena, &tmp);
+    const cert_path = try fs.path.join(arena, &.{ dir, "cert.pem" });
+    const key_path = try fs.path.join(arena, &.{ dir, "key.pem" });
+    try genCert(arena, cert_path, key_path);
+
+    try runClientGroup(arena, cert_path, key_path, p384_group, 20343);
+}
+
+// RFC 10024 §4 — OpenSSL independently validates every ztls client hybrid
+// share layout and derives matching ECDHE + ML-KEM traffic keys.
+test "OpenSSL s_server interoperates with ztls RFC 10024 client groups" {
+    var arena_allocator: heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_allocator.deinit();
+    const arena = arena_allocator.allocator();
+
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const dir = try tmpDirPath(arena, &tmp);
+    const cert_path = try fs.path.join(arena, &.{ dir, "cert.pem" });
+    const key_path = try fs.path.join(arena, &.{ dir, "key.pem" });
+    try genCert(arena, cert_path, key_path);
+
+    var tested = false;
+    for (hybrid_groups, 0..) |group, i| {
+        if (!backend.supportsClientHybridGroup(group.ztls_group)) continue;
+        tested = true;
+        try runClientGroup(
+            arena,
+            cert_path,
+            key_path,
+            group,
+            20433 + @as(u16, @intCast(i)),
+        );
+    }
+    if (!tested) return error.SkipZigTest;
 }
 
 // RFC 8446 §4.6.1, §4.2.11 — ztls client resumes with openssl s_server:
@@ -107,6 +172,34 @@ test "OpenSSL s_client interoperates with ztls server" {
     for (server_suites, 0..) |suite, i| {
         try runServerSuite(arena, suite, 16433 + @as(u16, @intCast(i)));
     }
+}
+
+// RFC 8446 §4.2.8.2, §7.4 — OpenSSL independently validates the ztls
+// secp384r1 ServerHello share and derives matching handshake/traffic keys.
+test "OpenSSL s_client interoperates with ztls P-384 server" {
+    if (!backend.supportsServerP384()) return error.SkipZigTest;
+
+    var arena_allocator: heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_allocator.deinit();
+    const arena = arena_allocator.allocator();
+
+    try runServerGroup(arena, p384_group, 21343);
+}
+
+// RFC 10024 §4 — OpenSSL independently validates every ztls server hybrid
+// share layout and derives matching ECDHE + ML-KEM traffic keys.
+test "OpenSSL s_client interoperates with ztls RFC 10024 server groups" {
+    var arena_allocator: heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_allocator.deinit();
+    const arena = arena_allocator.allocator();
+
+    var tested = false;
+    for (hybrid_groups, 0..) |group, i| {
+        if (!backend.supportsServerHybridGroup(group.ztls_group)) continue;
+        tested = true;
+        try runServerGroup(arena, group, 21433 + @as(u16, @intCast(i)));
+    }
+    if (!tested) return error.SkipZigTest;
 }
 
 // RFC 8446 §4.7.2, §4.4.2, §4.4.3 — ztls server requiring client authentication
@@ -362,7 +455,21 @@ fn runClientSuite(
     defer killChild(&server);
     const stream = try connectWithRetry(port);
     defer closeStream(stream);
-    try clientInterop(stream);
+    try clientInterop(stream, null);
+}
+
+fn runClientGroup(
+    arena: Allocator,
+    cert_path: []const u8,
+    key_path: []const u8,
+    group: InteropGroup,
+    port: u16,
+) !void {
+    var server = try startServerWithGroup(arena, cert_path, key_path, group, port);
+    defer killChild(&server);
+    const stream = try connectWithRetry(port);
+    defer closeStream(stream);
+    try clientInterop(stream, group.ztls_group);
 }
 
 fn runResumptionInterop(
@@ -488,21 +595,68 @@ fn startServer(
     return child;
 }
 
-fn clientInterop(stream: Stream) !void {
+fn startServerWithGroup(
+    arena: Allocator,
+    cert_path: []const u8,
+    key_path: []const u8,
+    group: InteropGroup,
+    port: u16,
+) !Child {
+    const port_str = try std.fmt.allocPrint(arena, "{d}", .{port});
+    const argv = &.{
+        "openssl",                "s_server",
+        "-tls1_3",                "-ciphersuites",
+        "TLS_AES_128_GCM_SHA256", "-groups",
+        group.openssl_name,       "-key",
+        key_path,                 "-cert",
+        cert_path,                "-port",
+        port_str,                 "-www",
+        "-alpn",                  alpn_protocol,
+        "-quiet",
+    };
+    if (comptime is_zig_16) {
+        return std.process.spawn(testing.io, .{
+            .argv = argv,
+            .stdout = .ignore,
+            .stderr = .ignore,
+        });
+    }
+
+    var child = Child.init(argv, arena);
+    child.stdout_behavior = .Ignore;
+    child.stderr_behavior = .Ignore;
+    try child.spawn();
+    return child;
+}
+
+fn clientInterop(stream: Stream, group: ?ztls.kex.NamedGroup) !void {
     const kp: ztls.x25519.KeyPair = .generate();
     var random: ztls.Random = .empty;
     entropy.fill(&random.data);
 
+    var keypairs: ztls.ClientHandshake.KeyPairs = try .init(kp);
+    if (group == .secp384r1 or group == .secp384r1_mlkem1024)
+        keypairs.p384 = try .generate();
+    const hybrid_group = if (group) |selected|
+        if (selected.hybridSpec() != null) selected else null
+    else
+        null;
+    const groups = [_]ztls.kex.NamedGroup{hybrid_group orelse .x25519_mlkem768};
     var hs: ztls.ClientHandshake = .init(.{
-        .keypairs = try .init(kp),
+        .keypairs = keypairs,
         .host_name = "localhost",
         .now_sec = 0,
         .random = random,
         .insecure_no_chain_anchor = true,
         .alpn_protocols = &.{alpn_protocol},
+        .hybrid = if (hybrid_group) |selected| .{
+            .supported_groups = &groups,
+            .initial_key_share = selected,
+        } else .{},
     });
+    defer hs.deinit();
 
-    var out: [1024]u8 = undefined;
+    var out: [4096]u8 = undefined;
     var storage: ztls.RecordBuffer.Storage = .empty;
     var rb: ztls.RecordBuffer = .init(&storage.buffer);
 
@@ -802,6 +956,7 @@ fn clientEarlyDataInterop(
 const ServerArgs = struct {
     port: u16,
     suite: ztls.CipherSuite,
+    group: ?ztls.kex.NamedGroup = null,
 };
 
 fn runServerSuite(arena: Allocator, suite: ServerSuite, port: u16) !void {
@@ -809,6 +964,29 @@ fn runServerSuite(arena: Allocator, suite: ServerSuite, port: u16) !void {
     const thread = try std.Thread.spawn(.{}, serverThread, .{&args});
 
     var child = try startClient(arena, suite.openssl_name, port);
+    defer killChild(&child);
+    try writeFileAll(child.stdin.?, "GET / HTTP/1.0\r\n\r\n");
+    closeFile(child.stdin.?);
+    child.stdin = null;
+
+    var stdout_buf: [4096]u8 = undefined;
+    const n = try readFileAll(child.stdout.?, &stdout_buf);
+    const term = try waitChild(&child);
+    thread.join();
+
+    if (!exitedZero(term)) return error.OpenSslClientFailed;
+    if (!mem.containsAtLeast(u8, stdout_buf[0..n], 1, "hello")) return error.NoServerResponse;
+}
+
+fn runServerGroup(arena: Allocator, group: InteropGroup, port: u16) !void {
+    var args: ServerArgs = .{
+        .port = port,
+        .suite = .aes_128_gcm_sha256,
+        .group = group.ztls_group,
+    };
+    const thread = try std.Thread.spawn(.{}, serverThread, .{&args});
+
+    var child = try startClientWithGroup(arena, group, port);
     defer killChild(&child);
     try writeFileAll(child.stdin.?, "GET / HTTP/1.0\r\n\r\n");
     closeFile(child.stdin.?);
@@ -850,23 +1028,64 @@ fn startClient(arena: Allocator, suite: []const u8, port: u16) !Child {
     return child;
 }
 
+fn startClientWithGroup(arena: Allocator, group: InteropGroup, port: u16) !Child {
+    const port_str = try std.fmt.allocPrint(arena, "{d}", .{port});
+    const connect_to = try std.fmt.allocPrint(arena, "{s}:{s}", .{ host, port_str });
+    const argv = &.{
+        "openssl",                "s_client",
+        "-tls1_3",                "-connect",
+        connect_to,               "-ciphersuites",
+        "TLS_AES_128_GCM_SHA256", "-groups",
+        group.openssl_name,       "-alpn",
+        alpn_protocol,            "-quiet",
+    };
+    if (comptime is_zig_16) {
+        return std.process.spawn(testing.io, .{
+            .argv = argv,
+            .stdin = .pipe,
+            .stdout = .pipe,
+            .stderr = .ignore,
+        });
+    }
+
+    var child = Child.init(argv, arena);
+    child.stdin_behavior = .Pipe;
+    child.stdout_behavior = .Pipe;
+    child.stderr_behavior = .Ignore;
+    try child.spawn();
+    return child;
+}
+
 fn serverThread(args: *const ServerArgs) !void {
     const addr = try parseAddress(host, args.port);
     var server = try listen(addr);
     defer deinitServer(&server);
     const stream = try accept(&server);
     defer closeStream(stream);
-    try serve(stream, args.suite);
+    try serve(stream, args.suite, args.group);
 }
 
-fn serve(stream: Stream, suite: ztls.CipherSuite) !void {
+fn serve(
+    stream: Stream,
+    suite: ztls.CipherSuite,
+    group: ?ztls.kex.NamedGroup,
+) !void {
     const server_keypair: ztls.x25519.KeyPair = .generate();
     var server_random: ztls.Random = .empty;
     entropy.fill(&server_random.data);
 
+    var keypairs: ztls.ServerHandshake.KeyPairs = try .init(server_keypair);
+    if (group == .secp384r1 or group == .secp384r1_mlkem1024)
+        keypairs.p384 = try .generate();
+    const hybrid_group = if (group) |selected|
+        if (selected.hybridSpec() != null) selected else null
+    else
+        null;
+    const groups = [_]ztls.kex.NamedGroup{hybrid_group orelse .x25519_mlkem768};
     var hs: ztls.ServerHandshake = .init(.{
-        .keypairs = try .init(server_keypair),
+        .keypairs = keypairs,
         .random = server_random,
+        .hybrid_groups = if (hybrid_group != null) &groups else &.{},
     });
     defer hs.deinit();
     hs.supportAlpn(&.{alpn_protocol});

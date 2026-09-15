@@ -62,7 +62,7 @@ ztls is production-ready when all six pillars are `PROVEN`:
 | 1. Correctness | `PROVEN` | Both #91 fixture defects have red/green regressions and fresh strict-complete captures on all three backends at `e5800ee`: zero unexpected results and zero validity rejections. Historical failure causality remains bounded by the retained evidence. Full TLS-Anvil remains scheduled-only; BoGo is explicitly deferred. |
 | 2. Ergonomics | `PROVEN` | CI-gated examples cover both roles across io_uring, epoll, kqueue, and `std.Io`. `ztls-std` (#77) gates plain and mTLS OpenSSL interop in both directions, concurrent split halves, KeyUpdate handoff, TX poisoning, and abort-before-join teardown. `ztls-xev` satisfies #76's Linux/macOS contract, including in-flight cancellation (#83). |
 | 3. Performance | `PROVEN` | n=10 captures on x86_64 (c7i.2xlarge), aarch64 (c7g.2xlarge), and macOS (Apple M1 Max) with formal CIs (p=0.000): ztls beats libssl on every comparable app-data row on all three platforms and rustls on all AES-GCM rows; regression gate committed. |
-| 4. Providers | `PROVEN` | OpenSSL, AWS-LC, and BoringSSL have CI-gated backend lanes and fresh strict-complete TLS-Anvil captures at `e5800ee`, with both fixture patches verified and no unexpected results (#91). Cert-chain stays ztls/std; FIPS capability checks are comptime-only; PQ/P-384 is #6. |
+| 4. Providers | `PROVEN` | OpenSSL, AWS-LC, and BoringSSL have CI-gated backend lanes and fresh strict-complete TLS-Anvil captures at `e5800ee`, with both fixture patches verified and no unexpected results (#91). Plain P-384 and RFC 10024 hybrid KEX complete bidirectional OpenSSL 3.6 interop on all three non-FIPS lanes; the pinned upstream tlsfuzzer RFC 10024 matrix also passes (#6). Cert-chain stays ztls/std and FIPS checks remain capability-only. |
 | 5. Marketing | `PROVEN` | README leads with the proven performance story (n=10, both architectures, honest ChaCha20 loss) and the adversarial security posture; the why-ztls narrative and headline benchmarks are on the front door, backed by PERFORMANCE.md. |
 | 6. User docs | `PROVEN` | One fetched package exposes core plus the Zig 0.16 integration modules (#79); isolated consumer gates and `docs/USAGE.md` cover dependency wiring, supported surface, drive loops, API reference, and integration examples. |
 
@@ -163,8 +163,10 @@ derives the resumption_master_secret over the live transcript (RFC 8448 §4
 vector-proven), surfaces NewSessionTicket events, and produces a caller-storable
 SessionTicket (identity + PSK + age/lifetime via ArrayBuffer); the client emits
 a PSK ClientHello (pre_shared_key + psk_key_exchange_modes + binder over the
-truncated transcript prefix); the server verifies the binder via a caller-owned
-PskLookup and selects an identity; both sides use the PSK as the early secret
+truncated transcript prefix); after HelloRetryRequest, ClientHello2 retains a
+compatible PSK and both roles recompute/verify its binder over the retry
+transcript; the server verifies binders via a caller-owned PskLookup and selects
+an identity; both sides use the PSK as the early secret
 in the key schedule (psk_dhe_ke, PSK + ECDHE). An in-memory PSK resumption
 handshake completes to connected with an application-data round trip, and
 OpenSSL resumption interop is CI-gated: a ztls client captures an NST from
@@ -300,9 +302,10 @@ data to openssl s_server and receives the HTTP response.
   conclusion `success`. The `expected_failed` count is the #52 visibility
   mechanism, not a conformance pass. The #48 client-runner scope is now
   strict-clean under that visible #52 classification; remaining external
-  conformance breadth is feature-specific — HRR, resumption, 0-RTT, client
-  auth (formerly #1–#4) plus P-384/PQ groups (#6) — and the BoGo
-  re-entry path in #50. A skip-list narrowing landed during #48
+  conformance breadth is feature-specific — HRR, resumption, 0-RTT, and client
+  auth (formerly #1–#4), plus the BoGo re-entry path in #50. Plain P-384 now
+  has bidirectional OpenSSL 3.6 interop; the RFC 10024 groups additionally pass
+  the pinned upstream tlsfuzzer ML-KEM matrix. A skip-list narrowing during #48
   surfaces the strict-complete f50fcd8
   client capture's `sendEndOfEarlyDataAsServer` STRICTLY_SUCCEEDED row rather
   than the broader `*EarlyData*` skip pattern masking it as `unexpected_pass`;
@@ -417,11 +420,12 @@ data to openssl s_server and receives the HTTP response.
     `BN_clear_free` (were `BN_free`, leaving secret residue), and `aeadInit`
     rejects a key whose length differs from the cipher's key length before any
     EVP setup (defense-in-depth; unreachable via the typed `Aead` facade).
-  - H4/H5 — KEM hardening: the server pins `kem_key_share.group ==
-    .x25519_mlkem768` before encapsulating with the hardcoded X25519MLKEM768
-    params (no group-echo confusion), and the ML-KEM wrapper validates
-    provider-returned public/ciphertext/secret lengths against the
-    X25519MLKEM768 constants (1216/1120/64) instead of trusting them.
+  - H4/H5 — KEM hardening: the negotiated RFC 10024 group selects an exact
+    parameter set and component layout before any provider call (no group-echo
+    confusion). The ML-KEM wrapper validates provider-returned public-key,
+    ciphertext, and shared-secret lengths for ML-KEM-768 or ML-KEM-1024 rather
+    than trusting them; ClientHello and ServerHello parsing also require each
+    group's exact role-specific share length and classical point format.
   - H13/H14 — ServerHandshake record hygiene: `receiveApplicationData` rejects
     application data interleaved inside a pending KeyUpdate fragment, and the
     0-RTT byte counter checks the remaining budget before adding (no saturation
@@ -646,11 +650,14 @@ limits and the #52 DSA exception remain explicit.
   suite runs in a separate scheduled/manual workflow, and the TLS-Anvil client
   runner/workflow has strict-clean evidence under the visible #52 `expected_failed`
   classification. Completed TLS-Anvil server and client evidence now have no
-  unexpected attempted failures; P-384 is now locally implemented through
-  OpenSSL/AWS-LC-backed key-share encode/parse and ECDHE primitive tests, but
-  external named-group conformance beyond the proven server-side P-256 path
-  stays tracked under broader provider-backed group work *(#6)*. HelloRetryRequest
-  server retry now passes TLS-Anvil, and client-side HRR consumption for
+  unexpected attempted failures. Plain P-384 has bidirectional OpenSSL 3.6
+  interoperability on every non-FIPS backend lane. TLS-Anvil has no RFC 10024
+  suite, so the three hybrid groups use the same bidirectional OpenSSL matrix
+  plus the pinned upstream tlsfuzzer ML-KEM driver: 35 sanity, per-group,
+  malformed/truncated/padded-share, point-format, and HRR conversations pass.
+  In-memory direct and HRR handshake matrices remain the deterministic core
+  regression evidence *(#6)*.
+  HelloRetryRequest server retry now passes TLS-Anvil, and client-side HRR consumption for
   supported groups omitted from ClientHello1 `key_share` is implemented with
   RFC-cited unit tests covering the §4.4.1 transcript collapse, ClientHello2
   generation with selected-group-only key_share, rejection when HRR selects an
@@ -1471,10 +1478,11 @@ dispatch through the backend facade; capability tables are backend-owned.
 
 **Design decisions and residual scope:**
 
-- **The provider abstraction is partly real but not exercised end-to-end.**
-  `src/crypto/backend.zig` exists, `-Dcrypto-backend=aws-lc` is a recognized
-  value, and X25519, P-256, AEAD, and CertificateVerify signing/verification
-  dispatch through the facade. Certificate-chain signature verification and
+- **The provider abstraction is real for handshake primitives; certificate
+  chain policy remains ztls-owned.** `src/crypto/backend.zig` dispatches
+  X25519, P-256/P-384, AEAD, CertificateVerify signing/verification, and pure
+  ML-KEM-768/1024 operations. RFC 10024 composition stays in ztls above that
+  seam. Certificate-chain signature verification and
   path validation stay ztls/std-derived rather than backend-backed — that is
   the recorded ownership decision: the backend seam lacks PKCS#1 v1.5 /
   Ed25519 / ECDSA-all-hashes primitives, the std path is exercised and tested,
@@ -1494,10 +1502,11 @@ dispatch through the backend facade; capability tables are backend-owned.
   OpenSSL/AWS-LC) and the client capture has 1 unexpected KeyUpdate/ChaCha20
   finding (#71, root-caused and fixed locally — ConnectionRefused race in
   anvil_client). *(#60, #63, #70, #71)*
-- **aws-lc has a real test lane but not a full backend matrix.** The
-  `-Dcrypto-backend=aws-lc` build links AWS-LC libcrypto and runs the unit suite;
-  X25519 uses AWS-LC's flat `curve25519.h` API, and AEAD uses AWS-LC's
-  BoringSSL-style `EVP_AEAD` one-shot API. P-256/P-384 ECDH and signature
+- **aws-lc has a real test lane but not a full external conformance matrix.**
+  The `-Dcrypto-backend=aws-lc` build links AWS-LC libcrypto and runs the unit
+  suite; X25519 uses AWS-LC's flat `curve25519.h` API, AEAD uses AWS-LC's
+  BoringSSL-style `EVP_AEAD` one-shot API, and ML-KEM uses its pure KEM API.
+  P-256/P-384 ECDH and signature
   paths delegate to OpenSSL-compatible wrappers using the legacy
   `EC_KEY_*` / `EVP_DigestSign*` API — the only API AWS-LC 5.0.0 exposes for
   these primitives (see the compatibility-decision gap below). CI-gated
@@ -1550,53 +1559,45 @@ dispatch through the backend facade; capability tables are backend-owned.
   compromise — but the AWS-LC decision rests on the API survey (no alternative
   exists), not on a speed claim. *(#60, slice C done — compatibility-justified,
   no AWS-LC alternative API to measure)*
-- **Capability gating exists but is shallow.** ClientHello cipher-suite,
-  supported-group, `signature_algorithms`, and `signature_algorithms_cert`
-  advertisement now comes from the active backend capability declaration; server
-  default suite selection and X25519/P-256 HRR/key-share selection consult the
-  same facade. The current OpenSSL and AWS-LC capability sets are intentionally
-  identical but backend-owned rather than aliases, the ztls client has local
-  X25519/P-256 first-flight key-share plumbing, and compile-time FIPS-narrowed
-  capability tables (`openssl-fips`, `aws-lc-fips` backend identities) now
-  exist: each FIPS table drops ChaCha20-Poly1305 (not FIPS 140-3 approved),
-  RSA PKCS#1 v1.5 certificate signatures (only PSS approved for TLS 1.3),
-  Ed25519, and ML-KEM, keeping AES-GCM, P-256/P-384, X25519, RSA-PSS, and
-  ECDSA. The non-FIPS `certificate_signature_schemes` tables now advertise
-  `.ed25519` because Ed25519 chain signatures are verified via
-  `std.crypto.sign.Ed25519` in `certificate_parser.zig`, independent of the
-  CertificateVerify backend seam (RFC 8446 §4.4.2.2 vs §4.4.3);
-  `certificate_verify_schemes` still omits `ed25519` because Ed25519
-  CertificateVerify signing/verification is not backend-backed. Comptime assertions prove each FIPS table is a strict subset of its
-  non-FIPS counterpart, and divergence tests (running under the default
-  backend) verify the FIPS tables exclude the non-approved algorithms. The FIPS
-  build option declares intent; the caller/linker is responsible for ensuring
-  the linked libcrypto is actually in FIPS mode (no runtime FIPS provider-load
-  verification is performed by ztls). Residual: the full runtime test suite is
-  not FIPS-lane-gated — the suite uses non-FIPS algorithms (RFC 8448 §3
-  fixtures with RSA PKCS1 cert signatures, ChaCha20-Poly1305 tests), so FIPS
-  correctness is proven by comptime capability assertions and divergence tests,
-  not by running the suite under a FIPS backend.
+- **Capability gating covers the whole advertised handshake surface.**
+  ClientHello cipher suites, named groups, `signature_algorithms`, and
+  `signature_algorithms_cert` come from the active backend capability table;
+  server selection consults the same facade. OpenSSL, AWS-LC, and BoringSSL
+  advertise all three RFC 10024 groups. The `openssl-fips` and `aws-lc-fips`
+  identities advertise none and explicit hybrid policy returns
+  `UnsupportedGroup` instead of downgrading. Those FIPS tables also drop
+  ChaCha20-Poly1305, RSA PKCS#1 v1.5 certificate signatures, and Ed25519 while
+  keeping AES-GCM, P-256/P-384, X25519, RSA-PSS, and ECDSA. Comptime subset
+  assertions and divergence tests enforce the narrowing. The FIPS build option
+  still declares intent only: the caller/linker must ensure the linked
+  libcrypto actually runs in FIPS mode, and the full runtime suite is not a
+  FIPS lane because existing fixtures intentionally use non-FIPS algorithms.
   The strict-complete `b6aee2c` client TLS-Anvil capture (`ci-28722850517`)
   closes the remote P-256 evidence gap with `ComplianceRequirements: passed=2`
-  and `KeyShare: passed=5`. *(#60)*
-- **Named-group/key-exchange shape is only partly generalized.** X25519,
-  P-256, and opt-in P-384 ECDHE are provider-backed on the server side, and the
-  client can advertise/process those key shares locally. P-384 has local
-  OpenSSL/AWS-LC primitive and unit coverage, but still lacks external
-  TLS-Anvil/tlsfuzzer evidence; PQ and hybrid groups still need real backend
-  math, variable-length key-share/shared-secret plumbing, and provider
-  capability tests before aws-lc differences can be claimed honestly. The
-  X25519MLKEM768 hybrid KEM handshake now works on both aarch64 and x86_64
-  (CI-gated in-memory KEM handshake test passes on ubuntu-latest x86_64 with
-  Nix OpenSSL 3.6.2); the initial x86_64 shared-secret mismatch was an x86_64
-  codegen issue with by-value capture of the large KEM KeyShare union, fixed
-  by using pointer captures. *(#6, #60, #65)*
+  and `KeyShare: passed=5`. *(#6, #60)*
+- **Named-group/key-exchange plumbing is group-sized and provider-backed.**
+  X25519, P-256, and opt-in P-384 ECDHE work on both roles. RFC 10024 adds
+  X25519MLKEM768, SecP256r1MLKEM768, and SecP384r1MLKEM1024 through pure
+  ML-KEM provider operations with ztls-owned component order and secret
+  composition. Exact ClientHello/ServerHello share lengths, malformed point
+  rejection, direct negotiation, HRR selected-group-only ClientHello2,
+  transcript collapse, and direct plus post-HRR PSK resumption with application
+  data are covered locally. Bidirectional OpenSSL 3.6 interop exercises plain P-384 and
+  every hybrid group with ztls linked to each non-FIPS backend. TLS-Anvil has no
+  RFC 10024 coverage; the pinned upstream tlsfuzzer ML-KEM driver instead covers
+  35 external conversations across the three groups, including HRR and malformed
+  share rejection. Large KEM union variants use pointer captures to avoid Zig
+  0.15's x86_64
+  by-value offset bug *(#6, #65)*.
 - **The facade contract is partly enforced by primitive tests, not a full
   matrix.** `src/crypto/backend_primitive_tests.zig` runs the same X25519,
   P-256/P-384 ECDH, AEAD, and all currently advertised CertificateVerify
   signature primitive vectors through the backend facade under both the OpenSSL
-  and AWS-LC lanes in `zig build test` and `just check-backend-aws-lc`. It now
-  includes selected facade-direct Wycheproof vectors for X25519 and all
+  and AWS-LC lanes in `zig build test` and `just check-backend-aws-lc`;
+  BoringSSL has its matching backend lane. ML-KEM-768 and ML-KEM-1024
+  keygen/encapsulate/decapsulate round trips and all three RFC 10024 handshakes
+  run in those same lanes. The suite also includes selected facade-direct
+  Wycheproof vectors for X25519 and all
   advertised AEAD suites, while the
   wrapper-level Wycheproof tests still cover the public `x25519`/`aead` paths.
   This is a narrow primitive/vector contract — it is not yet a full Wycheproof

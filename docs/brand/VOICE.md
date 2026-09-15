@@ -71,9 +71,9 @@ these.
 And the constraints, stated in public without flinching:
 
 - Pre-alpha. No public API contract. Signatures move.
-- Client cert auth, broader named-group/provider work, PSK/resumption, 0-RTT,
-  and HRR are in flight — we point at the issue numbers (#1–#6 etc.), we don't
-  bury them.
+- Feature and provider claims follow `PRODUCTION_READINESS.md`. We name open
+  gaps and their issue numbers; we do not preserve stale "in flight" lists in
+  public copy after the evidence changes.
 
 ---
 

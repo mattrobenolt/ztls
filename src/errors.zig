@@ -175,6 +175,7 @@ pub fn classify(err: HandshakeError) Class {
         error.DeterministicNonceUnsupported,
         error.EmptyAlpnProtocol,
         error.IdentityTooLong,
+        error.InvalidBinderLength,
         error.ServerNameTooLong,
         error.TooManyAlpnBytes,
         error.TooManyAlpnProtocols,
@@ -230,6 +231,7 @@ test "classify: remaining buckets" {
     try testing.expectEqual(Class.buffer, classify(error.ClientCertificateTooLarge));
     try testing.expectEqual(Class.options, classify(error.AlpnProtocolTooLong));
     try testing.expectEqual(Class.options, classify(error.DeterministicNonceUnsupported));
+    try testing.expectEqual(Class.options, classify(error.InvalidBinderLength));
     try testing.expectEqual(Class.internal, classify(error.LibcryptoFailed));
     try testing.expectEqual(Class.no_alpn, classify(error.NoApplicationProtocol));
     try testing.expectEqual(Class.unsupported_suite, classify(error.UnsupportedCipherSuite));

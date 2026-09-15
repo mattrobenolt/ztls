@@ -27,11 +27,15 @@ pub const Options = struct {
     /// empty list means ALPN is not offered; a client that requires it will
     /// fail the handshake.
     alpn: []const []const u8 = &.{},
+    /// RFC 10024 hybrid groups accepted in server preference order. Empty
+    /// disables hybrid negotiation. Borrowed for this config's lifetime.
+    hybrid_groups: []const ztls.kex.NamedGroup = &.{},
 };
 
 cert_chain: []const []const u8,
 signer: ztls.signature.Signer,
 alpn: []const []const u8,
+hybrid_groups: []const ztls.kex.NamedGroup,
 
 /// No allocation and nothing to tear down; there is no `deinit` because there
 /// is nothing owned. Certificate rotation is a matter of building a new config
@@ -45,6 +49,7 @@ pub fn init(options: Options) ServerConfig {
         .cert_chain = options.cert_chain,
         .signer = options.signer,
         .alpn = options.alpn,
+        .hybrid_groups = options.hybrid_groups,
     };
 }
 
@@ -71,7 +76,8 @@ test "config is reusable across connections: no per-connection state" {
     inline for (@typeInfo(ServerConfig).@"struct".fields) |field| {
         const ok = comptime std.mem.eql(u8, field.name, "cert_chain") or
             std.mem.eql(u8, field.name, "signer") or
-            std.mem.eql(u8, field.name, "alpn");
+            std.mem.eql(u8, field.name, "alpn") or
+            std.mem.eql(u8, field.name, "hybrid_groups");
         if (!ok) @compileError("new ServerConfig field '" ++ field.name ++
             "': confirm it is connection-independent before sharing a ServerConfig");
     }

@@ -157,8 +157,10 @@ These are deliberately not closed by writing the inventory:
   fixture set; if it becomes a supported lane, give it its own issue.
 - BoGo remains deferred per `BOGO_DEFERRED.md`; TLS-Anvil server/client evidence
   lives in the dedicated workflows.
-- PQ / P-384+ groups, exporters, and unscheduled extensions remain outside
-  the current supported surface. P-384/PQ waits on #6.
+- P-521, FFDHE, exporters, and unscheduled extensions remain outside the
+  current supported surface. RFC 10024 malformed-share and unsupported-policy
+  rejection is covered in the core handshake/parser suites; evidence status
+  lives in `PRODUCTION_READINESS.md`.
 - The following negative-side families are covered for the supported surface:
   HRR (in-memory end-to-end + TLS-Anvil; formerly #1), PSK/binder verification
   (formerly #2), 0-RTT rejection paths (EndOfEarlyData absence, server-sent

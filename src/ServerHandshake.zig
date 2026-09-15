@@ -73,9 +73,13 @@ pub const PskLookup = struct {
     context: *anyopaque,
     lookup: *const fn (context: *anyopaque, identity: []const u8) ?PskEntry,
 };
+const PskSelection = struct {
+    entry: PskEntry,
+    identity_index: usize,
+};
 const transcript_util = @import("transcript.zig");
 const x25519 = @import("x25519.zig");
-const mlkem_mod = @import("mlkem.zig");
+const hybrid_kex = @import("hybrid_kex.zig");
 
 const HandshakeBuffer = SliceBuffer(u8);
 // Bounds a reassembled client-flight plaintext (Certificate [+ CertificateVerify]
@@ -140,8 +144,7 @@ const ClientKeyShare = union(enum) {
     x25519: x25519.PublicKey,
     secp256r1: p256.PublicKey,
     secp384r1: p384.PublicKey,
-    /// KEM hybrid key_share (client side: the raw key_exchange bytes from
-    /// the ClientHello key_share entry). draft-ietf-tls-ecdhe-mlkem-05 §4.1.
+    /// RFC 10024 §4.1 hybrid key_share selected from the ClientHello.
     kem: client_hello.ParsedKemKeyShare,
 };
 
@@ -206,6 +209,11 @@ pub const Config = struct {
     /// verifies, resumes with that PSK (psk_dhe_ke) instead of a full
     /// handshake. Caller-owned: ztls stores no heap state.
     psk_lookup: ?PskLookup = null,
+    /// RFC 10024 hybrid groups accepted by this server, in preference order.
+    /// Empty keeps hybrid negotiation disabled. A listed group with no client
+    /// key_share may be selected through HelloRetryRequest. Caller-owned; the
+    /// slice must remain valid through any ClientHello2 processing.
+    hybrid_groups: []const NamedGroup = &.{},
 };
 
 const ServerCredentials = struct {
@@ -220,6 +228,7 @@ negotiated_group: NamedGroup = .x25519,
 suite: CipherSuite = .aes_128_gcm_sha256,
 suite_state: Suite = undefined,
 supported_suites: []const CipherSuite = default_supported_suites,
+hybrid_groups: []const NamedGroup = &.{},
 alpn_protocols: root.AlpnProtocols = &.{},
 client_auth: ClientAuthPolicy = .none,
 /// Policy for verifying client certificate chains. Initialized from Config.
@@ -314,6 +323,7 @@ pub fn init(config: Config) ServerHandshake {
         .keypairs = config.keypairs,
         .random = config.random,
         .supported_suites = config.supported_suites,
+        .hybrid_groups = config.hybrid_groups,
         .alpn_protocols = config.alpn_protocols,
         .client_auth = config.client_auth,
         .client_cert_policy = .{
@@ -381,6 +391,20 @@ pub fn selectPsk(
     entry: PskEntry,
     identity_index: usize,
 } {
+    const selection = try selectPskWithTranscript(parsed, msg, lookup, negotiated_suite, null);
+    return if (selection) |selected| .{
+        .entry = selected.entry,
+        .identity_index = selected.identity_index,
+    } else null;
+}
+
+fn selectPskWithTranscript(
+    parsed: client_hello.Parsed,
+    msg: []const u8,
+    lookup: PskLookup,
+    negotiated_suite: CipherSuite,
+    retry_transcript: ?*const RetryTranscript,
+) error{ InvalidExtensionLength, InvalidVectorLength, UnexpectedEof }!?PskSelection {
     const psk_ext = parsed.psk_ext orelse return null;
     // identities list: 2-byte len + entries (2-byte identity len + identity +
     // 4-byte obfuscated_ticket_age). binders list follows.
@@ -419,6 +443,10 @@ pub fn selectPsk(
                     entry.psk,
                     prefix,
                     offered_binder,
+                    if (retry_transcript) |rt| switch (rt.*) {
+                        .sha256 => |*transcript| transcript,
+                        .sha384 => unreachable,
+                    } else null,
                 ),
                 .aes_256_gcm_sha384 => verifyBinderSha(
                     hkdf.HkdfSha384,
@@ -426,6 +454,10 @@ pub fn selectPsk(
                     entry.psk,
                     prefix,
                     offered_binder,
+                    if (retry_transcript) |rt| switch (rt.*) {
+                        .sha256 => unreachable,
+                        .sha384 => |*transcript| transcript,
+                    } else null,
                 ),
             };
             if (ok) return .{ .entry = entry, .identity_index = idx };
@@ -441,13 +473,17 @@ fn verifyBinderSha(
     psk: []const u8,
     prefix: []const u8,
     offered_binder: []const u8,
+    initial_transcript: ?*const Hash,
 ) bool {
     if (offered_binder.len != H.prk_len) return false;
     const early = H.pskEarlySecret(psk);
     const binder_key = H.resumptionBinderKey(early);
     const fin_key = H.finishedKey(.{ .data = binder_key.data });
+    var transcript: Hash = if (initial_transcript) |initial| initial.* else .init(.{});
+    transcript.update(prefix);
+    const digest = transcript.peek();
     var th: H.TranscriptHash = undefined;
-    Hash.hash(prefix, &th.data, .{});
+    @memcpy(th.data[0..], digest[0..]);
     const expected = H.binder(fin_key, &th);
     const Binder = [H.prk_len]u8;
     return std.crypto.timing_safe.eql(Binder, offered_binder[0..H.prk_len].*, expected);
@@ -626,7 +662,8 @@ pub const KeyUpdateEvent = struct {
 };
 
 pub const AcceptError =
-    frame.ParseError || client_hello.ParseError || server_hello.EncodeError || aead.Error || error{
+    frame.ParseError || client_hello.ParseError || server_hello.EncodeError || aead.Error ||
+    hybrid_kex.Error || error{
         IncompleteRecord,
         UnexpectedRecord,
         UnsupportedCipherSuite,
@@ -694,13 +731,11 @@ pub fn acceptClientHello(
 /// body). Called by acceptClientHello (fast path from a single record) and by
 /// handleClientHelloRecord (after fragment reassembly).
 /// Clear 0-RTT/PSK selection state installed while inspecting a ClientHello.
-/// RFC 8446 §4.2.10/§4.6.1 — 0-RTT and PSK negotiation do not survive a
-/// HelloRetryRequest: the server sends HRR instead of a ServerHello, so any
-/// PSK selection and early-traffic key installed while examining ClientHello1
-/// MUST be discarded before waiting for ClientHello2. Without this, a
-/// ClientHello2 that offers no acceptable PSK could inherit a stale early_rx
-/// from ClientHello1. HRR + 0-RTT is out of scope (#1), but the reset is cheap
-/// and prevents a latent cross-flight state-pollution hazard.
+/// RFC 8446 §4.1.2/§4.2.10 — 0-RTT does not survive HelloRetryRequest, and a
+/// retained PSK must be selected again from ClientHello2 after its binder is
+/// recomputed over the retry transcript. Without this reset, a ClientHello2
+/// that offers no acceptable PSK could inherit stale selection or early_rx
+/// state from ClientHello1.
 fn clearEarlyDataStateForRetry(self: *ServerHandshake) void {
     if (self.early_rx) |*early_rx| early_rx.deinit();
     self.early_rx = null;
@@ -711,6 +746,77 @@ fn clearEarlyDataStateForRetry(self: *ServerHandshake) void {
     self.selected_psk_index = 0;
 }
 
+fn supportsHybridGroup(self: *const ServerHandshake, group: NamedGroup) bool {
+    const spec = group.hybridSpec() orelse return false;
+    if (!backend.supportsServerHybridGroup(group)) return false;
+    if (spec.classical_group == .secp384r1 and self.keypairs.p384 == null)
+        return false;
+    return mem.indexOfScalar(NamedGroup, self.hybrid_groups, group) != null;
+}
+
+fn validateHybridGroups(self: *const ServerHandshake) error{UnsupportedGroup}!void {
+    if (self.hybrid_groups.len > 3) return error.UnsupportedGroup;
+    for (self.hybrid_groups, 0..) |group, i| {
+        if (!self.supportsHybridGroup(group)) return error.UnsupportedGroup;
+        for (self.hybrid_groups[0..i]) |earlier| {
+            if (earlier == group) return error.UnsupportedGroup;
+        }
+    }
+}
+
+fn preferredHybridGroup(
+    self: *const ServerHandshake,
+    groups: client_hello.SupportedGroups,
+) ?NamedGroup {
+    for (self.hybrid_groups) |group| {
+        if (groups.contains(group) and self.supportsHybridGroup(group)) return group;
+    }
+    return null;
+}
+
+fn preferredHybridShare(
+    self: *const ServerHandshake,
+    shares: []const client_hello.ParsedKemKeyShare,
+) ?*const client_hello.ParsedKemKeyShare {
+    for (self.hybrid_groups) |group| {
+        for (shares) |*share| {
+            if (share.group == group and self.supportsHybridGroup(group)) return share;
+        }
+    }
+    return null;
+}
+
+fn encapsulateHybrid(
+    self: *const ServerHandshake,
+    share: *const client_hello.ParsedKemKeyShare,
+    server_share: *ArrayBuffer(u8, hybrid_kex.max_server_share_len),
+    shared_secret: *ArrayBuffer(u8, hybrid_kex.max_shared_secret_len),
+) hybrid_kex.Error!void {
+    assert(server_share.len == 0);
+    assert(shared_secret.len == 0);
+    const result = try hybrid_kex.encapsulate(
+        share.group,
+        share.data,
+        &self.keypairs,
+        server_share.unusedCapacitySlice(),
+        shared_secret.unusedCapacitySlice(),
+    );
+    server_share.resize(@intCast(result.server_share.len));
+    shared_secret.resize(@intCast(result.shared_secret.len));
+}
+
+fn selectHybridShare(
+    self: *const ServerHandshake,
+    share: *const client_hello.ParsedKemKeyShare,
+    server_share: *ArrayBuffer(u8, hybrid_kex.max_server_share_len),
+    shared_secret: *ArrayBuffer(u8, hybrid_kex.max_shared_secret_len),
+) hybrid_kex.Error!ClientKeyShare {
+    // Once a configured hybrid share is selected, malformed key material or
+    // provider failure aborts. There is no classical fallback after selection.
+    try self.encapsulateHybrid(share, server_share, shared_secret);
+    return .{ .kem = share.* };
+}
+
 fn processClientHelloMessage(
     self: *ServerHandshake,
     ch_msg: []const u8,
@@ -718,6 +824,7 @@ fn processClientHelloMessage(
 ) AcceptError![]const u8 {
     assert(self.state == .wait_ch);
     assert((self.retry_transcript == null) == (self.retry_ch1_digest == null));
+    try self.validateHybridGroups();
     const ch = try client_hello.parse(ch_msg);
     if (self.retry_ch1_digest) |ch1_digest| {
         const ch2_digest = retryClientHelloDigest(&ch);
@@ -747,7 +854,16 @@ fn processClientHelloMessage(
             @intFromEnum(client_hello.PskKeyExchangeMode.psk_dhe_ke),
         ) != null) {
             if (self.psk_lookup) |lookup| {
-                if (try selectPsk(ch, ch_msg, lookup, suite)) |sel| {
+                const retry_transcript: ?*const RetryTranscript =
+                    if (self.retry_transcript) |*transcript| transcript else null;
+                const selection = try selectPskWithTranscript(
+                    ch,
+                    ch_msg,
+                    lookup,
+                    suite,
+                    retry_transcript,
+                );
+                if (selection) |sel| {
                     self.selected_psk = sel.entry;
                     self.selected_psk_index = @intCast(sel.identity_index);
                     // 0-RTT (RFC 8446 §4.2.10): if the client offered early_data,
@@ -786,71 +902,79 @@ fn processClientHelloMessage(
         }
     }
 
-    // KEM encapsulation state. Populated when the server selects a KEM group.
-    // draft-ietf-tls-ecdhe-mlkem-05 §4.2. Declared here because the KEM
-    // branch in the key_share selection below needs to write to them.
-    var kem_enc: ?ArrayBuffer(u8, server_hello.max_kem_share_len) = null;
-    var kem_sec: ?ArrayBuffer(u8, 80) = null;
+    // RFC 10024 hybrid outputs remain in fixed-capacity stack storage. The
+    // secret is zeroed after the key schedule consumes it.
+    var hybrid_server_share: ArrayBuffer(u8, hybrid_kex.max_server_share_len) = .empty;
+    var hybrid_secret: ArrayBuffer(u8, hybrid_kex.max_shared_secret_len) = .empty;
+    defer hybrid_secret.secureZero();
 
     const client_key_share: ClientKeyShare = if (self.retry_selected_group) |selected_group|
         switch (selected_group) {
             .x25519 => if (backend.supportsServerX25519()) blk: {
                 if (ch.public_key) |public_key| {
-                    if (ch.public_key_p256 != null) return error.IllegalParameter;
-                    if (ch.public_key_p384 != null) return error.IllegalParameter;
+                    if (ch.public_key_p256 != null or ch.public_key_p384 != null or
+                        ch.hybrid_key_shares.len != 0)
+                    {
+                        return error.IllegalParameter;
+                    }
                     break :blk .{ .x25519 = public_key };
                 }
                 return error.IllegalParameter;
             } else return error.IllegalParameter,
             .secp256r1 => if (backend.supportsServerP256()) blk: {
                 if (ch.public_key_p256) |public_key| {
-                    if (ch.public_key != null) return error.IllegalParameter;
-                    if (ch.public_key_p384 != null) return error.IllegalParameter;
+                    if (ch.public_key != null or ch.public_key_p384 != null or
+                        ch.hybrid_key_shares.len != 0)
+                    {
+                        return error.IllegalParameter;
+                    }
                     break :blk .{ .secp256r1 = public_key };
                 }
                 return error.IllegalParameter;
             } else return error.IllegalParameter,
             .secp384r1 => if ((backend.supportsServerP384() and self.keypairs.p384 != null)) blk: {
                 if (ch.public_key_p384) |public_key| {
-                    if (ch.public_key != null) return error.IllegalParameter;
-                    if (ch.public_key_p256 != null) return error.IllegalParameter;
+                    if (ch.public_key != null or ch.public_key_p256 != null or
+                        ch.hybrid_key_shares.len != 0)
+                    {
+                        return error.IllegalParameter;
+                    }
                     break :blk .{ .secp384r1 = public_key };
                 }
                 return error.IllegalParameter;
             } else return error.IllegalParameter,
+            .x25519_mlkem768,
+            .secp256r1_mlkem768,
+            .secp384r1_mlkem1024,
+            => blk: {
+                if (!self.supportsHybridGroup(selected_group)) return error.IllegalParameter;
+                if (ch.public_key != null or ch.public_key_p256 != null or
+                    ch.public_key_p384 != null)
+                {
+                    return error.IllegalParameter;
+                }
+                if (ch.hybrid_key_shares.len != 1) return error.IllegalParameter;
+                const share = &ch.hybrid_key_shares.constSlice()[0];
+                if (share.group != selected_group) return error.IllegalParameter;
+                try self.encapsulateHybrid(share, &hybrid_server_share, &hybrid_secret);
+                break :blk .{ .kem = share.* };
+            },
             else => return error.IllegalParameter,
         }
-    else if (ch.kem_key_share != null and
-        ch.kem_key_share.?.group == .x25519_mlkem768 and
-        backend.supportsServerX25519Mlkem768())
-    blk: {
-        // Try KEM encapsulation; if it fails (e.g. the libcrypto build
-        // doesn't support the algorithm at runtime), fall back to ECDHE.
-        // draft-ietf-tls-ecdhe-mlkem-05 §4.
-        const k = ch.kem_key_share.?;
-        const peer = mlkem_mod.loadPeerPublic(k.data.constSlice()) catch null;
-        if (peer) |p| {
-            defer mlkem_mod.freeKey(p);
-            var enc: [server_hello.max_kem_share_len]u8 = undefined;
-            var sec: [80]u8 = undefined;
-            const result = mlkem_mod.encapsulate(p, &enc, &sec) catch null;
-            if (result) |r| {
-                var enc_buf: ArrayBuffer(u8, server_hello.max_kem_share_len) = .empty;
-                enc_buf.appendSliceAssumeCapacity(r.enc);
-                kem_enc = enc_buf;
-                var sec_buf: ArrayBuffer(u8, 80) = .empty;
-                sec_buf.appendSliceAssumeCapacity(r.sec);
-                kem_sec = sec_buf;
-                break :blk .{ .kem = k };
-            }
-        }
-        // KEM failed — fall through to ECDHE.
-        break :blk if (ch.public_key != null and backend.supportsServerX25519())
-            .{ .x25519 = ch.public_key.? }
-        else if (ch.public_key_p256 != null and backend.supportsServerP256())
-            .{ .secp256r1 = ch.public_key_p256.? }
-        else
-            return error.UnsupportedKeyShare;
+    else if (self.preferredHybridShare(ch.hybrid_key_shares.constSlice())) |share|
+        try self.selectHybridShare(share, &hybrid_server_share, &hybrid_secret)
+    else if (self.preferredHybridGroup(ch.groups)) |group| {
+        const hrr = try self.encodeHelloRetryRequest(
+            ch_msg,
+            &ch,
+            ch.legacy_session_id,
+            suite,
+            group,
+            out,
+        );
+        self.clearEarlyDataStateForRetry();
+        self.state = .wait_ch;
+        return hrr;
     } else if (ch.public_key != null and backend.supportsServerX25519())
         .{ .x25519 = ch.public_key.? }
     else if (ch.public_key_p256 != null and backend.supportsServerP256())
@@ -902,19 +1026,16 @@ fn processClientHelloMessage(
         .x25519 => .x25519,
         .secp256r1 => .secp256r1,
         .secp384r1 => .secp384r1,
-        .kem => |*k| k.group,
+        .kem => |*share| share.group,
     };
-    // KEM encapsulation was already done during key_share selection above.
-    // The `kem_enc` and `kem_sec` ArrayBuffers contain the ciphertext and
-    // shared secret from that single encapsulation.
 
     const server_key_share: server_hello.KeyShare = switch (client_key_share) {
         .x25519 => .{ .x25519 = self.keypairs.x25519.public_key },
         .secp256r1 => .{ .secp256r1 = self.keypairs.p256.public_key },
         .secp384r1 => .{ .secp384r1 = (self.keypairs.p384 orelse unreachable).public_key },
-        .kem => |*k| .{ .kem = .{
-            .group = k.group,
-            .data = kem_enc orelse .empty,
+        .kem => |*share| .{ .kem = .{
+            .group = share.group,
+            .data = hybrid_server_share,
         } },
     };
 
@@ -939,7 +1060,9 @@ fn processClientHelloMessage(
     header.write(out[0..frame.header_len]);
 
     var out_len = frame.header_len + sh.len;
-    if (ch.legacy_session_id.len != 0) {
+    // RFC 8446 Appendix D.4 — send at most one compatibility CCS. The HRR
+    // path already sent it after ClientHello1.
+    if (ch.legacy_session_id.len != 0 and self.retry_selected_group == null) {
         out_len += try appendCompatibilityChangeCipherSpec(out[out_len..]);
     }
 
@@ -947,8 +1070,8 @@ fn processClientHelloMessage(
         suite,
         ch_msg,
         sh,
-        client_key_share,
-        kem_sec,
+        &client_key_share,
+        &hybrid_secret,
     );
     self.state = .wait_client_finished;
     return out[0..out_len];
@@ -1057,11 +1180,11 @@ fn installHandshakeKeys(
     suite: CipherSuite,
     ch_msg: []const u8,
     sh_msg: []const u8,
-    client_key_share: ClientKeyShare,
-    kem_sec: ?ArrayBuffer(u8, 80),
+    client_key_share: *const ClientKeyShare,
+    hybrid_secret: *const ArrayBuffer(u8, hybrid_kex.max_shared_secret_len),
 ) (error{ IdentityElement, LibcryptoFailed } || aead.Error)!void {
     var dhe: [80]u8 = undefined;
-    const dhe_len: usize = switch (client_key_share) {
+    const dhe_len: usize = switch (client_key_share.*) {
         .x25519 => |public_key| blk: {
             const secret = try x25519.sharedSecret(self.keypairs.x25519.secret_key, public_key);
             @memcpy(dhe[0..32], &secret);
@@ -1078,13 +1201,12 @@ fn installHandshakeKeys(
             @memcpy(dhe[0..48], &secret);
             break :blk @as(usize, 48);
         },
-        // KEM hybrid: use the pre-computed shared secret from encapsulation.
-        // draft-ietf-tls-ecdhe-mlkem-05 §4.3.
+        // RFC 10024 §4.3 — use the precomputed combined shared secret.
         .kem => blk: {
-            if (kem_sec == null) return error.LibcryptoFailed;
-            const sec = kem_sec.?.constSlice();
-            @memcpy(dhe[0..sec.len], sec);
-            break :blk sec.len;
+            const secret = hybrid_secret.constSlice();
+            if (secret.len == 0) return error.LibcryptoFailed;
+            @memcpy(dhe[0..secret.len], secret);
+            break :blk secret.len;
         },
     };
     defer std.crypto.secureZero(u8, dhe[0..dhe_len]);
@@ -2227,7 +2349,7 @@ fn clientHelloWithP256KeyShare(
     out[1] = @truncate(body_len >> 16);
     out[2] = @truncate(body_len >> 8);
     out[3] = @truncate(body_len);
-    const extensions_len_offset = 49;
+    const extensions_len_offset = clientHelloExtensionsLenOffset(out[0..new_len]);
     const ext_len = memx.readInt(u16, out[extensions_len_offset..][0..2]);
     memx.writeInt(u16, out[extensions_len_offset..][0..2], ext_len + @as(u16, @intCast(delta)));
     return out[0..new_len];
@@ -2275,7 +2397,7 @@ fn clientHelloWithP384KeyShare(
     const new_len = client_hello_msg.len + delta;
     const body_len: u24 = @intCast(new_len - handshake_header_len);
     memx.writeInt(u24, out[1..4], body_len);
-    const extensions_len_offset = 49;
+    const extensions_len_offset = clientHelloExtensionsLenOffset(out[0..new_len]);
     const ext_len = memx.readInt(u16, out[extensions_len_offset..][0..2]);
     memx.writeInt(u16, out[extensions_len_offset..][0..2], ext_len + @as(u16, @intCast(delta)));
     return out[0..new_len];
@@ -2288,7 +2410,7 @@ fn clientHelloWithBothKeyShares(
 ) []const u8 {
     @memcpy(out[0..client_hello_msg.len], client_hello_msg);
     var len = client_hello_msg.len;
-    const extensions_len_offset = 49;
+    const extensions_len_offset = clientHelloExtensionsLenOffset(client_hello_msg);
 
     var i: usize = 0;
     while (i + 8 <= len) : (i += 1) {
@@ -2348,6 +2470,15 @@ fn clientHelloWithBothKeyShares(
     const ext_len = memx.readInt(u16, out[extensions_len_offset..][0..2]);
     memx.writeInt(u16, out[extensions_len_offset..][0..2], ext_len + delta);
     return out[0..len];
+}
+
+fn clientHelloExtensionsLenOffset(client_hello_msg: []const u8) usize {
+    var offset: usize = handshake_header_len + 2 + 32;
+    offset += 1 + client_hello_msg[offset];
+    const suites_len = memx.readInt(u16, client_hello_msg[offset..][0..2]);
+    offset += 2 + suites_len;
+    offset += 1 + client_hello_msg[offset];
+    return offset;
 }
 
 fn patchClientHelloKeyShareGroup(client_hello_msg: []u8, group: u16) void {
@@ -2888,14 +3019,17 @@ test "acceptClientHello: rejects ClientHello2 with extra key share" {
     );
 }
 
-test "acceptClientHello: emits HelloRetryRequest for missing X25519 key share" {
+test "acceptClientHello: HRR sends at most one compatibility ChangeCipherSpec" {
     const client_keypair: x25519.KeyPair = .generate();
+    const session_id: [4]u8 = .{ 0xa0, 0xa1, 0xa2, 0xa3 };
     var ch1_buf: [512]u8 = undefined;
     const ch1 = try client_hello.encode(&ch1_buf, .zero, client_keypair.public_key, null, &.{});
-    var hrr_ch1_buf: [512]u8 = undefined;
+    var compat_ch1_buf: [544]u8 = undefined;
+    const compat_ch1 = compatibilityClientHello(&compat_ch1_buf, ch1, &session_id);
+    var hrr_ch1_buf: [544]u8 = undefined;
     const hrr_ch1 = clientHelloWithKeyShareGroup(
         &hrr_ch1_buf,
-        ch1,
+        compat_ch1,
         0x6a6a,
     );
     var ch1_record: [1024]u8 = undefined;
@@ -2914,28 +3048,39 @@ test "acceptClientHello: emits HelloRetryRequest for missing X25519 key share" {
 
     const hrr_hdr = try frame.parseHeader(hrr_record);
     try testing.expectEqual(.handshake, hrr_hdr.content_type);
-    const hrr = try server_hello.parseHelloRetryRequest(
+    const hrr = try server_hello.parseHelloRetryRequestWithSessionIdEcho(
         hrr_record[frame.header_len..][0..hrr_hdr.length()],
+        &session_id,
     );
     try testing.expectEqual(NamedGroup.x25519, hrr.selected_group.?);
+    const hrr_ccs_offset = frame.header_len + @as(usize, hrr_hdr.length());
+    try testing.expectEqual(hrr_ccs_offset + compatibility_ccs_len, hrr_record.len);
 
     var ccs = [_]u8{ 0x14, 0x03, 0x03, 0x00, 0x01, 0x01 };
     try testing.expectEqual(Event.none, try server.handleRecord(&ccs, &hrr_out));
 
     var ch2_record: [1024]u8 = undefined;
-    const ch2_header: frame.Header = .init(.handshake, @intCast(ch1.len));
+    const ch2_header: frame.Header = .init(.handshake, @intCast(compat_ch1.len));
     ch2_header.write(ch2_record[0..frame.header_len]);
-    @memcpy(ch2_record[frame.header_len..][0..ch1.len], ch1);
+    @memcpy(ch2_record[frame.header_len..][0..compat_ch1.len], compat_ch1);
     var sh_out: [256]u8 = undefined;
     const sh_record = try server.acceptClientHello(
-        ch2_record[0 .. frame.header_len + ch1.len],
+        ch2_record[0 .. frame.header_len + compat_ch1.len],
         &sh_out,
     );
     try testing.expectEqual(.wait_client_finished, server.state);
     try testing.expect(server.needsServerFlight());
     const sh_hdr = try frame.parseHeader(sh_record);
     try testing.expectEqual(.handshake, sh_hdr.content_type);
-    _ = try server_hello.parse(sh_record[frame.header_len..][0..sh_hdr.length()]);
+    var sh: server_hello.ServerHello = undefined;
+    _ = try server_hello.parseWithSessionIdEcho(
+        sh_record[frame.header_len..][0..sh_hdr.length()],
+        &session_id,
+        &sh,
+    );
+    // RFC 8446 Appendix D.4 — the server sends at most one compatibility CCS;
+    // this path sent it after HRR, so ServerHello carries no second CCS.
+    try testing.expectEqual(frame.header_len + @as(usize, sh_hdr.length()), sh_record.len);
 }
 
 test "acceptClientHello: emits compatibility ChangeCipherSpec for non-empty legacy_session_id" {
@@ -5174,65 +5319,204 @@ test "PSK selection skips cipher suites with an incompatible hash" {
 
 // RFC 8446 §4.2.11, §7.1 — in-memory PSK resumption (psk_dhe_ke): the client
 // offers a PSK, the server verifies the binder and selects it, and the
-// handshake completes to connected with matching keys and an application-data
-// round trip. Exercises the full PSK key schedule (PSK early secret + ECDHE).
+// handshake completes to connected with matching keys and application data.
 test "in-memory PSK resumption reaches app data" {
-    const resumption_master: hkdf.HkdfSha256.Prk = .init(.{
-        0x7d, 0xf2, 0x35, 0xf2, 0x03, 0x1d, 0x2a, 0x05,
-        0x12, 0x87, 0xd0, 0x2b, 0x02, 0x41, 0xb0, 0xbf,
-        0xda, 0xf8, 0x6c, 0xc8, 0x56, 0x23, 0x1f, 0x2d,
-        0x5a, 0xba, 0x46, 0xc4, 0x34, 0xec, 0x19, 0x6c,
-    });
-    const psk = hkdf.HkdfSha256.resumptionPsk(resumption_master, &.{ 0x00, 0x00 });
+    try expectInMemoryPskResumption(null, .direct, .aes_128_gcm_sha256);
+}
+
+// RFC 8446 §4.2.11, §7.1 and RFC 10024 §4 — PSK authentication composes with
+// every standardized hybrid shared secret under psk_dhe_ke.
+test "in-memory RFC 10024 PSK resumption matrix reaches app data" {
+    const groups = [_]NamedGroup{
+        .x25519_mlkem768,
+        .secp256r1_mlkem768,
+        .secp384r1_mlkem1024,
+    };
+    var tested = false;
+    for (groups) |group| {
+        if (!backend.supportsServerHybridGroup(group)) continue;
+        tested = true;
+        try expectInMemoryPskResumption(group, .direct, .aes_128_gcm_sha256);
+    }
+    if (!tested) return error.SkipZigTest;
+}
+
+// RFC 8446 §4.1.2, §4.2.11.2 and RFC 10024 §4 — ClientHello2 preserves the
+// PSK offer and recomputes its binder over the retry transcript while each
+// standardized hybrid group supplies the fresh psk_dhe_ke shared secret.
+test "in-memory RFC 10024 PSK resumption survives HRR" {
+    const groups = [_]NamedGroup{
+        .x25519_mlkem768,
+        .secp256r1_mlkem768,
+        .secp384r1_mlkem1024,
+    };
+    var tested = false;
+    for (groups) |group| {
+        if (!backend.supportsServerHybridGroup(group)) continue;
+        tested = true;
+        try expectInMemoryPskResumption(
+            group,
+            .hello_retry_request,
+            .aes_128_gcm_sha256,
+        );
+    }
+    if (!tested) return error.SkipZigTest;
+}
+
+// RFC 8446 §4.1.2 and §4.2.11.2 — the retry binder uses the selected cipher
+// suite's transcript hash. Exercise the compatible 48-byte SHA-384 path.
+test "in-memory RFC 10024 SHA-384 PSK resumption survives HRR" {
+    const groups = [_]NamedGroup{
+        .x25519_mlkem768,
+        .secp256r1_mlkem768,
+        .secp384r1_mlkem1024,
+    };
+    var tested = false;
+    for (groups) |group| {
+        if (!backend.supportsServerHybridGroup(group)) continue;
+        tested = true;
+        try expectInMemoryPskResumption(
+            group,
+            .hello_retry_request,
+            .aes_256_gcm_sha384,
+        );
+    }
+    if (!tested) return error.SkipZigTest;
+}
+
+const PskHandshakePath = enum {
+    direct,
+    hello_retry_request,
+};
+
+fn firstObfuscatedTicketAge(parsed: client_hello.Parsed) !u32 {
+    var reader: wiremod.Reader = .init(parsed.psk_ext.?);
+    _ = try reader.read(u16);
+    const identity_len = try reader.read(u16);
+    _ = try reader.readSlice(@as(usize, identity_len));
+    return reader.read(u32);
+}
+
+fn expectInMemoryPskResumption(
+    hybrid_group: ?NamedGroup,
+    path: PskHandshakePath,
+    cipher_suite: CipherSuite,
+) !void {
+    var psk_storage: [48]u8 = undefined;
+    const psk: []const u8 = switch (cipher_suite) {
+        .aes_128_gcm_sha256, .chacha20_poly1305_sha256 => blk: {
+            const master: hkdf.HkdfSha256.Prk = .init(@splat(0x7d));
+            const derived = hkdf.HkdfSha256.resumptionPsk(master, &.{ 0x00, 0x00 });
+            @memcpy(psk_storage[0..hkdf.HkdfSha256.prk_len], &derived.data);
+            break :blk psk_storage[0..hkdf.HkdfSha256.prk_len];
+        },
+        .aes_256_gcm_sha384 => blk: {
+            const master: hkdf.HkdfSha384.Prk = .init(@splat(0x7d));
+            const derived = hkdf.HkdfSha384.resumptionPsk(master, &.{ 0x00, 0x00 });
+            @memcpy(psk_storage[0..hkdf.HkdfSha384.prk_len], &derived.data);
+            break :blk psk_storage[0..hkdf.HkdfSha384.prk_len];
+        },
+    };
     const identity = [_]u8{ 0x2c, 0x03, 0x5d, 0x82, 0x93, 0x59 };
 
+    var group_storage: [1]NamedGroup = undefined;
+    const hybrid_groups: []const NamedGroup = if (hybrid_group) |group| blk: {
+        group_storage[0] = group;
+        break :blk &group_storage;
+    } else &.{};
+
+    var client_keypairs: KeyPairs = try .init(.generate());
+    if (hybrid_group == .secp384r1_mlkem1024) client_keypairs.p384 = try .generate();
     var client: ClientHandshake = .init(.{
-        .keypairs = try .init(.generate()),
+        .keypairs = client_keypairs,
         .host_name = null,
         .now_sec = 0,
         .random = .zero,
+        .hybrid = .{
+            .supported_groups = hybrid_groups,
+            .initial_key_share = switch (path) {
+                .direct => hybrid_group,
+                .hello_retry_request => null,
+            },
+        },
     });
+    defer client.deinit();
     client.policy.insecure_no_chain_anchor = true;
+
     var ticket: ClientHandshake.SessionTicket = .{
         .ticket_age_add = 0x262a6494,
-        .cipher_suite = .aes_128_gcm_sha256,
+        .cipher_suite = cipher_suite,
     };
     ticket.identity.appendSliceAssumeCapacity(&identity);
-    ticket.psk.appendSliceAssumeCapacity(&psk.data);
+    ticket.psk.appendSliceAssumeCapacity(psk);
     var client_out: [4096]u8 = undefined;
     const ch_record = try client.startWithPsk(&ticket, &client_out, false);
     client.completeWrite();
+    const parsed_ch1 = try client_hello.parse(ch_record[frame.header_len..]);
+    const offered_ticket_age = try firstObfuscatedTicketAge(parsed_ch1);
+    try testing.expectEqual(ticket.ticket_age_add, offered_ticket_age);
 
     const Lookup = struct {
         const Self = @This();
         psk: []const u8,
         identity: []const u8,
+        cipher_suite: CipherSuite,
         fn l(ctx: *anyopaque, id: []const u8) ?PskEntry {
             const self: *Self = @ptrCast(@alignCast(ctx));
             if (std.mem.eql(u8, id, self.identity))
-                return .{ .psk = self.psk, .cipher_suite = .aes_128_gcm_sha256 };
+                return .{ .psk = self.psk, .cipher_suite = self.cipher_suite };
             return null;
         }
     };
-    var lookup_ctx: Lookup = .{ .psk = &psk.data, .identity = &identity };
+    var lookup_ctx: Lookup = .{
+        .psk = psk,
+        .identity = &identity,
+        .cipher_suite = cipher_suite,
+    };
 
+    var server_keypairs: KeyPairs = try .init(.generate());
+    if (hybrid_group == .secp384r1_mlkem1024) server_keypairs.p384 = try .generate();
     var server: ServerHandshake = .init(.{
-        .keypairs = try .init(.generate()),
+        .keypairs = server_keypairs,
         .random = .zero,
         .psk_lookup = .{ .context = &lookup_ctx, .lookup = Lookup.l },
+        .hybrid_groups = hybrid_groups,
     });
+    defer server.deinit();
+    server.supportSuites(&.{cipher_suite});
     try testing.expect(server.selected_psk == null);
+
     var server_out: [4096]u8 = undefined;
-    const sh_record = try server.acceptClientHello(ch_record, &server_out);
-    // The server selected the PSK.
+    const first_server_record = try server.acceptClientHello(ch_record, &server_out);
+    const sh_record = switch (path) {
+        .direct => first_server_record,
+        .hello_retry_request => blk: {
+            try testing.expect(server.selected_psk == null);
+            var hrr_record: [4096]u8 = undefined;
+            @memcpy(hrr_record[0..first_server_record.len], first_server_record);
+            const event = try client.handleRecord(
+                hrr_record[0..first_server_record.len],
+                &client_out,
+            );
+            const ch2_record = switch (event) {
+                .write => |record| record,
+                else => return error.UnexpectedEvent,
+            };
+            client.completeWrite();
+            const parsed_ch2 = try client_hello.parse(ch2_record[frame.header_len..]);
+            try testing.expect(parsed_ch2.psk_ext != null);
+            try testing.expectEqual(offered_ticket_age, try firstObfuscatedTicketAge(parsed_ch2));
+            try testing.expect(!parsed_ch2.offered_early_data);
+            break :blk try server.acceptClientHello(ch2_record, &server_out);
+        },
+    };
     try testing.expect(server.selected_psk != null);
     try testing.expectEqual(@as(u16, 0), server.selected_psk_index);
+    if (hybrid_group) |group| try testing.expectEqual(group, server.negotiated_group);
 
     try client.processServerHello(sh_record[frame.header_len..]);
+    try testing.expect(client.server_selected_psk);
 
-    // The server sends an authenticated flight (with PSK resumption, the
-    // server still sends Certificate/CertificateVerify/Finished — psk_dhe_ke
-    // keeps the server auth). Use the test helper flight.
     var signer = try signature.PrivateKey.fromP256Scalar(serverEcdsaScalar()[0..32]);
     defer signer.deinit();
     var plaintext: [4096]u8 = undefined;
@@ -5253,7 +5537,6 @@ test "in-memory PSK resumption reaches app data" {
     try server.processClientFinished(client_out[0..client_finished.len]);
     try testing.expect(server.isConnected());
 
-    // Application-data round trip under the PSK-derived keys.
     const client_app = try client.sendApplicationData("ping", &client_out);
     client.completeWrite();
     try testing.expectEqualStrings(
@@ -5846,104 +6129,227 @@ test "0-RTT: processClientFinished rejects Finished before EndOfEarlyData" {
     try testing.expect(!server.isConnected());
 }
 
-// draft-ietf-tls-ecdhe-mlkem-05 §4 — in-memory X25519MLKEM768 hybrid KEM
-// handshake: the client offers a KEM key_share, the server encapsulates, and
-// the handshake completes with the hybrid shared secret.
-test "in-memory X25519MLKEM768 KEM handshake reaches app data" {
-    if (!backend.supportsServerX25519Mlkem768()) return error.SkipZigTest;
-    // Runtime check: try to generate a KEM key. If the provider doesn't
-    // support it at runtime (e.g. the default provider isn't loaded), skip.
-    const test_key = mlkem_mod.generateX25519Mlkem768() catch return error.SkipZigTest;
-    mlkem_mod.freeKey(test_key);
+// RFC 8446 §4.2.8 / RFC 10024 §4.1 — when a client sends multiple hybrid
+// shares, the server chooses in its configured preference order.
+test "preferredHybridShare follows server preference" {
+    if (!backend.supportsServerHybridGroup(.x25519_mlkem768) or
+        !backend.supportsServerHybridGroup(.secp256r1_mlkem768))
+    {
+        return error.SkipZigTest;
+    }
 
-    const client_keypair: x25519.KeyPair = .generate();
-    const server_keypair: x25519.KeyPair = .generate();
-
-    var client: ClientHandshake = .init(.{
-        .keypairs = try .init(client_keypair),
-        .host_name = null,
-        .now_sec = 0,
-        .random = .zero,
-        .offer_pq_key_share = true,
-    });
-    client.policy.insecure_no_chain_anchor = true;
-    defer client.deinit();
-
-    var client_out: [4096]u8 = undefined;
-    const ch_record = try client.start(&client_out);
-    client.completeWrite();
-    if (client.kem_key == null) return error.SkipZigTest;
-
-    var server: ServerHandshake = .init(try testConfig(server_keypair));
-    var server_out: [4096]u8 = undefined;
-    const sh_record = try server.acceptClientHello(ch_record, &server_out);
-    if (server.negotiated_group != .x25519_mlkem768) return error.SkipZigTest;
-
-    const sh_ev = try client.handleRecord(server_out[0..sh_record.len], &client_out);
-    _ = sh_ev;
-
-    var signer = try signature.PrivateKey.fromP256Scalar(serverEcdsaScalar()[0..32]);
-    defer signer.deinit();
-    var plaintext: [4096]u8 = undefined;
-    const flight_record = try server.sendAuthenticatedFlight(
-        &.{serverEcdsaCertDer()},
-        signer.signer(),
-        &plaintext,
-        &server_out,
-    );
-    const flight_ev = try client.handleRecord(server_out[0..flight_record.len], &client_out);
-    const client_finished = switch (flight_ev) {
-        .write => |w| w,
-        else => return error.UnexpectedEvent,
+    const preference = [_]NamedGroup{
+        .secp256r1_mlkem768,
+        .x25519_mlkem768,
     };
-    client.completeWrite();
-    try testing.expect(client.isConnected());
+    var config = try testConfig(.generate());
+    config.hybrid_groups = &preference;
+    var server: ServerHandshake = .init(config);
+    defer server.deinit();
 
-    try server.processClientFinished(client_out[0..client_finished.len]);
-    try testing.expect(server.isConnected());
-
-    // Application-data round trip under the KEM-derived keys.
-    const client_app = try client.sendApplicationData("ping", &client_out);
-    client.completeWrite();
-    try testing.expectEqualStrings(
-        "ping",
-        try server.receiveApplicationData(client_out[0..client_app.len]),
-    );
-    const server_app = try server.sendApplicationData("pong", &server_out);
-    var server_app_mut: [128]u8 = undefined;
-    @memcpy(server_app_mut[0..server_app.len], server_app);
-    const app_ev = try client.handleRecord(server_app_mut[0..server_app.len], &client_out);
-    try testing.expectEqualStrings("pong", app_ev.application_data);
+    var x25519_share: [1216]u8 = undefined;
+    var p256_share: [1249]u8 = undefined;
+    const offered = [_]client_hello.ParsedKemKeyShare{
+        .{ .group = .x25519_mlkem768, .data = &x25519_share },
+        .{ .group = .secp256r1_mlkem768, .data = &p256_share },
+    };
+    const selected = server.preferredHybridShare(&offered);
+    try testing.expect(selected != null);
+    try testing.expectEqual(NamedGroup.secp256r1_mlkem768, selected.?.group);
 }
 
-// draft-ietf-tls-ecdhe-mlkem-05 §4 — KEM operations and the echoed
-// KeyShareEntry group must use the same named-group construction. A share for
-// an unimplemented hybrid group falls back to the offered X25519 share.
-test "KEM negotiation pins encapsulation to X25519MLKEM768" {
-    if (!backend.supportsServerX25519Mlkem768()) return error.SkipZigTest;
+// RFC 10024 §4 — every standardized hybrid group completes an in-memory
+// authenticated handshake and protects application data with the composed
+// ECDHE + ML-KEM shared secret.
+test "in-memory RFC 10024 hybrid group matrix reaches app data" {
+    const groups = [_]NamedGroup{
+        .x25519_mlkem768,
+        .secp256r1_mlkem768,
+        .secp384r1_mlkem1024,
+    };
+    var tested = false;
 
-    const kem_key = mlkem_mod.generateX25519Mlkem768() catch
+    for (groups) |group| {
+        if (!backend.supportsServerHybridGroup(group)) continue;
+        tested = true;
+
+        const enabled_groups = [_]NamedGroup{group};
+        var client_keys: KeyPairs = try .init(.generate());
+        if (group == .secp384r1_mlkem1024) client_keys.p384 = try .generate();
+        var client: ClientHandshake = .init(.{
+            .keypairs = client_keys,
+            .host_name = null,
+            .now_sec = 0,
+            .random = .zero,
+            .hybrid = .{
+                .supported_groups = &enabled_groups,
+                .initial_key_share = group,
+            },
+        });
+        client.policy.insecure_no_chain_anchor = true;
+        defer client.deinit();
+
+        var client_out: [4096]u8 = undefined;
+        const ch_record = try client.start(&client_out);
+        client.completeWrite();
+
+        var server_config = try testConfig(.generate());
+        if (group == .secp384r1_mlkem1024)
+            server_config.keypairs.p384 = try .generate();
+        server_config.hybrid_groups = &enabled_groups;
+        var server: ServerHandshake = .init(server_config);
+        defer server.deinit();
+
+        var server_out: [4096]u8 = undefined;
+        const sh_record = try server.acceptClientHello(ch_record, &server_out);
+        try testing.expectEqual(group, server.negotiated_group);
+
+        _ = try client.handleRecord(server_out[0..sh_record.len], &client_out);
+
+        var signer = try signature.PrivateKey.fromP256Scalar(serverEcdsaScalar()[0..32]);
+        defer signer.deinit();
+        var plaintext: [4096]u8 = undefined;
+        const flight_record = try server.sendAuthenticatedFlight(
+            &.{serverEcdsaCertDer()},
+            signer.signer(),
+            &plaintext,
+            &server_out,
+        );
+        const flight_ev = try client.handleRecord(
+            server_out[0..flight_record.len],
+            &client_out,
+        );
+        const client_finished = switch (flight_ev) {
+            .write => |w| w,
+            else => return error.UnexpectedEvent,
+        };
+        client.completeWrite();
+        try testing.expect(client.isConnected());
+
+        try server.processClientFinished(client_out[0..client_finished.len]);
+        try testing.expect(server.isConnected());
+
+        const client_app = try client.sendApplicationData("ping", &client_out);
+        client.completeWrite();
+        try testing.expectEqualStrings(
+            "ping",
+            try server.receiveApplicationData(client_out[0..client_app.len]),
+        );
+        const server_app = try server.sendApplicationData("pong", &server_out);
+        var server_app_mut: [128]u8 = undefined;
+        @memcpy(server_app_mut[0..server_app.len], server_app);
+        const app_ev = try client.handleRecord(
+            server_app_mut[0..server_app.len],
+            &client_out,
+        );
+        try testing.expectEqualStrings("pong", app_ev.application_data);
+    }
+
+    if (!tested) return error.SkipZigTest;
+}
+
+// RFC 8446 §4.1.4, RFC 10024 §4.1 — advertising a hybrid group without an
+// initial share lets the server select it through HRR; ClientHello2 then
+// carries exactly that group's full hybrid share.
+test "RFC 10024 hybrid group matrix negotiates through HRR" {
+    const groups = [_]NamedGroup{
+        .x25519_mlkem768,
+        .secp256r1_mlkem768,
+        .secp384r1_mlkem1024,
+    };
+    var tested = false;
+
+    for (groups) |group| {
+        if (!backend.supportsServerHybridGroup(group)) continue;
+        tested = true;
+
+        const enabled_groups = [_]NamedGroup{group};
+        var client_keys: KeyPairs = try .init(.generate());
+        if (group == .secp384r1_mlkem1024) client_keys.p384 = try .generate();
+        var client: ClientHandshake = .init(.{
+            .keypairs = client_keys,
+            .host_name = null,
+            .now_sec = 0,
+            .random = .zero,
+            .hybrid = .{ .supported_groups = &enabled_groups },
+        });
+        defer client.deinit();
+
+        var client_out: [4096]u8 = undefined;
+        const ch1_record = try client.start(&client_out);
+        client.completeWrite();
+
+        var server_config = try testConfig(.generate());
+        if (group == .secp384r1_mlkem1024)
+            server_config.keypairs.p384 = try .generate();
+        server_config.hybrid_groups = &enabled_groups;
+        var server: ServerHandshake = .init(server_config);
+        defer server.deinit();
+
+        var server_out: [4096]u8 = undefined;
+        const hrr_record = try server.acceptClientHello(ch1_record, &server_out);
+        const hrr_header = try frame.parseHeader(hrr_record);
+        const hrr = try server_hello.parseHelloRetryRequest(
+            hrr_record[frame.header_len..][0..hrr_header.length()],
+        );
+        try testing.expectEqual(group, hrr.selected_group.?);
+
+        var hrr_rx: [4096]u8 = undefined;
+        @memcpy(hrr_rx[0..hrr_record.len], hrr_record);
+        const ch2_event = try client.handleRecord(hrr_rx[0..hrr_record.len], &client_out);
+        const ch2_record = switch (ch2_event) {
+            .write => |record| record,
+            else => return error.UnexpectedEvent,
+        };
+        client.completeWrite();
+
+        const ch2_header = try frame.parseHeader(ch2_record);
+        const ch2 = try client_hello.parse(
+            ch2_record[frame.header_len..][0..ch2_header.length()],
+        );
+        try testing.expectEqual(group, ch2.hybrid_key_shares.get(0).group);
+        try testing.expect(ch2.public_key == null);
+        try testing.expect(ch2.public_key_p256 == null);
+        try testing.expect(ch2.public_key_p384 == null);
+
+        const sh_record = try server.acceptClientHello(ch2_record, &server_out);
+        try testing.expectEqual(group, server.negotiated_group);
+        _ = try client.handleRecord(server_out[0..sh_record.len], &client_out);
+        try testing.expectEqual(group, client.retry_selected_group.?);
+    }
+
+    if (!tested) return error.SkipZigTest;
+}
+
+// RFC 8446 §4.2.7, RFC 10024 §4 — a server that has not enabled hybrid
+// groups may ignore a valid hybrid share and select an offered classical share.
+test "hybrid share requires explicit server policy" {
+    if (!backend.supportsClientHybridGroup(.secp256r1_mlkem768))
         return error.SkipZigTest;
-    defer mlkem_mod.freeKey(kem_key);
-    var kem_public_buf: [mlkem_mod.x25519_mlkem768_public_length]u8 = undefined;
-    const kem_public = try mlkem_mod.publicKey(kem_key, &kem_public_buf);
 
-    const client_x25519: x25519.KeyPair = .generate();
-    const client_p256 = try p256.KeyPair.generateDeterministic(.init(test_p256_seed_a));
-    const kem_share: client_hello.KemShare = .{
+    var client_keys: handshake_key_pairs.KeyPairs = .initWithP256(
+        .generate(),
+        try .generateDeterministic(.init(test_p256_seed_a)),
+    );
+    defer client_keys.secureZero();
+    var hybrid_key = try hybrid_kex.ClientKeyPair.generate(.secp256r1_mlkem768);
+    defer hybrid_key.deinit();
+    var hybrid_public: [hybrid_kex.max_client_share_len]u8 = undefined;
+    const public_key = try hybrid_key.publicKey(&client_keys, &hybrid_public);
+    const share: client_hello.KemShare = .{
         .group = .secp256r1_mlkem768,
-        .data = kem_public,
+        .data = public_key,
     };
     var ch_buf: [4096]u8 = undefined;
     const ch = try client_hello.encodeWithKem(
         &ch_buf,
         .zero,
-        client_x25519.public_key,
-        client_p256.public_key,
+        client_keys.x25519.public_key,
+        client_keys.p256.public_key,
         null,
         null,
         &.{},
-        kem_share,
+        share,
     );
     var ch_record: [4096]u8 = undefined;
     const ch_header: frame.Header = .init(.handshake, @intCast(ch.len));
