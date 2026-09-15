@@ -914,15 +914,21 @@ test "split halves: abort wakes blocked read before teardown" {
     defer conn.deinit();
 
     var read_ctx: ClientReadCtx = .{ .conn = &conn };
-    const reader_thread = try std.Thread.spawn(.{}, clientReadRun, .{&read_ctx});
-    defer reader_thread.join();
-    errdefer conn.abort();
-    try waitState(&conn, state_rx_busy);
+    {
+        const reader_thread = try std.Thread.spawn(.{}, clientReadRun, .{&read_ctx});
+        defer reader_thread.join();
+        errdefer conn.abort();
+        try waitState(&conn, state_rx_busy);
 
-    conn.abort();
-    try read_ctx.done.wait();
+        conn.abort();
+        try read_ctx.done.wait();
+        try testing.expectEqual(error.TlsAborted, read_ctx.err.?);
+    }
+
+    // Peer completion is not part of the abort contract. Close only after the
+    // local half joins, then verify that the peer drains without error.
+    conn.deinit();
     try sctx.done.wait();
-    try testing.expectEqual(error.TlsAborted, read_ctx.err.?);
     if (sctx.err) |err| return err;
 }
 
@@ -953,22 +959,26 @@ test "split halves: abort wakes blocked write before teardown" {
 
     harness.state.store(.armed, .release);
     var write_ctx: ClientWriteCtx = .{ .conn = &conn, .data = "blocked" };
-    const writer_thread = try std.Thread.spawn(.{}, clientWriteRun, .{&write_ctx});
-    defer writer_thread.join();
-    errdefer conn.abort();
+    {
+        const writer_thread = try std.Thread.spawn(.{}, clientWriteRun, .{&write_ctx});
+        defer writer_thread.join();
+        errdefer conn.abort();
 
-    try harness.entered.wait();
-    conn.abort();
-    try testing.expect(harness.aborted.isOpen());
-    try testing.expectEqual(
-        AbortWriteHarness.Shutdown.both,
-        harness.shutdown.load(.acquire),
-    );
-    try write_ctx.done.wait();
+        try harness.entered.wait();
+        conn.abort();
+        try testing.expect(harness.aborted.isOpen());
+        try testing.expectEqual(
+            AbortWriteHarness.Shutdown.both,
+            harness.shutdown.load(.acquire),
+        );
+        try write_ctx.done.wait();
+        try testing.expectEqual(error.TlsAborted, write_ctx.err.?);
+        try testing.expect(conn.hs.pending_write.isPending());
+        try testing.expect(conn.state.load(.acquire) & state_tx_poisoned != 0);
+    }
+
+    conn.deinit();
     try sctx.done.wait();
-    try testing.expectEqual(error.TlsAborted, write_ctx.err.?);
-    try testing.expect(conn.hs.pending_write.isPending());
-    try testing.expect(conn.state.load(.acquire) & state_tx_poisoned != 0);
     if (sctx.err) |err| return err;
 }
 
