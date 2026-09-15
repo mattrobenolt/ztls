@@ -31,8 +31,9 @@ The engine owns the TLS protocol: framing, encryption, transcript hashing, alert
 - [`examples/tcp_loopback.zig`](https://github.com/mattrobenolt/ztls/blob/main/examples/tcp_loopback.zig) — ztls client plus ztls server over `std.net.Stream` on loopback.
 - [`examples/epoll_pingpong.zig`](https://github.com/mattrobenolt/ztls/blob/main/examples/epoll_pingpong.zig) — non-blocking Linux epoll client/server ping-pong.
 - [`examples/iouring_pingpong.zig`](https://github.com/mattrobenolt/ztls/blob/main/examples/iouring_pingpong.zig) — Linux io_uring client/server ping-pong.
+- [`integrations/ztls-ktls/examples/ktls_pingpong.zig`](https://github.com/mattrobenolt/ztls/blob/main/integrations/ztls-ktls/examples/ktls_pingpong.zig) — Zig 0.16/Linux userspace handshake followed by kernel TX/RX, live KeyUpdate, and explicit close alerts.
 
-`just examples-ci` builds and runs those paths. If a drive-loop shape here diverges from those examples, this document is the stale side.
+`just examples-ci` builds and runs the core paths. The Zig 0.16 integration gate runs the packaged examples and tests. If a drive-loop shape here diverges from those examples, this document is the stale side.
 
 ## Fresh project setup
 
@@ -288,7 +289,9 @@ record drain. The writer must not call back into ztls.
 
 After the handshake is connected, `txKtlsInfo()` and `rxKtlsInfo()` return copied Linux kTLS key material for the current traffic-key epoch. `tx` is the local write direction; `rx` is the peer write direction. The core still does no socket I/O and does not call `setsockopt`.
 
-For caller-initiated KeyUpdate, send the KeyUpdate record, call `completeWrite()` after it is fully written, then call `txKtlsInfo()` and install that value as the new kernel TX key before the next kernel send. For inbound KeyUpdate, the engine-owned record path ratchets `rx`; callers using kernel-owned RX must treat this as a sequencing contract they own and install the new `rxKtlsInfo()` value when they process a KeyUpdate boundary. Full kTLS RX event surfacing remains a separate API concern; do not poll once at handshake completion and assume the epoch is permanent.
+The Zig 0.16/Linux [`integrations/ztls-ktls`](../integrations/ztls-ktls/README.md) package owns the safe activation and data-plane lifecycle. It requires an empty `RecordBuffer`, no pending engine write, no unanswered KeyUpdate request, and an application-level barrier preventing the peer from racing a new record into the socket during activation; keeps key snapshots internal to immediate `setsockopt` calls; receives control-record metadata with `recvmsg`; processes kernel-decrypted records through `receiveKtlsRecord`; ratchets external TX records through `ratchetKtlsTx`; and sends `close_notify` explicitly. Use that package instead of open-coding the sequence from the raw getters.
+
+The raw exports remain available for specialized integrations. They are immediate-use snapshots: retaining one across any record operation, or reinstalling stale sequence/key material, can cause epoch desynchronization or nonce reuse.
 
 ## Server credentials
 
@@ -567,7 +570,6 @@ for the examples above:
 
 - P-384 and PQ/hybrid key shares (#6, open)
 - Exporters — not implemented; not on the timeline until a feature request earns it.
-- Distributable wrappers around the engine (io_uring submissions, async runtimes,
-  `std.net.Stream` adapters, kTLS integration). The `RecordBuffer` +
-  `handleRecord` pattern is the same for every supported flow; wrapper packages
-  belong in separate repositories.
+- A general io_uring or arbitrary-runtime wrapper. In-tree integration packages
+  cover `std.Io`, libxev, and Linux kTLS without moving transport I/O into the
+  core engine.

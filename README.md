@@ -103,13 +103,14 @@ code, start with the examples that run in CI:
 - [`examples/tcp_loopback.zig`](examples/tcp_loopback.zig) — client and server over `std.net.Stream` loopback.
 - [`examples/epoll_pingpong.zig`](examples/epoll_pingpong.zig) — non-blocking Linux epoll ping-pong.
 - [`examples/iouring_pingpong.zig`](examples/iouring_pingpong.zig) — Linux io_uring ping-pong.
-- [`examples/ktls_server.zig`](examples/ktls_server.zig) — Linux kTLS offload: userspace handshake, kernel data plane.
+- [`integrations/ztls-ktls/examples/ktls_pingpong.zig`](integrations/ztls-ktls/examples/ktls_pingpong.zig) — Zig 0.16/Linux kTLS: exact handoff, kernel data plane, live KeyUpdate, and explicit close alerts.
 
 Run them from the devshell:
 
 ```sh
 nix develop .#openssl
 just examples-ci
+nix develop .#ztls-ktls --command just integrations/ztls-ktls/ci
 ```
 
 `nix develop .#aws-lc` selects the AWS-LC shell for backend work. OpenSSL is the

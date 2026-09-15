@@ -1,0 +1,65 @@
+# ztls-ktls integration workflows (#78).
+#
+# Zig 0.16 and Linux only. Enter the devshell with
+# `nix develop ../..#ztls-ktls`, or let direnv do it via .envrc.
+
+[private]
+default:
+    @just --list
+
+[doc("Remove local build artifacts")]
+clean:
+    rm -rf zig-out .zig-cache
+
+[doc("Build the package")]
+build:
+    zig build
+
+[doc("Compile every example")]
+build-examples:
+    zig build build-examples
+
+[doc("Run unit and live kernel tests")]
+test:
+    zig build test --summary all
+
+[doc("Format Zig and Just sources")]
+fmt: fmt-zig fmt-just
+
+[doc("Lint Zig and Just sources")]
+lint: lint-zig lint-just
+
+[doc("Format Zig code")]
+fmt-zig:
+    zig fmt build.zig src/ examples/
+
+[doc("Lint Zig code (fmt, ziglint, and workspace std-alias rules)")]
+lint-zig:
+    zig fmt --check build.zig src/ examples/
+    ziglint build.zig src/ examples/
+    rc=0; for rule in ../../rules/std-alias-*.yml; do ast-grep scan --rule "$rule" src examples --globs '*.zig' --report-style short || rc=1; done; exit $rc
+
+[doc("Format Justfile")]
+fmt-just:
+    just --fmt --unstable --justfile justfile
+
+[doc("Lint Justfile")]
+lint-just:
+    just --check --fmt --unstable --justfile justfile
+
+[doc("Rerun kernel tests N times to shake out timing-dependent flakes")]
+[group("check")]
+flake-check n="20":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    for i in $(seq 1 {{ n }}); do
+        if ! zig build test > /dev/null 2>&1; then
+            echo "flaked on run $i of {{ n }}" >&2
+            zig build test >&2
+            exit 1
+        fi
+    done
+    echo "{{ n }} consecutive green runs"
+
+[doc("Run all CI gates for this integration")]
+ci: lint test build-examples

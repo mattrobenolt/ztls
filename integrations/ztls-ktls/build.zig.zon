@@ -1,0 +1,23 @@
+.{
+    .name = .ztls_ktls,
+    .version = "0.0.0",
+    .fingerprint = 0x6fe677c8d1847ac4,
+    .minimum_zig_version = "0.16.0",
+    .dependencies = .{
+        .ztls = .{
+            .path = "../..",
+        },
+        .ztest = .{
+            .url = "https://github.com/mattrobenolt/ztest/archive/e8a7c83a961502ff85ed82fbab06af78c81a0836.tar.gz",
+            .hash = "ztest-0.2.0-h6PBzyKEAAC49mtm1NO2CTeniItVuL0l06TpBDMDTe19",
+            .lazy = true,
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        "examples",
+        "README.md",
+    },
+}

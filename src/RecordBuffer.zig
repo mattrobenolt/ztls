@@ -91,6 +91,13 @@ pub fn hasRecord(self: *const RecordBuffer) bool {
     return avail.len >= frame.header_len + hdr.length();
 }
 
+/// True when no transport bytes remain buffered, including a partial record.
+/// A kTLS handoff must satisfy this before the kernel takes ownership of RX.
+pub fn isEmpty(self: *const RecordBuffer) bool {
+    assert(self.pos <= self.filled);
+    return self.pos == self.filled;
+}
+
 /// Move unconsumed bytes to the front so `writable()` is maximally contiguous.
 fn compact(self: *RecordBuffer) void {
     if (self.pos == 0) return;
@@ -182,4 +189,23 @@ test "next: oversized length is rejected" {
     @memcpy(rb.writable()[0..hdr.len], &hdr);
     rb.advance(hdr.len);
     try testing.expectError(error.RecordTooLarge, rb.next());
+}
+
+// RFC 8446 §5.1 — kTLS RX handoff requires no userspace-owned transport byte,
+// including a partial header or body.
+test "isEmpty distinguishes drained, partial, and complete records" {
+    var storage: [min_storage]u8 = undefined;
+    var rb: RecordBuffer = .init(&storage);
+    try testing.expect(rb.isEmpty());
+
+    rb.writable()[0] = 23;
+    rb.advance(1);
+    try testing.expect(!rb.isEmpty());
+    try testing.expectEqual(@as(?[]u8, null), try rb.next());
+
+    const rest = [_]u8{ 0x03, 0x03, 0x00, 0x01, 0xaa };
+    @memcpy(rb.writable()[0..rest.len], &rest);
+    rb.advance(rest.len);
+    _ = (try rb.next()).?;
+    try testing.expect(rb.isEmpty());
 }

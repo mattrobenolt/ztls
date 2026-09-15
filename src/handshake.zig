@@ -13,7 +13,10 @@ pub const max_post_handshake_key_updates = 16;
 pub const max_post_handshake_new_session_tickets = 32;
 // Retained for the server-side KeyUpdate counter.
 pub const max_post_handshake_messages = max_post_handshake_key_updates;
-pub const SendError = RecordLayer.EncryptError || error{PendingWrite};
+pub const SendError = RecordLayer.EncryptError || error{
+    PendingWrite,
+    PendingKeyUpdateResponse,
+};
 pub const KeyUpdateSender = enum { client, server };
 
 fn requireHandshakeShape(comptime T: type) void {
@@ -25,7 +28,7 @@ fn requireHandshakeShape(comptime T: type) void {
         },
         else => @compileError("handshake helpers expect a mutable *Handshake pointer"),
     };
-    inline for (&.{ "state", "pending_write", "tx" }) |field| {
+    inline for (&.{ "state", "pending_write", "key_update_obligation", "tx" }) |field| {
         if (!@hasField(Ptr.child, field))
             @compileError("handshake helpers expect state, pending_write, and tx fields");
     }
@@ -53,6 +56,9 @@ pub fn sendApplicationData(self: anytype, plaintext: []const u8, out: []u8) Send
     comptime requireHandshakeShape(@TypeOf(self));
     assert(self.state == .connected);
     if (self.pending_write.isPending()) return error.PendingWrite;
+    if (self.key_update_obligation == .response_owed) {
+        return error.PendingKeyUpdateResponse;
+    }
     const record = try self.tx.encrypt(.application_data, plaintext, out);
     self.pending_write.mark();
     return record;
@@ -67,6 +73,9 @@ pub fn sendPreparedApplicationData(
     comptime requireHandshakeShape(@TypeOf(self));
     assert(self.state == .connected);
     if (self.pending_write.isPending()) return error.PendingWrite;
+    if (self.key_update_obligation == .response_owed) {
+        return error.PendingKeyUpdateResponse;
+    }
     const record = try self.tx.encryptPrepared(.application_data, plaintext_len, out);
     self.pending_write.mark();
     return record;
@@ -88,6 +97,24 @@ pub fn sendKeyUpdate(
     writer.append(u24, 1);
     writer.append(KeyUpdateRequest, request);
     const record = try self.tx.encrypt(.handshake, &msg, out);
+    try ratchetKtlsTx(sender, self, request);
+    self.pending_write.mark();
+    return record;
+}
+
+/// Advance the send traffic secret after an external TLS record layer has sent
+/// a KeyUpdate under the old key. `request` describes the record already sent.
+/// The caller must serialize the send and subsequent key installation around
+/// this call. RFC 8446 §4.6.3.
+// ziglint-ignore: Z015 -- SendError is public; ziglint does not follow imported error-set aliases.
+pub fn ratchetKtlsTx(
+    comptime sender: KeyUpdateSender,
+    self: anytype,
+    request: KeyUpdateRequest,
+) SendError!void {
+    comptime requireHandshakeShape(@TypeOf(self));
+    assert(self.state == .connected);
+    if (self.pending_write.isPending()) return error.PendingWrite;
     const suite = if (@hasField(@TypeOf(self.*), "suite_state"))
         &self.suite_state
     else
@@ -98,8 +125,7 @@ pub fn sendKeyUpdate(
     };
     self.tx.deinit();
     self.tx = next_tx;
-    self.pending_write.mark();
-    return record;
+    if (request == .update_not_requested) self.key_update_obligation = .none;
 }
 
 /// RFC 8446 §4 — handshake message type. Open enum: unrecognized values pass
@@ -123,6 +149,11 @@ pub const Type = enum(u8) {
 pub const KeyUpdateRequest = enum(u8) {
     update_not_requested = 0,
     update_requested = 1,
+};
+
+pub const KeyUpdateObligation = enum(u8) {
+    none,
+    response_owed,
 };
 
 /// Iterates handshake messages packed into one decrypted record payload.

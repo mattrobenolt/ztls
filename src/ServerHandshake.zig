@@ -253,6 +253,8 @@ pending_write: PendingWrite = .idle,
 /// never sets it.
 last_peer_alert: ?alert.Alert = null,
 post_handshake_count: u8 = 0,
+/// An inbound KeyUpdate request must be answered before kTLS handoff.
+key_update_obligation: handshake.KeyUpdateObligation = .none,
 retry_transcript: ?RetryTranscript = null,
 retry_ch1_digest: ?RetryClientHelloDigest = null,
 retry_selected_group: ?NamedGroup = null,
@@ -565,6 +567,18 @@ pub fn isConnected(self: *const ServerHandshake) bool {
     return self.state == .connected;
 }
 
+/// True while wire bytes returned by the engine still await transport
+/// acknowledgement through `completeWrite()`.
+pub fn hasPendingWrite(self: *const ServerHandshake) bool {
+    return self.pending_write.isPending();
+}
+
+/// RFC 8446 §4.6.3 — true after receiving update_requested until the required
+/// update_not_requested response has been generated.
+pub fn hasPendingKeyUpdateResponse(self: *const ServerHandshake) bool {
+    return self.key_update_obligation == .response_owed;
+}
+
 pub fn needsServerFlight(self: *const ServerHandshake) bool {
     return self.state == .wait_client_finished;
 }
@@ -645,7 +659,10 @@ pub const ClientFinishedError =
         ClientCertificateTooLarge,
     };
 
-pub const SendError = RecordLayer.EncryptError || error{PendingWrite};
+pub const SendError = RecordLayer.EncryptError || error{
+    PendingWrite,
+    PendingKeyUpdateResponse,
+};
 pub const ReceiveError =
     RecordLayer.DecryptError || alert.ParseError ||
     error{ UnexpectedEof, UnexpectedRecord, UnexpectedMessage, IllegalParameter } ||
@@ -1903,22 +1920,43 @@ fn handleWaitClientFinished(self: *ServerHandshake, record: []u8) HandleError!Ev
 pub fn receiveRecord(self: *ServerHandshake, record: []u8) ReceiveError!ReceiveEvent {
     assert(self.state == .connected);
     const dec = try handshake.decryptProtected(&self.rx, record);
-    switch (dec.content_type) {
+    return self.receivePlaintextRecord(dec.content_type, dec.content);
+}
+
+/// Process one complete record already decrypted by Linux kTLS. Call exactly
+/// once per `TLS_GET_RECORD_TYPE` result; the record boundary is security-
+/// relevant for KeyUpdate. The kernel owns record sequence advancement.
+// ziglint-ignore: Z015 -- ReceiveError is a public error-set alias.
+pub fn receiveKtlsRecord(
+    self: *ServerHandshake,
+    content_type: frame.ContentType,
+    content: []u8,
+) ReceiveError!ReceiveEvent {
+    assert(self.state == .connected);
+    return self.receivePlaintextRecord(content_type, content);
+}
+
+fn receivePlaintextRecord(
+    self: *ServerHandshake,
+    content_type: frame.ContentType,
+    content: []u8,
+) ReceiveError!ReceiveEvent {
+    switch (content_type) {
         .application_data => {
             if (self.ku_frag.len != 0) {
                 self.ku_frag.clear();
                 return error.UnexpectedMessage;
             }
-            if (dec.content.len > 0) self.post_handshake_count = 0;
-            return .{ .application_data = dec.content };
+            if (content.len > 0) self.post_handshake_count = 0;
+            return .{ .application_data = content };
         },
         .handshake => {
-            if (dec.content.len == 0) {
+            if (content.len == 0) {
                 self.ku_frag.clear();
                 return error.UnexpectedMessage;
             }
 
-            for (dec.content, 0..) |byte, i| {
+            for (content, 0..) |byte, i| {
                 if (self.ku_frag.len == 0 and byte != @intFromEnum(HandshakeType.key_update)) {
                     self.ku_frag.clear();
                     return error.UnexpectedMessage;
@@ -1945,7 +1983,7 @@ pub fn receiveRecord(self: *ServerHandshake, record: []u8) ReceiveError!ReceiveE
                 // must align with a record boundary. Reject before ratcheting
                 // if this record contains anything after the KeyUpdate.
                 if (self.ku_frag.len != key_update_total_len) unreachable;
-                if (i + 1 != dec.content.len) {
+                if (i + 1 != content.len) {
                     self.ku_frag.clear();
                     return error.UnexpectedMessage;
                 }
@@ -1966,6 +2004,9 @@ pub fn receiveRecord(self: *ServerHandshake, record: []u8) ReceiveError!ReceiveE
                 self.rx.deinit();
                 self.rx = next_rx;
                 self.ku_frag.clear();
+                if (request == .update_requested) {
+                    self.key_update_obligation = .response_owed;
+                }
 
                 return .{ .key_update = request };
             }
@@ -1976,7 +2017,7 @@ pub fn receiveRecord(self: *ServerHandshake, record: []u8) ReceiveError!ReceiveE
                 self.ku_frag.clear();
                 return error.UnexpectedMessage;
             }
-            const a = try alert.parse(dec.content);
+            const a = try alert.parse(content);
             if (a.isCloseNotify()) return .closed;
             self.last_peer_alert = a;
             return error.PeerAlert;
@@ -2008,6 +2049,17 @@ pub fn sendKeyUpdate(
     request: KeyUpdateRequest,
 ) SendError![]const u8 {
     return handshake.sendKeyUpdate(.server, self, out, request);
+}
+
+/// Advance server TX after Linux kTLS has accepted a KeyUpdate control record
+/// under the old key. `request` must match that record; a not-requested update
+/// satisfies any owed response. Install `txKtlsInfo()` before any later send.
+// ziglint-ignore: Z015 -- SendError is a public error-set alias.
+pub fn ratchetKtlsTx(
+    self: *ServerHandshake,
+    request: KeyUpdateRequest,
+) SendError!void {
+    return handshake.ratchetKtlsTx(.server, self, request);
 }
 
 // ziglint-ignore: Z015 -- AlertError is a public error-set alias.
@@ -4035,6 +4087,70 @@ test "receiveRecord: RX progresses while a server TX record is pending" {
         error.PendingWrite,
         server.handleRecord(update_record[0..update.len], &server_out),
     );
+}
+
+// RFC 8446 §4.6.3, §5.3 — Linux kTLS supplies one decrypted record and owns
+// its sequence number. The server still validates KeyUpdate and ratchets RX.
+test "receiveKtlsRecord: server processes kernel-decrypted records" {
+    var server = try connectedTestServer();
+    defer server.deinit();
+
+    const rx_before = server.rxKtlsInfo();
+    const tx_before = server.txKtlsInfo();
+    var app = "ping".*;
+    const app_event = try server.receiveKtlsRecord(.application_data, &app);
+    try testing.expectEqualSlices(u8, "ping", app_event.application_data);
+    try testing.expectEqual(rx_before, server.rxKtlsInfo());
+
+    var update = [_]u8{
+        @intFromEnum(HandshakeType.key_update),          0x00, 0x00, 0x01,
+        @intFromEnum(KeyUpdateRequest.update_requested),
+    };
+    const update_event = try server.receiveKtlsRecord(.handshake, &update);
+    try testing.expectEqual(KeyUpdateRequest.update_requested, update_event.key_update);
+    try testing.expectEqual(tx_before, server.txKtlsInfo());
+    const rx_after = server.rxKtlsInfo();
+    try testing.expect(!mem.eql(
+        u8,
+        rx_before.key[0..rx_before.key_len],
+        rx_after.key[0..rx_after.key_len],
+    ));
+    try testing.expectEqualSlices(u8, &([_]u8{0} ** 8), &rx_after.rec_seq);
+    try testing.expect(server.hasPendingKeyUpdateResponse());
+    var blocked_out: [frame.max_wire_record_len]u8 = undefined;
+    try testing.expectError(
+        error.PendingKeyUpdateResponse,
+        server.sendPreparedApplicationData("blocked".len, &blocked_out),
+    );
+    try server.ratchetKtlsTx(.update_not_requested);
+    try testing.expect(!server.hasPendingKeyUpdateResponse());
+}
+
+// RFC 8446 §4.6.3 — an external record layer sends KeyUpdate under the old TX
+// key, then asks the engine to derive the next epoch before later records.
+test "ratchetKtlsTx: server advances only an idle TX epoch" {
+    var server = try connectedTestServer();
+    defer server.deinit();
+
+    const tx_before = server.txKtlsInfo();
+    const rx_before = server.rxKtlsInfo();
+    try server.ratchetKtlsTx(.update_requested);
+    const tx_after = server.txKtlsInfo();
+    try testing.expect(!mem.eql(
+        u8,
+        tx_before.key[0..tx_before.key_len],
+        tx_after.key[0..tx_after.key_len],
+    ));
+    try testing.expectEqualSlices(u8, &([_]u8{0} ** 8), &tx_after.rec_seq);
+    try testing.expectEqual(rx_before, server.rxKtlsInfo());
+
+    try testing.expect(!server.hasPendingWrite());
+    var out: [64]u8 = undefined;
+    _ = try server.sendApplicationData("pending", &out);
+    try testing.expect(server.hasPendingWrite());
+    try testing.expectError(error.PendingWrite, server.ratchetKtlsTx(.update_not_requested));
+    server.completeWrite();
+    try testing.expect(!server.hasPendingWrite());
 }
 
 // RFC 8446 §4.6.3 — a client KeyUpdate(update_requested) ratchets the

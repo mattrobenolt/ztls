@@ -102,6 +102,17 @@
               zig-tools = zig0_16;
             };
 
+            # ztls-ktls integration (#78): Zig 0.16 + OpenSSL backend. The
+            # package itself is Linux-only and root CI skips it on macOS.
+            ztls-ktls = backendShell {
+              name = "ztls-ktls";
+              backend = "openssl";
+              pkgConfigPath = opensslBackend.pkgConfigPath;
+              libDir = opensslBackend.libDir;
+              packages = opensslBackend.packages;
+              zig-tools = zig0_16;
+            };
+
             aws-lc = backendShell {
               name = "ztls-aws-lc";
               backend = "aws-lc";

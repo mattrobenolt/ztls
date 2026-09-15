@@ -185,6 +185,7 @@ pub fn classify(err: HandshakeError) Class {
         error.AeadSetupFailed,
         error.KeyUpdateRequired,
         error.LibcryptoFailed,
+        error.PendingKeyUpdateResponse,
         error.PendingWrite,
         error.PlaintextTooLarge,
         error.RequestContextTooLong,

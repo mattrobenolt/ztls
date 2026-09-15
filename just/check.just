@@ -89,6 +89,7 @@ flake-check n="20":
 integrations-ci:
     just integrations/ztls-std/ci
     just integrations/ztls-xev/ci
+    if [ "$(uname -s)" = Linux ]; then just integrations/ztls-ktls/ci; else echo "ztls-ktls: Linux-only, skipped"; fi
 
 [doc("Build and run the C ABI example (libztls.a + c_client.c)")]
 [group("check")]
@@ -123,7 +124,6 @@ examples-ci:
     zig build example-in_memory_handshake --summary all
     zig build example-epoll_pingpong --summary all
     zig build example-iouring_pingpong --summary all
-    zig build example-ktls_server --summary all
 
 [doc("Check formatting and lint (for CI)")]
 [group("check")]

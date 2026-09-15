@@ -35,6 +35,12 @@ pub const TLS_TX: u32 = 1;
 /// `TLS_RX` direction: install the receive traffic key.
 // ziglint-ignore: Z006 -- kernel UAPI constant, matches include/uapi/linux/tls.h
 pub const TLS_RX: u32 = 2;
+/// Ancillary-data type used to select a non-application TLS TX record.
+// ziglint-ignore: Z006 -- kernel UAPI constant, matches include/uapi/linux/tls.h
+pub const TLS_SET_RECORD_TYPE: u32 = 1;
+/// Ancillary-data type carrying the decrypted TLS RX record type.
+// ziglint-ignore: Z006 -- kernel UAPI constant, matches include/uapi/linux/tls.h
+pub const TLS_GET_RECORD_TYPE: u32 = 2;
 
 /// `TLS_1_3_VERSION` (0x0304) for `tls_crypto_info.version`.
 // ziglint-ignore: Z006 -- kernel UAPI constant, matches include/uapi/linux/tls.h
@@ -148,6 +154,8 @@ test "kernel socket option constants" {
     try testing.expectEqual(@as(u32, 31), TCP_ULP);
     try testing.expectEqual(@as(u32, 1), TLS_TX);
     try testing.expectEqual(@as(u32, 2), TLS_RX);
+    try testing.expectEqual(@as(u32, 1), TLS_SET_RECORD_TYPE);
+    try testing.expectEqual(@as(u32, 2), TLS_GET_RECORD_TYPE);
     try testing.expectEqual(@as(u16, 0x0304), TLS_1_3_VERSION);
 }
 

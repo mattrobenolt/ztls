@@ -19,8 +19,9 @@ If you're wiring ztls into something, read these first.
   non-blocking socket, handshake and exchange messages. No blocking I/O.
 - **`iouring_pingpong`** — deterministic io_uring client/server in one process;
   all socket reads/writes go through io_uring, TLS stays Sans-I/O.
-- **`ktls_server`** — userspace handshake, then hand the keys to the kernel
-  (kTLS) and let the kernel move the data plane.
+- **[`integrations/ztls-ktls`](../integrations/ztls-ktls/README.md)** — the
+  Linux kTLS package and loopback example own handoff, data-plane I/O,
+  KeyUpdate, and closure.
 
 ## Educational demos — protocol and crypto walkthroughs
 

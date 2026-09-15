@@ -717,8 +717,8 @@ Sans-I/O API is pleasant across every I/O model ztls claims to support.
 - `just ci` runs deterministic TLS smoke examples through `examples-ci`:
   `example-tcp_loopback`, `example-in_memory_handshake`,
   `example-epoll_pingpong`, and `example-iouring_pingpong`. The same four
-  deterministic examples plus `example-ktls_server` also run under Zig 0.16
-  via `just ci-0_16` (CI-gated), covering the `std.Io.net` transport
+  deterministic examples also run under Zig 0.16 via `just ci-0_16`
+  (CI-gated), covering the `std.Io.net` transport
   boundary for TCP loopback plus the raw-fd epoll and io_uring examples.
   The 0.16 lane runs the full core gate (test + lint + examples +
   conformance); two `ziglint-ignore: Z011` inline suppressions bridge
@@ -1266,36 +1266,57 @@ in sync without re-running the capture.
   CertificateVerify verification while rustls `NoVerifier` does not. No
   cross-implementation handshake performance claim is allowed from the current
   row.
-- **kTLS offload support is API-complete with a CI-gated example.**
-  `RecordLayer.ktlsInfo()` now exports copied TLS 1.3 traffic key material,
-  Linux kTLS cipher-type values, split AES-GCM salt/IV, ChaCha20-Poly1305 IV,
-  and current big-endian record sequence with RFC-cited tests proving nonce
-  reconstruction and deinit-safe copy semantics. `ClientHandshake` and
-  `ServerHandshake` expose `txKtlsInfo()` / `rxKtlsInfo()` accessors, and
-  post-KeyUpdate tests prove exported epochs carry new keys with sequence
-  number reset to zero. KeyUpdate event surfacing is implemented: both
-  `ClientHandshake.Event` and `ServerHandshake.Event` carry a `key_update`
-  variant that surfaces RX and TX epoch changes and an optional response
-  record, so kTLS callers can reinstall `TLS_RX`/`TLS_TX` at the right
-  moment. The `examples/ktls_server.zig` Linux loopback example demonstrates
-  the full userspace-handshake → kernel-data-plane loop including a
-  pre-install KeyUpdate: the server completes the TLS 1.3 handshake in
-  userspace, processes a client-initiated KeyUpdate (handling the
-  `key_update` event), installs kTLS TX/RX via `setsockopt` with the
-  post-KeyUpdate key material, and exchanges a kernel-encrypted/decrypted
-  ping/pong against a ztls userspace client. The example is CI-gated
-  (`examples-ci`) and proven on ubuntu-latest (run 28808144027, green): the
-  kernel decrypted the client's `ping` and encrypted the server's `pong`
-  using ztls-extracted keys, and the ztls userspace client decrypted the
-  kernel-encrypted `pong`; on a kernel without `tls.ko` it gracefully skips
-  with exit 0. The `ztls.ktls` namespace exposes the Linux UAPI constants
-  and `packAesGcm128`/`packAesGcm256`/`packChaCha20Poly1305` helpers that
-  fold the RFC 8446 §5.3 salt/IV split into the library. Residual scope:
-  the example does the KeyUpdate in userspace before installing kTLS, not a
-  live mid-stream re-key of an already-installed kTLS session (once kTLS RX
-  is installed the kernel consumes encrypted records, so ztls cannot see a
-  KeyUpdate via `handleRecord`); that would need a manual-ratchet API and
-  kernel `EKEYEXPIRED` integration, tracked separately if wanted. *(#29)*
+- **The Zig 0.16/Linux kTLS integration is proven for its documented
+  surface.** Core still exports copied traffic-key snapshots and the three
+  Linux cipher layouts through `RecordLayer.ktlsInfo()` and `ztls.ktls`.
+  `RecordBuffer.isEmpty()`, `hasPendingWrite()`, and
+  `hasPendingKeyUpdateResponse()` make the one-way activation preconditions
+  explicit and prevent application data from overtaking an RFC 8446 §4.6.3
+  response. `ClientHandshake.receiveKtlsRecord()` and
+  `ServerHandshake.receiveKtlsRecord()` validate kernel-decrypted record
+  plaintext while preserving post-handshake counters and RX ratchets;
+  `ratchetKtlsTx()` advances an externally sent TX KeyUpdate without producing
+  duplicate userspace ciphertext.
+
+  `integrations/ztls-ktls` owns the immediate export → pack → `setsockopt`
+  sequence and zeroes every local key copy. Activation rejects read-ahead bytes,
+  pending writes, and unanswered KeyUpdate requests, and shuts down partial
+  installs. Because a userspace buffer cannot exclude ciphertext racing into
+  the socket queue, the handoff contract also requires an application-level
+  peer barrier; the live suite forces that ordering. The data plane uses
+  `sendmsg`/`recvmsg` ancillary metadata (`TLS_SET_RECORD_TYPE` /
+  `TLS_GET_RECORD_TYPE`), dispatches AES-128-GCM, AES-256-GCM, and
+  ChaCha20-Poly1305, handles peer- and locally initiated live KeyUpdate, sends
+  `close_notify` explicitly, and treats bare FIN as truncation. It probes live
+  rekey with an identical pre-send TX reinstall rather than trusting the kernel
+  version. Kernels without the TLS ULP/cipher skip the live suite; kernels that
+  support initial offload but reject a second install expose
+  `.unsupported`, reject local updates before sending, and fail closed on a
+  peer update.
+
+  The CI-wired loopback suite exercises all three ciphers, userspace-peer and
+  both-kTLS-role paths, crossed live rekeys, empty application records,
+  proactive rekey after a coalesced NewSessionTicket, exact empty-buffer and
+  answered-KeyUpdate activation, two-record helper read-ahead drainage,
+  explicit close alerts, bare-FIN truncation,
+  and bounded fragmented-KeyUpdate failure. It is green locally on Linux
+  7.2.3/aarch64 with the `tls` module
+  loaded. The package example supersedes the deleted legacy
+  `examples/ktls_server.zig` initial-offload proof, which had no control-record
+  lifecycle and neither sent nor verified `close_notify` explicitly. The package
+  does both.
+
+  Residual scope is explicit in `integrations/ztls-ktls/README.md`: one
+  single-threaded blocking caller; fragmented KeyUpdate is fatal because the
+  kernel pauses before exposing its continuation; pre-live-rekey kernels cannot
+  recover from a peer update after RX handoff; affected kernels can stay inside
+  `recvmsg` on a stream of empty application records; client session tickets
+  are not surfaced after handoff; and kernel-owned records do not yet get RFC
+  8446 §5.5 preventive usage-limit accounting. Linux can silently select
+  device offload on capable NICs; the package neither detects nor disables it,
+  and live-rekey behavior there is driver-dependent and unverified. No
+  userspace fallback, splice/sendfile, or unsafe no-padding mode is claimed.
+  *(#29, #78)*
 
 ---
 
