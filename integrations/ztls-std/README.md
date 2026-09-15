@@ -240,10 +240,9 @@ pub const Client = /* ClientWith(.{}) */ struct {
 };
 ```
 
-Zeroing those buffers is the wrapper's job, not the engine's. ztls hands lent
-storage back untouched by design ([#81](https://github.com/mattrobenolt/ztls/issues/81)),
-and every buffer here is declared by the `Stream` — including the record and read
-buffers that held decrypted application plaintext, which nobody else would clear.
+Before socket creation, call `Client.Options.validate()` for exact hybrid and credential policy errors. `connect` repeats the check before key generation. `connect` maps these failures to `InvalidOptions`.
+
+ztls returns lent storage unchanged by design ([#81](https://github.com/mattrobenolt/ztls/issues/81)). The wrapper declares and clears all its buffers. These buffers include record data and decrypted application plaintext.
 
 `Server.Options` carries credentials instead of a verification policy:
 
@@ -264,6 +263,8 @@ pub const Options = struct {
     client_auth: ClientAuth = .none,
 };
 ```
+
+Before socket acceptance, call `Server.Options.validate()` for exact hybrid and credential policy errors. `accept` repeats the check before key generation. `accept` maps hybrid faults to `InvalidOptions`.
 
 `info()` exposes negotiated metadata without making callers spelunk through
 handshake state:

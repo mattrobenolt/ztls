@@ -419,7 +419,7 @@ const Role = enum { client, server };
 const max_idle_records_per_refill = 64;
 
 /// Client connection options. See `Client.connect`.
-const ClientOptions = struct {
+pub const ClientOptions = struct {
     /// SNI + certificate hostname (SAN/CN) to verify. Required for real
     /// verification; null disables BOTH SNI and hostname verification
     /// (ztls `host_name = null`).
@@ -438,10 +438,22 @@ const ClientOptions = struct {
     /// chain is rejected as `InvalidOptions` before any wire I/O. Borrowed
     /// for the handshake. RFC 8446 §4.4.2, §4.4.3.
     client_credentials: ?ClientCredentials = null,
+
+    pub const ValidationError = ztls.ClientHandshake.HybridPolicyError ||
+        error{EmptyClientCertificateChain};
+
+    /// Validate local hybrid and credential policy before socket creation.
+    pub fn validate(self: ClientOptions) ValidationError!void {
+        try self.hybrid.validate();
+        if (self.client_credentials) |credentials| {
+            if (credentials.cert_chain.len == 0)
+                return error.EmptyClientCertificateChain;
+        }
+    }
 };
 
 /// Server connection options. See `Server.accept`.
-const ServerOptions = struct {
+pub const ServerOptions = struct {
     /// Certificate chain, leaf first, DER. Borrowed for the connection's life.
     cert_chain: []const []const u8,
     /// Signer for CertificateVerify. Obtained from
@@ -458,6 +470,15 @@ const ServerOptions = struct {
     /// mode requires a `ClientTrust` decision — no system-bundle path, no
     /// separate insecure flag. RFC 8446 §4.4.2.
     client_auth: ClientAuth = .none,
+
+    pub const ValidationError = ztls.capabilities.HybridPolicyError ||
+        error{MissingCredentials};
+
+    /// Validate local hybrid and credential policy before socket acceptance.
+    pub fn validate(self: ServerOptions) ValidationError!void {
+        if (self.cert_chain.len == 0) return error.MissingCredentials;
+        try ztls.capabilities.validateHybridGroups(.server, self.hybrid_groups);
+    }
 };
 
 fn StreamImpl(comptime Hs: type, comptime role: Role, comptime config: Config) type {
@@ -1236,6 +1257,11 @@ fn StreamImpl(comptime Hs: type, comptime role: Role, comptime config: Config) t
         ) ConnectError!void {
             switch (role) {
                 .client => {
+                    options.validate() catch {
+                        s.abortBeforeInit(io, sock);
+                        return error.InvalidOptions;
+                    };
+
                     var client_keypair: ztls.x25519.KeyPair = .generate();
                     defer client_keypair.secureZero();
                     var random: ztls.Random = .empty;
@@ -1252,11 +1278,7 @@ fn StreamImpl(comptime Hs: type, comptime role: Role, comptime config: Config) t
                             };
                         };
                     defer keypairs.secureZero();
-                    if (std.mem.indexOfScalar(
-                        ztls.kex.NamedGroup,
-                        options.hybrid.supported_groups,
-                        .secp384r1_mlkem1024,
-                    ) != null) {
+                    if (options.hybrid.requiresP384()) {
                         keypairs.p384 = ztls.p384.KeyPair.generate() catch |err| {
                             s.abortBeforeInit(io, sock);
                             return switch (err) {
@@ -1281,14 +1303,8 @@ fn StreamImpl(comptime Hs: type, comptime role: Role, comptime config: Config) t
                     errdefer s.deinit();
 
                     // RFC 8446 §4.4.2, §4.4.3 — credentials before any wire I/O.
-                    // An empty chain is not a credential set; rejecting it
-                    // here keeps the failure local (the server never sees a
-                    // ClientHello) while the errdefer preserves the owned
-                    // socket close and the deinit-is-a-no-op contract.
-                    if (options.client_credentials) |creds| {
-                        if (creds.cert_chain.len == 0) return error.InvalidOptions;
+                    if (options.client_credentials) |creds|
                         s.hs.setCredentials(creds.cert_chain, creds.signer);
-                    }
 
                     // Defers unwind in reverse: policy pointer cleared first,
                     // then the bundle memory it referenced.
@@ -1333,6 +1349,14 @@ fn StreamImpl(comptime Hs: type, comptime role: Role, comptime config: Config) t
         ) AcceptError!void {
             switch (role) {
                 .server => {
+                    options.validate() catch |err| {
+                        s.abortBeforeInit(io, sock);
+                        return switch (err) {
+                            error.MissingCredentials => error.MissingCredentials,
+                            else => error.InvalidOptions,
+                        };
+                    };
+
                     var server_keypair: ztls.x25519.KeyPair = .generate();
                     defer server_keypair.secureZero();
                     var random: ztls.Random = .empty;
@@ -1348,11 +1372,7 @@ fn StreamImpl(comptime Hs: type, comptime role: Role, comptime config: Config) t
                             };
                         };
                     defer keypairs.secureZero();
-                    if (std.mem.indexOfScalar(
-                        ztls.kex.NamedGroup,
-                        options.hybrid_groups,
-                        .secp384r1_mlkem1024,
-                    ) != null) {
+                    if (ztls.capabilities.requiresP384(options.hybrid_groups)) {
                         keypairs.p384 = ztls.p384.KeyPair.generate() catch |err| {
                             s.abortBeforeInit(io, sock);
                             return switch (err) {
@@ -1372,9 +1392,6 @@ fn StreamImpl(comptime Hs: type, comptime role: Role, comptime config: Config) t
                     s.finishInit();
                     errdefer s.deinit();
 
-                    // Checked after in-place init so this error path is
-                    // teardown-safe like every other one.
-                    if (options.cert_chain.len == 0) return error.MissingCredentials;
                     s.hs.setCredentials(options.cert_chain, options.signer);
 
                     // Client trust is borrowed only while accept drives the

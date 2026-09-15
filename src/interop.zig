@@ -484,6 +484,7 @@ fn runResumptionInterop(
     // Connection 1: full handshake, capture the NewSessionTicket.
     const stream1 = try connectWithRetry(port);
     var ticket: ztls.ClientHandshake.SessionTicket = try clientInteropCaptureTicket(stream1);
+    defer ticket.secureZero();
     closeStream(stream1);
 
     // Connection 2: offer the ticket and resume.
@@ -525,6 +526,7 @@ fn runEarlyDataInterop(
     // Connection 1: full handshake, capture the NST (with early_data).
     const stream1 = try connectWithRetry(port);
     var ticket: ztls.ClientHandshake.SessionTicket = try clientInteropCaptureTicket(stream1);
+    defer ticket.secureZero();
     closeStream(stream1);
 
     if (ticket.max_early_data_size == null) return error.NoEarlyDataInTicket;

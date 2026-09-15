@@ -193,7 +193,7 @@ pub fn main(init: std.process.Init) !void {
     const address = try resolve(blocking, host_str, port);
 
     var config = if (insecure)
-        tls.ClientConfig.init(.{ .verify = .insecure, .alpn = &.{alpn} })
+        try tls.ClientConfig.init(.{ .verify = .insecure, .alpn = &.{alpn} })
     else
         try tls.ClientConfig.initSystemBundle(blocking, init.gpa, .{
             .verify = .owned_bundle,

@@ -109,9 +109,9 @@ pub fn Connection(comptime Handshake: type) type {
             }
 
             var tx_info = handshake.txKtlsInfo();
-            defer std.crypto.secureZero(u8, std.mem.asBytes(&tx_info));
+            defer tx_info.secureZero();
             var rx_info = handshake.rxKtlsInfo();
-            defer std.crypto.secureZero(u8, std.mem.asBytes(&rx_info));
+            defer rx_info.secureZero();
 
             switch (installInfo(fd, ztls.ktls.TLS_TX, &tx_info)) {
                 .ok => {},
@@ -319,7 +319,7 @@ pub fn Connection(comptime Handshake: type) type {
             }
 
             var rx_info = self.handshake.rxKtlsInfo();
-            defer std.crypto.secureZero(u8, std.mem.asBytes(&rx_info));
+            defer rx_info.secureZero();
             switch (installInfo(self.fd, ztls.ktls.TLS_RX, &rx_info)) {
                 .ok => {},
                 .busy => {
@@ -361,7 +361,7 @@ pub fn Connection(comptime Handshake: type) type {
                 return err;
             };
             var tx_info = self.handshake.txKtlsInfo();
-            defer std.crypto.secureZero(u8, std.mem.asBytes(&tx_info));
+            defer tx_info.secureZero();
             switch (installInfo(self.fd, ztls.ktls.TLS_TX, &tx_info)) {
                 .ok => {},
                 .busy => {
@@ -437,17 +437,17 @@ fn installInfo(
     switch (info.cipher_type) {
         .aes_gcm_128 => {
             var crypto_info = ztls.ktls.packAesGcm128(info.*) catch return .failed;
-            defer std.crypto.secureZero(u8, std.mem.asBytes(&crypto_info));
+            defer crypto_info.secureZero();
             return sys.setSockOpt(fd, ztls.ktls.SOL_TLS, direction, std.mem.asBytes(&crypto_info));
         },
         .aes_gcm_256 => {
             var crypto_info = ztls.ktls.packAesGcm256(info.*) catch return .failed;
-            defer std.crypto.secureZero(u8, std.mem.asBytes(&crypto_info));
+            defer crypto_info.secureZero();
             return sys.setSockOpt(fd, ztls.ktls.SOL_TLS, direction, std.mem.asBytes(&crypto_info));
         },
         .chacha20_poly1305 => {
             var crypto_info = ztls.ktls.packChaCha20Poly1305(info.*) catch return .failed;
-            defer std.crypto.secureZero(u8, std.mem.asBytes(&crypto_info));
+            defer crypto_info.secureZero();
             return sys.setSockOpt(fd, ztls.ktls.SOL_TLS, direction, std.mem.asBytes(&crypto_info));
         },
     }

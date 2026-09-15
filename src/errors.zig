@@ -174,8 +174,11 @@ pub fn classify(err: HandshakeError) Class {
         error.AlpnProtocolTooLong,
         error.DeterministicNonceUnsupported,
         error.EmptyAlpnProtocol,
+        error.HybridGroupUnavailable,
         error.IdentityTooLong,
         error.InvalidBinderLength,
+        error.InvalidHybridPolicy,
+        error.MissingP384KeyPair,
         error.ServerNameTooLong,
         error.TooManyAlpnBytes,
         error.TooManyAlpnProtocols,
@@ -224,6 +227,7 @@ test "classify: authentication failures are their own class" {
 test "classify: remaining buckets" {
     try testing.expectEqual(Class.alert, classify(error.PeerAlert));
     try testing.expectEqual(Class.protocol, classify(error.IllegalParameter));
+    try testing.expectEqual(Class.protocol, classify(error.UnsupportedGroup));
     try testing.expectEqual(Class.record_overflow, classify(error.RecordTooLarge));
     try testing.expectEqual(Class.buffer, classify(error.HandshakeBufferTooShort));
     // A verified client leaf that cannot fit the caller's retention storage is
@@ -232,6 +236,9 @@ test "classify: remaining buckets" {
     try testing.expectEqual(Class.options, classify(error.AlpnProtocolTooLong));
     try testing.expectEqual(Class.options, classify(error.DeterministicNonceUnsupported));
     try testing.expectEqual(Class.options, classify(error.InvalidBinderLength));
+    try testing.expectEqual(Class.options, classify(error.InvalidHybridPolicy));
+    try testing.expectEqual(Class.options, classify(error.HybridGroupUnavailable));
+    try testing.expectEqual(Class.options, classify(error.MissingP384KeyPair));
     try testing.expectEqual(Class.internal, classify(error.LibcryptoFailed));
     try testing.expectEqual(Class.no_alpn, classify(error.NoApplicationProtocol));
     try testing.expectEqual(Class.unsupported_suite, classify(error.UnsupportedCipherSuite));

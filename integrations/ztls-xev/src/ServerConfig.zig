@@ -9,7 +9,6 @@
 //! and the ALPN list must all outlive every connection using this config —
 //! nothing is copied and nothing is freed.
 const std = @import("std");
-const assert = std.debug.assert;
 const testing = std.testing;
 
 const ztls = @import("ztls");
@@ -17,6 +16,9 @@ const ztls = @import("ztls");
 const ServerConfig = @This();
 
 pub const Options = struct {
+    pub const ValidationError = ztls.capabilities.HybridPolicyError ||
+        error{MissingCredentials};
+
     /// Certificate chain, leaf first, DER. Borrowed.
     cert_chain: []const []const u8,
     /// Signer for CertificateVerify, from
@@ -30,6 +32,12 @@ pub const Options = struct {
     /// RFC 10024 hybrid groups accepted in server preference order. Empty
     /// disables hybrid negotiation. Borrowed for this config's lifetime.
     hybrid_groups: []const ztls.kex.NamedGroup = &.{},
+
+    /// Validate local options before configuration construction.
+    pub fn validate(self: Options) Options.ValidationError!void {
+        if (self.cert_chain.len == 0) return error.MissingCredentials;
+        try ztls.capabilities.validateHybridGroups(.server, self.hybrid_groups);
+    }
 };
 
 cert_chain: []const []const u8,
@@ -41,10 +49,8 @@ hybrid_groups: []const ztls.kex.NamedGroup,
 /// is nothing owned. Certificate rotation is a matter of building a new config
 /// and pointing new connections at it, leaving in-flight ones on the old one
 /// until they finish.
-pub fn init(options: Options) ServerConfig {
-    // A server with no chain cannot authenticate, and the failure is far more
-    // useful here than as a handshake error on every connection.
-    assert(options.cert_chain.len > 0);
+pub fn init(options: Options) Options.ValidationError!ServerConfig {
+    try options.validate();
     return .{
         .cert_chain = options.cert_chain,
         .signer = options.signer,
@@ -59,7 +65,7 @@ test "init: credentials are borrowed verbatim" {
     var key: ztls.signature.PrivateKey = try .fromP256Scalar(&@as([32]u8, @splat(7)));
     defer key.deinit();
 
-    const config: ServerConfig = .init(.{
+    const config: ServerConfig = try .init(.{
         .cert_chain = &chain,
         .signer = key.signer(),
         .alpn = &.{"h2"},
@@ -68,6 +74,21 @@ test "init: credentials are borrowed verbatim" {
     try testing.expectEqual(@as(usize, 1), config.cert_chain.len);
     try testing.expectEqualSlices(u8, &leaf, config.cert_chain[0]);
     try testing.expectEqualStrings("h2", config.alpn[0]);
+}
+
+test "init: local policy faults are explicit" {
+    var key: ztls.signature.PrivateKey = try .fromP256Scalar(&@as([32]u8, @splat(7)));
+    defer key.deinit();
+
+    try testing.expectError(error.MissingCredentials, init(.{
+        .cert_chain = &.{},
+        .signer = key.signer(),
+    }));
+    try testing.expectError(error.InvalidHybridPolicy, init(.{
+        .cert_chain = &.{&[_]u8{0x30}},
+        .signer = key.signer(),
+        .hybrid_groups = &.{ .x25519_mlkem768, .x25519_mlkem768 },
+    }));
 }
 
 // The config is shared by every connection, so it must hold nothing that is

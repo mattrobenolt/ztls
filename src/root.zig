@@ -5,6 +5,7 @@ pub const AlpnProtocols = @import("alpn.zig").Protocols;
 pub const certificate = @import("certificate.zig");
 pub const certificate_chain = @import("certificate_chain.zig");
 pub const CertificateChain = certificate_chain.CertificateChain;
+pub const capabilities = @import("capabilities.zig");
 /// RFC 8446 Appendix B.4
 pub const CipherSuite = @import("cipher_suite.zig").CipherSuite;
 pub const client_hello = @import("client_hello.zig");

@@ -9,7 +9,6 @@
 //! A `ClientConfig` is immutable once built and safe to share across connections on
 //! one event loop. It holds no per-connection state.
 const std = @import("std");
-const assert = std.debug.assert;
 const crypto = std.crypto;
 const mem = std.mem;
 const testing = std.testing;
@@ -32,6 +31,9 @@ pub const Verify = union(enum) {
 };
 
 pub const Options = struct {
+    pub const ValidationError = ztls.ClientHandshake.HybridPolicyError ||
+        error{InvalidVerifyPolicy};
+
     verify: Verify,
     /// ALPN protocols to offer, in preference order. Borrowed for the `ClientConfig`'s
     /// life, so it must outlive every `Conn` using it.
@@ -49,8 +51,9 @@ bundle: crypto.Certificate.Bundle = .empty,
 gpa: ?mem.Allocator = null,
 
 /// Build a `ClientConfig` around a caller-owned bundle or `.insecure`. No allocation.
-pub fn init(options: Options) ClientConfig {
-    assert(options.verify != .owned_bundle); // use initSystemBundle
+pub fn init(options: Options) Options.ValidationError!ClientConfig {
+    try options.hybrid.validate();
+    if (options.verify == .owned_bundle) return error.InvalidVerifyPolicy;
     return .{
         .verify = options.verify,
         .alpn = options.alpn,
@@ -66,6 +69,7 @@ pub fn initSystemBundle(
     gpa: mem.Allocator,
     options: Options,
 ) !ClientConfig {
+    try options.hybrid.validate();
     var bundle: crypto.Certificate.Bundle = .empty;
     try bundle.rescan(gpa, io, std.Io.Timestamp.now(io, .real));
     return .{
@@ -96,7 +100,7 @@ pub fn insecureNoChainAnchor(self: *const ClientConfig) bool {
 }
 
 test "init: insecure config needs no allocator and anchors nothing" {
-    var config: ClientConfig = .init(.{ .verify = .insecure, .alpn = &.{"h2"} });
+    var config: ClientConfig = try .init(.{ .verify = .insecure, .alpn = &.{"h2"} });
     defer config.deinit();
 
     try testing.expect(config.insecureNoChainAnchor());
@@ -106,13 +110,34 @@ test "init: insecure config needs no allocator and anchors nothing" {
 
 test "init: a borrowed bundle is anchored and not owned" {
     const bundle: crypto.Certificate.Bundle = .empty;
-    var config: ClientConfig = .init(.{ .verify = .{ .bundle = &bundle } });
+    var config: ClientConfig = try .init(.{ .verify = .{ .bundle = &bundle } });
     defer config.deinit();
 
     try testing.expect(!config.insecureNoChainAnchor());
     try testing.expectEqual(&bundle, config.trustAnchors().?);
     // Nothing to free: no allocator was retained.
     try testing.expectEqual(@as(?mem.Allocator, null), config.gpa);
+}
+
+test "init: local policy faults are explicit" {
+    try testing.expectError(error.InvalidVerifyPolicy, init(.{ .verify = .owned_bundle }));
+    try testing.expectError(error.InvalidHybridPolicy, init(.{
+        .verify = .insecure,
+        .hybrid = .{ .initial_key_share = .x25519_mlkem768 },
+    }));
+}
+
+test "initSystemBundle: policy validation precedes trust-store allocation" {
+    var empty_storage: [0]u8 = .{};
+    var fba: std.heap.FixedBufferAllocator = .init(&empty_storage);
+    try testing.expectError(error.InvalidHybridPolicy, initSystemBundle(
+        testing.io,
+        fba.allocator(),
+        .{
+            .verify = .owned_bundle,
+            .hybrid = .{ .initial_key_share = .x25519_mlkem768 },
+        },
+    ));
 }
 
 test "config is reusable across connections: no per-connection state" {

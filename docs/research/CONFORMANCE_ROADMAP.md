@@ -134,7 +134,7 @@ needed and the work-edges that were cleared.
 
 ---
 
-## RFC 10024 hybrid named groups — #6
+## RFC 10024 hybrid named groups
 
 The named-group abstraction and KEM seam are described in
 PROVIDER_INTERFACE §3. X25519MLKEM768 (`0x11ec`), SecP256r1MLKEM768 (`0x11eb`),

@@ -1,6 +1,6 @@
 # ztls — Sans-I/O
 
-ztls is a pure TLS 1.3 state machine: you feed it bytes, it gives you bytes back. It does not open sockets, allocate memory, or spawn threads. This document shows how to drive a handshake and exchange application data using the public API.
+ztls is a pure TLS 1.3 state machine. The caller supplies bytes, buffers, transport I/O, and the drive loop. ztls protocol code allocates no memory. Production crypto backends can allocate memory inside provider operations.
 
 ## Mental model
 
@@ -404,23 +404,20 @@ After the handshake, `selectedAlpnProtocol()` returns the negotiated protocol (o
 
 ## RFC 10024 hybrid key exchange
 
-Hybrid groups are opt-in. The non-FIPS OpenSSL, AWS-LC, and BoringSSL backends
-support `x25519_mlkem768`, `secp256r1_mlkem768`, and
-`secp384r1_mlkem1024`. These are ztls state-machine capabilities: only pure
-ML-KEM comes from the linked provider; ztls, not backend libssl, negotiates the
-codepoints and composes each classical ECDHE secret in RFC 10024 order. The
-FIPS backend identities advertise none of these groups.
+Hybrid groups are opt-in. The non-FIPS OpenSSL, AWS-LC, and BoringSSL backends support all three RFC 10024 groups. The provider supplies pure ML-KEM operations. ztls owns group negotiation and classical-secret composition. FIPS backend identities advertise no hybrid groups.
+
+`ztls.capabilities.active_backend` identifies the selected backend. `ztls.capabilities.is_fips` reports compile-time FIPS narrowing. It does not prove the provider runtime mode. `supportsHybridGroup(role, group)` reports role support. Provider operations can still fail at runtime.
+
+Start with one group:
 
 ```zig
-const hybrid_groups = [_]ztls.kex.NamedGroup{
-    .x25519_mlkem768,
-    .secp256r1_mlkem768,
-    .secp384r1_mlkem1024,
-};
+const hybrid_groups = [_]ztls.kex.NamedGroup{.x25519_mlkem768};
+try ztls.capabilities.validateHybridGroups(.client, &hybrid_groups);
+try ztls.capabilities.validateHybridGroups(.server, &hybrid_groups);
 
 var client_keypairs: ztls.ClientHandshake.KeyPairs = try .init(.generate());
-client_keypairs.p384 = try .generate();
-var client: ztls.ClientHandshake = .init(.{
+defer client_keypairs.secureZero();
+const client_config: ztls.ClientHandshake.Config = .{
     .keypairs = client_keypairs,
     .host_name = "example.com",
     .now_sec = std.time.timestamp(),
@@ -429,32 +426,34 @@ var client: ztls.ClientHandshake = .init(.{
         .supported_groups = &hybrid_groups,
         .initial_key_share = .x25519_mlkem768,
     },
-});
+};
+try client_config.validate();
+var client: ztls.ClientHandshake = .init(client_config);
+defer client.deinit();
 
 var server_keypairs: ztls.ServerHandshake.KeyPairs = try .init(.generate());
-server_keypairs.p384 = try .generate();
-var server: ztls.ServerHandshake = .init(.{
+defer server_keypairs.secureZero();
+const server_config: ztls.ServerHandshake.Config = .{
     .keypairs = server_keypairs,
     .random = server_random,
     .hybrid_groups = &hybrid_groups,
-});
+};
+try server_config.validate();
+var server: ztls.ServerHandshake = .init(server_config);
+defer server.deinit();
 ```
 
-Set `initial_key_share = null` to advertise the groups without sending a hybrid
-share in ClientHello1; the server can then select one through
-HelloRetryRequest. `secp384r1_mlkem1024` requires a P-384 keypair on the role
-that enables it. The group slices are borrowed and must outlive the handshake.
-The `ztls-std` client/server options use the same `hybrid` and `hybrid_groups`
-fields. `ztls-xev.ClientConfig.Options` and `ServerConfig.Options` expose those
-fields for reusable configurations, so their borrowed slices must outlive every
-connection using the config.
+Set `initial_key_share = null` to omit the hybrid share from ClientHello1. A compatible server can select the group through HelloRetryRequest.
 
-Explicit configuration fails closed: duplicates, non-RFC groups, backend-
-unsupported groups, or a missing P-384 keypair return `error.UnsupportedGroup`
-instead of silently falling back to classical key exchange. Resumed
-`psk_dhe_ke` handshakes retain the same client hybrid policy and negotiate a
-fresh hybrid secret. If that negotiation uses HelloRetryRequest, ClientHello2
-retains the PSK identity and recomputes its binder over the retry transcript.
+A hybrid offer still permits classical key exchange. Invalid explicit policy never causes a silent classical fallback. A failure after hybrid selection ends the handshake.
+
+`error.InvalidHybridPolicy` reports malformed lists or an inconsistent initial share. `error.HybridGroupUnavailable` reports compile-time backend policy. `error.MissingP384KeyPair` reports absent P-384 material.
+
+`secp384r1_mlkem1024` requires a P-384 keypair on each enabled role. All three group values can appear in one policy.
+
+The group slices are borrowed. They must outlive the handshake. A reusable xev configuration requires them until every associated connection ends.
+
+Call `ztls-std` option `validate()` methods before socket creation. `connect` and `accept` repeat validation before key generation. The fallible xev configuration constructors validate before trust-store work.
 
 ## Certificate policy
 
@@ -537,13 +536,15 @@ _ = engine.handleRecord(record, &out) catch |err| switch (err) {
 
 ## Buffer sizing
 
-| Buffer     | Minimum recommended | Why                                      |
-|------------|---------------------|------------------------------------------|
-| `out`      | 4 KiB               | Fits a full record plus handshake overhead |
-| `storage`  | `RecordBuffer.recommended_storage` (~33 KiB) | Fits a partial + full record             |
-| `flight`   | `ServerHandshake.FlightBuffer` | Holds the encrypted server authenticated flight |
+| Purpose | Public type or bound | Capacity contract |
+|---|---|---|
+| Client output | `ClientHandshake.OutBuffer` | Holds one maximum wire record. |
+| Server output | `ServerHandshake.OutBuffer` | Holds one maximum wire record. |
+| Server flight | `ServerHandshake.FlightBuffer` | Holds one authenticated server flight. |
+| Stream input | `RecordBuffer.Storage` | Uses `RecordBuffer.recommended_storage`. |
+| Minimum stream input | `RecordBuffer.MinStorage` | Holds one maximum wire record. |
 
-The engine returns `error.BufferTooShort` if `out` is too small. Use `RecordBuffer.recommended_storage` for `storage`; anything smaller risks stalling on a large record.
+Use the public buffer types unless the application needs custom storage. Smaller custom slices can return `error.BufferTooShort`.
 
 ## API reference
 
@@ -558,7 +559,7 @@ Caller-owned types:
 
 Common drive methods:
 
-- `init(config)` / `deinit()` — create and release a client handshake. `Config` requires `keypair`, `host_name`, `now_sec`, and `random`; optional fields default `bundle`, `insecure_no_chain_anchor`, `alpn_protocols`, and `reassembly`.
+- `init(config)` / `deinit()` create and release a client handshake. `Config` requires `keypairs`, `host_name`, `now_sec`, and `random`. Other fields have defaults.
 - `offerAlpn(protocols)` — advertise application protocols before `start` (also settable via `Config.alpn_protocols`).
 - `useHandshakeBuffer(storage)` — attach caller-owned handshake reassembly storage (also settable via `Config.reassembly`).
 - `start(out)` — emit ClientHello using `Config.host_name` (SNI) and `Config.random`.
@@ -641,7 +642,22 @@ Low-level in-memory hooks used by `examples/in_memory_handshake.zig`: `acceptCli
 - `SignatureScheme` names the TLS signature scheme used with a loaded key, including `rsa_pss_rsae_sha256`, `ecdsa_secp256r1_sha256`, `ecdsa_secp384r1_sha384`, and `ed25519`.
 - `x25519.KeyPair.generate()` creates a fresh ephemeral X25519 keypair.
 - `x25519.KeyPair.generateDeterministic(seed)` and `x25519.sharedSecret(secret_key, peer_public_key)` are lower-level primitives for tests and fixed-vector paths.
-- `ClientHandshake.KeyPairs.init(x25519_keypair)` generates the P-256 half and is fallible: the backend can refuse (`p256.Error`), which the caller answers by shedding the handshake, not by retrying forever (#88). `initWithP256`/`initWithP256P384` stay infallible for fixed keypairs.
+- `ClientHandshake.KeyPairs.init(x25519_keypair)` generates the P-256 half and can return `p256.Error`. The caller sheds the handshake after failure (#88).
+- `initWithP256` and `initWithP256P384` accept fixed caller-supplied keypairs.
+
+### Secret cleanup
+
+After use, call `secureZero()` on each caller-owned X25519, P-256, P-384, or aggregate handshake keypair.
+
+Before release of resumption material, call `SessionTicket.secureZero()`.
+
+After kernel setup, call `KtlsInfo.secureZero()`.
+
+After kernel setup, call `secureZero()` on the packed kTLS value.
+
+After use, call handshake `deinit()` methods to release provider handles and erase each handshake-owned secret copy.
+
+Do not erase borrowed buffers, `Signer` values, or borrowed PSK slices through these owners.
 
 ## Runtime-specific integration notes
 

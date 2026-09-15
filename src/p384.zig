@@ -37,6 +37,12 @@ pub const KeyPair = struct {
     pub fn generateDeterministic(seed: SecretKey) Error!KeyPair {
         return .{ .secret_key = seed, .public_key = try publicFromSecret(seed) };
     }
+
+    /// Erase the secret and public key bytes.
+    /// The keypair is invalid after this call.
+    pub fn secureZero(self: *KeyPair) void {
+        std.crypto.secureZero(u8, std.mem.asBytes(self));
+    }
 };
 
 /// The draw `generate` actually makes — see `p256.EntropyAttempt`.
@@ -104,9 +110,16 @@ const test_seed_b = hex(48, "303132333435363738393a3b3c3d3e3f" ++
 
 // SEC 1 / RFC 8446 §4.2.8.2 — P-384 key shares use uncompressed points.
 test "KeyPair.generateDeterministic emits uncompressed SEC1 public key" {
-    const keypair: KeyPair = try .generateDeterministic(.init(test_seed_a));
+    var keypair: KeyPair = try .generateDeterministic(.init(test_seed_a));
+    defer keypair.secureZero();
     try testing.expectEqual(@as(u8, 0x04), keypair.public_key.data[0]);
     try testing.expectEqual(@as(usize, 97), keypair.public_key.data.len);
+}
+
+test "KeyPair.secureZero erases secret and public material" {
+    var keypair: KeyPair = try .generateDeterministic(.init(test_seed_a));
+    keypair.secureZero();
+    try testing.expect(std.mem.allEqual(u8, std.mem.asBytes(&keypair), 0));
 }
 
 // RFC 8446 §7.4.2 — two deterministic P-384 keypairs must agree on the shared

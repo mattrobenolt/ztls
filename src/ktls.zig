@@ -71,6 +71,11 @@ pub const Tls12CryptoInfoAesGcm128 = extern struct {
     key: [16]u8,
     salt: [4]u8,
     rec_seq: [8]u8,
+
+    /// Erase the packed key material and invalidate this value.
+    pub fn secureZero(self: *Tls12CryptoInfoAesGcm128) void {
+        std.crypto.secureZero(u8, std.mem.asBytes(self));
+    }
 };
 
 /// `struct tls12_crypto_info_aes_gcm_256` from include/uapi/linux/tls.h.
@@ -80,6 +85,11 @@ pub const Tls12CryptoInfoAesGcm256 = extern struct {
     key: [32]u8,
     salt: [4]u8,
     rec_seq: [8]u8,
+
+    /// Erase the packed key material and invalidate this value.
+    pub fn secureZero(self: *Tls12CryptoInfoAesGcm256) void {
+        std.crypto.secureZero(u8, std.mem.asBytes(self));
+    }
 };
 
 /// `struct tls12_crypto_info_chacha20_poly1305` from include/uapi/linux/tls.h.
@@ -93,6 +103,11 @@ pub const Tls12CryptoInfoChaCha20Poly1305 = extern struct {
     /// though the TLS 1.3 IV is 12 bytes; the nonce is `iv XOR seq` over the
     /// last 8 bytes (RFC 8446 §5.3).
     rec_seq: [8]u8,
+
+    /// Erase the packed key material and invalidate this value.
+    pub fn secureZero(self: *Tls12CryptoInfoChaCha20Poly1305) void {
+        std.crypto.secureZero(u8, std.mem.asBytes(self));
+    }
 };
 
 pub const PackError = error{CipherMismatch};
@@ -159,6 +174,19 @@ test "kernel socket option constants" {
     try testing.expectEqual(@as(u16, 0x0304), TLS_1_3_VERSION);
 }
 
+test "packed kTLS info secureZero methods erase every byte" {
+    inline for (.{
+        Tls12CryptoInfoAesGcm128,
+        Tls12CryptoInfoAesGcm256,
+        Tls12CryptoInfoChaCha20Poly1305,
+    }) |T| {
+        var info: T = undefined;
+        @memset(std.mem.asBytes(&info), 0xab);
+        info.secureZero();
+        try testing.expect(std.mem.allEqual(u8, std.mem.asBytes(&info), 0));
+    }
+}
+
 // RFC 8446 §5.3 — the AES-GCM pack splits the 12-byte IV into salt[4] + iv[8];
 // the kernel reconstructs the nonce as salt || iv XOR seq.
 test "packAesGcm128 splits the 12-byte IV and copies key/seq" {
@@ -169,11 +197,13 @@ test "packAesGcm128 splits the 12-byte IV and copies key/seq" {
         .iv_len = 8,
         .rec_seq = .{ 0, 0, 0, 0, 0, 0, 0, 5 },
     };
+    defer info.secureZero();
     info.key[0..16].* = [_]u8{0xaa} ** 16;
     info.salt = .{ 0x01, 0x02, 0x03, 0x04 };
     info.iv[0..8].* = .{ 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c };
 
-    const out = try packAesGcm128(info);
+    var out = try packAesGcm128(info);
+    defer out.secureZero();
     try testing.expectEqual(@as(u16, 0x0304), out.info.version);
     try testing.expectEqual(TLS_CIPHER_AES_GCM_128, out.info.cipher_type);
     try testing.expectEqualSlices(u8, &.{ 0x01, 0x02, 0x03, 0x04 }, &out.salt);
@@ -194,6 +224,7 @@ test "packAesGcm128 rejects a non-AES-GCM-128 info" {
         .iv_len = 8,
         .rec_seq = .{0} ** 8,
     };
+    defer info.secureZero();
     info.key[0..32].* = [_]u8{0xbb} ** 32;
     info.salt = .{ 0, 0, 0, 0 };
     info.iv[0..8].* = .{0} ** 8;
@@ -209,10 +240,12 @@ test "packChaCha20Poly1305 uses the full 12-byte IV" {
         .iv_len = 12,
         .rec_seq = .{ 0, 0, 0, 0, 0, 0, 0, 9 },
     };
+    defer info.secureZero();
     info.key[0..32].* = [_]u8{0xcc} ** 32;
     info.iv = .{ 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b };
 
-    const out = try packChaCha20Poly1305(info);
+    var out = try packChaCha20Poly1305(info);
+    defer out.secureZero();
     try testing.expectEqual(TLS_CIPHER_CHACHA20_POLY1305, out.info.cipher_type);
     try testing.expectEqualSlices(u8, &info.iv, &out.iv);
     try testing.expectEqualSlices(u8, &([_]u8{0xcc} ** 32), &out.key);
@@ -227,11 +260,13 @@ test "packAesGcm256 copies the 32-byte key and splits the IV" {
         .iv_len = 8,
         .rec_seq = .{0} ** 8,
     };
+    defer info.secureZero();
     info.key[0..32].* = [_]u8{0xdd} ** 32;
     info.salt = .{ 0xa, 0xb, 0xc, 0xd };
     info.iv[0..8].* = .{ 0xe, 0xf, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15 };
 
-    const out = try packAesGcm256(info);
+    var out = try packAesGcm256(info);
+    defer out.secureZero();
     try testing.expectEqual(TLS_CIPHER_AES_GCM_256, out.info.cipher_type);
     try testing.expectEqualSlices(u8, &([_]u8{0xdd} ** 32), &out.key);
     try testing.expectEqualSlices(u8, &info.salt, &out.salt);

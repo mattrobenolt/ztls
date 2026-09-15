@@ -58,6 +58,24 @@ fn socketPair() ![2]posix.fd_t {
     return fds;
 }
 
+test "option preflight reports hybrid policy faults without a socket" {
+    const client_options: tls.Client.Options = .{
+        .host = test_host,
+        .verify = .insecure,
+        .hybrid = .{ .initial_key_share = .x25519_mlkem768 },
+    };
+    try testing.expectError(error.InvalidHybridPolicy, client_options.validate());
+
+    var key: ztls.signature.PrivateKey = try .fromP256Scalar(@ptrCast(test_scalar[0..32]));
+    defer key.deinit();
+    const server_options: tls.Server.Options = .{
+        .cert_chain = &.{test_cert_der},
+        .signer = key.signer(),
+        .hybrid_groups = &.{ .x25519_mlkem768, .x25519_mlkem768 },
+    };
+    try testing.expectError(error.InvalidHybridPolicy, server_options.validate());
+}
+
 fn sleepMs(ms: u64) void {
     var ts: posix.timespec = .{
         .sec = @intCast(ms / std.time.ms_per_s),

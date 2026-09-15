@@ -127,19 +127,16 @@ peer that drops you mid-request yields `eof` with the bytes-so-far.
 
 ## Roles
 
-`Client.Config` is `ClientConfig`: a trust store loaded once and shared. Its
-mirror `Server.Config` is `ServerConfig`: one certificate chain and signer,
-shared the same way. Both are borrowed for the life of every connection using
-them, and neither owns per-connection state.
+`Client.Config` is `ClientConfig`. It loads one trust store for many connections. `Server.Config` is `ServerConfig`. It shares one certificate chain and signer.
 
-RFC 10024 hybrid key exchange is opt-in through
-`ClientConfig.Options.hybrid` and `ServerConfig.Options.hybrid_groups`. The
-configuration slices are borrowed and must outlive every connection using the
-config. The three supported groups and the fail-closed/FIPS behavior are
-covered in [`docs/USAGE.md`](../../docs/USAGE.md#rfc-10024-hybrid-key-exchange).
+Both configurations borrow their slices. The caller must retain those slices until every associated connection ends. Neither configuration owns per-connection state.
+
+RFC 10024 hybrid key exchange is opt-in through `ClientConfig.Options.hybrid` and `ServerConfig.Options.hybrid_groups`. Both constructors validate these options. Invalid policy fails before trust-store work or connection key generation.
+
+[`docs/USAGE.md`](../../docs/USAGE.md#rfc-10024-hybrid-key-exchange) lists capability queries, policy errors, and FIPS behavior.
 
 ```zig
-const server_config: tls.ServerConfig = .init(.{
+const server_config: tls.ServerConfig = try .init(.{
     .cert_chain = &.{cert_der},   // leaf first
     .signer = key.signer(),       // the PrivateKey must outlive this
     .alpn = &.{"h2"},

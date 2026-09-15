@@ -186,7 +186,7 @@ pub fn main(init: std.process.Init) !void {
     // One config, every connection. The chain and signer are borrowed, so both
     // must outlive the loop.
     const cert_chain = [_][]const u8{&fixtures.server_ecdsa_cert_der};
-    const config: tls.ServerConfig = .init(.{
+    const config: tls.ServerConfig = try .init(.{
         .cert_chain = &cert_chain,
         .signer = key.signer(),
         .alpn = &.{alpn},
@@ -235,7 +235,7 @@ test "credentials build from the embedded fixture" {
     defer key.deinit();
 
     const cert_chain = [_][]const u8{&fixtures.server_ecdsa_cert_der};
-    const config: tls.ServerConfig = .init(.{
+    const config: tls.ServerConfig = try .init(.{
         .cert_chain = &cert_chain,
         .signer = key.signer(),
         .alpn = &.{"echo"},

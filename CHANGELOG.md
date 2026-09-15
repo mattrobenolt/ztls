@@ -53,6 +53,16 @@ This section describes what exists on `main` today. It is not a release.
   and fixed three vulnerabilities, with regression tests. This is not an
   external audit.
 
+### Changed
+
+- Public hybrid capability queries now expose the selected backend, FIPS identity, and role support.
+- Hybrid policy validation now returns explicit local configuration errors from core and low-level
+  encoder APIs.
+- `ztls-xev` client and server configuration constructors are now fallible.
+- Public inline keypair, session ticket, and kTLS values now expose `secureZero()` methods.
+- Client handshake traffic-key carrier structs without a public lifecycle contract are no longer
+  exported.
+
 ### Not done yet
 
 - **No C ABI.** ztls is only callable from Zig today. A C-callable surface so

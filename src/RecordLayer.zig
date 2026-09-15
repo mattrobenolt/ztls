@@ -53,6 +53,12 @@ pub const KtlsInfo = struct {
     iv: [12]u8 = @splat(0),
     iv_len: u8,
     rec_seq: [8]u8,
+
+    /// Erase the exported traffic key, IV, and sequence snapshot.
+    /// The snapshot is invalid after this call.
+    pub fn secureZero(self: *KtlsInfo) void {
+        std.crypto.secureZero(u8, mem.asBytes(self));
+    }
 };
 
 /// Bytes added to plaintext length to produce the encrypted wire record.
@@ -329,7 +335,8 @@ test "ktlsInfo: AES-GCM salt and IV reconstruct RFC 8446 nonce" {
     defer rl.deinit();
     rl.seq = 0x0102030405060708;
 
-    const info = rl.ktlsInfo();
+    var info = rl.ktlsInfo();
+    defer info.secureZero();
     try testing.expectEqual(@as(u16, 0x0304), info.version);
     try testing.expectEqual(KtlsCipherType.aes_gcm_128, info.cipher_type);
     try testing.expectEqual(@as(u8, 16), info.key_len);
@@ -359,8 +366,10 @@ test "ktlsInfo: cipher type uses Linux UAPI values" {
     );
     defer chacha.deinit();
 
-    const aes_info = aes256.ktlsInfo();
-    const chacha_info = chacha.ktlsInfo();
+    var aes_info = aes256.ktlsInfo();
+    defer aes_info.secureZero();
+    var chacha_info = chacha.ktlsInfo();
+    defer chacha_info.secureZero();
     try testing.expectEqual(KtlsCipherType.aes_gcm_256, aes_info.cipher_type);
     try testing.expectEqual(@as(u16, 52), @intFromEnum(aes_info.cipher_type));
     try testing.expectEqual(KtlsCipherType.chacha20_poly1305, chacha_info.cipher_type);
@@ -373,9 +382,19 @@ test "ktlsInfo: cipher type uses Linux UAPI values" {
 test "ktlsInfo: exported key material survives RecordLayer deinit" {
     const key: Aes128GcmKey = .init(@splat(0xab));
     var rl: RecordLayer = try .init(.{ .aes_128_gcm_sha256 = key }, .zero);
-    const info = rl.ktlsInfo();
+    var info = rl.ktlsInfo();
+    defer info.secureZero();
     rl.deinit();
     try testing.expectEqualSlices(u8, &key.data, info.key[0..info.key_len]);
+}
+
+test "KtlsInfo.secureZero erases exported traffic material" {
+    const key: Aes128GcmKey = .init(@splat(0xab));
+    var rl: RecordLayer = try .init(.{ .aes_128_gcm_sha256 = key }, .zero);
+    defer rl.deinit();
+    var info = rl.ktlsInfo();
+    info.secureZero();
+    try testing.expect(mem.allEqual(u8, mem.asBytes(&info), 0));
 }
 
 test "encrypt/decrypt: key update required at AEAD usage limit" {

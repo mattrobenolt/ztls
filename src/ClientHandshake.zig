@@ -23,6 +23,7 @@ const SliceBuffer = array_buffer.SliceBuffer;
 const certificate = @import("certificate.zig");
 const certificate_request = @import("certificate_request.zig");
 const client_hello = @import("client_hello.zig");
+const capabilities = @import("capabilities.zig");
 const backend = @import("crypto/backend.zig");
 const encrypted_extensions = @import("encrypted_extensions.zig");
 const extension_type = @import("extension_type.zig");
@@ -94,7 +95,26 @@ pub const SessionTicket = struct {
     /// derived), so the offering client must use the same hash even before the
     /// new handshake negotiates a suite. RFC 8446 §4.2.11.2, §7.1.
     cipher_suite: CipherSuite = .aes_128_gcm_sha256,
+
+    /// Erase the ticket identity, PSK capacity, and metadata.
+    /// The ticket is invalid after this call.
+    pub fn secureZero(self: *SessionTicket) void {
+        std.crypto.secureZero(u8, std.mem.asBytes(self));
+    }
 };
+
+test "SessionTicket.secureZero erases identity, PSK, and metadata" {
+    var ticket: SessionTicket = .{
+        .ticket_age_add = 0x11111111,
+        .ticket_lifetime = 0x22222222,
+        .max_early_data_size = 0x33333333,
+        .cipher_suite = .aes_256_gcm_sha384,
+    };
+    ticket.identity.appendSliceAssumeCapacity(&([_]u8{0xaa} ** 256));
+    ticket.psk.appendSliceAssumeCapacity(&([_]u8{0xbb} ** 48));
+    ticket.secureZero();
+    try testing.expect(mem.allEqual(u8, mem.asBytes(&ticket), 0));
+}
 
 const ClientHandshake = @This();
 
@@ -139,6 +159,8 @@ pub const Storage = ArrayBuffer(u8, recommended_handshake_storage);
 /// both SNI (the server_name extension) and certificate SAN/CN validation.
 pub const KeyPairs = handshake_key_pairs.KeyPairs;
 
+pub const HybridPolicyError = capabilities.HybridPolicyError;
+
 pub const HybridPolicy = struct {
     /// RFC 10024 hybrid groups advertised in supported_groups. Caller-owned;
     /// the slice must outlive the handshake because HRR reuses it verbatim.
@@ -147,9 +169,25 @@ pub const HybridPolicy = struct {
     /// supported_groups. null advertises support without an initial share,
     /// allowing a server to select the group through HelloRetryRequest.
     initial_key_share: ?NamedGroup = null,
+
+    /// Validate the compiled support, group list, and initial-share relation.
+    pub fn validate(self: HybridPolicy) HybridPolicyError!void {
+        if (self.initial_key_share) |group| {
+            if (mem.indexOfScalar(NamedGroup, self.supported_groups, group) == null)
+                return error.InvalidHybridPolicy;
+        }
+        try capabilities.validateHybridGroups(.client, self.supported_groups);
+    }
+
+    /// Report whether this policy requires a P-384 keypair.
+    pub fn requiresP384(self: HybridPolicy) bool {
+        return capabilities.requiresP384(self.supported_groups);
+    }
 };
 
 pub const Config = struct {
+    pub const ValidationError = HybridPolicyError || error{MissingP384KeyPair};
+
     /// Ephemeral keypairs used for offered ClientHello key_share entries.
     /// X25519 and P-256 are present by default; P-384 is opt-in to avoid
     /// unconditional extra scalar generation and ClientHello bloat.
@@ -168,8 +206,8 @@ pub const Config = struct {
     /// Test/demo opt-out from trust-anchor verification. Production clients
     /// should leave this false and provide `bundle`.
     insecure_no_chain_anchor: bool = false,
-    /// ALPN protocols offered in ClientHello. Caller-owned; must live until
-    /// start() encodes them.
+    /// ALPN protocols offered in ClientHello. Caller-owned; must live through
+    /// ClientHello2 because HelloRetryRequest reuses them.
     alpn_protocols: AlpnProtocols = &.{},
     /// RFC 10024 hybrid-group policy. Disabled by default so existing caller
     /// buffer sizes and ClientHello shape remain unchanged.
@@ -177,7 +215,60 @@ pub const Config = struct {
     /// Optional caller-owned storage for handshake-message reassembly. When
     /// non-null, the engine reassembles flight messages that span records.
     reassembly: ?[]u8 = null,
+
+    /// Validate local hybrid policy before handshake construction or wire I/O.
+    pub fn validate(self: *const Config) ValidationError!void {
+        try validateHybridPolicy(self.hybrid, &self.keypairs);
+    }
 };
+
+pub const ConfigError = Config.ValidationError;
+
+test "HybridPolicy.validate rejects an initial share outside its group list" {
+    const policy: HybridPolicy = .{
+        .supported_groups = &.{.x25519_mlkem768},
+        .initial_key_share = .secp256r1_mlkem768,
+    };
+    try testing.expectError(error.InvalidHybridPolicy, policy.validate());
+}
+
+test "Config.validate reports unavailable groups and missing P-384 material" {
+    var keypairs: KeyPairs = try .init(.generate());
+    defer keypairs.secureZero();
+    const config: Config = .{
+        .keypairs = keypairs,
+        .host_name = null,
+        .now_sec = 0,
+        .random = .zero,
+        .hybrid = .{ .supported_groups = &.{.secp384r1_mlkem1024} },
+    };
+    if (capabilities.supportsHybridGroup(.client, .secp384r1_mlkem1024)) {
+        try testing.expectError(error.MissingP384KeyPair, config.validate());
+    } else {
+        try testing.expectError(error.HybridGroupUnavailable, config.validate());
+    }
+}
+
+test "start validates hybrid policy before key generation and output" {
+    var keypairs: KeyPairs = try .init(.generate());
+    defer keypairs.secureZero();
+    var client: ClientHandshake = .init(.{
+        .keypairs = keypairs,
+        .host_name = null,
+        .now_sec = 0,
+        .random = .zero,
+        .hybrid = .{
+            .supported_groups = &.{.x25519_mlkem768},
+            .initial_key_share = .secp256r1_mlkem768,
+        },
+    });
+    defer client.deinit();
+
+    var out: [max_out_len]u8 = @splat(0xaa);
+    try testing.expectError(error.InvalidHybridPolicy, client.start(&out));
+    try testing.expect(client.kem_key == null);
+    try testing.expect(mem.allEqual(u8, &out, 0xaa));
+}
 
 const ServerFlightProgress = enum {
     none,
@@ -189,13 +280,13 @@ const ServerFlightProgress = enum {
 /// The handshake-traffic RecordLayers derived once the key exchange completes.
 /// `rx` decrypts the server's flight (server handshake traffic secret);
 /// `tx` encrypts our Finished (client handshake traffic secret).
-pub const HandshakeKeys = struct {
+const HandshakeKeys = struct {
     rx: RecordLayer,
     tx: RecordLayer,
 
     /// Application-traffic RecordLayers plus the encoded client Finished
     /// plaintext (a slice into the caller's buffer).
-    pub const WithFinished = struct {
+    const WithFinished = struct {
         finished: []const u8,
         rx: RecordLayer,
         tx: RecordLayer,
@@ -566,21 +657,10 @@ pub fn init(config: Config) ClientHandshake {
     };
 }
 
-fn validateHybridPolicy(policy: HybridPolicy, keypairs: *const KeyPairs) hybrid_kex.Error!void {
-    if (policy.supported_groups.len > 3) return error.UnsupportedGroup;
-    for (policy.supported_groups, 0..) |group, i| {
-        const spec = group.hybridSpec() orelse return error.UnsupportedGroup;
-        if (!backend.supportsClientHybridGroup(group)) return error.UnsupportedGroup;
-        if (spec.classical_group == .secp384r1 and keypairs.p384 == null)
-            return error.UnsupportedGroup;
-        for (policy.supported_groups[0..i]) |earlier| {
-            if (earlier == group) return error.UnsupportedGroup;
-        }
-    }
-    if (policy.initial_key_share) |group| {
-        if (std.mem.indexOfScalar(NamedGroup, policy.supported_groups, group) == null)
-            return error.UnsupportedGroup;
-    }
+fn validateHybridPolicy(policy: HybridPolicy, keypairs: *const KeyPairs) ConfigError!void {
+    try policy.validate();
+    if (policy.requiresP384() and keypairs.p384 == null)
+        return error.MissingP384KeyPair;
 }
 
 /// Release backend handles and zero every secret this engine owns inline.
@@ -634,7 +714,7 @@ pub const StartError = error{
     ServerNameTooLong,
     IdentityTooLong,
     InvalidBinderLength,
-} || AlpnError || aead.Error || hybrid_kex.Error;
+} || AlpnError || aead.Error || hybrid_kex.Error || ConfigError;
 
 /// Provide caller-owned storage for reassembling handshake messages that span
 /// encrypted records (large certificate chains, fragmented flights). Without

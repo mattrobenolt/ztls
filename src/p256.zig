@@ -39,6 +39,12 @@ pub const KeyPair = struct {
     pub fn generateDeterministic(seed: SecretKey) Error!KeyPair {
         return .{ .secret_key = seed, .public_key = try publicFromSecret(seed) };
     }
+
+    /// Erase the secret and public key bytes.
+    /// The keypair is invalid after this call.
+    pub fn secureZero(self: *KeyPair) void {
+        std.crypto.secureZero(u8, std.mem.asBytes(self));
+    }
 };
 
 /// The draw `generate` actually makes: CSPRNG secret, then keypair from it.
@@ -121,16 +127,24 @@ test "sharedSecret: P-256 deterministic peers agree" {
 // backend this passes with or without the #88 bug — the policy claims are
 // pinned by the `generateRetry` tests below, not here.
 test "KeyPair.generate: healthy entropy path" {
-    const keypair = try KeyPair.generate();
+    var keypair = try KeyPair.generate();
+    defer keypair.secureZero();
     try testing.expectEqual(@as(u8, 0x04), keypair.public_key.data[0]);
     // Two calls draw independently; identical secrets would indict the
     // entropy source, not the loop.
-    const second = try KeyPair.generate();
+    var second = try KeyPair.generate();
+    defer second.secureZero();
     try testing.expect(!std.mem.eql(
         u8,
         &keypair.secret_key.data,
         &second.secret_key.data,
     ));
+}
+
+test "KeyPair.secureZero erases secret and public material" {
+    var keypair = try KeyPair.generateDeterministic(.init(test_seed_a));
+    keypair.secureZero();
+    try testing.expect(std.mem.allEqual(u8, std.mem.asBytes(&keypair), 0));
 }
 
 // #88 — a terminal backend failure surfaces after exactly one attempt.

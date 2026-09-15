@@ -304,17 +304,11 @@ pub fn ConnWith(comptime Xev: type, comptime role: root.Role) type {
             var keypairs: Handshake.KeyPairs = try .init(keypair);
             defer keypairs.secureZero();
             if (role == .client) {
-                if (mem.indexOfScalar(
-                    ztls.kex.NamedGroup,
-                    config.hybrid.supported_groups,
-                    .secp384r1_mlkem1024,
-                ) != null) keypairs.p384 = try .generate();
+                if (ztls.capabilities.requiresP384(config.hybrid.supported_groups))
+                    keypairs.p384 = try .generate();
             } else {
-                if (mem.indexOfScalar(
-                    ztls.kex.NamedGroup,
-                    config.hybrid_groups,
-                    .secp384r1_mlkem1024,
-                ) != null) keypairs.p384 = try .generate();
+                if (ztls.capabilities.requiresP384(config.hybrid_groups))
+                    keypairs.p384 = try .generate();
             }
 
             const engine: Handshake = if (role == .client) .init(.{

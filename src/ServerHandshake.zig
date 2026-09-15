@@ -23,6 +23,7 @@ const CertificateChain = @import("certificate_chain.zig").CertificateChain;
 const certificate_request = @import("certificate_request.zig");
 const client_hello = @import("client_hello.zig");
 const ClientHandshake = @import("ClientHandshake.zig");
+const capabilities = @import("capabilities.zig");
 const backend = @import("crypto/backend.zig");
 const default_supported_suites = backend.capabilities.cipher_suites;
 const encrypted_extensions = @import("encrypted_extensions.zig");
@@ -176,6 +177,8 @@ pub const ClientAuthPolicy = enum {
 };
 
 pub const Config = struct {
+    pub const ValidationError = capabilities.HybridPolicyError || error{MissingP384KeyPair};
+
     /// Ephemeral keypairs used for ServerHello key_share entries. X25519 and
     /// P-256 are present by default; P-384 is opt-in.
     keypairs: KeyPairs,
@@ -214,7 +217,32 @@ pub const Config = struct {
     /// key_share may be selected through HelloRetryRequest. Caller-owned; the
     /// slice must remain valid through any ClientHello2 processing.
     hybrid_groups: []const NamedGroup = &.{},
+
+    /// Validate local hybrid policy before handshake construction or wire I/O.
+    pub fn validate(self: *const Config) ValidationError!void {
+        try validateHybridPolicy(self.hybrid_groups, &self.keypairs);
+    }
 };
+
+pub const ConfigError = Config.ValidationError;
+
+test "Config.validate reports invalid lists and missing P-384 material" {
+    var keypairs: KeyPairs = try .init(.generate());
+    defer keypairs.secureZero();
+    var config: Config = .{
+        .keypairs = keypairs,
+        .random = .zero,
+        .hybrid_groups = &.{ .x25519_mlkem768, .x25519_mlkem768 },
+    };
+    try testing.expectError(error.InvalidHybridPolicy, config.validate());
+
+    config.hybrid_groups = &.{.secp384r1_mlkem1024};
+    if (capabilities.supportsHybridGroup(.server, .secp384r1_mlkem1024)) {
+        try testing.expectError(error.MissingP384KeyPair, config.validate());
+    } else {
+        try testing.expectError(error.HybridGroupUnavailable, config.validate());
+    }
+}
 
 const ServerCredentials = struct {
     chain: CertificateChain,
@@ -663,7 +691,7 @@ pub const KeyUpdateEvent = struct {
 
 pub const AcceptError =
     frame.ParseError || client_hello.ParseError || server_hello.EncodeError || aead.Error ||
-    hybrid_kex.Error || error{
+    hybrid_kex.Error || ConfigError || error{
         IncompleteRecord,
         UnexpectedRecord,
         UnsupportedCipherSuite,
@@ -754,14 +782,14 @@ fn supportsHybridGroup(self: *const ServerHandshake, group: NamedGroup) bool {
     return mem.indexOfScalar(NamedGroup, self.hybrid_groups, group) != null;
 }
 
-fn validateHybridGroups(self: *const ServerHandshake) error{UnsupportedGroup}!void {
-    if (self.hybrid_groups.len > 3) return error.UnsupportedGroup;
-    for (self.hybrid_groups, 0..) |group, i| {
-        if (!self.supportsHybridGroup(group)) return error.UnsupportedGroup;
-        for (self.hybrid_groups[0..i]) |earlier| {
-            if (earlier == group) return error.UnsupportedGroup;
-        }
-    }
+fn validateHybridGroups(self: *const ServerHandshake) ConfigError!void {
+    try validateHybridPolicy(self.hybrid_groups, &self.keypairs);
+}
+
+fn validateHybridPolicy(groups: []const NamedGroup, keypairs: *const KeyPairs) ConfigError!void {
+    try capabilities.validateHybridGroups(.server, groups);
+    if (capabilities.requiresP384(groups) and keypairs.p384 == null)
+        return error.MissingP384KeyPair;
 }
 
 fn preferredHybridGroup(

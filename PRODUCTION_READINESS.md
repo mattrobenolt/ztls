@@ -60,11 +60,11 @@ ztls is production-ready when all six pillars are `PROVEN`:
 | Pillar | Status | One-line |
 |---|---|---|
 | 1. Correctness | `PROVEN` | Both #91 fixture defects have red/green regressions and fresh strict-complete captures on all three backends at `e5800ee`: zero unexpected results and zero validity rejections. Historical failure causality remains bounded by the retained evidence. Full TLS-Anvil remains scheduled-only; BoGo is explicitly deferred. |
-| 2. Ergonomics | `PROVEN` | CI-gated examples cover both roles across io_uring, epoll, kqueue, and `std.Io`. `ztls-std` (#77) gates plain and mTLS OpenSSL interop in both directions, concurrent split halves, KeyUpdate handoff, TX poisoning, and abort-before-join teardown. `ztls-xev` satisfies #76's Linux/macOS contract, including in-flight cancellation (#83). |
+| 2. Ergonomics | `PROVEN` | CI-gated examples cover both roles across io_uring, epoll, kqueue, and `std.Io`. Core and wrapper APIs expose hybrid capabilities and reject invalid local policy before key generation or wire I/O (#105). `ztls-std` (#77) gates plain and mTLS OpenSSL interop in both directions. `ztls-xev` satisfies #76's Linux/macOS contract, including in-flight cancellation (#83). |
 | 3. Performance | `PROVEN` | n=10 captures on x86_64 (c7i.2xlarge), aarch64 (c7g.2xlarge), and macOS (Apple M1 Max) with formal CIs (p=0.000): ztls beats libssl on every comparable app-data row on all three platforms and rustls on all AES-GCM rows; regression gate committed. |
 | 4. Providers | `PROVEN` | OpenSSL, AWS-LC, and BoringSSL have CI-gated backend lanes and fresh strict-complete TLS-Anvil captures at `e5800ee`, with both fixture patches verified and no unexpected results (#91). Plain P-384 and RFC 10024 hybrid KEX complete bidirectional OpenSSL 3.6 interop on all three non-FIPS lanes; the pinned upstream tlsfuzzer RFC 10024 matrix also passes (#6). Cert-chain stays ztls/std and FIPS checks remain capability-only. |
 | 5. Marketing | `PROVEN` | README leads with the proven performance story (n=10, both architectures, honest ChaCha20 loss) and the adversarial security posture; the why-ztls narrative and headline benchmarks are on the front door, backed by PERFORMANCE.md. |
-| 6. User docs | `PROVEN` | One fetched package exposes core plus the Zig 0.16 integration modules (#79); isolated consumer gates and `docs/USAGE.md` cover dependency wiring, supported surface, drive loops, API reference, and integration examples. |
+| 6. User docs | `PROVEN` | One fetched package exposes core plus the Zig 0.16 integration modules (#79). Isolated consumer gates and `docs/USAGE.md` cover dependency wiring, hybrid capability checks, borrowed lifetimes, cleanup, drive loops, and integrations (#105). |
 
 ---
 
@@ -421,11 +421,15 @@ data to openssl s_server and receives the HTTP response.
     rejects a key whose length differs from the cipher's key length before any
     EVP setup (defense-in-depth; unreachable via the typed `Aead` facade).
   - H4/H5 — KEM hardening: the negotiated RFC 10024 group selects an exact
-    parameter set and component layout before any provider call (no group-echo
-    confusion). The ML-KEM wrapper validates provider-returned public-key,
-    ciphertext, and shared-secret lengths for ML-KEM-768 or ML-KEM-1024 rather
-    than trusting them; ClientHello and ServerHello parsing also require each
-    group's exact role-specific share length and classical point format.
+    parameter set and component layout before any provider call. This prevents
+    group-echo confusion. The ML-KEM wrapper validates provider outputs against
+    the exact ML-KEM-768 or ML-KEM-1024 lengths. ClientHello and ServerHello
+    parsers require each group's exact role-specific share length and classical
+    point format.
+  - Public secret cleanup (#105): `SessionTicket`, `KtlsInfo`, P-256 and P-384
+    key pairs, and packed kTLS crypto-info values own `secureZero()` methods.
+    Each byte-erasure test failed when its cleanup body became a no-op.
+    In-tree callers use those methods instead of raw object-layout erasure.
   - H13/H14 — ServerHandshake record hygiene: `receiveApplicationData` rejects
     application data interleaved inside a pending KeyUpdate fragment, and the
     0-RTT byte counter checks the remaining budget before adding (no saturation
@@ -805,12 +809,11 @@ lane cannot build a 0.16-only integration and does not gate it.
 (`StreamImpl(Hs, role, config)`), with eager `connect`/`accept`, `Io.Reader`/
 `Io.Writer` interfaces, `socketHandle`, `hasBuffered`, `info`, and the
 `closeWrite`/`abort`/`close`/`deinit` lifecycle, and client authentication
-(mTLS) on both roles. `just integrations-ci` runs lint plus 49 tests: 35
-fixture-backed round-trips over a socketpair (30 general + 5 client-auth),
-6 wrapper-level OpenSSL interoperability tests over TCP (plain both
-directions + successful and rejected mTLS in both directions), 5 unit tests
-on error classification, alert fidelity, and buffer sizing, 2 on the client
-example's helpers, and 1 smoke test.
+(mTLS) on both roles. `just integrations-ci` runs lint plus 50 tests: 36
+fixture-backed socketpair tests, six wrapper-level OpenSSL interoperability
+tests, five API tests, two client-example tests, and one smoke test. An API
+preflight test rejects invalid hybrid options without creating a socket;
+`connect` and `accept` repeat validation before key generation or wire I/O.
 
 **Wrapper interop is CI-gated in both directions, including mTLS.**
 `ztls_std.Client` negotiates
@@ -975,13 +978,13 @@ are both shared across connections. Surface is
 `init`/`handshake`/`read`/`write`/`close`/`closeReset`/`deinit` plus `state`,
 `selectedAlpn`, and `cipherSuite`.
 
-23 tests. The client round trip drives a real `xev.Loop` against a blocking ztls
-server on a thread; the server tests run *both* roles on one loop over a
-socketpair, with no threads, so the interleaving is the loop's and the result is
-deterministic. Plus unit coverage of the error projection, the alert mapping, the
-whole-struct `Storage` wipe, and the callback-slot contract. The server example
-is verified against real `openssl s_client`, including X25519MLKEM768 hybrid key
-exchange and ALPN, across repeated connections on one shared config.
+28 tests cover configuration, connection behavior, credentials, and address
+resolution. The client round trip drives a real `xev.Loop` against a blocking
+ztls server on a thread. Server tests run both roles on one loop over a
+socketpair. Configuration tests prove that both constructors reject local
+hybrid faults, and that client policy validation precedes trust-store allocation.
+The server example uses `openssl s_client` with X25519MLKEM768 and ALPN across
+repeated connections on one shared configuration.
 
 The API is not a port of ztls-std, and the reasons are structural rather than
 stylistic. ztls-std's drive loop owns the stack (`while (!isConnected())
@@ -1561,17 +1564,18 @@ dispatch through the backend facade; capability tables are backend-owned.
   no AWS-LC alternative API to measure)*
 - **Capability gating covers the whole advertised handshake surface.**
   ClientHello cipher suites, named groups, `signature_algorithms`, and
-  `signature_algorithms_cert` come from the active backend capability table;
-  server selection consults the same facade. OpenSSL, AWS-LC, and BoringSSL
-  advertise all three RFC 10024 groups. The `openssl-fips` and `aws-lc-fips`
-  identities advertise none and explicit hybrid policy returns
-  `UnsupportedGroup` instead of downgrading. Those FIPS tables also drop
-  ChaCha20-Poly1305, RSA PKCS#1 v1.5 certificate signatures, and Ed25519 while
-  keeping AES-GCM, P-256/P-384, X25519, RSA-PSS, and ECDSA. Comptime subset
-  assertions and divergence tests enforce the narrowing. The FIPS build option
-  still declares intent only: the caller/linker must ensure the linked
-  libcrypto actually runs in FIPS mode, and the full runtime suite is not a
-  FIPS lane because existing fixtures intentionally use non-FIPS algorithms.
+  `signature_algorithms_cert` come from the active backend capability table.
+  Server selection consults the same facade. Public `ztls.capabilities` exposes
+  `active_backend`, `is_fips`, `hybrid_groups`, group support, policy validation,
+  and the P-384 requirement. OpenSSL, AWS-LC, and BoringSSL advertise all three
+  RFC 10024 groups. The `openssl-fips` and `aws-lc-fips` identities advertise
+  none. Explicit local policy returns `InvalidHybridPolicy`,
+  `HybridGroupUnavailable`, or `MissingP384KeyPair` without a downgrade.
+  Those FIPS tables also drop ChaCha20-Poly1305, RSA PKCS#1 v1.5 certificate
+  signatures, and Ed25519. They retain AES-GCM, P-256/P-384, X25519, RSA-PSS,
+  and ECDSA. Comptime subset assertions and divergence tests enforce the
+  reduced set. The FIPS build option declares compile-time policy only.
+  The caller or linker must ensure that libcrypto runs in FIPS mode.
   The strict-complete `b6aee2c` client TLS-Anvil capture (`ci-28722850517`)
   closes the remote P-256 evidence gap with `ComplianceRequirements: passed=2`
   and `KeyShare: passed=5`. *(#6, #60)*

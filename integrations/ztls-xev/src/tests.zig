@@ -361,7 +361,7 @@ const Client = struct {
     }
 };
 
-fn insecureConfig() tls.ClientConfig {
+fn insecureConfig() !tls.ClientConfig {
     return .init(.{ .verify = .insecure });
 }
 
@@ -389,7 +389,7 @@ test "xev client: handshake, write, read, close_notify" {
     defer harness.deinit();
     const loop = &harness.loop;
 
-    var config = insecureConfig();
+    var config = try insecureConfig();
     defer config.deinit();
 
     var client: Client = .{ .loop = loop, .request = "ping" };
@@ -559,12 +559,12 @@ test "xev server: handshake, echo, and close against an xev client" {
     var key: ztls.signature.PrivateKey = try .fromP256Scalar(@ptrCast(test_scalar[0..32]));
     defer key.deinit();
 
-    const server_config: tls.ServerConfig = .init(.{
+    const server_config: tls.ServerConfig = try .init(.{
         .cert_chain = &.{test_cert_der},
         .signer = key.signer(),
         .alpn = &.{"h2"},
     });
-    var client_config: tls.ClientConfig = .init(.{ .verify = .insecure, .alpn = &.{"h2"} });
+    var client_config: tls.ClientConfig = try .init(.{ .verify = .insecure, .alpn = &.{"h2"} });
     defer client_config.deinit();
 
     const io = std.Io.Threaded.global_single_threaded.io();
@@ -694,11 +694,11 @@ test "xev server: a client that handshakes then leaves without speaking" {
     var key: ztls.signature.PrivateKey = try .fromP256Scalar(@ptrCast(test_scalar[0..32]));
     defer key.deinit();
 
-    const server_config: tls.ServerConfig = .init(.{
+    const server_config: tls.ServerConfig = try .init(.{
         .cert_chain = &.{test_cert_der},
         .signer = key.signer(),
     });
-    var client_config: tls.ClientConfig = .init(.{ .verify = .insecure });
+    var client_config: tls.ClientConfig = try .init(.{ .verify = .insecure });
     defer client_config.deinit();
 
     const io = std.Io.Threaded.global_single_threaded.io();
@@ -848,11 +848,11 @@ fn CloseWhileReading(comptime Xev: type) type {
 
             var key: ztls.signature.PrivateKey = try .fromP256Scalar(@ptrCast(test_scalar[0..32]));
             defer key.deinit();
-            const server_config: tls.ServerConfig = .init(.{
+            const server_config: tls.ServerConfig = try .init(.{
                 .cert_chain = &.{test_cert_der},
                 .signer = key.signer(),
             });
-            var client_config: tls.ClientConfig = .init(.{ .verify = .insecure });
+            var client_config: tls.ClientConfig = try .init(.{ .verify = .insecure });
             defer client_config.deinit();
 
             const io = std.Io.Threaded.global_single_threaded.io();
@@ -1113,11 +1113,11 @@ fn CloseWhileWriting(comptime Xev: type) type {
 
             var key: ztls.signature.PrivateKey = try .fromP256Scalar(@ptrCast(test_scalar[0..32]));
             defer key.deinit();
-            const server_config: tls.ServerConfig = .init(.{
+            const server_config: tls.ServerConfig = try .init(.{
                 .cert_chain = &.{test_cert_der},
                 .signer = key.signer(),
             });
-            var client_config: tls.ClientConfig = .init(.{ .verify = .insecure });
+            var client_config: tls.ClientConfig = try .init(.{ .verify = .insecure });
             defer client_config.deinit();
 
             const io = std.Io.Threaded.global_single_threaded.io();

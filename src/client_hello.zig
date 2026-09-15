@@ -11,6 +11,7 @@ const meta = std.meta;
 const alpn_mod = @import("alpn.zig");
 const AlpnProtocols = alpn_mod.Protocols;
 const AlpnError = alpn_mod.Error;
+const capabilities = @import("capabilities.zig");
 const CompressionMethod = @import("compression_method.zig").CompressionMethod;
 const backend = @import("crypto/backend.zig");
 const supported_cipher_suites = backend.capabilities.cipher_suites;
@@ -158,7 +159,7 @@ pub const RetryEncodeError = error{
     IdentityTooLong,
     InvalidBinderLength,
     UnsupportedGroup,
-} || AlpnError;
+} || capabilities.HybridPolicyError || AlpnError;
 
 /// PSK fields retained when constructing ClientHello2 after HRR. The binder is
 /// emitted as zeroes for the caller to patch through `PskEncodeResult`.
@@ -182,11 +183,11 @@ fn singleKeyShareLen(
         .secp256r1_mlkem768,
         .secp384r1_mlkem1024,
         => {
-            const share = hybrid_share orelse return error.UnsupportedGroup;
+            const share = hybrid_share orelse return error.InvalidHybridPolicy;
             if (share.group != selected_group or
                 share.data.len != selected_group.publicKeyLen().?)
             {
-                return error.UnsupportedGroup;
+                return error.InvalidHybridPolicy;
             }
             return 2 + 2 + share.data.len;
         },
@@ -321,6 +322,11 @@ pub fn encodeRetryAfterHrrWithHybridAndPsk(
     }
     if (selected_group == .secp384r1 and p384_public_key == null) return error.UnsupportedGroup;
     try validateHybridGroups(hybrid_groups, hybrid_share);
+    if (selected_group.hybridSpec() != null and
+        mem.indexOfScalar(NamedGroup, hybrid_groups, selected_group) == null)
+    {
+        return error.UnsupportedGroup;
+    }
     const include_p384 = p384_public_key != null;
     const ext_len = try retryExtensionsLen(
         server_name,
@@ -430,7 +436,7 @@ pub fn encodeRetryAfterHrrWithHybridAndPsk(
         .secp256r1_mlkem768,
         .secp384r1_mlkem1024,
         => {
-            const share = hybrid_share orelse return error.UnsupportedGroup;
+            const share = hybrid_share orelse return error.InvalidHybridPolicy;
             w.append(NamedGroup, share.group);
             w.append(u16, @intCast(share.data.len));
             w.appendSlice(share.data);
@@ -504,21 +510,16 @@ pub const KemShare = struct {
 fn validateHybridGroups(
     groups: []const NamedGroup,
     share: ?KemShare,
-) error{UnsupportedGroup}!void {
-    if (groups.len > 3) return error.UnsupportedGroup;
-    for (groups, 0..) |group, i| {
-        if (group.hybridSpec() == null or !backend.supportsClientHybridGroup(group))
-            return error.UnsupportedGroup;
-        for (groups[0..i]) |earlier| {
-            if (earlier == group) return error.UnsupportedGroup;
-        }
-    }
+) capabilities.HybridPolicyError!void {
     if (share) |value| {
         if (mem.indexOfScalar(NamedGroup, groups, value.group) == null)
-            return error.UnsupportedGroup;
-        const expected_len = value.group.publicKeyLen() orelse return error.UnsupportedGroup;
-        if (value.data.len != @as(usize, expected_len)) return error.UnsupportedGroup;
+            return error.InvalidHybridPolicy;
+        const expected_len = value.group.publicKeyLen() orelse
+            return error.InvalidHybridPolicy;
+        if (value.data.len != @as(usize, expected_len))
+            return error.InvalidHybridPolicy;
     }
+    try capabilities.validateHybridGroups(.client, groups);
 }
 
 /// Encoded ClientHello plus the offsets needed to patch its PSK binder.
@@ -558,8 +559,7 @@ pub fn encodeWithPsk(
     ServerNameTooLong,
     IdentityTooLong,
     InvalidBinderLength,
-    UnsupportedGroup,
-} || AlpnError)!PskEncodeResult {
+} || capabilities.HybridPolicyError || AlpnError)!PskEncodeResult {
     return encodeWithPskAndHybridGroups(
         out,
         random,
@@ -600,8 +600,7 @@ pub fn encodeWithPskAndHybridGroups(
     ServerNameTooLong,
     IdentityTooLong,
     InvalidBinderLength,
-    UnsupportedGroup,
-} || AlpnError)!PskEncodeResult {
+} || capabilities.HybridPolicyError || AlpnError)!PskEncodeResult {
     if (server_name) |name| if (name.len > 253) return error.ServerNameTooLong;
     if (identity.len > 256) return error.IdentityTooLong;
     if (binder_len != 32 and binder_len != 48) return error.InvalidBinderLength;
@@ -915,7 +914,8 @@ pub fn encodeWithKem(
     server_name: ?[]const u8,
     alpn_protocols: AlpnProtocols,
     kem_share: ?KemShare,
-) (error{ BufferTooShort, ServerNameTooLong, UnsupportedGroup } || AlpnError)![]u8 {
+) (error{ BufferTooShort, ServerNameTooLong } ||
+    capabilities.HybridPolicyError || AlpnError)![]u8 {
     const groups: []const NamedGroup = if (kem_share) |share| &.{share.group} else &.{};
     return encodeWithHybridGroups(
         out,
@@ -940,7 +940,8 @@ pub fn encodeWithHybridGroups(
     alpn_protocols: AlpnProtocols,
     hybrid_groups: []const NamedGroup,
     kem_share: ?KemShare,
-) (error{ BufferTooShort, ServerNameTooLong, UnsupportedGroup } || AlpnError)![]u8 {
+) (error{ BufferTooShort, ServerNameTooLong } ||
+    capabilities.HybridPolicyError || AlpnError)![]u8 {
     assert(backend.capabilities.client_p256);
     if (public_key_p384 != null) assert(backend.capabilities.client_p384);
     try validateHybridGroups(hybrid_groups, kem_share);
@@ -2510,16 +2511,38 @@ test "encodeRetryAfterHrr: rejects unsupported group" {
     );
 }
 
-// RFC 10024 §4.1 — public hybrid encoders reject a share for an unknown group
-// through their explicit error set rather than unwrapping a null group size.
-test "encodeWithHybridGroups: rejects unknown share group without panic" {
-    if (!backend.supportsClientHybridGroup(.x25519_mlkem768))
+// RFC 10024 §4.1 — a configured retry share is local policy, while the
+// selected group remains peer input.
+test "encodeRetryAfterHrr: missing configured hybrid share is a policy error" {
+    if (!capabilities.supportsHybridGroup(.client, .x25519_mlkem768))
         return error.SkipZigTest;
 
+    var buf: [4096]u8 = undefined;
+    try testing.expectError(
+        error.InvalidHybridPolicy,
+        encodeRetryAfterHrrWithHybrid(
+            &buf,
+            .zero,
+            .zero,
+            .init(@splat(0)),
+            null,
+            .x25519_mlkem768,
+            null,
+            null,
+            &.{},
+            &.{.x25519_mlkem768},
+            null,
+        ),
+    );
+}
+
+// RFC 10024 §4.1 — public hybrid encoders report malformed local policy
+// through their explicit options error rather than a peer protocol error.
+test "encodeWithHybridGroups: rejects unknown share group without panic" {
     const unknown: NamedGroup = @enumFromInt(0x1234);
     var buf: [4096]u8 = undefined;
     try testing.expectError(
-        error.UnsupportedGroup,
+        error.InvalidHybridPolicy,
         encodeWithHybridGroups(
             &buf,
             .zero,
