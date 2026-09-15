@@ -4,6 +4,8 @@
     .fingerprint = 0x6fe677c8d1847ac4,
     .minimum_zig_version = "0.16.0",
     .dependencies = .{
+        // In-tree development dependency. External consumers fetch the root
+        // package and import its Linux-only `ztls_ktls` module; see #79.
         .ztls = .{
             .path = "../..",
         },

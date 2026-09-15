@@ -4,11 +4,8 @@
     .fingerprint = 0x45842379ee2c17fe, // Changing this has security and trust implications.
     .minimum_zig_version = "0.16.0",
     .dependencies = .{
-        // In-tree path dep on the ztls core. Mirrors the conformance/ pattern
-        // (conformance/build.zig.zon uses `.path = "../`"). From
-        // integrations/ztls-std the repo root is ../.. .
-        // Publish-time, this swaps to a git-URL/tag dep on a published ztls —
-        // see #79 (distribution strategy). Dev-time, path.
+        // In-tree development dependency. External consumers fetch the root
+        // package and import its `ztls_std` module; see #79.
         .ztls = .{
             .path = "../..",
         },

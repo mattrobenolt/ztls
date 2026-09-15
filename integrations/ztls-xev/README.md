@@ -4,7 +4,26 @@ Non-blocking TLS 1.3 over [libxev](https://github.com/mitchellh/libxev). Zig 0.1
 only.
 
 Readiness status lives in [`PRODUCTION_READINESS.md`](../../PRODUCTION_READINESS.md),
-not here. Work is tracked by [#76](https://github.com/mattrobenolt/ztls/issues/76).
+not here. The implementation landed under
+[#76](https://github.com/mattrobenolt/ztls/issues/76).
+
+## Install
+
+Fetch the root ztls package and opt into libxev when resolving the dependency:
+
+```zig
+const ztls_dep = b.dependency("ztls", .{
+    .target = target,
+    .optimize = optimize,
+    .xev = true,
+});
+const ztls_xev = ztls_dep.module("ztls_xev");
+```
+
+The option keeps libxev out of core-only and `ztls_std` consumers. This module
+requires Zig 0.16. See
+[`docs/USAGE.md`](../../docs/USAGE.md#fresh-project-setup) for the complete
+consumer wiring.
 
 ## Why this is a package and `ztls-zio` isn't
 

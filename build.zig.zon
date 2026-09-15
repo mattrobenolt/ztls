@@ -14,6 +14,7 @@
         .benchmark = .{
             .url = "git+https://github.com/mattrobenolt/zig-benchmark#6e7e9ab7ed8bd8147c491ac53a1d326633a5c47a",
             .hash = "benchmark-0.1.0-JS72VvXxAACo8j9BYddbkivgNHXIeD1V27013BuCtW-_",
+            .lazy = true,
         },
         // Test-only: plain-text test runner that writes one line per test to
         // stderr instead of Zig's TUI progress protocol. Lazy so consumers of
@@ -23,11 +24,23 @@
             .hash = "ztest-0.2.0-h6PBzyKEAAC49mtm1NO2CTeniItVuL0l06TpBDMDTe19",
             .lazy = true,
         },
+        // Integration-only: fetched when a consumer opts into ztls_xev.
+        // Keep this pin in sync with integrations/ztls-xev/build.zig.zon.
+        .libxev = .{
+            .url = "git+https://github.com/mitchellh/libxev#7497c85dfc3ae5141308944f2cd47c836772c300",
+            .hash = "libxev-0.0.0-86vtc6BWFAAs_tGsasNfjQsxSsElhddIUnqVwGhwdnsu",
+            .lazy = true,
+        },
     },
     .paths = .{
+        "LICENSE",
+        "LICENSE-ZIG",
         "build.zig",
         "build.zig.zon",
         "src",
         "tests/fixtures",
+        "integrations/ztls-std/src",
+        "integrations/ztls-xev/src",
+        "integrations/ztls-ktls/src",
     },
 }

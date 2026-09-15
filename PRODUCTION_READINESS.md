@@ -64,7 +64,7 @@ ztls is production-ready when all six pillars are `PROVEN`:
 | 3. Performance | `PROVEN` | n=10 captures on x86_64 (c7i.2xlarge), aarch64 (c7g.2xlarge), and macOS (Apple M1 Max) with formal CIs (p=0.000): ztls beats libssl on every comparable app-data row on all three platforms and rustls on all AES-GCM rows; regression gate committed. |
 | 4. Providers | `PROVEN` | OpenSSL, AWS-LC, and BoringSSL have CI-gated backend lanes and fresh strict-complete TLS-Anvil captures at `e5800ee`, with both fixture patches verified and no unexpected results (#91). Cert-chain stays ztls/std; FIPS capability checks are comptime-only; PQ/P-384 is #6. |
 | 5. Marketing | `PROVEN` | README leads with the proven performance story (n=10, both architectures, honest ChaCha20 loss) and the adversarial security posture; the why-ztls narrative and headline benchmarks are on the front door, backed by PERFORMANCE.md. |
-| 6. User docs | `PROVEN` | Root on-ramp plus `docs/USAGE.md` cover fresh-project setup, supported surface, drive loops, API reference, and CI-gated integration examples. |
+| 6. User docs | `PROVEN` | One fetched package exposes core plus the Zig 0.16 integration modules (#79); isolated consumer gates and `docs/USAGE.md` cover dependency wiring, supported surface, drive loops, API reference, and integration examples. |
 
 ---
 
@@ -1647,8 +1647,15 @@ told clearly and backed by numbers").
 guides, without reading source.
 
 **Current evidence:** `README.md` gives a root on-ramp and fresh-project module
-wiring pointer. `docs/USAGE.md` documents the caller-owned-buffer model,
-`RecordBuffer`, `Outbox`, the `pending_write` / `completeWrite()` interlock,
+wiring pointer. The root fetched package exposes `ztls` on Zig 0.15.2 and the
+Zig 0.16 `ztls_std`, `ztls_xev`, and Linux-only `ztls_ktls` integration modules
+(#79). `ztls_xev` gates its libxev dependency behind an explicit opt-in. The
+distribution consumer compiles from an isolated package cache, checks the Zig
+0.15 integration-version diagnostic, checks the xev opt-in diagnostic, and
+rejects eager benchmark, test-runner, fixture-decoder, or libxev fetches on
+core and standard-wrapper paths. `docs/USAGE.md` documents the
+caller-owned-buffer model, `RecordBuffer`, `Outbox`, the `pending_write` /
+`completeWrite()` interlock,
 server credential flow (`setCredentials` plus `sendServerFlightBuffered`), ALPN
 error behavior, supported-surface boundaries, fresh-project dependency wiring,
 an API reference for the exported handshake/buffer/signing/key-exchange types,

@@ -91,6 +91,16 @@ integrations-ci:
     just integrations/ztls-xev/ci
     if [ "$(uname -s)" = Linux ]; then just integrations/ztls-ktls/ci; else echo "ztls-ktls: Linux-only, skipped"; fi
 
+[doc("Compile core ztls as an isolated fetched package with Zig 0.15.2")]
+[group("check")]
+distribution-core-ci:
+    ./scripts/distribution-smoke.sh core
+
+[doc("Compile integration modules as an isolated fetched package with Zig 0.16")]
+[group("check")]
+distribution-integrations-ci:
+    ./scripts/distribution-smoke.sh integrations
+
 [doc("Build and run the C ABI example (libztls.a + c_client.c)")]
 [group("check")]
 capi-ci:
@@ -229,8 +239,8 @@ fmt-rust:
 
 [group("check")]
 lint-zig:
-    zig fmt --check src/ examples/ bench/ shared/ build.zig
-    ziglint build.zig examples bench shared $(fd --extension zig --exclude certificate_parser.zig . src)
+    zig fmt --check src/ examples/ bench/ shared/ tests/distribution-consumer/ build.zig
+    ziglint build.zig examples bench shared tests/distribution-consumer $(fd --extension zig --exclude certificate_parser.zig . src)
     ast-grep scan --rule rules/no-ztls-owned-allocations.yml src --globs '*.zig' --globs '!src/test/**' --globs '!src/bench/**' --globs '!src/interop.zig' --report-style short
     ast-grep scan --rule rules/no-c-pointer-types.yml src --globs '*.zig' --report-style short
     # std-alias rules: enforce the aliases we always want. certificate_parser.zig

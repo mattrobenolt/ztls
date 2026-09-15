@@ -9,8 +9,24 @@ without writing a Sans-I/O loop. Zig 0.16 only. This is the reference
 integration; `ztls-xev` and `ztls-ktls` adapt its handshake-to-completion loop.
 
 Readiness status for this integration lives in
-[`PRODUCTION_READINESS.md`](../../PRODUCTION_READINESS.md), not here. Work is
-tracked by [#77](https://github.com/mattrobenolt/ztls/issues/77).
+[`PRODUCTION_READINESS.md`](../../PRODUCTION_READINESS.md), not here. The
+implementation landed under [#77](https://github.com/mattrobenolt/ztls/issues/77).
+
+## Install
+
+Fetch the root ztls package, then import its `ztls_std` module. One dependency
+contains core and all integration sources; this module requires Zig 0.16.
+
+```zig
+const ztls_dep = b.dependency("ztls", .{
+    .target = target,
+    .optimize = optimize,
+});
+const ztls_std = ztls_dep.module("ztls_std");
+```
+
+See [`docs/USAGE.md`](../../docs/USAGE.md#fresh-project-setup) for the complete
+consumer wiring.
 
 ## Design principles
 

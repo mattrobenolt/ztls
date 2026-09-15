@@ -10,6 +10,22 @@ key-schedule owner for later KeyUpdate messages.
 The package allocates no memory and supports AES-128-GCM, AES-256-GCM, and
 ChaCha20-Poly1305.
 
+## Install
+
+Fetch the root ztls package, then import its Linux-only `ztls_ktls` module:
+
+```zig
+const ztls_dep = b.dependency("ztls", .{
+    .target = target,
+    .optimize = optimize,
+});
+const ztls_ktls = ztls_dep.module("ztls_ktls");
+```
+
+The module requires Zig 0.16 and Linux. See
+[`docs/USAGE.md`](../../docs/USAGE.md#fresh-project-setup) for the complete
+consumer wiring.
+
 ## Handoff contract
 
 The transition to `TLS_RX` is one-way. Before activation:

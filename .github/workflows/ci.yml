@@ -50,8 +50,8 @@ jobs:
           persist-credentials: false
       - uses: DeterminateSystems/determinate-nix-action@61cbfe2efc2d4e7a8a6d56967c3c1058e846c858 # v3.21.9
       - uses: DeterminateSystems/magic-nix-cache-action@908b263ff629f4cc17666315b7fd3ec127c6244d # v14
-      - name: Run the 0.16 integration gates on kqueue
-        run: nix develop .#zig-0_16 --command just integrations-ci
+      - name: Run the 0.16 integration and distribution gates on kqueue
+        run: nix develop .#zig-0_16 --command just integrations-ci distribution-integrations-ci
 
   test-zig-0_16:
     runs-on: ubuntu-latest

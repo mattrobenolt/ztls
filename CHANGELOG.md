@@ -35,6 +35,8 @@ This section describes what exists on `main` today. It is not a release.
 - HelloRetryRequest, KeyUpdate (both directions), application data, alerts, and
   `close_notify`.
 - Linux kTLS offload: userspace handshake, kernel data plane.
+- One fetched root package exposes `ztls`, `ztls_std`, `ztls_xev`, and
+  Linux-only `ztls_ktls`; libxev remains an explicit lazy opt-in.
 - Client and server examples across `std.net.Stream`, epoll, io_uring, and an
   in-memory pipe, all exercised in CI.
 - Benchmarked against OpenSSL libssl and rustls with n=10 captures on x86_64

@@ -75,6 +75,64 @@ pub fn build(b: *Build) void {
     mod.link_libc = true;
     mod.linkSystemLibrary("crypto", .{});
 
+    // Library-only mirrors of the standalone integration build scripts. The
+    // distribution smoke compiles each mirror from the fetched root package.
+    const expose_xev = b.option(
+        bool,
+        "xev",
+        "Expose Zig 0.16 ztls_xev and fetch its lazy libxev dependency",
+    ) orelse false;
+    const supports_integrations = builtin.zig_version.major > 0 or
+        builtin.zig_version.minor >= 16;
+    if (supports_integrations) {
+        const std_mod = b.addModule("ztls_std", .{
+            .root_source_file = b.path("integrations/ztls-std/src/root.zig"),
+            .target = target,
+            .optimize = optimize,
+        });
+        std_mod.addImport("ztls", mod);
+        std_mod.link_libc = true;
+
+        const ktls_mod = b.addModule("ztls_ktls", .{
+            .root_source_file = b.path("integrations/ztls-ktls/src/root.zig"),
+            .target = target,
+            .optimize = optimize,
+        });
+        ktls_mod.addImport("ztls", mod);
+        ktls_mod.link_libc = true;
+
+        const xev_mod = b.addModule("ztls_xev", .{
+            .root_source_file = b.path(if (expose_xev)
+                "integrations/ztls-xev/src/root.zig"
+            else
+                "src/integration_requires_xev.zig"),
+            .target = target,
+            .optimize = optimize,
+        });
+        if (expose_xev) {
+            const libxev = b.lazyDependency("libxev", .{
+                .target = target,
+                .optimize = optimize,
+            });
+            if (libxev) |dependency| xev_mod.addImport("xev", dependency.module("xev"));
+            xev_mod.addImport("ztls", mod);
+            xev_mod.link_libc = true;
+        }
+    } else {
+        for ([_][]const u8{ "ztls_std", "ztls_xev", "ztls_ktls" }) |name| {
+            _ = b.addModule(name, .{
+                .root_source_file = b.path("src/integration_requires_zig_0_16.zig"),
+                .target = target,
+                .optimize = optimize,
+            });
+        }
+    }
+
+    // Dependency consumers need only the exported modules. Keeping the
+    // development graph root-only also keeps benchmark and test-runner packages
+    // out of a core consumer's cache.
+    if (b.pkg_hash.len != 0) return;
+
     const test_mod = b.createModule(.{
         .root_source_file = b.path("src/test.zig"),
         .target = target,
@@ -118,10 +176,10 @@ pub fn build(b: *Build) void {
     c_ssl_mod.linkSystemLibrary("ssl", .{});
     c_ssl_mod.linkSystemLibrary("crypto", .{});
 
-    const benchmark_dep = b.dependency("benchmark", .{
+    const benchmark_dep = b.lazyDependency("benchmark", .{
         .target = target,
         .optimize = .ReleaseFast,
-    });
+    }) orelse return;
 
     tests.addSteps(b, .{
         .test_mod = test_mod,

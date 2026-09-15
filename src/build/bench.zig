@@ -1,8 +1,6 @@
 const std = @import("std");
 const Build = std.Build;
 
-const benchmark = @import("benchmark");
-
 pub const Options = struct {
     target: Build.ResolvedTarget,
     ztls_mod: *Build.Module,
@@ -37,10 +35,7 @@ fn addZtlsBenchmarks(b: *Build, opts: Options) void {
     mod.linkSystemLibrary("crypto", .{});
     mod.addImport("fixtures", opts.fixtures_mod);
 
-    const exe = benchmark.addTest(b, .{
-        .dependency = opts.benchmark_dep,
-        .root_module = mod,
-    });
+    const exe = addBenchmark(b, opts, "benchmark", mod);
 
     const run = b.addRunArtifact(exe);
     if (b.args) |args| run.addArgs(args);
@@ -51,6 +46,29 @@ fn addZtlsBenchmarks(b: *Build, opts: Options) void {
     const install = b.addInstallArtifact(exe, .{});
     const install_step = b.step("bench-bin", "Build the benchmark binary for profiling");
     install_step.dependOn(&install.step);
+}
+
+fn addBenchmark(
+    b: *Build,
+    opts: Options,
+    name: []const u8,
+    benchmark_root: *Build.Module,
+) *Build.Step.Compile {
+    const benchmark_mod: *Build.Module = opts.benchmark_dep.module("benchmark");
+    benchmark_root.addImport("benchmark", benchmark_mod);
+
+    const main_mod: *Build.Module = b.createModule(.{
+        .root_source_file = opts.benchmark_dep.path("src/benchmark_main.zig"),
+        .target = opts.target,
+        .optimize = .ReleaseFast,
+    });
+    main_mod.addImport("benchmark", benchmark_mod);
+    main_mod.addImport("benchmark_root", benchmark_root);
+
+    return b.addExecutable(.{
+        .name = name,
+        .root_module = main_mod,
+    });
 }
 
 fn addReplayFixtureGenerator(b: *Build, opts: Options) void {
@@ -81,11 +99,7 @@ fn addEvpBenchmarks(b: *Build, opts: Options) void {
             .{ .name = "c", .module = opts.c_mod },
         },
     });
-    const evp_bench_test = benchmark.addTest(b, .{
-        .name = "evp_bench",
-        .dependency = opts.benchmark_dep,
-        .root_module = evp_bench_root,
-    });
+    const evp_bench_test = addBenchmark(b, opts, "evp_bench", evp_bench_root);
     const run_evp_bench = b.addRunArtifact(evp_bench_test);
     if (b.args) |args| run_evp_bench.addArgs(args);
 
@@ -112,11 +126,7 @@ fn addLibsslBenchmarks(b: *Build, opts: Options) void {
     bio_bench_root.linkSystemLibrary("ssl", .{});
     bio_bench_root.linkSystemLibrary("crypto", .{});
 
-    const bio_bench_exe = benchmark.addTest(b, .{
-        .name = "bio_bench",
-        .dependency = opts.benchmark_dep,
-        .root_module = bio_bench_root,
-    });
+    const bio_bench_exe = addBenchmark(b, opts, "bio_bench", bio_bench_root);
     const run_bio_bench = b.addRunArtifact(bio_bench_exe);
     if (b.args) |args| run_bio_bench.addArgs(args);
 

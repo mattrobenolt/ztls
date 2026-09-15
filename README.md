@@ -212,7 +212,18 @@ const exe_mod = b.createModule(.{
 const exe = b.addExecutable(.{ .name = "hello-ztls", .root_module = exe_mod });
 ```
 
-Now `@import("ztls")` works from `src/main.zig`. The longer setup is in
+Now `@import("ztls")` works from `src/main.zig`. The same fetched dependency
+exposes the Zig 0.16 integration modules:
+
+| Module | Purpose | Extra requirement |
+|---|---|---|
+| `ztls_std` | Blocking `std.Io.net` stream wrapper | Zig 0.16 |
+| `ztls_xev` | Non-blocking libxev adapter | Zig 0.16 and `.xev = true` in the `b.dependency` options |
+| `ztls_ktls` | Linux kernel TLS data plane | Zig 0.16 and Linux |
+
+Core `ztls` remains compatible with Zig 0.15.2. Importing an integration with
+Zig 0.15 reports the version requirement directly. `ztls_xev` is opt-in so a
+core or `ztls_std` consumer does not fetch libxev. The exact wiring is in
 [`docs/USAGE.md`](docs/USAGE.md).
 
 ## Project state
