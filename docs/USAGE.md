@@ -634,6 +634,7 @@ Low-level in-memory hooks used by `examples/in_memory_handshake.zig`: `acceptCli
 
 ### Signing and key exchange
 
+- `CertificateChain.fromPem(pem, der_storage, chain_storage)` decodes RFC 7468 certificate blocks into caller-owned storage. The output buffers must not overlap `pem` and must outlive the chain.
 - `signature.PrivateKey.fromPem(scheme, pem)` and `fromDer(scheme, der)` load private keys from caller-owned bytes.
 - `signature.PrivateKey.fromP256Scalar(scalar)` is useful for fixtures and examples that carry a raw P-256 scalar.
 - `signature.PrivateKey.signer()` borrows a `signature.Signer` vtable for `setCredentials`.
