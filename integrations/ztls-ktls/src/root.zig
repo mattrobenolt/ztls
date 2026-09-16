@@ -102,9 +102,9 @@ pub fn Connection(comptime Handshake: type) type {
             }
             if (!buffered.isEmpty()) return error.BufferedCiphertext;
 
-            ztls.ktls.ulpInstall(fd) catch |err| switch (err) {
-                error.Unavailable => return error.KtlsUnavailable,
-                error.Busy, error.Failed => return error.KtlsInstallFailed,
+            ztls.ktls.ulpInstall(fd) catch |err| return switch (err) {
+                error.Unavailable => error.KtlsUnavailable,
+                error.Busy, error.Failed => error.KtlsInstallFailed,
             };
 
             var tx_info = handshake.txKtlsInfo();
@@ -327,9 +327,9 @@ pub fn Connection(comptime Handshake: type) type {
                 },
             };
             if (request == .update_requested and !self.state.contains(.tx_closed)) {
-                self.sendKeyUpdate(.update_not_requested) catch |err| switch (err) {
-                    error.KtlsRekeyUnsupported => return self.fail(error.KtlsRekeyUnsupported),
-                    else => return self.fail(error.KtlsRekeyFailed),
+                self.sendKeyUpdate(.update_not_requested) catch |err| return switch (err) {
+                    error.KtlsRekeyUnsupported => self.fail(error.KtlsRekeyUnsupported),
+                    else => self.fail(error.KtlsRekeyFailed),
                 };
             }
         }

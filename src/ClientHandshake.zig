@@ -1982,9 +1982,9 @@ pub fn clientFinished(self: *ClientHandshake, out: []u8) ClientFinishedError![]c
                 c.signer.context,
                 cv_input[0 .. cv_ctx_len + th_len],
                 &sig_buf,
-            ) catch |err| switch (err) {
-                error.BufferTooShort => return error.BufferTooShort,
-                else => |e| return e,
+            ) catch |err| return switch (err) {
+                error.BufferTooShort => error.BufferTooShort,
+                else => |e| e,
             };
             const cv = certificate.encodeCertificateVerify(
                 plain_buf[plain_len..],
@@ -1999,9 +1999,9 @@ pub fn clientFinished(self: *ClientHandshake, out: []u8) ClientFinishedError![]c
     var keys = self.suite.finishHandshake(
         plain_buf[plain_len..],
         self.server_finished_hash[0..self.server_finished_hash_len],
-    ) catch |err| switch (err) {
-        error.BufferTooShort => return error.BufferTooShort,
-        else => |e| return e,
+    ) catch |err| return switch (err) {
+        error.BufferTooShort => error.BufferTooShort,
+        else => |e| e,
     };
     errdefer {
         keys.tx.deinit();

@@ -653,9 +653,9 @@ fn testKey() Tls12CryptoInfoAesGcm128 {
 /// no TLS ULP at all (module unloaded, kTLS configured out) — the same
 /// discipline the ztls-ktls integration's live tests use.
 fn skipUnlessUlp(fd: posix.socket_t) (InstallError || error{SkipZigTest})!void {
-    ulpInstall(fd) catch |err| switch (err) {
-        error.Unavailable => return error.SkipZigTest,
-        else => |e| return e,
+    ulpInstall(fd) catch |err| return switch (err) {
+        error.Unavailable => error.SkipZigTest,
+        else => |e| e,
     };
 }
 

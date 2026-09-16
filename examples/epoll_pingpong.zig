@@ -240,9 +240,9 @@ fn fillRecordBuffer(fd: posix.fd_t, rb: *ztls.RecordBuffer) !FillResult {
     while (true) {
         const writable = rb.writable();
         if (writable.len == 0) return .more;
-        const n = recvFd(fd, writable) catch |err| switch (err) {
-            error.WouldBlock => return .more,
-            else => return err,
+        const n = recvFd(fd, writable) catch |err| return switch (err) {
+            error.WouldBlock => .more,
+            else => err,
         };
         if (n == 0) return .closed;
         rb.advance(n);

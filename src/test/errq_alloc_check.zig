@@ -93,9 +93,9 @@ fn failMalformedKeyShare() CheckError!void {
     var peer: ztls.p256.PublicKey = .{ .data = @splat(0xff) };
     peer.data[0] = 0x04;
 
-    _ = ztls.p256.sharedSecret(secret, peer) catch |err| switch (err) {
-        error.IdentityElement => return,
-        error.LibcryptoFailed => return error.UnexpectedBackendResult,
+    _ = ztls.p256.sharedSecret(secret, peer) catch |err| return switch (err) {
+        error.IdentityElement => {},
+        error.LibcryptoFailed => error.UnexpectedBackendResult,
     };
     return error.UnexpectedBackendResult;
 }
@@ -118,9 +118,9 @@ fn failBadTagRecord() CheckError!void {
     tag.data[0] ^= 0xff;
     var decrypted: [plaintext.len]u8 = undefined;
     _ = aead.decrypt(&ctx, &decrypted, &ciphertext, &tag, "record-header", &nonce) catch |err|
-        switch (err) {
-            error.AuthenticationFailed => return,
-            else => return error.UnexpectedBackendResult,
+        return switch (err) {
+            error.AuthenticationFailed => {},
+            else => error.UnexpectedBackendResult,
         };
     return error.UnexpectedBackendResult;
 }

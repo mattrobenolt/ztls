@@ -70,10 +70,10 @@ pub fn advance(self: *RecordBuffer, n: usize) void {
 pub fn next(self: *RecordBuffer) error{RecordTooLarge}!?[]u8 {
     const avail = self.storage[self.pos..self.filled];
     if (avail.len < frame.header_len) return null;
-    const hdr = frame.parseHeader(avail) catch |e| switch (e) {
+    const hdr = frame.parseHeader(avail) catch |e| return switch (e) {
         // BufferTooShort can't happen — we checked header_len above.
         error.BufferTooShort => unreachable,
-        error.RecordTooLarge => return error.RecordTooLarge,
+        error.RecordTooLarge => error.RecordTooLarge,
     };
     const total = frame.header_len + hdr.length();
     if (avail.len < total) return null;

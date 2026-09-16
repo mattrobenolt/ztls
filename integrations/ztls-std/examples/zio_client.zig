@@ -132,9 +132,9 @@ const Fetch = struct {
         // Header lines span TLS record boundaries on any real response; the
         // reader buffers across them like any other `Io.Reader`.
         const r = conn.reader();
-        f.status_line = r.takeDelimiterInclusive('\n') catch |err| switch (err) {
-            error.ReadFailed => return f.failRead(&conn),
-            else => return f.fail(err),
+        f.status_line = r.takeDelimiterInclusive('\n') catch |err| return switch (err) {
+            error.ReadFailed => f.failRead(&conn),
+            else => f.fail(err),
         };
         print("[zio] {s}", .{f.status_line});
 

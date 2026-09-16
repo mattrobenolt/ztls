@@ -8,7 +8,7 @@ const pem_begin_certificate = "-----BEGIN CERTIFICATE-----";
 const pem_end_certificate = "-----END CERTIFICATE-----";
 const pem_decoder = std.base64.standard.decoderWithIgnore("\t\n\x0b\x0c\r ");
 
-fn findBytes(haystack: []const u8, needle: []const u8) ?usize {
+inline fn findBytes(haystack: []const u8, needle: []const u8) ?usize {
     if (comptime @hasDecl(std.mem, "find")) return std.mem.find(u8, haystack, needle);
 
     // Zig 0.15 uses indexOf; Zig 0.16 renamed it to find.
@@ -69,11 +69,11 @@ pub const CertificateChain = union(enum) {
             const certificate_len = pem_decoder.decode(
                 certificate_der,
                 pem[body_start..body_end],
-            ) catch |err| switch (err) {
-                error.NoSpaceLeft => return error.CertificateBufferTooShort,
+            ) catch |err| return switch (err) {
+                error.NoSpaceLeft => error.CertificateBufferTooShort,
                 error.InvalidCharacter,
                 error.InvalidPadding,
-                => return error.InvalidCertificateEncoding,
+                => error.InvalidCertificateEncoding,
             };
             if (certificate_len == 0) return error.InvalidCertificateEncoding;
 
