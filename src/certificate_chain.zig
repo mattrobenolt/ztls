@@ -8,6 +8,14 @@ const pem_begin_certificate = "-----BEGIN CERTIFICATE-----";
 const pem_end_certificate = "-----END CERTIFICATE-----";
 const pem_decoder = std.base64.standard.decoderWithIgnore("\t\n\x0b\x0c\r ");
 
+fn findBytes(haystack: []const u8, needle: []const u8) ?usize {
+    if (comptime @hasDecl(std.mem, "find")) return std.mem.find(u8, haystack, needle);
+
+    // Zig 0.15 uses indexOf; Zig 0.16 renamed it to find.
+    // ziglint-ignore: Z011
+    return std.mem.indexOf(u8, haystack, needle);
+}
+
 pub const PemDecodeError = error{
     NoCertificate,
     MissingCertificateEnd,
@@ -46,10 +54,9 @@ pub const CertificateChain = union(enum) {
         var der_len: usize = 0;
         var certificate_count: usize = 0;
 
-        while (std.mem.indexOf(u8, pem[pem_pos..], pem_begin_certificate)) |begin_offset| {
+        while (findBytes(pem[pem_pos..], pem_begin_certificate)) |begin_offset| {
             const body_start = pem_pos + begin_offset + pem_begin_certificate.len;
-            const end_offset = std.mem.indexOf(
-                u8,
+            const end_offset = findBytes(
                 pem[body_start..],
                 pem_end_certificate,
             ) orelse return error.MissingCertificateEnd;
