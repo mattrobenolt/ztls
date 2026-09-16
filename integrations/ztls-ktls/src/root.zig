@@ -102,44 +102,40 @@ pub fn Connection(comptime Handshake: type) type {
             }
             if (!buffered.isEmpty()) return error.BufferedCiphertext;
 
-            switch (sys.setSockOpt(fd, ztls.ktls.SOL_TCP, ztls.ktls.TCP_ULP, "tls")) {
-                .ok => {},
-                .unavailable => return error.KtlsUnavailable,
-                .busy, .failed => return error.KtlsInstallFailed,
-            }
+            ztls.ktls.ulpInstall(fd) catch |err| switch (err) {
+                error.Unavailable => return error.KtlsUnavailable,
+                error.Busy, error.Failed => return error.KtlsInstallFailed,
+            };
 
             var tx_info = handshake.txKtlsInfo();
             defer tx_info.secureZero();
             var rx_info = handshake.rxKtlsInfo();
             defer rx_info.secureZero();
 
-            switch (installInfo(fd, ztls.ktls.TLS_TX, &tx_info)) {
-                .ok => {},
-                .unavailable => {
-                    shutdown(fd, linux.SHUT.RDWR);
-                    return error.KtlsUnavailable;
-                },
-                .busy, .failed => {
-                    shutdown(fd, linux.SHUT.RDWR);
-                    return error.KtlsInstallFailed;
-                },
-            }
-            if (installInfo(fd, ztls.ktls.TLS_RX, &rx_info) != .ok) {
+            installInfo(fd, ztls.ktls.TLS_TX, &tx_info) catch |err| {
+                shutdown(fd, linux.SHUT.RDWR);
+                return switch (err) {
+                    error.Unavailable => error.KtlsUnavailable,
+                    error.Busy, error.Failed => error.KtlsInstallFailed,
+                };
+            };
+            installInfo(fd, ztls.ktls.TLS_RX, &rx_info) catch {
                 shutdown(fd, linux.SHUT.RDWR);
                 return error.KtlsInstallFailed;
-            }
+            };
 
             // No kernel TX can occur between the initial install and this
             // identical reinstall. EBUSY is the runtime capability probe for
             // kernels predating TLS 1.3 live rekey support.
-            const rekey_support: RekeySupport = switch (installInfo(
+            const rekey_support: RekeySupport = if (installInfo(
                 fd,
                 ztls.ktls.TLS_TX,
                 &tx_info,
-            )) {
-                .ok => .supported,
-                .busy => .unsupported,
-                .unavailable, .failed => {
+            )) |_|
+                .supported
+            else |err| switch (err) {
+                error.Busy => .unsupported,
+                error.Unavailable, error.Failed => {
                     shutdown(fd, linux.SHUT.RDWR);
                     return error.KtlsInstallFailed;
                 },
@@ -320,17 +316,16 @@ pub fn Connection(comptime Handshake: type) type {
 
             var rx_info = self.handshake.rxKtlsInfo();
             defer rx_info.secureZero();
-            switch (installInfo(self.fd, ztls.ktls.TLS_RX, &rx_info)) {
-                .ok => {},
-                .busy => {
+            installInfo(self.fd, ztls.ktls.TLS_RX, &rx_info) catch |err| switch (err) {
+                error.Busy => {
                     self.sendFailureAlert(.internal_error);
                     return self.fail(error.KtlsRekeyUnsupported);
                 },
-                .unavailable, .failed => {
+                error.Unavailable, error.Failed => {
                     self.sendFailureAlert(.internal_error);
                     return self.fail(error.KtlsRekeyFailed);
                 },
-            }
+            };
             if (request == .update_requested and !self.state.contains(.tx_closed)) {
                 self.sendKeyUpdate(.update_not_requested) catch |err| switch (err) {
                     error.KtlsRekeyUnsupported => return self.fail(error.KtlsRekeyUnsupported),
@@ -362,17 +357,16 @@ pub fn Connection(comptime Handshake: type) type {
             };
             var tx_info = self.handshake.txKtlsInfo();
             defer tx_info.secureZero();
-            switch (installInfo(self.fd, ztls.ktls.TLS_TX, &tx_info)) {
-                .ok => {},
-                .busy => {
+            installInfo(self.fd, ztls.ktls.TLS_TX, &tx_info) catch |err| switch (err) {
+                error.Busy => {
                     self.poison();
                     return error.KtlsRekeyUnsupported;
                 },
-                .unavailable, .failed => {
+                error.Unavailable, error.Failed => {
                     self.poison();
                     return error.KtlsRekeyFailed;
                 },
-            }
+            };
         }
 
         fn sendControl(
@@ -433,22 +427,22 @@ fn installInfo(
     fd: posix.socket_t,
     direction: u32,
     info: *const ztls.RecordLayer.KtlsInfo,
-) sys.SetResult {
+) ztls.ktls.InstallError!void {
     switch (info.cipher_type) {
         .aes_gcm_128 => {
-            var crypto_info = ztls.ktls.packAesGcm128(info.*) catch return .failed;
+            var crypto_info = ztls.ktls.packAesGcm128(info.*) catch return error.Failed;
             defer crypto_info.secureZero();
-            return sys.setSockOpt(fd, ztls.ktls.SOL_TLS, direction, std.mem.asBytes(&crypto_info));
+            return ztls.ktls.installCryptoInfo(fd, direction, std.mem.asBytes(&crypto_info));
         },
         .aes_gcm_256 => {
-            var crypto_info = ztls.ktls.packAesGcm256(info.*) catch return .failed;
+            var crypto_info = ztls.ktls.packAesGcm256(info.*) catch return error.Failed;
             defer crypto_info.secureZero();
-            return sys.setSockOpt(fd, ztls.ktls.SOL_TLS, direction, std.mem.asBytes(&crypto_info));
+            return ztls.ktls.installCryptoInfo(fd, direction, std.mem.asBytes(&crypto_info));
         },
         .chacha20_poly1305 => {
-            var crypto_info = ztls.ktls.packChaCha20Poly1305(info.*) catch return .failed;
+            var crypto_info = ztls.ktls.packChaCha20Poly1305(info.*) catch return error.Failed;
             defer crypto_info.secureZero();
-            return sys.setSockOpt(fd, ztls.ktls.SOL_TLS, direction, std.mem.asBytes(&crypto_info));
+            return ztls.ktls.installCryptoInfo(fd, direction, std.mem.asBytes(&crypto_info));
         },
     }
 }
