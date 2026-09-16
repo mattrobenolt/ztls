@@ -55,7 +55,7 @@
             base = pkgs.mkShell {
               name = "ztls-base";
               packages = commonPackages zig0_15;
-              shellHook = commonHook;
+              shellHook = commonHook zig0_15;
             };
 
             openssl = backendShell {
