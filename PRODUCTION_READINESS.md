@@ -59,16 +59,32 @@ ztls is production-ready when all six pillars are `PROVEN`:
 
 | Pillar | Status | One-line |
 |---|---|---|
-| 1. Correctness | `PROVEN` | Both #91 fixture defects have red/green regressions and fresh strict-complete captures on all three backends at `e5800ee`: zero unexpected results and zero validity rejections. Historical failure causality remains bounded by the retained evidence. Full TLS-Anvil remains scheduled-only; BoGo is explicitly deferred. |
+| 1. Correctness | `PARTIAL` | Scheduled TLS-Anvil runs expose 14 unclassified disabled client cases and two unclassified disabled server cases. #108 fixes them locally, but both full workflows still require all-backend remote proof. |
 | 2. Ergonomics | `PROVEN` | CI-gated examples cover both roles across io_uring, epoll, kqueue, and `std.Io`. Core and wrapper APIs expose hybrid capabilities and reject invalid local policy before key generation or wire I/O (#105). `ztls-std` (#77) gates plain and mTLS OpenSSL interop in both directions. `ztls-xev` satisfies #76's Linux/macOS contract, including in-flight cancellation (#83). |
 | 3. Performance | `PROVEN` | n=10 captures on x86_64 (c7i.2xlarge), aarch64 (c7g.2xlarge), and macOS (Apple M1 Max) with formal CIs (p=0.000): ztls beats libssl on every comparable app-data row on all three platforms and rustls on all AES-GCM rows; regression gate committed. |
-| 4. Providers | `PROVEN` | OpenSSL, AWS-LC, and BoringSSL have CI-gated backend lanes and fresh strict-complete TLS-Anvil captures at `e5800ee`, with both fixture patches verified and no unexpected results (#91). Plain P-384 and RFC 10024 hybrid KEX complete bidirectional OpenSSL 3.6 interop on all three non-FIPS lanes; the pinned upstream tlsfuzzer RFC 10024 matrix also passes (#6). Cert-chain stays ztls/std and FIPS checks remain capability-only. |
+| 4. Providers | `PARTIAL` | Scheduled AWS-LC client validation exposes an incorrect `internal_error` for malformed peer ML-KEM keys. #108 adds provider-neutral canonical validation, but all-backend scheduled proof remains pending. |
 | 5. Marketing | `PROVEN` | README leads with the proven performance story (n=10, both architectures, honest ChaCha20 loss) and the adversarial security posture; the why-ztls narrative and headline benchmarks are on the front door, backed by PERFORMANCE.md. |
 | 6. User docs | `PROVEN` | One fetched package exposes core plus the Zig 0.16 integration modules (#79). Isolated consumer gates and `docs/USAGE.md` cover dependency wiring, hybrid capability checks, borrowed lifetimes, cleanup, drive loops, and integrations (#105). |
 
 ---
 
 ## Pillar 1 — Correctness
+
+**Current scheduled-gate regression (2026-09-17, #108):** Server run
+`35064986395` used clean `4dec721` and completed 437 tests on each backend.
+Each lane reported 105 passes, no failures, and two unexpected skips for disabled
+EC point-format length cases. Client run `35192217277` used clean `01e0b45`.
+OpenSSL and BoringSSL each completed 437 tests with 92 passes, six expected DSA
+failures, and 14 unexpected skips. The AWS-LC lane stopped before TLS-Anvil.
+Malformed ML-KEM keys produced `internal_error`, not `illegal_parameter`.
+
+The #108 candidate adds 14 exact test IDs and never restores the broad
+`NAMED_GROUP` pattern. It validates packed ML-KEM coefficients before provider
+import and preserves provider faults as `internal_error`. Local Zig 0.15.2
+backend gates pass across OpenSSL, AWS-LC, and BoringSSL; the Zig 0.16 OpenSSL
+gate also passes. Reprocessed OpenSSL and BoringSSL captures report zero
+unexpected results. The dashboard remains
+`PARTIAL` until both scheduled workflows pass every backend lane.
 
 **Accepted three-backend captures (2026-09-13 UTC, #91):** OpenSSL
 `34739623436`, AWS-LC `34739624161`, and BoringSSL `34739624962` ran at clean
@@ -639,9 +655,9 @@ data to openssl s_server and receives the HTTP response.
   unsupported-subtree rejection, and a differential test corpus against OpenSSL
   3.6.3 covering all four GeneralName forms (#75 resolved).
 
-**Status:** `PROVEN` — #91's fixture regressions and fresh strict-complete
-three-backend captures satisfy the stated acceptance; historical causality
-limits and the #52 DSA exception remain explicit.
+**Status:** `PARTIAL` — historical #91 evidence remains valid, but #108 records
+current scheduled failures. Both scheduled workflows must pass all backend lanes
+before this pillar returns to `PROVEN`.
 
 **Evidence and design decisions:**
 
@@ -650,11 +666,11 @@ limits and the #52 DSA exception remain explicit.
   `docs/research/BOGO_DEFERRED.md`. The completed strict server/client captures
   account for endpoint-mode `not_attempted` rows, including the `tests.both.*`
   length-field rows that are role-specific despite their package name. TLS-Anvil
-  normalization and wrapper-helper tests are gated, the real TLS-Anvil server
-  suite runs in a separate scheduled/manual workflow, and the TLS-Anvil client
-  runner/workflow has strict-clean evidence under the visible #52 `expected_failed`
-  classification. Completed TLS-Anvil server and client evidence now have no
-  unexpected attempted failures. Plain P-384 has bidirectional OpenSSL 3.6
+  normalization and wrapper-helper tests are gated. The real TLS-Anvil server
+  and client suites run in separate scheduled/manual workflows. Historical #91
+  runs have strict-clean evidence under the visible #52 `expected_failed`
+  classification. The current scheduled runs fail under #108 for narrow skip
+  classification and AWS-LC peer-key alert mapping. Plain P-384 has bidirectional OpenSSL 3.6
   interoperability on every non-FIPS backend lane. TLS-Anvil has no RFC 10024
   suite, so the three hybrid groups use the same bidirectional OpenSSL matrix
   plus the pinned upstream tlsfuzzer ML-KEM driver: 35 sanity, per-group,
@@ -686,9 +702,10 @@ limits and the #52 DSA exception remain explicit.
   can't go in PR `just ci`; this is an accepted design decision, not a
   correctness gap. The RFC 8446 MUST matrix is closed for the supported
   surface (unit tests in PR CI), tlsfuzzer is PR-gated (`just conformance/ci`),
-  and the full TLS-Anvil server/client suites run in scheduled/manual workflows
-  with committed strict-clean captures (437/437, no unexpected attempted
-  failures). BoGo is explicitly deferred (`docs/research/BOGO_DEFERRED.md`).
+  and the full TLS-Anvil server/client suites run in scheduled/manual workflows.
+  Historical commits retain strict-clean captures with 437 completed tests.
+  The latest scheduled runs fail under #108. BoGo is explicitly deferred
+  (`docs/research/BOGO_DEFERRED.md`).
   The adversarial security review (Glasswing) found and fixed 3 vulnerabilities.
   Future feature work that changes TLS scope must reopen the relevant MUST
   matrix rows in the same change.
@@ -1468,8 +1485,14 @@ each passing the same correctness and interop gates.
   row-perf evidence). *(#63, #70, #71 — server capture clean; client
   capture KeyUpdate failure root-caused and fixed, CI-confirmed)*
 
-**Status:** `PROVEN` — fresh strict-complete client captures at `e5800ee`
-pass the #91 acceptance bar on OpenSSL, AWS-LC, and BoringSSL.
+**Status:** `PARTIAL` — historical three-backend captures remain valid at their
+commits. Current scheduled gates fail under #108. Fresh all-backend client and
+server proof is pending.
+
+The local #108 candidate rejects non-canonical ML-KEM encapsulation keys before
+provider import. It maps peer input to `illegal_parameter` and keeps provider
+faults mapped to `internal_error`. OpenSSL, AWS-LC, and BoringSSL pass the local
+backend and tlsfuzzer gates. Both scheduled workflows still require remote proof.
 
 Historical baseline: three libcrypto backends (OpenSSL default, AWS-LC, BoringSSL) are selectable
 via `-Dcrypto-backend=...` / devshells, compile and pass the full test suite,

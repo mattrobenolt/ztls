@@ -100,6 +100,62 @@
     {
       "pattern": "*Target does not provide Ciphersuites that are supported by the test.*",
       "reason": "legacy compression/cipher-suite compatibility behavior is out of scope for the TLS 1.3-only runner (#9)"
+    },
+    {
+      "pattern": "de.rub.nds.tlstest.suite.tests.client.tls13.rfc8446.HelloRetryRequest.copiesCookieValue",
+      "reason": "TLS-Anvil disabled this exact HRR case because NAMED_GROUP derivation selected no case. No execution evidence exists (#108)."
+    },
+    {
+      "pattern": "de.rub.nds.tlstest.suite.tests.client.tls13.rfc8446.HelloRetryRequest.actsCorrectlyUponHelloRetryRequest",
+      "reason": "TLS-Anvil disabled this exact HRR case because NAMED_GROUP derivation selected no case. No execution evidence exists (#108)."
+    },
+    {
+      "pattern": "de.rub.nds.tlstest.suite.tests.client.tls13.rfc8446.HelloRetryRequest.helloRetryLegacySessionId",
+      "reason": "TLS-Anvil disabled this exact HRR case because NAMED_GROUP derivation selected no case. No execution evidence exists (#108)."
+    },
+    {
+      "pattern": "de.rub.nds.tlstest.suite.tests.client.tls13.rfc8446.HelloRetryRequest.helloRetryRequestsTls12CipherSuite",
+      "reason": "TLS-Anvil disabled this exact HRR case because NAMED_GROUP derivation selected no case. No execution evidence exists (#108)."
+    },
+    {
+      "pattern": "de.rub.nds.tlstest.suite.tests.client.tls13.rfc8446.HelloRetryRequest.sendSecondHelloRetryRequest",
+      "reason": "TLS-Anvil disabled this exact HRR case because NAMED_GROUP derivation selected no case. No execution evidence exists (#108)."
+    },
+    {
+      "pattern": "de.rub.nds.tlstest.suite.tests.client.tls13.rfc8446.HelloRetryRequest.namedGroupDisparity",
+      "reason": "TLS-Anvil disabled this exact HRR case because NAMED_GROUP derivation selected no case. No execution evidence exists (#108)."
+    },
+    {
+      "pattern": "de.rub.nds.tlstest.suite.tests.client.tls13.rfc8446.HelloRetryRequest.helloRetryGreaseExtension",
+      "reason": "TLS-Anvil disabled this exact HRR case because NAMED_GROUP derivation selected no case. No execution evidence exists (#108)."
+    },
+    {
+      "pattern": "de.rub.nds.tlstest.suite.tests.client.tls13.rfc8446.HelloRetryRequest.helloRetryCompressionValue",
+      "reason": "TLS-Anvil disabled this exact HRR case because NAMED_GROUP derivation selected no case. No execution evidence exists (#108)."
+    },
+    {
+      "pattern": "de.rub.nds.tlstest.suite.tests.client.tls13.rfc8446.HelloRetryRequest.cipherSuiteDisparity",
+      "reason": "TLS-Anvil disabled this exact HRR case because NAMED_GROUP derivation selected no case. No execution evidence exists (#108)."
+    },
+    {
+      "pattern": "de.rub.nds.tlstest.suite.tests.client.tls13.rfc8446.HelloRetryRequest.versionDisparity",
+      "reason": "TLS-Anvil disabled this exact HRR case because NAMED_GROUP derivation selected no case. No execution evidence exists (#108)."
+    },
+    {
+      "pattern": "de.rub.nds.tlstest.suite.tests.client.tls13.rfc8446.HelloRetryRequest.helloRetryGreaseCipherSuite",
+      "reason": "TLS-Anvil disabled this exact HRR case because NAMED_GROUP derivation selected no case. No execution evidence exists (#108)."
+    },
+    {
+      "pattern": "de.rub.nds.tlstest.suite.tests.client.tls13.rfc8446.HelloRetryRequest.helloRetryGreaseVersionSelected",
+      "reason": "TLS-Anvil disabled this exact HRR case because NAMED_GROUP derivation selected no case. No execution evidence exists (#108)."
+    },
+    {
+      "pattern": "de.rub.nds.tlstest.suite.tests.both.lengthfield.extensions.ECPointFormatExtension.pointFormatExtensionFormatsLength",
+      "reason": "TLS-Anvil disabled this exact EC point-format length case because NAMED_GROUP derivation selected no case. No execution evidence exists (#108)."
+    },
+    {
+      "pattern": "de.rub.nds.tlstest.suite.tests.both.lengthfield.extensions.ECPointFormatExtension.pointFormatExtensionLength",
+      "reason": "TLS-Anvil disabled this exact EC point-format length case because NAMED_GROUP derivation selected no case. No execution evidence exists (#108)."
     }
   ]
 }

@@ -328,6 +328,11 @@ test "alertForError: parser and semantic failures map to protocol alerts" {
     for (cases) |case| try testing.expectEqual(case.description, alertForError(case.err));
 }
 
+// RFC 8446 §6 — provider failures are local errors, not peer input errors.
+test "alertForError: provider failure maps to internal_error" {
+    try testing.expectEqual(.internal_error, alertForError(error.LibcryptoFailed));
+}
+
 // RFC 8446 §6 — unknown errors fall through to internal_error.
 test "alertForError: unknown error maps to internal_error" {
     try testing.expectEqual(.internal_error, alertForError(error.SomeUnmappedError));

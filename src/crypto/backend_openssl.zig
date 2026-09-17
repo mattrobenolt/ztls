@@ -176,7 +176,7 @@ pub fn kemPublic(key: KemKey, out: []u8) Error![]u8 {
     return out[0..len];
 }
 
-/// Load and validate a peer's raw ML-KEM encapsulation key.
+/// Load a peer's raw ML-KEM encapsulation key after ztls validation.
 pub fn kemLoadPublic(
     parameter_set: ParameterSet,
     public_key: []const u8,
@@ -189,7 +189,7 @@ pub fn kemLoadPublic(
         null,
         public_key.ptr,
         public_key.len,
-    ) orelse error.IdentityElement;
+    ) orelse error.LibcryptoFailed;
 }
 
 /// Encapsulate using the peer's pure ML-KEM public key.

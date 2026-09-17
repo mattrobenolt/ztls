@@ -110,7 +110,7 @@ pub fn kemLoadPublic(
         kemAlgorithm(parameter_set),
         public_key.ptr,
         public_key.len,
-    ) orelse error.IdentityElement;
+    ) orelse error.LibcryptoFailed;
 }
 
 pub fn kemEncapsulate(

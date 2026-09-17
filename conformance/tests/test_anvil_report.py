@@ -67,8 +67,11 @@ def test_skip_list_loaded():
     for entry in raw["skip"]:
         assert "pattern" in entry
         assert "reason" in entry
-        # ensure pattern uses fnmatch-compatible wildcards
-        assert "*" in entry["pattern"], f"pattern must be a glob: {entry['pattern']}"
+        pattern = entry["pattern"]
+        assert pattern, "skip pattern must not be empty"
+        if "*" not in pattern:
+            assert pattern.startswith("de.rub.nds.tlstest.suite.tests.")
+            assert "?" not in pattern and "[" not in pattern
 
 
 # ─── synthetic fixture validation ───────────────────────────────────────
@@ -107,6 +110,59 @@ def test_pattern_psk_disabled_reason_matches():
 def test_pattern_tls12_lowercase_id_matches():
     """Real TLS-Anvil class ids use lowercase tls12."""
     assert fnmatch.fnmatch("de.rub.nds.tlstest.suite.tests.server.tls12.foo", "*tls12*")
+
+
+def test_named_group_disabled_cases_use_exact_ids():
+    """The #108 entries match only the observed stable TLS-Anvil test IDs."""
+    from scripts.anvil_report import matches_any_pattern
+
+    hrr_prefix = "de.rub.nds.tlstest.suite.tests.client.tls13.rfc8446.HelloRetryRequest"
+    hrr_methods = {
+        "copiesCookieValue",
+        "actsCorrectlyUponHelloRetryRequest",
+        "helloRetryLegacySessionId",
+        "helloRetryRequestsTls12CipherSuite",
+        "sendSecondHelloRetryRequest",
+        "namedGroupDisparity",
+        "helloRetryGreaseExtension",
+        "helloRetryCompressionValue",
+        "cipherSuiteDisparity",
+        "versionDisparity",
+        "helloRetryGreaseCipherSuite",
+        "helloRetryGreaseVersionSelected",
+    }
+    point_format_prefix = (
+        "de.rub.nds.tlstest.suite.tests.both.lengthfield.extensions.ECPointFormatExtension"
+    )
+    exact_ids = {f"{hrr_prefix}.{method}" for method in hrr_methods}
+    exact_ids.update(
+        {
+            f"{point_format_prefix}.pointFormatExtensionFormatsLength",
+            f"{point_format_prefix}.pointFormatExtensionLength",
+        }
+    )
+
+    skip_entries = json.loads(SKIP_LIST_PATH.read_text())["skip"]
+    patterns = {entry["pattern"] for entry in skip_entries}
+    assert exact_ids <= patterns
+    assert not any("NAMED_GROUP" in pattern for pattern in patterns)
+
+    disabled_reason = (
+        "Specific features required for the test have not been met by the SUT "
+        "for derivation parameter NAMED_GROUP"
+    )
+    for test_id in exact_ids:
+        assert matches_any_pattern("unrelated", skip_entries, test_id, disabled_reason) == test_id
+
+    assert (
+        matches_any_pattern(
+            "unrelated",
+            skip_entries,
+            f"{hrr_prefix}.unobservedCase",
+            disabled_reason,
+        )
+        is None
+    )
 
 
 def test_end_of_early_data_pass_not_hidden_by_skip_list():

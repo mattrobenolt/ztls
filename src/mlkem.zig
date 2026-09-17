@@ -5,6 +5,7 @@
 //! ciphertexts. Keeping the combiner above the provider seam makes the TLS wire
 //! construction identical for OpenSSL, AWS-LC, and BoringSSL.
 const std = @import("std");
+const assert = std.debug.assert;
 const testing = std.testing;
 const backend = @import("crypto/backend.zig");
 const kem_impl = backend.kem_impl;
@@ -21,6 +22,9 @@ pub const Error = error{
 pub const max_public_key_len = ParameterSet.mlkem1024.publicKeyLen();
 pub const max_ciphertext_len = ParameterSet.mlkem1024.ciphertextLen();
 pub const max_shared_secret_len = ParameterSet.mlkem1024.sharedSecretLen();
+
+const coefficient_modulus = 3329;
+const public_seed_len = 32;
 
 pub const KeyHandle = struct {
     parameter_set: ParameterSet,
@@ -57,17 +61,40 @@ pub fn publicKey(key: *const KeyHandle, out: []u8) Error![]u8 {
     return public_key;
 }
 
-/// Import performs the FIPS 203 §7.2 encapsulation-key check in the provider.
+/// Validate before provider import because providers differ on when they apply
+/// the FIPS 203 §7.2 encapsulation-key check.
 pub fn loadPeerPublic(
     parameter_set: ParameterSet,
     public_key: []const u8,
 ) Error!PeerHandle {
     if (public_key.len != parameter_set.publicKeyLen())
         return error.MalformedKeyShare;
+    if (!encapsulationKeyIsCanonical(parameter_set, public_key))
+        return error.IdentityElement;
     return .{
         .parameter_set = parameter_set,
         .key = try kem_impl.kemLoadPublic(parameter_set, public_key),
     };
+}
+
+fn encapsulationKeyIsCanonical(
+    parameter_set: ParameterSet,
+    public_key: []const u8,
+) bool {
+    assert(public_key.len == parameter_set.publicKeyLen());
+    const polynomial_bytes_len = public_key.len - public_seed_len;
+    assert(polynomial_bytes_len % 3 == 0);
+
+    var offset: usize = 0;
+    while (offset < polynomial_bytes_len) : (offset += 3) {
+        const coefficient_0 = @as(u16, public_key[offset]) |
+            (@as(u16, public_key[offset + 1] & 0x0f) << 8);
+        const coefficient_1 = @as(u16, public_key[offset + 1] >> 4) |
+            (@as(u16, public_key[offset + 2]) << 4);
+        if (coefficient_0 >= coefficient_modulus) return false;
+        if (coefficient_1 >= coefficient_modulus) return false;
+    }
+    return true;
 }
 
 pub fn encapsulate(
@@ -154,6 +181,58 @@ fn testRoundTrip(parameter_set: ParameterSet) !void {
         &client_secret_buf,
     );
     try testing.expectEqualSlices(u8, result.secret, client_secret);
+}
+
+// FIPS 203 §7.2 — the modulus check accepts q - 1, excludes the public seed,
+// and rejects q in either packed position through the final coefficient group.
+test "ML-KEM encapsulation-key modulus boundary" {
+    for ([_]ParameterSet{ .mlkem768, .mlkem1024 }) |parameter_set| {
+        var public_key_storage: [max_public_key_len]u8 = @splat(0);
+        const public_key = public_key_storage[0..parameter_set.publicKeyLen()];
+        const polynomial_end = public_key.len - public_seed_len;
+
+        public_key[public_key.len - 1] = 0xff;
+        try testing.expect(encapsulationKeyIsCanonical(parameter_set, public_key));
+        public_key[public_key.len - 1] = 0;
+
+        public_key[0] = @intCast((coefficient_modulus - 1) & 0xff);
+        public_key[1] = @intCast((coefficient_modulus - 1) >> 8);
+        try testing.expect(encapsulationKeyIsCanonical(parameter_set, public_key));
+
+        public_key[0] = @intCast(coefficient_modulus & 0xff);
+        public_key[1] = @intCast(coefficient_modulus >> 8);
+        try testing.expect(!encapsulationKeyIsCanonical(parameter_set, public_key));
+
+        public_key[0] = 0;
+        public_key[1] = @intCast((coefficient_modulus & 0x0f) << 4);
+        public_key[2] = @intCast(coefficient_modulus >> 4);
+        try testing.expect(!encapsulationKeyIsCanonical(parameter_set, public_key));
+
+        @memset(public_key[0..3], 0);
+        public_key[polynomial_end - 2] = @intCast((coefficient_modulus & 0x0f) << 4);
+        public_key[polynomial_end - 1] = @intCast(coefficient_modulus >> 4);
+        try testing.expect(!encapsulationKeyIsCanonical(parameter_set, public_key));
+    }
+}
+
+// RFC 10024 §4.2 / FIPS 203 §7.2 — the server rejects encapsulation keys
+// whose 12-bit polynomial coefficients do not encode values modulo q.
+test "ML-KEM rejects non-canonical encapsulation keys" {
+    for ([_]ParameterSet{ .mlkem768, .mlkem1024 }) |parameter_set| {
+        var public_key: [max_public_key_len]u8 = @splat(0);
+        @memset(public_key[0..3], 0xff);
+
+        if (loadPeerPublic(
+            parameter_set,
+            public_key[0..parameter_set.publicKeyLen()],
+        )) |peer_value| {
+            var peer = peer_value;
+            peer.deinit();
+            return error.TestUnexpectedResult;
+        } else |err| {
+            try testing.expectEqual(error.IdentityElement, err);
+        }
+    }
 }
 
 // RFC 10024 §4.2 — the client rejects a ciphertext whose length does not
