@@ -29,10 +29,13 @@
 //!   - include/uapi/linux/tls.h
 //!   - RFC 8446 §5.3 (per-record nonce / IV split), §7.1 (traffic key derivation)
 const std = @import("std");
-const builtin = @import("builtin");
 const testing = std.testing;
+const assert = std.debug.assert;
 const linux = std.os.linux;
 const posix = std.posix;
+const mem = std.mem;
+const crypto = std.crypto;
+const builtin = @import("builtin");
 
 const RecordLayer = @import("RecordLayer.zig");
 const KtlsInfo = RecordLayer.KtlsInfo;
@@ -93,7 +96,7 @@ pub const Tls12CryptoInfoAesGcm128 = extern struct {
 
     /// Erase the packed key material and invalidate this value.
     pub fn secureZero(self: *Tls12CryptoInfoAesGcm128) void {
-        std.crypto.secureZero(u8, std.mem.asBytes(self));
+        crypto.secureZero(u8, mem.asBytes(self));
     }
 };
 
@@ -107,7 +110,7 @@ pub const Tls12CryptoInfoAesGcm256 = extern struct {
 
     /// Erase the packed key material and invalidate this value.
     pub fn secureZero(self: *Tls12CryptoInfoAesGcm256) void {
-        std.crypto.secureZero(u8, std.mem.asBytes(self));
+        crypto.secureZero(u8, mem.asBytes(self));
     }
 };
 
@@ -125,7 +128,7 @@ pub const Tls12CryptoInfoChaCha20Poly1305 = extern struct {
 
     /// Erase the packed key material and invalidate this value.
     pub fn secureZero(self: *Tls12CryptoInfoChaCha20Poly1305) void {
-        std.crypto.secureZero(u8, std.mem.asBytes(self));
+        crypto.secureZero(u8, mem.asBytes(self));
     }
 };
 
@@ -215,12 +218,12 @@ pub fn ulpInstall(fd: posix.socket_t) InstallError!void {
 
 /// Install the transmit key (`TLS_TX`).
 pub fn txInstall(fd: posix.socket_t, info: *const Tls12CryptoInfoAesGcm128) InstallError!void {
-    return installCryptoInfo(fd, TLS_TX, std.mem.asBytes(info));
+    return installCryptoInfo(fd, TLS_TX, mem.asBytes(info));
 }
 
 /// Install the receive key (`TLS_RX`).
 pub fn rxInstall(fd: posix.socket_t, info: *const Tls12CryptoInfoAesGcm128) InstallError!void {
-    return installCryptoInfo(fd, TLS_RX, std.mem.asBytes(info));
+    return installCryptoInfo(fd, TLS_RX, mem.asBytes(info));
 }
 
 /// Install a packed crypto-info struct for `direction` (`TLS_TX` or
@@ -278,17 +281,17 @@ pub const cmsghdr = extern struct {
 
 comptime {
     if (@hasDecl(linux, "cmsghdr")) {
-        std.debug.assert(@sizeOf(cmsghdr) == @sizeOf(linux.cmsghdr));
-        std.debug.assert(@alignOf(cmsghdr) == @alignOf(linux.cmsghdr));
-        std.debug.assert(@offsetOf(cmsghdr, "len") == @offsetOf(linux.cmsghdr, "len"));
-        std.debug.assert(@offsetOf(cmsghdr, "level") == @offsetOf(linux.cmsghdr, "level"));
-        std.debug.assert(@offsetOf(cmsghdr, "type") == @offsetOf(linux.cmsghdr, "type"));
+        assert(@sizeOf(cmsghdr) == @sizeOf(linux.cmsghdr));
+        assert(@alignOf(cmsghdr) == @alignOf(linux.cmsghdr));
+        assert(@offsetOf(cmsghdr, "len") == @offsetOf(linux.cmsghdr, "len"));
+        assert(@offsetOf(cmsghdr, "level") == @offsetOf(linux.cmsghdr, "level"));
+        assert(@offsetOf(cmsghdr, "type") == @offsetOf(linux.cmsghdr, "type"));
     }
 }
 
 /// `CMSG_ALIGN(sizeof(struct cmsghdr))`: a cmsghdr is 16 bytes on 64-bit and
 /// cmsg data starts at the next word boundary.
-const cmsg_data_offset = std.mem.alignForward(usize, @sizeOf(cmsghdr), @sizeOf(usize));
+const cmsg_data_offset = mem.alignForward(usize, @sizeOf(cmsghdr), @sizeOf(usize));
 
 /// `CMSG_LEN(sizeof(u8))`: the `cmsg_len` of a one-byte record-type cmsg.
 const cmsg_len = cmsg_data_offset + 1;
@@ -296,40 +299,37 @@ const cmsg_len = cmsg_data_offset + 1;
 /// `CMSG_SPACE(sizeof(u8))`: the control buffer one record-type cmsg needs,
 /// padding included. kTLS reports `controllen == 24` for such a cmsg, so the
 /// receive buffer must be at least this large even though the cmsg is 17 long.
-pub const control_space = std.mem.alignForward(usize, cmsg_len, @sizeOf(usize));
+pub const control_space = mem.alignForward(usize, cmsg_len, @sizeOf(usize));
 
 /// A control buffer for one record-type cmsg. Wrapped in a struct because the
 /// buffer has to be as aligned as `struct cmsghdr` and Zig cannot express an
 /// alignment on an array type alias; `bytes` is the `msghdr.control` target.
 pub const ControlBuffer = struct {
-    bytes: [control_space]u8 align(@alignOf(cmsghdr)) = @splat(0),
-};
+    bytes: [control_space]u8 align(@alignOf(cmsghdr)),
 
-/// Encode a `TLS_SET_RECORD_TYPE` cmsg selecting `content_type` for the
-/// record `sendmsg` is about to write. Returns the buffer as the
-/// `msghdr.control` / `msg_controllen` pair, padding zeroed.
-///
-/// The kernel refuses any other cmsg on a kTLS socket with EINVAL, so there
-/// is deliberately no way to pass a different level or cmsg type.
-pub fn encodeRecordType(buf: *ControlBuffer, content_type: RecordType) []u8 {
-    // @memset, not crypto.secureZero, and deliberately so: nothing here is
-    // ever secret — the cmsg is UAPI constants plus the record type (a
-    // protocol-public value that rides every TLS record's inner content
-    // type in the clear), and the padding never leaves the kernel's
-    // copyin. The zeroing is contract hygiene: deterministic framing bytes
-    // into a buffer the kernel validates. The store is also non-elidable
-    // in practice (the pointer escapes into the sendmsg wrapper), but the
-    // content class is the reason.
-    @memset(&buf.bytes, 0);
-    const header: *cmsghdr = @ptrCast(&buf.bytes);
-    header.* = .{
-        .len = cmsg_len,
-        .level = SOL_TLS,
-        .type = TLS_SET_RECORD_TYPE,
-    };
-    buf.bytes[cmsg_data_offset] = content_type;
-    return &buf.bytes;
-}
+    /// Encode a `TLS_SET_RECORD_TYPE` cmsg selecting `content_type` for the
+    /// record `sendmsg` is about to write. The padding starts zeroed, so no
+    /// stale stack bytes enter the kernel with the control message.
+    ///
+    /// The kernel refuses any other cmsg on a kTLS socket with EINVAL, so there
+    /// is deliberately no way to pass a different level or cmsg type.
+    pub fn init(content_type: RecordType) ControlBuffer {
+        var control: ControlBuffer = .{ .bytes = @splat(0) };
+        const header: *cmsghdr = @ptrCast(&control.bytes);
+        header.* = .{
+            .len = cmsg_len,
+            .level = SOL_TLS,
+            .type = TLS_SET_RECORD_TYPE,
+        };
+        control.bytes[cmsg_data_offset] = content_type;
+        return control;
+    }
+
+    /// Borrow the encoded `msghdr.control` bytes from stable caller storage.
+    pub fn encoded(self: *const ControlBuffer) []const u8 {
+        return &self.bytes;
+    }
+};
 
 pub const ParseError = error{InvalidControlMessage};
 
@@ -400,9 +400,9 @@ test "packed kTLS info secureZero methods erase every byte" {
         Tls12CryptoInfoChaCha20Poly1305,
     }) |T| {
         var info: T = undefined;
-        @memset(std.mem.asBytes(&info), 0xab);
+        @memset(mem.asBytes(&info), 0xab);
         info.secureZero();
-        try testing.expect(std.mem.allEqual(u8, std.mem.asBytes(&info), 0));
+        try testing.expect(mem.allEqual(u8, mem.asBytes(&info), 0));
     }
 }
 
@@ -477,7 +477,7 @@ test "packAesGcm256 copies the 32-byte key and splits the IV" {
         .key_len = 32,
         .salt_len = 4,
         .iv_len = 8,
-        .rec_seq = .{0} ** 8,
+        .rec_seq = @splat(0),
     };
     defer info.secureZero();
     info.key[0..32].* = [_]u8{0xdd} ** 32;
@@ -514,9 +514,9 @@ test "a record-type cmsg occupies the kernel's CMSG_LEN and CMSG_SPACE" {
     try testing.expectEqual(@alignOf(cmsghdr), @alignOf(ControlBuffer));
 }
 
-test "encodeRecordType writes one cmsg and zeroes the padding" {
-    var control: ControlBuffer = .{ .bytes = @splat(0xaa) };
-    const bytes = encodeRecordType(&control, 21);
+test "ControlBuffer.init writes one cmsg and zeroes the padding" {
+    var control: ControlBuffer = .init(21);
+    const bytes = control.encoded();
     try testing.expectEqual(control_space, bytes.len);
 
     const header: cmsghdr = @bitCast(bytes[0..@sizeOf(cmsghdr)].*);
@@ -524,7 +524,7 @@ test "encodeRecordType writes one cmsg and zeroes the padding" {
     try testing.expectEqual(@as(i32, SOL_TLS), header.level);
     try testing.expectEqual(@as(i32, TLS_SET_RECORD_TYPE), header.type);
     try testing.expectEqual(@as(RecordType, 21), bytes[cmsg_data_offset]);
-    try testing.expect(std.mem.allEqual(u8, bytes[cmsg_len..], 0));
+    try testing.expect(mem.allEqual(u8, bytes[cmsg_len..], 0));
 }
 
 test "parseRecordType rejects control data off the kTLS contract" {
@@ -534,8 +534,8 @@ test "parseRecordType rejects control data off the kTLS contract" {
         try parseRecordType(&.{}, linux.MSG.EOR),
     );
 
-    var control: ControlBuffer = .{};
-    const encoded = encodeRecordType(&control, 23);
+    var control: ControlBuffer = .init(23);
+    const encoded = control.encoded();
     const header: *cmsghdr = @ptrCast(&control.bytes);
 
     // The encoder builds a send-side cmsg; receiving never sees one.
@@ -597,8 +597,8 @@ const Loopback = struct {
         )));
         errdefer _ = linux.close(listener);
         var addr: linux.sockaddr.in = .{
-            .port = std.mem.nativeToBig(u16, 0),
-            .addr = std.mem.nativeToBig(u32, 0x7F000001),
+            .port = mem.nativeToBig(u16, 0),
+            .addr = mem.nativeToBig(u32, 0x7F000001),
         };
         _ = try hostCall(linux.bind(listener, @ptrCast(&addr), @sizeOf(linux.sockaddr.in)));
         var addr_len: linux.socklen_t = @sizeOf(linux.sockaddr.in);
@@ -676,7 +676,7 @@ test "ulpInstall attaches once, and only to an established TCP socket" {
         error.Failed => {},
     };
 
-    const pair = try Loopback.init();
+    const pair: Loopback = try .init();
     defer pair.deinit();
     try skipUnlessUlp(pair.server);
     // EEXIST: the ULP is on the socket now, so this is a typed failure
@@ -686,7 +686,7 @@ test "ulpInstall attaches once, and only to an established TCP socket" {
 
 test "txInstall and rxInstall accept a synthetic TLS 1.3 AES-128-GCM key" {
     if (builtin.os.tag != .linux) return error.SkipZigTest;
-    const pair = try Loopback.init();
+    const pair: Loopback = try .init();
     defer pair.deinit();
     try skipUnlessUlp(pair.server);
 
@@ -698,7 +698,7 @@ test "txInstall and rxInstall accept a synthetic TLS 1.3 AES-128-GCM key" {
 
 test "installs without the ULP are typed Unavailable errors, not panics" {
     if (builtin.os.tag != .linux) return error.SkipZigTest;
-    const pair = try Loopback.init();
+    const pair: Loopback = try .init();
     defer pair.deinit();
 
     var info = testKey();
@@ -712,7 +712,7 @@ test "installs without the ULP are typed Unavailable errors, not panics" {
 
 test "a crypto_info the kernel cannot use is a typed EINVAL failure" {
     if (builtin.os.tag != .linux) return error.SkipZigTest;
-    const pair = try Loopback.init();
+    const pair: Loopback = try .init();
     defer pair.deinit();
     try skipUnlessUlp(pair.server);
 
@@ -731,7 +731,7 @@ test "a crypto_info the kernel cannot use is a typed EINVAL failure" {
 
 test "record-type cmsg round-trips through a live kTLS pair" {
     if (builtin.os.tag != .linux) return error.SkipZigTest;
-    const pair = try Loopback.init();
+    const pair: Loopback = try .init();
     defer pair.deinit();
     try skipUnlessUlp(pair.client);
     try skipUnlessUlp(pair.server);
@@ -742,8 +742,8 @@ test "record-type cmsg round-trips through a live kTLS pair" {
     try rxInstall(pair.server, &info);
 
     const handshake: RecordType = 22; // RFC 8446 §5.1 content type
-    var control: ControlBuffer = .{};
-    const sent_control = encodeRecordType(&control, handshake);
+    var control: ControlBuffer = .init(handshake);
+    const sent_control = control.encoded();
 
     const payload = "ping";
     var send_iov: [1]posix.iovec_const = .{.{ .base = payload.ptr, .len = payload.len }};
@@ -762,7 +762,7 @@ test "record-type cmsg round-trips through a live kTLS pair" {
     );
 
     var plain: [64]u8 = @splat(0);
-    var recv_control: ControlBuffer = .{};
+    var recv_control: ControlBuffer = undefined;
     var recv_iov: [1]posix.iovec = .{.{ .base = &plain, .len = plain.len }};
     var recv_msg: linux.msghdr = .{
         .name = null,

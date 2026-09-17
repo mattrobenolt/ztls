@@ -2,6 +2,7 @@ const std = @import("std");
 const testing = std.testing;
 const posix = std.posix;
 const linux = std.os.linux;
+
 const ktls = @import("ztls").ktls;
 
 pub const SendError = error{
@@ -47,8 +48,8 @@ pub fn sendControl(
     content_type: u8,
     bytes: []const u8,
 ) ControlSendError!void {
-    var control: ktls.ControlBuffer = .{};
-    const encoded = ktls.encodeRecordType(&control, content_type);
+    var control: ktls.ControlBuffer = .init(content_type);
+    const encoded = control.encoded();
 
     var iov: [1]posix.iovec_const = .{.{ .base = bytes.ptr, .len = bytes.len }};
     const msg: linux.msghdr_const = .{
@@ -74,7 +75,7 @@ pub fn sendControl(
 }
 
 pub fn recvRecord(fd: posix.socket_t, bytes: []u8) RecvError!Received {
-    var control: ktls.ControlBuffer = .{};
+    var control: ktls.ControlBuffer = undefined;
     var iov: [1]posix.iovec = .{.{ .base = bytes.ptr, .len = bytes.len }};
     var msg: linux.msghdr = .{
         .name = null,
