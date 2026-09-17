@@ -101,6 +101,7 @@ per subsystem".
 | `ServerHandshake.handleConnected` | later in same file | Post-handshake dispatch. Drives KeyUpdate flood handling. |
 | `ServerHandshake.processClientFinished(record)` | `src/ServerHandshake.zig:1276` | Server Finished verification surface. |
 | `ServerHandshake.acceptClientHello(out)` | `src/ServerHandshake.zig:631` | Server-driven emit of CH acceptance; not a network entry but reads/rewrites internal state. |
+| `ServerHandshake.deriveTicketPsk()` / `sendNewSessionTicket(prepared, params, out)` | `src/ServerHandshake.zig` | Post-Finished ticket-key derivation and application-key-encrypted ticket emission. Consumes caller-owned identity and output storage. |
 
 ### Client-side handshake
 
@@ -126,7 +127,7 @@ These are the leaf parsing surfaces — once the dispatch identifies
 | `encrypted_extensions.parse` | `src/encrypted_extensions.zig:96` | RFC 8446 §4.3.1 + referenced extension RFCs |
 | `certificate.parse` / `parseClientChain` / `parseClientCertificate` | `src/certificate.zig:111/171/101` | RFC 8446 §4.4.2 + RFC 5280 |
 | `certificate_request.parse` | `src/certificate_request.zig` | RFC 8446 §4.3.2 |
-| `NewSessionTicket.parse` | `src/NewSessionTicket.zig:50` | RFC 8446 §4.6.1 |
+| `NewSessionTicket.parse` / `encode` | `src/NewSessionTicket.zig` | RFC 8446 §4.6.1 |
 | `finished.zig` Finished MAC | `src/finished.zig` | RFC 8446 §4.4.4 |
 | `alert.parse` / `alert.encode` | `src/alert.zig:60` | RFC 8446 §6 |
 | `handshake.parseKeyUpdate` | `src/handshake.zig:174` | RFC 8446 §4.6.3 |

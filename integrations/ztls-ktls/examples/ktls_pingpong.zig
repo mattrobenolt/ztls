@@ -31,6 +31,7 @@ const Scenario = enum {
     client_coalesced_key_update,
     forced_handoff,
     pending_write_guard,
+    pending_ticket_guard,
     pending_key_update_response_guard,
     abrupt_client,
     fragmented_key_update,
@@ -92,6 +93,12 @@ test "Linux kTLS drains forced read-ahead before handoff" {
 // full transport delivery has been acknowledged.
 test "Linux kTLS pending-write handoff drains existing read-ahead" {
     try runScenario(.aes_128_gcm_sha256, .pending_write_guard);
+}
+
+// RFC 8446 §4.6.1, §5.3 — ticket preparation and its userspace-encrypted
+// record must complete before the kernel can own the server TX record layer.
+test "Linux kTLS rejects handoff until NewSessionTicket is flushed" {
+    try runScenario(.aes_128_gcm_sha256, .pending_ticket_guard);
 }
 
 // RFC 8446 §4.6.3 — an update_requested response is sent in userspace before
@@ -331,6 +338,31 @@ fn runServer(context: *ServerContext) !void {
         try sendServerApplication(stream, &handshake, &out, "pong");
     }
 
+    if (context.scenario == .pending_ticket_guard) {
+        var ticket_psk = try handshake.deriveTicketPsk();
+        defer ticket_psk.secureZero();
+        try testing.expectError(
+            error.PendingTicket,
+            ztls_ktls.Server.activate(net.fd(stream), &handshake, &buffered),
+        );
+        const ticket = try handshake.sendNewSessionTicket(
+            &ticket_psk,
+            .{
+                .ticket_lifetime = 60,
+                .ticket_age_add = 0x12345678,
+                .ticket = "ktls-handoff-ticket",
+            },
+            &out.buffer,
+        );
+        try testing.expectError(
+            error.PendingWrite,
+            ztls_ktls.Server.activate(net.fd(stream), &handshake, &buffered),
+        );
+        try writeSocketAll(stream, ticket);
+        handshake.completeWrite();
+        try sendServerApplication(stream, &handshake, &out, "pong");
+    }
+
     var connection = try ztls_ktls.Server.activate(
         net.fd(stream),
         &handshake,
@@ -353,7 +385,9 @@ fn runServer(context: *ServerContext) !void {
         try readExact(&connection, receive_buf[0..4]);
         try testing.expectEqualSlices(u8, "ping", receive_buf[0..4]);
     }
-    if (context.scenario != .pending_write_guard) {
+    if (context.scenario != .pending_write_guard and
+        context.scenario != .pending_ticket_guard)
+    {
         try writeAll(&connection, "pong");
     }
 

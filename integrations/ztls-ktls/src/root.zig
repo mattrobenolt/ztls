@@ -29,6 +29,7 @@ pub const ActivateError = error{
     NotConnected,
     PendingWrite,
     PendingKeyUpdateResponse,
+    PendingTicket,
     BufferedCiphertext,
     KtlsUnavailable,
     KtlsInstallFailed,
@@ -100,6 +101,9 @@ pub fn Connection(comptime Handshake: type) type {
             if (handshake.hasPendingKeyUpdateResponse()) {
                 return error.PendingKeyUpdateResponse;
             }
+            if (comptime !is_client) {
+                if (handshake.hasPendingTicket()) return error.PendingTicket;
+            }
             if (!buffered.isEmpty()) return error.BufferedCiphertext;
 
             ztls.ktls.ulpInstall(fd) catch |err| return switch (err) {
@@ -141,6 +145,7 @@ pub fn Connection(comptime Handshake: type) type {
                 },
             };
 
+            if (comptime !is_client) try handshake.markKtlsTxInstalled();
             return .{
                 .fd = fd,
                 .handshake = handshake,

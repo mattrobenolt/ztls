@@ -21,7 +21,7 @@ pub fn HashArm(comptime Hkdf_: type, comptime Hash: type) type {
         server_app_secret: Hkdf.TrafficSecret = undefined,
         /// RFC 8446 §7.5 — resumption_master_secret, derived from the master
         /// secret and the transcript through the client Finished. Retained
-        /// post-handshake so the client can derive per-ticket PSKs from
+        /// post-handshake so either role can derive per-ticket PSKs from
         /// NewSessionTicket nonces. NOT in the forgetHandshakeSecrets range.
         resumption_master: Hkdf.Prk = undefined,
         resumption_master_valid: bool = false,

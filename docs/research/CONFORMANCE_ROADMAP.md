@@ -31,15 +31,18 @@ gated.
 
 ---
 
-## NewSessionTicket consumption / storage (formerly #2)
+## NewSessionTicket issuance / consumption / storage (formerly #2)
 
-#2 was closed; ticket parsing, session-ticket derivation, storage API, and the
-resumption-bound NST state machine are part of the supported surface. The
-prerequisites below capture what was needed.
+The protocol surface includes client parsing and cache derivation plus explicit,
+allocation-free server issuance. The caller owns opaque ticket identity,
+persistence, expiration, rotation, replay policy, fresh `ticket_age_add`
+generation, and client-auth continuity. See `PRODUCTION_READINESS.md` for the
+canonical status and remaining gaps.
 
-**Acceptance criteria (implemented):** ticket store API records ticket, nonce,
-lifetime, `ticket_age_add`, and issuance time; expiry is enforced against
-`ticket_lifetime`; exercised by the resumption flow.
+**Conformance shape:** client ticket state records identity, nonce, lifetime,
+`ticket_age_add`, and issuance time; expiry is enforced against
+`ticket_lifetime`; server issuance is exercised through resumption and OpenSSL
+interop.
 
 ---
 

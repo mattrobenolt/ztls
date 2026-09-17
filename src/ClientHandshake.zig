@@ -1202,7 +1202,8 @@ pub fn deriveSessionTicket(
         .buffering => return error.NoResumptionSecret,
         inline .sha256, .sha384 => |*s| {
             if (!s.resumption_master_valid) return error.NoResumptionSecret;
-            const psk = @TypeOf(s.*).Hkdf.resumptionPsk(s.resumption_master, nst.ticket_nonce);
+            var psk = @TypeOf(s.*).Hkdf.resumptionPsk(s.resumption_master, nst.ticket_nonce);
+            defer psk.secureZero();
             ticket.psk.appendSliceAssumeCapacity(&psk.data);
             ticket.cipher_suite = s.aead;
         },

@@ -55,6 +55,9 @@ This section describes what exists on `main` today. It is not a release.
 
 ### Changed
 
+- Servers can derive and emit allocation-free TLS 1.3 NewSessionTicket records,
+  resume them through caller-owned PSK lookup policy, and hand TX ownership to
+  kTLS only after ticket writes are flushed.
 - Public hybrid capability queries now expose the selected backend, FIPS identity, and role support.
 - Hybrid policy validation now returns explicit local configuration errors from core and low-level
   encoder APIs.

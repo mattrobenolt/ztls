@@ -165,9 +165,10 @@ These are deliberately not closed by writing the inventory:
   HRR (in-memory end-to-end + TLS-Anvil; formerly #1), PSK/binder verification
   (formerly #2), 0-RTT rejection paths (EndOfEarlyData absence, server-sent
   EndOfEarlyData, `max_early_data_size` exceeded, no-PSK-but-early-data-offered,
-  server-declined-0-RTT — formerly #3), and client certificate authentication
-  (rejects offered-scheme violations, EKU/KU violations, missing chain — formerly
-  #4). Anti-replay for 0-RTT remains a caller-owned contract.
+  server-declined-0-RTT decision — formerly #3), and client certificate
+  authentication (rejects offered-scheme violations, EKU/KU violations,
+  missing chain — formerly #4). A declining server cannot yet skip early records
+  already in flight (#111). Anti-replay for 0-RTT remains caller-owned.
 - Legacy session id length caps on parse paths need dedicated enforcement/tests.
 - Server Certificate `request_context` non-empty rejection needs a targeted test.
 - Some server-side client-Finished negative paths exist structurally but lack

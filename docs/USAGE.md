@@ -247,20 +247,27 @@ while (!hs.isConnected()) {
     const n = try stream.read(rb.writable());
     if (n == 0) return error.ClientClosed;
     rb.advance(n);
-    while (try rb.next()) |record| switch (try hs.handleRecord(record, &out.buffer)) {
-        .write => |w| {
-            try stream.writeAll(w);
-            hs.completeWrite();
-            if (try hs.sendServerFlightBuffered(&flight)) |flight_bytes| {
-                try stream.writeAll(flight_bytes);
+    while (try rb.next()) |record| {
+        switch (try hs.handleRecord(record, &out.buffer)) {
+            .write => |w| {
+                try stream.writeAll(w);
                 hs.completeWrite();
-            }
-        },
-        .none => {},
-        .application_data, .closed => return error.UnexpectedDuringHandshake,
-    };
+                if (try hs.sendServerFlightBuffered(&flight)) |flight_bytes| {
+                    try stream.writeAll(flight_bytes);
+                    hs.completeWrite();
+                }
+            },
+            .none => {},
+            .application_data, .closed => return error.UnexpectedDuringHandshake,
+        }
+        if (hs.isConnected()) break;
+    }
 }
 ```
+
+Break out as soon as client Finished makes the server connected. Any later
+record already in `rb` remains buffered; this gives post-handshake work such as
+a `NewSessionTicket` write priority over coalesced application data.
 
 ## The `pending_write` interlock
 
@@ -364,7 +371,60 @@ if (try server.sendServerFlightBuffered(&flight)) |flight_bytes| {
 }
 ```
 
-`sendAuthenticatedFlight` remains available as a lower-level escape hatch, but new callers should prefer up-front `setCredentials` plus `sendServerFlightBuffered`. `PrivateKey.deinit()` zeroes key material via libcrypto.
+`sendAuthenticatedFlight` remains available as a lower-level escape hatch, but new callers should prefer up-front `setCredentials` plus `sendServerFlightBuffered`. On PSK resumption these methods automatically omit Certificate and CertificateVerify. `PrivateKey.deinit()` zeroes key material via libcrypto.
+
+## Server session tickets
+
+After verifying client Finished, a server can issue one or more resumable TLS
+1.3 tickets without allocating. Ticket identity encoding, persistence,
+expiration, key rotation, replay policy, absolute resumption-chain lifetime,
+and any client-auth identity continuity remain caller policy.
+
+```zig
+var prepared = try server.deriveTicketPsk();
+defer prepared.secureZero();
+
+// Stage prepared.psk and prepared.cipher_suite under this opaque identity, or
+// include them in a caller-encrypted and authenticated stateless ticket.
+const identity = "opaque-ticket";
+
+// `fresh_ticket_age_add` came from the application's CSPRNG for this ticket.
+const record = try server.sendNewSessionTicket(
+    &prepared,
+    .{
+        .ticket_lifetime = 3600,
+        .ticket_age_add = fresh_ticket_age_add,
+        .ticket = identity,
+    },
+    &out.buffer,
+);
+try stream.writeAll(record);
+server.completeWrite();
+```
+
+`deriveTicketPsk()` assigns a unique per-connection nonce and permits only one
+prepared ticket at a time. RFC 8446 §4.6.1 puts `ticket_age_add` freshness on
+the server; ztls owns no CSPRNG, so the caller must provide a fresh
+cryptographically random value for every call. Ticket identities are non-empty
+and at most 256 bytes so ztls clients can cache them. The server emits one ticket per
+record, caps issuance at 32 tickets per connection, and does not advertise
+0-RTT from this API.
+
+Clients that did not advertise `psk_dhe_ke` make ticket preparation fail with
+`error.IncompatiblePskModes`. Commit a stateful ticket row only after the record
+has been fully written. If identity construction or persistence fails, call
+`discardTicketPsk()`; it erases the PSK and burns the nonce.
+
+Issue and flush every userspace ticket before kTLS activation. A prepared ticket
+blocks `ztls_ktls.Server.activate`; after successful activation,
+`deriveTicketPsk()` and `sendNewSessionTicket()` fail with
+`error.KtlsTxActive`.
+
+PSK resumption never implicitly preserves a client-certificate identity. A
+server configured for fresh client authentication declines offered PSKs and
+runs a full authenticated handshake. Applications that intentionally carry an
+identity in a ticket must authenticate and authorize that caller-owned ticket
+state themselves.
 
 ## SNI (server name indication)
 

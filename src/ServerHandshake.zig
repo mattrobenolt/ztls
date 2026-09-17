@@ -44,6 +44,7 @@ const max_post_handshake_messages = handshake.max_post_handshake_messages;
 const HashArm = @import("suite_state.zig").HashArm;
 const hkdf = @import("hkdf.zig");
 const memx = @import("memx.zig");
+const NewSessionTicket = @import("NewSessionTicket.zig");
 const NamedGroup = @import("kex.zig").NamedGroup;
 const p256 = @import("p256.zig");
 const handshake_key_pairs = @import("handshake_key_pairs.zig");
@@ -74,6 +75,35 @@ pub const PskLookup = struct {
     context: *anyopaque,
     lookup: *const fn (context: *anyopaque, identity: []const u8) ?PskEntry,
 };
+
+/// Prepared caller-owned PSK material for one NewSessionTicket. Use it to build
+/// the opaque identity, commit stateful storage after the record is written,
+/// then erase it with `secureZero`. Only one ticket may be prepared at a time.
+pub const TicketPsk = struct {
+    /// HKDF-Expand-Label output. Capacity covers SHA-384.
+    psk: ArrayBuffer(u8, 48) = .empty,
+    /// Cipher suite whose hash derived this PSK. Preserve it in `PskEntry`.
+    cipher_suite: CipherSuite,
+    /// Engine-assigned per-connection nonce. Pass this object unchanged to
+    /// `sendNewSessionTicket`; the wire method serializes the nonce itself.
+    ticket_nonce: [1]u8,
+
+    pub fn secureZero(self: *TicketPsk) void {
+        std.crypto.secureZero(u8, mem.asBytes(self));
+    }
+};
+
+/// Caller-owned NewSessionTicket policy and opaque identity.
+pub const TicketParams = struct {
+    /// Lifetime in seconds. RFC 8446 caps this at seven days; zero is valid.
+    ticket_lifetime: u32,
+    /// A fresh, securely generated random value for this ticket.
+    ticket_age_add: u32,
+    /// Database lookup key or caller-encrypted/authenticated stateless value.
+    /// Must be non-empty and no longer than `max_ticket_identity_len`.
+    ticket: []const u8,
+};
+
 const PskSelection = struct {
     entry: PskEntry,
     identity_index: usize,
@@ -104,6 +134,24 @@ pub const State = enum {
     wait_client_finished,
     connected,
 };
+
+const TicketNonceState = union(enum) {
+    next: u8,
+    prepared: u8,
+};
+
+const TicketCompatibility = enum {
+    unavailable,
+    psk_dhe_ke,
+};
+
+const TxOwner = enum {
+    userspace,
+    kernel,
+};
+
+const max_new_session_tickets = handshake.max_post_handshake_new_session_tickets;
+pub const max_ticket_identity_len = 256;
 
 const RetryClientHelloDigest = [Sha256.digest_length]u8;
 
@@ -286,6 +334,11 @@ tx: RecordLayer = undefined,
 /// more input can be safely processed. Prevents dropped ServerHello/flight/app
 /// data from silently desynchronizing traffic keys.
 pending_write: PendingWrite = .idle,
+/// Monotonic one-byte nonces structurally enforce uniqueness for the bounded
+/// ticket burst accepted by ztls clients. At most one PSK may be prepared ahead.
+ticket_nonce_state: TicketNonceState = .{ .next = 0 },
+ticket_compatibility: TicketCompatibility = .unavailable,
+tx_owner: TxOwner = .userspace,
 /// Most recent non-close_notify peer alert (RFC 8446 §6.2); close_notify (§6.1)
 /// never sets it.
 last_peer_alert: ?alert.Alert = null,
@@ -631,10 +684,77 @@ pub fn isConnected(self: *const ServerHandshake) bool {
     return self.state == .connected;
 }
 
+/// True when this connection authenticated with a caller-provided PSK.
+/// Ticket policy can use this to bound chains of resumed sessions.
+pub fn isResumed(self: *const ServerHandshake) bool {
+    assert(self.state == .connected);
+    return self.selected_psk != null;
+}
+
+/// Prepare caller-owned key material for one NewSessionTicket. ztls assigns a
+/// unique nonce from a bounded 32-ticket sequence and derives the matching PSK;
+/// the caller uses the PSK to stage a stateful lookup row or build an
+/// authenticated stateless identity, then passes this object unchanged to
+/// `sendNewSessionTicket`.
+///
+/// Ticket storage, expiration, rotation, replay handling, chain lifetime, and
+/// any client-auth identity carried across resumption remain caller policy.
+/// RFC 8446 §4.6.1.
+pub fn deriveTicketPsk(self: *ServerHandshake) PrepareTicketError!TicketPsk {
+    assert(self.state == .connected);
+    if (self.tx_owner == .kernel) return error.KtlsTxActive;
+    if (self.ticket_compatibility != .psk_dhe_ke)
+        return error.IncompatiblePskModes;
+    const nonce = switch (self.ticket_nonce_state) {
+        .next => |next| next,
+        .prepared => return error.PendingTicket,
+    };
+    if (nonce >= max_new_session_tickets) return error.TooManyNewSessionTickets;
+
+    var ticket: TicketPsk = .{
+        .cipher_suite = self.suite,
+        .ticket_nonce = .{nonce},
+    };
+    switch (self.suite_state) {
+        inline .sha256, .sha384 => |*s| {
+            if (!s.resumption_master_valid) return error.NoResumptionSecret;
+            var psk = @TypeOf(s.*).Hkdf.resumptionPsk(
+                s.resumption_master,
+                &ticket.ticket_nonce,
+            );
+            defer psk.secureZero();
+            ticket.psk.appendSliceAssumeCapacity(&psk.data);
+        },
+    }
+    self.ticket_nonce_state = .{ .prepared = nonce };
+    return ticket;
+}
+
+/// Abandon one prepared ticket without sending it. Its nonce is burned, so a
+/// later ticket cannot reuse the derived PSK. The supplied key material is erased.
+pub fn discardTicketPsk(
+    self: *ServerHandshake,
+    ticket: *TicketPsk,
+) error{InvalidTicketPsk}!void {
+    const nonce = switch (self.ticket_nonce_state) {
+        .prepared => |prepared| prepared,
+        .next => return error.InvalidTicketPsk,
+    };
+    if (ticket.ticket_nonce[0] != nonce) return error.InvalidTicketPsk;
+    self.ticket_nonce_state = .{ .next = nonce + 1 };
+    ticket.secureZero();
+}
+
 /// True while wire bytes returned by the engine still await transport
 /// acknowledgement through `completeWrite()`.
 pub fn hasPendingWrite(self: *const ServerHandshake) bool {
     return self.pending_write.isPending();
+}
+
+/// True after ticket key material has been prepared but before the ticket is
+/// emitted or explicitly discarded.
+pub fn hasPendingTicket(self: *const ServerHandshake) bool {
+    return self.ticket_nonce_state == .prepared;
 }
 
 /// RFC 8446 §4.6.3 — true after receiving update_requested until the required
@@ -727,6 +847,23 @@ pub const ClientFinishedError =
 pub const SendError = RecordLayer.EncryptError || error{
     PendingWrite,
     PendingKeyUpdateResponse,
+};
+pub const PrepareTicketError = error{
+    NoResumptionSecret,
+    IncompatiblePskModes,
+    PendingTicket,
+    TooManyNewSessionTickets,
+    KtlsTxActive,
+};
+pub const TicketSendError = SendError || NewSessionTicket.EncodeError || error{
+    InvalidTicketPsk,
+    IncompatiblePskModes,
+    KtlsTxActive,
+};
+pub const KtlsTxTransferError = error{
+    PendingWrite,
+    PendingKeyUpdateResponse,
+    PendingTicket,
 };
 pub const ReceiveError =
     RecordLayer.DecryptError || alert.ParseError ||
@@ -872,15 +1009,26 @@ fn processClientHelloMessage(
         return error.NoApplicationProtocol;
     self.client_server_name = ch.server_name;
 
-    // RFC 8446 §4.2.9 — pre_shared_key requires psk_key_exchange_modes. ztls
-    // implements psk_dhe_ke only; an offer without that mode is not resumed.
-    if (ch.psk_ext != null) {
-        const modes = ch.psk_key_exchange_modes orelse return error.MissingExtension;
-        if (mem.indexOfScalar(
+    // RFC 8446 §4.2.9 — issue and accept tickets only for the forward-secret
+    // psk_dhe_ke mode ztls implements. Preserve the offer through the handshake
+    // so post-handshake emission cannot create an unusable ticket.
+    const offers_psk_dhe_ke = if (ch.psk_key_exchange_modes) |modes|
+        mem.indexOfScalar(
             u8,
             modes,
             @intFromEnum(client_hello.PskKeyExchangeMode.psk_dhe_ke),
-        ) != null) {
+        ) != null
+    else
+        false;
+    self.ticket_compatibility = if (offers_psk_dhe_ke) .psk_dhe_ke else .unavailable;
+
+    // RFC 8446 §4.2.9 — pre_shared_key requires psk_key_exchange_modes.
+    if (ch.psk_ext != null) {
+        if (ch.psk_key_exchange_modes == null) return error.MissingExtension;
+        // A PSK does not implicitly carry a client-certificate identity. When
+        // fresh client authentication is configured, decline resumption and run
+        // the authenticated handshake instead.
+        if (offers_psk_dhe_ke and self.client_auth == .none) {
             if (self.psk_lookup) |lookup| {
                 const retry_transcript: ?*const RetryTranscript =
                     if (self.retry_transcript) |*transcript| transcript else null;
@@ -1333,6 +1481,16 @@ fn sendAnonymousFlightForTest(self: *ServerHandshake, out: []u8) FlightError![]c
     assert(!self.server_flight_sent);
     self.server_flight_sent = true;
     var plaintext: [256]u8 = undefined;
+    const flight = try self.encodeEncryptedExtensionsFinished(&plaintext);
+    return self.encryptServerFlight(flight, out);
+}
+
+// RFC 8446 §4.4.2 — when the server selected a PSK, its authentication
+// messages are omitted. The resumed flight is EncryptedExtensions, Finished.
+fn encodeEncryptedExtensionsFinished(
+    self: *ServerHandshake,
+    plaintext: []u8,
+) FlightError![]const u8 {
     var pos: usize = 0;
     const ee = try encrypted_extensions.encode(
         plaintext[pos..],
@@ -1352,21 +1510,20 @@ fn sendAnonymousFlightForTest(self: *ServerHandshake, out: []u8) FlightError![]c
                 &th,
             );
             s.transcript.update(fin);
-            // Snapshot the transcript through the server Finished for app-
-            // secret derivation (RFC 8446 §7.1). Mirrors encodeAuthenticatedFlight.
             const fin_th = s.transcript.peek();
             self.server_finished_hash[0..fin_th.len].* = fin_th;
             self.server_finished_hash_len = @intCast(fin_th.len);
             pos += fin.len;
         },
     }
-    return self.encryptServerFlight(plaintext[0..pos], out);
+    return plaintext[0..pos];
 }
 
-/// Emit an authenticated encrypted server flight: EncryptedExtensions,
-/// Certificate, CertificateVerify, Finished. The signer receives the exact TLS
-/// 1.3 CertificateVerify input (`64*SP || context || 0 || transcript_hash`) and
-/// writes a DER signature into caller-provided scratch. RFC 8446 §4.3-§4.4.
+/// Emit the encrypted server flight. A full handshake sends
+/// EncryptedExtensions, Certificate, CertificateVerify, Finished; a selected
+/// PSK omits Certificate and CertificateVerify as required by RFC 8446 §4.4.2.
+/// The signer receives the exact TLS 1.3 CertificateVerify input
+/// (`64*SP || context || 0 || transcript_hash`) for a full handshake.
 /// Any error is terminal for this handshake because flight assembly advances
 /// the transcript; send an alert when possible, then deinit.
 // ziglint-ignore: Z015 -- FlightError is a public error-set alias.
@@ -1391,7 +1548,10 @@ pub fn sendCertificateChainFlight(
     assert(self.state == .wait_client_finished);
     assert(!self.server_flight_sent);
     self.server_flight_sent = true;
-    const flight = try self.encodeAuthenticatedFlight(chain, signer, plaintext);
+    const flight = if (self.selected_psk != null)
+        try self.encodeEncryptedExtensionsFinished(plaintext)
+    else
+        try self.encodeAuthenticatedFlight(chain, signer, plaintext);
     return self.encryptServerFlight(flight, out);
 }
 
@@ -1416,7 +1576,10 @@ pub fn sendPreparedCertificateChainFlight(
     assert(!self.server_flight_sent);
     if (out.len < frame.header_len) return error.BufferTooShort;
     self.server_flight_sent = true;
-    const flight = try self.encodeAuthenticatedFlight(chain, signer, out[frame.header_len..]);
+    const flight = if (self.selected_psk != null)
+        try self.encodeEncryptedExtensionsFinished(out[frame.header_len..])
+    else
+        try self.encodeAuthenticatedFlight(chain, signer, out[frame.header_len..]);
     return self.encryptPreparedServerFlight(flight.len, out);
 }
 
@@ -1436,9 +1599,11 @@ pub fn sendAuthenticatedFlightBuffered(
     return out.slice();
 }
 
-/// Emit the configured authenticated server flight once it is ready.
-/// Returns null before ServerHello has installed handshake keys, or after the
-/// flight has already been emitted. A non-null result sets the pending-write
+/// Emit the configured server flight once it is ready. A selected PSK emits
+/// EncryptedExtensions + Finished; otherwise the configured certificate and
+/// signer produce the authenticated flight. Returns null before ServerHello has
+/// installed handshake keys, or after the flight has already been emitted. A
+/// non-null result sets the pending-write
 /// latch; callers must write the returned bytes and then call completeWrite().
 /// Any error is terminal for this handshake because flight assembly advances
 /// the transcript; send an alert when possible, then deinit.
@@ -1446,14 +1611,20 @@ pub fn sendAuthenticatedFlightBuffered(
 pub fn sendPreparedServerFlight(self: *ServerHandshake, out: []u8) FlightError!?[]const u8 {
     if (self.pending_write.isPending()) return error.PendingWrite;
     if (self.state != .wait_client_finished or self.server_flight_sent) return null;
-    const credentials = self.server_credentials orelse return error.MissingServerCredentials;
+    const credentials = if (self.selected_psk == null)
+        self.server_credentials orelse return error.MissingServerCredentials
+    else
+        null;
     if (out.len < frame.header_len) return error.BufferTooShort;
     self.server_flight_sent = true;
-    const flight = try self.encodeAuthenticatedFlight(
-        credentials.chain,
-        credentials.signer,
-        out[frame.header_len..],
-    );
+    const flight = if (self.selected_psk != null)
+        try self.encodeEncryptedExtensionsFinished(out[frame.header_len..])
+    else
+        try self.encodeAuthenticatedFlight(
+            credentials.?.chain,
+            credentials.?.signer,
+            out[frame.header_len..],
+        );
     const record = try self.encryptPreparedServerFlight(flight.len, out);
     self.pending_write.mark();
     return record;
@@ -1720,6 +1891,11 @@ fn verifyClientFinished(
             self.rx.deinit();
             self.rx = next_rx;
             s.transcript.update(msg_raw);
+            const res_th_raw = s.transcript.peek();
+            var res_th: H.TranscriptHash = undefined;
+            @memcpy(res_th.data[0..], res_th_raw[0..]);
+            s.resumption_master = H.resumptionMasterSecret(master, &res_th);
+            s.resumption_master_valid = true;
             s.forgetHandshakeSecrets();
         },
     }
@@ -2230,6 +2406,53 @@ pub fn sendAlert(
     return record;
 }
 
+/// Serialize and encrypt one prepared NewSessionTicket under the current
+/// application traffic keys. The caller must write the returned record and call
+/// `completeWrite()` before sending another record or transferring TX to kTLS.
+/// Tickets emitted here never advertise 0-RTT: the current acceptance API cannot
+/// validate all RFC 8446 §4.2.10 age, exact-suite, and ALPN obligations.
+///
+/// The caller owns the opaque identity and all storage, expiration, rotation,
+/// replay, random `ticket_age_add`, resumption-chain, and client-auth continuity
+/// policy. `params.ticket` must not alias `out`. RFC 8446 §4.6.1.
+// ziglint-ignore: Z015 -- TicketSendError is a public error-set alias.
+pub fn sendNewSessionTicket(
+    self: *ServerHandshake,
+    prepared: *const TicketPsk,
+    params: TicketParams,
+    out: []u8,
+) TicketSendError![]const u8 {
+    assert(self.state == .connected);
+    if (self.tx_owner == .kernel) return error.KtlsTxActive;
+    if (self.ticket_compatibility != .psk_dhe_ke)
+        return error.IncompatiblePskModes;
+    if (self.pending_write.isPending()) return error.PendingWrite;
+    if (self.key_update_obligation == .response_owed)
+        return error.PendingKeyUpdateResponse;
+    const nonce = switch (self.ticket_nonce_state) {
+        .prepared => |ticket_nonce| ticket_nonce,
+        .next => return error.InvalidTicketPsk,
+    };
+    if (prepared.ticket_nonce[0] != nonce) return error.InvalidTicketPsk;
+    if (params.ticket.len > max_ticket_identity_len) return error.TicketTooLong;
+    if (out.len < RecordLayer.overhead) return error.BufferTooShort;
+
+    const plaintext_capacity = out.len - RecordLayer.overhead;
+    const msg = try NewSessionTicket.encode(
+        out[frame.header_len..][0..plaintext_capacity],
+        .{
+            .ticket_lifetime = params.ticket_lifetime,
+            .ticket_age_add = params.ticket_age_add,
+            .ticket_nonce = &prepared.ticket_nonce,
+            .ticket = params.ticket,
+        },
+    );
+    const record = try self.tx.encryptPrepared(.handshake, msg.len, out);
+    self.ticket_nonce_state = .{ .next = nonce + 1 };
+    self.pending_write.mark();
+    return record;
+}
+
 // ziglint-ignore: Z015 -- SendError is a public error-set alias.
 pub fn sendApplicationData(
     self: *ServerHandshake,
@@ -2248,10 +2471,23 @@ pub fn sendPreparedApplicationData(
     return handshake.sendPreparedApplicationData(self, plaintext_len, out);
 }
 
-/// Export the current server-write traffic key epoch for caller-owned kTLS TX setup.
+/// Export the current server-write traffic key epoch for caller-owned kTLS TX
+/// setup. Every userspace-encrypted record, including each NewSessionTicket,
+/// must be written and completed before this snapshot is taken.
 pub fn txKtlsInfo(self: *const ServerHandshake) RecordLayer.KtlsInfo {
     assert(self.state == .connected);
     return self.tx.ktlsInfo();
+}
+
+/// Record that kTLS owns the TX record layer. Call only after successful TLS_TX
+/// installation; NewSessionTicket emission then fails with `error.KtlsTxActive`.
+pub fn markKtlsTxInstalled(self: *ServerHandshake) KtlsTxTransferError!void {
+    assert(self.state == .connected);
+    if (self.pending_write.isPending()) return error.PendingWrite;
+    if (self.key_update_obligation == .response_owed)
+        return error.PendingKeyUpdateResponse;
+    if (self.ticket_nonce_state == .prepared) return error.PendingTicket;
+    self.tx_owner = .kernel;
 }
 
 /// Export the current client-write traffic key epoch for caller-owned kTLS RX setup.
@@ -3551,6 +3787,382 @@ fn connectedTestPair() !ConnectedTestPair {
     return .{ .client = client, .server = server };
 }
 
+// RFC 8446 §4.6.1, §7.1 — the server derives the ticket PSK from the transcript
+// through client Finished, emits one encrypted post-handshake record, and the
+// client independently derives the same caller-storable PSK from that record.
+test "NewSessionTicket emission derives matching client and server PSKs" {
+    var pair = try connectedTestPair();
+    defer pair.client.deinit();
+    defer pair.server.deinit();
+
+    var prepared = try pair.server.deriveTicketPsk();
+    defer prepared.secureZero();
+    try testing.expectEqualSlices(u8, &.{0}, &prepared.ticket_nonce);
+
+    const tx_before = pair.server.txKtlsInfo();
+    var server_out: [512]u8 = undefined;
+    const record = try pair.server.sendNewSessionTicket(
+        &prepared,
+        .{
+            .ticket_lifetime = 3600,
+            .ticket_age_add = 0x12345678,
+            .ticket = "opaque-ticket",
+        },
+        &server_out,
+    );
+    try testing.expect(pair.server.hasPendingWrite());
+    const tx_after = pair.server.txKtlsInfo();
+    try testing.expectEqual(
+        std.mem.readInt(u64, &tx_before.rec_seq, .big) + 1,
+        std.mem.readInt(u64, &tx_after.rec_seq, .big),
+    );
+
+    var client_out: [128]u8 = undefined;
+    const event = try pair.client.handleRecord(server_out[0..record.len], &client_out);
+    const nst = switch (event) {
+        .new_session_ticket => |ticket| ticket,
+        else => return error.UnexpectedEvent,
+    };
+    try testing.expectEqual(@as(u32, 3600), nst.ticket_lifetime);
+    try testing.expectEqual(@as(u32, 0x12345678), nst.ticket_age_add);
+    try testing.expectEqualSlices(u8, &prepared.ticket_nonce, nst.ticket_nonce);
+    try testing.expectEqualStrings("opaque-ticket", nst.ticket);
+    try testing.expectEqual(@as(?u32, null), nst.max_early_data_size);
+
+    var session = try pair.client.deriveSessionTicket(nst);
+    defer session.secureZero();
+    try testing.expectEqual(prepared.cipher_suite, session.cipher_suite);
+    try testing.expectEqualSlices(u8, prepared.psk.constSlice(), session.psk.constSlice());
+    pair.server.completeWrite();
+}
+
+// RFC 8446 §4.6.1 — a prepared PSK belongs to exactly one pending nonce. A
+// stale object cannot emit or discard the current ticket obligation.
+test "NewSessionTicket emission rejects stale prepared PSK objects" {
+    var pair = try connectedTestPair();
+    defer pair.client.deinit();
+    defer pair.server.deinit();
+
+    var prepared = try pair.server.deriveTicketPsk();
+    defer prepared.secureZero();
+    var stale = prepared;
+    defer stale.secureZero();
+    stale.ticket_nonce[0] += 1;
+
+    var out: [256]u8 = @splat(0xaa);
+    try testing.expectError(
+        error.InvalidTicketPsk,
+        pair.server.sendNewSessionTicket(
+            &stale,
+            .{
+                .ticket_lifetime = 3600,
+                .ticket_age_add = 0x12345678,
+                .ticket = "opaque-ticket",
+            },
+            &out,
+        ),
+    );
+    try testing.expect(mem.allEqual(u8, &out, 0xaa));
+    try testing.expect(pair.server.hasPendingTicket());
+    try testing.expectError(error.InvalidTicketPsk, pair.server.discardTicketPsk(&stale));
+    try pair.server.discardTicketPsk(&prepared);
+}
+
+// RFC 8446 §4.2.11, §4.6.1, §7.1 — a ztls-issued ticket resumes against a
+// ztls server, and the resumed connection can derive and emit a fresh ticket.
+test "server-issued NewSessionTicket resumes and can be renewed" {
+    var initial = try connectedTestPair();
+    defer initial.client.deinit();
+    defer initial.server.deinit();
+
+    var first_psk = try initial.server.deriveTicketPsk();
+    defer first_psk.secureZero();
+    var initial_server_out: [256]u8 = undefined;
+    const first_record = try initial.server.sendNewSessionTicket(
+        &first_psk,
+        .{
+            .ticket_lifetime = 3600,
+            .ticket_age_add = 0x12345678,
+            .ticket = "issued-by-ztls",
+        },
+        &initial_server_out,
+    );
+    var initial_client_out: [64]u8 = undefined;
+    const first_event = try initial.client.handleRecord(
+        initial_server_out[0..first_record.len],
+        &initial_client_out,
+    );
+    const first_nst = switch (first_event) {
+        .new_session_ticket => |ticket| ticket,
+        else => return error.UnexpectedEvent,
+    };
+    var session = try initial.client.deriveSessionTicket(first_nst);
+    defer session.secureZero();
+    initial.server.completeWrite();
+
+    var client: ClientHandshake = .init(.{
+        .keypairs = try .init(.generate()),
+        .host_name = "ztls.server.test",
+        .now_sec = 0,
+        .random = .zero,
+    });
+    defer client.deinit();
+    client.policy.insecure_no_chain_anchor = true;
+    var client_out: [4096]u8 = undefined;
+    const ch_record = try client.startWithPsk(&session, &client_out, false);
+    client.completeWrite();
+
+    const Lookup = struct {
+        const Context = struct {
+            identity: []const u8,
+            psk: []const u8,
+            cipher_suite: CipherSuite,
+        };
+        fn lookup(context: *anyopaque, identity: []const u8) ?PskEntry {
+            const ctx: *Context = @ptrCast(@alignCast(context));
+            if (!mem.eql(u8, identity, ctx.identity)) return null;
+            return .{ .psk = ctx.psk, .cipher_suite = ctx.cipher_suite };
+        }
+    };
+    var lookup_context: Lookup.Context = .{
+        .identity = session.identity.constSlice(),
+        .psk = session.psk.constSlice(),
+        .cipher_suite = session.cipher_suite,
+    };
+    var server: ServerHandshake = .init(.{
+        .keypairs = try .init(.generate()),
+        .random = .zero,
+        .psk_lookup = .{ .context = &lookup_context, .lookup = Lookup.lookup },
+    });
+    defer server.deinit();
+    server.supportSuites(&.{session.cipher_suite});
+
+    var server_out: [4096]u8 = undefined;
+    const sh_record = try server.acceptClientHello(ch_record, &server_out);
+    try testing.expect(server.selected_psk != null);
+    try client.processServerHello(sh_record[frame.header_len..]);
+
+    var signer = try signature.PrivateKey.fromP256Scalar(serverEcdsaScalar()[0..32]);
+    defer signer.deinit();
+    var plaintext: [4096]u8 = undefined;
+    const flight_record = try server.sendAuthenticatedFlight(
+        &.{serverEcdsaCertDer()},
+        signer.signer(),
+        &plaintext,
+        &server_out,
+    );
+    const handshake_event = try client.handleRecord(
+        server_out[0..flight_record.len],
+        &client_out,
+    );
+    const client_finished = switch (handshake_event) {
+        .write => |record| record,
+        else => return error.UnexpectedEvent,
+    };
+    client.completeWrite();
+    try server.processClientFinished(client_out[0..client_finished.len]);
+    try testing.expect(client.isConnected());
+    try testing.expect(server.isConnected());
+    try testing.expect(server.isResumed());
+
+    var renewed_psk = try server.deriveTicketPsk();
+    defer renewed_psk.secureZero();
+    try testing.expect(!mem.eql(
+        u8,
+        first_psk.psk.constSlice(),
+        renewed_psk.psk.constSlice(),
+    ));
+    const renewed_record = try server.sendNewSessionTicket(
+        &renewed_psk,
+        .{
+            .ticket_lifetime = 3600,
+            .ticket_age_add = 0x87654321,
+            .ticket = "renewed-by-ztls",
+        },
+        &server_out,
+    );
+    const renewed_event = try client.handleRecord(
+        server_out[0..renewed_record.len],
+        &client_out,
+    );
+    const renewed_nst = switch (renewed_event) {
+        .new_session_ticket => |ticket| ticket,
+        else => return error.UnexpectedEvent,
+    };
+    var renewed_session = try client.deriveSessionTicket(renewed_nst);
+    defer renewed_session.secureZero();
+    try testing.expectEqualSlices(
+        u8,
+        renewed_psk.psk.constSlice(),
+        renewed_session.psk.constSlice(),
+    );
+}
+
+// RFC 8446 §4.6.1 — ticket nonces and derived PSKs are unique per connection,
+// and server emission is bounded to the 32-ticket receive limit ztls enforces.
+test "NewSessionTicket emission owns unique bounded nonces" {
+    var pair = try connectedTestPair();
+    defer pair.client.deinit();
+    defer pair.server.deinit();
+
+    var previous_psk: [48]u8 = undefined;
+    var previous_psk_len: usize = 0;
+    var server_out: [256]u8 = undefined;
+    var client_out: [64]u8 = undefined;
+    for (0..max_new_session_tickets) |i| {
+        var prepared = try pair.server.deriveTicketPsk();
+        defer prepared.secureZero();
+        try testing.expectEqual(@as(u8, @intCast(i)), prepared.ticket_nonce[0]);
+        if (i != 0) {
+            try testing.expect(!mem.eql(
+                u8,
+                previous_psk[0..previous_psk_len],
+                prepared.psk.constSlice(),
+            ));
+        }
+        previous_psk_len = prepared.psk.len;
+        @memcpy(previous_psk[0..previous_psk_len], prepared.psk.constSlice());
+
+        const identity = [_]u8{@intCast(i)};
+        const record = try pair.server.sendNewSessionTicket(
+            &prepared,
+            .{
+                .ticket_lifetime = 60,
+                .ticket_age_add = @intCast(i),
+                .ticket = &identity,
+            },
+            &server_out,
+        );
+        pair.server.completeWrite();
+        const event = try pair.client.handleRecord(server_out[0..record.len], &client_out);
+        const nst = switch (event) {
+            .new_session_ticket => |ticket| ticket,
+            else => return error.UnexpectedEvent,
+        };
+        try testing.expectEqual(@as(u32, @intCast(i)), nst.ticket_age_add);
+    }
+    try testing.expectError(
+        error.TooManyNewSessionTickets,
+        pair.server.deriveTicketPsk(),
+    );
+}
+
+// RFC 8446 §4.6.1, §4.6.3 — a prepared ticket obeys the common write latch,
+// waits behind an owed KeyUpdate response, and cannot cross the kTLS TX boundary.
+test "NewSessionTicket emission enforces write and kTLS ordering" {
+    var pair = try connectedTestPair();
+    defer pair.client.deinit();
+    defer pair.server.deinit();
+
+    var prepared = try pair.server.deriveTicketPsk();
+    defer prepared.secureZero();
+    const params: TicketParams = .{
+        .ticket_lifetime = 60,
+        .ticket_age_add = 1,
+        .ticket = "ticket",
+    };
+    var out: [128]u8 = undefined;
+
+    pair.server.pending_write.mark();
+    try testing.expectError(
+        error.PendingWrite,
+        pair.server.sendNewSessionTicket(&prepared, params, &out),
+    );
+    pair.server.completeWrite();
+
+    pair.server.key_update_obligation = .response_owed;
+    try testing.expectError(
+        error.PendingKeyUpdateResponse,
+        pair.server.sendNewSessionTicket(&prepared, params, &out),
+    );
+    pair.server.key_update_obligation = .none;
+
+    try testing.expectError(error.PendingTicket, pair.server.markKtlsTxInstalled());
+    try pair.server.discardTicketPsk(&prepared);
+    try pair.server.markKtlsTxInstalled();
+    try testing.expectError(error.KtlsTxActive, pair.server.deriveTicketPsk());
+    try testing.expectError(
+        error.KtlsTxActive,
+        pair.server.sendNewSessionTicket(&prepared, params, &out),
+    );
+}
+
+// RFC 8446 §4.6.1 — encoding failures neither consume the prepared ticket nor
+// advance the application write sequence, so the caller may correct and retry.
+test "NewSessionTicket emission preserves state on encoding failure" {
+    var pair = try connectedTestPair();
+    defer pair.client.deinit();
+    defer pair.server.deinit();
+
+    var prepared = try pair.server.deriveTicketPsk();
+    defer prepared.secureZero();
+    const tx_before = pair.server.txKtlsInfo();
+
+    var short_out: [RecordLayer.overhead]u8 = @splat(0xa5);
+    const short_before = short_out;
+    try testing.expectError(
+        error.BufferTooShort,
+        pair.server.sendNewSessionTicket(
+            &prepared,
+            .{
+                .ticket_lifetime = 60,
+                .ticket_age_add = 1,
+                .ticket = "retry",
+            },
+            &short_out,
+        ),
+    );
+    try testing.expectEqualSlices(u8, &short_before, &short_out);
+    try testing.expect(pair.server.hasPendingTicket());
+    try testing.expect(!pair.server.hasPendingWrite());
+    try testing.expectEqual(tx_before, pair.server.txKtlsInfo());
+
+    var too_large: [max_ticket_identity_len + 1]u8 = @splat(0);
+    var out: [max_out_len]u8 = undefined;
+    try testing.expectError(
+        error.TicketTooLong,
+        pair.server.sendNewSessionTicket(
+            &prepared,
+            .{
+                .ticket_lifetime = 60,
+                .ticket_age_add = 1,
+                .ticket = &too_large,
+            },
+            &out,
+        ),
+    );
+    try testing.expect(pair.server.hasPendingTicket());
+    try testing.expect(!pair.server.hasPendingWrite());
+    try testing.expectEqual(tx_before, pair.server.txKtlsInfo());
+
+    const record = try pair.server.sendNewSessionTicket(
+        &prepared,
+        .{
+            .ticket_lifetime = 60,
+            .ticket_age_add = 2,
+            .ticket = "retry",
+        },
+        &out,
+    );
+    try testing.expect(record.len > RecordLayer.overhead);
+}
+
+// RFC 8446 §4.6.1 — abandoning a prepared ticket burns its nonce and erases
+// its PSK so a later ticket cannot accidentally reuse that key material.
+test "discardTicketPsk burns nonce and erases key material" {
+    var pair = try connectedTestPair();
+    defer pair.client.deinit();
+    defer pair.server.deinit();
+
+    var discarded = try pair.server.deriveTicketPsk();
+    try pair.server.discardTicketPsk(&discarded);
+    try testing.expect(mem.allEqual(u8, mem.asBytes(&discarded), 0));
+
+    var next = try pair.server.deriveTicketPsk();
+    defer next.secureZero();
+    try testing.expectEqual(@as(u8, 1), next.ticket_nonce[0]);
+}
+
 // RFC 8446 §4.4.2, §4.4.4 — when the server requests client authentication
 // and the client has no credentials, optional client auth accepts an empty
 // Certificate followed by Finished.
@@ -3775,6 +4387,37 @@ test "processClientFinished: required client auth verifies real client Certifica
         parsed_presented.certificate.buffer[expected_san.start..expected_san.end],
         retained.certificate.buffer[actual_san.start..actual_san.end],
     );
+
+    // RFC 8446 §7.1 — the ticket PSK binds the complete client-auth flight,
+    // including Certificate, CertificateVerify, and client Finished.
+    var ticket_psk = try server.deriveTicketPsk();
+    defer ticket_psk.secureZero();
+    const ticket_record = try server.sendNewSessionTicket(
+        &ticket_psk,
+        .{
+            .ticket_lifetime = 60,
+            .ticket_age_add = 0x12345678,
+            .ticket = "client-auth-ticket",
+        },
+        &server_out,
+    );
+    var nst_out: [64]u8 = undefined;
+    const ticket_event = try client.handleRecord(
+        server_out[0..ticket_record.len],
+        &nst_out,
+    );
+    const nst = switch (ticket_event) {
+        .new_session_ticket => |ticket| ticket,
+        else => return error.UnexpectedEvent,
+    };
+    var session = try client.deriveSessionTicket(nst);
+    defer session.secureZero();
+    try testing.expectEqualSlices(
+        u8,
+        ticket_psk.psk.constSlice(),
+        session.psk.constSlice(),
+    );
+    server.completeWrite();
 }
 
 // RFC 8446 §4.4.3, §4.4.4 — a chain-valid client identity is not retained
@@ -5227,9 +5870,10 @@ test "PSK offer without psk_key_exchange_modes aborts" {
     );
 }
 
-// RFC 8446 §4.2.9 — ztls implements psk_dhe_ke only. A valid PSK offer that
-// advertises only psk_ke must fall back to a full handshake, not resume.
-test "PSK offer with only psk_ke does not resume" {
+// RFC 8446 §4.2.9, §4.6.1 — ztls implements psk_dhe_ke only. A valid PSK
+// offer with only psk_ke falls back to a full handshake and cannot receive a
+// ticket for a mode it did not advertise.
+test "PSK offer with only psk_ke disables resumption and ticket issuance" {
     const psk: [32]u8 = @splat(0x42);
     const identity = [_]u8{ 0x2c, 0x03, 0x5d, 0x82, 0x93, 0x59 };
     var client: ClientHandshake = .init(.{
@@ -5283,6 +5927,93 @@ test "PSK offer with only psk_ke does not resume" {
     var server_out: [1024]u8 = undefined;
     _ = try server.acceptClientHello(record, &server_out);
     try testing.expect(server.selected_psk == null);
+
+    // Isolate the post-handshake issuance guard from the rest of the full
+    // handshake: removing the compatibility check must make this assertion red.
+    server.state = .connected;
+    switch (server.suite_state) {
+        inline .sha256, .sha384 => |*s| {
+            s.resumption_master = .init(@splat(0x42));
+            s.resumption_master_valid = true;
+        },
+    }
+    try testing.expectError(error.IncompatiblePskModes, server.deriveTicketPsk());
+}
+
+// RFC 8446 §4.4.2 — selecting a PSK does not implicitly preserve a client
+// certificate identity. A server requiring fresh client authentication declines
+// the PSK and completes the full certificate-authenticated handshake.
+test "client authentication policy declines PSK resumption" {
+    const psk: [32]u8 = @splat(0x42);
+    const identity = "client-auth-ticket";
+    var client: ClientHandshake = .init(.{
+        .keypairs = try .init(.generate()),
+        .host_name = "ztls.server.test",
+        .now_sec = 0,
+        .random = .zero,
+    });
+    defer client.deinit();
+    client.policy.insecure_no_chain_anchor = true;
+    var client_signer = try signature.PrivateKey.fromP256Scalar(clientEcdsaScalar()[0..32]);
+    defer client_signer.deinit();
+    client.setCredentials(&.{clientEcdsaCertDer()}, client_signer.signer());
+    var ticket: ClientHandshake.SessionTicket = .{
+        .ticket_age_add = 0,
+        .cipher_suite = .aes_128_gcm_sha256,
+    };
+    ticket.identity.appendSliceAssumeCapacity(identity);
+    ticket.psk.appendSliceAssumeCapacity(&psk);
+
+    var client_out: [4096]u8 = undefined;
+    const record = try client.startWithPsk(&ticket, &client_out, false);
+    client.completeWrite();
+
+    const Lookup = struct {
+        const Context = struct {
+            identity: []const u8,
+            psk: []const u8,
+        };
+        fn lookup(context: *anyopaque, offered_identity: []const u8) ?PskEntry {
+            const ctx: *Context = @ptrCast(@alignCast(context));
+            if (!mem.eql(u8, offered_identity, ctx.identity)) return null;
+            return .{ .psk = ctx.psk, .cipher_suite = .aes_128_gcm_sha256 };
+        }
+    };
+    var lookup_context: Lookup.Context = .{ .identity = identity, .psk = &psk };
+    var client_cert_storage: [1024]u8 = undefined;
+    var server: ServerHandshake = .init(.{
+        .keypairs = try .init(.generate()),
+        .random = .zero,
+        .psk_lookup = .{ .context = &lookup_context, .lookup = Lookup.lookup },
+        .client_auth = .required,
+        .insecure_no_client_chain_anchor = true,
+        .client_cert_buffer = &client_cert_storage,
+    });
+    defer server.deinit();
+    var server_out: [4096]u8 = undefined;
+    const server_hello_record = try server.acceptClientHello(record, &server_out);
+    try testing.expect(server.selected_psk == null);
+    try client.processServerHello(server_hello_record[frame.header_len..]);
+
+    var server_signer = try signature.PrivateKey.fromP256Scalar(serverEcdsaScalar()[0..32]);
+    defer server_signer.deinit();
+    var plaintext: [4096]u8 = undefined;
+    const flight_record = try server.sendAuthenticatedFlight(
+        &.{serverEcdsaCertDer()},
+        server_signer.signer(),
+        &plaintext,
+        &server_out,
+    );
+    const client_event = try client.handleRecord(server_out[0..flight_record.len], &client_out);
+    const client_finished_record = switch (client_event) {
+        .write => |write| write,
+        else => return error.UnexpectedEvent,
+    };
+    client.completeWrite();
+    try server.processClientFinished(client_out[0..client_finished_record.len]);
+    try testing.expect(server.isConnected());
+    try testing.expect(!server.isResumed());
+    try testing.expect(server.clientCertificate() != null);
 }
 
 fn expectIncompatiblePskNotSelected(

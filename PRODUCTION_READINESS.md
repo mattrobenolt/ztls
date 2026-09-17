@@ -174,22 +174,29 @@ X25519 and P-256 ECDHE, three mandatory cipher suites, certificate-authenticated
 server flight with client verification gates, application data, alerts,
 `close_notify`,
 post-handshake KeyUpdate (both directions, flood-bounded, record-boundary
-enforced). PSK/session resumption is implemented: the client
-derives the resumption_master_secret over the live transcript (RFC 8448 §4
-vector-proven), surfaces NewSessionTicket events, and produces a caller-storable
-SessionTicket (identity + PSK + age/lifetime via ArrayBuffer); the client emits
-a PSK ClientHello (pre_shared_key + psk_key_exchange_modes + binder over the
-truncated transcript prefix); after HelloRetryRequest, ClientHello2 retains a
-compatible PSK and both roles recompute/verify its binder over the retry
-transcript; the server verifies binders via a caller-owned PskLookup and selects
-an identity; both sides use the PSK as the early secret
-in the key schedule (psk_dhe_ke, PSK + ECDHE). An in-memory PSK resumption
-handshake completes to connected with an application-data round trip, and
-OpenSSL resumption interop is CI-gated: a ztls client captures an NST from
-openssl s_server on connection 1 and resumes with it on connection 2. The
-client state machine handles the PSK resumption flight (EE + Finished, no
-server Certificate/CertificateVerify). 0-RTT early data is implemented: the
-client can offer early_data + derive the client_early_traffic_secret and send
+enforced). PSK/session resumption is implemented (#110): both roles derive the
+resumption_master_secret over the live transcript through client Finished. The
+server exposes explicit allocation-free ticket preparation and emission with an
+engine-owned unique nonce, caller-supplied fresh random ticket_age_add, a
+seven-day lifetime limit, one ticket per record, and a 32-ticket per-connection
+server issuance bound. The caller owns opaque identity encoding, persistence,
+expiry, rotation, replay policy, resumption-chain limits, and any client-auth
+continuity; v1 server-issued tickets do not advertise 0-RTT. The client
+surfaces
+NewSessionTicket events, produces a caller-storable SessionTicket (identity +
+PSK + age/lifetime via ArrayBuffer), and emits a PSK ClientHello
+(pre_shared_key + psk_key_exchange_modes + binder over the truncated transcript
+prefix). After HelloRetryRequest, ClientHello2 retains a compatible PSK and both
+roles recompute/verify its binder over the retry transcript; the server verifies
+binders via a caller-owned PskLookup and selects an identity; both sides use the
+PSK as the early secret in the key schedule (psk_dhe_ke, PSK + ECDHE). In-memory
+tests cover issuance, matching client/server PSKs, resumption, renewal, and
+client-auth transcript binding. The repository's OpenSSL-provisioned CI gates
+resumption interop in both directions: ztls resumes a ticket from openssl
+s_server, and openssl s_client resumes a ticket issued by ztls. The client and
+server state machines handle the PSK resumption flight (EE + Finished, no server
+Certificate/CertificateVerify). 0-RTT early data is implemented: the client can
+offer early_data + derive the client_early_traffic_secret and send
 0-RTT data (sendEarlyData); the server derives the early traffic key from the
 selected PSK + ClientHello transcript and decrypts 0-RTT records, enforcing
 max_early_data_size. The server emits the early_data extension in
@@ -201,8 +208,10 @@ the client's EndOfEarlyData with early_rx before the client Finished, and
 rejects its absence with unexpected_message. The server declines 0-RTT when
 the selected PSK's max_early_data_size is null, omitting early_data from EE;
 the client detects this, clears early_tx, and proceeds without EndOfEarlyData.
-Reject-path tests cover max_early_data_size exceeded, no-PSK-selected early
-data, server-declined 0-RTT, and client rejection of server-sent EndOfEarlyData.
+A server that declines after early records are already in flight still aborts
+instead of applying RFC 8446 §4.2.10's bounded skip strategy (#111). Reject-path
+tests cover max_early_data_size exceeded, no-PSK-selected early data,
+server-declined 0-RTT, and client rejection of server-sent EndOfEarlyData.
 0-RTT is disabled by default (offer_early_data=false) and the caller is
 responsible for replay-safe policy — 0-RTT data is not forward-secret and can
 be replayed by a network attacker; no anti-replay cache exists in ztls (the
@@ -464,7 +473,10 @@ data to openssl s_server and receives the HTTP response.
     (key preserved).
   - H12 — the client post-handshake flood counter now tracks KeyUpdate and
     NewSessionTicket separately (limits 16 / 32), both reset on application data,
-    so a ticket-heavy server no longer false-trips the KeyUpdate limit. A
+    so a ticket-heavy server no longer false-trips the KeyUpdate limit. Server
+    issuance has its own 32-ticket per-connection bound and emits exactly one
+    ticket per record.
+    A
     cross-family council endorsed this split and rejected the audit's original
     "don't reset on app data" (which would cap a connection at 16 KeyUpdates for
     life — OpenSSL removed exactly such a cap).
@@ -1296,7 +1308,7 @@ in sync without re-running the capture.
 - **The Zig 0.16/Linux kTLS integration is proven for its documented
   surface.** Core still exports copied traffic-key snapshots and the three
   Linux cipher layouts through `RecordLayer.ktlsInfo()` and `ztls.ktls`.
-  `RecordBuffer.isEmpty()`, `hasPendingWrite()`, and
+  `RecordBuffer.isEmpty()`, `hasPendingWrite()`, `hasPendingTicket()`, and
   `hasPendingKeyUpdateResponse()` make the one-way activation preconditions
   explicit and prevent application data from overtaking an RFC 8446 §4.6.3
   response. `ClientHandshake.receiveKtlsRecord()` and
@@ -1307,8 +1319,10 @@ in sync without re-running the capture.
 
   `integrations/ztls-ktls` owns the immediate export → pack → `setsockopt`
   sequence and zeroes every local key copy. Activation rejects read-ahead bytes,
-  pending writes, and unanswered KeyUpdate requests, and shuts down partial
-  installs. Because a userspace buffer cannot exclude ciphertext racing into
+  prepared tickets, pending writes, and unanswered KeyUpdate requests, and shuts
+  down partial installs. Successful server activation latches TX ownership in
+  the engine so later userspace NewSessionTicket emission fails with a typed
+  error. Because a userspace buffer cannot exclude ciphertext racing into
   the socket queue, the handoff contract also requires an application-level
   peer barrier; the live suite forces that ordering. The data plane uses
   `sendmsg`/`recvmsg` ancillary metadata (`TLS_SET_RECORD_TYPE` /
@@ -1323,8 +1337,9 @@ in sync without re-running the capture.
 
   The CI-wired loopback suite exercises all three ciphers, userspace-peer and
   both-kTLS-role paths, crossed live rekeys, empty application records,
-  proactive rekey after a coalesced NewSessionTicket, exact empty-buffer and
-  answered-KeyUpdate activation, two-record helper read-ahead drainage,
+  proactive rekey after a coalesced NewSessionTicket, exact empty-buffer,
+  flushed-ticket, and answered-KeyUpdate activation, two-record helper
+  read-ahead drainage,
   explicit close alerts, bare-FIN truncation,
   and bounded fragmented-KeyUpdate failure. It is green locally on Linux
   7.2.3/aarch64 with the `tls` module

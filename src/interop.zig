@@ -174,6 +174,20 @@ test "OpenSSL s_client interoperates with ztls server" {
     }
 }
 
+// RFC 8446 §4.6.1, §4.2.11 — OpenSSL stores a ztls-issued ticket on the first
+// connection and offers it on the second; the ztls server selects the PSK.
+test "OpenSSL s_client resumes with ztls server-issued ticket" {
+    var arena_allocator: heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_allocator.deinit();
+    const arena = arena_allocator.allocator();
+
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const dir = try tmpDirPath(arena, &tmp);
+    const session_path = try fs.path.join(arena, &.{ dir, "session.pem" });
+    try runServerResumptionSuite(arena, session_path, 16533);
+}
+
 // RFC 8446 §4.2.8.2, §7.4 — OpenSSL independently validates the ztls
 // secp384r1 ServerHello share and derives matching handshake/traffic keys.
 test "OpenSSL s_client interoperates with ztls P-384 server" {
@@ -961,6 +975,35 @@ const ServerArgs = struct {
     group: ?ztls.kex.NamedGroup = null,
 };
 
+const server_ticket_identity = "ztls-openssl-resumption";
+
+const ServerTicketState = struct {
+    psk: [48]u8 = @splat(0),
+    psk_len: u8 = 0,
+    cipher_suite: ztls.CipherSuite = .aes_128_gcm_sha256,
+    did_resume: bool = false,
+
+    fn lookup(context: *anyopaque, identity: []const u8) ?ztls.ServerHandshake.PskEntry {
+        const self: *ServerTicketState = @ptrCast(@alignCast(context));
+        if (!mem.eql(u8, identity, server_ticket_identity)) return null;
+        return .{
+            .psk = self.psk[0..self.psk_len],
+            .cipher_suite = self.cipher_suite,
+        };
+    }
+};
+
+const ServerTicketPhase = enum {
+    none,
+    issue,
+    reuse,
+};
+
+const ServerResumptionArgs = struct {
+    port: u16,
+    ticket: ServerTicketState = .{},
+};
+
 fn runServerSuite(arena: Allocator, suite: ServerSuite, port: u16) !void {
     var args: ServerArgs = .{ .port = port, .suite = suite.ztls_suite };
     const thread = try std.Thread.spawn(.{}, serverThread, .{&args});
@@ -978,6 +1021,38 @@ fn runServerSuite(arena: Allocator, suite: ServerSuite, port: u16) !void {
 
     if (!exitedZero(term)) return error.OpenSslClientFailed;
     if (!mem.containsAtLeast(u8, stdout_buf[0..n], 1, "hello")) return error.NoServerResponse;
+}
+
+fn runServerResumptionSuite(arena: Allocator, session_path: []const u8, port: u16) !void {
+    var args: ServerResumptionArgs = .{ .port = port };
+    defer std.crypto.secureZero(u8, &args.ticket.psk);
+    const thread = try std.Thread.spawn(.{}, resumptionServerThread, .{&args});
+
+    var first = try startClientSaveSession(arena, session_path, port);
+    defer killChild(&first);
+    try writeFileAll(first.stdin.?, "GET / HTTP/1.0\r\n\r\n");
+    closeFile(first.stdin.?);
+    first.stdin = null;
+    var stdout_buf: [4096]u8 = undefined;
+    const first_n = try readFileAll(first.stdout.?, &stdout_buf);
+    const first_term = try waitChild(&first);
+    if (!exitedZero(first_term)) return error.OpenSslClientFailed;
+    if (!mem.containsAtLeast(u8, stdout_buf[0..first_n], 1, "hello"))
+        return error.NoServerResponse;
+
+    var second = try startClientReuseSession(arena, session_path, port);
+    defer killChild(&second);
+    try writeFileAll(second.stdin.?, "GET / HTTP/1.0\r\n\r\n");
+    closeFile(second.stdin.?);
+    second.stdin = null;
+    const second_n = try readFileAll(second.stdout.?, &stdout_buf);
+    const second_term = try waitChild(&second);
+    thread.join();
+
+    if (!exitedZero(second_term)) return error.OpenSslClientFailed;
+    if (!mem.containsAtLeast(u8, stdout_buf[0..second_n], 1, "hello"))
+        return error.NoServerResponse;
+    if (!args.ticket.did_resume) return error.OpenSslClientDidNotResume;
 }
 
 fn runServerGroup(arena: Allocator, group: InteropGroup, port: u16) !void {
@@ -1030,6 +1105,60 @@ fn startClient(arena: Allocator, suite: []const u8, port: u16) !Child {
     return child;
 }
 
+fn startClientSaveSession(
+    arena: Allocator,
+    session_path: []const u8,
+    port: u16,
+) !Child {
+    const port_str = try std.fmt.allocPrint(arena, "{d}", .{port});
+    const connect_to = try std.fmt.allocPrint(arena, "{s}:{s}", .{ host, port_str });
+    const argv = &.{
+        "openssl",                "s_client",
+        "-tls1_3",                "-connect",
+        connect_to,               "-ciphersuites",
+        "TLS_AES_128_GCM_SHA256", "-alpn",
+        alpn_protocol,            "-sess_out",
+        session_path,             "-quiet",
+    };
+    return spawnClient(arena, argv);
+}
+
+fn startClientReuseSession(
+    arena: Allocator,
+    session_path: []const u8,
+    port: u16,
+) !Child {
+    const port_str = try std.fmt.allocPrint(arena, "{d}", .{port});
+    const connect_to = try std.fmt.allocPrint(arena, "{s}:{s}", .{ host, port_str });
+    const argv = &.{
+        "openssl",                "s_client",
+        "-tls1_3",                "-connect",
+        connect_to,               "-ciphersuites",
+        "TLS_AES_128_GCM_SHA256", "-alpn",
+        alpn_protocol,            "-sess_in",
+        session_path,             "-quiet",
+    };
+    return spawnClient(arena, argv);
+}
+
+fn spawnClient(arena: Allocator, argv: []const []const u8) !Child {
+    if (comptime is_zig_16) {
+        return std.process.spawn(testing.io, .{
+            .argv = argv,
+            .stdin = .pipe,
+            .stdout = .pipe,
+            .stderr = .ignore,
+        });
+    }
+
+    var child = Child.init(argv, arena);
+    child.stdin_behavior = .Pipe;
+    child.stdout_behavior = .Pipe;
+    child.stderr_behavior = .Ignore;
+    try child.spawn();
+    return child;
+}
+
 fn startClientWithGroup(arena: Allocator, group: InteropGroup, port: u16) !Child {
     const port_str = try std.fmt.allocPrint(arena, "{d}", .{port});
     const connect_to = try std.fmt.allocPrint(arena, "{s}:{s}", .{ host, port_str });
@@ -1064,13 +1193,31 @@ fn serverThread(args: *const ServerArgs) !void {
     defer deinitServer(&server);
     const stream = try accept(&server);
     defer closeStream(stream);
-    try serve(stream, args.suite, args.group);
+    try serve(stream, args.suite, args.group, null, .none);
+}
+
+fn resumptionServerThread(args: *ServerResumptionArgs) !void {
+    const addr = try parseAddress(host, args.port);
+    var server = try listen(addr);
+    defer deinitServer(&server);
+    {
+        const stream = try accept(&server);
+        defer closeStream(stream);
+        try serve(stream, .aes_128_gcm_sha256, null, &args.ticket, .issue);
+    }
+    {
+        const stream = try accept(&server);
+        defer closeStream(stream);
+        try serve(stream, .aes_128_gcm_sha256, null, &args.ticket, .reuse);
+    }
 }
 
 fn serve(
     stream: Stream,
     suite: ztls.CipherSuite,
     group: ?ztls.kex.NamedGroup,
+    ticket_state: ?*ServerTicketState,
+    ticket_phase: ServerTicketPhase,
 ) !void {
     const server_keypair: ztls.x25519.KeyPair = .generate();
     var server_random: ztls.Random = .empty;
@@ -1087,6 +1234,10 @@ fn serve(
     var hs: ztls.ServerHandshake = .init(.{
         .keypairs = keypairs,
         .random = server_random,
+        .psk_lookup = if (ticket_phase == .reuse) .{
+            .context = ticket_state.?,
+            .lookup = ServerTicketState.lookup,
+        } else null,
         .hybrid_groups = if (hybrid_group != null) &groups else &.{},
     });
     defer hs.deinit();
@@ -1125,19 +1276,38 @@ fn serve(
                     }
                 },
                 .none => {},
-                .application_data => |data| {
-                    if (!hs.isConnected()) return error.UnexpectedDuringHandshake;
-                    return sendResponse(stream, &hs, data, &out);
-                },
+                .application_data => return error.UnexpectedDuringHandshake,
                 .closed => return error.UnexpectedDuringHandshake,
             }
+            if (hs.isConnected()) break;
         }
     }
 
+    if (ticket_state) |state| switch (ticket_phase) {
+        .none => {},
+        .issue => {
+            var ticket_psk = try hs.deriveTicketPsk();
+            defer ticket_psk.secureZero();
+            @memcpy(state.psk[0..ticket_psk.psk.len], ticket_psk.psk.constSlice());
+            state.psk_len = ticket_psk.psk.len;
+            state.cipher_suite = ticket_psk.cipher_suite;
+            var age_add_bytes: [4]u8 = undefined;
+            entropy.fill(&age_add_bytes);
+            const ticket_record = try hs.sendNewSessionTicket(
+                &ticket_psk,
+                .{
+                    .ticket_lifetime = 3600,
+                    .ticket_age_add = mem.readInt(u32, &age_add_bytes, .big),
+                    .ticket = server_ticket_identity,
+                },
+                &out,
+            );
+            try writeAll(stream, ticket_record);
+            hs.completeWrite();
+        },
+        .reuse => state.did_resume = hs.isResumed(),
+    };
     while (true) {
-        const n = try read(stream, rb.writable());
-        if (n == 0) return error.ClientClosed;
-        rb.advance(n);
         while (try rb.next()) |record| switch (try hs.handleRecord(record, &out)) {
             .application_data => |data| return sendResponse(stream, &hs, data, &out),
             .write => |w| {
@@ -1153,6 +1323,9 @@ fn serve(
             .closed => return,
             .none => {},
         };
+        const n = try read(stream, rb.writable());
+        if (n == 0) return error.ClientClosed;
+        rb.advance(n);
     }
 }
 

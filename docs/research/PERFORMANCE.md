@@ -155,8 +155,8 @@ than papered over.
 - Allocation: zero ztls-owned heap allocation. `deinit` performs secure-zeroing
   of AEAD contexts, transcript state, and key material (no heap free) inside the
   timed loop.
-- Ticket/resumption: disabled (ztls does not implement resumption; NewSessionTicket
-  is parsed and discarded).
+- Ticket/resumption: disabled in this benchmark harness; every iteration runs a
+  full handshake and neither issues a ticket nor offers a PSK.
 - ALPN/SNI: SNI hostname string is set (`ztls.server.test`) but no ALPN
   negotiation in the benchmark harness.
 - Measurement shape: Go-bench-style per-iteration timing via `b.loop()`,

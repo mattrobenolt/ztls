@@ -31,7 +31,8 @@ consumer wiring.
 The transition to `TLS_RX` is one-way. Before activation:
 
 1. Drive the handshake to `isConnected()`.
-2. Write every record returned by the engine and call `completeWrite()`.
+2. Emit or discard any prepared server `NewSessionTicket`, write every record
+   returned by the engine, and call `completeWrite()` after each full write.
 3. Keep parsing every complete record already read from the socket. Deliver or
    retain any application plaintext encountered after Finished.
 4. If the record buffer holds a partial record, read until it is complete and
@@ -57,8 +58,9 @@ var connection = try ztls_ktls.Server.activate(
 );
 ```
 
-`activate` rejects a pending userspace write, an unanswered peer KeyUpdate
-request, or any buffered ciphertext. It exports each `KtlsInfo` immediately
+`activate` rejects a pending userspace write, a prepared-but-unemitted server
+ticket, an unanswered peer KeyUpdate request, or any buffered ciphertext. It
+exports each `KtlsInfo` immediately
 before `setsockopt`, zeroes local copies, and never stores key snapshots. If
 activation partially installs kTLS
 and then fails, it shuts down the socket; the caller must close the descriptor

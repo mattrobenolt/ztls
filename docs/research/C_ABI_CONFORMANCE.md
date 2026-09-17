@@ -173,16 +173,14 @@ flatten that to `ztls_event.data`/`data_len` without losing the response
 slice or the implicit epoch transition. Round-trip equivalence through
 that flattening is a new conformance row the Zig harness does not check.
 
-**PSK / 0-RTT scope extends only if it lands.** #30 marks resumption/PSK
-and 0-RTT as out of scope, so PSK and 0-RTT inherit the existing
-`expected_skipped` patterns (`*SUT does not support PSK handshakes*`,
-`*Server does not issue Session Tickets*`, `*0Rtt*`, the server-side
-EarlyData row, `*PSKModeExtension is not supported*`). If PSK or 0-RTT
-ships post-#30 through additional `ztls_*` verbs or an extended
-header, the conformance surface picks up additional skip-list removals,
-not additional skips. A C-ABI-specific failure on those rows stays
-`unexpected_fail` until the underlying feature and the C ABI verb both
-land and a strict capture is re-run.
+**Core PSK / 0-RTT support does not implicitly extend the C ABI.** The current
+C header has no ticket, PSK-lookup, or early-data verbs, so its harness retains
+the corresponding `expected_skipped` patterns (`*SUT does not support PSK
+handshakes*`, `*Server does not issue Session Tickets*`, `*0Rtt*`, the
+server-side EarlyData row, `*PSKModeExtension is not supported*`). Extending the
+C header would require explicit ABI design, matching conformance coverage, and
+skip-list removals. A C-ABI-specific failure on those rows stays
+`unexpected_fail` until both the C ABI verb and a strict capture land.
 
 ## What a C harness does not prove
 

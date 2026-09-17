@@ -31,8 +31,10 @@ The current threat model covers the implemented TLS 1.3 surface:
 - 0-RTT early data with EndOfEarlyData both directions and OpenSSL interop
   CI-gated; anti-replay is caller-owned (formerly #3).
 - Application data, alerts, `close_notify`, and KeyUpdate in both directions.
-- NewSessionTicket is parsed, surfaces an `early_data` `max_early_data_size`,
-  and feeds the resumption-decision surface (formerly #2).
+- NewSessionTicket is parsed by clients and emitted explicitly by servers.
+  Clients surface an `early_data` `max_early_data_size`; v1 server issuance does
+  not advertise early data. Ticket identity, persistence, rotation, expiry,
+  replay handling, and client-auth continuity remain caller policy.
 - P-521, FFDHE, and named groups beyond the documented classical and RFC 10024
   set remain outside the current supported surface. Extension behavior beyond
   the supported surface is tracked by the feature issue that introduces it.

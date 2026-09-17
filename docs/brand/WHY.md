@@ -54,9 +54,10 @@ Being honest about this is the whole brand, so here it is straight:
 - **A drop-in OpenSSL replacement.** ztls does the TLS state machine. It does
   not manage sockets, load OS trust stores, or hand you a `connect()`. You write
   the drive loop. The examples show how, but it's your code.
-- **The full TLS feature set.** Server auth works today. Client certificates,
-  session resumption, 0-RTT, and HelloRetryRequest are tracked as open issues,
-  not shipped.
+- **The full TLS feature set.** ztls intentionally supports a bounded TLS 1.3
+  surface rather than every legacy or optional feature. See
+  [`PRODUCTION_READINESS.md`](../../PRODUCTION_READINESS.md) for the canonical
+  supported surface and remaining gaps.
 - **A guaranteed-stable API.** Signatures move. Pin a commit if you build on it.
 
 If you need a mature, audited, drop-everything-in TLS stack right now, use

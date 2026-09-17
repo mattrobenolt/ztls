@@ -362,10 +362,10 @@ Every error path is tested. Fuzzing is not optional.
   protocol fuzzer. Runs Python scripts against a live server. The active TLS 1.3
   suite lives in `conformance/` and runs from the root with
   `just conformance/tlsfuzzer`.
-- **TLS-Anvil** (https://github.com/tls-attacker/TLS-Anvil) — ~408 RFC-based
-  client and server tests for TLS 1.3. Java/JUnit based. Useful for broad future
-  matrix coverage, especially once ztls implements HRR, PSK/resumption, 0-RTT,
-  or client auth.
+- **TLS-Anvil** (https://github.com/tls-attacker/TLS-Anvil) — RFC-based client
+  and server tests for TLS 1.3. Java/JUnit based. Useful for broad ongoing
+  matrix coverage across HRR, PSK/resumption, 0-RTT, client authentication, and
+  post-handshake behavior.
 - **Wycheproof** (https://github.com/C2SP/wycheproof) — integration vectors at
   the libcrypto boundary (AEAD tag/AAD/nonce handling, X25519 identity-element
   rejection, ECDSA DER verification), not proof that ztls implements primitive
@@ -389,11 +389,14 @@ See `docs/research/PERFORMANCE.md` for the benchmark methodology and prior-art n
    (caller allocates, engine holds slice), or does the caller pass a fresh
    buffer on every call? BearSSL does the former. Probably right.
 
-3. **0-RTT scope**: Skip entirely for now. Security properties are subtle and
-   it adds complexity to the state machine. Add later.
+3. ~~**0-RTT scope**~~ — settled boundary: replay and anti-replay policy remain
+   caller-owned. Server-issued v1 tickets do not advertise `early_data`; see
+   `PRODUCTION_READINESS.md` for the current implementation status and gaps.
 
-4. **Session tickets / PSK resumption**: Useful for performance but not needed
-   for a correct implementation. Phase 2.
+4. ~~**Session tickets / PSK resumption**~~ — settled shape: ticket identities,
+   persistence, expiration, rotation, replay policy, and client-auth continuity
+   remain caller-owned; ztls owns allocation-free protocol derivation and wire
+   state. See `PRODUCTION_READINESS.md` for status.
 
 5. **Certificate validation**: Full X.509 path validation remains caller-policy
    driven. libcrypto-family backends may provide signature primitives and future
