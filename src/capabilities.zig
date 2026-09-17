@@ -6,27 +6,15 @@ const backend = @import("crypto/backend.zig");
 const kex = @import("kex.zig");
 const NamedGroup = kex.NamedGroup;
 
-pub const Backend = enum {
-    openssl,
-    @"aws-lc",
-    boringssl,
-    @"openssl-fips",
-    @"aws-lc-fips",
-};
+pub const Backend = backend.Backend;
 
 pub const Role = enum { client, server };
 
-/// Backend identity selected by `-Dcrypto-backend`.
-pub const active_backend: Backend = switch (backend.active) {
-    .openssl => .openssl,
-    .@"aws-lc" => .@"aws-lc",
-    .boringssl => .boringssl,
-    .@"openssl-fips" => .@"openssl-fips",
-    .@"aws-lc-fips" => .@"aws-lc-fips",
-};
+/// Backend identity inferred from the selected libcrypto headers and FIPS policy.
+pub const active_backend: Backend = backend.active;
 
 /// True for a compile-time FIPS capability identity.
-pub const is_fips = backend.is_fips;
+pub const is_fips: bool = backend.is_fips;
 
 /// RFC 10024 groups that ztls implements. Backend support remains selectable.
 pub const hybrid_groups = [_]NamedGroup{

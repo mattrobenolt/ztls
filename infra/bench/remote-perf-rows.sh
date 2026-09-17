@@ -44,7 +44,7 @@ Run the #31 row-oriented perf/disassembly evidence set on a remote Linux host.
 This script expects to run inside the repo's nix develop .#openssl shell.
 
 Options:
-  --crypto-backend BACKEND  ztls backend: openssl or aws-lc (default: openssl)
+  --crypto-backend BACKEND  ztls backend: openssl, aws-lc, or boringssl (default: openssl)
   --count N                benchmark outer sample count for Zig/libssl rows (default: 5)
   --benchtime DURATION     Zig benchmark duration (default: 500ms)
   --samples N              rustls sample count (default: count)
@@ -64,7 +64,7 @@ Default rows:
 USAGE
 }
 
-crypto_backend="${ZTLS_CRYPTO_BACKEND:-openssl}"
+crypto_backend="openssl"
 count=5
 benchtime=500ms
 samples=""

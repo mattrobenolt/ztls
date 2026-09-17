@@ -6,7 +6,7 @@ log() {
   printf '[%s] bench-remote-host: %s\n' "$(date -u +%H:%M:%S)" "$*" >&2
 }
 
-crypto_backend="${ZTLS_CRYPTO_BACKEND:-openssl}"
+crypto_backend="openssl"
 allow_dirty=false
 count=5
 benchtime=500ms

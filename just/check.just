@@ -18,12 +18,12 @@ check-backend-aws-lc:
     cache_dir=$(mktemp -d)
     log=$(mktemp)
     trap 'rm -rf "$cache_dir" "$log"' EXIT
-    PKG_CONFIG_PATH="$aws_lc_pkg_config_path" zig build test --summary all --verbose --cache-dir "$cache_dir" -Dcrypto-backend=aws-lc 2>&1 | tee "$log"
-    PKG_CONFIG_PATH="$aws_lc_pkg_config_path" zig build bench-bin --summary all --verbose --cache-dir "$cache_dir" -Dcrypto-backend=aws-lc 2>&1 | tee -a "$log"
-    PKG_CONFIG_PATH="$aws_lc_pkg_config_path" zig build bench --cache-dir "$cache_dir" -Dcrypto-backend=aws-lc -- --filter 'BenchmarkRecordEncryptPrepared/TLS_AES_128_GCM_SHA256/1350' --count=1 --benchtime=1x --no-env
-    PKG_CONFIG_PATH="$aws_lc_pkg_config_path" zig build example-in_memory_handshake --summary all --cache-dir "$cache_dir" -Dcrypto-backend=aws-lc
-    (cd conformance && PKG_CONFIG_PATH="$aws_lc_pkg_config_path" ZTLS_CRYPTO_BACKEND=aws-lc zig build --summary all --verbose --cache-dir "$cache_dir/conformance" -Dcrypto-backend=aws-lc) 2>&1 | tee -a "$log"
-    (cd conformance && PKG_CONFIG_PATH="$aws_lc_pkg_config_path" ZTLS_CRYPTO_BACKEND=aws-lc uv run pytest -q tests/test_tls13.py)
+    PKG_CONFIG_PATH="$aws_lc_pkg_config_path" zig build test --summary all --verbose --cache-dir "$cache_dir" 2>&1 | tee "$log"
+    PKG_CONFIG_PATH="$aws_lc_pkg_config_path" zig build bench-bin --summary all --verbose --cache-dir "$cache_dir" 2>&1 | tee -a "$log"
+    PKG_CONFIG_PATH="$aws_lc_pkg_config_path" zig build bench --cache-dir "$cache_dir" -- --filter 'BenchmarkRecordEncryptPrepared/TLS_AES_128_GCM_SHA256/1350' --count=1 --benchtime=1x --no-env
+    PKG_CONFIG_PATH="$aws_lc_pkg_config_path" zig build example-in_memory_handshake --summary all --cache-dir "$cache_dir"
+    (cd conformance && PKG_CONFIG_PATH="$aws_lc_pkg_config_path" zig build --summary all --verbose --cache-dir "$cache_dir/conformance") 2>&1 | tee -a "$log"
+    (cd conformance && PKG_CONFIG_PATH="$aws_lc_pkg_config_path" uv run pytest -q tests/test_tls13.py)
     grep -F -- "-I$aws_lc_include_dir" "$log" >/dev/null || {
         echo "AWS-LC include path was not used: $aws_lc_include_dir" >&2
         exit 1
@@ -48,12 +48,12 @@ check-backend-boringssl:
     cache_dir=$(mktemp -d)
     log=$(mktemp)
     trap 'rm -rf "$cache_dir" "$log"' EXIT
-    PKG_CONFIG_PATH="$boringssl_pkg_config_path" zig build test --summary all --verbose --cache-dir "$cache_dir" -Dcrypto-backend=boringssl 2>&1 | tee "$log"
-    PKG_CONFIG_PATH="$boringssl_pkg_config_path" zig build bench-bin --summary all --verbose --cache-dir "$cache_dir" -Dcrypto-backend=boringssl 2>&1 | tee -a "$log"
-    PKG_CONFIG_PATH="$boringssl_pkg_config_path" zig build bench --cache-dir "$cache_dir" -Dcrypto-backend=boringssl -- --filter 'BenchmarkRecordEncryptPrepared/TLS_AES_128_GCM_SHA256/1350' --count=1 --benchtime=1x --no-env
-    PKG_CONFIG_PATH="$boringssl_pkg_config_path" zig build example-in_memory_handshake --summary all --cache-dir "$cache_dir" -Dcrypto-backend=boringssl
-    (cd conformance && PKG_CONFIG_PATH="$boringssl_pkg_config_path" ZTLS_CRYPTO_BACKEND=boringssl zig build --summary all --verbose --cache-dir "$cache_dir/conformance" -Dcrypto-backend=boringssl) 2>&1 | tee -a "$log"
-    (cd conformance && PKG_CONFIG_PATH="$boringssl_pkg_config_path" ZTLS_CRYPTO_BACKEND=boringssl uv run pytest -q tests/test_tls13.py)
+    PKG_CONFIG_PATH="$boringssl_pkg_config_path" zig build test --summary all --verbose --cache-dir "$cache_dir" 2>&1 | tee "$log"
+    PKG_CONFIG_PATH="$boringssl_pkg_config_path" zig build bench-bin --summary all --verbose --cache-dir "$cache_dir" 2>&1 | tee -a "$log"
+    PKG_CONFIG_PATH="$boringssl_pkg_config_path" zig build bench --cache-dir "$cache_dir" -- --filter 'BenchmarkRecordEncryptPrepared/TLS_AES_128_GCM_SHA256/1350' --count=1 --benchtime=1x --no-env
+    PKG_CONFIG_PATH="$boringssl_pkg_config_path" zig build example-in_memory_handshake --summary all --cache-dir "$cache_dir"
+    (cd conformance && PKG_CONFIG_PATH="$boringssl_pkg_config_path" zig build --summary all --verbose --cache-dir "$cache_dir/conformance") 2>&1 | tee -a "$log"
+    (cd conformance && PKG_CONFIG_PATH="$boringssl_pkg_config_path" uv run pytest -q tests/test_tls13.py)
     grep -F -- "-I$boringssl_include_dir" "$log" >/dev/null || {
         echo "BoringSSL include path was not used: $boringssl_include_dir" >&2
         exit 1
@@ -62,6 +62,56 @@ check-backend-boringssl:
         echo "BoringSSL library path was not used: $boringssl_lib_dir" >&2
         exit 1
     }
+
+[doc("Run AWS-LC and BoringSSL tests under Zig 0.16")]
+[group("check")]
+check-backends-0_16:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    case "$(zig version)" in
+        0.16.*) ;;
+        *) echo "check-backends-0_16 requires Zig 0.16" >&2; exit 1 ;;
+    esac
+    aws_lc_pkg_config_path="${ZTLS_AWS_LC_PKG_CONFIG_PATH:-}"
+    boringssl_pkg_config_path="${ZTLS_BORINGSSL_PKG_CONFIG_PATH:-}"
+    if [ -z "$aws_lc_pkg_config_path" ] || [ -z "$boringssl_pkg_config_path" ]; then
+        echo "run inside the ztls Zig 0.16 Nix devshell" >&2
+        exit 1
+    fi
+    cache_dir=$(mktemp -d)
+    global_cache_dir=$(mktemp -d)
+    trap 'rm -rf "$cache_dir" "$global_cache_dir"' EXIT
+    PKG_CONFIG_PATH="$aws_lc_pkg_config_path" scripts/assert-libcrypto-family.sh aws-lc
+    ZIG_GLOBAL_CACHE_DIR="$global_cache_dir" PKG_CONFIG_PATH="$aws_lc_pkg_config_path" zig build test --summary all --cache-dir "$cache_dir/aws-lc"
+    PKG_CONFIG_PATH="$boringssl_pkg_config_path" scripts/assert-libcrypto-family.sh boringssl
+    ZIG_GLOBAL_CACHE_DIR="$global_cache_dir" PKG_CONFIG_PATH="$boringssl_pkg_config_path" zig build test --summary all --cache-dir "$cache_dir/boringssl"
+
+[doc("Compile explicit FIPS identities and reject BoringSSL FIPS")]
+[group("check")]
+check-fips-builds:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    aws_lc_pkg_config_path="${ZTLS_AWS_LC_PKG_CONFIG_PATH:-}"
+    boringssl_pkg_config_path="${ZTLS_BORINGSSL_PKG_CONFIG_PATH:-}"
+    if [ -z "$aws_lc_pkg_config_path" ] || [ -z "$boringssl_pkg_config_path" ]; then
+        echo "run inside a ztls Nix devshell" >&2
+        exit 1
+    fi
+    cache_dir=$(mktemp -d)
+    global_cache_dir=$(mktemp -d)
+    log=$(mktemp)
+    trap 'rm -rf "$cache_dir" "$global_cache_dir" "$log"' EXIT
+    ZIG_GLOBAL_CACHE_DIR="$global_cache_dir" zig build test-bin -Dcrypto-fips=true --cache-dir "$cache_dir/openssl"
+    ZIG_GLOBAL_CACHE_DIR="$global_cache_dir" PKG_CONFIG_PATH="$aws_lc_pkg_config_path" zig build test-bin -Dcrypto-fips=true --cache-dir "$cache_dir/aws-lc"
+    set +e
+    ZIG_GLOBAL_CACHE_DIR="$global_cache_dir" PKG_CONFIG_PATH="$boringssl_pkg_config_path" zig build test-bin -Dcrypto-fips=true --cache-dir "$cache_dir/boringssl" >"$log" 2>&1
+    status=$?
+    set -e
+    if [ "$status" -eq 0 ]; then
+        echo "BoringSSL accepted unsupported FIPS policy" >&2
+        exit 1
+    fi
+    grep -F -- '-Dcrypto-fips=true is unsupported with BoringSSL' "$log" >/dev/null
 
 [doc("Format all code")]
 [group("check")]

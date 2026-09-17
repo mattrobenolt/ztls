@@ -36,7 +36,7 @@ run_step() {
   fi
 }
 
-crypto_backend="${ZTLS_CRYPTO_BACKEND:-openssl}"
+crypto_backend="openssl"
 bench_args=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -91,24 +91,22 @@ elif [[ "${crypto_backend}" == "boringssl" ]]; then
   log "BoringSSL pkg-config path: ${boringssl_pkg_config_path}"
 fi
 
+case "${crypto_backend}" in
+  aws-lc) backend_pkg_config_path="${aws_lc_pkg_config_path}" ;;
+  boringssl) backend_pkg_config_path="${boringssl_pkg_config_path}" ;;
+  *) backend_pkg_config_path="${openssl_pkg_config_path}" ;;
+esac
+PKG_CONFIG_PATH="${backend_pkg_config_path}" \
+  scripts/assert-libcrypto-family.sh "${crypto_backend}"
+backend_lib_dir="$(PKG_CONFIG_PATH="${backend_pkg_config_path}" \
+  pkg-config --variable=libdir libcrypto)"
+
 zig_for_backend() {
-  case "${crypto_backend}" in
-    aws-lc)
-      PKG_CONFIG_PATH="${aws_lc_pkg_config_path}${PKG_CONFIG_PATH:+:${PKG_CONFIG_PATH}}" zig "$@"
-      ;;
-    boringssl)
-      PKG_CONFIG_PATH="${boringssl_pkg_config_path}${PKG_CONFIG_PATH:+:${PKG_CONFIG_PATH}}" zig "$@"
-      ;;
-    *)
-      PKG_CONFIG_PATH="${openssl_pkg_config_path}${PKG_CONFIG_PATH:+:${PKG_CONFIG_PATH}}" zig "$@"
-      ;;
-  esac
+  PKG_CONFIG_PATH="${backend_pkg_config_path}" zig "$@"
 }
 
 zig_for_openssl_baseline() {
-  PKG_CONFIG_PATH="${openssl_pkg_config_path}${PKG_CONFIG_PATH:+:${PKG_CONFIG_PATH}}" \
-    ZTLS_CRYPTO_BACKEND=openssl \
-    zig "$@"
+  PKG_CONFIG_PATH="${openssl_pkg_config_path}" zig "$@"
 }
 
 stamp="$(date -u +%Y%m%d-%H%M%S)"
@@ -174,9 +172,9 @@ run_rustls() {
 }
 
 run_step "build ztls benchmark binary (${crypto_backend})" \
-  zig_for_backend build -Dcrypto-backend="${crypto_backend}" bench-bin >/dev/null
+  zig_for_backend build bench-bin >/dev/null
 run_step "build OpenSSL EVP/libssl benchmark binaries" \
-  zig_for_openssl_baseline build -Dcrypto-backend=openssl bench-evp-bin bench-openssl-bin >/dev/null
+  zig_for_openssl_baseline build bench-evp-bin bench-openssl-bin >/dev/null
 
 linked_crypto="$(linked_library zig-out/bin/benchmark 'libcrypto' || true)"
 linked_evp_crypto="$(linked_library zig-out/bin/evp_bench 'libcrypto' || true)"
@@ -187,6 +185,7 @@ log "EVP linked libcrypto: ${linked_evp_crypto:-unknown}"
 log "libssl bench linked libcrypto: ${linked_libssl_crypto:-unknown}"
 log "libssl bench linked libssl: ${linked_libssl_ssl:-unknown}"
 
+assert_linked_under "ztls benchmark" "${linked_crypto}" "${backend_lib_dir}"
 assert_linked_under "OpenSSL EVP benchmark" "${linked_evp_crypto}" "${ZTLS_OPENSSL_LIB_DIR:-}"
 assert_linked_under "OpenSSL libssl benchmark crypto" "${linked_libssl_crypto}" "${ZTLS_OPENSSL_LIB_DIR:-}"
 assert_linked_under "OpenSSL libssl benchmark ssl" "${linked_libssl_ssl}" "${ZTLS_OPENSSL_LIB_DIR:-}"
@@ -262,11 +261,11 @@ assert_linked_under "OpenSSL libssl benchmark ssl" "${linked_libssl_ssl}" "${ZTL
 } > "${run_dir}/metadata.txt"
 
 run_step "run ztls benchmarks -> ${run_dir}/ztls.txt" \
-  zig_for_backend build -Dcrypto-backend="${crypto_backend}" bench -- "${bench_args[@]}" > "${run_dir}/ztls.txt"
+  zig_for_backend build bench -- "${bench_args[@]}" > "${run_dir}/ztls.txt"
 run_step "run OpenSSL EVP crypto-floor benchmarks -> ${run_dir}/evp.txt" \
-  zig_for_openssl_baseline build -Dcrypto-backend=openssl bench-evp -- "${bench_args[@]}" > "${run_dir}/evp.txt"
+  zig_for_openssl_baseline build bench-evp -- "${bench_args[@]}" > "${run_dir}/evp.txt"
 run_step "run OpenSSL libssl memory-BIO benchmarks -> ${run_dir}/libssl.txt" \
-  zig_for_openssl_baseline build -Dcrypto-backend=openssl bench-openssl -- "${bench_args[@]}" > "${run_dir}/libssl.txt"
+  zig_for_openssl_baseline build bench-openssl -- "${bench_args[@]}" > "${run_dir}/libssl.txt"
 run_step "run rustls benchmarks -> ${run_dir}/rustls.txt" \
   run_rustls "${bench_args[@]}"
 

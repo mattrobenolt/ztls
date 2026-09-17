@@ -66,8 +66,8 @@ pub const capabilities = struct {
     };
 };
 
-/// FIPS 140-3 narrowed capability table. The build option `aws-lc-fips`
-/// selects this table at compile time. The caller is responsible for ensuring
+/// FIPS 140-3 narrowed capability table. `-Dcrypto-fips=true` selects this
+/// table when AWS-LC headers are active. The caller is responsible for ensuring
 /// the linked AWS-LC libcrypto is actually a FIPS-validated build. No runtime
 /// provider probing is performed by ztls.
 pub const capabilities_fips = struct {

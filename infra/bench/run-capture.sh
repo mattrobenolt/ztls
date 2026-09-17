@@ -37,7 +37,7 @@ run_step() {
 }
 
 instance_types="${ZTLS_BENCH_INSTANCE_TYPES:-c7i.large}"
-crypto_backend="${ZTLS_CRYPTO_BACKEND:-openssl}"
+crypto_backend="openssl"
 count=5
 benchtime=500ms
 allow_dirty=false
@@ -56,7 +56,7 @@ capture under the OpenSSL devshell, pull results back, and write benchstat.
 
 Options:
   --instance-types LIST     comma/space-separated EC2 matrix (default: c7i.large)
-  --crypto-backend BACKEND  ztls backend: openssl or aws-lc (default: shell/default openssl)
+  --crypto-backend BACKEND  ztls backend: openssl, aws-lc, or boringssl (default: openssl)
   --count N                benchmark sample count (default: 5)
   --benchtime DURATION     Zig benchmark duration (default: 500ms)
   --allow-dirty            permit dirty local/remote worktrees for smoke/debug runs
@@ -128,9 +128,9 @@ while [[ $# -gt 0 ]]; do
 done
 
 case "${crypto_backend}" in
-  openssl|aws-lc) ;;
+  openssl|aws-lc|boringssl) ;;
   *)
-    echo "unsupported --crypto-backend=${crypto_backend}; expected openssl or aws-lc" >&2
+    echo "unsupported --crypto-backend=${crypto_backend}; expected openssl, aws-lc, or boringssl" >&2
     exit 2
     ;;
 esac

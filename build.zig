@@ -8,22 +8,6 @@ const bench_mod = @import("src/build/bench.zig");
 const examples_mod = @import("src/build/examples.zig");
 const tests = @import("src/build/tests.zig");
 
-/// libcrypto-family backend kind. Field names are the wire strings used on the
-/// CLI and in metadata, so @tagName round-trips to -Dcrypto-backend=... values.
-/// `openssl-fips` and `aws-lc-fips` are compile-time FIPS capability identities:
-/// they link the same libcrypto as their non-FIPS counterparts and narrow
-/// the advertised capability table at compile time. The build option declares FIPS
-/// intent; the caller/linker is responsible for ensuring the linked libcrypto is
-/// actually in FIPS mode (e.g. loading the OpenSSL FIPS provider or linking
-/// AWS-LC FIPS). No runtime provider probing is performed by ztls.
-pub const Backend = enum {
-    openssl,
-    @"aws-lc",
-    boringssl,
-    @"openssl-fips",
-    @"aws-lc-fips",
-};
-
 fn nativeTarget() Target.Query {
     var query: Target.Query = .{ .cpu_model = .native };
     // Zig's native CPU detection reports generic under some Apple-Silicon Linux
@@ -40,23 +24,11 @@ pub fn build(b: *Build) void {
         .default_target = nativeTarget(),
     });
     const optimize = b.standardOptimizeOption(.{});
-    const env_map = if (@hasField(@TypeOf(b.graph.*), "environ_map"))
-        b.graph.environ_map
-    else
-        b.graph.env_map;
-    const env_crypto_backend = env_map.get("ZTLS_CRYPTO_BACKEND") orelse "";
-    const crypto_backend_str = b.option(
-        []const u8,
-        "crypto-backend",
-        "libcrypto-family backend to compile: openssl, aws-lc, boringssl, " ++
-            "openssl-fips, aws-lc-fips",
-    ) orelse if (env_crypto_backend.len > 0) env_crypto_backend else "openssl";
-    const crypto_backend: Backend = std.meta.stringToEnum(Backend, crypto_backend_str) orelse
-        panic(
-            "unsupported -Dcrypto-backend={s}; supported: openssl, aws-lc, boringssl, " ++
-                "openssl-fips, aws-lc-fips",
-            .{crypto_backend_str},
-        );
+    const crypto_fips = b.option(
+        bool,
+        "crypto-fips",
+        "Narrow the inferred libcrypto backend to its FIPS capability identity",
+    ) orelse false;
     // Fuzz mode uses the default test runner, which speaks the server protocol
     // that `zig build test --fuzz` needs. ztest's `.mode = .simple` bypasses
     // that protocol, so it is only used for normal (non-fuzz) test runs.
@@ -64,7 +36,7 @@ pub fn build(b: *Build) void {
         b.option(bool, "fuzz", "Enable fuzzing (uses the default test runner)") orelse false;
 
     const build_options = b.addOptions();
-    build_options.addOption(Backend, "crypto_backend", crypto_backend);
+    build_options.addOption(bool, "crypto_fips", crypto_fips);
 
     const mod = b.addModule("ztls", .{
         .root_source_file = b.path("src/root.zig"),
@@ -185,11 +157,7 @@ pub fn build(b: *Build) void {
         .test_mod = test_mod,
         .fuzz = fuzz_mode,
         .ztest = ztest_dep,
-        // #88: the errq-alloc-check executable exists only on OpenSSL lanes
-        // (CRYPTO_set_mem_functions is absent from BoringSSL-family
-        // libcrypto).
-        .ztls_mod = if (crypto_backend == .openssl or
-            crypto_backend == .@"openssl-fips") mod else null,
+        .ztls_mod = mod,
         .target = target,
         .optimize = optimize,
     });

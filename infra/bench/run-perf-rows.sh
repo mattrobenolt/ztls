@@ -45,7 +45,7 @@ pull the result back under zig-out/perf/, and destroy the host by default.
 
 Options:
   --instance-type TYPE      EC2 instance type (default: c7i.2xlarge)
-  --crypto-backend BACKEND  ztls backend: openssl or aws-lc (default: openssl)
+  --crypto-backend BACKEND  ztls backend: openssl, aws-lc, or boringssl (default: openssl)
   --count N                benchmark outer sample count (default: 5)
   --benchtime DURATION     Zig benchmark duration (default: 500ms)
   --samples N              rustls sample count (default: count)
@@ -61,7 +61,7 @@ USAGE
 }
 
 instance_type="${ZTLS_BENCH_INSTANCE_TYPE:-c7i.2xlarge}"
-crypto_backend="${ZTLS_CRYPTO_BACKEND:-openssl}"
+crypto_backend="openssl"
 count=5
 benchtime=500ms
 samples=""
@@ -102,8 +102,8 @@ while [[ $# -gt 0 ]]; do
 done
 
 case "${crypto_backend}" in
-  openssl|aws-lc) ;;
-  *) echo "unsupported --crypto-backend=${crypto_backend}; expected openssl or aws-lc" >&2; exit 2 ;;
+  openssl|aws-lc|boringssl) ;;
+  *) echo "unsupported --crypto-backend=${crypto_backend}; expected openssl, aws-lc, or boringssl" >&2; exit 2 ;;
 esac
 
 if [[ -z "${samples}" ]]; then

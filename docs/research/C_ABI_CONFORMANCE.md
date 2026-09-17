@@ -65,11 +65,10 @@ The harness can be one of:
 
 The capture must reproduce on three libcrypto-family backends:
 
-- OpenSSL (`-Dcrypto-backend=openssl`, the default), the same backend the
-  Zig harness capture was taken on;
-- AWS-LC (`-Dcrypto-backend=aws-lc`, `check-backend-aws-lc` recipe path);
-- BoringSSL (`-Dcrypto-backend=boringssl`, `.#boringssl` devshell and the
-  `just/check.just:check-backend-boringssl` PKG_CONFIG path). The same
+- OpenSSL, through the default `libcrypto.pc` and headers;
+- AWS-LC, through the `check-backend-aws-lc` package path;
+- BoringSSL, through the `.#boringssl` devshell and the
+  `just/check.just:check-backend-boringssl` package path. The same
   backend-bind surfaces as a layout leak between the C ABI and one backend;
   the same backends are what ztls targets for production.
 
@@ -225,12 +224,10 @@ made on this evidence.
 ## BoGo deferral: re-evaluation trigger note
 
 `docs/research/BOGO_DEFERRED.md` lists four re-open criteria for the
-BoringSSL BoGo runner integration. The first — "BoringSSL becomes an
-actual `crypto-backend` target in `PROVIDER_INTERFACE.md`, with a
-matching `flake.nix` derivation or pinned dependency path" — has been
-met:
+BoringSSL BoGo runner integration. The first criterion requires a BoringSSL
+backend with a matching `flake.nix` package path. That criterion is met:
 
-- `zig build -Dcrypto-backend=boringssl` produces a ztls binary;
+- BoringSSL headers make `zig build` produce a BoringSSL-backed ztls binary.
   `just/check.just:check-backend-boringssl` covers the AWS-LC and
   BoringSSL parity path, including the conformance subproject build and
   the local pytest tlsfuzzer smoke.

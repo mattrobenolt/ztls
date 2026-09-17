@@ -115,10 +115,10 @@ const ztls_dep = b.dependency("ztls", .{
 const ztls_xev = ztls_dep.module("ztls_xev");
 ```
 
-All imported modules share that dependency's core crypto backend. Add
-`.@"crypto-backend" = "aws-lc"` (or `"boringssl"`) to the same dependency
-options when selecting a non-default provider, and provide its `libcrypto.pc`
-through `PKG_CONFIG_PATH`.
+All imported modules use the same libcrypto headers and library. Select them
+through `PKG_CONFIG_PATH`. The compiler infers OpenSSL, AWS-LC, or BoringSSL
+from the selected headers. Add `.@"crypto-fips" = true` only to narrow OpenSSL
+or AWS-LC capabilities for an explicitly configured FIPS build.
 
 Importing an integration under Zig 0.15 reports its Zig 0.16 requirement.
 Importing `ztls_xev` without `.xev = true` reports the missing opt-in. The three
@@ -406,7 +406,7 @@ After the handshake, `selectedAlpnProtocol()` returns the negotiated protocol (o
 
 Hybrid groups are opt-in. The non-FIPS OpenSSL, AWS-LC, and BoringSSL backends support all three RFC 10024 groups. The provider supplies pure ML-KEM operations. ztls owns group negotiation and classical-secret composition. FIPS backend identities advertise no hybrid groups.
 
-`ztls.capabilities.active_backend` identifies the selected backend. `ztls.capabilities.is_fips` reports compile-time FIPS narrowing. It does not prove the provider runtime mode. `supportsHybridGroup(role, group)` reports role support. Provider operations can still fail at runtime.
+`ztls.capabilities.active_backend` identifies the inferred backend and explicit FIPS policy. `ztls.capabilities.is_fips` reports compile-time FIPS narrowing. It does not prove the provider runtime mode. `supportsHybridGroup(role, group)` reports role support. Provider operations can still fail at runtime.
 
 Start with one group:
 

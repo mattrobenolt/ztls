@@ -52,7 +52,7 @@ The prior blocker around PEM/PKCS#8 key loading has been reduced by the libcrypt
 
 Lift this deferral and implement the vendored-runner path when any one of these is true:
 
-- A BoringSSL backend becomes an actual `crypto-backend` target in `PROVIDER_INTERFACE.md`, with a matching `flake.nix` derivation or pinned dependency path.
+- BoringSSL becomes an active backend through a matching `flake.nix` package path or pinned dependency path.
 - A BoGo-specific failure class is found against another TLS stack and cannot be reproduced through TLS-Anvil or tlsfuzzer; the issue must cite the upstream BoGo test or peer reproduction.
 - A downstream user or reviewer asks for BoGo specifically for cross-implementation coverage, FIPS/regulatory review, or BoringSSL compatibility.
 - TLS-Anvil client and both-endpoint coverage reach strict normalized evidence, leaving BoGo as second-source breadth rather than the first missing external-runner lane.

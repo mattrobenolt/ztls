@@ -19,12 +19,12 @@ example example *args:
 # The 0.16-only integrations under integrations/ are gated by `ci-0_16`, not
 # here: this lane runs Zig 0.15.2 and cannot build them at all.
 [doc("Run all CI gates")]
-ci: test check-backend-aws-lc lint examples-ci capi-ci distribution-core-ci
+ci: test check-backend-aws-lc check-fips-builds lint examples-ci capi-ci distribution-core-ci
     just conformance/ci
 
 [doc("Run all CI gates under Zig 0.16 (lint via inline Z011 suppressions for dual-version deprecations)")]
 [group("check")]
-ci-0_16: test lint examples-ci integrations-ci distribution-integrations-ci
+ci-0_16: test check-backends-0_16 lint examples-ci integrations-ci distribution-integrations-ci
     just conformance/ci
 
 [doc("Remove local scratch directories (.tmp/, book/, zig-out/)")]

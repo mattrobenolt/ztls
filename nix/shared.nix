@@ -60,17 +60,13 @@ rec {
   };
 
   # commonHook is interpolated into backendShell's shellHook and used directly
-  # by the base shell. It isolates both Zig caches by compiler version. Unset
-  # the crypto environment first, then set the per-backend paths. The BoringSSL
-  # path references boringsslPc when a shell calls commonHook.
+  # by the base shell. It isolates both Zig caches by compiler version. The
+  # BoringSSL path references boringsslPc when a shell calls commonHook.
   commonHook = zig-tools: ''
     unset NIX_CFLAGS_COMPILE
     unset PKG_CONFIG_PATH
     unset ZIG_LOCAL_CACHE_DIR
     unset ZIG_GLOBAL_CACHE_DIR
-    unset ZTLS_CRYPTO_BACKEND
-    unset ZTLS_CRYPTO_PKG_CONFIG_PATH
-    unset ZTLS_CRYPTO_LIB_DIR
     export ZIG_LOCAL_CACHE_DIR=.zig-cache/${zig-tools.zig.version}
     export ZIG_GLOBAL_CACHE_DIR="''${XDG_CACHE_HOME:-$HOME/.cache}/zig/${zig-tools.zig.version}"
     export ZTLS_OPENSSL_PKG_CONFIG_PATH=${pkgs.openssl.dev}/lib/pkgconfig
@@ -128,11 +124,10 @@ rec {
     zls = pkgs.zls_0_16;
   };
 
-  # The openssl backend literal shared by the openssl, zig-0_16, and docs
+  # The OpenSSL package paths shared by the openssl, zig-0_16, and docs
   # shells (previously triplicated in flake.nix).
   opensslBackend = {
     pkgConfigPath = "${pkgs.openssl.dev}/lib/pkgconfig";
-    libDir = "${pkgs.openssl.out}/lib";
     packages = [
       pkgs.openssl.dev
       pkgs.openssl.out
@@ -142,9 +137,7 @@ rec {
   backendShell =
     {
       name,
-      backend,
       pkgConfigPath,
-      libDir,
       packages,
       zig-tools ? zig0_15,
     }:
@@ -153,9 +146,6 @@ rec {
       packages = commonPackages zig-tools ++ packages;
       shellHook = ''
         ${commonHook zig-tools}
-        export ZTLS_CRYPTO_BACKEND=${backend}
-        export ZTLS_CRYPTO_PKG_CONFIG_PATH=${pkgConfigPath}
-        export ZTLS_CRYPTO_LIB_DIR=${libDir}
         export PKG_CONFIG_PATH=${pkgConfigPath}''${PKG_CONFIG_PATH:+:''${PKG_CONFIG_PATH}}
       '';
     };

@@ -1,8 +1,9 @@
 //! OpenSSL backend primitive wrappers.
 const std = @import("std");
 
-const c = @import("c_openssl.zig").openssl;
-const is_boringssl_family = @import("c_openssl.zig").is_boringssl_family;
+const c_openssl = @import("c_openssl.zig");
+const c = c_openssl.openssl;
+const is_boringssl_family = c_openssl.is_boringssl_family;
 const CipherSuite = @import("../cipher_suite.zig").CipherSuite;
 const ParameterSet = @import("mlkem_parameters.zig").ParameterSet;
 const SignatureScheme = @import("../signature_scheme.zig").SignatureScheme;
@@ -50,8 +51,8 @@ pub const capabilities = struct {
     };
 };
 
-/// FIPS 140-3 narrowed capability table. The build option `openssl-fips`
-/// selects this table at compile time. The caller is responsible for ensuring
+/// FIPS 140-3 narrowed capability table. `-Dcrypto-fips=true` selects this
+/// table when OpenSSL headers are active. The caller is responsible for ensuring
 /// the linked libcrypto is actually in FIPS mode (e.g. FIPS provider loaded).
 /// No runtime provider probing is performed by ztls.
 pub const capabilities_fips = struct {
@@ -550,8 +551,7 @@ pub fn aeadInit(suite: CipherSuite, key_bytes: []const u8) AeadError!AeadContext
 // The backend boundary rejects slices that cannot satisfy the cipher's
 // implicit fixed-size key read.
 test "OpenSSL AEAD initialization rejects wrong key length" {
-    const build_options = @import("build_options");
-    if (comptime build_options.crypto_backend != .boringssl) {
+    if (comptime c_openssl.family != .boringssl) {
         const testing = std.testing;
         const wrong_key: [1]u8 = @splat(0);
         var ctx = aeadInit(.aes_256_gcm_sha384, &wrong_key) catch |err| {

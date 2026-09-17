@@ -1,13 +1,22 @@
-const build_options = @import("build_options");
+pub const Family = enum {
+    openssl,
+    @"aws-lc",
+    boringssl,
+};
 
-// FIPS identities share their parent backend's libcrypto headers: aws-lc-fips
-// uses AWS-LC headers (no openssl/core.h), so it must be treated as
-// BoringSSL-family for the c_import the same as aws-lc. Otherwise the
-// aws-lc-fips build tries to include openssl/core.h under the AWS-LC devshell
-// and fails (core.h is absent from AWS-LC).
-const is_aws_lc_backend = build_options.crypto_backend == .@"aws-lc" or
-    build_options.crypto_backend == .@"aws-lc-fips";
-const is_boringssl_backend = build_options.crypto_backend == .boringssl;
+// opensslv.h is common to all three supported families. AWS-LC and BoringSSL
+// reach their base.h identity macros through crypto.h, so the selected headers
+// are the compile-time source of truth for the backend family.
+const identity = @cImport({
+    @cInclude("openssl/opensslv.h");
+});
+
+pub const family: Family = if (@hasDecl(identity, "OPENSSL_IS_AWSLC"))
+    .@"aws-lc"
+else if (@hasDecl(identity, "OPENSSL_IS_BORINGSSL"))
+    .boringssl
+else
+    .openssl;
 
 // AWS-LC and BoringSSL are both BoringSSL-family: they share the flat
 // curve25519.h X25519 API and the EVP_AEAD one-shot AEAD API, and neither
@@ -18,10 +27,24 @@ const is_boringssl_backend = build_options.crypto_backend == .boringssl;
 // key-construction/signature path. Pub so backend code can comptime-gate
 // provider-parameter features (e.g. the RFC 6979 nonce-type,
 // mattrobenolt/ztls#82).
-pub const is_boringssl_family = is_aws_lc_backend or is_boringssl_backend;
+pub const is_boringssl_family = family != .openssl;
 
 pub const openssl = @cImport({
-    if (is_boringssl_family) @cInclude("openssl/base.h");
+    if (family == .boringssl) {
+        @cInclude("openssl/base.h");
+        // Zig 0.16 translate-c emits BoringSSL's expanded _Pragma tokens as C
+        // declarations. These macros only suppress C compiler warnings.
+        @cUndef("OPENSSL_BEGIN_ALLOW_DEPRECATED");
+        @cDefine("OPENSSL_BEGIN_ALLOW_DEPRECATED", "");
+        @cUndef("OPENSSL_END_ALLOW_DEPRECATED");
+        @cDefine("OPENSSL_END_ALLOW_DEPRECATED", "");
+        @cUndef("OPENSSL_GNUC_CLANG_PRAGMA");
+        @cDefine("OPENSSL_GNUC_CLANG_PRAGMA(arg)", "");
+        @cUndef("OPENSSL_CLANG_PRAGMA");
+        @cDefine("OPENSSL_CLANG_PRAGMA(arg)", "");
+    } else if (is_boringssl_family) {
+        @cInclude("openssl/base.h");
+    }
     if (is_boringssl_family) @cInclude("openssl/aead.h");
     if (is_boringssl_family) @cInclude("openssl/curve25519.h");
     if (!is_boringssl_family) @cInclude("openssl/core.h");
@@ -36,12 +59,3 @@ pub const openssl = @cImport({
     @cInclude("openssl/pem.h");
     @cInclude("openssl/rsa.h");
 });
-
-comptime {
-    if (is_aws_lc_backend and !@hasDecl(openssl, "OPENSSL_IS_AWSLC")) {
-        @compileError("-Dcrypto-backend=aws-lc requires AWS-LC libcrypto headers");
-    }
-    if (is_boringssl_backend and !@hasDecl(openssl, "OPENSSL_IS_BORINGSSL")) {
-        @compileError("-Dcrypto-backend=boringssl requires BoringSSL libcrypto headers");
-    }
-}

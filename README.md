@@ -113,8 +113,8 @@ just examples-ci
 nix develop .#ztls-ktls --command just integrations/ztls-ktls/ci
 ```
 
-`nix develop .#aws-lc` selects the AWS-LC shell for backend work. OpenSSL is the
-default devshell and the default `-Dcrypto-backend`.
+`nix develop .#aws-lc` selects AWS-LC headers and libraries. The compiler
+infers the backend family from those headers. The default devshell selects OpenSSL.
 
 ## Supported surface
 
@@ -149,15 +149,15 @@ Crypto primitives come from a libcrypto backend, selected at build time:
 
 | Backend | Status |
 |---|---|
-| OpenSSL | Supported (default) |
-| AWS-LC | Supported (`-Dcrypto-backend=aws-lc`) |
-| BoringSSL | Supported (`-Dcrypto-backend=boringssl`) |
+| OpenSSL | Supported; selected by its `libcrypto.pc` and headers |
+| AWS-LC | Supported; selected by its `libcrypto.pc` and headers |
+| BoringSSL | Supported; selected by its `libcrypto.pc` and headers |
 
 All three RFC 10024 groups use provider-backed pure ML-KEM with ztls-owned
 hybrid composition on OpenSSL, AWS-LC, and BoringSSL. The FIPS backend
-identities do not advertise them. A BoGo conformance runner is deferred, and
-FIPS mode has compile-time capability tables but no runtime FIPS-provider
-verification.
+identities do not advertise them. Use `-Dcrypto-fips=true` to select the FIPS
+capability identity for OpenSSL or AWS-LC. This option does not verify runtime
+FIPS-provider activation. A BoGo conformance runner is deferred.
 
 ## Fresh project
 

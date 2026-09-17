@@ -3,16 +3,16 @@ const std = @import("std");
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
-    const crypto_backend = b.option(
-        []const u8,
-        "crypto-backend",
-        "libcrypto backend: openssl | aws-lc | boringssl",
-    ) orelse "openssl";
+    const crypto_fips = b.option(
+        bool,
+        "crypto-fips",
+        "Narrow the inferred libcrypto backend to its FIPS capability identity",
+    ) orelse false;
 
     const ztls_dep = b.dependency("ztls", .{
         .target = target,
         .optimize = optimize,
-        .@"crypto-backend" = crypto_backend,
+        .@"crypto-fips" = crypto_fips,
     });
     const ztls_mod = ztls_dep.module("ztls");
     const fixtures_mod = b.addModule("fixtures", .{

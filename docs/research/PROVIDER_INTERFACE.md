@@ -34,22 +34,23 @@ that the EVP/libssl app-data path beat the current record path.
 
 ## Backend selection
 
-A single comptime build option selects the backend:
+`PKG_CONFIG_PATH` selects the libcrypto headers and library. ztls identifies
+the backend family from those headers at compile time:
 
-```
--Dcrypto-backend=openssl # default OpenSSL lane
--Dcrypto-backend=aws-lc  # selectable AWS-LC lane
--Dcrypto-fips=true|false # narrows the capability table (build-time, see below)
-
-# BoringSSL remains a possible later backend; it is not a selectable build option yet.
+```sh
+PKG_CONFIG_PATH=/path/to/lib/pkgconfig zig build
+zig build -Dcrypto-fips=true
 ```
 
-The rest of ztls imports one backend-agnostic module (`src/crypto/`) and never
-sees a `@cImport`. Each backend is one implementation file behind the same Zig
-interface. AWS-LC is the lowest-risk second backend because it carries both the
-BoringSSL flat/`EVP_AEAD` API family and enough OpenSSL 1.1.1 EVP compatibility
-that most existing EVP code compiles; conditional compilation keys off
-`OPENSSL_IS_AWSLC` / `OPENSSL_IS_BORINGSSL`.
+`OPENSSL_IS_AWSLC` identifies AWS-LC. `OPENSSL_IS_BORINGSSL` identifies
+BoringSSL. The absence of both macros identifies OpenSSL. The FIPS option
+narrows OpenSSL or AWS-LC capabilities. It does not select a different library.
+BoringSSL rejects the FIPS option.
+
+The rest of ztls imports one backend-agnostic module (`src/crypto/`). Each
+backend is one implementation file behind the same Zig interface. AWS-LC and
+BoringSSL use the flat BoringSSL API family. OpenSSL uses provider-backed EVP
+APIs.
 
 ---
 
@@ -221,11 +222,10 @@ pub const capabilities = struct {
 };
 ```
 
-FIPS posture is build-time selection (OpenSSL fips provider vs `aws-lc-fips`),
-surfaced as a comptime flag that *narrows* the capability table (e.g. drops
-non-approved signatures or groups). Getting this wrong means negotiating
-algorithms the backend cannot run. BoringSSL/AWS-LC have no runtime provider
-model; OpenSSL fetches by name — prefetch and cache all handles at backend init.
+FIPS posture is explicit build-time policy through `-Dcrypto-fips=true`. The
+flag narrows the capability table. It does not prove OpenSSL FIPS-provider
+activation or select an AWS-LC FIPS library. The caller must configure the
+matching provider or library. BoringSSL does not support this policy identity.
 
 ### 6. Memory ownership and backend allocations
 

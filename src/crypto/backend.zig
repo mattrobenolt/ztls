@@ -8,6 +8,7 @@ const std = @import("std");
 const testing = std.testing;
 const assert = std.debug.assert;
 const build_options = @import("build_options");
+const c_openssl = @import("c_openssl.zig");
 
 const CipherSuite = @import("../cipher_suite.zig").CipherSuite;
 const NamedGroup = @import("../kex.zig").NamedGroup;
@@ -16,20 +17,30 @@ const backend_aws_lc = @import("backend_aws_lc.zig");
 const backend_boringssl = @import("backend_boringssl.zig");
 const backend_openssl = @import("backend_openssl.zig");
 
-// Backend kind enum is emitted into `build_options` by build.zig (see
-// `build.Backend`). Field names are the wire strings, so @tagName round-trips
-// to the CLI/metadata value.
+pub const Backend = enum {
+    openssl,
+    @"aws-lc",
+    boringssl,
+    @"openssl-fips",
+    @"aws-lc-fips",
+};
 
-pub const active = build_options.crypto_backend;
+/// Backend family inferred from the selected libcrypto headers, plus the
+/// explicit compile-time FIPS capability policy.
+pub const active: Backend = switch (c_openssl.family) {
+    .openssl => if (build_options.crypto_fips) .@"openssl-fips" else .openssl,
+    .@"aws-lc" => if (build_options.crypto_fips) .@"aws-lc-fips" else .@"aws-lc",
+    .boringssl => if (build_options.crypto_fips)
+        @compileError("-Dcrypto-fips=true is unsupported with BoringSSL")
+    else
+        .boringssl,
+};
 
 /// True when the active backend is a FIPS-narrowed capability identity.
 /// The FIPS tables drop non-approved algorithms (ChaCha20-Poly1305, RSA PKCS1
 /// v1.5 certificate signatures, Ed25519, ML-KEM) at compile time. The caller
 /// is responsible for ensuring the linked libcrypto is actually in FIPS mode.
-pub const is_fips: bool = switch (active) {
-    .openssl, .@"aws-lc", .boringssl => false,
-    .@"openssl-fips", .@"aws-lc-fips" => true,
-};
+pub const is_fips: bool = build_options.crypto_fips;
 
 const x25519_impl = switch (active) {
     .openssl, .@"openssl-fips" => backend_openssl,
@@ -376,18 +387,17 @@ pub const sign = struct {
     }
 };
 
-// docs/research/PROVIDER_INTERFACE.md §1 — current production backend is
-// OpenSSL/libcrypto; AWS-LC and BoringSSL are selectable libcrypto-family
-// backends behind the same seam. The backend kind is chosen in build.zig and
-// emitted as a typed build_option, so `active` is already a typed enum value
-// here — no string parse to validate.
-// `openssl-fips` and `aws-lc-fips` are FIPS-narrowed capability identities that
-// link the same libcrypto as their non-FIPS counterparts.
-test "active backend is a buildable libcrypto-family member" {
-    try testing.expect(active == .openssl or active == .@"aws-lc" or
-        active == .boringssl or
-        active == .@"openssl-fips" or active == .@"aws-lc-fips");
-    // field names are the wire strings, so @tagName round-trips to the CLI value
+// docs/research/PROVIDER_INTERFACE.md §1 — the selected headers identify the
+// libcrypto family. The explicit FIPS option narrows OpenSSL or AWS-LC to its
+// FIPS capability identity without changing the linked library.
+test "active backend matches the selected libcrypto headers" {
+    switch (c_openssl.family) {
+        .openssl => try testing.expect(active == .openssl or active == .@"openssl-fips"),
+        .@"aws-lc" => try testing.expect(active == .@"aws-lc" or active == .@"aws-lc-fips"),
+        .boringssl => try testing.expectEqual(Backend.boringssl, active),
+    }
+
+    // Field names remain stable public metadata values.
     try testing.expectEqualStrings("openssl", @tagName(@as(@TypeOf(active), .openssl)));
     try testing.expectEqualStrings("aws-lc", @tagName(@as(@TypeOf(active), .@"aws-lc")));
     try testing.expectEqualStrings("boringssl", @tagName(@as(@TypeOf(active), .boringssl)));

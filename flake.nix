@@ -60,9 +60,7 @@
 
             openssl = backendShell {
               name = "ztls-openssl";
-              backend = "openssl";
               pkgConfigPath = opensslBackend.pkgConfigPath;
-              libDir = opensslBackend.libDir;
               packages = opensslBackend.packages;
             };
 
@@ -71,9 +69,7 @@
             # real, not a local spot-check (#61).
             zig-0_16 = backendShell {
               name = "ztls-zig-0_16";
-              backend = "openssl";
               pkgConfigPath = opensslBackend.pkgConfigPath;
-              libDir = opensslBackend.libDir;
               packages = opensslBackend.packages;
               zig-tools = zig0_16;
             };
@@ -83,9 +79,7 @@
             # (integrations/ztls-std/build.zig.zon). Reuses shared helpers.
             ztls-std = backendShell {
               name = "ztls-std";
-              backend = "openssl";
               pkgConfigPath = opensslBackend.pkgConfigPath;
-              libDir = opensslBackend.libDir;
               packages = opensslBackend.packages;
               zig-tools = zig0_16;
             };
@@ -95,9 +89,7 @@
             # same shape as ztls-std.
             ztls-xev = backendShell {
               name = "ztls-xev";
-              backend = "openssl";
               pkgConfigPath = opensslBackend.pkgConfigPath;
-              libDir = opensslBackend.libDir;
               packages = opensslBackend.packages;
               zig-tools = zig0_16;
             };
@@ -106,18 +98,14 @@
             # package itself is Linux-only and root CI skips it on macOS.
             ztls-ktls = backendShell {
               name = "ztls-ktls";
-              backend = "openssl";
               pkgConfigPath = opensslBackend.pkgConfigPath;
-              libDir = opensslBackend.libDir;
               packages = opensslBackend.packages;
               zig-tools = zig0_16;
             };
 
             aws-lc = backendShell {
               name = "ztls-aws-lc";
-              backend = "aws-lc";
               pkgConfigPath = "${pkgs.aws-lc.dev}/lib/pkgconfig";
-              libDir = "${pkgs.aws-lc}/lib";
               packages = [
                 pkgs.aws-lc.dev
                 pkgs.aws-lc
@@ -126,23 +114,19 @@
 
             boringssl = backendShell {
               name = "ztls-boringssl";
-              backend = "boringssl";
               pkgConfigPath = "${boringsslPc}";
-              libDir = "${pkgs.boringssl}/lib";
               packages = [
                 pkgs.boringssl.dev
                 pkgs.boringssl
               ];
             };
 
-            # Docs site tooling: Zig autodoc build (needs the crypto backend
-            # env) plus mdBook and wrangler for building and publishing the
-            # Cloudflare site. Built on the OpenSSL backend shell.
+            # Docs site tooling: Zig autodoc build plus mdBook and wrangler
+            # for building and publishing the Cloudflare site. Built on the
+            # OpenSSL backend shell.
             docs = backendShell {
               name = "ztls-docs";
-              backend = "openssl";
               pkgConfigPath = opensslBackend.pkgConfigPath;
-              libDir = opensslBackend.libDir;
               packages = opensslBackend.packages ++ [
                 pkgs.mdbook
                 pkgs.nodejs

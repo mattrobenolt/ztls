@@ -573,7 +573,7 @@ data to openssl s_server and receives the HTTP response.
     residue) and by mutation checks (guard removal, over-drain to
     `ERR_clear_error`, reintroduced nesting). Allocation behavior is
     asserted by a dedicated standalone executable (`zig build
-    errq-alloc-check`, OpenSSL lane only; wired into `just test`) that
+    errq-alloc-check`, OpenSSL and AWS-LC lanes; wired into `just test`) that
     installs counting `CRYPTO_set_mem_functions` hooks before any libcrypto
     call and, after fully warming the exact failing operation and clearing
     the warmup errors, asserts that each further failing guarded call
@@ -584,9 +584,8 @@ data to openssl s_server and receives the HTTP response.
     `errqExit`. That check remains allocation-count retention evidence, not
     recovery-after-exhaustion: the hooks count and never fail, and
     realloc-based byte growth is invisible to the counts (documented in the
-    executable). BoringSSL-family libcrypto has no
-    `CRYPTO_set_mem_functions`, so the counting-hook check cannot exist
-    there (queue hygiene still applies).
+    executable). BoringSSL has no `CRYPTO_set_mem_functions`, so the
+    counting-hook check cannot exist there (queue hygiene still applies).
 
     End-to-end fixed-arena recovery is separately proven against public
     historical zoxy commit `6e13999` (the bounded-keygen revision before
@@ -1363,23 +1362,29 @@ each passing the same correctness and interop gates.
 
 **Current evidence (real, but thin):**
 
-- OpenSSL/libcrypto is the default backend and AWS-LC is selectable through
-  `nix develop .#aws-lc` / `ZTLS_CRYPTO_BACKEND=aws-lc` or the explicit
-  `-Dcrypto-backend=aws-lc` build option. BoringSSL is selectable through
-  `nix develop .#boringssl` / `ZTLS_CRYPTO_BACKEND=boringssl` or
-  `-Dcrypto-backend=boringssl`. The flake exposes `.#base`, `.#openssl`,
-  `.#aws-lc`, and `.#boringssl` devshells; each backend shell makes its selected
+- OpenSSL, AWS-LC, and BoringSSL are selected through `libcrypto.pc` and the
+  matching headers. `src/crypto/c_openssl.zig` infers the family from
+  `OPENSSL_IS_AWSLC` and `OPENSSL_IS_BORINGSSL`. The absence of both macros
+  identifies OpenSSL. No backend environment variable or build option exists.
+  `-Dcrypto-fips=true` remains an explicit capability policy for OpenSSL and
+  AWS-LC. BoringSSL rejects that option. The flake exposes `.#base`, `.#openssl`,
+  `.#aws-lc`, and `.#boringssl` devshells. Each backend shell makes its selected
   `libcrypto.pc` ambient while preserving the OpenSSL CLI for interop tools.
-  The AWS-LC lane rejects non-AWS-LC headers at compile time and verifies the
-  AWS-LC include/library paths in Zig's verbose build output. The BoringSSL
-  lane synthesizes a `libcrypto.pc` (nixpkgs boringssl ships no pkg-config
-  file) and rejects non-BoringSSL headers at compile time via an
-  `OPENSSL_IS_BORINGSSL` comptime guard.
+  The AWS-LC and BoringSSL recipes verify their include and library paths in
+  Zig's verbose build output. TLS-Anvil workflows assert that selected headers
+  match each matrix label before they build conformance harnesses. Benchmark
+  scripts make the same assertion before they build ztls rows. The BoringSSL
+  shell synthesizes `libcrypto.pc` because nixpkgs BoringSSL does not ship one.
+  Final local gates passed `just ci`, `just check-backend-boringssl`, and Zig
+  0.16 `just ci-0_16` on 2026-09-17. The Zig 0.16 AWS-LC suite passed 766 tests.
+  Its BoringSSL suite passed 759 tests and skipped seven capability-specific
+  tests. *(#109)*
   AEAD, CertificateVerify signing/verification, certificate public-key
   construction for CertificateVerify, and X25519/P-256 ECDHE dispatch through
   `src/crypto/backend.zig`.
-- `src/crypto/backend.zig` exposes a `Backend` enum, an `active` selector
-  resolved from the build option, and compile-time capability declarations for
+- `src/crypto/backend.zig` exposes a `Backend` enum and an `active` selector.
+  The selector combines the inferred family with the explicit FIPS policy.
+  The backend owns compile-time capability declarations for
   cipher suites, client/server key-share groups, CertificateVerify schemes, and
   certificate-signature advertisement. `src/x25519.zig` dispatches X25519
   primitives through `src/crypto/backend.zig`; OpenSSL uses EVP_PKEY, while the
@@ -1419,9 +1424,8 @@ each passing the same correctness and interop gates.
   conformance shims, and runs the TLS 1.3 tlsfuzzer smoke with AWS-LC libcrypto
   linked; the recipe pins `PKG_CONFIG_PATH` to the AWS-LC derivation and checks
   the resolved include and library paths in the combined build log. `zig build
-  test` inside `.#openssl` and `.#aws-lc` follows the shell-selected backend by
-  default, while explicit `-Dcrypto-backend=...` still wins. `conformance/build.zig`
-  accepts the same `-Dcrypto-backend=aws-lc` option, so `anvil_client` and
+  test` inside `.#openssl` and `.#aws-lc` follows the selected headers.
+  `conformance/build.zig` uses the same header inference, so `anvil_client` and
   `tlsfuzzer_server` can be built as AWS-LC-linked harness binaries.
 - HKDF/HMAC/SHA transcript hashing remain on `std.crypto`, matching the roadmap
   policy unless a concrete provider/FIPS requirement appears.
@@ -1440,9 +1444,10 @@ each passing the same correctness and interop gates.
   signature paths still delegate through OpenSSL-compatible wrappers while
   linking AWS-LC libcrypto. This is a per-primitive smoke contract, not a
   Wycheproof matrix or divergent capability proof.
-- BoringSSL is a compile + primitive-test + CI-gated lane: `nix develop
-  .#boringssl` + `zig build test -Dcrypto-backend=boringssl` compiles and all
-  597 non-FIPS tests pass (8 FIPS tests skip — BoringSSL has no FIPS variant).
+- BoringSSL is a compile + primitive-test + CI-gated lane. `nix develop
+  .#boringssl --command zig build test` infers BoringSSL from its headers.
+  The suite runs 766 tests: 759 pass and seven capability-specific tests skip.
+  BoringSSL has no FIPS policy identity.
   `just check-backend-boringssl` builds, tests, produces the benchmark binary,
   executes a one-row benchmark smoke, runs the in-memory example, builds the
   conformance shims, and runs the TLS 1.3 tlsfuzzer smoke with BoringSSL
@@ -1462,7 +1467,10 @@ each passing the same correctness and interop gates.
   under the BoringSSL lane. The flake synthesizes both `libcrypto.pc` and
   `libssl.pc` for BoringSSL (nixpkgs ships neither) and exports
   `ZTLS_BORINGSSL_PKG_CONFIG_PATH` / `ZTLS_BORINGSSL_LIB_DIR` env vars in
-  `commonHook`. TLS-Anvil workflow matrices include `boringssl` alongside
+  `commonHook`. Zig 0.16 needs BoringSSL warning pragma macros disabled during
+  `@cImport`; they only suppress C warnings. `just check-backends-0_16` runs the
+  full AWS-LC and BoringSSL suites, while `ci-0_16` runs OpenSSL and that gate.
+  TLS-Anvil workflow matrices include `boringssl` alongside
   `openssl` and `aws-lc` for both client and server scheduled/dispatch runs.
   The first BoringSSL TLS-Anvil captures are complete. Server run
   `ci-29157499150` on `fd571eb` is strict-complete `437/437`: `passed=105`,
@@ -1495,9 +1503,10 @@ import. It maps peer input to `illegal_parameter` and keeps provider faults
 mapped to `internal_error`. OpenSSL, AWS-LC, and BoringSSL pass the local backend
 and tlsfuzzer gates plus fresh client and server TLS-Anvil runs.
 
-Historical baseline: three libcrypto backends (OpenSSL default, AWS-LC, BoringSSL) are selectable
-via `-Dcrypto-backend=...` / devshells, compile and pass the full test suite,
-tlsfuzzer smoke, in-memory example, benchmark smoke, and have committed clean
+Historical baseline: three libcrypto backends compile and pass the full test
+suite, tlsfuzzer smoke, in-memory example, and benchmark smoke. The devshells
+select matching package paths, and the headers determine the backend family.
+All three backends have committed clean
 TLS-Anvil captures (437/437 each, no unexpected failures). CI-gated backend
 lanes (`just check-backend-aws-lc`, `just check-backend-boringssl`) run the
 same gates as the default. X25519, P-256, AEAD, and CertificateVerify
@@ -1530,8 +1539,8 @@ dispatch through the backend facade; capability tables are backend-owned.
   finding (#71, root-caused and fixed locally — ConnectionRefused race in
   anvil_client). *(#60, #63, #70, #71)*
 - **aws-lc has a real test lane but not a full external conformance matrix.**
-  The `-Dcrypto-backend=aws-lc` build links AWS-LC libcrypto and runs the unit
-  suite; X25519 uses AWS-LC's flat `curve25519.h` API, AEAD uses AWS-LC's
+  The AWS-LC package path links AWS-LC libcrypto and runs the unit suite.
+  X25519 uses AWS-LC's flat `curve25519.h` API, while AEAD uses AWS-LC's
   BoringSSL-style `EVP_AEAD` one-shot API, and ML-KEM uses its pure KEM API.
   P-256/P-384 ECDH and signature
   paths delegate to OpenSSL-compatible wrappers using the legacy

@@ -12,7 +12,7 @@ cd "$(dirname "$0")/.."
 # --- argument parsing -------------------------------------------------------
 
 impl=""
-crypto_backend="${ZTLS_CRYPTO_BACKEND:-openssl}"
+crypto_backend="openssl"
 out_dir=""
 skip_linked_libs=false
 
@@ -52,7 +52,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -z "${impl}" ]]; then
-  echo "usage: $0 --impl ztls|openssl|evp|rustls [--crypto-backend openssl|aws-lc]" >&2
+  echo "usage: $0 --impl ztls|openssl|evp|rustls [--crypto-backend openssl|aws-lc|boringssl]" >&2
   exit 2
 fi
 
@@ -75,38 +75,32 @@ fi
 build_ztls() {
   case "${crypto_backend}" in
     aws-lc)
-      aws_lc_pkg_config_path="${ZTLS_AWS_LC_PKG_CONFIG_PATH:-}"
-      if [[ -z "${aws_lc_pkg_config_path}" ]]; then
+      backend_pkg_config_path="${ZTLS_AWS_LC_PKG_CONFIG_PATH:-}"
+      if [[ -z "${backend_pkg_config_path}" ]]; then
         aws_lc_dev=$(nix build --no-link --print-out-paths nixpkgs#aws-lc.dev)
-        aws_lc_pkg_config_path="${aws_lc_dev}/lib/pkgconfig"
+        backend_pkg_config_path="${aws_lc_dev}/lib/pkgconfig"
       fi
-      PKG_CONFIG_PATH="${aws_lc_pkg_config_path}${PKG_CONFIG_PATH:+:${PKG_CONFIG_PATH}}" \
-        zig build -Dcrypto-backend=aws-lc bench-bin >/dev/null
       ;;
     boringssl)
-      boringssl_pkg_config_path="${ZTLS_BORINGSSL_PKG_CONFIG_PATH:-}"
-      if [[ -z "${boringssl_pkg_config_path}" ]]; then
+      backend_pkg_config_path="${ZTLS_BORINGSSL_PKG_CONFIG_PATH:-}"
+      if [[ -z "${backend_pkg_config_path}" ]]; then
         echo "ZTLS_BORINGSSL_PKG_CONFIG_PATH is not set; run inside 'nix develop .#boringssl'" >&2
         exit 1
       fi
-      PKG_CONFIG_PATH="${boringssl_pkg_config_path}${PKG_CONFIG_PATH:+:${PKG_CONFIG_PATH}}" \
-        zig build -Dcrypto-backend=boringssl bench-bin >/dev/null
       ;;
-    *)
-      PKG_CONFIG_PATH="${openssl_pkg_config_path}${PKG_CONFIG_PATH:+:${PKG_CONFIG_PATH}}" \
-        zig build -Dcrypto-backend=openssl bench-bin >/dev/null
-      ;;
+    *) backend_pkg_config_path="${openssl_pkg_config_path}" ;;
   esac
+  PKG_CONFIG_PATH="${backend_pkg_config_path}" \
+    scripts/assert-libcrypto-family.sh "${crypto_backend}"
+  PKG_CONFIG_PATH="${backend_pkg_config_path}" zig build bench-bin >/dev/null
 }
 
 build_openssl() {
-  PKG_CONFIG_PATH="${openssl_pkg_config_path}${PKG_CONFIG_PATH:+:${PKG_CONFIG_PATH}}" \
-    zig build -Dcrypto-backend=openssl bench-openssl-bin >/dev/null
+  PKG_CONFIG_PATH="${openssl_pkg_config_path}" zig build bench-openssl-bin >/dev/null
 }
 
 build_evp() {
-  PKG_CONFIG_PATH="${openssl_pkg_config_path}${PKG_CONFIG_PATH:+:${PKG_CONFIG_PATH}}" \
-    zig build -Dcrypto-backend=openssl bench-evp-bin >/dev/null
+  PKG_CONFIG_PATH="${openssl_pkg_config_path}" zig build bench-evp-bin >/dev/null
 }
 
 build_rustls() {

@@ -26,11 +26,9 @@
 //! future guard change that allocates per record.
 //!
 //! No ztls-owned allocation is involved: the hooks are libc pass-throughs
-//! that count, and all buffers are stack-owned. OpenSSL-lane builds only
-//! (the build step is not registered for BoringSSL-family backends, which
-//! have no CRYPTO_set_mem_functions — their err.c is built with
-//! _BORINGSSL_PROHIBIT_OPENSSL_MALLOC and uses system malloc directly;
-//! queue hygiene still applies on those lanes).
+//! that count, and all buffers are stack-owned. BoringSSL builds skip at
+//! comptime because the API is absent. Its err.c uses system malloc directly;
+//! queue hygiene still applies there.
 const std = @import("std");
 const ztls = @import("ztls");
 
@@ -134,6 +132,8 @@ fn checkRound(op: fn () CheckError!void, baseline: i64) CheckError!void {
     if (c.ERR_peek_error() != 0) return error.QueueResidue;
 }
 
+// BoringSSL must return from main at comptime before this function is analyzed.
+// Its headers do not declare CRYPTO_set_mem_functions.
 fn runChecks() CheckError!void {
     // Hooks first, before any libcrypto call can allocate.
     if (c.CRYPTO_set_mem_functions(hookMalloc, hookRealloc, hookFree) != 1)
@@ -163,6 +163,12 @@ fn runChecks() CheckError!void {
 }
 
 pub fn main() void {
+    const active = ztls.capabilities.active_backend;
+    if (comptime active == .boringssl) {
+        std.debug.print("errq-alloc-check: skipped for {s}\n", .{@tagName(active)});
+        return;
+    }
+
     runChecks() catch |err| {
         std.debug.print("errq-alloc-check: FAILED: {s}\n", .{@errorName(err)});
         std.process.exit(1);

@@ -37,10 +37,10 @@ with file:line references.
 
 Build options most relevant to security review:
 
-- `-Dcrypto-backend=openssl|aws-lc|boringssl|openssl-fips|aws-lc-fips`
-  chooses which libcrypto-family backend `src/crypto/backend.zig` links. Any
-  hunt cross-referencing sigverify or AEAD behavior should at minimum pin the
-  backend and re-run when switching.
+- `PKG_CONFIG_PATH` selects the libcrypto headers and library. The compiler
+  infers OpenSSL, AWS-LC, or BoringSSL from those headers. `-Dcrypto-fips=true`
+  narrows OpenSSL or AWS-LC capabilities. Any backend-specific hunt must record
+  the selected package paths and FIPS policy.
 - `-Doptimize=ReleaseFast` is required for benchmarks but also exposes
   inlining differences that can mask OOB reads in Debug.
 
