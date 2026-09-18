@@ -104,6 +104,12 @@ pub const TicketParams = struct {
     ticket: []const u8,
 };
 
+/// Default decline-skip budget: the RFC 8446 §5.2 maximum TLSCiphertext
+/// payload (2^14 + 256), which covers one full maximum-size early-data
+/// record's wire payload (2^14 plaintext + 1 content-type byte + 16 tag
+/// bytes = 16401).
+const default_early_data_skip_limit: u32 = frame.max_ciphertext_len;
+
 const PskSelection = struct {
     entry: PskEntry,
     identity_index: usize,
@@ -133,6 +139,28 @@ pub const State = enum {
     wait_ch,
     wait_client_finished,
     connected,
+};
+
+/// RFC 8446 §4.2.10 — disposition of records arriving after this server
+/// declined the client's early_data offer. 0-RTT records already in flight
+/// are protected under the client_early_traffic_secret, which a declining
+/// server does not hold, so they are skipped, bounded by
+/// `early_data_skip_limit`:
+pub const EarlyDataSkip = enum {
+    /// Not skipping: the client offered no early_data, 0-RTT was accepted
+    /// (early_rx installed), or the skip window has already closed.
+    off,
+    /// 1-RTT decline (regular response): the client's second flight is
+    /// pending in wait_client_finished. Trial-deprotect each
+    /// application_data record with the handshake traffic key, discard
+    /// failures, and treat the first success as the start of the second
+    /// flight.
+    trial_decrypt,
+    /// HelloRetryRequest decline: ClientHello2 is pending in wait_ch. The
+    /// server holds no key that can deprotect in-flight 0-RTT records, so
+    /// skip records with an outer content type of application_data. The
+    /// first ClientHello record (ClientHello2) closes the window.
+    await_client_hello2,
 };
 
 const TicketNonceState = union(enum) {
@@ -265,6 +293,19 @@ pub const Config = struct {
     /// key_share may be selected through HelloRetryRequest. Caller-owned; the
     /// slice must remain valid through any ClientHello2 processing.
     hybrid_groups: []const NamedGroup = &.{},
+    /// RFC 8446 §4.2.10 — wire-byte budget for skipping already-in-flight
+    /// 0-RTT records after this server declines an early_data offer, on both
+    /// decline paths: the regular 1-RTT response (trial-deprotection with the
+    /// handshake key while the second flight is pending) and the
+    /// HelloRetryRequest response (skipping outer application_data records
+    /// while ClientHello2 is pending). Each skipped record consumes its wire
+    /// payload length — ciphertext plus AEAD tag, excluding the 5-byte record
+    /// header — so one maximum-size early-data record consumes 16401 of the
+    /// default 16640. Exhausting the budget aborts the handshake with
+    /// `EarlyDataSkipLimitExceeded` (bad_record_mac). Size it above the
+    /// largest total early data your tickets can put in flight; zero restores
+    /// abort-on-first-failure.
+    early_data_skip_limit: u32 = default_early_data_skip_limit,
 
     /// Validate local hybrid policy before handshake construction or wire I/O.
     pub fn validate(self: *const Config) ValidationError!void {
@@ -365,6 +406,14 @@ early_data_received: u32 = 0,
 /// and verified under the early traffic key. The server expects this before
 /// the client Finished when it accepted 0-RTT (early_rx != null).
 end_of_early_data_received: bool = false,
+/// RFC 8446 §4.2.10 — skip mode for 0-RTT records already in flight after
+/// this server declined the client's early_data offer. See `EarlyDataSkip`.
+early_data_skip: EarlyDataSkip = .off,
+/// Wire payload bytes discarded so far in a skip window, bounded by
+/// `early_data_skip_limit` (copied from Config; the engine keeps it because
+/// Config is not retained).
+early_data_skip_bytes: u32 = 0,
+early_data_skip_limit: u32 = default_early_data_skip_limit,
 /// Caller-configured PSK lookup (from Config.psk_lookup). Carried on state
 /// so processClientHelloMessage can use it.
 psk_lookup: ?PskLookup = null,
@@ -416,6 +465,7 @@ pub fn init(config: Config) ServerHandshake {
         .ch_buf = if (config.reassembly) |buf| .init(buf) else .empty,
         .client_cert = if (config.client_cert_buffer) |buf| .init(buf) else .empty,
         .psk_lookup = config.psk_lookup,
+        .early_data_skip_limit = config.early_data_skip_limit,
     };
 }
 
@@ -871,7 +921,8 @@ pub const ReceiveError =
     error{ TooManyKeyUpdates, PeerAlert };
 pub const HandleError =
     AcceptError || FlightError || ClientFinishedError ||
-    ReceiveError || SendError || alert.ParseError || error{PendingWrite};
+    ReceiveError || SendError || alert.ParseError ||
+    error{ PendingWrite, EarlyDataSkipLimitExceeded };
 pub const AlertError = RecordLayer.EncryptError || error{ BufferTooShort, PendingWrite };
 
 /// Consume a plaintext ClientHello record and emit a plaintext ServerHello
@@ -895,18 +946,22 @@ pub fn acceptClientHello(
 /// Parse and process a complete ClientHello handshake message (4-byte header +
 /// body). Called by acceptClientHello (fast path from a single record) and by
 /// handleClientHelloRecord (after fragment reassembly).
-/// Clear 0-RTT/PSK selection state installed while inspecting a ClientHello.
-/// RFC 8446 §4.1.2/§4.2.10 — 0-RTT does not survive HelloRetryRequest, and a
-/// retained PSK must be selected again from ClientHello2 after its binder is
-/// recomputed over the retry transcript. Without this reset, a ClientHello2
-/// that offers no acceptable PSK could inherit stale selection or early_rx
-/// state from ClientHello1.
-fn clearEarlyDataStateForRetry(self: *ServerHandshake) void {
+/// Clear 0-RTT/PSK selection state installed while inspecting a ClientHello
+/// and arm the §4.2.10 HRR early-data skip window when that ClientHello
+/// offered early_data. RFC 8446 §4.1.2/§4.2.10 — 0-RTT does not survive
+/// HelloRetryRequest: a retained PSK must be selected again from ClientHello2
+/// after its binder is recomputed over the retry transcript, and the client's
+/// already-in-flight 0-RTT records must be skipped while ClientHello2 is
+/// pending. Without this reset, a ClientHello2 that offers no acceptable PSK
+/// could inherit stale selection or early_rx state from ClientHello1.
+fn resetEarlyDataStateForRetry(self: *ServerHandshake, offered_early_data: bool) void {
     if (self.early_rx) |*early_rx| early_rx.deinit();
     self.early_rx = null;
     self.early_data_limit = null;
     self.early_data_received = 0;
     self.end_of_early_data_received = false;
+    self.early_data_skip = if (offered_early_data) .await_client_hello2 else .off;
+    self.early_data_skip_bytes = 0;
     self.selected_psk = null;
     self.selected_psk_index = 0;
 }
@@ -989,6 +1044,15 @@ fn processClientHelloMessage(
 ) AcceptError![]const u8 {
     assert(self.state == .wait_ch);
     assert((self.retry_transcript == null) == (self.retry_ch1_digest == null));
+    // RFC 8446 §4.2.10 — ClientHello2 closes the HRR early-data skip window.
+    // The window is armed only by the HelloRetryRequest response to
+    // ClientHello1, so any ClientHello processed while it is open is
+    // ClientHello2 (or an impostor the §4.1.2 retry validation below rejects
+    // either way); application_data is no longer skippable afterwards.
+    if (self.early_data_skip == .await_client_hello2) {
+        self.early_data_skip = .off;
+        self.early_data_skip_bytes = 0;
+    }
     try self.validateHybridGroups();
     const ch = try client_hello.parse(ch_msg);
     if (self.retry_ch1_digest) |ch1_digest| {
@@ -1148,7 +1212,7 @@ fn processClientHelloMessage(
             group,
             out,
         );
-        self.clearEarlyDataStateForRetry();
+        self.resetEarlyDataStateForRetry(ch.offered_early_data);
         self.state = .wait_ch;
         return hrr;
     } else if (ch.public_key != null and backend.supportsServerX25519())
@@ -1167,7 +1231,7 @@ fn processClientHelloMessage(
             .x25519,
             out,
         );
-        self.clearEarlyDataStateForRetry();
+        self.resetEarlyDataStateForRetry(ch.offered_early_data);
         self.state = .wait_ch;
         return hrr;
     } else if (ch.groups.contains(.secp256r1) and backend.supportsServerP256()) {
@@ -1179,7 +1243,7 @@ fn processClientHelloMessage(
             .secp256r1,
             out,
         );
-        self.clearEarlyDataStateForRetry();
+        self.resetEarlyDataStateForRetry(ch.offered_early_data);
         self.state = .wait_ch;
         return hrr;
     } else if (ch.groups.contains(.secp384r1) and
@@ -1193,7 +1257,7 @@ fn processClientHelloMessage(
             .secp384r1,
             out,
         );
-        self.clearEarlyDataStateForRetry();
+        self.resetEarlyDataStateForRetry(ch.offered_early_data);
         self.state = .wait_ch;
         return hrr;
     } else return error.UnsupportedKeyShare;
@@ -1249,6 +1313,17 @@ fn processClientHelloMessage(
         &client_key_share,
         &hybrid_secret,
     );
+    // RFC 8446 §4.2.10 — the client may already have 0-RTT records in flight
+    // under the early traffic key even though this server declined its
+    // early_data offer (no PSK selected, or the selected ticket permits no
+    // early data). Skip them by trial-deprotection with the handshake key
+    // until the second flight begins. The HelloRetryRequest decline variant
+    // (skip all outer application_data records while waiting for ClientHello2)
+    // is armed by resetEarlyDataStateForRetry at the HRR branches.
+    if (ch.offered_early_data and self.early_rx == null) {
+        self.early_data_skip = .trial_decrypt;
+        self.early_data_skip_bytes = 0;
+    }
     self.state = .wait_client_finished;
     return out[0..out_len];
 }
@@ -1968,6 +2043,26 @@ fn handleWaitClientHello(
             if (hdr.length() == 0) return error.UnexpectedRecord;
             return self.handleClientHelloRecord(record, out);
         },
+        // RFC 8446 §4.2.10 — after this server answered an early_data
+        // ClientHello with HelloRetryRequest, 0-RTT records already in
+        // flight arrive with an outer content type of application_data while
+        // ClientHello2 is pending. The declining server holds no key that
+        // could deprotect them, so the HRR strategy skips by outer content
+        // type, bounded by the same wire-byte budget as the 1-RTT decline
+        // path. ClientHello2 (the first handshake record) closes the window.
+        .application_data => {
+            if (self.early_data_skip != .await_client_hello2) return error.UnexpectedRecord;
+            // An outer application_data payload of one AEAD tag or less
+            // cannot be an encrypted TLS 1.3 record (§5.2 needs tag + inner
+            // content type): malformed input, not skippable early data, so a
+            // zero-length record stream cannot burn skips for free.
+            if (hdr.length() <= aead.tag_len) return error.RecordTooShort;
+            const skipped: u32 = @intCast(hdr.length());
+            if (skipped > self.early_data_skip_limit - self.early_data_skip_bytes)
+                return error.EarlyDataSkipLimitExceeded;
+            self.early_data_skip_bytes += skipped;
+            return .none;
+        },
         else => error.UnexpectedRecord,
     };
 }
@@ -2146,10 +2241,47 @@ fn handleWaitClientFinished(self: *ServerHandshake, record: []u8) HandleError!Ev
         }
     }
 
+    // RFC 8446 §4.2.10 — when this server declined the client's early_data
+    // offer, 0-RTT records already in flight fail deprotection under the
+    // handshake traffic key. Trial-deprotect each application_data record:
+    // discard failures up to the configured ciphertext-byte budget; the first
+    // record that deprotects is the start of the client's second flight and
+    // ends skip mode for good. A failed trial does not advance the receive
+    // sequence (§5.2) or disturb the AEAD context, so later records
+    // deprotect with the same sequence number. The failed record's buffer is
+    // backend-owned failure output and is discarded unread.
+    if (self.early_data_skip == .trial_decrypt) {
+        const dec = handshake.decryptProtected(&self.rx, record) catch |err| switch (err) {
+            error.AuthenticationFailed => {
+                const skipped: u32 = @intCast(hdr.length());
+                if (skipped > self.early_data_skip_limit - self.early_data_skip_bytes)
+                    return error.EarlyDataSkipLimitExceeded;
+                self.early_data_skip_bytes += skipped;
+                return .none;
+            },
+            else => {
+                if (self.fin_frag.len > 0) self.fin_frag.clear();
+                return err;
+            },
+        };
+        self.early_data_skip = .off;
+        return self.handleClientFlightRecord(dec);
+    }
+
     const dec = handshake.decryptProtected(&self.rx, record) catch |err| {
         if (self.fin_frag.len > 0) self.fin_frag.clear();
         return err;
     };
+    return self.handleClientFlightRecord(dec);
+}
+
+/// Dispatch one deprotected client-flight record (wait_client_finished).
+/// Shared by the plain handshake-key path and the §4.2.10 skip-mode trial
+/// path so both enforce identical flight framing and transcript rules.
+fn handleClientFlightRecord(
+    self: *ServerHandshake,
+    dec: RecordLayer.DecryptedRecord,
+) HandleError!Event {
 
     // RFC 8446 §5.1 — if a Finished fragment is pending and the inner
     // content type is not handshake, reject with UnexpectedMessage.
@@ -2540,6 +2672,18 @@ fn clientEcdsaScalar() []const u8 {
     // ziglint-ignore: Z028, Z007
     const f = @import("fixtures");
     return &f.client_ecdsa_scalar;
+}
+
+/// First hybrid group this backend supports that can force a HelloRetryRequest
+/// (advertised in supported_groups without an initial client key_share). Used
+/// by the §4.2.10 HRR decline tests; the classical groups cannot force HRR
+/// from the real client engine because it always sends shares for them.
+fn firstSupportedHrrTriggerGroup() ?NamedGroup {
+    const candidates = [_]NamedGroup{ .x25519_mlkem768, .secp256r1_mlkem768 };
+    for (candidates) |group| {
+        if (backend.supportsServerHybridGroup(group)) return group;
+    }
+    return null;
 }
 const test_p256_seed_a = memx.hex(32, "000102030405060708090a0b0c0d0e0f" ++
     "101112131415161718191a1b1c1d1e1f");
@@ -6609,9 +6753,11 @@ test "0-RTT: max u32 early-data limit rejects bytes beyond remaining budget" {
 }
 
 // RFC 8446 §4.2.10 — when no PSK is selected (psk_lookup returns null),
-// early_rx is not installed. 0-RTT records cannot be decrypted and the
-// server treats them as handshake-key records that fail authentication.
-test "0-RTT: no PSK selected means early data is rejected" {
+// early_rx is not installed and the server declines the early_data offer.
+// 0-RTT records already in flight fail deprotection under the handshake
+// traffic key; the server skips them (bounded) until the first record
+// deprotects successfully, so the ordinary 1-RTT handshake still completes.
+test "0-RTT: no PSK selected means early data is skipped and 1-RTT completes" {
     const resumption_master: hkdf.HkdfSha256.Prk = .init(.{
         0x7d, 0xf2, 0x35, 0xf2, 0x03, 0x1d, 0x2a, 0x05,
         0x12, 0x87, 0xd0, 0x2b, 0x02, 0x41, 0xb0, 0xbf,
@@ -6653,20 +6799,948 @@ test "0-RTT: no PSK selected means early data is rejected" {
         .psk_lookup = .{ .context = &no_match, .lookup = NoMatch.l },
     });
     var server_out: [4096]u8 = undefined;
-    _ = try server.acceptClientHello(ch_record, &server_out);
+    const sh_record = try server.acceptClientHello(ch_record, &server_out);
     try testing.expect(server.early_rx == null);
     try testing.expect(server.selected_psk == null);
+    // The offer was declined with records already in flight: skip mode on.
+    try testing.expect(server.early_data_skip == .trial_decrypt);
 
-    // Send 0-RTT data — server has no early_rx, so the record falls through
-    // to the handshake key decrypt, which fails (wrong key).
+    // Send 0-RTT data — the server holds no early key, so the record fails
+    // deprotection under the handshake key and is discarded, not aborted.
     var early_buf: [256]u8 = undefined;
     const early_record = try client.sendEarlyData("hello 0-rtt", &early_buf);
+    client.completeWrite();
     var early_rx_buf: [256]u8 = undefined;
     @memcpy(early_rx_buf[0..early_record.len], early_record);
+    try testing.expectEqual(
+        ServerHandshake.Event.none,
+        try server.handleRecord(early_rx_buf[0..early_record.len], &server_out),
+    );
+    // The failed trial counts its wire payload and advances nothing: the
+    // handshake-key receive sequence stays at 0 for the real second flight.
+    try testing.expectEqual(
+        @as(u32, @intCast(early_record.len - frame.header_len)),
+        server.early_data_skip_bytes,
+    );
+    try testing.expectEqual(@as(u64, 0), server.rx.seq);
+    try testing.expect(server.early_data_skip == .trial_decrypt);
+
+    // The client processes the ServerHello and the authenticated flight,
+    // then emits its Finished under the handshake traffic key.
+    _ = try client.handleRecord(server_out[0..sh_record.len], &client_out);
+    var signer = try signature.PrivateKey.fromP256Scalar(serverEcdsaScalar()[0..32]);
+    defer signer.deinit();
+    var plaintext: [4096]u8 = undefined;
+    const flight_record = try server.sendAuthenticatedFlight(
+        &.{serverEcdsaCertDer()},
+        signer.signer(),
+        &plaintext,
+        &server_out,
+    );
+    const client_flight_ev = try client.handleRecord(
+        server_out[0..flight_record.len],
+        &client_out,
+    );
+    const client_finished = switch (client_flight_ev) {
+        .write => |w| w,
+        else => return error.UnexpectedEvent,
+    };
+    client.completeWrite();
+
+    // The first record that deprotects under the handshake key is the start
+    // of the client's second flight: the Finished verifies and the server
+    // completes the 1-RTT handshake despite the skipped early record.
+    var client_out_mut: [4096]u8 = undefined;
+    @memcpy(client_out_mut[0..client_finished.len], client_out[0..client_finished.len]);
+    try testing.expectEqual(
+        ServerHandshake.Event.none,
+        try server.handleRecord(client_out_mut[0..client_finished.len], &server_out),
+    );
+    try testing.expect(server.isConnected());
+    // Skip mode ended for good at the first successful deprotection.
+    try testing.expect(server.early_data_skip == .off);
+}
+
+// RFC 8446 §4.2.10 — ordinary policy decline: the PSK is selected but its
+// ticket entry permits no early data, so early_rx is never installed while
+// the client (whose own ticket copy advertised 0-RTT) already has records in
+// flight under the early traffic key. The server skips each one by
+// trial-deprotection with the handshake key and the 1-RTT resumption
+// handshake completes. The two failed trials prove the receive sequence and
+// AEAD context survive discarded records: the real Finished still
+// deprotects at sequence 0.
+test "0-RTT: declined early records in flight are skipped and 1-RTT completes" {
+    const resumption_master: hkdf.HkdfSha256.Prk = .init(.{
+        0x7d, 0xf2, 0x35, 0xf2, 0x03, 0x1d, 0x2a, 0x05,
+        0x12, 0x87, 0xd0, 0x2b, 0x02, 0x41, 0xb0, 0xbf,
+        0xda, 0xf8, 0x6c, 0xc8, 0x56, 0x23, 0x1f, 0x2d,
+        0x5a, 0xba, 0x46, 0xc4, 0x34, 0xec, 0x19, 0x6c,
+    });
+    const psk = hkdf.HkdfSha256.resumptionPsk(resumption_master, &.{ 0x00, 0x00 });
+    const identity = [_]u8{ 0x2c, 0x03, 0x5d, 0x82, 0x93, 0x59 };
+
+    var client: ClientHandshake = .init(.{
+        .keypairs = try .init(.generate()),
+        .host_name = null,
+        .now_sec = 0,
+        .random = .zero,
+    });
+    client.policy.insecure_no_chain_anchor = true;
+    // The client's ticket copy permits 0-RTT, so it offers early_data and
+    // installs early_tx; the server's lookup entry has max_early_data_size
+    // null, so the offer is declined.
+    var ticket: ClientHandshake.SessionTicket = .{
+        .ticket_age_add = 0x262a6494,
+        .cipher_suite = .aes_128_gcm_sha256,
+        .max_early_data_size = 16384,
+    };
+    ticket.identity.appendSliceAssumeCapacity(&identity);
+    ticket.psk.appendSliceAssumeCapacity(&psk.data);
+
+    var client_out: [4096]u8 = undefined;
+    const ch_record = try client.startWithPsk(&ticket, &client_out, true);
+    client.completeWrite();
+    try testing.expect(client.early_tx != null);
+
+    // Two 0-RTT records are already in flight when the decline happens.
+    var early_buf: [256]u8 = undefined;
+    const early_one = try client.sendEarlyData("early one", &early_buf);
+    client.completeWrite();
+    var early_two_buf: [256]u8 = undefined;
+    const early_two = try client.sendEarlyData("early two", &early_two_buf);
+    client.completeWrite();
+
+    const Lookup = struct {
+        const Self = @This();
+        psk: []const u8,
+        identity: []const u8,
+        fn l(ctx: *anyopaque, id: []const u8) ?PskEntry {
+            const self: *Self = @ptrCast(@alignCast(ctx));
+            if (std.mem.eql(u8, id, self.identity))
+                return .{ .psk = self.psk, .cipher_suite = .aes_128_gcm_sha256 };
+            return null;
+        }
+    };
+    var lookup_ctx: Lookup = .{ .psk = &psk.data, .identity = &identity };
+
+    var server: ServerHandshake = .init(.{
+        .keypairs = try .init(.generate()),
+        .random = .zero,
+        .psk_lookup = .{ .context = &lookup_ctx, .lookup = Lookup.l },
+    });
+    var server_out: [4096]u8 = undefined;
+    const sh_record = try server.acceptClientHello(ch_record, &server_out);
+    try testing.expect(server.selected_psk != null);
+    try testing.expect(server.early_rx == null);
+    try testing.expect(server.early_data_skip == .trial_decrypt);
+
+    // Both early records fail handshake-key deprotection and are discarded.
+    var early_rx_buf: [256]u8 = undefined;
+    @memcpy(early_rx_buf[0..early_one.len], early_one);
+    try testing.expectEqual(
+        ServerHandshake.Event.none,
+        try server.handleRecord(early_rx_buf[0..early_one.len], &server_out),
+    );
+    @memcpy(early_rx_buf[0..early_two.len], early_two);
+    try testing.expectEqual(
+        ServerHandshake.Event.none,
+        try server.handleRecord(early_rx_buf[0..early_two.len], &server_out),
+    );
+    try testing.expectEqual(
+        @as(u32, @intCast(early_one.len + early_two.len - 2 * frame.header_len)),
+        server.early_data_skip_bytes,
+    );
+    try testing.expectEqual(@as(u64, 0), server.rx.seq);
+
+    // Server flight: EE without early_data + Finished (PSK resumption).
+    _ = try client.handleRecord(server_out[0..sh_record.len], &client_out);
+    var signer = try signature.PrivateKey.fromP256Scalar(serverEcdsaScalar()[0..32]);
+    defer signer.deinit();
+    var plaintext: [4096]u8 = undefined;
+    const flight_record = try server.sendAuthenticatedFlight(
+        &.{serverEcdsaCertDer()},
+        signer.signer(),
+        &plaintext,
+        &server_out,
+    );
+    const client_flight_ev = try client.handleRecord(
+        server_out[0..flight_record.len],
+        &client_out,
+    );
+    const client_finished = switch (client_flight_ev) {
+        .write => |w| w,
+        else => return error.UnexpectedEvent,
+    };
+    client.completeWrite();
+    try testing.expect(client.isConnected());
+    // The client saw the decline and cleared its early key.
+    try testing.expect(client.early_tx == null);
+    try testing.expect(!client.server_accepted_early_data);
+
+    // The Finished is the first handshake-key record: it deprotects at
+    // sequence 0 (both trials left the counter alone) and completes the
+    // handshake with no EndOfEarlyData expected.
+    var client_out_mut: [4096]u8 = undefined;
+    @memcpy(client_out_mut[0..client_finished.len], client_out[0..client_finished.len]);
+    try testing.expectEqual(
+        ServerHandshake.Event.none,
+        try server.handleRecord(client_out_mut[0..client_finished.len], &server_out),
+    );
+    try testing.expect(server.isConnected());
+    try testing.expect(server.early_data_skip == .off);
+    try testing.expect(!server.end_of_early_data_received);
+
+    // Post-handshake application data round-trips on the 1-RTT keys.
+    const client_app = try client.sendApplicationData("ping", &client_out);
+    client.completeWrite();
+    try testing.expectEqualStrings(
+        "ping",
+        try server.receiveApplicationData(client_out[0..client_app.len]),
+    );
+}
+
+// RFC 8446 §4.2.10 — a server that requires fresh client authentication
+// declines the PSK (no early key is installed) and runs the full certificate
+// handshake. The client's already-in-flight 0-RTT record is skipped and the
+// authenticated 1-RTT flight (client Certificate + CertificateVerify +
+// Finished) completes normally.
+test "0-RTT: required client auth declines PSK, skips early data, completes 1-RTT" {
+    const psk: [32]u8 = @splat(0x42);
+    const identity = "client-auth-ticket";
+    var client: ClientHandshake = .init(.{
+        .keypairs = try .init(.generate()),
+        .host_name = "ztls.server.test",
+        .now_sec = 0,
+        .random = .zero,
+    });
+    defer client.deinit();
+    client.policy.insecure_no_chain_anchor = true;
+    var client_signer = try signature.PrivateKey.fromP256Scalar(clientEcdsaScalar()[0..32]);
+    defer client_signer.deinit();
+    client.setCredentials(&.{clientEcdsaCertDer()}, client_signer.signer());
+    var ticket: ClientHandshake.SessionTicket = .{
+        .ticket_age_add = 0,
+        .cipher_suite = .aes_128_gcm_sha256,
+        .max_early_data_size = 16384,
+    };
+    ticket.identity.appendSliceAssumeCapacity(identity);
+    ticket.psk.appendSliceAssumeCapacity(&psk);
+
+    var client_out: [4096]u8 = undefined;
+    const ch_record = try client.startWithPsk(&ticket, &client_out, true);
+    client.completeWrite();
+
+    // 0-RTT record already in flight when the server declines the PSK.
+    var early_buf: [256]u8 = undefined;
+    const early_record = try client.sendEarlyData("hello 0-rtt", &early_buf);
+    client.completeWrite();
+
+    const Lookup = struct {
+        const Context = struct {
+            identity: []const u8,
+            psk: []const u8,
+        };
+        fn lookup(context: *anyopaque, offered_identity: []const u8) ?PskEntry {
+            const ctx: *Context = @ptrCast(@alignCast(context));
+            if (!mem.eql(u8, offered_identity, ctx.identity)) return null;
+            return .{ .psk = ctx.psk, .cipher_suite = .aes_128_gcm_sha256 };
+        }
+    };
+    var lookup_context: Lookup.Context = .{ .identity = identity, .psk = &psk };
+    var client_cert_storage: [1024]u8 = undefined;
+    var server: ServerHandshake = .init(.{
+        .keypairs = try .init(.generate()),
+        .random = .zero,
+        .psk_lookup = .{ .context = &lookup_context, .lookup = Lookup.lookup },
+        .client_auth = .required,
+        .insecure_no_client_chain_anchor = true,
+        .client_cert_buffer = &client_cert_storage,
+    });
+    defer server.deinit();
+    var server_out: [4096]u8 = undefined;
+    const sh_record = try server.acceptClientHello(ch_record, &server_out);
+    // The required-auth policy declined the PSK: no resumption, no early key,
+    // skip mode armed for the in-flight 0-RTT record.
+    try testing.expect(server.selected_psk == null);
+    try testing.expect(server.early_rx == null);
+    try testing.expect(server.early_data_skip == .trial_decrypt);
+
+    var early_rx_buf: [256]u8 = undefined;
+    @memcpy(early_rx_buf[0..early_record.len], early_record);
+    try testing.expectEqual(
+        ServerHandshake.Event.none,
+        try server.handleRecord(early_rx_buf[0..early_record.len], &server_out),
+    );
+    try testing.expectEqual(@as(u64, 0), server.rx.seq);
+
+    // Full certificate-authenticated server flight (with CertificateRequest).
+    _ = try client.handleRecord(server_out[0..sh_record.len], &client_out);
+    var server_signer = try signature.PrivateKey.fromP256Scalar(serverEcdsaScalar()[0..32]);
+    defer server_signer.deinit();
+    var plaintext: [4096]u8 = undefined;
+    const flight_record = try server.sendAuthenticatedFlight(
+        &.{serverEcdsaCertDer()},
+        server_signer.signer(),
+        &plaintext,
+        &server_out,
+    );
+    const client_event = try client.handleRecord(server_out[0..flight_record.len], &client_out);
+    const client_flight = switch (client_event) {
+        .write => |write| write,
+        else => return error.UnexpectedEvent,
+    };
+    client.completeWrite();
+
+    // The client flight record (Certificate + CertificateVerify + Finished
+    // under the handshake key) deprotects, ends skip mode, and completes the
+    // authenticated 1-RTT handshake.
+    var client_out_mut: [4096]u8 = undefined;
+    @memcpy(client_out_mut[0..client_flight.len], client_out[0..client_flight.len]);
+    try testing.expectEqual(
+        ServerHandshake.Event.none,
+        try server.handleRecord(client_out_mut[0..client_flight.len], &server_out),
+    );
+    try testing.expect(server.isConnected());
+    try testing.expect(!server.isResumed());
+    try testing.expect(server.clientCertificate() != null);
+    try testing.expect(server.early_data_skip == .off);
+}
+
+// RFC 8446 §4.2.10 — the decline-skip budget is bounded: records that fail
+// handshake-key deprotection are discarded only up to the configured
+// ciphertext-byte limit (inclusive); one byte beyond the remaining budget
+// aborts the handshake instead of letting a peer stream undecryptable records
+// forever. The abort maps to bad_record_mac (§5.2).
+test "0-RTT: decline skip budget exhaustion aborts the handshake" {
+    const psk: [32]u8 = @splat(0x42);
+    const identity = "budget-ticket";
+    var client: ClientHandshake = .init(.{
+        .keypairs = try .init(.generate()),
+        .host_name = null,
+        .now_sec = 0,
+        .random = .zero,
+    });
+    defer client.deinit();
+    client.policy.insecure_no_chain_anchor = true;
+    var ticket: ClientHandshake.SessionTicket = .{
+        .ticket_age_add = 0,
+        .cipher_suite = .aes_128_gcm_sha256,
+        .max_early_data_size = 16384,
+    };
+    ticket.identity.appendSliceAssumeCapacity(identity);
+    ticket.psk.appendSliceAssumeCapacity(&psk);
+
+    var client_out: [4096]u8 = undefined;
+    const ch_record = try client.startWithPsk(&ticket, &client_out, true);
+    client.completeWrite();
+
+    var early_buf: [256]u8 = undefined;
+    const early_one = try client.sendEarlyData("hello 0-rtt", &early_buf);
+    client.completeWrite();
+    var early_two_buf: [256]u8 = undefined;
+    const early_two = try client.sendEarlyData("hello 0-rtt", &early_two_buf);
+    client.completeWrite();
+    // Budget sized to exactly one early record's wire payload: the first
+    // record fits, the second does not.
+    const skip_limit: u32 = @intCast(early_one.len - frame.header_len);
+
+    // Server with no PSK lookup: the offer is declined with no early key.
+    var server: ServerHandshake = .init(.{
+        .keypairs = try .init(.generate()),
+        .random = .zero,
+        .early_data_skip_limit = skip_limit,
+    });
+    defer server.deinit();
+    var server_out: [4096]u8 = undefined;
+    _ = try server.acceptClientHello(ch_record, &server_out);
+    try testing.expect(server.early_data_skip == .trial_decrypt);
+
+    var early_rx_buf: [256]u8 = undefined;
+    @memcpy(early_rx_buf[0..early_one.len], early_one);
+    try testing.expectEqual(
+        ServerHandshake.Event.none,
+        try server.handleRecord(early_rx_buf[0..early_one.len], &server_out),
+    );
+    try testing.expectEqual(skip_limit, server.early_data_skip_bytes);
+
+    // Second record: same wire payload, zero budget remaining.
+    @memcpy(early_rx_buf[0..early_two.len], early_two);
+    try testing.expectError(
+        error.EarlyDataSkipLimitExceeded,
+        server.handleRecord(early_rx_buf[0..early_two.len], &server_out),
+    );
+    // The aborted record is not counted and the sequence never moved.
+    try testing.expectEqual(skip_limit, server.early_data_skip_bytes);
+    try testing.expectEqual(@as(u64, 0), server.rx.seq);
+}
+
+// RFC 8446 §4.2.10 — the skip window ends at the first record that
+// deprotects under the handshake key; after that, corrupted records are
+// ordinary §5.2 authentication failures again, not silently skipped early
+// data. A partial handshake message opens the flight (fragment reassembly
+// pending), then a corrupted follow-up record must abort.
+test "0-RTT: corrupted record after the skip window aborts" {
+    const psk: [32]u8 = @splat(0x42);
+    const identity = "skip-window-ticket";
+    var client: ClientHandshake = .init(.{
+        .keypairs = try .init(.generate()),
+        .host_name = null,
+        .now_sec = 0,
+        .random = .zero,
+    });
+    defer client.deinit();
+    client.policy.insecure_no_chain_anchor = true;
+    var ticket: ClientHandshake.SessionTicket = .{
+        .ticket_age_add = 0,
+        .cipher_suite = .aes_128_gcm_sha256,
+        .max_early_data_size = 16384,
+    };
+    ticket.identity.appendSliceAssumeCapacity(identity);
+    ticket.psk.appendSliceAssumeCapacity(&psk);
+
+    var client_out: [4096]u8 = undefined;
+    const ch_record = try client.startWithPsk(&ticket, &client_out, true);
+    client.completeWrite();
+
+    var early_buf: [256]u8 = undefined;
+    const early_record = try client.sendEarlyData("hello 0-rtt", &early_buf);
+    client.completeWrite();
+
+    // Server with no PSK lookup: declined, no early key, skip mode armed.
+    var server: ServerHandshake = .init(.{
+        .keypairs = try .init(.generate()),
+        .random = .zero,
+    });
+    defer server.deinit();
+    var server_out: [4096]u8 = undefined;
+    const sh_record = try server.acceptClientHello(ch_record, &server_out);
+    try testing.expect(server.early_data_skip == .trial_decrypt);
+
+    // The 0-RTT record is skipped.
+    var early_rx_buf: [256]u8 = undefined;
+    @memcpy(early_rx_buf[0..early_record.len], early_record);
+    try testing.expectEqual(
+        ServerHandshake.Event.none,
+        try server.handleRecord(early_rx_buf[0..early_record.len], &server_out),
+    );
+
+    // The client processes the ServerHello; snapshot its handshake traffic
+    // key so the test can craft second-flight records record-by-record.
+    _ = try client.handleRecord(server_out[0..sh_record.len], &client_out);
+    var client_hs_tx = try client.tx.clone();
+    defer client_hs_tx.deinit();
+
+    // First flight record: a partial Certificate handshake message (4-byte
+    // header declaring 100 body bytes plus the first 10). It deprotects, ends
+    // skip mode, and parks in the fragment reassembly buffer.
+    const partial = [_]u8{
+        @intFromEnum(HandshakeType.certificate),
+        0,
+        0,
+        100,
+    } ++ [_]u8{0xaa} ** 10;
+    var frag_buf: [256]u8 = undefined;
+    const frag_record = try client_hs_tx.encrypt(.handshake, &partial, &frag_buf);
+    var frag_rx_buf: [256]u8 = undefined;
+    @memcpy(frag_rx_buf[0..frag_record.len], frag_record);
+    try testing.expectEqual(
+        ServerHandshake.Event.none,
+        try server.handleRecord(frag_rx_buf[0..frag_record.len], &server_out),
+    );
+    try testing.expect(server.early_data_skip == .off);
+    try testing.expectEqual(partial.len, server.fin_frag.len);
+    const skipped_before: u32 = server.early_data_skip_bytes;
+
+    // Second flight record, corrupted: an authentication failure past the
+    // skip window aborts and drops the pending fragment instead of being
+    // discarded as early data.
+    var rest_buf: [256]u8 = undefined;
+    const rest_record = try client_hs_tx.encrypt(
+        .handshake,
+        &([_]u8{0xbb} ** 90),
+        &rest_buf,
+    );
+    rest_buf[frame.header_len] ^= 0xff;
     try testing.expectError(
         error.AuthenticationFailed,
-        server.handleRecord(early_rx_buf[0..early_record.len], &early_rx_buf),
+        server.handleRecord(rest_buf[0..rest_record.len], &server_out),
     );
+    try testing.expectEqual(@as(usize, 0), server.fin_frag.len);
+    try testing.expectEqual(skipped_before, server.early_data_skip_bytes);
+}
+
+// RFC 8446 §4.2.10 — HelloRetryRequest decline: a client whose ClientHello1
+// offered early_data may already have 0-RTT records in flight when the
+// server answers with HRR. The server holds no key that can deprotect them,
+// so it skips records with an outer content type of application_data while
+// ClientHello2 is pending, and the retry handshake completes normally.
+test "0-RTT: HRR decline skips in-flight early data and the retry handshake completes" {
+    const group = firstSupportedHrrTriggerGroup() orelse return error.SkipZigTest;
+    var group_storage = [1]NamedGroup{group};
+    const hybrid_groups: []const NamedGroup = &group_storage;
+
+    const master: hkdf.HkdfSha256.Prk = .init(@splat(0x7d));
+    const psk = hkdf.HkdfSha256.resumptionPsk(master, &.{ 0x00, 0x00 });
+    const identity = [_]u8{ 0x2c, 0x03, 0x5d, 0x82, 0x93, 0x59 };
+
+    var client: ClientHandshake = .init(.{
+        .keypairs = try .init(.generate()),
+        .host_name = null,
+        .now_sec = 0,
+        .random = .zero,
+        .hybrid = .{ .supported_groups = hybrid_groups, .initial_key_share = null },
+    });
+    defer client.deinit();
+    client.policy.insecure_no_chain_anchor = true;
+    var ticket: ClientHandshake.SessionTicket = .{
+        .ticket_age_add = 0x262a6494,
+        .cipher_suite = .aes_128_gcm_sha256,
+        .max_early_data_size = 16384,
+    };
+    ticket.identity.appendSliceAssumeCapacity(&identity);
+    ticket.psk.appendSliceAssumeCapacity(&psk.data);
+
+    var client_out: [4096]u8 = undefined;
+    const ch_record = try client.startWithPsk(&ticket, &client_out, true);
+    client.completeWrite();
+    try testing.expect(client.early_tx != null);
+
+    // 0-RTT record already in flight when the HRR is sent.
+    var early_buf: [256]u8 = undefined;
+    const early_record = try client.sendEarlyData("hello 0-rtt", &early_buf);
+    client.completeWrite();
+
+    const Lookup = struct {
+        const Self = @This();
+        psk: []const u8,
+        identity: []const u8,
+        fn l(ctx: *anyopaque, id: []const u8) ?PskEntry {
+            const self: *Self = @ptrCast(@alignCast(ctx));
+            if (std.mem.eql(u8, id, self.identity))
+                return .{ .psk = self.psk, .cipher_suite = .aes_128_gcm_sha256 };
+            return null;
+        }
+    };
+    var lookup_ctx: Lookup = .{ .psk = &psk.data, .identity = &identity };
+
+    var server: ServerHandshake = .init(.{
+        .keypairs = try .init(.generate()),
+        .random = .zero,
+        .psk_lookup = .{ .context = &lookup_ctx, .lookup = Lookup.l },
+        .hybrid_groups = hybrid_groups,
+    });
+    defer server.deinit();
+    server.supportSuites(&.{.aes_128_gcm_sha256});
+    var server_out: [4096]u8 = undefined;
+    const hrr_record = try server.acceptClientHello(ch_record, &server_out);
+    try testing.expectEqual(.wait_ch, server.state);
+    // The HRR declined the early_data offer with records in flight: the
+    // outer-content-type skip window is armed while ClientHello2 is pending.
+    try testing.expect(server.early_data_skip == .await_client_hello2);
+
+    // The in-flight 0-RTT record arrives while ClientHello2 is pending: it is
+    // skipped by outer content type, never decrypted.
+    var early_rx_buf: [256]u8 = undefined;
+    @memcpy(early_rx_buf[0..early_record.len], early_record);
+    try testing.expectEqual(
+        ServerHandshake.Event.none,
+        try server.handleRecord(early_rx_buf[0..early_record.len], &server_out),
+    );
+    try testing.expectEqual(
+        @as(u32, @intCast(early_record.len - frame.header_len)),
+        server.early_data_skip_bytes,
+    );
+
+    // The client consumes the HRR, invalidates its early key (§4.1.4), and
+    // emits ClientHello2 without early_data.
+    var hrr_rx: [4096]u8 = undefined;
+    @memcpy(hrr_rx[0..hrr_record.len], hrr_record);
+    const ch2_event = try client.handleRecord(hrr_rx[0..hrr_record.len], &client_out);
+    const ch2_record = switch (ch2_event) {
+        .write => |w| w,
+        else => return error.UnexpectedEvent,
+    };
+    client.completeWrite();
+    try testing.expect(client.early_tx == null);
+    const parsed_ch2 = try client_hello.parse(ch2_record[frame.header_len..]);
+    try testing.expect(!parsed_ch2.offered_early_data);
+
+    // ClientHello2 is accepted: the PSK is re-selected over the retry
+    // transcript and the skip window is closed for good.
+    const sh_record = try server.acceptClientHello(ch2_record, &server_out);
+    try testing.expect(server.selected_psk != null);
+    try testing.expectEqual(.wait_client_finished, server.state);
+    try testing.expect(server.early_data_skip == .off);
+    try testing.expectEqual(@as(u32, 0), server.early_data_skip_bytes);
+
+    // The resumption handshake completes despite the skipped early record.
+    try client.processServerHello(sh_record[frame.header_len..]);
+    var signer = try signature.PrivateKey.fromP256Scalar(serverEcdsaScalar()[0..32]);
+    defer signer.deinit();
+    var plaintext: [4096]u8 = undefined;
+    const flight_record = try server.sendAuthenticatedFlight(
+        &.{serverEcdsaCertDer()},
+        signer.signer(),
+        &plaintext,
+        &server_out,
+    );
+    const flight_event = try client.handleRecord(server_out[0..flight_record.len], &client_out);
+    const client_finished = switch (flight_event) {
+        .write => |w| w,
+        else => return error.UnexpectedEvent,
+    };
+    client.completeWrite();
+    try testing.expect(client.isConnected());
+
+    var client_out_mut: [4096]u8 = undefined;
+    @memcpy(client_out_mut[0..client_finished.len], client_out[0..client_finished.len]);
+    try server.processClientFinished(client_out_mut[0..client_finished.len]);
+    try testing.expect(server.isConnected());
+
+    // Application-data round trip under the post-retry keys.
+    const client_app = try client.sendApplicationData("ping", &client_out);
+    client.completeWrite();
+    try testing.expectEqualStrings(
+        "ping",
+        try server.receiveApplicationData(client_out[0..client_app.len]),
+    );
+}
+
+// RFC 8446 §4.2.10, §5.2 — the decline-skip budget must cover one full
+// maximum-size early-data record: 2^14 plaintext + 1 inner content-type
+// byte + 16 AEAD tag bytes = 16401 wire payload bytes.
+test "0-RTT: default decline-skip budget covers a full max-size early record" {
+    const psk: [32]u8 = @splat(0x42);
+    const identity = "max-size-ticket";
+    var client: ClientHandshake = .init(.{
+        .keypairs = try .init(.generate()),
+        .host_name = null,
+        .now_sec = 0,
+        .random = .zero,
+    });
+    defer client.deinit();
+    client.policy.insecure_no_chain_anchor = true;
+    var ticket: ClientHandshake.SessionTicket = .{
+        .ticket_age_add = 0,
+        .cipher_suite = .aes_128_gcm_sha256,
+        .max_early_data_size = 16384,
+    };
+    ticket.identity.appendSliceAssumeCapacity(identity);
+    ticket.psk.appendSliceAssumeCapacity(&psk);
+
+    var client_out: [4096]u8 = undefined;
+    const ch_record = try client.startWithPsk(&ticket, &client_out, true);
+    client.completeWrite();
+
+    // A full maximum-size 0-RTT record is already in flight when the
+    // server (no psk_lookup: offer declined) responds.
+    var early_plain: [frame.max_plaintext_len]u8 = @splat(0xaa);
+    var early_buf: [frame.max_wire_record_len]u8 = undefined;
+    const early_record = try client.sendEarlyData(&early_plain, &early_buf);
+    client.completeWrite();
+    try testing.expectEqual(
+        @as(usize, frame.header_len + frame.max_plaintext_len + 1 + 16),
+        early_record.len,
+    );
+
+    var server: ServerHandshake = .init(.{
+        .keypairs = try .init(.generate()),
+        .random = .zero,
+    });
+    defer server.deinit();
+    var server_out: [4096]u8 = undefined;
+    const sh_record = try server.acceptClientHello(ch_record, &server_out);
+    try testing.expect(server.early_rx == null);
+
+    // The max-size record fits inside the default budget and is skipped.
+    var early_rx_buf: [frame.max_wire_record_len]u8 = undefined;
+    @memcpy(early_rx_buf[0..early_record.len], early_record);
+    try testing.expectEqual(
+        ServerHandshake.Event.none,
+        try server.handleRecord(early_rx_buf[0..early_record.len], &server_out),
+    );
+    try testing.expectEqual(
+        @as(u32, frame.max_plaintext_len + 1 + 16),
+        server.early_data_skip_bytes,
+    );
+
+    // The 1-RTT handshake still completes after the skipped record.
+    _ = try client.handleRecord(server_out[0..sh_record.len], &client_out);
+    var signer = try signature.PrivateKey.fromP256Scalar(serverEcdsaScalar()[0..32]);
+    defer signer.deinit();
+    var plaintext: [4096]u8 = undefined;
+    const flight_record = try server.sendAuthenticatedFlight(
+        &.{serverEcdsaCertDer()},
+        signer.signer(),
+        &plaintext,
+        &server_out,
+    );
+    const flight_event = try client.handleRecord(server_out[0..flight_record.len], &client_out);
+    const client_finished = switch (flight_event) {
+        .write => |w| w,
+        else => return error.UnexpectedEvent,
+    };
+    client.completeWrite();
+    var client_out_mut: [4096]u8 = undefined;
+    @memcpy(client_out_mut[0..client_finished.len], client_out[0..client_finished.len]);
+    try server.processClientFinished(client_out_mut[0..client_finished.len]);
+    try testing.expect(server.isConnected());
+}
+
+const hrr_decline_identity = [_]u8{ 0x3a, 0x5e, 0x11, 0x97, 0x64, 0x2f };
+const hrr_decline_psk: [32]u8 = @splat(0x5c);
+
+const HrrDeclineSetup = struct {
+    /// One in-flight 0-RTT record from the client (borrows `early_buf`).
+    early_record: []const u8,
+    /// The HelloRetryRequest record the server emitted (borrows `hrr_buf`).
+    hrr_record: []const u8,
+};
+
+/// RFC 8446 §4.2.10 — drive a ClientHello1 that offers early_data into a
+/// HelloRetryRequest decline. The engines must already be configured as a
+/// hybrid-HRR pair (the client advertises `groups` without an initial
+/// key_share, the server lists the same group) with no server psk_lookup, so
+/// the offer is declined outright and the server answers with HRR. Afterwards
+/// the server waits for ClientHello2 with the early-data skip window armed.
+fn setupHrrEarlyDataDecline(
+    client: *ClientHandshake,
+    server: *ServerHandshake,
+    client_out: []u8,
+    server_out: []u8,
+    early_buf: []u8,
+    hrr_buf: []u8,
+) !HrrDeclineSetup {
+    var ticket: ClientHandshake.SessionTicket = .{
+        .ticket_age_add = 0x262a6494,
+        .cipher_suite = .aes_128_gcm_sha256,
+        .max_early_data_size = 16384,
+    };
+    ticket.identity.appendSliceAssumeCapacity(&hrr_decline_identity);
+    ticket.psk.appendSliceAssumeCapacity(&hrr_decline_psk);
+    const ch_record = try client.startWithPsk(&ticket, client_out, true);
+    client.completeWrite();
+    const early_record = try client.sendEarlyData("hello 0-rtt", early_buf);
+    client.completeWrite();
+    const hrr_record = try server.acceptClientHello(ch_record, server_out);
+    @memcpy(hrr_buf[0..hrr_record.len], hrr_record);
+    return .{
+        .early_record = early_buf[0..early_record.len],
+        .hrr_record = hrr_buf[0..hrr_record.len],
+    };
+}
+
+// RFC 8446 §4.2.10 — the HRR decline-skip budget is bounded exactly like the
+// 1-RTT path: outer application_data records are discarded only up to the
+// configured wire-byte budget (inclusive), and the first record that does
+// not fit aborts with EarlyDataSkipLimitExceeded (bad_record_mac) instead of
+// letting a peer stream undecryptable records forever.
+test "0-RTT: HRR decline skip budget exhaustion aborts the handshake" {
+    const group = firstSupportedHrrTriggerGroup() orelse return error.SkipZigTest;
+    var group_storage = [1]NamedGroup{group};
+    var client: ClientHandshake = .init(.{
+        .keypairs = try .init(.generate()),
+        .host_name = null,
+        .now_sec = 0,
+        .random = .zero,
+        .hybrid = .{ .supported_groups = &group_storage, .initial_key_share = null },
+    });
+    defer client.deinit();
+    client.policy.insecure_no_chain_anchor = true;
+    // Budget sized to exactly one "hello 0-rtt" record's wire payload:
+    // plaintext + inner content type + AEAD tag.
+    const skip_limit: u32 = @intCast("hello 0-rtt".len + 1 + aead.tag_len);
+    var server: ServerHandshake = .init(.{
+        .keypairs = try .init(.generate()),
+        .random = .zero,
+        .hybrid_groups = &group_storage,
+        .early_data_skip_limit = skip_limit,
+    });
+    defer server.deinit();
+    var client_out: [4096]u8 = undefined;
+    var server_out: [4096]u8 = undefined;
+    var early_buf: [256]u8 = undefined;
+    var hrr_buf: [4096]u8 = undefined;
+    const setup = try setupHrrEarlyDataDecline(
+        &client,
+        &server,
+        &client_out,
+        &server_out,
+        &early_buf,
+        &hrr_buf,
+    );
+    try testing.expect(server.early_data_skip == .await_client_hello2);
+
+    // The first record fits the budget exactly (inclusive boundary).
+    var early_rx_buf: [256]u8 = undefined;
+    @memcpy(early_rx_buf[0..setup.early_record.len], setup.early_record);
+    try testing.expectEqual(
+        ServerHandshake.Event.none,
+        try server.handleRecord(early_rx_buf[0..setup.early_record.len], &server_out),
+    );
+    try testing.expectEqual(skip_limit, server.early_data_skip_bytes);
+
+    // A second same-size record does not: the window is exhausted.
+    var early_two_buf: [256]u8 = undefined;
+    const early_two = try client.sendEarlyData("hello 0-rtt", &early_two_buf);
+    client.completeWrite();
+    @memcpy(early_rx_buf[0..early_two.len], early_two);
+    try testing.expectError(
+        error.EarlyDataSkipLimitExceeded,
+        server.handleRecord(early_rx_buf[0..early_two.len], &server_out),
+    );
+    // The aborted record is not counted.
+    try testing.expectEqual(skip_limit, server.early_data_skip_bytes);
+}
+
+// RFC 8446 §4.2.10, §5.2 — while the HRR skip window is open, an outer
+// application_data record whose payload cannot be an encrypted TLS 1.3
+// record (zero length, or one AEAD tag or less) is malformed input, not
+// skippable early data: it aborts with RecordTooShort, consumes no budget,
+// and does not close the window, so a zero-length record stream cannot burn
+// skips (or force a window exit) for free.
+test "0-RTT: HRR decline skip rejects malformed application_data records" {
+    const group = firstSupportedHrrTriggerGroup() orelse return error.SkipZigTest;
+    var group_storage = [1]NamedGroup{group};
+    var client: ClientHandshake = .init(.{
+        .keypairs = try .init(.generate()),
+        .host_name = null,
+        .now_sec = 0,
+        .random = .zero,
+        .hybrid = .{ .supported_groups = &group_storage, .initial_key_share = null },
+    });
+    defer client.deinit();
+    client.policy.insecure_no_chain_anchor = true;
+    var server: ServerHandshake = .init(.{
+        .keypairs = try .init(.generate()),
+        .random = .zero,
+        .hybrid_groups = &group_storage,
+    });
+    defer server.deinit();
+    var client_out: [4096]u8 = undefined;
+    var server_out: [4096]u8 = undefined;
+    var early_buf: [256]u8 = undefined;
+    var hrr_buf: [4096]u8 = undefined;
+    const setup = try setupHrrEarlyDataDecline(
+        &client,
+        &server,
+        &client_out,
+        &server_out,
+        &early_buf,
+        &hrr_buf,
+    );
+
+    // Zero-length application_data: five header bytes, no payload.
+    var zero_len = [_]u8{
+        @intFromEnum(frame.ContentType.application_data),
+        0x03,
+        0x03,
+        0x00,
+        0x00,
+    };
+    try testing.expectError(error.RecordTooShort, server.handleRecord(&zero_len, &server_out));
+
+    // Tag-only payload: 16 bytes cannot hold an AEAD tag plus the inner
+    // content-type byte a valid encrypted record needs.
+    const tag_zeros: [aead.tag_len]u8 = @splat(0);
+    var tag_only = [_]u8{
+        @intFromEnum(frame.ContentType.application_data),
+        0x03,
+        0x03,
+        0x00,
+        aead.tag_len,
+    } ++ tag_zeros;
+    try testing.expectError(error.RecordTooShort, server.handleRecord(&tag_only, &server_out));
+
+    // Neither malformed record consumed budget nor closed the window: the
+    // real early record is still skipped afterwards.
+    try testing.expectEqual(@as(u32, 0), server.early_data_skip_bytes);
+    try testing.expect(server.early_data_skip == .await_client_hello2);
+    var early_rx_buf: [256]u8 = undefined;
+    @memcpy(early_rx_buf[0..setup.early_record.len], setup.early_record);
+    try testing.expectEqual(
+        ServerHandshake.Event.none,
+        try server.handleRecord(early_rx_buf[0..setup.early_record.len], &server_out),
+    );
+    try testing.expectEqual(
+        @as(u32, @intCast(setup.early_record.len - frame.header_len)),
+        server.early_data_skip_bytes,
+    );
+}
+
+// RFC 8446 §4.2.10 — ClientHello2 closes the HRR skip window for good:
+// afterwards application_data is no longer skippable early data, and a record
+// that fails deprotection under the handshake key is an ordinary §5.2
+// authentication failure.
+test "0-RTT: HRR skip window closes at ClientHello2" {
+    const group = firstSupportedHrrTriggerGroup() orelse return error.SkipZigTest;
+    var group_storage = [1]NamedGroup{group};
+    var client: ClientHandshake = .init(.{
+        .keypairs = try .init(.generate()),
+        .host_name = null,
+        .now_sec = 0,
+        .random = .zero,
+        .hybrid = .{ .supported_groups = &group_storage, .initial_key_share = null },
+    });
+    defer client.deinit();
+    client.policy.insecure_no_chain_anchor = true;
+    var server: ServerHandshake = .init(.{
+        .keypairs = try .init(.generate()),
+        .random = .zero,
+        .hybrid_groups = &group_storage,
+    });
+    defer server.deinit();
+    var client_out: [4096]u8 = undefined;
+    var server_out: [4096]u8 = undefined;
+    var early_buf: [256]u8 = undefined;
+    var hrr_buf: [4096]u8 = undefined;
+    const setup = try setupHrrEarlyDataDecline(
+        &client,
+        &server,
+        &client_out,
+        &server_out,
+        &early_buf,
+        &hrr_buf,
+    );
+
+    // One early record is skipped while the window is open.
+    var early_rx_buf: [256]u8 = undefined;
+    @memcpy(early_rx_buf[0..setup.early_record.len], setup.early_record);
+    try testing.expectEqual(
+        ServerHandshake.Event.none,
+        try server.handleRecord(early_rx_buf[0..setup.early_record.len], &server_out),
+    );
+    try testing.expect(server.early_data_skip == .await_client_hello2);
+
+    // The client consumes the HRR and emits ClientHello2 (no early_data,
+    // §4.1.2/§4.2.10).
+    var hrr_rx: [4096]u8 = undefined;
+    @memcpy(hrr_rx[0..setup.hrr_record.len], setup.hrr_record);
+    const ch2_event = try client.handleRecord(hrr_rx[0..setup.hrr_record.len], &client_out);
+    const ch2_record = switch (ch2_event) {
+        .write => |w| w,
+        else => return error.UnexpectedEvent,
+    };
+    client.completeWrite();
+    const parsed_ch2 = try client_hello.parse(ch2_record[frame.header_len..]);
+    try testing.expect(!parsed_ch2.offered_early_data);
+
+    // ClientHello2 closes the window and resets the accounting.
+    _ = try server.acceptClientHello(ch2_record, &server_out);
+    try testing.expectEqual(.wait_client_finished, server.state);
+    try testing.expect(server.early_data_skip == .off);
+    try testing.expectEqual(@as(u32, 0), server.early_data_skip_bytes);
+
+    // A subsequent application_data record is not skipped: garbage fails
+    // deprotection under the handshake key and aborts.
+    var garbage_buf: [64]u8 = @splat(0xcc);
+    const garbage_header: frame.Header = .init(.application_data, 29);
+    garbage_header.write(garbage_buf[0..frame.header_len]);
+    try testing.expectError(
+        error.AuthenticationFailed,
+        server.handleRecord(&garbage_buf, &server_out),
+    );
+    try testing.expectEqual(@as(u32, 0), server.early_data_skip_bytes);
 }
 
 // RFC 8446 §4.2.10, §4.5 — server declines 0-RTT (PSK selected but

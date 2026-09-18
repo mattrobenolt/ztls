@@ -93,6 +93,11 @@ pub fn plaintextRecord(msg: *const [2]u8, out: []u8) error{BufferTooShort}![]u8 
 pub fn alertForError(err: anyerror) Description {
     return switch (err) {
         error.AuthenticationFailed => .bad_record_mac,
+        // RFC 8446 §4.2.10 — the §4.2.10 decline path deliberately tolerates a
+        // bounded number of deprotection failures (in-flight 0-RTT records);
+        // once the budget is spent the remaining failures are ordinary §5.2
+        // failures to deprotect.
+        error.EarlyDataSkipLimitExceeded => .bad_record_mac,
         error.SignatureVerificationFailed,
         error.InvalidVerifyData,
         => .decrypt_error,
@@ -286,6 +291,7 @@ test "alertForError: parser and semantic failures map to protocol alerts" {
         description: Description,
     }{
         .{ .err = error.AuthenticationFailed, .description = .bad_record_mac },
+        .{ .err = error.EarlyDataSkipLimitExceeded, .description = .bad_record_mac },
         .{ .err = error.SignatureVerificationFailed, .description = .decrypt_error },
         .{ .err = error.InvalidVerifyData, .description = .decrypt_error },
         .{ .err = error.UnexpectedEof, .description = .decode_error },

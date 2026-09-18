@@ -108,6 +108,13 @@ The authoritative readiness state remains `PRODUCTION_READINESS.md`.
 | Connected-state KeyUpdate not at record boundary | `error.UnexpectedMessage` | `ServerHandshake.zig`: `handleRecord: KeyUpdate not at record boundary is rejected` | covered |
 | Simultaneous KeyUpdate requests | Both sides remain connected and ratchet safely | `ServerHandshake.zig`: `key update: simultaneous update_requested remains connected` | covered |
 | Connected-state illegal inner content type | `error.UnexpectedRecord` | `ServerHandshake.zig`: `handleRecord: illegal post-handshake inner content type is rejected` | covered |
+| 0-RTT record after the server declined the early_data offer (no PSK selected, ticket without early data, or required client auth declining the PSK) | Discarded by trial-deprotection with the handshake key (RFC 8446 §4.2.10); the first deprotected record starts the client's second flight. The failed trial's buffer is backend-owned failure output and is never re-decrypted or inspected | `ServerHandshake.zig`: `0-RTT: no PSK selected means early data is skipped and 1-RTT completes`, `0-RTT: declined early records in flight are skipped and 1-RTT completes`, `0-RTT: required client auth declines PSK, skips early data, completes 1-RTT` | covered |
+| More undecryptable bytes than the decline-skip budget (`Config.early_data_skip_limit`, wire payload bytes — ciphertext + tag, header excluded — default 16640, one full max-size early record) | `error.EarlyDataSkipLimitExceeded` → `bad_record_mac` (§5.2 beyond the §4.2.10 tolerance) | `ServerHandshake.zig`: `0-RTT: decline skip budget exhaustion aborts the handshake`; `alert.zig`: `alertForError: parser and semantic failures map to protocol alerts` | covered |
+| Corrupted record after the skip window closed (first handshake-key record already seen) | `error.AuthenticationFailed` (ordinary §5.2 failure; pending flight fragment dropped) | `ServerHandshake.zig`: `0-RTT: corrupted record after the skip window aborts` | covered |
+| 0-RTT record after the server declined the early_data offer by responding HelloRetryRequest (records in flight while ClientHello2 is pending) | Skipped by outer content type (RFC 8446 §4.2.10 HRR strategy), bounded by the shared wire-byte budget; ClientHello2 closes the window | `ServerHandshake.zig`: `0-RTT: HRR decline skips in-flight early data and the retry handshake completes`, `0-RTT: HRR skip window closes at ClientHello2` | covered |
+| Malformed outer application_data during the HRR skip window (zero-length or one AEAD tag or less) | `error.RecordTooShort`; consumes no budget and does not close the window | `ServerHandshake.zig`: `0-RTT: HRR decline skip rejects malformed application_data records` | covered |
+| More HRR-declined bytes than the budget | `error.EarlyDataSkipLimitExceeded` → `bad_record_mac` | `ServerHandshake.zig`: `0-RTT: HRR decline skip budget exhaustion aborts the handshake` | covered |
+| 0-RTT record that fails decryption after the server *accepted* early_data | Currently `unexpected_message`; RFC 8446 §4.2.10 requires `bad_record_mac` | none | gap — accepted-path alert mapping, #116 |
 
 ## Parser and crypto boundary fuzz surfaces
 
@@ -167,8 +174,13 @@ These are deliberately not closed by writing the inventory:
   EndOfEarlyData, `max_early_data_size` exceeded, no-PSK-but-early-data-offered,
   server-declined-0-RTT decision — formerly #3), and client certificate
   authentication (rejects offered-scheme violations, EKU/KU violations,
-  missing chain — formerly #4). A declining server cannot yet skip early records
-  already in flight (#111). Anti-replay for 0-RTT remains caller-owned.
+  missing chain — formerly #4). A declining server skips already-in-flight early
+  records on both §4.2.10 decline paths (#111): bounded trial-deprotection
+  with the handshake key on the regular 1-RTT response, and outer-content-type
+  skipping while ClientHello2 is pending after HelloRetryRequest. Anti-replay
+  for 0-RTT remains caller-owned; the accepted-0-RTT decrypt-failure alert
+  mapping (unexpected_message vs the §4.2.10-required bad_record_mac) is the
+  one remaining gap row above.
 - Legacy session id length caps on parse paths need dedicated enforcement/tests.
 - Server Certificate `request_context` non-empty rejection needs a targeted test.
 - Some server-side client-Finished negative paths exist structurally but lack

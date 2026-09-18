@@ -115,6 +115,7 @@ pub fn classify(err: HandshakeError) Class {
         // ── Cryptographic proof failed ──
         // RFC 8446 §4.4.4 (Finished) and §5.2 (record AEAD).
         error.AuthenticationFailed,
+        error.EarlyDataSkipLimitExceeded,
         error.InvalidVerifyData,
         => .decrypt,
 

@@ -208,10 +208,30 @@ the client's EndOfEarlyData with early_rx before the client Finished, and
 rejects its absence with unexpected_message. The server declines 0-RTT when
 the selected PSK's max_early_data_size is null, omitting early_data from EE;
 the client detects this, clears early_tx, and proceeds without EndOfEarlyData.
-A server that declines after early records are already in flight still aborts
-instead of applying RFC 8446 §4.2.10's bounded skip strategy (#111). Reject-path
+A server that declines after early records are already in flight now applies
+both RFC 8446 §4.2.10 decline strategies (#111). The regular 1-RTT response
+trial-deprotects each application_data record with the handshake traffic
+key, discards failures up to a configurable wire-byte budget, and treats the
+first deprotected record as the start of the client's second flight. The
+HelloRetryRequest response skips records with an outer content type of
+application_data while ClientHello2 is pending (payloads of one AEAD tag or
+less abort with `RecordTooShort` so zero-length abuse cannot burn budget;
+ClientHello2 closes the window). The budget is `Config.early_data_skip_limit`
+in wire payload bytes (ciphertext + tag, the 5-byte header excluded), default
+`frame.max_ciphertext_len` (16640) so one full max-size early-data record
+(2^14 + 1 + 16 = 16401) fits; exhaustion aborts with
+`EarlyDataSkipLimitExceeded` → bad_record_mac per §5.2. Remaining 0-RTT gap:
+a record that fails decryption after the server *accepted* early_data maps
+to `unexpected_message` where §4.2.10 requires `bad_record_mac` (accepted-
+path alert mapping; #116). Reject-path
 tests cover max_early_data_size exceeded, no-PSK-selected early data,
-server-declined 0-RTT, and client rejection of server-sent EndOfEarlyData.
+server-declined 0-RTT, and client rejection of server-sent EndOfEarlyData;
+decline-skip tests cover ordinary policy decline, no-PSK selection, and
+required client authentication declining the PSK on the 1-RTT path, and the
+full HRR → skipped early records → ClientHello2 → completed retry handshake,
+plus budget exhaustion, malformed/zero-length abuse, skip-window closure,
+post-window record corruption, and the default budget covering a full
+max-size early record (#111).
 0-RTT is disabled by default (offer_early_data=false) and the caller is
 responsible for replay-safe policy — 0-RTT data is not forward-secret and can
 be replayed by a network attacker; no anti-replay cache exists in ztls (the
