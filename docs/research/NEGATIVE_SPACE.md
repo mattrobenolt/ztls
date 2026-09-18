@@ -114,7 +114,8 @@ The authoritative readiness state remains `PRODUCTION_READINESS.md`.
 | 0-RTT record after the server declined the early_data offer by responding HelloRetryRequest (records in flight while ClientHello2 is pending) | Skipped by outer content type (RFC 8446 §4.2.10 HRR strategy), bounded by the shared wire-byte budget; ClientHello2 closes the window | `ServerHandshake.zig`: `0-RTT: HRR decline skips in-flight early data and the retry handshake completes`, `0-RTT: HRR skip window closes at ClientHello2` | covered |
 | Malformed outer application_data during the HRR skip window (zero-length or one AEAD tag or less) | `error.RecordTooShort`; consumes no budget and does not close the window | `ServerHandshake.zig`: `0-RTT: HRR decline skip rejects malformed application_data records` | covered |
 | More HRR-declined bytes than the budget | `error.EarlyDataSkipLimitExceeded` → `bad_record_mac` | `ServerHandshake.zig`: `0-RTT: HRR decline skip budget exhaustion aborts the handshake` | covered |
-| 0-RTT record that fails decryption after the server *accepted* early_data | Currently `unexpected_message`; RFC 8446 §4.2.10 requires `bad_record_mac` | none | gap — accepted-path alert mapping, #116 |
+| 0-RTT record with a corrupt authentication tag after explicit early_data acceptance | `AuthenticationFailed` → `bad_record_mac` (RFC 8446 §4.2.10, §5.2) | `ServerHandshake.zig`: `0-RTT: accepted early data distinguishes authentication and handshake errors` | covered |
+| Authenticated EndOfEarlyData with a nonzero body length after early_data acceptance | `UnexpectedMessage` → `unexpected_message` (RFC 8446 §4.5) | `ServerHandshake.zig`: `0-RTT: accepted early data distinguishes authentication and handshake errors` | covered |
 
 ## Parser and crypto boundary fuzz surfaces
 

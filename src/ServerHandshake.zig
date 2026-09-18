@@ -2385,8 +2385,7 @@ fn handleWaitClientFinished(self: *ServerHandshake, record: []u8) HandleError!Ev
     // is required to send EndOfEarlyData before any handshake-key record.
     if (self.early_rx) |*early_rx| {
         if (!self.end_of_early_data_received) {
-            const early_dec = handshake.decryptProtected(early_rx, record) catch
-                return error.UnexpectedMessage;
+            const early_dec = try handshake.decryptProtected(early_rx, record);
             switch (early_dec.content_type) {
                 .application_data => {
                     // RFC 8446 §4.2.10: reject early data exceeding the
@@ -7832,6 +7831,89 @@ test "in-memory 0-RTT early data is decrypted by the server" {
         "ping",
         try server.receiveApplicationData(client_out[0..client_app.len]),
     );
+}
+
+// RFC 8446 §4.2.10, §4.5, §5.2 — accepted early-data authentication failures
+// require bad_record_mac. Authenticated malformed EndOfEarlyData stays unexpected_message.
+test "0-RTT: accepted early data distinguishes authentication and handshake errors" {
+    const Lookup = struct {
+        fn lookup(_: *anyopaque, identity: []const u8) ?PskEntry {
+            if (!std.mem.eql(u8, identity, "early-ticket")) return null;
+            return .{
+                .psk = &([_]u8{0x42} ** 32),
+                .cipher_suite = .aes_128_gcm_sha256,
+                .max_early_data_size = 1024,
+            };
+        }
+    };
+    const Fault = enum { corrupt_tag, malformed_handshake };
+    for ([_]Fault{ .corrupt_tag, .malformed_handshake }) |fault| {
+        var client: ClientHandshake = .init(.{
+            .keypairs = try .init(.generate()),
+            .host_name = null,
+            .now_sec = 0,
+            .random = .zero,
+        });
+        defer client.deinit();
+        client.policy.insecure_no_chain_anchor = true;
+        var ticket: ClientHandshake.SessionTicket = .{
+            .cipher_suite = .aes_128_gcm_sha256,
+            .max_early_data_size = 1024,
+        };
+        ticket.identity.appendSliceAssumeCapacity("early-ticket");
+        ticket.psk.appendSliceAssumeCapacity(&([_]u8{0x42} ** 32));
+        var client_out: [4096]u8 = undefined;
+        const ch = try client.startWithPsk(&ticket, &client_out, true);
+        client.completeWrite();
+        var context: u8 = 0;
+        var server: ServerHandshake = .init(.{
+            .keypairs = try .init(.generate()),
+            .random = .zero,
+            .psk_lookup = .{ .context = &context, .lookup = Lookup.lookup },
+        });
+        defer server.deinit();
+        var server_out: [4096]u8 = undefined;
+        const sh = try server.acceptClientHello(ch, &server_out);
+        server.completeWrite();
+        try testing.expect(server.early_rx != null);
+        _ = try client.handleRecord(server_out[0..sh.len], &client_out);
+        var wire_buf: [128]u8 = undefined;
+        const wire = switch (fault) {
+            .corrupt_tag => try client.sendEarlyData("early payload", &wire_buf),
+            .malformed_handshake => try client.early_tx.?.encrypt(
+                .handshake,
+                &.{ @intFromEnum(HandshakeType.end_of_early_data), 0, 0, 1 },
+                &wire_buf,
+            ),
+        };
+        client.completeWrite();
+        if (fault == .corrupt_tag) wire_buf[wire.len - 1] ^= 1;
+        var signer = try signature.PrivateKey.fromP256Scalar(serverEcdsaScalar()[0..32]);
+        defer signer.deinit();
+        var plaintext: [4096]u8 = undefined;
+        const flight = try server.sendAuthenticatedFlight(
+            &.{serverEcdsaCertDer()},
+            signer.signer(),
+            &plaintext,
+            &server_out,
+        );
+        server.completeWrite();
+        _ = try client.handleRecord(server_out[0..flight.len], &client_out);
+        try testing.expect(client.server_accepted_early_data);
+        const failure = if (server.handleRecord(wire_buf[0..wire.len], &server_out)) |_|
+            return error.ExpectedFailure
+        else |err|
+            err;
+        const description: alert.Description = switch (fault) {
+            .corrupt_tag => .bad_record_mac,
+            .malformed_handshake => .unexpected_message,
+        };
+        try testing.expectEqual(description, alert.alertForError(failure));
+        try testing.expectEqual(switch (fault) {
+            .corrupt_tag => error.AuthenticationFailed,
+            .malformed_handshake => error.UnexpectedMessage,
+        }, failure);
+    }
 }
 
 // RFC 8446 §4.2.10 — server rejects 0-RTT early data exceeding

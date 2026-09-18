@@ -227,10 +227,13 @@ ClientHello2 closes the window). The budget is `Config.early_data_skip_limit`
 in wire payload bytes (ciphertext + tag, the 5-byte header excluded), default
 `frame.max_ciphertext_len` (16640) so one full max-size early-data record
 (2^14 + 1 + 16 = 16401) fits; exhaustion aborts with
-`EarlyDataSkipLimitExceeded` → bad_record_mac per §5.2. Remaining 0-RTT gap:
-a record that fails decryption after the server *accepted* early_data maps
-to `unexpected_message` where §4.2.10 requires `bad_record_mac` (accepted-
-path alert mapping; #116). Reject-path
+`EarlyDataSkipLimitExceeded` → bad_record_mac per §5.2. Accepted 0-RTT
+records preserve decryption errors (#116): `AuthenticationFailed` maps to
+`bad_record_mac`, as §4.2.10 requires. The regression explicitly negotiates
+early data, corrupts a record tag, and checks the error and alert.
+It failed on the alert assertion before the fix. Authenticated malformed
+EndOfEarlyData still produces `UnexpectedMessage` and `unexpected_message`.
+Reject-path
 tests cover max_early_data_size exceeded, no-PSK-selected early data,
 server-declined 0-RTT, and client rejection of server-sent EndOfEarlyData;
 decline-skip tests cover ordinary policy decline, no-PSK selection, and
