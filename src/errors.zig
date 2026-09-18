@@ -165,6 +165,10 @@ pub fn classify(err: HandshakeError) Class {
         error.BufferTooShort,
         error.ClientCertificateTooLarge,
         error.HandshakeBufferTooShort,
+        // A protocol-legal ClientHello offered more PSK identities than the
+        // engine's fixed-capacity HelloRetryRequest retention can hold: the
+        // peer did nothing wrong, our retention storage is the limit.
+        error.TooManyPskIdentities,
         => .buffer,
 
         // ── Caller-supplied options ──
@@ -211,6 +215,12 @@ pub fn classify(err: HandshakeError) Class {
 // The table is exhaustive by construction: adding a variant to any core
 // handshake error set fails to compile here until it is classified. These cases
 // pin the classifications that are security-relevant to get right.
+test "classify: bounded PSK identity admission is a buffer-class limit" {
+    // Not .protocol: the ClientHello is legal; the engine's fixed retention
+    // capacity is what failed.
+    try testing.expectEqual(Class.buffer, classify(error.TooManyPskIdentities));
+}
+
 test "classify: certificate failures never fall into a generic bucket" {
     try testing.expectEqual(Class.certificate, classify(error.CertificateHostMismatch));
     try testing.expectEqual(Class.certificate, classify(error.CertificateExpired));

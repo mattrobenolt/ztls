@@ -153,6 +153,11 @@ pub fn alertForError(err: anyerror) Description {
         error.UnsupportedCipherSuite,
         error.UnsupportedKeyShare,
         => .handshake_failure,
+        // Server admission bound, not a peer violation: the ClientHello is
+        // protocol-legal but offers more PSK identities than the server's
+        // fixed-capacity HelloRetryRequest retention can hold (RFC 8446
+        // §4.1.2 continuity requires retaining them).
+        error.TooManyPskIdentities => .handshake_failure,
         error.NoApplicationProtocol => .no_application_protocol,
         error.ClientCertificateRequired => .certificate_required,
         error.DuplicateExtension,
@@ -315,6 +320,7 @@ test "alertForError: parser and semantic failures map to protocol alerts" {
         .{ .err = error.UnsupportedTlsVersion, .description = .protocol_version },
         .{ .err = error.RecordTooLarge, .description = .record_overflow },
         .{ .err = error.UnsupportedCipherSuite, .description = .handshake_failure },
+        .{ .err = error.TooManyPskIdentities, .description = .handshake_failure },
         .{ .err = error.UnsupportedKeyShare, .description = .handshake_failure },
         .{ .err = error.NoApplicationProtocol, .description = .no_application_protocol },
         .{ .err = error.DuplicateExtension, .description = .illegal_parameter },

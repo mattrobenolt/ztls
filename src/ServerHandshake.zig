@@ -63,6 +63,13 @@ pub const Signer = signature.Signer;
 /// server calls `lookup` for each offered identity; a non-null result carries
 /// the PSK and the cipher suite under which it was derived (the binder hash
 /// uses that suite's hash). Caller-owned: ztls stores no heap state.
+///
+/// `lookup` may be called repeatedly for the same identity within one
+/// handshake: once during ClientHello PSK selection, again when a
+/// HelloRetryRequest must retain the offered identities for §4.1.2
+/// continuity, and once more for ClientHello2 selection. Implementations
+/// must be side-effect-free and return a consistent entry (or consistent
+/// null) for the same identity.
 pub const PskEntry = struct {
     psk: []const u8,
     cipher_suite: CipherSuite,
@@ -182,6 +189,59 @@ const max_new_session_tickets = handshake.max_post_handshake_new_session_tickets
 pub const max_ticket_identity_len = 256;
 
 const RetryClientHelloDigest = [Sha256.digest_length]u8;
+
+/// Fixed capacity of ClientHello1 PSK identities retained across a
+/// HelloRetryRequest. Real clients offer a handful of tickets; a
+/// ClientHello1 that needs a retry but offers more identities than this is
+/// rejected up front with TooManyPskIdentities — an explicit, documented
+/// admission bound rather than a silent claim of support beyond it.
+const max_retry_psk_identities = 8;
+
+/// 128-bit fingerprint of a ClientHello1 PSK identity (truncated SHA-256).
+/// Fingerprints, not identity bytes, are retained: identities are
+/// peer-controlled and may reach 64 KiB each, while the engine holds no heap
+/// state. A 128-bit truncation keeps a substitution that survives continuity
+/// matching a 2^64 birthday search, and a forged identity still has to pass
+/// its own binder to be selected.
+const RetryPskFingerprint = [16]u8;
+
+/// Whether ClientHello2 may drop a ClientHello1 PSK identity, decided at
+/// HelloRetryRequest time from what the server can prove. RFC 8446 §4.1.2
+/// permits removing only PSKs incompatible with the cipher suite the server
+/// indicated, and the server can determine a PSK's hash two ways: an
+/// identity its own PskLookup resolves carries the hash of the entry's
+/// cipher suite, and any identity's binder length is the hash output of its
+/// PSK's cipher suite (§4.2.11.2: the binder is an HMAC over the transcript
+/// hash, Finished-style). An identity whose binder length does not match the
+/// HRR suite's hash length claims a different hash family and may be
+/// dropped; one that matches claims compatibility and must be retained.
+const RetryPskRetention = enum {
+    /// The lookup resolved the identity to a suite-hash-compatible PSK, or
+    /// the identity is unknown but its binder length matches the HRR
+    /// suite's hash output: ClientHello2 must retain it.
+    must_retain,
+    /// The lookup resolved the identity to a PSK hash-incompatible with the
+    /// HRR cipher suite, or the binder length claims a different hash
+    /// family (no binder of that length can verify under the HRR suite
+    /// anyway): ClientHello2 may drop it.
+    may_remove,
+};
+
+const RetryPskIdentity = struct {
+    fingerprint: RetryPskFingerprint,
+    retention: RetryPskRetention,
+};
+
+/// ClientHello1 pre_shared_key continuity metadata retained across a
+/// HelloRetryRequest (RFC 8446 §4.1.2). Fixed capacity; no allocation.
+const RetryPskCapture = union(enum) {
+    /// ClientHello1 offered no pre_shared_key extension: ClientHello2 must
+    /// not add one (§4.1.2 forbids extensions not present in ClientHello1).
+    none,
+    /// Per-identity fingerprints in offer order. ClientHello2's identities
+    /// must match these in order, minus `may_remove` entries.
+    identities: ArrayBuffer(RetryPskIdentity, max_retry_psk_identities),
+};
 
 const RetryTranscript = union(enum) {
     sha256: Sha256,
@@ -388,6 +448,10 @@ post_handshake_count: u8 = 0,
 key_update_obligation: handshake.KeyUpdateObligation = .none,
 retry_transcript: ?RetryTranscript = null,
 retry_ch1_digest: ?RetryClientHelloDigest = null,
+/// ClientHello1 PSK identity continuity metadata (RFC 8446 §4.1.2),
+/// captured when the server sends a HelloRetryRequest and consumed when
+/// processing ClientHello2. See RetryPskCapture.
+retry_psk: RetryPskCapture = .none,
 retry_selected_group: ?NamedGroup = null,
 /// PSK selected from the client's pre_shared_key offer (RFC 8446 §4.2.11),
 /// set when the server resumes. `selected_psk_index` is echoed in the
@@ -537,32 +601,16 @@ fn selectPskWithTranscript(
     retry_transcript: ?*const RetryTranscript,
 ) error{ InvalidExtensionLength, InvalidVectorLength, UnexpectedEof }!?PskSelection {
     const psk_ext = parsed.psk_ext orelse return null;
-    // identities list: 2-byte len + entries (2-byte identity len + identity +
-    // 4-byte obfuscated_ticket_age). binders list follows.
-    var idr: wiremod.Reader = .init(psk_ext);
-    const identities_len = idr.read(u16) catch return error.UnexpectedEof;
-    if (@as(usize, 2) + identities_len + 2 > psk_ext.len) return error.InvalidExtensionLength;
-    const identities_end = idr.pos + identities_len;
-    // binders list starts after the identities.
-    var br: wiremod.Reader = .{ .buf = psk_ext, .pos = identities_end };
-    const binders_len = br.read(u16) catch return error.UnexpectedEof;
-    if (@as(usize, 2) + identities_len + 2 + binders_len != psk_ext.len)
-        return error.InvalidExtensionLength;
+    // PskOfferIter bounds both readers to their own vectors: a truncated or
+    // slack-padded identities vector is a clean error, never the usize
+    // underflow the unbounded inline walk had on `vector_end - pos`
+    // (#103 review P1).
+    var iter = try client_hello.PskOfferIter.init(psk_ext);
 
     const prefix = msg[0..parsed.binders_offset];
     var idx: usize = 0;
-    while (idr.pos < identities_end) {
-        const identity_len = idr.read(u16) catch return error.UnexpectedEof;
-        if (identities_end - idr.pos < @as(usize, identity_len) + 4)
-            return error.InvalidVectorLength;
-        const identity = idr.readSlice(identity_len) catch return error.UnexpectedEof;
-        _ = idr.readSlice(4) catch return error.UnexpectedEof; // obfuscated_ticket_age
-        // binder entry: 2-byte len + binder bytes.
-        const binder_len = br.read(u8) catch return error.UnexpectedEof;
-        if (br.remaining().len < binder_len) return error.InvalidVectorLength;
-        const offered_binder = br.readSlice(binder_len) catch return error.UnexpectedEof;
-
-        if (lookup.lookup(lookup.context, identity)) |entry| {
+    while (try iter.next()) |offer| {
+        if (lookup.lookup(lookup.context, offer.identity)) |entry| {
             if (entry.cipher_suite.hash() != negotiated_suite.hash()) {
                 idx += 1;
                 continue;
@@ -573,7 +621,7 @@ fn selectPskWithTranscript(
                     Sha256,
                     entry.psk,
                     prefix,
-                    offered_binder,
+                    offer.binder,
                     if (retry_transcript) |rt| switch (rt.*) {
                         .sha256 => |*transcript| transcript,
                         .sha384 => unreachable,
@@ -584,7 +632,7 @@ fn selectPskWithTranscript(
                     Sha384,
                     entry.psk,
                     prefix,
-                    offered_binder,
+                    offer.binder,
                     if (retry_transcript) |rt| switch (rt.*) {
                         .sha256 => unreachable,
                         .sha384 => |*transcript| transcript,
@@ -869,6 +917,7 @@ pub const AcceptError =
         IdentityElement,
         IllegalParameter,
         LibcryptoFailed,
+        TooManyPskIdentities,
     };
 
 pub const FlightError =
@@ -1058,6 +1107,13 @@ fn processClientHelloMessage(
     if (self.retry_ch1_digest) |ch1_digest| {
         const ch2_digest = retryClientHelloDigest(&ch);
         if (!mem.eql(u8, &ch1_digest, &ch2_digest)) return error.IllegalParameter;
+        // RFC 8446 §4.1.2 — the pre_shared_key identities are the one field
+        // the stable-field digest cannot cover: ages and binders may be
+        // recomputed and hash-incompatible identities may be dropped (by
+        // lookup entry or binder length, see retryPskRetention), while
+        // added, replaced, reordered, or retained-but-dropped identities
+        // are illegal.
+        try self.enforceRetryPskContinuity(&ch);
     }
     // RFC 8446 §4.1.2, §4.2.10 — early_data MUST be removed in ClientHello2;
     // 0-RTT is not compatible with HelloRetryRequest.
@@ -1344,7 +1400,7 @@ fn encodeHelloRetryRequest(
     suite: CipherSuite,
     selected_group: NamedGroup,
     out: []u8,
-) server_hello.EncodeError![]const u8 {
+) (server_hello.EncodeError || RetryPskCaptureError)![]const u8 {
     const hrr = try server_hello.encodeHelloRetryRequest(
         out[frame.header_len..],
         legacy_session_id,
@@ -1355,6 +1411,7 @@ fn encodeHelloRetryRequest(
     header.write(out[0..frame.header_len]);
     self.retry_transcript = makeRetryTranscript(suite, ch_msg, hrr);
     self.retry_ch1_digest = retryClientHelloDigest(ch);
+    self.retry_psk = try captureRetryPskIdentities(ch.psk_ext, self.psk_lookup, suite);
     self.retry_selected_group = selected_group;
     var out_len = frame.header_len + hrr.len;
     if (legacy_session_id.len != 0) {
@@ -1397,6 +1454,133 @@ fn retryClientHelloDigestUpdateOptional(hash: *Sha256, bytes: ?[]const u8) void 
     const presence: [1]u8 = .{@intFromBool(bytes != null)};
     hash.update(&presence);
     retryClientHelloDigestUpdate(hash, bytes orelse &.{});
+}
+
+/// Errors from walking a pre_shared_key offer list. Explicit rather
+/// than composed from `client_hello.PskOfferIter.Error` so a new iterator
+/// error surfaces as a compile error here, not a silent gap (ziglint Z015
+/// does not follow composed public aliases).
+const RetryPskCaptureError = error{
+    InvalidExtensionLength,
+    InvalidVectorLength,
+    UnexpectedEof,
+    /// ClientHello1 offers more PSK identities than
+    /// max_retry_psk_identities and the server must retain them across a
+    /// HelloRetryRequest (RFC 8446 §4.1.2). Bounded admission: the engine's
+    /// retention is fixed-capacity and allocation-free, so the handshake is
+    /// refused rather than silently degrading. Maps to handshake_failure.
+    TooManyPskIdentities,
+};
+const RetryPskContinuityError = RetryPskCaptureError || error{IllegalParameter};
+
+fn retryPskFingerprint(identity: []const u8) RetryPskFingerprint {
+    var digest: [Sha256.digest_length]u8 = undefined;
+    Sha256.hash(identity, &digest, .{});
+    return digest[0..16].*; // truncated SHA-256, see RetryPskFingerprint
+}
+
+/// Retain ClientHello1's PSK identity continuity metadata for ClientHello2
+/// validation (RFC 8446 §4.1.2). `hrr_suite` is the cipher suite carried in
+/// the HelloRetryRequest; the client may drop only identities whose PSK
+/// hash conflicts with it. See RetryPskRetention for how the hash is
+/// determined for lookup-resolved and unknown identities.
+///
+/// `lookup` is called here for every offered identity even though
+/// selectPskWithTranscript already called it during ClientHello1 PSK
+/// selection (and will call it again for ClientHello2): PskLookup
+/// implementations must tolerate repeated calls for the same identity
+/// within a handshake and stay side-effect-free.
+fn captureRetryPskIdentities(
+    psk_ext: ?[]const u8,
+    lookup: ?PskLookup,
+    hrr_suite: CipherSuite,
+) RetryPskCaptureError!RetryPskCapture {
+    const ext = psk_ext orelse return .none;
+    var identities: ArrayBuffer(RetryPskIdentity, max_retry_psk_identities) = .empty;
+    var iter = try client_hello.PskOfferIter.init(ext);
+    while (try iter.next()) |offer| {
+        const entry: RetryPskIdentity = .{
+            .fingerprint = retryPskFingerprint(offer.identity),
+            .retention = retryPskRetention(offer, lookup, hrr_suite),
+        };
+        // Bounded admission: exceeding the fixed capacity refuses the
+        // ClientHello1 instead of degrading the §4.1.2 continuity rule.
+        identities.append(entry) catch return error.TooManyPskIdentities;
+    }
+    return .{ .identities = identities };
+}
+
+/// Removal rule for one ClientHello1 identity under the HelloRetryRequest
+/// cipher suite. Lookup-resolved identities carry the hash of the entry's
+/// cipher suite. For identities the lookup cannot resolve, the binder
+/// length is the hash output of the PSK's cipher suite (RFC 8446
+/// §4.2.11.2: the binder is an HMAC over the transcript hash,
+/// Finished-style), so a binder matching the HRR suite's hash length claims
+/// a compatible hash and the identity must be retained; any other length
+/// claims a different hash family — no binder of that length can verify
+/// under the HRR suite anyway — so the identity may be dropped.
+fn retryPskRetention(
+    offer: client_hello.PskOffer,
+    lookup: ?PskLookup,
+    hrr_suite: CipherSuite,
+) RetryPskRetention {
+    if (lookup) |l| {
+        if (l.lookup(l.context, offer.identity)) |psk| {
+            return if (psk.cipher_suite.hash() == hrr_suite.hash())
+                .must_retain
+            else
+                .may_remove;
+        }
+    }
+    const hrr_hash_len: usize = switch (hrr_suite.hash()) {
+        .sha256 => Sha256.digest_length,
+        .sha384 => Sha384.digest_length,
+    };
+    return if (offer.binder.len == hrr_hash_len) .must_retain else .may_remove;
+}
+
+/// RFC 8446 §4.1.2 — validate ClientHello2's pre_shared_key identities
+/// against the ClientHello1 metadata captured at HelloRetryRequest time.
+/// The identity list must be ClientHello1's, in offer order, minus identities
+/// the server proved droppable (hash-incompatible per lookup entry or
+/// binder length). Ages and binders are not compared: §4.1.2 permits
+/// recomputing them. Addition, replacement, reordering, and dropping a
+/// must-retain identity are all illegal_parameter.
+fn enforceRetryPskContinuity(
+    self: *const ServerHandshake,
+    ch: *const client_hello.Parsed,
+) RetryPskContinuityError!void {
+    switch (self.retry_psk) {
+        .none => if (ch.psk_ext != null) return error.IllegalParameter,
+        .identities => |identities| {
+            const retained = identities.constSlice();
+            var next_index: usize = 0;
+            if (ch.psk_ext) |ext| {
+                var iter = try client_hello.PskOfferIter.init(ext);
+                while (try iter.next()) |offer| {
+                    const fingerprint = retryPskFingerprint(offer.identity);
+                    // Advance past ClientHello1 identities this offer skips:
+                    // each skipped identity was dropped and must be droppable.
+                    while (next_index < retained.len and
+                        !mem.eql(u8, &retained[next_index].fingerprint, &fingerprint))
+                    {
+                        if (retained[next_index].retention == .must_retain)
+                            return error.IllegalParameter;
+                        next_index += 1;
+                    }
+                    // No remaining ClientHello1 identity matches: this
+                    // identity was added or substituted.
+                    if (next_index == retained.len) return error.IllegalParameter;
+                    next_index += 1;
+                }
+            }
+            // Identities left over after the last match were dropped.
+            while (next_index < retained.len) : (next_index += 1) {
+                if (retained[next_index].retention == .must_retain)
+                    return error.IllegalParameter;
+            }
+        },
+    }
 }
 
 fn makeRetryTranscript(
@@ -1504,6 +1688,7 @@ fn installHandshakeKeys(
     }
     self.retry_transcript = null;
     self.retry_ch1_digest = null;
+    self.retry_psk = .none;
     self.retry_selected_group = null;
 
     switch (self.suite_state) {
@@ -3355,6 +3540,620 @@ test "acceptClientHello: rejects early_data in ClientHello2 after HRR" {
         server.acceptClientHello(ch2_record_slice, &out),
     );
     try testing.expect(server.early_rx == null);
+}
+
+/// Test-only fixed-buffer harness for the RFC 8446 §4.1.2 PSK identity
+/// continuity tests. Owns the ClientHello1 and HelloRetryRequest bytes so
+/// ClientHello2 binders can be computed over the exact retry transcript
+/// (§4.2.11.2: message_hash(ClientHello1) || HRR || Truncate(ClientHello2)).
+const RetryPskHarness = struct {
+    base: [4096]u8 = undefined,
+    ch2_base: [4096]u8 = undefined,
+    ch1_msg: [4096]u8 = undefined,
+    ch2_msg: [4096]u8 = undefined,
+    ch1_record: [4096]u8 = undefined,
+    ch2_record: [4096]u8 = undefined,
+    hrr_record: [512]u8 = undefined,
+    out: [1024]u8 = undefined,
+    ch1_len: usize = 0,
+    hrr_len: usize = 0,
+
+    fn encodeBase(buf: []u8, keypair: x25519.KeyPair) !client_hello.PskEncodeResult {
+        // Identity "x" is a placeholder: clientHelloWithPskIdentities
+        // replaces the whole pre_shared_key extension.
+        return client_hello.encodeWithPsk(
+            buf,
+            .zero,
+            keypair.public_key,
+            null,
+            null,
+            null,
+            &.{},
+            .psk_dhe_ke,
+            "x",
+            0,
+            Sha256.digest_length,
+            false,
+        );
+    }
+
+    /// Build a framed ClientHello1 whose pre_shared_key extension carries
+    /// `offers` (plus `identities_slack` trailing bytes inside the identities
+    /// vector, for malformed-input regressions) and whose key_share group is
+    /// patched to `share_group` (0x6a6a GREASE forces HelloRetryRequest; the
+    /// real group leaves a usable share). Retains the message for
+    /// `ch1Msg()`.
+    fn buildCh1Record(
+        self: *RetryPskHarness,
+        keypair: x25519.KeyPair,
+        offers: []const TestPskOffer,
+        identities_slack: usize,
+        share_group: u16,
+    ) ![]u8 {
+        const base = try encodeBase(&self.base, keypair);
+        const multi = try clientHelloWithPskIdentities(
+            &self.ch1_msg,
+            base.msg,
+            offers,
+            identities_slack,
+        );
+        patchClientHelloKeyShareGroup(self.ch1_msg[0..multi.msg.len], share_group);
+        self.ch1_len = multi.msg.len;
+        return handshakeRecord(&self.ch1_record, self.ch1_msg[0..self.ch1_len]);
+    }
+
+    /// Feed `server` a ClientHello1 with no usable key_share (GREASE group,
+    /// so the server must HelloRetryRequest) and `offers` as its
+    /// pre_shared_key identity list. Binders stay zero-filled: after an HRR
+    /// the binder must be recomputed anyway (§4.1.2), so CH1 binder validity
+    /// is irrelevant on this path.
+    fn sendCh1(
+        self: *RetryPskHarness,
+        server: *ServerHandshake,
+        keypair: x25519.KeyPair,
+        offers: []const TestPskOffer,
+    ) !void {
+        const record = try self.buildCh1Record(keypair, offers, 0, 0x6a6a);
+        const hrr = try server.acceptClientHello(record, &self.out);
+        try testing.expectEqual(.wait_ch, server.state);
+        const hrr_hdr = try frame.parseHeader(hrr);
+        try testing.expectEqual(.handshake, hrr_hdr.content_type);
+        self.hrr_len = hrr.len;
+        @memcpy(self.hrr_record[0..hrr.len], hrr);
+    }
+
+    /// Build an unframed ClientHello2 with the same non-PSK fields as the
+    /// harness ClientHello1, `offers` as its pre_shared_key identity list,
+    /// and optionally `identities_slack` trailing bytes inside the
+    /// identities vector (malformed-input regressions).
+    fn buildCh2(
+        self: *RetryPskHarness,
+        keypair: x25519.KeyPair,
+        offers: []const TestPskOffer,
+        identities_slack: usize,
+    ) !MultiPskClientHello {
+        const base = try encodeBase(&self.ch2_base, keypair);
+        const multi = try clientHelloWithPskIdentities(
+            &self.ch2_msg,
+            base.msg,
+            offers,
+            identities_slack,
+        );
+        return multi;
+    }
+
+    fn frameCh2(self: *RetryPskHarness, msg: []const u8) []u8 {
+        return handshakeRecord(&self.ch2_record, msg);
+    }
+
+    fn ch1Msg(self: *const RetryPskHarness) []const u8 {
+        return self.ch1_msg[0..self.ch1_len];
+    }
+
+    /// The HelloRetryRequest handshake message (record header stripped).
+    fn hrrMsg(self: *const RetryPskHarness) []const u8 {
+        return self.hrr_record[frame.header_len..self.hrr_len];
+    }
+};
+
+fn handshakeRecord(out: []u8, msg: []const u8) []u8 {
+    const header: frame.Header = .init(.handshake, @intCast(msg.len));
+    header.write(out[0..frame.header_len]);
+    @memcpy(out[frame.header_len..][0..msg.len], msg);
+    return out[0 .. frame.header_len + msg.len];
+}
+
+const TestPskOffer = struct {
+    identity: []const u8,
+    obfuscated_ticket_age: u32 = 0,
+    /// Binder entry length emitted for this offer. RFC 8446 §4.2.11.2: the
+    /// binder is an HMAC over the transcript hash, so its length is the hash
+    /// output of the PSK's cipher suite (32 SHA-256, 48 SHA-384).
+    binder_len: u8 = Sha256.digest_length,
+};
+
+const MultiPskClientHello = struct {
+    msg: []u8,
+    /// Offset where the binders list begins: the binder transcript prefix
+    /// is msg[0..binder_list_offset]. RFC 8446 §4.2.11.2.
+    binder_list_offset: usize,
+};
+
+/// Test-only ClientHello builder for pre_shared_key offers carrying an
+/// arbitrary identity list (the production encoder offers one identity).
+/// Replaces the trailing pre_shared_key extension of a single-identity
+/// `encodeWithPsk` message and patches the enclosing length fields
+/// (handshake header u24, extensions block u16, ext_data u16). RFC 8446
+/// §4.2.11: pre_shared_key is the last extension, so nothing after it moves.
+/// Binders are emitted zero-filled with each offer's `binder_len`; the
+/// caller patches them via `multiPskBinderOffset`. `identities_slack` appends
+/// trailing bytes inside the identities vector (counted in its length, not
+/// part of any entry) for malformed-input regressions.
+fn clientHelloWithPskIdentities(
+    out: []u8,
+    base: []const u8,
+    offers: []const TestPskOffer,
+    identities_slack: usize,
+) (error{ BufferTooShort, NoPskExtension } || client_hello.ParseError)!MultiPskClientHello {
+    const parsed = try client_hello.parse(base);
+    const psk_ext = parsed.psk_ext orelse return error.NoPskExtension;
+    // psk_ext points at ext_data; the 4-byte extension header precedes it.
+    const ext_start = (@intFromPtr(psk_ext.ptr) - @intFromPtr(base.ptr)) - 4;
+
+    var identities_len: usize = identities_slack;
+    var binders_len: usize = 2;
+    for (offers) |offer| {
+        identities_len += 2 + offer.identity.len + 4;
+        binders_len += 1 + offer.binder_len;
+    }
+    const ext_data_len: usize = 2 + identities_len + binders_len;
+    const total: usize = ext_start + 4 + ext_data_len;
+    if (out.len < total) return error.BufferTooShort;
+
+    @memcpy(out[0..ext_start], base[0..ext_start]);
+    var w: wiremod.Writer = .init(out[ext_start..]);
+    w.append(u16, 0x0029); // ExtensionType.pre_shared_key
+    w.append(u16, @intCast(ext_data_len));
+    w.append(u16, @intCast(identities_len));
+    for (offers) |offer| {
+        w.append(u16, @intCast(offer.identity.len));
+        w.appendSlice(offer.identity);
+        w.append(u32, offer.obfuscated_ticket_age);
+    }
+    const slack: [8]u8 = @splat(0);
+    var slack_left = identities_slack;
+    while (slack_left >= slack.len) : (slack_left -= slack.len) w.appendSlice(&slack);
+    if (slack_left > 0) w.appendSlice(slack[0..slack_left]);
+    const binder_list_offset = ext_start + w.pos;
+    w.append(u16, @intCast(binders_len - 2));
+    for (offers) |offer| {
+        w.append(u8, offer.binder_len);
+        var binder: [48]u8 = @splat(0); // max binder length covers SHA-384
+        w.appendSlice(binder[0..offer.binder_len]);
+    }
+    assert(w.pos + ext_start == total);
+
+    // Patch the enclosing lengths: pre_shared_key is the last extension.
+    memx.writeInt(u24, out[1..4], @intCast(total - handshake_header_len));
+    const ext_len_offset = clientHelloExtensionsLenOffset(out[0..total]);
+    const ext_block_len = ext_start - (ext_len_offset + 2) + 4 + ext_data_len;
+    memx.writeInt(u16, out[ext_len_offset..][0..2], @intCast(ext_block_len));
+    return .{ .msg = out[0..total], .binder_list_offset = binder_list_offset };
+}
+
+/// Offset of offer `index`'s binder bytes in a MultiPskClientHello: the
+/// binders list is a 2-byte list length, then per binder a 1-byte entry
+/// length followed by the binder. RFC 8446 §4.2.11.
+fn multiPskBinderOffset(
+    hello: MultiPskClientHello,
+    offers: []const TestPskOffer,
+    index: usize,
+) usize {
+    var offset = hello.binder_list_offset + 2 + 1;
+    for (offers[0..index]) |offer| offset += 1 + offer.binder_len;
+    return offset;
+}
+
+/// SHA-256 PSK binder over the retry transcript: message_hash(ClientHello1)
+/// || HelloRetryRequest || Truncate(ClientHello2). RFC 8446 §4.2.11.2,
+/// §4.4.1. Mirrors verifyBinderSha's psk_dhe_ke/SHA-256 path.
+fn retryTestBinderSha256(
+    psk: []const u8,
+    ch1_msg: []const u8,
+    hrr_msg: []const u8,
+    ch2_prefix: []const u8,
+) [hkdf.HkdfSha256.prk_len]u8 {
+    var ch1_hash: [Sha256.digest_length]u8 = undefined;
+    Sha256.hash(ch1_msg, &ch1_hash, .{});
+    const synthetic = transcript_util.messageHashSynthetic(Sha256.digest_length, ch1_hash);
+    var transcript: Sha256 = .init(.{});
+    transcript.update(&synthetic);
+    transcript.update(hrr_msg);
+    transcript.update(ch2_prefix);
+    const digest = transcript.peek();
+    var th: hkdf.HkdfSha256.TranscriptHash = undefined;
+    @memcpy(&th.data, &digest);
+    const early = hkdf.HkdfSha256.pskEarlySecret(psk);
+    const binder_key = hkdf.HkdfSha256.resumptionBinderKey(early);
+    const fin_key = hkdf.HkdfSha256.finishedKey(binder_key);
+    return hkdf.HkdfSha256.binder(fin_key, &th);
+}
+
+const RetryPskLookupEntry = struct {
+    identity: []const u8,
+    psk: []const u8,
+    cipher_suite: CipherSuite,
+};
+
+const RetryPskTable = struct {
+    entries: []const RetryPskLookupEntry,
+
+    fn lookup(context: *anyopaque, identity: []const u8) ?PskEntry {
+        const self: *RetryPskTable = @ptrCast(@alignCast(context));
+        for (self.entries) |entry| {
+            if (mem.eql(u8, entry.identity, identity))
+                return .{ .psk = entry.psk, .cipher_suite = entry.cipher_suite };
+        }
+        return null;
+    }
+};
+
+// RFC 8446 §4.1.2 — after HelloRetryRequest, ClientHello2 may update PSK
+// ages and binders and drop hash-incompatible identities, but MUST NOT
+// replace an offered identity. The replacement identity here is known to
+// the server and its binder is valid over the retry transcript, so without
+// identity-continuity enforcement the server would accept and resume with
+// the substituted PSK. Regression for #103.
+test "acceptClientHello: rejects replaced PSK identity in ClientHello2 despite valid binder" {
+    const psk_a: [32]u8 = @splat(0xa5);
+    const psk_b: [32]u8 = @splat(0x5a);
+    const identity_a = [_]u8{0x11};
+    const identity_b = [_]u8{0x22};
+    var table: RetryPskTable = .{ .entries = &.{
+        .{
+            .identity = &identity_a,
+            .psk = &psk_a,
+            .cipher_suite = .aes_128_gcm_sha256,
+        },
+        .{
+            .identity = &identity_b,
+            .psk = &psk_b,
+            .cipher_suite = .aes_128_gcm_sha256,
+        },
+    } };
+    const client_keypair: x25519.KeyPair = .generate();
+
+    var server: ServerHandshake = .init(.{
+        .keypairs = try .init(.generate()),
+        .random = .zero,
+        .psk_lookup = .{ .context = &table, .lookup = RetryPskTable.lookup },
+    });
+    server.supportSuites(&.{.aes_128_gcm_sha256});
+
+    var harness: RetryPskHarness = .{};
+    try harness.sendCh1(&server, client_keypair, &.{.{ .identity = &identity_a }});
+
+    // ClientHello2 substitutes identity_b for identity_a, with a binder
+    // psk_b computes correctly over the retry transcript.
+    const offers = [_]TestPskOffer{.{ .identity = &identity_b }};
+    const ch2 = try harness.buildCh2(client_keypair, &offers, 0);
+    const binder = retryTestBinderSha256(
+        &psk_b,
+        harness.ch1Msg(),
+        harness.hrrMsg(),
+        ch2.msg[0..ch2.binder_list_offset],
+    );
+    @memcpy(harness.ch2_msg[multiPskBinderOffset(ch2, &offers, 0)..][0..binder.len], &binder);
+
+    try testing.expectError(
+        error.IllegalParameter,
+        server.acceptClientHello(harness.frameCh2(ch2.msg), &harness.out),
+    );
+    try testing.expectEqual(.wait_ch, server.state);
+    try testing.expect(server.selected_psk == null);
+}
+
+// RFC 8446 §4.1.2 — ClientHello2's pre_shared_key identity list must be
+// ClientHello1's in offer order: identities may not be added, reordered, or
+// (for identities the server knows are hash-compatible with the HRR cipher
+// suite) dropped. Binders are zero: the continuity check runs before binder
+// verification, so these rejections are its own.
+test "acceptClientHello: rejects added, reordered, or dropped PSK identities in CH2" {
+    const psk_a: [32]u8 = @splat(0xa5);
+    const psk_b: [32]u8 = @splat(0x5a);
+    const identity_a = [_]u8{0x11};
+    const identity_b = [_]u8{0x22};
+    var table: RetryPskTable = .{ .entries = &.{
+        .{
+            .identity = &identity_a,
+            .psk = &psk_a,
+            .cipher_suite = .aes_128_gcm_sha256,
+        },
+        .{
+            .identity = &identity_b,
+            .psk = &psk_b,
+            .cipher_suite = .aes_128_gcm_sha256,
+        },
+    } };
+    const client_keypair: x25519.KeyPair = .generate();
+
+    const Case = struct {
+        ch1: []const TestPskOffer,
+        ch2: []const TestPskOffer,
+    };
+    const cases = [_]Case{
+        // Addition: identity_b was never offered in ClientHello1.
+        .{ .ch1 = &.{.{ .identity = &identity_a }}, .ch2 = &.{
+            .{ .identity = &identity_a },
+            .{ .identity = &identity_b },
+        } },
+        // Reorder: both identities retained, but out of offer order.
+        .{ .ch1 = &.{
+            .{ .identity = &identity_a },
+            .{ .identity = &identity_b },
+        }, .ch2 = &.{
+            .{ .identity = &identity_b },
+            .{ .identity = &identity_a },
+        } },
+        // Removal of a known hash-compatible identity: only incompatible
+        // (or unresolvable) identities may be dropped.
+        .{ .ch1 = &.{
+            .{ .identity = &identity_a },
+            .{ .identity = &identity_b },
+        }, .ch2 = &.{.{ .identity = &identity_b }} },
+    };
+
+    for (cases) |case| {
+        var server: ServerHandshake = .init(.{
+            .keypairs = try .init(.generate()),
+            .random = .zero,
+            .psk_lookup = .{ .context = &table, .lookup = RetryPskTable.lookup },
+        });
+        server.supportSuites(&.{.aes_128_gcm_sha256});
+
+        var harness: RetryPskHarness = .{};
+        try harness.sendCh1(&server, client_keypair, case.ch1);
+        const ch2 = try harness.buildCh2(client_keypair, case.ch2, 0);
+        try testing.expectError(
+            error.IllegalParameter,
+            server.acceptClientHello(harness.frameCh2(ch2.msg), &harness.out),
+        );
+    }
+}
+
+// RFC 8446 §4.1.2 — the permitted ClientHello2 pre_shared_key updates: the
+// client may recompute obfuscated_ticket_age and binders, and may drop
+// identities hash-incompatible with the HRR cipher suite — established by
+// the lookup entry for known PSKs or by the binder length (§4.2.11.2: the
+// binder length is the PSK's hash output) for unknown ones. Each case must
+// still resume with the retained PSK.
+test "acceptClientHello: accepts permitted ClientHello2 PSK updates after HRR" {
+    const psk_compatible: [32]u8 = @splat(0x33);
+    const psk_incompatible: [48]u8 = @splat(0x66);
+    const identity_compatible = [_]u8{0x33};
+    const identity_incompatible = [_]u8{0x66};
+    const identity_unknown = [_]u8{0x99};
+    var table: RetryPskTable = .{ .entries = &.{
+        .{
+            .identity = &identity_compatible,
+            .psk = &psk_compatible,
+            .cipher_suite = .aes_128_gcm_sha256,
+        },
+        .{
+            .identity = &identity_incompatible,
+            .psk = &psk_incompatible,
+            .cipher_suite = .aes_256_gcm_sha384,
+        },
+    } };
+    const client_keypair: x25519.KeyPair = .generate();
+
+    const Case = struct {
+        ch1: []const TestPskOffer,
+        ch2: []const TestPskOffer,
+    };
+    const cases = [_]Case{
+        // Age/binder recomputation only: same identity, new age, binder
+        // recomputed over the retry transcript.
+        .{ .ch1 = &.{.{ .identity = &identity_compatible }}, .ch2 = &.{
+            .{ .identity = &identity_compatible, .obfuscated_ticket_age = 0x11223344 },
+        } },
+        // Permitted removal: identity_incompatible resolves to a SHA-384
+        // PSK (48-byte binder), incompatible with the HRR's AES-128/SHA-256
+        // suite — the one removal §4.1.2 permits.
+        .{ .ch1 = &.{
+            .{ .identity = &identity_incompatible, .binder_len = 48 },
+            .{ .identity = &identity_compatible },
+        }, .ch2 = &.{.{ .identity = &identity_compatible }} },
+        // Permitted removal: identity_unknown does not resolve in the
+        // lookup, and its 48-byte binder (§4.2.11.2: binder length = the
+        // PSK's hash output) claims a SHA-384 PSK — incompatible with the
+        // HRR suite, so it may be dropped.
+        .{ .ch1 = &.{
+            .{ .identity = &identity_unknown, .binder_len = 48 },
+            .{ .identity = &identity_compatible },
+        }, .ch2 = &.{.{ .identity = &identity_compatible }} },
+    };
+
+    for (cases) |case| {
+        var server: ServerHandshake = .init(.{
+            .keypairs = try .init(.generate()),
+            .random = .zero,
+            .psk_lookup = .{ .context = &table, .lookup = RetryPskTable.lookup },
+        });
+        server.supportSuites(&.{.aes_128_gcm_sha256});
+
+        var harness: RetryPskHarness = .{};
+        try harness.sendCh1(&server, client_keypair, case.ch1);
+        const ch2 = try harness.buildCh2(client_keypair, case.ch2, 0);
+        const binder = retryTestBinderSha256(
+            &psk_compatible,
+            harness.ch1Msg(),
+            harness.hrrMsg(),
+            ch2.msg[0..ch2.binder_list_offset],
+        );
+        @memcpy(harness.ch2_msg[multiPskBinderOffset(ch2, case.ch2, 0)..][0..binder.len], &binder);
+
+        _ = try server.acceptClientHello(harness.frameCh2(ch2.msg), &harness.out);
+        try testing.expectEqual(.wait_client_finished, server.state);
+        try testing.expect(server.selected_psk != null);
+        // The retained identity is index 0 in ClientHello2's offer list.
+        try testing.expectEqual(@as(u16, 0), server.selected_psk_index);
+        try testing.expectEqualSlices(u8, &psk_compatible, server.selected_psk.?.psk);
+    }
+}
+
+// RFC 8446 §4.1.2 — identity continuity across a HelloRetryRequest requires
+// retaining ClientHello1's offered identities, and the engine's retention is
+// a fixed-capacity, allocation-free structure. A ClientHello1 offering more
+// identities than `max_retry_psk_identities` is therefore rejected with
+// TooManyPskIdentities before the HelloRetryRequest is emitted — an explicit
+// documented admission bound, not a silent claim of support beyond it. The
+// bound applies only when a retry is actually needed: with a usable key_share
+// the server never retains CH1 identities and any count is fine.
+test "acceptClientHello: bounded PSK identity admission before HelloRetryRequest" {
+    const client_keypair: x25519.KeyPair = .generate();
+    var identities: [max_retry_psk_identities + 1]TestPskOffer = undefined;
+    for (&identities, 0..) |*offer, i| {
+        // One-byte distinct opaque identities, all unknown to this server
+        // (no psk_lookup configured).
+        offer.* = .{ .identity = &([_]u8{@intCast(i + 1)}) };
+    }
+
+    // No usable key_share: the server would have to retain all 9 identities
+    // across the retry, exceeding the fixed capacity — reject before the HRR.
+    var server: ServerHandshake = .init(try testConfig(.generate()));
+    var harness: RetryPskHarness = .{};
+    const ch1_record = try harness.buildCh1Record(client_keypair, &identities, 0, 0x6a6a);
+    try testing.expectError(
+        error.TooManyPskIdentities,
+        server.acceptClientHello(ch1_record, &harness.out),
+    );
+    try testing.expectEqual(.wait_ch, server.state);
+
+    // Usable key_share: no retry, no retention — the same offer count is
+    // fine and the handshake proceeds (no PSK selected, full DHE).
+    var server2: ServerHandshake = .init(try testConfig(.generate()));
+    const ch1_usable = try harness.buildCh1Record(
+        client_keypair,
+        &identities,
+        0,
+        @intFromEnum(NamedGroup.x25519),
+    );
+    _ = try server2.acceptClientHello(ch1_usable, &harness.out);
+    try testing.expectEqual(.wait_client_finished, server2.state);
+    try testing.expect(server2.selected_psk == null);
+}
+
+// RFC 8446 §4.1.2, §4.2.11.2 — an identity the server's PskLookup cannot
+// resolve is not automatically removable: the offered binder length is the
+// hash output of the PSK's cipher suite, so an unknown identity whose binder
+// length matches the HelloRetryRequest suite's hash claims compatibility and
+// must be retained in ClientHello2 just like a lookup-resolved one.
+test "acceptClientHello: rejects removal of an unknown identity whose binder claims the HRR hash" {
+    const psk_compatible: [32]u8 = @splat(0x33);
+    const identity_compatible = [_]u8{0x33};
+    const identity_unknown = [_]u8{0x99};
+    // The lookup resolves only identity_compatible; identity_unknown is
+    // offered with a 32-byte binder, i.e. claiming a SHA-256 PSK.
+    var table: RetryPskTable = .{ .entries = &.{
+        .{
+            .identity = &identity_compatible,
+            .psk = &psk_compatible,
+            .cipher_suite = .aes_128_gcm_sha256,
+        },
+    } };
+    const client_keypair: x25519.KeyPair = .generate();
+
+    var server: ServerHandshake = .init(.{
+        .keypairs = try .init(.generate()),
+        .random = .zero,
+        .psk_lookup = .{ .context = &table, .lookup = RetryPskTable.lookup },
+    });
+    server.supportSuites(&.{.aes_128_gcm_sha256});
+
+    var harness: RetryPskHarness = .{};
+    try harness.sendCh1(&server, client_keypair, &.{
+        .{ .identity = &identity_unknown },
+        .{ .identity = &identity_compatible },
+    });
+    const offers = [_]TestPskOffer{.{ .identity = &identity_compatible }};
+    const ch2 = try harness.buildCh2(client_keypair, &offers, 0);
+    try testing.expectError(
+        error.IllegalParameter,
+        server.acceptClientHello(harness.frameCh2(ch2.msg), &harness.out),
+    );
+}
+
+// RFC 8446 §4.2.11 — the identities vector must contain whole PskIdentity
+// entries. A trailing slack byte is malformed, and the regression it guards
+// is the #103-review P0/P1 usize-underflow: the entry-header read was
+// bounds-checked against the whole ext_data (binders included), so the slack
+// byte let it read past the identities-vector end and the
+// `vector_end - pos` bounds check underflowed. Wire-reachable from both new
+// call sites (HRR-time identity capture) — red run: integer-overflow panic.
+test "acceptClientHello: HRR path rejects a slack-byte identities vector in CH1" {
+    const client_keypair: x25519.KeyPair = .generate();
+    // No psk_lookup: PSK selection is skipped, so the malformed vector first
+    // reaches the HRR-time identity capture.
+    var server: ServerHandshake = .init(try testConfig(.generate()));
+    var harness: RetryPskHarness = .{};
+    const ch1_record = try harness.buildCh1Record(
+        client_keypair,
+        &.{.{ .identity = "a" }},
+        1,
+        0x6a6a,
+    );
+    try testing.expectError(
+        error.UnexpectedEof,
+        server.acceptClientHello(ch1_record, &harness.out),
+    );
+    try testing.expectEqual(.wait_ch, server.state);
+}
+
+// RFC 8446 §4.2.11 — same slack-byte malformation, but in ClientHello2,
+// where the identity-continuity check is the first consumer of the
+// identities vector. Red run: integer-overflow panic in the continuity
+// iterator.
+test "acceptClientHello: HRR path rejects a slack-byte identities vector in CH2" {
+    const client_keypair: x25519.KeyPair = .generate();
+    var server: ServerHandshake = .init(try testConfig(.generate()));
+    var harness: RetryPskHarness = .{};
+    try harness.sendCh1(&server, client_keypair, &.{.{ .identity = "a" }});
+    const offers = [_]TestPskOffer{.{ .identity = "a" }};
+    const ch2 = try harness.buildCh2(client_keypair, &offers, 1);
+    try testing.expectError(
+        error.UnexpectedEof,
+        server.acceptClientHello(harness.frameCh2(ch2.msg), &harness.out),
+    );
+}
+
+// RFC 8446 §4.2.11 — same slack-byte malformation on the ordinary (no-HRR)
+// PSK selection path: selectPskWithTranscript walks the identities vector on
+// every ClientHello offering pre_shared_key when a psk_lookup is configured.
+// The identity is unknown to the lookup so iteration continues into the
+// slack byte. Red run: integer-overflow panic (the #103-review P1 sibling
+// underflow, pre-existing on the default resumption path).
+test "acceptClientHello: PSK selection rejects a slack-byte identities vector" {
+    const client_keypair: x25519.KeyPair = .generate();
+    // Empty table: the lookup resolves nothing, so the walk reaches the
+    // slack byte instead of returning on a verified binder.
+    var table: RetryPskTable = .{ .entries = &.{} };
+    var server: ServerHandshake = .init(.{
+        .keypairs = try .init(.generate()),
+        .random = .zero,
+        .psk_lookup = .{ .context = &table, .lookup = RetryPskTable.lookup },
+    });
+    var harness: RetryPskHarness = .{};
+    const ch1_record = try harness.buildCh1Record(
+        client_keypair,
+        &.{.{ .identity = "a" }},
+        1,
+        @intFromEnum(NamedGroup.x25519),
+    );
+    try testing.expectError(
+        error.UnexpectedEof,
+        server.acceptClientHello(ch1_record, &harness.out),
+    );
 }
 
 // RFC 8446 §4.1.4 — ClientHello2 must contain a key share for the group named
@@ -7504,6 +8303,7 @@ const HrrDeclineSetup = struct {
 /// the offer is declined outright and the server answers with HRR. Afterwards
 /// the server waits for ClientHello2 with the early-data skip window armed.
 fn setupHrrEarlyDataDecline(
+    ticket: *ClientHandshake.SessionTicket,
     client: *ClientHandshake,
     server: *ServerHandshake,
     client_out: []u8,
@@ -7511,14 +8311,15 @@ fn setupHrrEarlyDataDecline(
     early_buf: []u8,
     hrr_buf: []u8,
 ) !HrrDeclineSetup {
-    var ticket: ClientHandshake.SessionTicket = .{
+    // The client borrows this storage through ClientHello2 and Finished.
+    ticket.* = .{
         .ticket_age_add = 0x262a6494,
         .cipher_suite = .aes_128_gcm_sha256,
         .max_early_data_size = 16384,
     };
     ticket.identity.appendSliceAssumeCapacity(&hrr_decline_identity);
     ticket.psk.appendSliceAssumeCapacity(&hrr_decline_psk);
-    const ch_record = try client.startWithPsk(&ticket, client_out, true);
+    const ch_record = try client.startWithPsk(ticket, client_out, true);
     client.completeWrite();
     const early_record = try client.sendEarlyData("hello 0-rtt", early_buf);
     client.completeWrite();
@@ -7561,7 +8362,9 @@ test "0-RTT: HRR decline skip budget exhaustion aborts the handshake" {
     var server_out: [4096]u8 = undefined;
     var early_buf: [256]u8 = undefined;
     var hrr_buf: [4096]u8 = undefined;
+    var ticket: ClientHandshake.SessionTicket = undefined;
     const setup = try setupHrrEarlyDataDecline(
+        &ticket,
         &client,
         &server,
         &client_out,
@@ -7621,7 +8424,9 @@ test "0-RTT: HRR decline skip rejects malformed application_data records" {
     var server_out: [4096]u8 = undefined;
     var early_buf: [256]u8 = undefined;
     var hrr_buf: [4096]u8 = undefined;
+    var ticket: ClientHandshake.SessionTicket = undefined;
     const setup = try setupHrrEarlyDataDecline(
+        &ticket,
         &client,
         &server,
         &client_out,
@@ -7694,7 +8499,9 @@ test "0-RTT: HRR skip window closes at ClientHello2" {
     var server_out: [4096]u8 = undefined;
     var early_buf: [256]u8 = undefined;
     var hrr_buf: [4096]u8 = undefined;
+    var ticket: ClientHandshake.SessionTicket = undefined;
     const setup = try setupHrrEarlyDataDecline(
+        &ticket,
         &client,
         &server,
         &client_out,

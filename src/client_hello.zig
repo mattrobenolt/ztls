@@ -532,6 +532,189 @@ pub const PskEncodeResult = struct {
     binder_len: u8,
 };
 
+/// One pre_shared_key offer: the identity's opaque bytes paired with its
+/// binder entry. RFC 8446 §4.2.11: the binders list carries exactly one
+/// binder per identity, in offer order. `binder.len` is the hash output of
+/// the PSK's cipher suite (§4.2.11.2: the binder is an HMAC over the
+/// transcript hash, Finished-style), so 32 bytes claim SHA-256 and 48 claim
+/// SHA-384.
+pub const PskOffer = struct {
+    identity: []const u8,
+    binder: []const u8,
+};
+
+/// Iterator over the parallel (PskIdentity, binder) pairs of a
+/// pre_shared_key ext_data (identities list + binders list, RFC 8446
+/// §4.2.11). Yields each offer in offer order. Ages are skipped: after a
+/// HelloRetryRequest the client may recompute ages and binders (§4.1.2), so
+/// the identity bytes, their order, and the binder lengths carry the
+/// cross-flight information.
+///
+/// Both readers are bounded to their own vectors: an entry-header read can
+/// never consume bytes past the identities-vector end into the binders
+/// region. Without that bound, a one-byte-short identities vector let the
+/// u16 entry-length read cross into the binders bytes and the
+/// `vector_end - pos` bounds check underflowed usize (#103 review P0/P1).
+pub const PskOfferIter = struct {
+    identities: wire.Reader,
+    binders: wire.Reader,
+
+    pub const Error = error{
+        InvalidExtensionLength,
+        InvalidVectorLength,
+        UnexpectedEof,
+    };
+
+    pub fn init(psk_ext: []const u8) Error!PskOfferIter {
+        var header: wire.Reader = .init(psk_ext);
+        const identities_len = try header.read(u16);
+        // The binders list (at least its 2-byte length) must follow the
+        // identities. Widen: identities_len is attacker-controlled u16.
+        if (@as(usize, 2) + identities_len + 2 > psk_ext.len)
+            return error.InvalidExtensionLength;
+        const binders_start: usize = 2 + identities_len;
+        var tail: wire.Reader = .init(psk_ext[binders_start..]);
+        const binders_len = try tail.read(u16);
+        // The binders list must end exactly at ext_data end. Widen before
+        // the add: binders_len is attacker-controlled u16.
+        if (@as(usize, 2) + binders_len != psk_ext.len - binders_start)
+            return error.InvalidExtensionLength;
+        return .{
+            .identities = .init(psk_ext[2..binders_start]),
+            .binders = .init(psk_ext[binders_start + 2 ..]),
+        };
+    }
+
+    pub fn next(self: *PskOfferIter) Error!?PskOffer {
+        if (self.identities.pos >= self.identities.buf.len) {
+            // Identities exhausted: the binders list must be exhausted too —
+            // §4.2.11 requires one binder per identity.
+            if (self.binders.pos != self.binders.buf.len)
+                return error.InvalidVectorLength;
+            return null;
+        }
+        // Each identity entry is a u16 length, the identity, and a 4-byte
+        // obfuscated_ticket_age. Widen the length before the add: the u16
+        // entry length is attacker-controlled.
+        const identity_len = try self.identities.read(u16);
+        if (self.identities.remaining().len < @as(usize, identity_len) + 4)
+            return error.InvalidVectorLength;
+        const identity = try self.identities.readSlice(identity_len);
+        try self.identities.skip(4); // obfuscated_ticket_age
+        // Binder entry: 1-byte length + binder bytes.
+        const binder_len = try self.binders.read(u8);
+        if (self.binders.remaining().len < binder_len)
+            return error.InvalidVectorLength;
+        const binder = try self.binders.readSlice(binder_len);
+        return .{ .identity = identity, .binder = binder };
+    }
+};
+
+// RFC 8446 §4.2.11 — pre_shared_key ext_data: identities vector (2-byte
+// length + entries of u16 length, opaque identity, 4-byte age) followed by
+// the parallel binders vector (2-byte length + entries of 1-byte length,
+// binder).
+test "PskOfferIter: walks identity/binder pairs in offer order" {
+    const ext = [_]u8{
+        0x00, 0x10, // identities list length: 16
+        0x00, 0x03, 'a', 'b', 'c', 0x00, 0x00, 0x00, 0x2a, // "abc", age 42
+        0x00, 0x01, 'z', 0xff, 0xff, 0xff, 0xff, // "z", age max
+        0x00, 0x06, // binders list length: 6
+        0x02, 0xaa, 0xbb, // 2-byte binder for "abc"
+        0x02, 0xcc, 0xdd, // 2-byte binder for "z"
+    };
+    var iter = try PskOfferIter.init(&ext);
+    const first = (try iter.next()).?;
+    try testing.expectEqualSlices(u8, "abc", first.identity);
+    try testing.expectEqualSlices(u8, &.{ 0xaa, 0xbb }, first.binder);
+    const second = (try iter.next()).?;
+    try testing.expectEqualSlices(u8, "z", second.identity);
+    try testing.expectEqualSlices(u8, &.{ 0xcc, 0xdd }, second.binder);
+    try testing.expect((try iter.next()) == null);
+}
+
+// RFC 8446 §4.2.11 — the identities and binders vectors must fit inside
+// ext_data and each entry inside its vector. All length fields are
+// peer-controlled.
+test "PskOfferIter: rejects oversized lengths" {
+    // identities vector claims more bytes than ext_data holds.
+    const bad_list = [_]u8{ 0x10, 0x00, 0x00, 0x01, 'a', 0, 0, 0, 0, 0x00, 0x00 };
+    try testing.expectError(error.InvalidExtensionLength, PskOfferIter.init(&bad_list));
+
+    // binders vector claims more bytes than ext_data holds.
+    const bad_binders = [_]u8{
+        0x00, 0x07, // identities list length: 7
+        0x00, 0x01,
+        'a',  0,
+        0,    0,
+        0,
+        0x40, 0x00, // binders list length: 16384
+    };
+    try testing.expectError(error.InvalidExtensionLength, PskOfferIter.init(&bad_binders));
+
+    // Identity entry claims a length longer than the vector holds.
+    const bad_entry = [_]u8{
+        0x00, 0x07, // identities list length: 7
+        0xff, 0xff, // identity length: 65535
+        'a',  0,    0, 0, 0, // only 5 bytes remain in the vector
+        0x00, 0x00,
+    };
+    var iter = try PskOfferIter.init(&bad_entry);
+    try testing.expectError(error.InvalidVectorLength, iter.next());
+
+    // Binder entry claims a length longer than the vector holds.
+    const bad_binder = [_]u8{
+        0x00, 0x07, // identities list length: 7
+        0x00, 0x01,
+        'a',  0,
+        0,    0,
+        0,
+        0x00, 0x03, // binders list length: 3
+        0xff, 0x00, 0x00, // binder length 255 with only 2 bytes present
+    };
+    var binder_iter = try PskOfferIter.init(&bad_binder);
+    try testing.expectError(error.InvalidVectorLength, binder_iter.next());
+}
+
+// RFC 8446 §4.2.11 — the identities vector must contain whole PskIdentity
+// entries. A trailing slack byte must be an error, never a read past the
+// vector end: this is the #103-review P0/P1 usize-underflow regression (the
+// u16 entry-length read used to be bounds-checked against the whole
+// ext_data, so it consumed binders bytes and `vector_end - pos` wrapped).
+test "PskOfferIter: rejects a slack-byte identities vector" {
+    const ext = [_]u8{
+        0x00, 0x08, // identities list length: 8 (7 entry + 1 slack)
+        0x00, 0x01, 'a', 0x00, 0x00, 0x00, 0x00, // one whole entry
+        0x00, // one slack byte inside the identities vector
+        0x00, 0x03, // binders list length: 3
+        0x02, 0xaa, 0xbb, // one binder, paired with the one identity
+    };
+    var iter = try PskOfferIter.init(&ext);
+    try testing.expectEqualSlices(u8, "a", (try iter.next()).?.identity);
+    // The slack byte: no whole entry header fits, so the walk must end with
+    // an error, not a panic and not a silent skip.
+    try testing.expectError(error.UnexpectedEof, iter.next());
+}
+
+// RFC 8446 §4.2.11 — one binder per identity: extra binder entries after
+// the identities are exhausted are a vector-length violation.
+test "PskOfferIter: rejects more binders than identities" {
+    const ext = [_]u8{
+        0x00, 0x07, // identities list length: 7
+        0x00, 0x01,
+        'a',  0x00,
+        0x00, 0x00,
+        0x00,
+        0x00, 0x06, // binders list length: 6
+        0x02, 0xaa,
+        0xbb,
+        0x02, 0xcc, 0xdd, // a second binder with no second identity
+    };
+    var iter = try PskOfferIter.init(&ext);
+    try testing.expect((try iter.next()) != null);
+    try testing.expectError(error.InvalidVectorLength, iter.next());
+}
+
 /// Encode a ClientHello offering a PSK for session resumption. Builds the full
 /// message with `psk_key_exchange_modes` and a `pre_shared_key` extension (the
 /// LAST extension, per RFC 8446 §4.2.11) carrying one identity. The binder is

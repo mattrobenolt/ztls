@@ -187,8 +187,15 @@ NewSessionTicket events, produces a caller-storable SessionTicket (identity +
 PSK + age/lifetime via ArrayBuffer), and emits a PSK ClientHello
 (pre_shared_key + psk_key_exchange_modes + binder over the truncated transcript
 prefix). After HelloRetryRequest, ClientHello2 retains a compatible PSK and both
-roles recompute/verify its binder over the retry transcript; the server verifies
-binders via a caller-owned PskLookup and selects an identity; both sides use the
+roles recompute/verify its binder over the retry transcript; the server also
+enforces PSK identity continuity across the retry (RFC 8446 §4.1.2: ages and
+binders may be recomputed and hash-incompatible identities dropped — by lookup
+entry or binder length; added, replaced, reordered, or retained-but-dropped
+identities rejected; more than 8 offered identities refused before the HRR as a
+documented admission bound), from fixed-capacity CH1 fingerprints with no
+allocation; the server verifies
+binders via a caller-owned PskLookup (which may be called repeatedly per
+identity within a handshake) and selects an identity; both sides use the
 PSK as the early secret in the key schedule (psk_dhe_ke, PSK + ECDHE). In-memory
 tests cover issuance, matching client/server PSKs, resumption, renewal, and
 client-auth transcript binding. The repository's OpenSSL-provisioned CI gates
@@ -440,7 +447,43 @@ data to openssl s_server and receives the HTTP response.
     RecordLayer (equal-length in-place slices).
   - S9 — after HelloRetryRequest the server validates ClientHello2 against
     ClientHello1 (length-prefixed stable-field digest) and rejects `early_data`
-    in CH2 (§4.1.2/§4.2.10).
+    in CH2 (§4.1.2/§4.2.10). The stable-field digest deliberately excludes the
+    `pre_shared_key` identities (ages/binders may be recomputed, §4.1.2), so
+    PSK identity continuity is enforced separately from retained CH1 metadata:
+    fixed-capacity 128-bit identity fingerprints plus a per-identity removal
+    rule the server can prove — drop only identities hash-incompatible with
+    the HRR cipher suite, established by the `PskLookup` entry for known PSKs
+    or by the offered binder length for unknown ones (§4.2.11.2: binder
+    length = the PSK's hash output; an unknown identity whose binder length
+    matches the HRR suite's hash claims compatibility and must be retained).
+    Added, replaced, reordered, and retained-but-dropped identities are
+    `illegal_parameter`. A CH1 that needs a retry but offers more identities
+    than the fixed capacity (`max_retry_psk_identities = 8`) is rejected
+    before the HRR with `TooManyPskIdentities` (classified `.buffer`, alert
+    `handshake_failure`) — an explicit documented admission bound, not a
+    claim of support beyond it; with a usable key_share no retention is
+    needed and any count is accepted. Regression-tested for #103 with a
+    valid-binder identity substitution, addition/reorder/drop rejections,
+    permitted-removal/age/binder acceptance, binder-length-based
+    unknown-identity rejection, bounded admission, and mutation checks
+    (enforcement disabled → substitution/drop tests fail; retention rule
+    disabled → compatible-drop case fails; admission disabled → admission
+    test fails; binder-length classification disabled either direction →
+    the corresponding acceptance/rejection test fails). The #103-review P0
+    slack-byte usize-underflow in the new offer iterator and the P1
+    pre-existing sibling underflow in `selectPskWithTranscript` are fixed by
+    replacing both walks with the vector-bounded `PskOfferIter`
+    (client_hello.zig; both readers bounded to their own vectors), with
+    wire-level red/green regressions on all three reachable paths (HRR CH1
+    capture, CH2 continuity, ordinary PSK selection) that panicked with
+    integer overflow before the fix and now return clean decode-class
+    errors; the iterator also enforces one-binder-per-identity, which
+    tightens previously-accepted malformed offer lists. Local unit evidence
+    only (0.15 and 0.16 lanes both green); no external TLS-Anvil/BoGo run
+    yet covers these cases. `PskLookup` may now be called repeatedly for the
+    same identity within one handshake (CH1 selection, HRR retention, CH2
+    selection) — documented on the type; implementations must stay
+    side-effect-free.
   - S10 + H1 + H11 — PSK selection honors `psk_key_exchange_modes` (abort on a
     `pre_shared_key` offer with no modes; no resumption without `psk_dhe_ke`) and
     enforces PSK/cipher-suite hash compatibility on both server selection and
