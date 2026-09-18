@@ -30,6 +30,7 @@ pub const RecordBuffer = @import("RecordBuffer.zig");
 pub const RecordLayer = @import("RecordLayer.zig");
 pub const server_hello = @import("server_hello.zig");
 pub const ServerHandshake = @import("ServerHandshake.zig");
+pub const EstablishedSession = @import("EstablishedSession.zig").EstablishedSession;
 pub const signature = @import("signature.zig");
 pub const SignatureScheme = @import("signature_scheme.zig").SignatureScheme;
 pub const x25519 = @import("x25519.zig");
