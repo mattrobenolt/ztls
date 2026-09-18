@@ -365,6 +365,52 @@ test "PrivateKey.fromPemAuto: garbage PEM fails at load" {
 }
 
 // ---------------------------------------------------------------------------
+// encrypted PEM — no password input path (#114)
+// ---------------------------------------------------------------------------
+
+// #114 — encrypted private keys are outside the loader contract. Both APIs
+// must fail with the backend load error, never prompt on a terminal and never
+// read process stdin, so an unattended startup cannot hang or consume input.
+// The two containers libcrypto accepts are covered: PKCS#8 `ENCRYPTED PRIVATE
+// KEY` (PBES2) and the legacy `Proc-Type: 4,ENCRYPTED` / `DEK-Info` headers.
+// Non-interaction itself is proven by `zig build encrypted-pem-check` (pipe
+// and PTY probes), which the test suite runs; this test pins the error.
+test "PrivateKey.fromPem: encrypted PEM fails at load" {
+    const encrypted_pkcs8_pem = @import("fixtures").rsa_pss_key_encrypted_pkcs8_pem;
+    const encrypted_legacy_pem = @import("fixtures").rsa_pss_key_encrypted_legacy_pem;
+    try testing.expectError(
+        error.LibcryptoFailed,
+        PrivateKey.fromPem(.rsa_pss_rsae_sha256, encrypted_pkcs8_pem),
+    );
+    try testing.expectError(
+        error.LibcryptoFailed,
+        PrivateKey.fromPem(.rsa_pss_rsae_sha256, encrypted_legacy_pem),
+    );
+
+    // The decline is scoped to password-protected input: the same key in
+    // plaintext still loads through the identical call path.
+    const rsa_pss_key_pem = @import("fixtures").rsa_pss_key_pem;
+    var plaintext: PrivateKey = try .fromPem(.rsa_pss_rsae_sha256, rsa_pss_key_pem);
+    plaintext.deinit();
+}
+
+// #114 — the automatic loader inherits the backend loader, so the decline
+// must hold there too: encrypted input fails at load instead of falling
+// through to scheme inference.
+test "PrivateKey.fromPemAuto: encrypted PEM fails at load" {
+    const encrypted_pkcs8_pem = @import("fixtures").rsa_pss_key_encrypted_pkcs8_pem;
+    const encrypted_legacy_pem = @import("fixtures").rsa_pss_key_encrypted_legacy_pem;
+    try testing.expectError(
+        error.LibcryptoFailed,
+        PrivateKey.fromPemAuto(encrypted_pkcs8_pem),
+    );
+    try testing.expectError(
+        error.LibcryptoFailed,
+        PrivateKey.fromPemAuto(encrypted_legacy_pem),
+    );
+}
+
+// ---------------------------------------------------------------------------
 // pairsWith — load-time cert/key pairing (#113)
 // ---------------------------------------------------------------------------
 

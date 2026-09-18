@@ -17,6 +17,10 @@
 //! runs BEFORE the queue assertion so a guard regression that leaves
 //! allocated entries queued fails on the memory axis first.
 //!
+//! Measured operations: malformed EC public-key rejection, per-record AEAD tag
+//! rejection, and the #114 declined encrypted-PEM load (`fromPem` on an
+//! encrypted fixture) — each one a guarded wrapper that allocates and fails.
+//!
 //! Blind spots, explicit: liveCount tracks allocation counts, not bytes —
 //! a leak that grows an existing buffer through realloc (same count, more
 //! bytes) is invisible; resizing a live allocation changes neither count.
@@ -31,6 +35,11 @@
 //! queue hygiene still applies there.
 const std = @import("std");
 const ztls = @import("ztls");
+const fixtures = @import("fixtures");
+
+/// #114 — the PKCS#8-encrypted form of the RSA fixture key, re-loaded under
+/// the counting hooks to measure the declined path.
+const encrypted_pkcs8_pem = fixtures.rsa_pss_key_encrypted_pkcs8_pem;
 
 const c = @cImport({
     @cInclude("openssl/crypto.h");
@@ -123,6 +132,17 @@ fn failBadTagRecord() CheckError!void {
     return error.UnexpectedBackendResult;
 }
 
+/// Run the #114 declined encrypted-PEM load path: an encrypted PKCS#8 fixture
+/// with no password input, so the callback declines before any decryption.
+fn failEncryptedPemLoad() CheckError!void {
+    _ = ztls.signature.PrivateKey.fromPem(.rsa_pss_rsae_sha256, encrypted_pkcs8_pem) catch |err|
+        return switch (err) {
+            error.LibcryptoFailed => {},
+            else => error.UnexpectedBackendResult,
+        };
+    return error.UnexpectedBackendResult;
+}
+
 /// One measured round of `op`: memory back to baseline first (the
 /// load-bearing axis — entries left queued hold their allocations), queue
 /// empty second.
@@ -160,6 +180,18 @@ fn runChecks() CheckError!void {
 
     round = 0;
     while (round < 100) : (round += 1) try checkRound(failBadTagRecord, aead_baseline);
+
+    // #114 — the declined encrypted-PEM load parses and then abandons libcrypto
+    // state, so repeated failures must not grow the live-allocation count
+    // either. A handful of warmup rounds, because this path allocates more
+    // than the primitives above.
+    round = 0;
+    while (round < 5) : (round += 1) try failEncryptedPemLoad();
+    c.ERR_clear_error();
+    const pem_baseline = liveCount();
+
+    round = 0;
+    while (round < 100) : (round += 1) try checkRound(failEncryptedPemLoad, pem_baseline);
 }
 
 pub fn main() void {

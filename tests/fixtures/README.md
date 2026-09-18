@@ -58,6 +58,30 @@ Paste each output as a raw `-- name --` section in `fixtures.txtar` (no
 base64, same as `rsa_pss_key_pem`) and keep the matching `rawSection`
 extractor in `fixtures.zig` in the same change.
 
+## Encrypted PEM fixtures (#114)
+
+`rsa_pss_key_encrypted_pkcs8_pem` and `rsa_pss_key_encrypted_legacy_pem` are
+encrypted forms of `rsa_pss_key_pem` — the same RSA key that pairs with
+`rsa_pss_cert_der` — under passphrase `ztls-fixture-passphrase`. The loaders
+take no password input, so these fixtures must fail at load without prompting
+or reading stdin, and `zig build encrypted-pem-check` runs them against both a
+stdin pipe and a PTY to prove that. Public test material, not credentials; the
+passphrase is in this file so the fixtures stay reproducible:
+
+```sh
+# rsa_pss_key_pem as a loose file, then
+openssl pkcs8 -topk8 -in rsa_pss_key.pem -out encrypted_pkcs8.pem \
+    -v2 aes-256-cbc -iter 2048 -saltlen 16 -passout pass:ztls-fixture-passphrase
+openssl rsa -in rsa_pss_key.pem -traditional -aes256 -out encrypted_legacy.pem \
+    -passout pass:ztls-fixture-passphrase
+```
+
+The PKCS#8 form (`ENCRYPTED PRIVATE KEY`, PBES2) and the legacy form
+(`Proc-Type: 4,ENCRYPTED` / `DEK-Info: AES-256-CBC,…`) decode through
+different libcrypto paths, so both containers are pinned. Verify a regenerated
+fixture decrypts back to the plaintext key with
+`openssl pkey -in encrypted_pkcs8.pem -passin pass:ztls-fixture-passphrase`.
+
 ## Guardrails
 
 - `just lint-fixtures` rejects tracked `.der`, `.bin`, and `.sig` files under

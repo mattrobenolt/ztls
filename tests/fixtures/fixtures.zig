@@ -85,6 +85,19 @@ pub const rsa_pss_key_pem: []const u8 = rawSection("rsa_pss_key_pem");
 /// container is parsed by libcrypto, both forms load the same EVP_PKEY (#112).
 pub const rsa_pkcs1_key_pem: []const u8 = rawSection("rsa_pkcs1_key_pem");
 
+/// PKCS#8 PBES2/AES-256-CBC encryption of `rsa_pss_key_pem` (passphrase
+/// `ztls-fixture-passphrase`). Encrypted keys are not part of the loader
+/// contract (#114): this must fail at load without prompting or reading
+/// stdin, so it never yields a key.
+pub const rsa_pss_key_encrypted_pkcs8_pem: []const u8 =
+    rawSection("rsa_pss_key_encrypted_pkcs8_pem");
+
+/// Legacy `Proc-Type: 4,ENCRYPTED` / `DEK-Info` encryption of
+/// `rsa_pss_key_pem`, same passphrase as the PKCS#8 form. A distinct
+/// container and decrypt path, with the same #114 contract.
+pub const rsa_pss_key_encrypted_legacy_pem: []const u8 =
+    rawSection("rsa_pss_key_encrypted_legacy_pem");
+
 /// P-256 PKCS#8 key — pairs with `server_cert_der` (CN=test.local) (#112/#113).
 pub const ec_p256_key_pem: []const u8 = rawSection("ec_p256_key_pem");
 /// P-384 PKCS#8 key — infers ecdsa_secp384r1_sha384 (#112).

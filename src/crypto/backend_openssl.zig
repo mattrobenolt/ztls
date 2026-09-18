@@ -719,13 +719,38 @@ pub fn privateKeyFromDer(der: []const u8) SignatureError!*pkey {
     return c.d2i_AutoPrivateKey(null, &ptr, @intCast(der.len)) orelse error.LibcryptoFailed;
 }
 
+/// #114 — declining `pem_password_cb` for every PEM private-key load. A NULL
+/// callback makes libcrypto fall back to `PEM_def_callback`, which prompts on
+/// the controlling terminal (OpenSSL, AWS-LC) or consumes process stdin
+/// instead of failing — unacceptable for unattended startup. Encrypted keys
+/// are not part of this loader's contract, so the callback always declines:
+/// -1 is the provider-family convention for "no password available"
+/// (BoringSSL's `openssl/pem.h`: "on error ... it should return -1"), and
+/// all three lanes abort the decrypt without reading input on a non-positive
+/// return (measured; 0 and -1 both decline). The parameter list matches
+/// `pem_password_cb`, and `?[*]u8` accepts the headers' C pointer type, so all
+/// three backends compile against this one implementation.
+fn declinePemPassword(
+    password: ?[*]u8,
+    max_len: c_int,
+    decrypting: c_int,
+    userdata: ?*anyopaque,
+) callconv(.c) c_int {
+    _ = password;
+    _ = max_len;
+    _ = decrypting;
+    _ = userdata;
+    return -1;
+}
+
 pub fn privateKeyFromPem(pem: []const u8) SignatureError!*pkey {
     errqEnter();
     defer errqExit();
     const bio = c.BIO_new_mem_buf(pem.ptr, @intCast(pem.len)) orelse
         return error.LibcryptoFailed;
     defer _ = c.BIO_free(bio);
-    return c.PEM_read_bio_PrivateKey(bio, null, null, null) orelse error.LibcryptoFailed;
+    return c.PEM_read_bio_PrivateKey(bio, null, declinePemPassword, null) orelse
+        error.LibcryptoFailed;
 }
 
 pub const KeySchemeError = error{UnsupportedKeyScheme};

@@ -13,6 +13,9 @@ pub fn addSteps(b: *Build, opts: struct {
     /// The ztls library module, for standalone check executables that must
     /// control the process environment before any libcrypto call.
     ztls_mod: *Build.Module,
+    /// Fixtures module — the #114 non-interaction check loads the encrypted
+    /// PEM fixtures directly.
+    fixtures_mod: *Build.Module,
     /// Build target for standalone check executables. Required: the only
     /// caller (build.zig) always passes it.
     target: Build.ResolvedTarget,
@@ -53,6 +56,7 @@ pub fn addSteps(b: *Build, opts: struct {
         .optimize = opts.optimize,
     });
     errq_mod.addImport("ztls", opts.ztls_mod);
+    errq_mod.addImport("fixtures", opts.fixtures_mod);
     errq_mod.link_libc = true;
     errq_mod.linkSystemLibrary("crypto", .{});
 
@@ -68,4 +72,31 @@ pub fn addSteps(b: *Build, opts: struct {
         "Run the #88 error-queue allocation-count check (OpenSSL and AWS-LC)",
     );
     errq_step.dependOn(&run_errq.step);
+
+    // #114 — encrypted-PEM non-interaction check. Same standalone-executable
+    // rationale as the errq check: the probe replaces its own stdin/stdout/
+    // stderr, which a test inside the shared binary cannot safely do. Runs on
+    // every lane, including BoringSSL.
+    const pem_mod = b.createModule(.{
+        .root_source_file = b.path("src/test/encrypted_pem_check.zig"),
+        .target = opts.target,
+        .optimize = opts.optimize,
+    });
+    pem_mod.addImport("ztls", opts.ztls_mod);
+    pem_mod.addImport("fixtures", opts.fixtures_mod);
+    pem_mod.link_libc = true;
+    pem_mod.linkSystemLibrary("crypto", .{});
+
+    const pem_exe = b.addExecutable(.{
+        .name = "encrypted-pem-check",
+        .root_module = pem_mod,
+    });
+    const run_pem = b.addRunArtifact(pem_exe);
+    run_pem.has_side_effects = true;
+    test_step.dependOn(&run_pem.step);
+    const pem_step = b.step(
+        "encrypted-pem-check",
+        "Run the #114 encrypted-PEM non-interaction check (pipe and terminal probes)",
+    );
+    pem_step.dependOn(&run_pem.step);
 }

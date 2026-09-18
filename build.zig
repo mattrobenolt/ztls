@@ -158,6 +158,7 @@ pub fn build(b: *Build) void {
         .fuzz = fuzz_mode,
         .ztest = ztest_dep,
         .ztls_mod = mod,
+        .fixtures_mod = fixtures_mod,
         .target = target,
         .optimize = optimize,
     });

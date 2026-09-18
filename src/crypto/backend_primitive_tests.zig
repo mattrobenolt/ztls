@@ -1323,6 +1323,28 @@ test "backend error-queue hygiene: scheme inference preserves caller entries (#1
     try expectQueueMatchesCallerResidue();
 }
 
+// #88 finding 2 / #114 — the declined encrypted-PEM load is an outermost
+// guarded wrapper: two failures on a quiet queue must leave it empty, so an
+// unattended startup that keeps retrying encrypted keys cannot accumulate
+// residue for the life of the thread. The guard pops every entry the provider
+// queued on this path (removing it turns this test red). Caller preservation
+// here is the same lane-dependent caveat as the DER loads above, so this pins
+// only the residue axis.
+test "backend error-queue hygiene: declined encrypted PEM loads leave no residue (#114)" {
+    const encrypted_pems = [_][]const u8{
+        fixtures.rsa_pss_key_encrypted_pkcs8_pem,
+        fixtures.rsa_pss_key_encrypted_legacy_pem,
+    };
+    for (encrypted_pems) |pem| {
+        c.ERR_clear_error();
+        try testing.expectError(
+            error.LibcryptoFailed,
+            backend.sign.privateKeyFromPem(pem),
+        );
+        try testing.expect(c.ERR_get_error() == 0);
+    }
+}
+
 // #88 finding 2 / #113 — a clean cert/key mismatch pushes an error-queue
 // entry on every lane (X509_R_KEY_VALUES_MISMATCH) and the guard pops it,
 // so the wrapper leaves no residue of its own. Caller preservation is

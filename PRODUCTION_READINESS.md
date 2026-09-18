@@ -595,7 +595,9 @@ data to openssl s_server and receives the HTTP response.
     installs counting `CRYPTO_set_mem_functions` hooks before any libcrypto
     call and, after fully warming the exact failing operation and clearing
     the warmup errors, asserts that each further failing guarded call
-    returns the live-allocation count to the baseline snapshot — the
+    (malformed EC key share, per-record AEAD tag rejection, and the #114
+    declined encrypted-PEM load) returns the live-allocation count to the
+    baseline snapshot — the
     memory assertion runs before the queue assertion, and with the guards
     removed the executable fails on the memory axis (`AllocationGrowth`),
     as it also does under a deliberate per-call libcrypto-allocated leak in
@@ -1442,7 +1444,36 @@ each passing the same correctness and interop gates.
   mismatched EC/RSA material, both PEM containers, every gate/mapping
   rejection, and CertificateVerify-shaped sign round-trips, with mutation
   checks red on the mapping flip, the gate removal, the pairing comparison
-  inversion, and removal of the exact-DER trailing-byte check. `PrivateKey` also
+  inversion, and removal of the exact-DER trailing-byte check. Encrypted PEM
+  input is declined at load (#114): both loaders pass an explicit
+  `pem_password_cb` returning -1 — the provider-family convention for "no
+  password available" — so an encrypted key (PKCS#8 PBES2
+  `ENCRYPTED PRIVATE KEY`, or the legacy `Proc-Type: 4,ENCRYPTED`/
+  `DEK-Info` container) fails with `error.LibcryptoFailed` instead of falling
+  back to `PEM_def_callback`, which prompts (on the terminal when one is
+  attached, and on stderr either way) and reads process stdin (measured
+  pre-fix on OpenSSL 3.6.4 and AWS-LC 5.5.0). Encrypted private keys are not
+  part of the loader API and no
+  caller-owned password API exists yet; `docs/USAGE.md` states the same. The
+  evidence is a source-embedded encrypted pair of fixtures (same RSA key as
+  `rsa_pss_key_pem`, both containers), an error-contract test per API, a
+  lane-independent error-queue residue test (red under errq-guard removal,
+  `TestUnexpectedResult`), an allocation-retention round in
+  `errq-alloc-check` (red on the memory axis, `AllocationGrowth`, under the
+  same guard removal; OpenSSL and AWS-LC lanes, BoringSSL skips the hook
+  check by construction), and a standalone `zig build encrypted-pem-check`
+  executable wired into `zig build test` that replaces the loader's
+  stdin/stdout/stderr with a two-line passphrase sentinel on a pipe and on a
+  PTY and asserts no consumption and no prompt text, bounded by SIGALRM and
+  non-blocking probe stdin. Mutation: restoring the pre-#114 NULL callback
+  turns that check red on OpenSSL and AWS-LC (`PromptWritten` *and*
+  `StdinConsumed`), while BoringSSL was already non-interactive (its
+  `PEM_def_callback` returns -1 for NULL userdata, documented in
+  `openssl/pem.h`), so the change is behavior-preserving there and makes the
+  contract explicit on every lane. Encrypted loads were exercised on all six
+  lanes (OpenSSL, AWS-LC, BoringSSL × Zig 0.15.2/0.16); the check's Darwin
+  build was verified by cross-target semantic analysis only — linking it
+  needs a darwin libcrypto, so it has not been executed on macOS. `PrivateKey` also
   carries a `nonce_mode` option (`NonceMode`, RFC 6979, mattrobenolt/ztls#82):
   default `.random`; `.deterministic` makes an ECDSA CertificateVerify
   byte-reproducible. Capability is compiled support only
@@ -1496,7 +1527,8 @@ each passing the same correctness and interop gates.
   Wycheproof matrix or divergent capability proof.
 - BoringSSL is a compile + primitive-test + CI-gated lane. `nix develop
   .#boringssl --command zig build test` infers BoringSSL from its headers.
-  The suite runs 766 tests: 759 pass and seven capability-specific tests skip.
+  The suite runs 795 tests: 788 pass and seven capability-specific tests skip
+  (measured 2026-09-18, including the #114 encrypted-PEM tests and check).
   BoringSSL has no FIPS policy identity.
   `just check-backend-boringssl` builds, tests, produces the benchmark binary,
   executes a one-row benchmark smoke, runs the in-memory example, builds the

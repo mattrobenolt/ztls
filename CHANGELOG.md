@@ -56,6 +56,7 @@ This section describes what exists on `main` today. It is not a release.
 ### Changed
 
 - Private keys can infer supported TLS 1.3 signature schemes from PEM material, and callers can validate certificate/private-key pairing before starting or rotating a server.
+- Encrypted PEM private keys now fail at load instead of prompting for a passphrase: the loaders decline password input, so an unattended startup cannot block on a terminal or eat process stdin. A caller-owned password API is not designed yet.
 - Servers can derive and emit allocation-free TLS 1.3 NewSessionTicket records,
   resume them through caller-owned PSK lookup policy, and hand TX ownership to
   kTLS only after ticket writes are flushed.
