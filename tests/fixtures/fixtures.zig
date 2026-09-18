@@ -74,9 +74,30 @@ pub const cv_sig = decodeSection("cv_sig");
 pub const rsa_pss_cv_sig = decodeSection("rsa_pss_cv_sig");
 pub const rsa_pss_cv_salt20_sig = decodeSection("rsa_pss_cv_salt20_sig");
 
-// --- PEM key fixture (raw, not base64-decoded) ------------------------------
+// --- PEM key fixtures (raw, not base64-decoded) ------------------------------
 
+/// RSA-2048 PKCS#8 key — the same key material as `rsa_pss_key_pem` and the
+/// `rsa_pss/server.crt` certificate. Scheme-inference and pairing fixtures
+/// (#112/#113).
 pub const rsa_pss_key_pem: []const u8 = rawSection("rsa_pss_key_pem");
+
+/// RSA-2048 PKCS#1 (traditional) container of the same RSA key: the PEM
+/// container is parsed by libcrypto, both forms load the same EVP_PKEY (#112).
+pub const rsa_pkcs1_key_pem: []const u8 = rawSection("rsa_pkcs1_key_pem");
+
+/// P-256 PKCS#8 key — pairs with `server_cert_der` (CN=test.local) (#112/#113).
+pub const ec_p256_key_pem: []const u8 = rawSection("ec_p256_key_pem");
+/// P-384 PKCS#8 key — infers ecdsa_secp384r1_sha384 (#112).
+pub const ec_p384_key_pem: []const u8 = rawSection("ec_p384_key_pem");
+/// P-521 PKCS#8 key — loads everywhere; rejected by the CertificateVerify
+/// capability gate until a backend advertises ecdsa_secp521r1_sha512 (#112).
+pub const ec_p521_key_pem: []const u8 = rawSection("ec_p521_key_pem");
+/// Ed25519 PKCS#8 key — loads everywhere; rejected by the CertificateVerify
+/// capability gate until the sign seam grows a one-shot Ed25519 flow (#112).
+pub const ed25519_key_pem: []const u8 = rawSection("ed25519_key_pem");
+/// secp224r1 PKCS#8 key — loads everywhere but has no TLS 1.3 ECDSA scheme
+/// (RFC 8446 §4.2.3): the deterministic loads-then-rejects inference vector.
+pub const ec_secp224r1_key_pem: []const u8 = rawSection("ec_secp224r1_key_pem");
 
 // --- txtar archives (embedded directly) -------------------------------------
 

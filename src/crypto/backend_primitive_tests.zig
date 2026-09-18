@@ -16,6 +16,7 @@ const testing = std.testing;
 const backend = @import("backend.zig");
 const Certificate = @import("../certificate_parser.zig");
 const CipherSuite = @import("../cipher_suite.zig").CipherSuite;
+const SignatureScheme = @import("../signature_scheme.zig").SignatureScheme;
 const fixtures = @import("fixtures");
 
 const hex = @import("../memx.zig").hex;
@@ -1301,6 +1302,49 @@ test "backend error-queue hygiene: DER key load preservation is lane-dependent (
     );
 
     if (comptime c_openssl.is_boringssl_family) {
+        try testing.expect(c.ERR_get_error() == 0);
+    } else {
+        try expectQueueMatchesCallerResidue();
+    }
+}
+
+// #88 finding 2 / #112 — scheme inference is an outermost guarded wrapper;
+// a successful inference must leave the caller's queue entries intact.
+test "backend error-queue hygiene: scheme inference preserves caller entries (#112)" {
+    c.ERR_clear_error();
+    pushCallerQueueEntries();
+    const scalar: [32]u8 = @splat(0x01);
+    const key = try backend.sign.privateKeyFromP256Scalar(&scalar);
+    defer backend.sign.freeKey(key);
+
+    const scheme = try backend.sign.keyScheme(key);
+    try testing.expectEqual(SignatureScheme.ecdsa_secp256r1_sha256, scheme);
+
+    try expectQueueMatchesCallerResidue();
+}
+
+// #88 finding 2 / #113 — a clean cert/key mismatch pushes an error-queue
+// entry on every lane (X509_R_KEY_VALUES_MISMATCH) and the guard pops it,
+// so the wrapper leaves no residue of its own. Caller preservation is
+// lane-dependent, like the DER key loads: aws-lc's d2i_X509 clears the
+// queue during SPKI conversion on every parse (x_pubkey.c reaches its
+// ERR_clear_error unconditionally, even on success), so pre-existing
+// caller entries cannot survive there and the pinned result is an empty
+// queue. BoringSSL clears only on the SPKI-decode-failure path, and
+// OpenSSL uses counted marks, so on both of those lanes the caller's
+// entries survive exactly.
+test "backend error-queue hygiene: cert/key mismatch preservation is lane-dependent (#113)" {
+    c.ERR_clear_error();
+    pushCallerQueueEntries();
+    const scalar: [32]u8 = @splat(0x01);
+    const key = try backend.sign.privateKeyFromP256Scalar(&scalar);
+    defer backend.sign.freeKey(key);
+
+    try testing.expect(
+        try backend.sign.privateKeyPairsWithCertificate(key, &fixtures.rsa_pss_cert_der) == false,
+    );
+
+    if (comptime c_openssl.family == .@"aws-lc") {
         try testing.expect(c.ERR_get_error() == 0);
     } else {
         try expectQueueMatchesCallerResidue();

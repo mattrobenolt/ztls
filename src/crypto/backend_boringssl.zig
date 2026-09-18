@@ -351,6 +351,19 @@ pub inline fn privateKeyFromPem(pem: []const u8) SignatureError!*pkey {
     return compat.privateKeyFromPem(pem);
 }
 
+pub const KeySchemeError = compat.KeySchemeError;
+
+pub inline fn keyScheme(key: *const pkey) KeySchemeError!SignatureScheme {
+    return compat.keyScheme(key);
+}
+
+pub inline fn privateKeyPairsWithCertificate(
+    key: *const pkey,
+    leaf_cert_der: []const u8,
+) error{InvalidEncoding}!bool {
+    return compat.privateKeyPairsWithCertificate(key, leaf_cert_der);
+}
+
 pub inline fn privateKeyFromP256Scalar(scalar: *const [32]u8) SignatureError!*pkey {
     return compat.privateKeyFromP256Scalar(scalar);
 }

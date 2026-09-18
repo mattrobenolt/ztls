@@ -350,6 +350,19 @@ pub const sign = struct {
         return sign_impl.privateKeyFromPem(pem);
     }
 
+    pub const KeySchemeError = sign_impl.KeySchemeError;
+
+    pub inline fn keyScheme(key: *const pkey) KeySchemeError!SignatureScheme {
+        return sign_impl.keyScheme(key);
+    }
+
+    pub inline fn privateKeyPairsWithCertificate(
+        key: *const pkey,
+        leaf_cert_der: []const u8,
+    ) error{InvalidEncoding}!bool {
+        return sign_impl.privateKeyPairsWithCertificate(key, leaf_cert_der);
+    }
+
     pub inline fn privateKeyFromP256Scalar(scalar: *const [32]u8) Error!*pkey {
         return sign_impl.privateKeyFromP256Scalar(scalar);
     }

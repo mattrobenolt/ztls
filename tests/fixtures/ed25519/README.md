@@ -24,5 +24,6 @@ openssl req -x509 -newkey ed25519 -nodes -keyout server.key -out server.crt \
 openssl x509 -in server.crt -outform DER -out server.der
 ```
 
-The private key is committed because this is a public test fixture, not a
-trust anchor or production credential.
+The certificate's private key is not committed; the Ed25519 key used for
+load/scheme-inference tests lives in `fixtures.txtar` (`ed25519_key_pem`, #112)
+and is an unrelated throwaway key, not this certificate's.

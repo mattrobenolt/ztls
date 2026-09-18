@@ -35,6 +35,29 @@ unit tests, examples, and conformance harnesses are reproducible.
   reference. Add a subdirectory + README when a fixture family needs its own
   provenance note.
 
+## Key-scheme inference and pairing fixtures (#112/#113)
+
+The key PEM sections in `fixtures.txtar` (`rsa_pkcs1_key_pem`,
+`ec_p256_key_pem`, `ec_p384_key_pem`, `ec_p521_key_pem`, `ed25519_key_pem`,
+`ec_secp224r1_key_pem`) drive `PrivateKey.fromPemAuto` scheme inference and
+`PrivateKey.pairsWith` load-time pairing tests. All are public test fixtures,
+not credentials. `ec_p256_key_pem` is the existing loose `server.key`
+(PKCS#8, pairs with `server_cert_der`); `rsa_pkcs1_key_pem` is the
+traditional-container form of `rsa_pss_key_pem`'s key. Regenerate the
+throwaway keys with:
+
+```sh
+openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:secp384r1
+openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:secp521r1
+openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:secp224r1
+openssl genpkey -algorithm ed25519
+openssl pkey -in rsa_pss/server.key -traditional   # PKCS#1 form of that key
+```
+
+Paste each output as a raw `-- name --` section in `fixtures.txtar` (no
+base64, same as `rsa_pss_key_pem`) and keep the matching `rawSection`
+extractor in `fixtures.zig` in the same change.
+
 ## Guardrails
 
 - `just lint-fixtures` rejects tracked `.der`, `.bin`, and `.sig` files under

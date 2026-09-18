@@ -117,6 +117,16 @@ pub const Error = error{ LibcryptoFailed, IdentityElement };
 //   call ERR_clear_error between parse fallbacks, destroying the caller's
 //   entries and ztls's mark before errqExit runs. The wrapper still leaves
 //   no residue of its own there; pinned by a lane-dependent test.
+// - The X509 leaf parse inside privateKeyPairsWithCertificate (#113) has
+//   the same caveat class by a different mechanism: the family's d2i_X509
+//   runs SPKI-to-EVP_PKEY conversion during the parse, and that path can
+//   call ERR_clear_error, destroying pre-existing caller entries and the
+//   mark before errqExit runs. aws-lc reaches the clear unconditionally
+//   (x_pubkey.c err: label, even on success); BoringSSL clears only when
+//   the SPKI decode fails; OpenSSL does not clear on this path. In every
+//   variant the wrapper's own X509_check_private_key mismatch push is
+//   still popped by the guard, so it leaves no residue of its own —
+//   pinned by a lane-dependent test.
 // - A caller's pending ERR_set_mark is consumed on the BoringSSL-family
 //   backends even when the wrapper pushes nothing: errqEnter re-marks the
 //   caller's top entry (idempotent flag) and errqExit clears it, so the
@@ -716,6 +726,64 @@ pub fn privateKeyFromPem(pem: []const u8) SignatureError!*pkey {
         return error.LibcryptoFailed;
     defer _ = c.BIO_free(bio);
     return c.PEM_read_bio_PrivateKey(bio, null, null, null) orelse error.LibcryptoFailed;
+}
+
+pub const KeySchemeError = error{UnsupportedKeyScheme};
+
+/// Infer the CertificateVerify SignatureScheme from a loaded private key
+/// (#112). Uses the exact key type (`EVP_PKEY_id`), not the base type. RFC
+/// 8446 §4.2.3 assigns rsassaPss-OID keys to rsa_pss_pss_*, which ztls does
+/// not implement or advertise; preserving EVP_PKEY_RSA_PSS therefore rejects
+/// those keys instead of mislabeling them rsa_pss_rsae_*. Ed25519 and P-521
+/// map to their schemes here; whether the active backend can sign them is a
+/// separate capability question (`fromPemAuto` gates on it).
+/// Outermost guarded wrapper (#88 finding 2): EVP_PKEY_get0_EC_KEY can push
+/// error-queue entries on OpenSSL when a provider-held EC key has no legacy
+/// export, and every mapping failure must leave no residue.
+pub fn keyScheme(key: *const pkey) KeySchemeError!SignatureScheme {
+    errqEnter();
+    defer errqExit();
+    return switch (c.EVP_PKEY_id(key)) {
+        c.EVP_PKEY_RSA => .rsa_pss_rsae_sha256,
+        c.EVP_PKEY_EC => switch (ecCurveNid(key) orelse return error.UnsupportedKeyScheme) {
+            c.NID_X9_62_prime256v1 => .ecdsa_secp256r1_sha256,
+            c.NID_secp384r1 => .ecdsa_secp384r1_sha384,
+            c.NID_secp521r1 => .ecdsa_secp521r1_sha512,
+            else => error.UnsupportedKeyScheme,
+        },
+        c.EVP_PKEY_ED25519 => .ed25519,
+        else => error.UnsupportedKeyScheme,
+    };
+}
+
+fn ecCurveNid(key: *const pkey) ?c_int {
+    const ec = c.EVP_PKEY_get0_EC_KEY(key) orelse return null;
+    const group = c.EC_KEY_get0_group(ec) orelse return null;
+    return c.EC_GROUP_get_curve_name(group);
+}
+
+/// RFC 8446 §4.4.3 — the CertificateVerify key must correspond to the leaf
+/// certificate's public key. Load-time pairing check (#113): parses the
+/// caller's exact leaf DER with d2i_X509, rejects trailing bytes, and compares
+/// through X509_check_private_key. The X509 is provider-owned, freed in this scope,
+/// and never escapes (public data, no zeroization needed); the private key
+/// is borrowed read-only, so ownership and zeroization stay with `freeKey`.
+/// `false` is conservative on every lane: an SPKI the backend cannot
+/// convert to an EVP_PKEY reports not-paired, never a false accept.
+/// Outermost guarded wrapper (#88 finding 2): a clean mismatch pushes
+/// X509_R_KEY_VALUES_MISMATCH on all three families.
+pub fn privateKeyPairsWithCertificate(
+    key: *const pkey,
+    leaf_cert_der: []const u8,
+) error{InvalidEncoding}!bool {
+    errqEnter();
+    defer errqExit();
+    var ptr: ?[*]const u8 = leaf_cert_der.ptr;
+    const x509 = c.d2i_X509(null, &ptr, @intCast(leaf_cert_der.len)) orelse
+        return error.InvalidEncoding;
+    defer c.X509_free(x509);
+    if (ptr.? != leaf_cert_der.ptr + leaf_cert_der.len) return error.InvalidEncoding;
+    return c.X509_check_private_key(x509, key) == 1;
 }
 
 /// Outermost entry point (key load for signing): guards on its own and calls

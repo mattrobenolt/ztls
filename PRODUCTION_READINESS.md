@@ -556,7 +556,8 @@ data to openssl s_server and receives the HTTP response.
     residue is eliminated and regression-tested on all three
     backends — every outermost public fallible backend wrapper (shared EC
     P-256/P-384 key construction and ECDH, X25519, key loading, signature
-    sign/verify, KEM, and the per-record AEAD seal/open paths) brackets its
+    sign/verify, key-scheme inference and cert/key pairing checks (#112,
+    #113), KEM, and the per-record AEAD seal/open paths) brackets its
     libcrypto calls with `ERR_set_mark`/`ERR_pop_to_mark`, so a handled
     failure removes exactly the queue entries it pushed and preserves the
     caller's, up to the per-thread ring capacity (16 slots, 15 usable —
@@ -566,7 +567,12 @@ data to openssl s_server and receives the HTTP response.
     BoringSSL-family backends (their d2i key parsers call `ERR_clear_error`
     between parse fallbacks, destroying the caller's entries and the mark
     before the guard's pop runs; the wrapper still leaves no residue of its
-    own there — pinned by a lane-dependent test), and a caller's pending
+    own there — pinned by a lane-dependent test), the #113 cert/key
+    pairing check has the same caveat class on the aws-lc lane (its
+    d2i_X509 reaches an unconditional `ERR_clear_error` during SPKI
+    conversion on every parse, while BoringSSL clears only on SPKI decode
+    failure and OpenSSL does not clear on this path — pinned by the
+    lane-dependent #113 hygiene test), and a caller's pending
     `ERR_set_mark` is consumed on those backends even when the wrapper
     pushes nothing (per-entry boolean flag; the caller's entries survive
     until the caller's own later pop). The guard is non-nested by
@@ -1412,7 +1418,31 @@ each passing the same correctness and interop gates.
   keypair/secret shape to the handshake.
 - `src/signature.zig` keeps the caller-facing `Signer` vtable for server
   signing, and its concrete `PrivateKey` helper now routes PEM/DER/scalar key
-  loading and signing through `src/crypto/backend.zig`. `PrivateKey` also
+  loading and signing through `src/crypto/backend.zig`. Scheme inference is
+  provider-backed (#112): `PrivateKey.fromPemAuto(pem)` loads the key and
+  derives the CertificateVerify scheme from the exact key type
+  (`EVP_PKEY_id`, not base_id — RFC 8446 §4.2.3 assigns a loadable
+  rsassaPss-OID key to rsa_pss_pss_*, which ztls does not implement or
+  advertise; a backend may also reject that container while loading) and
+  curve via the legacy `EVP_PKEY_get0_EC_KEY` →
+  `EC_GROUP_get_curve_name` family, then gates the result against the
+  active `certificate_verify_schemes` table, so a key that loads but cannot
+  sign CertificateVerify on the linked backend (Ed25519, P-521 today) fails
+  at load with `error.UnsupportedKeyScheme` — the capability gate is the
+  deliberate deviation from a pure metadata mapping, and it auto-opens if
+  Ed25519/P-521 CertificateVerify signing lands later. Load-time cert/key
+  pairing is provider-backed too (#113): `PrivateKey.pairsWith(leaf_der)`
+  parses exactly one leaf with `d2i_X509` and compares through
+  `X509_check_private_key`, returning `error.CertificateKeyMismatch` for a
+  parsed-but-unpaired leaf and `error.InvalidCertificate` for invalid DER or
+  trailing bytes, so startup and rotation can distinguish a wrong pairing from a
+  corrupt file; both inputs are borrowed and the parsed X509 is freed inside
+  the wrapper. Both paths run on all three backends (OpenSSL, AWS-LC,
+  BoringSSL lanes green), proven by RFC-cited tests for matching and
+  mismatched EC/RSA material, both PEM containers, every gate/mapping
+  rejection, and CertificateVerify-shaped sign round-trips, with mutation
+  checks red on the mapping flip, the gate removal, the pairing comparison
+  inversion, and removal of the exact-DER trailing-byte check. `PrivateKey` also
   carries a `nonce_mode` option (`NonceMode`, RFC 6979, mattrobenolt/ztls#82):
   default `.random`; `.deterministic` makes an ECDSA CertificateVerify
   byte-reproducible. Capability is compiled support only
@@ -1424,6 +1454,11 @@ each passing the same correctness and interop gates.
   mutation-checked red under a random nonce) plus the AWS-LC rejection
   assertions; pre-3.2-header compile behavior validated by header-overlay
   simulation only, not an actual OpenSSL 3.0 runtime.
+- **Known absent:** the RFC 8446 §4.2.3 `rsa_pss_pss_*` CertificateVerify
+  schemes are neither named in `SignatureScheme` nor advertised by any
+  backend. Automatic loading therefore rejects rsassaPss-OID keys with
+  `error.UnsupportedKeyScheme` when the backend parser accepts the container;
+  some backends may reject the container earlier with `error.LibcryptoFailed`.
 - `src/certificate.zig` routes CertificateVerify public-key construction and
   signature verification through `src/crypto/backend.zig`; certificate parsing,
   chain signature verification, and path policy remain ztls/std-derived code.

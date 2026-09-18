@@ -341,19 +341,6 @@ fn parsePemCerts(arena: Allocator, pem: []const u8) !std.ArrayList([]const u8) {
     return list;
 }
 
-fn signatureSchemeForCert(cert_der: []const u8) !ztls.SignatureScheme {
-    const cert: crypto.Certificate = .{ .buffer = cert_der, .index = 0 };
-    const parsed = try cert.parse();
-    return switch (parsed.pub_key_algo) {
-        .rsaEncryption, .rsassa_pss => .rsa_pss_rsae_sha256,
-        .X9_62_id_ecPublicKey => |curve| switch (curve) {
-            .secp384r1 => .ecdsa_secp384r1_sha384,
-            else => .ecdsa_secp256r1_sha256,
-        },
-        .curveEd25519 => .ed25519,
-    };
-}
-
 // -- Entry point --------------------------------------------------------------
 
 /// Handoff from the server thread: the ephemeral port it bound, published once
@@ -482,9 +469,9 @@ fn serverRun(
     shared.ready.set();
 
     const key_pem = try net.readFileAlloc(arena, args.key, 1 << 20);
-    const scheme = try signatureSchemeForCert(certs[0]);
-    var private_key: ztls.signature.PrivateKey = try .fromPem(scheme, key_pem);
+    var private_key: ztls.signature.PrivateKey = try .fromPemAuto(key_pem);
     defer private_key.deinit();
+    try private_key.pairsWith(certs[0]);
 
     const epoll_fd = try epollCreate1(0);
     defer closeFd(epoll_fd);

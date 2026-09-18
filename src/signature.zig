@@ -8,6 +8,16 @@ const SignatureScheme = @import("signature_scheme.zig").SignatureScheme;
 pub const SignError = backend.sign.SignError;
 pub const NonceMode = backend.sign.NonceMode;
 
+/// `fromPemAuto` load failure: backend load errors plus the scheme-inference
+/// rejection (#112). Kept separate from `SignError` so the sign-only errors
+/// do not widen the loaders.
+pub const LoadError = SignError || error{UnsupportedKeyScheme};
+
+/// `pairsWith` contract (#113): the leaf parsed but its key does not pair
+/// with the loaded private key (`CertificateKeyMismatch`), or the DER is
+/// not parseable X.509 (`InvalidCertificate`).
+pub const PairError = error{ CertificateKeyMismatch, InvalidCertificate };
+
 pub const Signer = struct {
     scheme: SignatureScheme,
     context: *anyopaque,
@@ -35,6 +45,24 @@ pub const PrivateKey = struct {
         return .{ .scheme = scheme, .key = try backend.sign.privateKeyFromPem(pem) };
     }
 
+    /// RFC 8446 §4.2.3 — infer the CertificateVerify scheme from the loaded
+    /// key (#112). The explicit `fromPem` stays caller-pins-scheme; this
+    /// path derives the scheme from the key's exact type and curve, then
+    /// gates it against the active backend's advertised CertificateVerify
+    /// schemes — so a key whose scheme this backend cannot sign (Ed25519,
+    /// P-521 today) fails here with `error.UnsupportedKeyScheme`, at load
+    /// time instead of at the first handshake signature.
+    // ziglint-ignore: Z015 -- LoadError is a public error-set alias.
+    pub fn fromPemAuto(pem: []const u8) LoadError!PrivateKey {
+        const key = try backend.sign.privateKeyFromPem(pem);
+        // Two fallible steps: a scheme-rejected key must not leak the
+        // loaded EVP_PKEY.
+        errdefer backend.sign.freeKey(key);
+        const scheme = try backend.sign.keyScheme(key);
+        if (!backend.supportsCertificateVerifyScheme(scheme)) return error.UnsupportedKeyScheme;
+        return .{ .scheme = scheme, .key = key };
+    }
+
     pub fn fromP256Scalar(scalar: *const [32]u8) SignError!PrivateKey {
         return .{
             .scheme = .ecdsa_secp256r1_sha256,
@@ -58,6 +86,30 @@ pub const PrivateKey = struct {
 
     pub fn sign(self: *const PrivateKey, msg: []const u8, out: []u8) SignError![]const u8 {
         return backend.sign.sign(self.key, self.scheme, msg, out, self.nonce_mode);
+    }
+
+    /// RFC 8446 §4.4.3 — the CertificateVerify signature must be made with
+    /// the private key matching the end-entity certificate's public key
+    /// (§4.4.2: the sender's certificate is first, so the leaf is element
+    /// [0] of the chain). Explicit load-time validation for startup and
+    /// certificate rotation (#113): `error.CertificateKeyMismatch` means
+    /// the leaf parsed but the keys do not pair; `error.InvalidCertificate`
+    /// means the input is not exactly one DER-encoded X.509 certificate —
+    /// distinct outcomes, so a rotation log can tell a wrong pairing from a
+    /// corrupt file. Both
+    /// inputs are borrowed: the parsed X509 is provider-owned and freed
+    /// inside the backend wrapper, and the private key is only read, so
+    /// ownership and zeroization stay with `deinit`. Rotation lifetime: a
+    /// `PrivateKey` must outlive every `Signer` it handed out — swap
+    /// credentials only when no in-flight handshake holds the old signer.
+    pub fn pairsWith(self: *const PrivateKey, leaf_cert_der: []const u8) PairError!void {
+        const paired = backend.sign.privateKeyPairsWithCertificate(
+            self.key,
+            leaf_cert_der,
+        ) catch |err| return switch (err) {
+            error.InvalidEncoding => error.InvalidCertificate,
+        };
+        if (!paired) return error.CertificateKeyMismatch;
     }
 };
 
@@ -191,5 +243,205 @@ test "PrivateKey.sign: deterministic nonce with RSA-PSS is rejected" {
     try testing.expectError(
         error.DeterministicNonceUnsupported,
         key.sign("test message", &sig),
+    );
+}
+
+// ---------------------------------------------------------------------------
+// fromPemAuto — provider-backed scheme inference (#112)
+// ---------------------------------------------------------------------------
+
+// RFC 8446 §4.4.3 — the CertificateVerify signed content is the
+// concatenation of 64×0x20, the role context string, one zero separator,
+// and the transcript hash. Fixed bytes stand in for the hash: the sign seam
+// is content-agnostic; the shape under test is the CertificateVerify layout.
+fn certificateVerifyContent() [64 + "TLS 1.3, server CertificateVerify".len + 1 + 32]u8 {
+    var content: [64 + "TLS 1.3, server CertificateVerify".len + 1 + 32]u8 = @splat(0x20);
+    const context = "TLS 1.3, server CertificateVerify";
+    @memcpy(content[64..][0..context.len], context);
+    content[64 + context.len] = 0;
+    @memset(content[64 + context.len + 1 ..], 0xa5);
+    return content;
+}
+
+// RFC 8446 §4.2.3 — an rsaEncryption key maps to rsa_pss_rsae_sha256
+// regardless of PEM container (libcrypto owns PKCS#8/PKCS#1 parsing), and
+// the auto-inferred key signs a CertificateVerify-shaped content (#112).
+test "PrivateKey.fromPemAuto: RSA PKCS#8 and PKCS#1 both infer rsa_pss_rsae_sha256" {
+    const rsa_pkcs1_key_pem = @import("fixtures").rsa_pkcs1_key_pem;
+    const rsa_pss_key_pem = @import("fixtures").rsa_pss_key_pem;
+    var key: PrivateKey = try .fromPemAuto(rsa_pss_key_pem);
+    defer key.deinit();
+    try testing.expectEqual(SignatureScheme.rsa_pss_rsae_sha256, key.scheme);
+
+    var pkcs1: PrivateKey = try .fromPemAuto(rsa_pkcs1_key_pem);
+    defer pkcs1.deinit();
+    try testing.expectEqual(SignatureScheme.rsa_pss_rsae_sha256, pkcs1.scheme);
+
+    const content = certificateVerifyContent();
+    var sig: [256]u8 = undefined;
+    const out = try key.sign(&content, &sig);
+    try testing.expectEqual(@as(usize, 256), out.len);
+}
+
+// RFC 8446 §4.2.3 — a prime256v1 key maps to ecdsa_secp256r1_sha256 and the
+// auto-inferred key signs a CertificateVerify-shaped content (#112).
+test "PrivateKey.fromPemAuto: P-256 infers ecdsa_secp256r1_sha256 and signs" {
+    const ec_p256_key_pem = @import("fixtures").ec_p256_key_pem;
+    var key: PrivateKey = try .fromPemAuto(ec_p256_key_pem);
+    defer key.deinit();
+    try testing.expectEqual(SignatureScheme.ecdsa_secp256r1_sha256, key.scheme);
+
+    const content = certificateVerifyContent();
+    var sig: [72]u8 = undefined;
+    const out = try key.sign(&content, &sig);
+    try testing.expect(out.len > 0);
+}
+
+// RFC 8446 §4.2.3 — a secp384r1 key maps to ecdsa_secp384r1_sha384 and the
+// auto-inferred key signs a CertificateVerify-shaped content (#112).
+test "PrivateKey.fromPemAuto: P-384 infers ecdsa_secp384r1_sha384 and signs" {
+    const ec_p384_key_pem = @import("fixtures").ec_p384_key_pem;
+    var key: PrivateKey = try .fromPemAuto(ec_p384_key_pem);
+    defer key.deinit();
+    try testing.expectEqual(SignatureScheme.ecdsa_secp384r1_sha384, key.scheme);
+
+    const content = certificateVerifyContent();
+    var sig: [104]u8 = undefined;
+    const out = try key.sign(&content, &sig);
+    try testing.expect(out.len > 0);
+}
+
+// RFC 8446 §4.2.3 — secp521r1 maps to ecdsa_secp521r1_sha512, but no backend
+// advertises that scheme for CertificateVerify yet, so the capability gate
+// rejects the key at load instead of letting it fail at the first
+// CertificateVerify signature (#112).
+test "PrivateKey.fromPemAuto: P-521 is rejected at load by the capability gate" {
+    const ec_p521_key_pem = @import("fixtures").ec_p521_key_pem;
+    const backend_key = try backend.sign.privateKeyFromPem(ec_p521_key_pem);
+    defer backend.sign.freeKey(backend_key);
+    try testing.expectEqual(
+        SignatureScheme.ecdsa_secp521r1_sha512,
+        try backend.sign.keyScheme(backend_key),
+    );
+    try testing.expectError(
+        error.UnsupportedKeyScheme,
+        PrivateKey.fromPemAuto(ec_p521_key_pem),
+    );
+}
+
+// RFC 8446 §4.2.3 — Ed25519 maps to the ed25519 scheme, but no backend
+// advertises it for CertificateVerify (it needs a one-shot EVP_DigestSign
+// flow the sign seam does not have), so the gate rejects at load (#112).
+test "PrivateKey.fromPemAuto: Ed25519 is rejected at load by the capability gate" {
+    const ed25519_key_pem = @import("fixtures").ed25519_key_pem;
+    const backend_key = try backend.sign.privateKeyFromPem(ed25519_key_pem);
+    defer backend.sign.freeKey(backend_key);
+    try testing.expectEqual(
+        SignatureScheme.ed25519,
+        try backend.sign.keyScheme(backend_key),
+    );
+    try testing.expectError(
+        error.UnsupportedKeyScheme,
+        PrivateKey.fromPemAuto(ed25519_key_pem),
+    );
+}
+
+// RFC 8446 §4.2.3 defines ECDSA schemes only for secp256r1, secp384r1, and
+// secp521r1: a secp224r1 key loads on every backend but has no scheme to
+// map to — the deterministic loads-then-rejects vector for the mapping
+// itself (#112).
+test "PrivateKey.fromPemAuto: secp224r1 has no CertificateVerify scheme" {
+    const ec_secp224r1_key_pem = @import("fixtures").ec_secp224r1_key_pem;
+    try testing.expectError(
+        error.UnsupportedKeyScheme,
+        PrivateKey.fromPemAuto(ec_secp224r1_key_pem),
+    );
+}
+
+// RFC 8446 §4.2.3 — inference cannot even begin: the PEM never loads, so
+// the failure is the backend load error, not a scheme rejection (#112).
+test "PrivateKey.fromPemAuto: garbage PEM fails at load" {
+    try testing.expectError(error.LibcryptoFailed, PrivateKey.fromPemAuto("not a pem"));
+}
+
+// ---------------------------------------------------------------------------
+// pairsWith — load-time cert/key pairing (#113)
+// ---------------------------------------------------------------------------
+
+// RFC 8446 §4.4.3 + §4.4.2 — the CertificateVerify key must be the private
+// key of the leaf certificate (element [0] of the sender's chain): the
+// fixture scalar and certificate are one credential (#113).
+test "PrivateKey.pairsWith: P-256 scalar key pairs with its leaf certificate" {
+    const server_ecdsa_cert_der = @import("fixtures").server_ecdsa_cert_der;
+    const server_ecdsa_scalar = @import("fixtures").server_ecdsa_scalar;
+    var key: PrivateKey = try .fromP256Scalar(&server_ecdsa_scalar);
+    defer key.deinit();
+    try key.pairsWith(&server_ecdsa_cert_der);
+}
+
+// RFC 8446 §4.4.3 — the startup shape #112/#113 enable together: an
+// auto-inferred key whose pairing with its leaf is proven at load time.
+test "PrivateKey.pairsWith: auto-inferred RSA and P-256 keys pair with their leaves" {
+    const ec_p256_key_pem = @import("fixtures").ec_p256_key_pem;
+    const rsa_pss_cert_der = @import("fixtures").rsa_pss_cert_der;
+    const rsa_pss_key_pem = @import("fixtures").rsa_pss_key_pem;
+    const server_cert_der = @import("fixtures").server_cert_der;
+    var rsa: PrivateKey = try .fromPemAuto(rsa_pss_key_pem);
+    defer rsa.deinit();
+    try rsa.pairsWith(&rsa_pss_cert_der);
+
+    var ec: PrivateKey = try .fromPemAuto(ec_p256_key_pem);
+    defer ec.deinit();
+    try ec.pairsWith(&server_cert_der);
+}
+
+// RFC 8446 §4.4.3 — a different key of the same algorithm does not pair;
+// the named error distinguishes a rotation mismatch from a load failure
+// (#113).
+test "PrivateKey.pairsWith: same-algorithm mismatch is a named error" {
+    const client_ecdsa_cert_der = @import("fixtures").client_ecdsa_cert_der;
+    const server_ecdsa_scalar = @import("fixtures").server_ecdsa_scalar;
+    var key: PrivateKey = try .fromP256Scalar(&server_ecdsa_scalar);
+    defer key.deinit();
+    try testing.expectError(
+        error.CertificateKeyMismatch,
+        key.pairsWith(&client_ecdsa_cert_der),
+    );
+}
+
+// RFC 8446 §4.4.3 — an EC key never pairs with an RSA certificate; the
+// cross-algorithm case cannot pass any curve or modulus comparison (#113).
+test "PrivateKey.pairsWith: cross-algorithm mismatch is a named error" {
+    const rsa_pss_cert_der = @import("fixtures").rsa_pss_cert_der;
+    const server_ecdsa_scalar = @import("fixtures").server_ecdsa_scalar;
+    var key: PrivateKey = try .fromP256Scalar(&server_ecdsa_scalar);
+    defer key.deinit();
+    try testing.expectError(
+        error.CertificateKeyMismatch,
+        key.pairsWith(&rsa_pss_cert_der),
+    );
+}
+
+// #113 — an unparseable leaf is a distinct failure from a pairing mismatch,
+// so rotation tooling can tell a corrupt file from a wrong key.
+test "PrivateKey.pairsWith: garbage leaf DER is not a certificate" {
+    const scalar = [_]u8{0} ** 31 ++ .{1};
+    var key: PrivateKey = try .fromP256Scalar(&scalar);
+    defer key.deinit();
+    try testing.expectError(error.InvalidCertificate, key.pairsWith("garbage"));
+}
+
+// RFC 8446 §4.4.2 — one CertificateEntry contains exactly one DER
+// certificate. A valid leaf followed by trailing bytes is not exact leaf DER
+// and must remain distinct from a parsed-but-unpaired certificate (#113).
+test "PrivateKey.pairsWith: trailing bytes make leaf DER invalid" {
+    const rsa_pss_cert_der = @import("fixtures").rsa_pss_cert_der;
+    const rsa_pss_key_pem = @import("fixtures").rsa_pss_key_pem;
+    const leaf_with_trailing_byte = rsa_pss_cert_der ++ [_]u8{0};
+    var key: PrivateKey = try .fromPemAuto(rsa_pss_key_pem);
+    defer key.deinit();
+    try testing.expectError(
+        error.InvalidCertificate,
+        key.pairsWith(&leaf_with_trailing_byte),
     );
 }
