@@ -670,8 +670,65 @@ Common drive methods:
 - `sendAlert(description, out)` and `sendKeyUpdate(request, out)` — post-handshake emits.
 - `txKtlsInfo()` / `rxKtlsInfo()` — copy current traffic-key epoch material for caller-owned Linux kTLS setup.
 - `completeWrite()` — acknowledge the previous emitted record.
+- `extractEstablished()` — at `isConnected()`, exactly once, hand the connection's post-handshake life to a compact `EstablishedSession` (736 bytes on the OpenSSL lane vs the handshake engine's 19,408; see the lane table below) and consume this engine. See below.
 
 Low-level in-memory hooks used by `examples/in_memory_handshake.zig`: `acceptClientHello`, `processClientFinished`, and `receiveApplicationData`.
+
+### `EstablishedSession`
+
+The compact post-handshake server engine, constructed only by
+`ServerHandshake.extractEstablished()` at handshake completion (#115). A
+connection pool keeps one `ServerHandshake` per worker and one
+`ztls.EstablishedSession` per live connection. The size is lane-dependent
+because each `RecordLayer` embeds its backend AEAD context (Zig 0.15.2,
+aarch64-linux; x86_64 compiles to the same numbers):
+
+| Lane | `EstablishedSession` | `ServerHandshake` |
+|---|---|---|
+| OpenSSL (heap `EVP_CIPHER_CTX` pointers) | 736 B | 19,408 B |
+| AWS-LC 5.5.0 (inline `EVP_AEAD_CTX`) | 1,872 B | 21,120 B |
+| BoringSSL (inline `EVP_AEAD_CTX`) | 1,856 B | 21,088 B |
+
+It preserves the traffic record layers and sequences, the
+application traffic secrets, an in-flight KeyUpdate fragment, the
+consecutive-KeyUpdate counter, the last peer alert, an owed KeyUpdate response,
+and the pending-write latch. It runs the same connected record-path code the
+handshake engine runs, so classification, KeyUpdate ratchet/response
+discipline, the flood cap, and the latch behave identically.
+
+Lifecycle rules:
+
+- Call `extractEstablished()` exactly once, while `isConnected()`. The
+  handshake engine becomes unusable (its `State` reports `.extracted`), and the
+  record-layer bytes it left behind — which on AWS-LC and BoringSSL are the
+  live traffic keys — are wiped immediately at extraction, without freeing the
+  moved contexts. `deinit` remains safe to call immediately afterwards: it
+  wipes the engine's remaining duplicated secret bytes and never touches the
+  moved record-layer contexts.
+- Issue NewSessionTickets (and discard any prepared one) BEFORE extracting.
+  The established session carries no ticket machinery.
+- Both record directions must be userspace when extracting. TX ownership is
+  tracked and asserted; RX ownership is not, so it is a caller contract — a
+  kernel-installed RX leaves the session's userspace RX sequence stale, and
+  misuse fails loudly (`error.AuthenticationFailed`). kTLS callers keep using
+  `ServerHandshake` in both directions.
+
+Methods (all mirror their `ServerHandshake` counterparts):
+
+- `deinit()` — release backend contexts and zero the secrets the session owns.
+- `handle(record, out)` — decrypt, classify, and auto-respond to an inbound
+  `update_requested` KeyUpdate with the response record in `out`.
+- `receive(record)` — RX-only classify; a received `update_requested` defers
+  the response to the caller (query with `hasPendingKeyUpdateResponse()`).
+- `sendApplicationData(plaintext, out)` — refused with
+  `error.PendingKeyUpdateResponse` while a response is owed, and with
+  `error.PendingWrite` until the previous record is acknowledged.
+- `sendAlert(description, out)` / `sendKeyUpdate(request, out)` /
+  `ratchetTx(request)` — post-handshake emits; `ratchetTx` advances the TX
+  epoch after an external record layer sent a KeyUpdate under the old key.
+- `hasPendingWrite()` / `completeWrite()` / `hasPendingKeyUpdateResponse()` /
+  `lastPeerAlert()` — the same interlocks and diagnostics as the handshake
+  engine.
 
 ### `Outbox`
 
@@ -719,7 +776,7 @@ After kernel setup, call `KtlsInfo.secureZero()`.
 
 After kernel setup, call `secureZero()` on the packed kTLS value.
 
-After use, call handshake `deinit()` methods to release provider handles and erase each handshake-owned secret copy.
+After use, call handshake `deinit()` methods to release provider handles and erase each handshake-owned secret copy. `EstablishedSession.deinit()` does the same for the extracted post-handshake session; the consumed handshake engine's own `deinit()` stays safe after extraction.
 
 Do not erase borrowed buffers, `Signer` values, or borrowed PSK slices through these owners.
 

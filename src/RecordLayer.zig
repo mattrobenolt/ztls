@@ -87,6 +87,18 @@ pub fn deinit(self: *RecordLayer) void {
     std.crypto.secureZero(u8, mem.asBytes(self));
 }
 
+/// Zero every byte of this layer — key material, IV, sequence — WITHOUT
+/// releasing the backend context. For ownership transfers
+/// (`ServerHandshake.extractEstablished`): the copy that moved out owns the
+/// context and stays live; these are the bytes left behind, which on
+/// inline-context backends (AWS-LC, BoringSSL) hold the live traffic keys and
+/// on OpenSSL hold the key/IV duplicates plus now-stale context pointers.
+/// Zeroed context handles are safe to deinit again if a bug ever does.
+// ziglint-ignore: Z030
+pub fn secureZeroMovedFrom(self: *RecordLayer) void {
+    std.crypto.secureZero(u8, mem.asBytes(self));
+}
+
 pub fn clone(self: *const RecordLayer) AeadError!RecordLayer {
     var copy: RecordLayer = try .init(self.aead, self.iv);
     copy.seq = self.seq;

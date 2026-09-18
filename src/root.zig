@@ -14,6 +14,9 @@ pub const CompressionMethod = @import("compression_method.zig").CompressionMetho
 /// Coarse classification of the handshake error sets, shared by every
 /// integration so there is one exhaustive table rather than one per wrapper.
 pub const errors = @import("errors.zig");
+/// The compact post-handshake server engine, constructed only by
+/// `ServerHandshake.extractEstablished` (#115).
+pub const EstablishedSession = @import("EstablishedSession.zig");
 pub const ExtensionType = @import("extension_type.zig").ExtensionType;
 pub const frame = @import("frame.zig");
 pub const hkdf = @import("hkdf.zig");

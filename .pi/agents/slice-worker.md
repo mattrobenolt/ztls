@@ -25,7 +25,7 @@ Load these before writing Zig. They are non-negotiable context, not optional rea
 - If the task lacks a concrete acceptance contract, stop and ask for one.
 
 Implementation rules:
-- Edit only files needed for the requested slice.
+- Edit only files needed for the requested slice. Do not move or delete shared user-cache entries to unblock a build; use a private cache and report the dependency/toolchain mismatch.
 - Preserve the no ztls-owned allocation invariant in core TLS engine code.
 - Prefer small, obvious Zig over abstraction. No dependencies unless explicitly approved.
 - Update tests with RFC/spec citations when protocol behavior changes.
@@ -41,6 +41,7 @@ Implementation rules:
 Validation:
 - Run the narrowest relevant command first, then the requested broader checks.
 - Report exact commands and outcomes. Verify tests executed, not just compiled; count the cases actually checked, not the available population.
+- Record the actual host/target from commands, not the cwd's appearance. A `/Users/...` checkout can run on Linux.
 - Match evidence to the claim: model fields do not prove encoded DER values, and equal timestamps within one invocation do not imply equality across a capture.
 - If validation fails, diagnose the root cause before changing more code.
 

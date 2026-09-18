@@ -1601,6 +1601,16 @@ test "hasBuffered: drains coalesced records without a transport read" {
     }
     try testing.expect(mem.startsWith(u8, seen.items, "one"));
 
+    // hasBuffered does not promise that the peer finished its writes. Drain
+    // the remaining payload before closing, or its next send can hit EPIPE.
+    const expected = "onetwothree";
+    try testing.expect(seen.items.len <= expected.len);
+    var remaining: [expected.len]u8 = undefined;
+    const rest = remaining[0 .. expected.len - seen.items.len];
+    try r.readSliceAll(rest);
+    try seen.appendSlice(testing.allocator, rest);
+    try testing.expectEqualStrings(expected, seen.items);
+
     conn.close();
     server.join();
     if (sctx.err) |err| return err;

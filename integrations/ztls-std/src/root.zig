@@ -1534,12 +1534,12 @@ test "alert fidelity: specific descriptions, silence after a peer alert" {
 }
 
 test "Config: buffer sizing is the whole story of the Stream footprint" {
-    // Measured on this revision: Client 151_856, Server 134_928. These are a
-    // coarse backstop; the exact-delta assertions below are what actually guard
-    // against a buffer growing unnoticed. The ceiling's slack already let these
-    // numbers drift 16 bytes stale once, so trust the deltas, not the comment.
+    // Zig 0.16, aarch64-linux/OpenSSL: Client 151_936, Server 135_088.
+    // The server includes bounded HRR identity metadata (#103) and declined
+    // early-data state (#111). These ceilings are coarse backstops; the
+    // exact-delta assertions below guard caller-configured buffer growth.
     try testing.expect(@sizeOf(Client) <= 152_000);
-    try testing.expect(@sizeOf(Server) <= 135_000);
+    try testing.expect(@sizeOf(Server) <= 135_256);
 
     // Retaining the peer chain for `info()` costs exactly one handshake-sized
     // buffer, which is why it is opt-in.

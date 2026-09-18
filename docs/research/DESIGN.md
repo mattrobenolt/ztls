@@ -273,6 +273,18 @@ response with other TX records.
 The state machine still performs no allocation or I/O. Callers provide all
 storage and decide how bytes move.
 
+At handshake completion a server can hand the connection's remaining life to a
+compact `EstablishedSession` via `ServerHandshake.extractEstablished()` (#115):
+736 bytes on the OpenSSL lane against the handshake engine's 19,408 (1,872 /
+21,120 on AWS-LC and 1,856 / 21,088 on BoringSSL, whose AEAD contexts are
+inline; Zig 0.15.2 aarch64-linux), carrying only the traffic
+record layers, application traffic secrets, KeyUpdate fragment/counter, peer
+alert, response obligation, and TX latch. The connected record paths are shared
+code (handshake.zig), not a second engine. Extraction is a move: the handshake
+engine is consumed (`.extracted`), its `deinit` stays safe, and pool reuse
+re-inits it for the next connection. Tickets are issued before extraction; the
+kTLS paths stay on the handshake engine.
+
 ### Crypto backends
 
 Production crypto is a libcrypto-family backend. OpenSSL/libcrypto is the first

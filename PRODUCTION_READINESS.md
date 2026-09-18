@@ -809,6 +809,65 @@ Sans-I/O API is pleasant across every I/O model ztls claims to support.
 
 **Current evidence:**
 
+- **EstablishedSession extraction (#115, core proven; integration not yet
+  wired):** `ServerHandshake.extractEstablished()` hands a connected server's
+  post-handshake life to a compact `ztls.EstablishedSession` — 736 bytes vs
+  the handshake engine's 19,408 on the OpenSSL lane (26x), 1,872 vs 21,120 on
+  AWS-LC 5.5.0 and 1,856 vs 21,088 on BoringSSL (inline AEAD contexts;
+  >11x), measured Zig 0.15.2 aarch64-linux with a comptime `@sizeOf`
+  probe, asserted in a size test — preserving the rx/tx record layers and sequences,
+  application traffic secrets, an in-flight KeyUpdate fragment, the
+  consecutive-KeyUpdate counter, the last peer alert, an owed KeyUpdate
+  response, and the pending-write latch. The connected record paths (record
+  classification, KeyUpdate reassembly/ratchet/response, encrypted alerts,
+  flood cap, latch) are shared implementations in handshake.zig used by both
+  engines — no duplicated engine. Extraction is a move: the handshake engine
+  transitions to `.extracted`, never touches the moved backend contexts again,
+  and its `deinit` stays safe to call immediately (it wipes only its own
+  duplicated secret bytes); it is valid exactly once at `isConnected()`
+  (asserted, along with userspace TX, no pending ticket, and no early-data
+  layer); both record directions must be userspace — TX ownership is
+  asserted, RX ownership is untracked and documented as a caller contract on
+  the seam and in `docs/USAGE.md`. Extraction wipes the record-layer bytes
+  left behind in the consumed engine immediately (`RecordLayer.
+  secureZeroMovedFrom`: no context release, so the moved copies stay live) —
+  on AWS-LC and BoringSSL those bytes are the live inline traffic keys, and
+  on OpenSSL the key/IV duplicates plus stale context pointers. Tickets must
+  be issued before extraction — documented on the seam and in
+  `docs/USAGE.md`. Evidence: twelve new RFC-cited tests in
+  `ServerHandshake.zig`, including a deterministic differential test that
+  drives a kept-connected control engine and an extracted session with the
+  same record sequence and requires identical events and byte-identical
+  KeyUpdate response records, plus four mutation checks (removing the
+  ownership transfer segfaults through the double-freed EVP context on the
+  OpenSSL lane; removing the flood-cap reset and removing the obligation
+  carry each fail their exact assertions; replacing the moved-from wipe with
+  `= undefined` fails the all-zero wipe assertion in BOTH Debug — where
+  undefined poison (0xaa) is non-zero — and ReleaseFast, where `= undefined`
+  is a no-op and the live keys remain: the discriminating ReleaseFast run is
+  recorded, not just the Debug one). The isolated slice's core test gate was green on
+  OpenSSL/Zig 0.15.2 Debug and ReleaseFast (803 pass, 1 lane skip each, of
+  804), AWS-LC 5.5.0 Debug and ReleaseFast (804 pass each), and BoringSSL
+  Debug (797 pass, 7 lane-specific skips), plus the same gate under Zig
+  0.16.0: OpenSSL 803 pass/1 skip, AWS-LC 804 pass, BoringSSL 797 pass/7
+  skips (`just check-backends-0_16`) — the test gate of each lane, not the
+  bench/conformance legs of the full recipes. The
+  refAllDeclsRecursive failure that sank the first prototype
+  (c4faadc/eceb2fd, reverted in dc8868b/e585ae1) is diagnosed and fixed
+  rather than hidden: a pub `= @This()` self-alias is a self-referential
+  public declaration, and test.zig's runtime-recursive coverage helper
+  follows it without bound (stack overflow); EstablishedSession now follows
+  the repo's private-alias convention, and the root export is covered by the
+  full refAllDecls walk. After integration with #103, #111, and #114,
+  `just ci`, `just check-backend-boringssl`, and `just ci-0_16` passed on
+  aarch64-linux: 829 core tests (OpenSSL 828 pass/1 skip, AWS-LC 829 pass,
+  BoringSSL 822 pass/7 skips). Zig 0.16 integration validation first caught
+  the server footprint ceiling (measured 135,088 bytes; revised ceiling
+  135,256, exact buffer deltas unchanged), then a socketpair test closing
+  before its peer finished sending. Draining the remaining payload before
+  teardown fixed that race; the integration suite passed five additional
+  runs. Wrapper/example adoption (ztls-std pooling, an example) is deliberately
+  not wired in this slice.
 - Complete example inventory: `full_handshake.zig`, `handshake_keys.zig`,
   `https_client.zig`, `https_server.zig`, `in_memory_handshake.zig`,
   `iouring_client.zig`, `iouring_pingpong.zig`, `key_schedule.zig`,

@@ -6,6 +6,10 @@ const crypto = std.crypto;
 const aead = @import("aead.zig");
 const CipherSuite = @import("cipher_suite.zig").CipherSuite;
 const RecordLayer = @import("RecordLayer.zig");
+const hkdf = @import("hkdf.zig");
+
+const Sha256 = crypto.hash.sha2.Sha256;
+const Sha384 = crypto.hash.sha2.Sha384;
 
 pub fn HashArm(comptime Hkdf_: type, comptime Hash: type) type {
     return struct {
@@ -72,3 +76,35 @@ pub fn HashArm(comptime Hkdf_: type, comptime Hash: type) type {
         }
     };
 }
+
+/// The negotiated cipher suite's traffic-secret state. Both roles carry one
+/// arm; the KeyUpdate ratchet (RFC 8446 §4.6.3, §7.2) derives each next
+/// traffic key from the arm's application secrets.
+pub const Suite = union(enum) {
+    sha256: HashArm(hkdf.HkdfSha256, Sha256),
+    sha384: HashArm(hkdf.HkdfSha384, Sha384),
+
+    pub fn secureZero(self: *Suite) void {
+        switch (self.*) {
+            inline .sha256, .sha384 => |*s| s.secureZero(),
+        }
+    }
+
+    pub fn update(self: *Suite, msg: []const u8) void {
+        switch (self.*) {
+            inline .sha256, .sha384 => |*s| s.transcript.update(msg),
+        }
+    }
+
+    pub fn ratchetClientKey(self: *Suite) aead.Error!RecordLayer {
+        return switch (self.*) {
+            inline .sha256, .sha384 => |*s| s.ratchetClientKey(),
+        };
+    }
+
+    pub fn ratchetServerKey(self: *Suite) aead.Error!RecordLayer {
+        return switch (self.*) {
+            inline .sha256, .sha384 => |*s| s.ratchetServerKey(),
+        };
+    }
+};

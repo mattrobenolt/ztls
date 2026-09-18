@@ -51,6 +51,7 @@ const handshake_key_pairs = @import("handshake_key_pairs.zig");
 const p384 = @import("p384.zig");
 const PendingWrite = @import("pending_write.zig").PendingWrite;
 const RecordLayer = @import("RecordLayer.zig");
+const EstablishedSession = @import("EstablishedSession.zig");
 const root = @import("root.zig");
 const CipherSuite = root.CipherSuite;
 const Random = root.Random;
@@ -132,9 +133,7 @@ const HandshakeBuffer = SliceBuffer(u8);
 // certificate chain and CertificateVerify too, so size for a full record
 // plaintext. RFC 8446 §5.2.
 const FinishedFragmentBuffer = ArrayBuffer(u8, frame.max_plaintext_len);
-const key_update_body_len = 1;
-const key_update_total_len = handshake_header_len + key_update_body_len;
-const KeyUpdateFragmentBuffer = ArrayBuffer(u8, key_update_total_len);
+const KeyUpdateFragmentBuffer = ArrayBuffer(u8, handshake.key_update_total_len);
 
 /// Upper bound on a client leaf public key we retain for CertificateVerify
 /// verification. Covers RSA-4096 (~525-byte DER) with margin.
@@ -146,6 +145,11 @@ pub const State = enum {
     wait_ch,
     wait_client_finished,
     connected,
+    /// Consumed by `extractEstablished`: the extracted EstablishedSession owns
+    /// the traffic record layers and their backend contexts. This engine must
+    /// not use them again; `deinit` remains safe and wipes the duplicated
+    /// secret bytes still stored here.
+    extracted,
 };
 
 /// RFC 8446 §4.2.10 — disposition of records arriving after this server
@@ -248,34 +252,10 @@ const RetryTranscript = union(enum) {
     sha384: Sha384,
 };
 
-const Suite = union(enum) {
-    sha256: HashArm(hkdf.HkdfSha256, Sha256),
-    sha384: HashArm(hkdf.HkdfSha384, Sha384),
-
-    fn secureZero(self: *Suite) void {
-        switch (self.*) {
-            inline .sha256, .sha384 => |*s| s.secureZero(),
-        }
-    }
-
-    fn update(self: *Suite, msg: []const u8) void {
-        switch (self.*) {
-            inline .sha256, .sha384 => |*s| s.transcript.update(msg),
-        }
-    }
-
-    pub fn ratchetClientKey(self: *Suite) aead.Error!RecordLayer {
-        return switch (self.*) {
-            inline .sha256, .sha384 => |*s| s.ratchetClientKey(),
-        };
-    }
-
-    pub fn ratchetServerKey(self: *Suite) aead.Error!RecordLayer {
-        return switch (self.*) {
-            inline .sha256, .sha384 => |*s| s.ratchetServerKey(),
-        };
-    }
-};
+/// Negotiated traffic-secret state (see suite_state.zig). The KeyUpdate
+/// ratchet derives each next traffic key from the active arm's application
+/// secrets (RFC 8446 §4.6.3, §7.2).
+const Suite = @import("suite_state.zig").Suite;
 
 const ClientKeyShare = union(enum) {
     x25519: x25519.PublicKey,
@@ -547,11 +527,13 @@ pub fn deinit(self: *ServerHandshake) void {
             self.rx.deinit();
             self.tx.deinit();
             if (self.early_rx) |*early_rx| early_rx.deinit();
+            self.suite_state.secureZero();
         },
-        .wait_ch => {},
-    }
-    switch (self.state) {
-        .wait_client_finished, .connected => self.suite_state.secureZero(),
+        // rx/tx and their backend contexts moved to the extracted
+        // EstablishedSession and were already wiped at extraction
+        // (secureZeroMovedFrom); never deinit them here. suite_state is this
+        // engine's own duplicate of the secret bytes, so it is still wiped.
+        .extracted => self.suite_state.secureZero(),
         .wait_ch => {},
     }
     self.keypairs.secureZero();
@@ -778,6 +760,60 @@ pub fn lastPeerAlert(self: *const ServerHandshake) ?alert.Alert {
     return self.last_peer_alert;
 }
 
+/// Extract the compact established-session engine at handshake completion.
+/// Call exactly once, while `isConnected()`: the returned session owns the
+/// traffic record layers, their sequences, and their backend contexts from
+/// here on, plus the application traffic secrets, the KeyUpdate reassembly
+/// fragment, the consecutive-KeyUpdate counter, the last peer alert, any owed
+/// KeyUpdate response, and the pending-write latch. A KeyUpdate response owed
+/// at the completion boundary, or a KeyUpdate fragment reassembled across the
+/// extraction point, carries over exactly.
+///
+/// Everything only needed during the handshake stays here and is NOT carried
+/// over: flight staging, ClientHello reassembly, the transcript, key exchange,
+/// PSK/early-data state, and ticket machinery. Issue NewSessionTickets (and
+/// discard any prepared one) BEFORE extracting — the established session can
+/// neither prepare nor send tickets.
+///
+/// Both record directions must be userspace when extracting. TX ownership is
+/// tracked and asserted (`tx_owner`); RX ownership is not, so it is a caller
+/// contract: a kernel-installed RX leaves this session's userspace RX sequence
+/// stale, and misuse fails loudly (AuthenticationFailed). kTLS callers keep
+/// using this engine in both directions.
+///
+/// `self` transitions to `.extracted` and must not be used again except to
+/// `deinit` it. Extraction wipes the moved-from record layers; deinit wipes
+/// the remaining duplicated traffic secrets and handshake keypairs without
+/// releasing the session's contexts. Deinit before re-initializing a pooled
+/// handshake engine.
+pub fn extractEstablished(self: *ServerHandshake) EstablishedSession {
+    assert(self.state == .connected);
+    assert(self.tx_owner == .userspace);
+    assert(self.early_rx == null);
+    assert(!self.hasPendingTicket());
+    const established: EstablishedSession = .{
+        .rx = self.rx,
+        .tx = self.tx,
+        .suite = self.suite_state,
+        .ku_frag = self.ku_frag,
+        .post_handshake_count = self.post_handshake_count,
+        .last_peer_alert = self.last_peer_alert,
+        .key_update_obligation = self.key_update_obligation,
+        .pending_write = self.pending_write,
+    };
+    // Ownership of the backend AEAD contexts in rx/tx moves with the copy;
+    // this engine must never deinit or use them again. Wipe the bytes left
+    // behind immediately — without freeing the moved contexts — so no
+    // duplicate traffic-key material survives in the pooled engine: on the
+    // inline-context backends (AWS-LC, BoringSSL) those bytes ARE the live
+    // keys, and on OpenSSL they are the key/IV duplicates plus stale context
+    // pointers. This covers the pool that never deinits the slot, too.
+    self.rx.secureZeroMovedFrom();
+    self.tx.secureZeroMovedFrom();
+    self.state = .extracted;
+    return established;
+}
+
 pub fn isConnected(self: *const ServerHandshake) bool {
     return self.state == .connected;
 }
@@ -865,47 +901,16 @@ pub fn needsServerFlight(self: *const ServerHandshake) bool {
     return self.state == .wait_client_finished;
 }
 
-pub const Event = union(enum) {
-    application_data: []const u8,
-    write: []const u8,
-    /// The peer's KeyUpdate ratcheted one or both traffic keys. See
-    /// `KeyUpdateEvent` for details. RFC 8446 §4.6.3, §7.2.
-    key_update: KeyUpdateEvent,
-    none,
-    closed,
-};
+/// Connected-state event shape, shared with the extracted EstablishedSession
+/// (see handshake.zig).
+pub const Event = handshake.Event;
 
 /// Connected-state receive result. This path owns only RX state, so callers can
 /// process inbound records while an unrelated TX record remains in flight.
-pub const ReceiveEvent = union(enum) {
-    application_data: []const u8,
-    /// The RX key is already ratcheted. For `update_requested`, the caller MUST
-    /// send `update_not_requested` before its next application-data record.
-    /// RFC 8446 §4.6.3, §7.2.
-    key_update: KeyUpdateRequest,
-    none,
-    closed,
-};
+pub const ReceiveEvent = handshake.ReceiveEvent;
 
 /// Surfaced when a peer KeyUpdate changes one or both traffic-key epochs.
-/// RFC 8446 §4.6.3. For kTLS callers: `rx` means the kernel RX path is paused
-/// (EKEYEXPIRED) until the new key is installed via `setsockopt(TLS_RX)`;
-/// `tx` means the caller must reinstall `TLS_TX` after writing `response` and
-/// calling `completeWrite()`.
-pub const KeyUpdateEvent = struct {
-    /// Record to send first (the KeyUpdate response), or null if the peer sent
-    /// `update_not_requested` and no response is needed. The caller MUST write
-    /// this to the transport and call `completeWrite()` before reinstalling
-    /// `TLS_TX`. The response is encrypted under the OLD TX key — the engine
-    /// ratchets TX inside `sendKeyUpdate` after encryption.
-    response: ?[]const u8,
-    /// RX traffic key was ratcheted — caller must reinstall `TLS_RX`.
-    rx: bool,
-    /// TX traffic key was ratcheted (we are sending a KeyUpdate response) —
-    /// caller must reinstall `TLS_TX` after writing `response` and calling
-    /// `completeWrite()`.
-    tx: bool,
-};
+pub const KeyUpdateEvent = handshake.KeyUpdateEvent;
 
 pub const AcceptError =
     frame.ParseError || client_hello.ParseError || server_hello.EncodeError || aead.Error ||
@@ -943,10 +948,7 @@ pub const ClientFinishedError =
         ClientCertificateTooLarge,
     };
 
-pub const SendError = RecordLayer.EncryptError || error{
-    PendingWrite,
-    PendingKeyUpdateResponse,
-};
+pub const SendError = handshake.SendError;
 pub const PrepareTicketError = error{
     NoResumptionSecret,
     IncompatiblePskModes,
@@ -964,15 +966,12 @@ pub const KtlsTxTransferError = error{
     PendingKeyUpdateResponse,
     PendingTicket,
 };
-pub const ReceiveError =
-    RecordLayer.DecryptError || alert.ParseError ||
-    error{ UnexpectedEof, UnexpectedRecord, UnexpectedMessage, IllegalParameter } ||
-    error{ TooManyKeyUpdates, PeerAlert };
+pub const ReceiveError = handshake.ReceiveError;
 pub const HandleError =
     AcceptError || FlightError || ClientFinishedError ||
     ReceiveError || SendError || alert.ParseError ||
     error{ PendingWrite, EarlyDataSkipLimitExceeded };
-pub const AlertError = RecordLayer.EncryptError || error{ BufferTooShort, PendingWrite };
+pub const AlertError = handshake.AlertError;
 
 /// Consume a plaintext ClientHello record and emit a plaintext ServerHello
 /// record. The returned bytes must be written before continuing the handshake.
@@ -2172,7 +2171,10 @@ pub fn handleRecord(
     const ev: Event = switch (self.state) {
         .wait_ch => try self.handleWaitClientHello(record, out),
         .wait_client_finished => try self.handleWaitClientFinished(record),
-        .connected => try self.handleConnected(record, out),
+        .connected => try handshake.serverHandleConnected(self, record, out),
+        // The engine was consumed by extractEstablished. Reuse is a
+        // programming error, not a protocol input.
+        .extracted => unreachable,
     };
     if (ev == .write) self.pending_write.mark();
     if (ev == .key_update and ev.key_update.response != null) self.pending_write.mark();
@@ -2562,8 +2564,7 @@ fn handleClientFlightRecord(
 // ziglint-ignore: Z015 -- ReceiveError is a public error-set alias.
 pub fn receiveRecord(self: *ServerHandshake, record: []u8) ReceiveError!ReceiveEvent {
     assert(self.state == .connected);
-    const dec = try handshake.decryptProtected(&self.rx, record);
-    return self.receivePlaintextRecord(dec.content_type, dec.content);
+    return handshake.serverReceiveRecord(self, record);
 }
 
 /// Process one complete record already decrypted by Linux kTLS. Call exactly
@@ -2576,113 +2577,7 @@ pub fn receiveKtlsRecord(
     content: []u8,
 ) ReceiveError!ReceiveEvent {
     assert(self.state == .connected);
-    return self.receivePlaintextRecord(content_type, content);
-}
-
-fn receivePlaintextRecord(
-    self: *ServerHandshake,
-    content_type: frame.ContentType,
-    content: []u8,
-) ReceiveError!ReceiveEvent {
-    switch (content_type) {
-        .application_data => {
-            if (self.ku_frag.len != 0) {
-                self.ku_frag.clear();
-                return error.UnexpectedMessage;
-            }
-            if (content.len > 0) self.post_handshake_count = 0;
-            return .{ .application_data = content };
-        },
-        .handshake => {
-            if (content.len == 0) {
-                self.ku_frag.clear();
-                return error.UnexpectedMessage;
-            }
-
-            for (content, 0..) |byte, i| {
-                if (self.ku_frag.len == 0 and byte != @intFromEnum(HandshakeType.key_update)) {
-                    self.ku_frag.clear();
-                    return error.UnexpectedMessage;
-                }
-                if (self.ku_frag.remainingCapacity() == 0) {
-                    self.ku_frag.clear();
-                    return error.UnexpectedMessage;
-                }
-                self.ku_frag.appendAssumeCapacity(byte);
-
-                if (self.ku_frag.len < handshake_header_len) continue;
-
-                const frag = self.ku_frag.constSlice();
-                const body_len = (@as(usize, frag[1]) << 16) |
-                    (@as(usize, frag[2]) << 8) |
-                    @as(usize, frag[3]);
-                if (body_len != key_update_body_len) {
-                    self.ku_frag.clear();
-                    return error.UnexpectedEof;
-                }
-                if (self.ku_frag.len < key_update_total_len) continue;
-
-                // RFC 8446 §5.1: a message immediately preceding a key change
-                // must align with a record boundary. Reject before ratcheting
-                // if this record contains anything after the KeyUpdate.
-                if (self.ku_frag.len != key_update_total_len) unreachable;
-                if (i + 1 != content.len) {
-                    self.ku_frag.clear();
-                    return error.UnexpectedMessage;
-                }
-
-                const request = handshake.parseKeyUpdate(frag) catch |err| {
-                    self.ku_frag.clear();
-                    return err;
-                };
-                self.post_handshake_count +|= 1;
-                if (self.post_handshake_count > max_post_handshake_messages) {
-                    self.ku_frag.clear();
-                    return error.TooManyKeyUpdates;
-                }
-                const next_rx = self.suite_state.ratchetClientKey() catch |err| {
-                    self.ku_frag.clear();
-                    return err;
-                };
-                self.rx.deinit();
-                self.rx = next_rx;
-                self.ku_frag.clear();
-                if (request == .update_requested) {
-                    self.key_update_obligation = .response_owed;
-                }
-
-                return .{ .key_update = request };
-            }
-            return .none;
-        },
-        .alert => {
-            if (self.ku_frag.len != 0) {
-                self.ku_frag.clear();
-                return error.UnexpectedMessage;
-            }
-            const a = try alert.parse(content);
-            if (a.isCloseNotify()) return .closed;
-            self.last_peer_alert = a;
-            return error.PeerAlert;
-        },
-        else => return error.UnexpectedRecord,
-    }
-}
-
-fn handleConnected(
-    self: *ServerHandshake,
-    record: []u8,
-    out: []u8,
-) (ReceiveError || SendError)!Event {
-    return switch (try self.receiveRecord(record)) {
-        .application_data => |data| .{ .application_data = data },
-        .key_update => |request| if (request == .update_requested) blk: {
-            const response = try self.sendKeyUpdate(out, .update_not_requested);
-            break :blk .{ .key_update = .{ .response = response, .rx = true, .tx = true } };
-        } else .{ .key_update = .{ .response = null, .rx = true, .tx = false } },
-        .none => .none,
-        .closed => .closed,
-    };
+    return handshake.serverReceivePlaintext(self, content_type, content);
 }
 
 // ziglint-ignore: Z015 -- SendError is a public error-set alias.
@@ -2712,12 +2607,21 @@ pub fn sendAlert(
     out: []u8,
 ) AlertError![]const u8 {
     if (self.pending_write.isPending()) return error.PendingWrite;
-    var msg: [2]u8 = undefined;
-    const level: alert.Level = if (description == .close_notify) .warning else .fatal;
-    _ = alert.encode(&msg, level, description) catch unreachable;
-    const record = try switch (self.state) {
-        .wait_ch => alert.plaintextRecord(&msg, out),
-        else => self.tx.encrypt(.alert, &msg, out),
+    const record: []const u8 = switch (self.state) {
+        // RFC 8446 §6 — alerts before handshake protection are plaintext.
+        .wait_ch => blk: {
+            var msg: [2]u8 = undefined;
+            const level: alert.Level = if (description == .close_notify) .warning else .fatal;
+            _ = alert.encode(&msg, level, description) catch unreachable;
+            break :blk try alert.plaintextRecord(&msg, out);
+        },
+        .wait_client_finished, .connected => try handshake.sendEstablishedAlert(
+            self,
+            description,
+            out,
+        ),
+        // The engine was consumed by extractEstablished.
+        .extracted => unreachable,
     };
     self.pending_write.mark();
     return record;
@@ -4647,10 +4551,17 @@ fn expectHandshakeSecretsZero(server: *const ServerHandshake) !void {
 }
 
 fn connectedTestServer() !ServerHandshake {
+    return connectedTestServerConfigure(null);
+}
+
+/// `suites_patch`, when set, overwrites the ClientHello cipher-suite vector
+/// (fixed 6-byte, three-suite layout) before acceptance.
+fn connectedTestServerConfigure(suites_patch: ?[6]u8) !ServerHandshake {
     const client_keypair: x25519.KeyPair = try .generateDeterministic(.init(@splat(0x11)));
     const server_keypair: x25519.KeyPair = try .generateDeterministic(.init(@splat(0x22)));
     var ch_buf: [512]u8 = undefined;
     const ch = try client_hello.encode(&ch_buf, .zero, client_keypair.public_key, null, &.{});
+    if (suites_patch) |patch| ch_buf[41..47].* = patch;
     var ch_record: [1024]u8 = undefined;
     const header: frame.Header = .init(.handshake, @intCast(ch.len));
     header.write(ch_record[0..frame.header_len]);
@@ -4681,6 +4592,13 @@ fn connectedTestServer() !ServerHandshake {
     try server.processClientFinished(fin_wire[0..fin_record.len]);
     try expectHandshakeSecretsZero(&server);
     return server;
+}
+
+/// Same as connectedTestServer, but negotiating TLS_AES_256_GCM_SHA384: the
+/// offered vector keeps its length and carries one recognized SHA-384 suite
+/// plus unknown code points the server ignores (RFC 8446 §4.1.2, §9.3).
+fn connectedTestServerSha384() !ServerHandshake {
+    return connectedTestServerConfigure(.{ 0x12, 0x34, 0x13, 0x02, 0x56, 0x78 });
 }
 
 const ConnectedTestPair = struct {
@@ -6280,6 +6198,466 @@ test "handleRecord: KeyUpdate flood cap fires despite empty app-data interleavin
         peer_tx = cloned;
     } else error.NoError;
     try testing.expectEqual(error.TooManyKeyUpdates, result);
+}
+
+// ---------------------------------------------------------------------------
+// EstablishedSession extraction (#115)
+// ---------------------------------------------------------------------------
+
+// #115 — the established session must stay compact: pool users keep one
+// ServerHandshake per worker and one EstablishedSession per live connection.
+// Measured Zig 0.15.2 aarch64-linux: 736 bytes on the OpenSSL lane against
+// ServerHandshake's 19,408. The record layers embed backend AEAD contexts,
+// so the absolute number shifts by lane (inline EVP_AEAD_CTXs on AWS-LC and
+// BoringSSL make it larger); the 2 KiB bound and the 10x ratio hold on
+// OpenSSL, AWS-LC, and BoringSSL.
+test "EstablishedSession: struct stays compact against the handshake engine" {
+    try testing.expect(@sizeOf(EstablishedSession) < 2 * 1024);
+    try testing.expect(@sizeOf(EstablishedSession) * 10 < @sizeOf(ServerHandshake));
+}
+
+fn expectSameEstablishedEvent(expected: Event, actual: Event) !void {
+    try testing.expectEqual(std.meta.activeTag(expected), std.meta.activeTag(actual));
+    switch (expected) {
+        .application_data => |data| {
+            try testing.expectEqualSlices(u8, data, actual.application_data);
+        },
+        .key_update => |update| {
+            try testing.expectEqual(update.rx, actual.key_update.rx);
+            try testing.expectEqual(update.tx, actual.key_update.tx);
+            if (update.response) |response| {
+                try testing.expectEqualSlices(u8, response, actual.key_update.response.?);
+            } else try testing.expect(actual.key_update.response == null);
+        },
+        .none, .closed, .write => {},
+    }
+}
+
+// RFC 8446 §4.6.3, §5.1, §6.1 — the extracted session runs the same connected
+// code paths as the handshake engine. connectedTestServer is deterministic
+// (fixed keypairs, zero random), so one scripted record sequence drives a
+// kept-connected control engine and an extracted session in parallel; every
+// event — including the KeyUpdate response record bytes, which pin the TX key
+// and sequence continuity — must match exactly.
+test "extractEstablished: connected events match the handshake engine" {
+    var control = try connectedTestServer();
+    defer control.deinit();
+    var source = try connectedTestServer();
+    var client_tx = try source.rx.clone();
+    defer client_tx.deinit();
+    var session = source.extractEstablished();
+    defer session.deinit();
+    source.deinit();
+
+    var wire_buf: [128]u8 = undefined;
+    var rx_buf: [128]u8 = undefined;
+    var control_out: [128]u8 = undefined;
+    var session_out: [128]u8 = undefined;
+
+    // Inbound application data classifies identically.
+    const app_wire = try client_tx.encrypt(.application_data, "ping", &wire_buf);
+    @memcpy(rx_buf[0..app_wire.len], app_wire);
+    const control_ev = try control.handleRecord(rx_buf[0..app_wire.len], &control_out);
+    @memcpy(rx_buf[0..app_wire.len], app_wire);
+    const session_ev = try session.handle(rx_buf[0..app_wire.len], &session_out);
+    try expectSameEstablishedEvent(control_ev, session_ev);
+
+    // An update_requested KeyUpdate ratchets RX and elicits the same response
+    // record under the same old TX key and sequence (§4.6.3).
+    const ku = [_]u8{
+        @intFromEnum(HandshakeType.key_update),          0x00, 0x00, 0x01,
+        @intFromEnum(KeyUpdateRequest.update_requested),
+    };
+    const ku_wire = try client_tx.encrypt(.handshake, &ku, &wire_buf);
+    @memcpy(rx_buf[0..ku_wire.len], ku_wire);
+    const control_ku = try control.handleRecord(rx_buf[0..ku_wire.len], &control_out);
+    @memcpy(rx_buf[0..ku_wire.len], ku_wire);
+    const session_ku = try session.handle(rx_buf[0..ku_wire.len], &session_out);
+    try expectSameEstablishedEvent(control_ku, session_ku);
+    control.completeWrite();
+    session.completeWrite();
+
+    // The ratcheted epochs stay aligned: the peer's next record decrypts on
+    // both engines.
+    var client_tx_next = try control.rx.clone();
+    defer client_tx_next.deinit();
+    const after_wire = try client_tx_next.encrypt(.application_data, "after", &wire_buf);
+    @memcpy(rx_buf[0..after_wire.len], after_wire);
+    const control_after = try control.handleRecord(rx_buf[0..after_wire.len], &control_out);
+    @memcpy(rx_buf[0..after_wire.len], after_wire);
+    const session_after = try session.handle(rx_buf[0..after_wire.len], &session_out);
+    try expectSameEstablishedEvent(control_after, session_after);
+
+    // close_notify closes both cleanly (§6.1).
+    const close_notify = [_]u8{ 0x01, 0x00 };
+    const close_wire = try client_tx_next.encrypt(.alert, &close_notify, &wire_buf);
+    @memcpy(rx_buf[0..close_wire.len], close_wire);
+    const control_close = try control.handleRecord(rx_buf[0..close_wire.len], &control_out);
+    @memcpy(rx_buf[0..close_wire.len], close_wire);
+    const session_close = try session.handle(rx_buf[0..close_wire.len], &session_out);
+    try expectSameEstablishedEvent(control_close, session_close);
+}
+
+// RFC 8446 §4.6.3 — the extracted session owns the traffic record layers and
+// their backend contexts; the pooled handshake engine can be deinit'd
+// immediately without double-freeing them, and the session stays fully live.
+test "extractEstablished: engine is consumed and immediate deinit is safe" {
+    var server = try connectedTestServer();
+    try testing.expect(server.isConnected());
+    var session = server.extractEstablished();
+    defer session.deinit();
+    try testing.expect(!server.isConnected());
+    server.deinit();
+
+    var client_tx = try session.rx.clone();
+    defer client_tx.deinit();
+    var wire_buf: [64]u8 = undefined;
+    var rx_buf: [64]u8 = undefined;
+    const app_wire = try client_tx.encrypt(.application_data, "live", &wire_buf);
+    @memcpy(rx_buf[0..app_wire.len], app_wire);
+    const ev = try session.receive(rx_buf[0..app_wire.len]);
+    try testing.expectEqualSlices(u8, "live", ev.application_data);
+
+    var out: [64]u8 = undefined;
+    _ = try session.sendApplicationData("ack", &out);
+    try testing.expect(session.hasPendingWrite());
+    session.completeWrite();
+}
+
+// #81/#115 — extraction wipes the record-layer bytes left behind in the
+// consumed engine immediately, without freeing the moved contexts: on the
+// inline-context backends (AWS-LC, BoringSSL) those bytes are the live
+// traffic keys, and on OpenSSL they are the key/IV duplicates plus stale
+// context pointers. The session's moved copies stay live. The all-zero
+// assertion is deliberately exact so it also fails under Debug
+// `= undefined` poison (0xaa) and under ReleaseFast, where `= undefined`
+// is a no-op — see the ReleaseFast mutation record in PRODUCTION_READINESS.
+test "extractEstablished: moved-from rx/tx are wiped, the session's copies stay live" {
+    var server = try connectedTestServer();
+    var client_tx = try server.rx.clone();
+    defer client_tx.deinit();
+    try testing.expect(!mem.allEqual(u8, mem.asBytes(&server.rx), 0));
+    try testing.expect(!mem.allEqual(u8, mem.asBytes(&server.tx), 0));
+
+    var session = server.extractEstablished();
+    defer session.deinit();
+
+    // Assert before deinit: deinit's `self.* = undefined` would overwrite
+    // the very bytes under test.
+    try testing.expect(mem.allEqual(u8, mem.asBytes(&server.rx), 0));
+    try testing.expect(mem.allEqual(u8, mem.asBytes(&server.tx), 0));
+    try testing.expect(!mem.allEqual(u8, mem.asBytes(&session.rx), 0));
+    try testing.expect(!mem.allEqual(u8, mem.asBytes(&session.tx), 0));
+    server.deinit();
+
+    // The moved copies are the live ones: application data still flows
+    // through the session after the source was wiped.
+    var wire_buf: [64]u8 = undefined;
+    var rx_buf: [64]u8 = undefined;
+    const app_wire = try client_tx.encrypt(.application_data, "live", &wire_buf);
+    @memcpy(rx_buf[0..app_wire.len], app_wire);
+    const ev = try session.receive(rx_buf[0..app_wire.len]);
+    try testing.expectEqualSlices(u8, "live", ev.application_data);
+}
+
+// RFC 8446 §4.6.3 — receive() defers the update_requested response: the
+// obligation carries into the session and blocks application writes until the
+// caller serializes its own response.
+test "extractEstablished: deferred KeyUpdate obligation blocks application writes" {
+    var server = try connectedTestServer();
+    var client_tx = try server.rx.clone();
+    defer client_tx.deinit();
+
+    // The client's update_requested KeyUpdate is received by the handshake
+    // engine before extraction, deferring the response (§4.6.3)…
+    const ku = [_]u8{
+        @intFromEnum(HandshakeType.key_update),          0x00, 0x00, 0x01,
+        @intFromEnum(KeyUpdateRequest.update_requested),
+    };
+    var wire_buf: [64]u8 = undefined;
+    const ku_wire = try client_tx.encrypt(.handshake, &ku, &wire_buf);
+    var rx_buf: [64]u8 = undefined;
+    @memcpy(rx_buf[0..ku_wire.len], ku_wire);
+    const ev = try server.receiveRecord(rx_buf[0..ku_wire.len]);
+    try testing.expectEqual(KeyUpdateRequest.update_requested, ev.key_update);
+    try testing.expect(server.hasPendingKeyUpdateResponse());
+
+    // …and the obligation must carry into the extracted session.
+    var session = server.extractEstablished();
+    defer session.deinit();
+    server.deinit();
+    try testing.expect(session.hasPendingKeyUpdateResponse());
+
+    var out: [64]u8 = undefined;
+    try testing.expectError(
+        error.PendingKeyUpdateResponse,
+        session.sendApplicationData("blocked", &out),
+    );
+    _ = try session.sendKeyUpdate(&out, .update_not_requested);
+    session.completeWrite();
+    try testing.expect(!session.hasPendingKeyUpdateResponse());
+    _ = try session.sendApplicationData("resumed", &out);
+    session.completeWrite();
+}
+
+// RFC 8446 §4.6.3 — the consecutive-KeyUpdate flood cap carries into the
+// extracted session, and non-empty application data resets it.
+test "extractEstablished: KeyUpdate flood cap survives extraction and resets on app data" {
+    var server = try connectedTestServer();
+    var session = server.extractEstablished();
+    defer session.deinit();
+    server.deinit();
+
+    var peer_tx = try session.rx.clone();
+    defer peer_tx.deinit();
+    var wire_buf: [64]u8 = undefined;
+    var rx_buf: [64]u8 = undefined;
+    const ku = [_]u8{
+        @intFromEnum(HandshakeType.key_update),              0x00, 0x00, 0x01,
+        @intFromEnum(KeyUpdateRequest.update_not_requested),
+    };
+
+    var i: usize = 0;
+    const result = while (i < max_post_handshake_messages + 1) : (i += 1) {
+        const ku_wire = try peer_tx.encrypt(.handshake, &ku, &wire_buf);
+        @memcpy(rx_buf[0..ku_wire.len], ku_wire);
+        _ = session.receive(rx_buf[0..ku_wire.len]) catch |e| break e;
+        const next = try session.rx.clone();
+        peer_tx.deinit();
+        peer_tx = next;
+    } else error.NoError;
+    try testing.expectEqual(error.TooManyKeyUpdates, result);
+
+    // The rejected KeyUpdate did not ratchet RX, so the peer is still on the
+    // live epoch. Non-empty application data resets the cap (§4.6.3)…
+    const app_wire = try peer_tx.encrypt(.application_data, "reset", &wire_buf);
+    @memcpy(rx_buf[0..app_wire.len], app_wire);
+    const app_ev = try session.receive(rx_buf[0..app_wire.len]);
+    try testing.expectEqualSlices(u8, "reset", app_ev.application_data);
+
+    // …and the next KeyUpdate is accepted again.
+    const ku_wire = try peer_tx.encrypt(.handshake, &ku, &wire_buf);
+    @memcpy(rx_buf[0..ku_wire.len], ku_wire);
+    const ku_ev = try session.receive(rx_buf[0..ku_wire.len]);
+    try testing.expectEqual(KeyUpdateRequest.update_not_requested, ku_ev.key_update);
+}
+
+// RFC 8446 §5.1 — a KeyUpdate fragmented across records may straddle the
+// extraction point: the reassembly fragment carries into the session and the
+// completed message ratchets RX exactly as before extraction.
+test "extractEstablished: KeyUpdate fragment carries across extraction" {
+    var server = try connectedTestServer();
+    var client_tx = try server.rx.clone();
+    defer client_tx.deinit();
+    var wire_buf: [64]u8 = undefined;
+    var rx_buf: [64]u8 = undefined;
+
+    const ku = [_]u8{
+        @intFromEnum(HandshakeType.key_update),          0x00, 0x00, 0x01,
+        @intFromEnum(KeyUpdateRequest.update_requested),
+    };
+    const part1 = try client_tx.encrypt(.handshake, ku[0..2], &wire_buf);
+    @memcpy(rx_buf[0..part1.len], part1);
+    try testing.expectEqual(ReceiveEvent.none, try server.receiveRecord(rx_buf[0..part1.len]));
+    try testing.expectEqual(@as(usize, 2), server.ku_frag.len);
+
+    var session = server.extractEstablished();
+    defer session.deinit();
+    server.deinit();
+
+    const part2 = try client_tx.encrypt(.handshake, ku[2..5], &wire_buf);
+    @memcpy(rx_buf[0..part2.len], part2);
+    const ev = try session.receive(rx_buf[0..part2.len]);
+    try testing.expectEqual(KeyUpdateRequest.update_requested, ev.key_update);
+    try testing.expect(session.hasPendingKeyUpdateResponse());
+}
+
+// RFC 8446 §5.1 — the record-boundary and fragment rules hold after
+// extraction: a KeyUpdate must be the last message in its record, and
+// application data cannot interleave into a pending KeyUpdate fragment.
+test "extractEstablished: KeyUpdate record-boundary and fragment rules hold" {
+    var server = try connectedTestServer();
+    var client_tx = try server.rx.clone();
+    defer client_tx.deinit();
+    var session = server.extractEstablished();
+    defer session.deinit();
+    server.deinit();
+
+    var wire_buf: [64]u8 = undefined;
+    var rx_buf: [64]u8 = undefined;
+    const ku_type = @intFromEnum(HandshakeType.key_update);
+    const ku_requested = @intFromEnum(KeyUpdateRequest.update_requested);
+
+    // A trailing byte after a complete KeyUpdate in the same record.
+    const trailing = [_]u8{ ku_type, 0x00, 0x00, 0x01, ku_requested, 0xff };
+    const trailing_wire = try client_tx.encrypt(.handshake, &trailing, &wire_buf);
+    @memcpy(rx_buf[0..trailing_wire.len], trailing_wire);
+    try testing.expectError(error.UnexpectedMessage, session.receive(rx_buf[0..trailing_wire.len]));
+
+    // A zero-length handshake record.
+    const empty_wire = try client_tx.encrypt(.handshake, "", &wire_buf);
+    @memcpy(rx_buf[0..empty_wire.len], empty_wire);
+    try testing.expectError(error.UnexpectedMessage, session.receive(rx_buf[0..empty_wire.len]));
+
+    // Application data interleaved into a pending fragment.
+    const part_wire = try client_tx.encrypt(.handshake, &[_]u8{ku_type}, &wire_buf);
+    @memcpy(rx_buf[0..part_wire.len], part_wire);
+    try testing.expectEqual(ReceiveEvent.none, try session.receive(rx_buf[0..part_wire.len]));
+    const app_wire = try client_tx.encrypt(.application_data, "mid", &wire_buf);
+    @memcpy(rx_buf[0..app_wire.len], app_wire);
+    try testing.expectError(error.UnexpectedMessage, session.receive(rx_buf[0..app_wire.len]));
+}
+
+// RFC 8446 §6.1, §6.2 — close_notify closes cleanly and never replaces the
+// recorded peer alert; a fatal alert surfaces as PeerAlert with the alert
+// retained for diagnostics.
+test "extractEstablished: close_notify and fatal alerts keep server semantics" {
+    var server = try connectedTestServer();
+    var client_tx = try server.rx.clone();
+    defer client_tx.deinit();
+    var session = server.extractEstablished();
+    defer session.deinit();
+    server.deinit();
+
+    try testing.expect(session.lastPeerAlert() == null);
+    var wire_buf: [64]u8 = undefined;
+    var rx_buf: [64]u8 = undefined;
+
+    const fatal = [_]u8{ 0x02, 0x0a }; // fatal, unexpected_message
+    const fatal_wire = try client_tx.encrypt(.alert, &fatal, &wire_buf);
+    @memcpy(rx_buf[0..fatal_wire.len], fatal_wire);
+    try testing.expectError(error.PeerAlert, session.receive(rx_buf[0..fatal_wire.len]));
+    try testing.expectEqual(
+        @as(?alert.Alert, .{ .level = .fatal, .description = .unexpected_message }),
+        session.lastPeerAlert(),
+    );
+
+    const close_notify = [_]u8{ 0x01, 0x00 };
+    const close_wire = try client_tx.encrypt(.alert, &close_notify, &wire_buf);
+    @memcpy(rx_buf[0..close_wire.len], close_wire);
+    try testing.expectEqual(ReceiveEvent.closed, try session.receive(rx_buf[0..close_wire.len]));
+    try testing.expectEqual(
+        @as(?alert.Alert, .{ .level = .fatal, .description = .unexpected_message }),
+        session.lastPeerAlert(),
+    );
+}
+
+// RFC 8446 §4.6.3, §6.1 — the session's own TX paths: alert emission rides the
+// pending-write latch, and ratchetTx advances the epoch after an externally
+// sent KeyUpdate.
+test "extractEstablished: sendAlert latches and ratchetTx advances the TX epoch" {
+    var server = try connectedTestServer();
+    var client_rx = try server.tx.clone();
+    defer client_rx.deinit();
+    var session = server.extractEstablished();
+    defer session.deinit();
+    server.deinit();
+
+    var out: [128]u8 = undefined;
+    var rec_buf: [128]u8 = undefined;
+    const alert_record = try session.sendAlert(.close_notify, &out);
+    try testing.expect(session.hasPendingWrite());
+    try testing.expectError(error.PendingWrite, session.sendAlert(.close_notify, &out));
+    try testing.expectError(error.PendingWrite, session.ratchetTx(.update_not_requested));
+    @memcpy(rec_buf[0..alert_record.len], alert_record);
+    const dec = try client_rx.decrypt(rec_buf[0..alert_record.len]);
+    try testing.expectEqual(.alert, dec.content_type);
+    try testing.expectEqualSlices(u8, &.{ 0x01, 0x00 }, dec.content);
+    session.completeWrite();
+
+    // ratchetTx after an externally sent KeyUpdate: the next record is under
+    // the new epoch — undecryptable by the old peer key, decryptable by a
+    // fresh clone taken before the send (§4.6.3, §5.3).
+    try session.ratchetTx(.update_requested);
+    var client_rx_next = try session.tx.clone();
+    defer client_rx_next.deinit();
+    const app_record = try session.sendApplicationData("next epoch", &out);
+    session.completeWrite();
+    @memcpy(rec_buf[0..app_record.len], app_record);
+    try testing.expectError(
+        error.AuthenticationFailed,
+        client_rx.decrypt(rec_buf[0..app_record.len]),
+    );
+    @memcpy(rec_buf[0..app_record.len], app_record);
+    const dec_next = try client_rx_next.decrypt(rec_buf[0..app_record.len]);
+    try testing.expectEqualSlices(u8, "next epoch", dec_next.content);
+}
+
+// RFC 8446 §4.6.3, §7.2 — the SHA-384 arm ratchets through the extracted
+// session exactly like the SHA-256 default.
+test "extractEstablished: SHA-384 suite ratchets and exchanges app data" {
+    var server = try connectedTestServerSha384();
+    try testing.expect(server.suite_state == .sha384);
+    var client_tx = try server.rx.clone();
+    defer client_tx.deinit();
+    var session = server.extractEstablished();
+    defer session.deinit();
+    server.deinit();
+    try testing.expect(session.suite == .sha384);
+
+    const ku = [_]u8{
+        @intFromEnum(HandshakeType.key_update),          0x00, 0x00, 0x01,
+        @intFromEnum(KeyUpdateRequest.update_requested),
+    };
+    var wire_buf: [64]u8 = undefined;
+    var rx_buf: [64]u8 = undefined;
+    const ku_wire = try client_tx.encrypt(.handshake, &ku, &wire_buf);
+    @memcpy(rx_buf[0..ku_wire.len], ku_wire);
+    const ku_ev = try session.receive(rx_buf[0..ku_wire.len]);
+    try testing.expectEqual(KeyUpdateRequest.update_requested, ku_ev.key_update);
+    try testing.expect(session.hasPendingKeyUpdateResponse());
+
+    // The ratcheted SHA-384 RX epoch accepts the peer's next record.
+    var client_tx_next = try session.rx.clone();
+    defer client_tx_next.deinit();
+    const app_wire = try client_tx_next.encrypt(.application_data, "sha384", &wire_buf);
+    @memcpy(rx_buf[0..app_wire.len], app_wire);
+    const app_ev = try session.receive(rx_buf[0..app_wire.len]);
+    try testing.expectEqualSlices(u8, "sha384", app_ev.application_data);
+
+    var out: [64]u8 = undefined;
+    _ = try session.sendKeyUpdate(&out, .update_not_requested);
+    session.completeWrite();
+    try testing.expect(!session.hasPendingKeyUpdateResponse());
+}
+
+// RFC 8446 §4.6.1 — ticket issuance happens before extraction: the handshake
+// engine prepares and sends the ticket, the client accepts it, and the
+// extracted session keeps serving application data on the same connection.
+test "extractEstablished: NewSessionTicket is issued before extraction" {
+    var pair = try connectedTestPair();
+    var prepared = try pair.server.deriveTicketPsk();
+    defer prepared.secureZero();
+    var server_out: [512]u8 = undefined;
+    const record = try pair.server.sendNewSessionTicket(
+        &prepared,
+        .{
+            .ticket_lifetime = 3600,
+            .ticket_age_add = 0x12345678,
+            .ticket = "opaque-ticket",
+        },
+        &server_out,
+    );
+    pair.server.completeWrite();
+    var client_out: [128]u8 = undefined;
+    const event = try pair.client.handleRecord(server_out[0..record.len], &client_out);
+    switch (event) {
+        .new_session_ticket => {},
+        else => return error.UnexpectedEvent,
+    }
+
+    var session = pair.server.extractEstablished();
+    defer session.deinit();
+    pair.server.deinit();
+    defer pair.client.deinit();
+
+    var wire_buf: [64]u8 = undefined;
+    const app_wire = try pair.client.sendApplicationData("after ticket", &wire_buf);
+    pair.client.completeWrite();
+    var rx_buf: [64]u8 = undefined;
+    @memcpy(rx_buf[0..app_wire.len], app_wire);
+    const ev = try session.receive(rx_buf[0..app_wire.len]);
+    try testing.expectEqualSlices(u8, "after ticket", ev.application_data);
 }
 
 // RFC 8446 §4.6.3 — simultaneous KeyUpdate messages are legal; each side
