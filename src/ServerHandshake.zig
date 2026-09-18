@@ -50,6 +50,7 @@ const p256 = @import("p256.zig");
 const handshake_key_pairs = @import("handshake_key_pairs.zig");
 const p384 = @import("p384.zig");
 const PendingWrite = @import("pending_write.zig").PendingWrite;
+const EstablishedSession = @import("EstablishedSession.zig").EstablishedSession;
 const RecordLayer = @import("RecordLayer.zig");
 const root = @import("root.zig");
 const CipherSuite = root.CipherSuite;
@@ -160,11 +161,11 @@ const RetryTranscript = union(enum) {
     sha384: Sha384,
 };
 
-const Suite = union(enum) {
+pub const Suite = union(enum) {
     sha256: HashArm(hkdf.HkdfSha256, Sha256),
     sha384: HashArm(hkdf.HkdfSha384, Sha384),
 
-    fn secureZero(self: *Suite) void {
+    pub fn secureZero(self: *Suite) void {
         switch (self.*) {
             inline .sha256, .sha384 => |*s| s.secureZero(),
         }
@@ -678,6 +679,27 @@ pub fn completeWrite(self: *ServerHandshake) void {
 /// `receiveRecord`, read this only after that task joins.
 pub fn lastPeerAlert(self: *const ServerHandshake) ?alert.Alert {
     return self.last_peer_alert;
+}
+
+/// Extract the compact established-session state. Call exactly once, at
+/// handshake completion (state == .connected); the result owns the traffic
+/// keys from here on. `self` keeps duplicated secret bytes until the caller
+/// wipes or deinits it — pool users: wipe the pooled scope right after
+/// extracting. The obligation/fragment state rides along, so a KeyUpdate
+/// response owed at the completion boundary (Finished + KeyUpdate
+/// coalesced) carries over exactly.
+pub fn extractEstablished(self: *ServerHandshake) EstablishedSession {
+    assert(self.state == .connected);
+    return .{
+        .rx = self.rx,
+        .tx = self.tx,
+        .suite = self.suite_state,
+        .ku_frag = self.ku_frag,
+        .post_handshake_count = self.post_handshake_count,
+        .last_peer_alert = self.last_peer_alert,
+        .key_update_obligation = self.key_update_obligation,
+        .pending_write = self.pending_write,
+    };
 }
 
 pub fn isConnected(self: *const ServerHandshake) bool {
