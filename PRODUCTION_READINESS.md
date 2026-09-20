@@ -33,7 +33,11 @@ works; only this one says *whether it is done and how we know*.
 
 ## Definition of Done
 
-ztls is production-ready when all six pillars are `PROVEN`:
+ztls is production-ready when all six pillars are `PROVEN` **and** one exact
+production candidate has passed the qualification gates in `Production
+candidate qualification` below. Pillar statuses are library-level claims bound
+to the revisions their evidence records; a milestone at an older revision does
+not transfer to a later candidate.
 
 1. **Correctness** — provably conformant to TLS 1.3. Every normative MUST in
    RFC 8446 is mapped to a passing test or an explicit, documented out-of-scope
@@ -62,16 +66,62 @@ ztls is production-ready when all six pillars are `PROVEN`:
 | 1. Correctness | `PARTIAL` | Historical TLS-Anvil evidence covers `d07c551` (#108). The #118 path-length patch passes local gates. Independent review and candidate qualification (#119–#121) remain pending. |
 | 2. Ergonomics | `PROVEN` | CI-gated examples cover both roles across io_uring, epoll, kqueue, and `std.Io`. Core and wrapper APIs expose hybrid capabilities and reject invalid local policy before key generation or wire I/O (#105). `ztls-std` (#77) gates plain and mTLS OpenSSL interop in both directions. `ztls-xev` satisfies #76's Linux/macOS contract, including in-flight cancellation (#83). |
 | 3. Performance | `PROVEN` | n=10 captures on x86_64 (c7i.2xlarge), aarch64 (c7g.2xlarge), and macOS (Apple M1 Max) with formal CIs (p=0.000): ztls beats libssl on every comparable app-data row on all three platforms and rustls on all AES-GCM rows; regression gate committed. |
-| 4. Providers | `PROVEN` | OpenSSL, AWS-LC, and BoringSSL pass fresh strict-complete TLS-Anvil client and server runs at `d07c551`; malformed peer ML-KEM keys now produce `illegal_parameter` while provider faults remain `internal_error` (#108). |
+| 4. Providers | `PROVEN` | OpenSSL, AWS-LC, and BoringSSL passed strict-complete TLS-Anvil client and server runs at `d07c551`; malformed peer ML-KEM keys produce `illegal_parameter` while provider faults remain `internal_error` (#108). The capture is bound to that revision; candidate re-qualification is #120. |
 | 5. Marketing | `PROVEN` | README leads with the proven performance story (n=10, both architectures, honest ChaCha20 loss) and the adversarial security posture; the why-ztls narrative and headline benchmarks are on the front door, backed by PERFORMANCE.md. |
 | 6. User docs | `PROVEN` | One fetched package exposes core plus the Zig 0.16 integration modules (#79). Isolated consumer gates and `docs/USAGE.md` cover dependency wiring, hybrid capability checks, borrowed lifetimes, cleanup, drive loops, and integrations (#105). |
 
 ---
 
+## Production candidate qualification
+
+Pillar statuses are library milestones bound to the revisions their evidence
+records. They do not qualify an exact production candidate, and a milestone for
+an older revision does not transfer to a newer one. Operational production
+qualification is a separate, stricter bar: the three open gates #119, #120, and
+#121, with the #118 fix as a candidate requirement that does not have to wait
+for the gate infrastructure.
+
+- **#119 — downstream compatibility.** Candidates are tested against the real
+  consumer suites. handoff and z53 are the only active consumers; Kafka is
+  abandoned and outside the gate. Each qualification run names one immutable
+  ztls candidate SHA plus the exact consumer revisions, package hashes,
+  toolchains, providers, and platforms. Each capture records the consumer
+  manifests. Dependency pins do not establish deployed versions.
+- **#120 — fresh full TLS-Anvil.** Both roles and all three backends
+  (OpenSSL, AWS-LC, BoringSSL) against the exact candidate, with clean source
+  provenance, terminal 437-case parent reports, zero unexpected results, and no
+  partial-run override. The #108 captures at `d07c551` remain valid historical
+  evidence for that revision, but they predate the ticket, PSK-continuity,
+  early-data, and established-session work and are not candidate
+  qualification.
+- **#121 — resource cleanup and transport recovery.** Targeted memory checks,
+  bounded connection churn, and repeatable transport-fault tests use the same
+  candidate. There is no minimum run duration. Existing z53 operation provides
+  historical evidence for its actual revision. The live service remains untouched.
+- **#118 — certificate path length.** Commit `b9d03ed` enforces
+  `pathLenConstraint` and passes the local provider and Zig matrices.
+  The S5 entry below records the tests and residual review boundary.
+
+Final sign-off requires all four on one candidate: #118 fixed, #119 green for
+handoff and z53 at recorded revisions, #120 clean on all three backends, and
+#121 clean for each profile selected for initial production support. Profiles
+or features not exercised are recorded as untested, and unobserved deployments
+are never claimed. Timestamped captures are immutable: qualification adds new
+captures at the candidate revision instead of rewriting older ones.
+
+The deferred C ABI work (#30) is outside the current consumers' production
+gate. #119 qualifies handoff and z53 through the ztls revision they consume,
+and the #30 deferral list (server-side shims, `RecordBuffer` C ABI, certificate
+verification or PSK from C, dynamic linking, and the C conformance harness) is
+not a prerequisite for their sign-off. #30 remains open on its existing scope,
+and the Pillar 2 C ABI section keeps stating its partial status.
+
+---
+
 ## Pillar 1 — Correctness
 
-**Fresh all-backend TLS-Anvil proof (2026-09-17, #108):** Manual runs of both
-scheduled workflows used clean `d07c551`. Client runs `35208400497` (OpenSSL),
+**All-backend TLS-Anvil proof at `d07c551` (2026-09-17, #108):** Manual runs of
+both scheduled workflows used clean `d07c551`. Client runs `35208400497` (OpenSSL),
 `35208402638` (AWS-LC), and `35208404759` (BoringSSL) each completed 437 tests:
 92 passes, six expected DSA failures, 134 expected skips, 205 not attempted, and
 zero unexpected results. Server runs `35208407073` (OpenSSL), `35208409696`
@@ -508,9 +558,11 @@ data to openssl s_server and receives the HTTP response.
   - H6/H7/H8/H10 — X.509 DER strictness: unknown critical extensions rejected,
     SAN dNSName matched only for context-specific GeneralNames, EKU requires a
     SEQUENCE wrapper, and duplicate instances of a processed extension are
-    rejected (RFC 5280 §4.2). Pre-existing residuals tracked for a later pass:
-    recognized-but-unimplemented critical extensions are still accepted, and the
-    outer SAN SEQUENCE in `verifyHostName` is not class-checked.
+    rejected (RFC 5280 §4.2). Pre-existing residuals (untracked): a
+    recognized-but-unimplemented critical extension is still accepted
+    (`certificate_parser.zig` continues on the non-processed extension IDs even
+    when critical; only unrecognized critical OIDs are rejected), and the outer
+    SAN SEQUENCE in `verifyHostName` is not class-checked.
   - H9 — X.509 time strictness: UTCTime `YY` now follows RFC 5280 (00–49 → 20YY,
     50–99 → 19YY, so a long-expired 19YY cert is no longer read as 20YY),
     GeneralizedTime requires exactly `YYYYMMDDHHMMSSZ`, and impossible dates
@@ -733,8 +785,14 @@ data to openssl s_server and receives the HTTP response.
   illegal pre-handshake application data, unexpected post-handshake inner content
   types, and truncated-record framing robustness.
 - `docs/research/RFC8446_MUST_MATRIX.md` maps TLS 1.3 normative requirements
-  to tests, caller-boundary decisions, or explicit out-of-scope feature issues;
-  no supported-surface row remains `GAP` or `PARTIAL`.
+  to tests, caller-boundary decisions, or explicit out-of-scope feature issues.
+  The PSK/resumption (R002-004) and 0-RTT (R002-005) rows remain `PARTIAL`
+  because each combines proven engine mechanics with obligations the Sans-I/O
+  boundary assigns to the caller: opaque ticket persistence, expiry, rotation,
+  replay rejection, and SNI partitioning for resumption, and 0-RTT anti-replay.
+  Neither row requires a ztls-owned global ticket or replay cache; the engine's
+  0-RTT default stays disabled, and the caller supplies the replay policy it
+  can actually observe.
 - `docs/research/NEGATIVE_SPACE.md` inventories supported-surface malformed and
   malicious peer inputs, mapping each to ztls's response and evidence or an
   explicit gap.
@@ -764,8 +822,8 @@ fresh strict-complete client and server proof across all three backends at clean
   normalization and wrapper-helper tests are gated. The real TLS-Anvil server
   and client suites run in separate scheduled/manual workflows. Historical #91
   runs have strict-clean evidence under the visible #52 `expected_failed`
-  classification. Fresh #108 runs of both workflows are strict-clean on all
-  three backends. Plain P-384 has bidirectional OpenSSL 3.6
+  classification. The #108 runs of both workflows are strict-clean on all
+  three backends at clean `d07c551`. Plain P-384 has bidirectional OpenSSL 3.6
   interoperability on every non-FIPS backend lane. TLS-Anvil has no RFC 10024
   suite, so the three hybrid groups use the same bidirectional OpenSSL matrix
   plus the pinned upstream tlsfuzzer ML-KEM driver: 35 sanity, per-group,
@@ -799,8 +857,8 @@ fresh strict-complete client and server proof across all three backends at clean
   surface (unit tests in PR CI), tlsfuzzer is PR-gated (`just conformance/ci`),
   and the full TLS-Anvil server/client suites run in scheduled/manual workflows.
   Historical commits retain strict-clean captures with 437 completed tests.
-  Fresh #108 manual runs of both scheduled workflows are strict-clean across all
-  three backends. BoGo is explicitly deferred
+  The #108 manual runs of both scheduled workflows are strict-clean across all
+  three backends at clean `d07c551`. BoGo is explicitly deferred
   (`docs/research/BOGO_DEFERRED.md`).
   The adversarial security review (Glasswing) found and fixed 3 vulnerabilities.
   Future feature work that changes TLS scope must reopen the relevant MUST
@@ -1711,20 +1769,24 @@ each passing the same correctness and interop gates.
   row-perf evidence). *(#63, #70, #71 — server capture clean; client
   capture KeyUpdate failure root-caused and fixed, CI-confirmed)*
 
-**Status:** `PROVEN` — fresh strict-complete TLS-Anvil client and server runs at
-clean `d07c551` pass on OpenSSL, AWS-LC, and BoringSSL with zero unexpected
-results (#108).
+**Status:** `PROVEN` (library milestone) — strict-complete TLS-Anvil client and
+server runs at clean `d07c551` passed on OpenSSL, AWS-LC, and BoringSSL with
+zero unexpected results (#108). The capture is historical for that revision;
+candidate re-qualification is #120.
 
 Commit `d07c551` rejects non-canonical ML-KEM encapsulation keys before provider
 import. It maps peer input to `illegal_parameter` and keeps provider faults
 mapped to `internal_error`. OpenSSL, AWS-LC, and BoringSSL pass the local backend
-and tlsfuzzer gates plus fresh client and server TLS-Anvil runs.
+and tlsfuzzer gates plus the #108 client and server TLS-Anvil runs at their
+recorded revision.
 
 Historical baseline: three libcrypto backends compile and pass the full test
 suite, tlsfuzzer smoke, in-memory example, and benchmark smoke. The devshells
 select matching package paths, and the headers determine the backend family.
 All three backends have committed clean
-TLS-Anvil captures (437/437 each, no unexpected failures). CI-gated backend
+TLS-Anvil captures (437/437 each, no unexpected failures) bound to their
+recorded revisions; dated captures are not candidate qualification. CI-gated
+backend
 lanes (`just check-backend-aws-lc`, `just check-backend-boringssl`) run the
 same gates as the default. X25519, P-256, AEAD, and CertificateVerify
 dispatch through the backend facade; capability tables are backend-owned.
@@ -1937,10 +1999,9 @@ These are not feature work; they stop the bleeding and make the rest legible.
 2. **DONE — decide the canonical-ID policy and repoint citations.** Committed
    files now cite the canonical GitHub issues (#1–#5), not duplicate pi todos.
 3. **DONE — Consolidate `docs/research/`.** The reconciliation kill-list that
-   lived in #20 (closed 2026-06-09) was applied: status assertions moved here,
-   and `docs/research/*` now keeps mechanism, rationale, acceptance criteria,
-   and runbook mechanics. Reopen only if this spine and the research files
-   visibly drift again.
+   lived in #20 was applied; #20 is open again for recurrent readiness drift.
+   Status assertions moved here, and `docs/research/*` keeps mechanism,
+   rationale, acceptance criteria, and runbook mechanics.
 4. **DONE — Define workspace ownership for build.zig / just recipes.**
    `src/build/` modules and root `just/` sub-files exist, while domain
    subprojects such as `conformance/` own their local workflows and root

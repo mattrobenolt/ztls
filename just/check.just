@@ -151,6 +151,32 @@ distribution-core-ci:
 distribution-integrations-ci:
     ./scripts/distribution-smoke.sh integrations
 
+# Consumer compatibility gate (#119). ztls owns candidate provenance,
+# isolation, and the record; the consumers own their commands. See
+# docs/research/CONSUMER_GATE.md. Consumer checkouts come from
+# CONSUMER_GATE_HANDOFF_REPO / CONSUMER_GATE_Z53_REPO or --handoff-repo/
+# --z53-repo.
+[doc("Gate a ztls candidate against the active consumer suites (handoff, z53) (#119)")]
+[group("check")]
+consumer-gate $ztls_rev="HEAD" $handoff_rev="HEAD" $z53_rev="HEAD" $consumers="handoff z53" $out_dir="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    args=(--ztls-rev "$ztls_rev" --handoff-rev "$handoff_rev" --z53-rev "$z53_rev" --consumers "$consumers")
+    if [ -n "$out_dir" ]; then args+=(--out-dir "$out_dir"); fi
+    exec ./scripts/consumer-gate.sh "${args[@]}"
+
+# The qualification entrypoint: refuses symbolic revisions, so a record written
+# by this recipe names the exact ztls and consumer commits that were tested.
+[doc("Qualify a production candidate: fixed ztls SHA plus fixed handoff and z53 SHAs (#119)")]
+[group("check")]
+qualify-candidate $ztls_sha $handoff_sha $z53_sha $out_dir:
+    ./scripts/consumer-gate.sh --require-fixed-revisions --ztls-rev "$ztls_sha" --handoff-rev "$handoff_sha" --z53-rev "$z53_sha" --out-dir "$out_dir"
+
+[doc("Exercise consumer-gate guards offline without consumer builds")]
+[group("check")]
+consumer-gate-selftest:
+    ./scripts/consumer-gate.sh --selftest
+
 [doc("Build and run the C ABI example (libztls.a + c_client.c)")]
 [group("check")]
 capi-ci:

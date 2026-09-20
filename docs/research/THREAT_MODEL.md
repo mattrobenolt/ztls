@@ -256,12 +256,12 @@ and unscheduled extensions are not on the timeline.
 
 | Gap | Boundary | Tracking |
 |---|---|---|
-| RFC 5280 directoryName constraints are not enforced | Certificate policy | future X.509 expansion |
+| directoryName name-constraint forms are unsupported: a critical NameConstraints extension rejects, non-critical instances are ignored (RFC 5280 §4.2) | Certificate policy | out of scope; no expansion issue |
+| Recognized-but-unimplemented critical X.509 extensions are accepted; only unrecognized critical OIDs are rejected | Certificate policy | `PRODUCTION_READINESS.md` residual, untracked |
 | BoGo is deferred; TLS-Anvil remains outside PR `just ci` but has dedicated server/client workflows | External conformance breadth | `BOGO_DEFERRED.md`, #50 |
-| Legacy session ID parse caps need dedicated enforcement/tests | Parser hardening | `NEGATIVE_SPACE.md` gap |
-| Server Certificate non-empty `request_context` needs rejection evidence | Parser/state-machine hardening | `NEGATIVE_SPACE.md` gap |
-| Server-side bad client-Finished negative unit tests are partial | Server state-machine evidence | `NEGATIVE_SPACE.md` gap |
-| Certificate and EncryptedExtensions standalone fuzz targets are absent | Parser fuzz breadth | `NEGATIVE_SPACE.md` gap |
+| Oversized SNI hostnames are accepted on the ClientHello parse path (`parseSni`); the encode path is capped at 253 octets | Parser hardening | `NEGATIVE_SPACE.md` gap, untracked |
+| Finished-with-a-trailing-message and non-Finished-in-`wait_client_finished` negative unit tests are absent | Server state-machine evidence | `NEGATIVE_SPACE.md` gap |
+| EncryptedExtensions has no standalone parser fuzz target | Parser fuzz breadth | `NEGATIVE_SPACE.md` gap |
 | Provider matrix lacks runtime FIPS-provider verification and full facade-direct Wycheproof coverage | Backend diversity | `PRODUCTION_READINESS.md` provider residuals |
 
 ## Boundary diagram

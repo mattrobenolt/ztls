@@ -164,5 +164,5 @@ endpoint role.
   only after strict server/client workflow evidence and BoGo deferral evidence landed.
 - Do not reopen #49 on the package prefix alone; verify the row's TLS-Anvil
   endpoint annotation and opposite-capture result.
-- Keep Pillar 1 at `PARTIAL` while external conformance remains outside required
-  PR CI and the strict client run still has unexpected failures.
+- Do not derive Pillar 1 status here; external conformance evidence and
+  readiness status live in `PRODUCTION_READINESS.md`.

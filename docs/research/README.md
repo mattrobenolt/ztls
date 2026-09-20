@@ -17,6 +17,8 @@ re-asserts it.
 
 ## correctness
 
+- [`CONSUMER_GATE.md`](CONSUMER_GATE.md) — immutable candidate selection,
+  isolated handoff and z53 tests, evidence records, and rollback pins.
 - [`CORRECTNESS.md`](CORRECTNESS.md) — local correctness gate commands and
   external-suite mechanics (tlsfuzzer, Wycheproof, fuzzing). Pure runbook;
   status-bearing evidence is rooted in `PRODUCTION_READINESS.md`.

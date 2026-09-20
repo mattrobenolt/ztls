@@ -90,6 +90,7 @@ rec {
       git
       go
       jdk
+      jq
       just
       llvm
       openssl.bin
