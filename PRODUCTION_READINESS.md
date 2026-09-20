@@ -61,7 +61,7 @@ revision, not automatically to later commits.
 
 | Pillar | Status | One-line |
 |---|---|---|
-| 1. Correctness | `PARTIAL` | Historical TLS-Anvil evidence covers `d07c551` (#108). The #118 fix, #119 consumer gate, and #120 candidate conformance pass. Memory reports and certificate residuals remain tracked under #121–#124. |
+| 1. Correctness | `PARTIAL` | Historical TLS-Anvil evidence covers `d07c551` (#108). The #118 fix, #119 consumer gate, and #120 candidate conformance pass. Resource and policy residuals remain tracked under #121–#126. |
 | 2. Ergonomics | `PROVEN` | CI-gated examples cover both roles across io_uring, epoll, kqueue, and `std.Io`. Core and wrapper APIs expose hybrid capabilities and reject invalid local policy before key generation or wire I/O (#105). `ztls-std` (#77) gates plain and mTLS OpenSSL interop in both directions. `ztls-xev` satisfies #76's Linux/macOS contract, including in-flight cancellation (#83). |
 | 3. Performance | `PROVEN` | n=10 captures on x86_64 (c7i.2xlarge), aarch64 (c7g.2xlarge), and macOS (Apple M1 Max) with formal CIs (p=0.000): ztls beats libssl on every comparable app-data row on all three platforms and rustls on all AES-GCM rows; regression gate committed. |
 | 4. Providers | `PROVEN` | OpenSSL, AWS-LC, and BoringSSL passed strict-complete TLS-Anvil client and server runs at `d07c551`; malformed peer ML-KEM keys produce `illegal_parameter` while provider faults remain `internal_error` (#108). The capture is bound to that revision; candidate re-qualification is #120. |
@@ -141,7 +141,8 @@ Unexercised profiles remain untested. Existing z53 operation provides historical
 The live service remains untouched.
 
 Candidate gates do not erase known correctness residuals. #122 tracks unprocessed critical X.509 extensions and SAN wrapper checks.
-#123 tracks the inbound SNI policy difference. #124 tracks focused negative-test gaps.
+#123 tracks the inbound SNI policy difference. #124 tracks focused handshake and parser evidence gaps.
+Compiler-dependent zeroization and the IDNA contract remain audit or policy questions under #125 and #126.
 Deferred C ABI work (#30) remains outside these consumers' qualification requirements.
 
 ---
@@ -662,9 +663,10 @@ data to openssl s_server and receives the HTTP response.
     ABI boundary, where a Zig "must outlive" contract can't be expressed — so the
     credential-lifetime redesign belongs there, as a hard gate before the C ABI
     ships. The Zig API stays borrowed-consistent.
-  - H17 — HKDF passes `Prk`/`TrafficSecret` by value, leaving un-zeroized stack
-    copies; the important handshake locals are wiped. Needs a dedicated
-    zeroization-strategy pass, not a point fix.
+  - H17 — HKDF passes `Prk` and `TrafficSecret` by value.
+    These signatures permit compiler-generated copies. They do not prove
+    unwiped stack bytes in a particular binary. #125 tracks the source,
+    disassembly, and zeroization audit. Explicit handshake locals have wipes.
   - Zeroing responsibility at the caller-owned-buffer boundary is now decided
     and documented rather than accidental (#81). `SliceBuffer.secureZero`
     zeroed the view's own 24-byte header — the fat pointer, its length, and
@@ -682,14 +684,14 @@ data to openssl s_server and receives the HTTP response.
     the retained chain`. Note this is a hygiene and honesty fix, not a
     disclosure fix: certificates are public, and the reassembly buffers hold
     whatever handshake plaintext spanned a record boundary.
-  - H20 — 0.5-RTT interop: the client rejects legal server application_data in
-    `.send_finished`. Fixing it needs an API/state-machine channel to surface
-    pre-connected app data; interop feature, not a security bug.
+  - H20 — the high-level client record path constructs its Finished immediately
+    after the server Finished. The `.send_finished` state alone does not prove
+    a general 0.5-RTT interoperability failure. #124 tracks focused evidence
+    for coalesced server data and low-level API sequences.
   - H21 (remainder) — SHA-1 chain signatures are in fact ALREADY rejected at the
-    policy layer (`verifyChainCertificateSignatureAlgorithms`; the audit finding
-    was stale — the council caught it), so only IDNA/A-label handling (a feature
-    gap) remains a policy decision. The rfc822/URI name-constraint item (#75) was
-    fixed separately.
+    policy layer (`verifyChainCertificateSignatureAlgorithms`). #126 tracks
+    the remaining IDNA and A-label contract. The rfc822/URI name-constraint
+    item (#75) was fixed separately.
   - #75 (fixed) — rfc822Name/URI bare-host name-constraint escape: bare-host
     constraints (no leading `.`) now do exact host matching per RFC 5280
     §4.2.1.10, instead of being routed through `dnsNameInSubtree` (subtree
@@ -835,11 +837,10 @@ data to openssl s_server and receives the HTTP response.
   unsupported-subtree rejection, and a differential test corpus against OpenSSL
   3.6.3 covering all four GeneralName forms (#75 resolved).
 
-**Status:** `PARTIAL` — #118 passes local and GitHub gates. Candidate
-qualification and the residuals under #120–#124 remain separate requirements. #91's fixture regressions
-remain valid, and #108 adds
-fresh strict-complete client and server proof across all three backends at clean
-`d07c551`.
+**Status:** `PARTIAL` — #118 passes local and GitHub gates.
+Candidate consumer and conformance evidence passes at `b9d03ed`.
+Resource and policy residuals under #121–#126 remain separate requirements.
+The #91 fixture regressions and #108 conformance captures retain their historical provenance.
 
 **Evidence and design decisions:**
 
