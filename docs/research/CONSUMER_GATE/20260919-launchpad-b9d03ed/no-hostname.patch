@@ -1,0 +1,17 @@
+diff --git a/src/ClientHandshake.zig b/src/ClientHandshake.zig
+index ab0bfa1..6caaa71 100644
+--- a/src/ClientHandshake.zig
++++ b/src/ClientHandshake.zig
+@@ -1711,7 +1711,11 @@ fn processServerCertificate(
+     if (msg.type != .certificate) return error.UnexpectedMessage;
+     // Extract and copy the leaf public key now; it must survive until
+     // CertificateVerify, which may arrive in a later record.
+-    const pk = try certificate.parse(msg.raw, policy);
++    // Mutant candidate: ignore the configured hostname policy to prove the
++    // consumer gate fails on an incompatible behavioral change.
++    var relaxed = policy;
++    relaxed.host_name = null;
++    const pk = try certificate.parse(msg.raw, relaxed);
+     try self.retainPeerCertificate(msg.raw);
+     self.leaf_pub_key.clear();
+     self.leaf_pub_key.appendSlice(pk) catch return error.CertificateKeyTooLarge;

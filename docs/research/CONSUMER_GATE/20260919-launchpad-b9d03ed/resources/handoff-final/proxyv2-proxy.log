@@ -1,0 +1,10 @@
+{"time":1789870807792,"level":"info","message":"listening","addr":"127.0.0.1","port":18443,"mode":"tls","starttls":"off","crypto":"aws-lc","backend":"/tmp/ztls-production.DCwJ3H/handoff-runtime-final/backend.sock","threads":1,"slots":128,"ring_depth":256}
+{"time":1789870807798,"level":"debug","tid":0,"message":"connection accepted","slot":0,"gen":1,"fd":10,"backend_fd":11}
+{"time":1789870807801,"level":"debug","tid":0,"message":"backend connected","slot":0}
+{"time":1789870807999,"level":"debug","tid":0,"message":"connection accepted","slot":0,"gen":2,"fd":10,"backend_fd":11}
+{"time":1789870807999,"level":"debug","tid":0,"message":"backend connected","slot":0}
+{"time":1789870808025,"level":"debug","tid":0,"message":"client eof","slot":0}
+{"time":1789870808026,"level":"debug","tid":0,"message":"backend eof","slot":0}
+{"time":1789870808046,"level":"info","message":"shutting down","signal":"TERM"}
+{"time":1789870808046,"level":"debug","scope":"cert_config","tid":0,"message":"certificate config destroyed"}
+{"time":1789870808046,"level":"info","message":"shutdown complete"}

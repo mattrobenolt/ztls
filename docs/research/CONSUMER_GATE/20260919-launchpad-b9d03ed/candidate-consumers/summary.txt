@@ -1,0 +1,5 @@
+ztls consumer gate: green
+candidate: b9d03edfb422e4f2528635bae03cc1a5daffbe69/ztls-0.0.0-SHHDXv6VIQC2xRJ5noTqy43kv9TWPOKUlZffYKtdLoBc
+record: /tmp/ztls-production.DCwJ3H/candidate-consumers/run.json
+handoff: green (557ba42de1e4aa3f16e3cff0c7ed6bb885fddebd)
+z53: green (499c41abab505d72d9611f5fbb3cebfc91d90058)

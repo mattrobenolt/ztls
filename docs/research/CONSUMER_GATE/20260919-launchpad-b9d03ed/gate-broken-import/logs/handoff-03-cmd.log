@@ -1,0 +1,4 @@
+warning: Git tree '/tmp/ztls-consumer-gate.ZG1vZy/handoff' is dirty
+Executing uvVenvShellHook
+Skipping venv creation, '.venv' already exists
+Finished executing uvVenvShellHook

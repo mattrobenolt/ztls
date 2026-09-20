@@ -1,0 +1,39 @@
+warning: Git tree '/tmp/ztls-consumer-gate.ZG1vZy/handoff' is dirty
+Executing uvVenvShellHook
+Skipping venv creation, '.venv' already exists
+Finished executing uvVenvShellHook
+zig build test --summary all
+test
++- run test
+   +- compile test Debug native 2 errors
+src/Server.zig:1785:21: error: root source file struct 'root' has no member named 'ClientHandshake'
+    var client: ztls.ClientHandshake = .init(.{
+                ~~~~^~~~~~~~~~~~~~~~
+zig-pkg/ztls-0.0.0-SHHDXoGkIACnCiBoGKuopnmqesCpayKAfx_FVMEMdp1b/src/root.zig:1:1: note: struct declared here
+pub const aead = @import("aead.zig");
+^~~
+referenced by:
+    test.userspace TLS leases stay distinct until teardown and are reused: src/Server.zig:1762:30
+    Server: src/AppConfig.zig:31:24
+    4 reference(s) hidden; use '-freference-trace=6' to see all references
+src/Server.zig:1884:21: error: root source file struct 'root' has no member named 'ClientHandshake'
+    var client: ztls.ClientHandshake = .init(.{
+                ~~~~^~~~~~~~~~~~~~~~
+zig-pkg/ztls-0.0.0-SHHDXoGkIACnCiBoGKuopnmqesCpayKAfx_FVMEMdp1b/src/root.zig:1:1: note: struct declared here
+pub const aead = @import("aead.zig");
+^~~
+error: 2 compilation errors
+failed command: /nix/store/h4am1dpj4li41cq58861nysgaip7036s-zig-0.16.0/bin/zig test -fno-strip -ODebug --dep ztls --dep clap --dep build_options -Mroot=/tmp/ztls-consumer-gate.ZG1vZy/handoff/src/main.zig -I/nix/store/dqas6llmc0w6gf922rcb6ncqmjjm5g1z-aws-lc-5.5.0-dev/include -L/nix/store/3hnfh4dzrjjncnpa9nhggr6l7m97g456-aws-lc-5.5.0/lib -lcrypto -ODebug --dep build_options=build_options0 -Mztls=/tmp/ztls-consumer-gate.ZG1vZy/handoff/zig-pkg/ztls-0.0.0-SHHDXoGkIACnCiBoGKuopnmqesCpayKAfx_FVMEMdp1b/src/root.zig -ODebug -Mclap=/tmp/ztls-consumer-gate.ZG1vZy/handoff/zig-pkg/clap-0.12.0-oBajB7foAQDqlSwaSG5g0yq7xGbQARUsBk5T64gAOqP5/clap.zig -Mbuild_options=/tmp/ztls-consumer-gate.ZG1vZy/local-cache-handoff/c/6fdd2b85200a74a47bca09cd7fd6f92b/options.zig -Mbuild_options0=/tmp/ztls-consumer-gate.ZG1vZy/local-cache-handoff/c/9291a429e26420e7c36eee7e19b2ebe5/options.zig -lc --cache-dir /tmp/ztls-consumer-gate.ZG1vZy/local-cache-handoff --global-cache-dir /tmp/cg-mutants/broken-import/zig-out/consumer-gate/cache/handoff-global --name test --zig-lib-dir /nix/store/h4am1dpj4li41cq58861nysgaip7036s-zig-0.16.0/lib/zig/ --listen=-
+
+Build Summary: 4/7 steps succeeded (1 failed); 4/4 tests passed
+test transitive failure
++- run test transitive failure
+|  +- compile test Debug native 2 errors
+|     +- options success
+|     +- options success
++- run test 4 pass (4 total) 3ms MaxRSS:4M
+   +- compile test Debug native success 1s MaxRSS:295M
+
+error: the following build command failed with exit code 1:
+/tmp/ztls-consumer-gate.ZG1vZy/local-cache-handoff/o/61d958d50c629e94b7f7058f60bff726/build /nix/store/h4am1dpj4li41cq58861nysgaip7036s-zig-0.16.0/bin/zig /nix/store/h4am1dpj4li41cq58861nysgaip7036s-zig-0.16.0/lib/zig /tmp/ztls-consumer-gate.ZG1vZy/handoff /tmp/ztls-consumer-gate.ZG1vZy/local-cache-handoff /tmp/cg-mutants/broken-import/zig-out/consumer-gate/cache/handoff-global --seed 0xcf4c1ea1 -Zf9c1d07856e18b3b test --summary all
+error: recipe `test` failed on line 20 with exit code 1

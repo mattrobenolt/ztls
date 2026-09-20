@@ -1,0 +1,86 @@
+{
+  "schema": "ztls.consumer-gate/1",
+  "generated_at": "2026-09-20T02:11:17Z",
+  "host": "Linux launchpad 7.2.3 #1-NixOS SMP PREEMPT Wed Sep  2 12:33:21 UTC 2026 aarch64 GNU/Linux",
+  "invocation": "--require-fixed-revisions --ztls-repo /tmp/cg-mutants/broken-import --ztls-rev 91739c698f32c95449ae189a51ee39c92738c4f2 --handoff-repo /Users/matt/code/handoff --handoff-rev 557ba42de1e4aa3f16e3cff0c7ed6bb885fddebd --z53-repo /Users/matt/code/z53 --z53-rev 499c41abab505d72d9611f5fbb3cebfc91d90058 --out-dir /tmp/ztls-production.DCwJ3H/gate-broken-import",
+  "nix_version": "nix (Nix) 2.34.8",
+  "candidate": {
+    "repo": "/tmp/cg-mutants/broken-import",
+    "revision": "91739c698f32c95449ae189a51ee39c92738c4f2",
+    "requested_revision": "91739c698f32c95449ae189a51ee39c92738c4f2",
+    "subject": "mutant: rename the ClientHandshake package export",
+    "worktree_dirty": "no",
+    "archive": "file:///tmp/ztls-consumer-gate.ZG1vZy/candidate.tar.gz",
+    "archive_command": "git archive --format=tar.gz --prefix=ztls/ -o candidate.tar.gz 91739c698f32c95449ae189a51ee39c92738c4f2",
+    "archive_sha256": "a06aef61d49f1dc6ad1cee74e28f8075fdb3d93258cf1a210a0dc344fbc9d17b",
+    "package_hash": "ztls-0.0.0-SHHDXoGkIACnCiBoGKuopnmqesCpayKAfx_FVMEMdp1b",
+    "id": "91739c698f32c95449ae189a51ee39c92738c4f2/ztls-0.0.0-SHHDXoGkIACnCiBoGKuopnmqesCpayKAfx_FVMEMdp1b"
+  },
+  "consumers": [
+{
+  "name": "handoff",
+  "source": "/Users/matt/code/handoff",
+  "source_kind": "path",
+  "source_dirty": "no",
+  "requested_revision": "557ba42de1e4aa3f16e3cff0c7ed6bb885fddebd",
+  "revision": "557ba42de1e4aa3f16e3cff0c7ed6bb885fddebd",
+  "subject": "CI bring-up findings: UnixTarget.init now writes the NUL the kernel reads at addrlen's edge explicitly (the .empty sentinel's undefined tail was the latent connect(2) path-corruption the code's own comment warned about — CI's zig put 0xAA there and the pack test caught it; sentinel zeroed too, ArrayBuffer's undefined-by-len-discipline left alone). determinate-nix-action re-pinned v3.22.4 — v3.22.5 is a day old, under pinact's 3-day cooldown; -u won't downgrade itself, re-pin in a few days",
+  "devshell": "default",
+  "rollback_pin": {
+    "url": "git+https://github.com/mattrobenolt/ztls?ref=main#960ab943f41aad4c0ffaaf32cf26ef35cca137b1",
+    "hash": "ztls-0.0.0-SHHDXoSkIABMcZtLWfUFFHipeZyv0ycyfEZBL31sQ9Sd"
+  },
+  "candidate_pin": {
+    "url": "file:///tmp/ztls-consumer-gate.ZG1vZy/candidate.tar.gz",
+    "hash": "ztls-0.0.0-SHHDXoGkIACnCiBoGKuopnmqesCpayKAfx_FVMEMdp1b"
+  },
+  "candidate_changed_pin": "yes",
+  "toolchain": {
+    "zig": "0.16.0",
+    "libcrypto_version": "1.1.1",
+    "libcrypto_libdir": "/nix/store/3hnfh4dzrjjncnpa9nhggr6l7m97g456-aws-lc-5.5.0/lib",
+    "os": "Linux",
+    "arch": "aarch64",
+    "kernel": "7.2.3"
+  },
+  "commands": [{"command":"just test","status":"failed","exit":1,"seconds":9,"log":"logs/handoff-02-cmd.log"},{"command":"zig build && zig build -Doptimize=ReleaseFast && zig build -Dmode=plaintext && zig build -Doptimize=ReleaseFast -Dmode=plaintext","status":"passed","exit":0,"seconds":21,"log":"logs/handoff-03-cmd.log"}],
+  "evidence": "src/Server.zig:1785:21: error: root source file struct 'root' has no member named 'ClientHandshake'|src/Server.zig:1884:21: error: root source file struct 'root' has no member named 'ClientHandshake'",
+  "status": "red"
+}
+,
+{
+  "name": "z53",
+  "source": "/Users/matt/code/z53",
+  "source_kind": "path",
+  "source_dirty": "no",
+  "requested_revision": "499c41abab505d72d9611f5fbb3cebfc91d90058",
+  "revision": "499c41abab505d72d9611f5fbb3cebfc91d90058",
+  "subject": "Add just bump-ztls to refresh every ztls pin",
+  "devshell": "default",
+  "rollback_pin": {
+    "url": "git+https://github.com/mattrobenolt/ztls?ref=main#960ab943f41aad4c0ffaaf32cf26ef35cca137b1",
+    "hash": "ztls-0.0.0-SHHDXoSkIABMcZtLWfUFFHipeZyv0ycyfEZBL31sQ9Sd"
+  },
+  "candidate_pin": {
+    "url": "file:///tmp/ztls-consumer-gate.ZG1vZy/candidate.tar.gz",
+    "hash": "ztls-0.0.0-SHHDXoGkIACnCiBoGKuopnmqesCpayKAfx_FVMEMdp1b"
+  },
+  "candidate_changed_pin": "yes",
+  "toolchain": {
+    "zig": "0.16.0",
+    "libcrypto_version": "3.6.4",
+    "libcrypto_libdir": "/nix/store/v89yca35zsb13k51ibz0mcz2rrzjwwrj-openssl-3.6.4/lib",
+    "os": "Linux",
+    "arch": "aarch64",
+    "kernel": "7.2.3"
+  },
+  "commands": [{"command":"just test","status":"failed","exit":1,"seconds":9,"log":"logs/z53-02-cmd.log"}],
+  "evidence": "src/runtime/tls.zig:11:29: error: root source file struct 'root' has no member named 'ClientHandshake'|src/runtime/tls.zig:42:23: error: root source file struct 'root' has no member named 'ClientHandshake'",
+  "status": "red"
+}
+
+  ],
+  "result": "red",
+  "qualification": "partial",
+  "qualification_gaps": []
+}

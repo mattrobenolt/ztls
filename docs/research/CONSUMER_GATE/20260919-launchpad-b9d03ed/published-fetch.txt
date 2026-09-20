@@ -1,0 +1,2 @@
+ZIG_GLOBAL_CACHE_DIR=/tmp/ztls-production.DCwJ3H/published-fetch-cache zig fetch git+https://github.com/mattrobenolt/ztls#b9d03edfb422e4f2528635bae03cc1a5daffbe69
+ztls-0.0.0-SHHDXv6VIQC2xRJ5noTqy43kv9TWPOKUlZffYKtdLoBc

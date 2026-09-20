@@ -1,0 +1,86 @@
+{
+  "schema": "ztls.consumer-gate/1",
+  "generated_at": "2026-09-20T02:09:24Z",
+  "host": "Linux launchpad 7.2.3 #1-NixOS SMP PREEMPT Wed Sep  2 12:33:21 UTC 2026 aarch64 GNU/Linux",
+  "invocation": "--require-fixed-revisions --ztls-rev b9d03edfb422e4f2528635bae03cc1a5daffbe69 --handoff-rev 557ba42de1e4aa3f16e3cff0c7ed6bb885fddebd --z53-rev 499c41abab505d72d9611f5fbb3cebfc91d90058 --out-dir /tmp/ztls-production.DCwJ3H/candidate-consumers",
+  "nix_version": "nix (Nix) 2.34.8",
+  "candidate": {
+    "repo": "/Users/matt/code/ztls",
+    "revision": "b9d03edfb422e4f2528635bae03cc1a5daffbe69",
+    "requested_revision": "b9d03edfb422e4f2528635bae03cc1a5daffbe69",
+    "subject": "Enforce certificate path-length constraints",
+    "worktree_dirty": "no",
+    "archive": "file:///tmp/ztls-consumer-gate.eQdhjg/candidate.tar.gz",
+    "archive_command": "git archive --format=tar.gz --prefix=ztls/ -o candidate.tar.gz b9d03edfb422e4f2528635bae03cc1a5daffbe69",
+    "archive_sha256": "bba988f8dd07bd883a2e0fa71217161e27b55ac657114ad71c34fbf0861e2954",
+    "package_hash": "ztls-0.0.0-SHHDXv6VIQC2xRJ5noTqy43kv9TWPOKUlZffYKtdLoBc",
+    "id": "b9d03edfb422e4f2528635bae03cc1a5daffbe69/ztls-0.0.0-SHHDXv6VIQC2xRJ5noTqy43kv9TWPOKUlZffYKtdLoBc"
+  },
+  "consumers": [
+{
+  "name": "handoff",
+  "source": "/Users/matt/code/handoff",
+  "source_kind": "path",
+  "source_dirty": "no",
+  "requested_revision": "557ba42de1e4aa3f16e3cff0c7ed6bb885fddebd",
+  "revision": "557ba42de1e4aa3f16e3cff0c7ed6bb885fddebd",
+  "subject": "CI bring-up findings: UnixTarget.init now writes the NUL the kernel reads at addrlen's edge explicitly (the .empty sentinel's undefined tail was the latent connect(2) path-corruption the code's own comment warned about — CI's zig put 0xAA there and the pack test caught it; sentinel zeroed too, ArrayBuffer's undefined-by-len-discipline left alone). determinate-nix-action re-pinned v3.22.4 — v3.22.5 is a day old, under pinact's 3-day cooldown; -u won't downgrade itself, re-pin in a few days",
+  "devshell": "default",
+  "rollback_pin": {
+    "url": "git+https://github.com/mattrobenolt/ztls?ref=main#960ab943f41aad4c0ffaaf32cf26ef35cca137b1",
+    "hash": "ztls-0.0.0-SHHDXoSkIABMcZtLWfUFFHipeZyv0ycyfEZBL31sQ9Sd"
+  },
+  "candidate_pin": {
+    "url": "file:///tmp/ztls-consumer-gate.eQdhjg/candidate.tar.gz",
+    "hash": "ztls-0.0.0-SHHDXv6VIQC2xRJ5noTqy43kv9TWPOKUlZffYKtdLoBc"
+  },
+  "candidate_changed_pin": "yes",
+  "toolchain": {
+    "zig": "0.16.0",
+    "libcrypto_version": "1.1.1",
+    "libcrypto_libdir": "/nix/store/3hnfh4dzrjjncnpa9nhggr6l7m97g456-aws-lc-5.5.0/lib",
+    "os": "Linux",
+    "arch": "aarch64",
+    "kernel": "7.2.3"
+  },
+  "commands": [{"command":"just test","status":"passed","exit":0,"seconds":44,"log":"logs/handoff-02-cmd.log"},{"command":"zig build && zig build -Doptimize=ReleaseFast && zig build -Dmode=plaintext && zig build -Doptimize=ReleaseFast -Dmode=plaintext","status":"passed","exit":0,"seconds":22,"log":"logs/handoff-03-cmd.log"}],
+  "evidence": "Skipping venv creation, '.venv' already exists|Finished executing uvVenvShellHook",
+  "status": "green"
+}
+,
+{
+  "name": "z53",
+  "source": "/Users/matt/code/z53",
+  "source_kind": "path",
+  "source_dirty": "no",
+  "requested_revision": "499c41abab505d72d9611f5fbb3cebfc91d90058",
+  "revision": "499c41abab505d72d9611f5fbb3cebfc91d90058",
+  "subject": "Add just bump-ztls to refresh every ztls pin",
+  "devshell": "default",
+  "rollback_pin": {
+    "url": "git+https://github.com/mattrobenolt/ztls?ref=main#960ab943f41aad4c0ffaaf32cf26ef35cca137b1",
+    "hash": "ztls-0.0.0-SHHDXoSkIABMcZtLWfUFFHipeZyv0ycyfEZBL31sQ9Sd"
+  },
+  "candidate_pin": {
+    "url": "file:///tmp/ztls-consumer-gate.eQdhjg/candidate.tar.gz",
+    "hash": "ztls-0.0.0-SHHDXv6VIQC2xRJ5noTqy43kv9TWPOKUlZffYKtdLoBc"
+  },
+  "candidate_changed_pin": "yes",
+  "toolchain": {
+    "zig": "0.16.0",
+    "libcrypto_version": "3.6.4",
+    "libcrypto_libdir": "/nix/store/v89yca35zsb13k51ibz0mcz2rrzjwwrj-openssl-3.6.4/lib",
+    "os": "Linux",
+    "arch": "aarch64",
+    "kernel": "7.2.3"
+  },
+  "commands": [{"command":"just test","status":"passed","exit":0,"seconds":100,"log":"logs/z53-02-cmd.log"}],
+  "evidence": "ztest: 4 passed, 0 failed, 0 skipped (of 4 total) in 5ms|ztest: 99 passed, 0 failed, 1 skipped (of 100 total) in 15012ms",
+  "status": "green"
+}
+
+  ],
+  "result": "green",
+  "qualification": "full",
+  "qualification_gaps": []
+}

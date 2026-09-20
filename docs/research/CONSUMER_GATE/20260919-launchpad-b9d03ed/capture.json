@@ -1,0 +1,33 @@
+{
+  "candidate": "b9d03edfb422e4f2528635bae03cc1a5daffbe69",
+  "controller_revision": "01a5b0686efc01bb7bf7970d9d49797389fbbe9f",
+  "captured_at": "2026-09-20T02:25:02.077415+00:00",
+  "host": "Linux launchpad 7.2.3 #1-NixOS SMP PREEMPT Wed Sep  2 12:33:21 UTC 2026 aarch64 GNU/Linux",
+  "gate_sha256": "11efd30f294c9844613c9fae09962ee3a9e7c286c2b3e1407c51f94ab123cf04",
+  "mutant_base": "960ab943f41aad4c0ffaaf32cf26ef35cca137b1",
+  "mutant_note": "Negative controls use the earlier base plus the recorded single mutation. Positive qualification uses b9d03ed.",
+  "handoff_probe_source": "handoff 557ba42de1e4aa3f16e3cff0c7ed6bb885fddebd plus the recorded dependency override and external driver",
+  "valgrind": "valgrind-3.27.1",
+  "openssl": "OpenSSL 3.6.4 25 Aug 2026 (Library: OpenSSL 3.6.4 25 Aug 2026)",
+  "valgrind_build": "zig build test-bin -Dcpu=baseline --prefix /tmp/ztls-production.DCwJ3H/valgrind-bin",
+  "valgrind_arguments": [
+    "--leak-check=full",
+    "--show-leak-kinds=definite,indirect",
+    "--errors-for-leak-kinds=definite,indirect",
+    "--track-origins=yes",
+    "--error-exitcode=99"
+  ],
+  "valgrind_exit_codes": {
+    "unit_tests": 99,
+    "in_memory_example": 99,
+    "openssl_control": 99
+  },
+  "qualification_limits": [
+    "No production deployment or live-service changes",
+    "No time-based soak requirement",
+    "RawTls KeyUpdate/half-close clients do not verify the certificate; Python TLS clients verify localhost against the pinned fixture leaf",
+    "Valgrind reports are not clean; standalone OpenSSL reproduces uninitialized-value reports",
+    "The unit suite leaks provider allocations; missing fixture teardown is a demonstrated source-level residual, not a complete attribution",
+    "Handoff resource samples cover bounded traffic and teardown, not rotation under load or a speed comparison"
+  ]
+}

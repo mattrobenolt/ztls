@@ -1,0 +1,58 @@
+Executing uvVenvShellHook
+Creating new uv venv environment in path: '.venv'
+Using CPython 3.14.7 interpreter at: /nix/store/3fl7bdkdxk2k4nssy1d1161isbzn6bsr-python3-3.14.7/bin/python3
+Creating virtual environment at: .venv
+Activate with: source .venv/bin/activate
+Finished executing uvVenvShellHook
+warning: overwriting existing dependency named 'ztls'
+zig build -Doptimize=ReleaseFast --prefix zig-out-fast
+zig build -Doptimize=ReleaseFast -Dmode=plaintext --prefix zig-out-fast-plain
+Installed 17 packages in 31ms
+PASS echo bytes=16384 sha256=a1f259d4365ed4320c377ce26f5c8c56dcdc9a89e7b641bfd8eabfbbeac86654
+PASS echo bytes=1048576 sha256=fbbab289f7f94b25736c58be46a994c441fd02552cc6022352e3d86d2fab7c83
+PASS soak 130/130 connections, concurrency=16
+PASS ku20: 20 updates, 20 wire responses, 20 byte-exact echoes
+Traceback (most recent call last):
+  File "/tmp/ztls-production.DCwJ3H/handoff-ops/qualification_check.py", line 55, in observed_running
+    yield
+  File "/tmp/ztls-production.DCwJ3H/handoff-ops/bench/check.py", line 458, in run_check
+    starttls_probe(PORT)
+    ~~~~~~~~~~~~~~^^^^^^
+  File "/tmp/ztls-production.DCwJ3H/handoff-ops/bench/check.py", line 287, in starttls_probe
+    tls = _ssl_context().wrap_socket(sock)
+  File "/nix/store/3fl7bdkdxk2k4nssy1d1161isbzn6bsr-python3-3.14.7/lib/python3.14/ssl.py", line 455, in wrap_socket
+    return self.sslsocket_class._create(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        sock=sock,
+        ^^^^^^^^^^
+    ...<5 lines>...
+        session=session
+        ^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/nix/store/3fl7bdkdxk2k4nssy1d1161isbzn6bsr-python3-3.14.7/lib/python3.14/ssl.py", line 1004, in _create
+    raise ValueError("check_hostname requires server_hostname")
+ValueError: check_hostname requires server_hostname
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/tmp/ztls-production.DCwJ3H/handoff-ops/qualification_check.py", line 72, in <module>
+    raise SystemExit(check.run_check('tls'))
+                     ~~~~~~~~~~~~~~~^^^^^^^
+  File "/tmp/ztls-production.DCwJ3H/handoff-ops/bench/check.py", line 452, in run_check
+    with running(
+         ~~~~~~~^
+        proxy_mode,
+        ^^^^^^^^^^^
+    ...<2 lines>...
+        label="starttls",
+        ^^^^^^^^^^^^^^^^^
+    ):
+    ^
+  File "/nix/store/3fl7bdkdxk2k4nssy1d1161isbzn6bsr-python3-3.14.7/lib/python3.14/contextlib.py", line 162, in __exit__
+    self.gen.throw(value)
+    ~~~~~~~~~~~~~~^^^^^^^
+  File "/tmp/ztls-production.DCwJ3H/handoff-ops/qualification_check.py", line 64, in observed_running
+    raise AssertionError(('file descriptors did not return', before, after))
+AssertionError: ('file descriptors did not return', {'3822829': {'name': 'handoff-test-ba', 'fds': 4, 'rss_kib': 3872}, '3822831': {'name': 'handoff', 'fds': 10, 'rss_kib': 5492}}, {'3822829': {'name': 'handoff-test-ba', 'fds': 5, 'rss_kib': 4152}, '3822831': {'name': 'handoff', 'fds': 12, 'rss_kib': 5492}})

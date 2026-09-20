@@ -1,0 +1,55 @@
+{
+  "schema": "ztls.consumer-gate/1",
+  "generated_at": "2026-09-20T02:12:20Z",
+  "host": "Linux launchpad 7.2.3 #1-NixOS SMP PREEMPT Wed Sep  2 12:33:21 UTC 2026 aarch64 GNU/Linux",
+  "invocation": "--require-fixed-revisions --ztls-repo /tmp/cg-mutants/no-hostname-check --ztls-rev db33cdf12d3c6cdb38ac8bccf1d1e327e629e0d7 --consumer z53 --z53-repo /Users/matt/code/z53 --z53-rev 499c41abab505d72d9611f5fbb3cebfc91d90058 --out-dir /tmp/ztls-production.DCwJ3H/gate-no-hostname",
+  "nix_version": "nix (Nix) 2.34.8",
+  "candidate": {
+    "repo": "/tmp/cg-mutants/no-hostname-check",
+    "revision": "db33cdf12d3c6cdb38ac8bccf1d1e327e629e0d7",
+    "requested_revision": "db33cdf12d3c6cdb38ac8bccf1d1e327e629e0d7",
+    "subject": "mutant: ignore the certificate hostname policy",
+    "worktree_dirty": "no",
+    "archive": "file:///tmp/ztls-consumer-gate.OIhCbH/candidate.tar.gz",
+    "archive_command": "git archive --format=tar.gz --prefix=ztls/ -o candidate.tar.gz db33cdf12d3c6cdb38ac8bccf1d1e327e629e0d7",
+    "archive_sha256": "24c67e4b535add4adfe62607ad0c0585cf126cc45193b207bac6f21b3b07f7c4",
+    "package_hash": "ztls-0.0.0-SHHDXkqlIAAC8kWz3ag9_civBLs1s-IdnrwRMP3JcEkj",
+    "id": "db33cdf12d3c6cdb38ac8bccf1d1e327e629e0d7/ztls-0.0.0-SHHDXkqlIAAC8kWz3ag9_civBLs1s-IdnrwRMP3JcEkj"
+  },
+  "consumers": [
+{
+  "name": "z53",
+  "source": "/Users/matt/code/z53",
+  "source_kind": "path",
+  "source_dirty": "no",
+  "requested_revision": "499c41abab505d72d9611f5fbb3cebfc91d90058",
+  "revision": "499c41abab505d72d9611f5fbb3cebfc91d90058",
+  "subject": "Add just bump-ztls to refresh every ztls pin",
+  "devshell": "default",
+  "rollback_pin": {
+    "url": "git+https://github.com/mattrobenolt/ztls?ref=main#960ab943f41aad4c0ffaaf32cf26ef35cca137b1",
+    "hash": "ztls-0.0.0-SHHDXoSkIABMcZtLWfUFFHipeZyv0ycyfEZBL31sQ9Sd"
+  },
+  "candidate_pin": {
+    "url": "file:///tmp/ztls-consumer-gate.OIhCbH/candidate.tar.gz",
+    "hash": "ztls-0.0.0-SHHDXkqlIAAC8kWz3ag9_civBLs1s-IdnrwRMP3JcEkj"
+  },
+  "candidate_changed_pin": "yes",
+  "toolchain": {
+    "zig": "0.16.0",
+    "libcrypto_version": "3.6.4",
+    "libcrypto_libdir": "/nix/store/v89yca35zsb13k51ibz0mcz2rrzjwwrj-openssl-3.6.4/lib",
+    "os": "Linux",
+    "arch": "aarch64",
+    "kernel": "7.2.3"
+  },
+  "commands": [{"command":"just test","status":"failed","exit":1,"seconds":60,"log":"logs/z53-02-cmd.log"}],
+  "evidence": "error: process exited with error code 1|error: the following build command failed with exit code 1:",
+  "status": "red"
+}
+
+  ],
+  "result": "red",
+  "qualification": "partial",
+  "qualification_gaps": ["consumer subset requested: z53"]
+}

@@ -1,0 +1,30 @@
+{
+  "name": "z53",
+  "source": "/Users/matt/code/z53",
+  "source_kind": "path",
+  "source_dirty": "no",
+  "requested_revision": "499c41abab505d72d9611f5fbb3cebfc91d90058",
+  "revision": "499c41abab505d72d9611f5fbb3cebfc91d90058",
+  "subject": "Add just bump-ztls to refresh every ztls pin",
+  "devshell": "default",
+  "rollback_pin": {
+    "url": "git+https://github.com/mattrobenolt/ztls?ref=main#960ab943f41aad4c0ffaaf32cf26ef35cca137b1",
+    "hash": "ztls-0.0.0-SHHDXoSkIABMcZtLWfUFFHipeZyv0ycyfEZBL31sQ9Sd"
+  },
+  "candidate_pin": {
+    "url": "file:///tmp/ztls-consumer-gate.eQdhjg/candidate.tar.gz",
+    "hash": "ztls-0.0.0-SHHDXv6VIQC2xRJ5noTqy43kv9TWPOKUlZffYKtdLoBc"
+  },
+  "candidate_changed_pin": "yes",
+  "toolchain": {
+    "zig": "0.16.0",
+    "libcrypto_version": "3.6.4",
+    "libcrypto_libdir": "/nix/store/v89yca35zsb13k51ibz0mcz2rrzjwwrj-openssl-3.6.4/lib",
+    "os": "Linux",
+    "arch": "aarch64",
+    "kernel": "7.2.3"
+  },
+  "commands": [{"command":"just test","status":"passed","exit":0,"seconds":100,"log":"logs/z53-02-cmd.log"}],
+  "evidence": "ztest: 4 passed, 0 failed, 0 skipped (of 4 total) in 5ms|ztest: 99 passed, 0 failed, 1 skipped (of 100 total) in 15012ms",
+  "status": "green"
+}

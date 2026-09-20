@@ -33,11 +33,9 @@ works; only this one says *whether it is done and how we know*.
 
 ## Definition of Done
 
-ztls is production-ready when all six pillars are `PROVEN` **and** one exact
-production candidate has passed the qualification gates in `Production
-candidate qualification` below. Pillar statuses are library-level claims bound
-to the revisions their evidence records; a milestone at an older revision does
-not transfer to a later candidate.
+ztls is production-ready when all six pillars are `PROVEN` and one immutable
+candidate passes the qualification gates below. Evidence applies to its recorded
+revision, not automatically to later commits.
 
 1. **Correctness** — provably conformant to TLS 1.3. Every normative MUST in
    RFC 8446 is mapped to a passing test or an explicit, documented out-of-scope
@@ -63,7 +61,7 @@ not transfer to a later candidate.
 
 | Pillar | Status | One-line |
 |---|---|---|
-| 1. Correctness | `PARTIAL` | Historical TLS-Anvil evidence covers `d07c551` (#108). The #118 path-length patch passes local gates. Independent review and candidate qualification (#119–#121) remain pending. |
+| 1. Correctness | `PARTIAL` | Historical TLS-Anvil evidence covers `d07c551` (#108). The #118 fix, #119 consumer gate, and #120 candidate conformance pass. Memory reports and certificate residuals remain tracked under #121–#124. |
 | 2. Ergonomics | `PROVEN` | CI-gated examples cover both roles across io_uring, epoll, kqueue, and `std.Io`. Core and wrapper APIs expose hybrid capabilities and reject invalid local policy before key generation or wire I/O (#105). `ztls-std` (#77) gates plain and mTLS OpenSSL interop in both directions. `ztls-xev` satisfies #76's Linux/macOS contract, including in-flight cancellation (#83). |
 | 3. Performance | `PROVEN` | n=10 captures on x86_64 (c7i.2xlarge), aarch64 (c7g.2xlarge), and macOS (Apple M1 Max) with formal CIs (p=0.000): ztls beats libssl on every comparable app-data row on all three platforms and rustls on all AES-GCM rows; regression gate committed. |
 | 4. Providers | `PROVEN` | OpenSSL, AWS-LC, and BoringSSL passed strict-complete TLS-Anvil client and server runs at `d07c551`; malformed peer ML-KEM keys produce `illegal_parameter` while provider faults remain `internal_error` (#108). The capture is bound to that revision; candidate re-qualification is #120. |
@@ -74,47 +72,77 @@ not transfer to a later candidate.
 
 ## Production candidate qualification
 
-Pillar statuses are library milestones bound to the revisions their evidence
-records. They do not qualify an exact production candidate, and a milestone for
-an older revision does not transfer to a newer one. Operational production
-qualification is a separate, stricter bar: the three open gates #119, #120, and
-#121, with the #118 fix as a candidate requirement that does not have to wait
-for the gate infrastructure.
+The selected candidate is `b9d03edfb422e4f2528635bae03cc1a5daffbe69`.
+The controller revision is `01a5b0686efc01bb7bf7970d9d49797389fbbe9f`.
+Only handoff and z53 participate. Kafka is abandoned and outside this gate.
 
-- **#119 — downstream compatibility.** Candidates are tested against the real
-  consumer suites. handoff and z53 are the only active consumers; Kafka is
-  abandoned and outside the gate. Each qualification run names one immutable
-  ztls candidate SHA plus the exact consumer revisions, package hashes,
-  toolchains, providers, and platforms. Each capture records the consumer
-  manifests. Dependency pins do not establish deployed versions.
-- **#120 — fresh full TLS-Anvil.** Both roles and all three backends
-  (OpenSSL, AWS-LC, BoringSSL) against the exact candidate, with clean source
-  provenance, terminal 437-case parent reports, zero unexpected results, and no
-  partial-run override. The #108 captures at `d07c551` remain valid historical
-  evidence for that revision, but they predate the ticket, PSK-continuity,
-  early-data, and established-session work and are not candidate
-  qualification.
-- **#121 — resource cleanup and transport recovery.** Targeted memory checks,
-  bounded connection churn, and repeatable transport-fault tests use the same
-  candidate. There is no minimum run duration. Existing z53 operation provides
-  historical evidence for its actual revision. The live service remains untouched.
-- **#118 — certificate path length.** Commit `b9d03ed` enforces
-  `pathLenConstraint` and passes the local provider and Zig matrices.
-  The S5 entry below records the tests and residual review boundary.
+| Gate | Evidence and residual scope |
+|---|---|
+| #118 — certificate path length | The published fix passes the local provider/Zig matrices and GitHub CI `35482684833`, including macOS. Parent review and mutation evidence support the patch. Delegated independent review did not execute. |
+| #119 — consumer compatibility | Both real consumer suites pass against the candidate. Broken-import controls fail both consumers. The hostname-removal control fails two z53 authentication tests. |
+| #120 — TLS-Anvil | Both roles account for 437 cases per provider with zero unexpected results. All six parent reports are terminal and all source trees are clean. |
+| #121 — resource cleanup and transport recovery | Bounded handoff checks pass. Valgrind reports remain unresolved. No duration-based gate applies. |
 
-Final sign-off requires all four on one candidate: #118 fixed, #119 green for
-handoff and z53 at recorded revisions, #120 clean on all three backends, and
-#121 clean for each profile selected for initial production support. Profiles
-or features not exercised are recorded as untested, and unobserved deployments
-are never claimed. Timestamped captures are immutable: qualification adds new
-captures at the candidate revision instead of rewriting older ones.
+The consumer records are under
+[`CONSUMER_GATE/20260919-launchpad-b9d03ed`](docs/research/CONSUMER_GATE/20260919-launchpad-b9d03ed/).
+Each record includes the candidate package hash, exact revisions, commands,
+original dependency pins, toolchain, and raw logs.
 
-The deferred C ABI work (#30) is outside the current consumers' production
-gate. #119 qualifies handoff and z53 through the ztls revision they consume,
-and the #30 deferral list (server-side shims, `RecordBuffer` C ABI, certificate
-verification or PSK from C, dynamic linking, and the C conformance harness) is
-not a prerequisite for their sign-off. #30 remains open on its existing scope,
-and the Pillar 2 C ABI section keeps stating its partial status.
+| Consumer | Revision | Tested profile |
+|---|---|---|
+| handoff | `557ba42de1e4aa3f16e3cff0c7ed6bb885fddebd` | Linux aarch64, kernel 7.2.3, Zig 0.16.0, AWS-LC 5.5.0 |
+| z53 | `499c41abab505d72d9611f5fbb3cebfc91d90058` | Linux aarch64, kernel 7.2.3, Zig 0.16.0, OpenSSL 3.6.4 |
+
+handoff passed 63 tests and four TLS/plaintext build configurations.
+z53 passed four portable tests and 99 native tests, with one recorded skip.
+Its native suite covers authentication rejection, partial TLS writes, reset,
+idle expiry, cancellation, and repeated restart behavior.
+
+The private handoff traffic probe verified `localhost` against the pinned fixture leaf for Python TLS clients.
+The probe covered:
+
+- Byte-exact echoes of 16 KiB and 1 MiB.
+- A batch of 130 connections at concurrency 16.
+- Twenty KeyUpdates with wire responses and byte-exact echoes.
+- PostgreSQL STARTTLS and PROXY v2.
+- Client and backend half-close behavior.
+
+The raw OpenSSL KeyUpdate and half-close clients did not verify the peer certificate.
+Both owned processes returned to their initial descriptor counts after each phase.
+The proxy used ten descriptors and reached 7,876 KiB RSS in the final samples.
+These are bounded functional checks, not throughput measurements or proof of indefinite stability.
+
+Valgrind 3.27.1 found no leaked allocations in the complete in-memory handshake example.
+The full unit suite leaked 124,416 direct bytes and 621,384 indirect bytes despite successful test assertions.
+Some handshake fixtures omit `deinit`. Full attribution remains open under #121.
+Uninitialized-value reports also occur in the standalone OpenSSL control without ztls.
+The reports remain unclassified, so the memory gate is not clean.
+
+The six candidate captures are under
+[`captures-b9d03ed`](docs/research/TLS_ANVIL_91_CHAIN_FIXTURE/captures-b9d03ed/).
+The manifest records workflow IDs, artifact hashes, and build provenance.
+| Role | Passed | Expected failed | Expected skipped | Not attempted |
+|---|---:|---:|---:|---:|
+| Client | 92 | 6 | 134 | 205 |
+| Server | 105 | 0 | 175 | 157 |
+
+Each capture uses Zig 0.15.2 with one provider:
+
+- OpenSSL 3.6.4.
+- AWS-LC 5.5.0.
+- BoringSSL 0.20260803.0.
+
+Expected classifications remain unchanged. No partial-run override applies.
+TLS-Anvil does not directly cover RFC 10024 hybrid groups, the new PSK continuity cases, or extracted-session ownership.
+Those features retain their separate unit and interoperability evidence.
+
+The #108 captures remain historical evidence for `d07c551`.
+Unexercised profiles remain untested. Existing z53 operation provides historical evidence for its actual deployed revision, not this candidate.
+The live service remains untouched.
+
+Candidate gates do not erase known correctness residuals. #122 tracks unprocessed critical X.509 extensions and SAN wrapper checks.
+#123 tracks the inbound SNI policy difference. #124 tracks focused negative-test gaps.
+Deferred C ABI work (#30) remains outside these consumers' qualification requirements.
 
 ---
 
@@ -500,8 +528,9 @@ data to openssl s_server and receives the HTTP response.
     and restored a green core suite: 846 passes, one existing skip.
     All 15 OpenSSL differential checks matched the expected verdicts.
     `just ci`, `just check-backend-boringssl`, and Zig 0.16 `just ci-0_16`
-    passed on Linux aarch64. Independent review and final-candidate evidence
-    remain pending under #118–#121.
+    passed on Linux aarch64. GitHub CI `35482684833` also passed, including
+    macOS. The parent reviewed the recovered patch. Delegated independent
+    review did not execute. Candidate evidence appears in the section above.
   - S6/S7 — three #72-class narrow-arithmetic panic sites widened to `usize`.
   - S8 — public `Aead.encrypt`/`decrypt` reject mismatched in/out slice lengths
     (`SliceLengthMismatch`) before the backend call; not peer-reachable via the
@@ -558,7 +587,7 @@ data to openssl s_server and receives the HTTP response.
   - H6/H7/H8/H10 — X.509 DER strictness: unknown critical extensions rejected,
     SAN dNSName matched only for context-specific GeneralNames, EKU requires a
     SEQUENCE wrapper, and duplicate instances of a processed extension are
-    rejected (RFC 5280 §4.2). Pre-existing residuals (untracked): a
+    rejected (RFC 5280 §4.2). Pre-existing residuals (#122): a
     recognized-but-unimplemented critical extension is still accepted
     (`certificate_parser.zig` continues on the non-processed extension IDs even
     when critical; only unrecognized critical OIDs are rejected), and the outer
@@ -806,8 +835,8 @@ data to openssl s_server and receives the HTTP response.
   unsupported-subtree rejection, and a differential test corpus against OpenSSL
   3.6.3 covering all four GeneralName forms (#75 resolved).
 
-**Status:** `PARTIAL` — #118 passes local gates but lacks independent review
-and final-candidate qualification under #119–#121. #91's fixture regressions
+**Status:** `PARTIAL` — #118 passes local and GitHub gates. Candidate
+qualification and the residuals under #120–#124 remain separate requirements. #91's fixture regressions
 remain valid, and #108 adds
 fresh strict-complete client and server proof across all three backends at clean
 `d07c551`.

@@ -1,0 +1,29 @@
+warning: Git tree '/tmp/ztls-consumer-gate.eQdhjg/handoff' is dirty
+Executing uvVenvShellHook
+Skipping venv creation, '.venv' already exists
+Finished executing uvVenvShellHook
+zig build test --summary all
+test
++- run test w
+The arguments '--cert' and '--key' are required in the tls build
+{"time":1789870039142,"level":"debug","scope":"cert_config","message":"certificate config loaded","chain_len":1,"scheme":"ecdsa_secp256r1_sha256"}
+{"time":1789870039142,"level":"debug","scope":"cert_config","message":"certificate config destroyed"}
+{"time":1789870039142,"level":"debug","scope":"cert_config","message":"certificate config loaded","chain_len":1,"scheme":"ecdsa_secp256r1_sha256"}
+{"time":1789870039142,"level":"debug","scope":"cert_config","message":"certificate config loaded","chain_len":1,"scheme":"ecdsa_secp256r1_sha256"}
+{"time":1789870039142,"level":"debug","scope":"cert_config","message":"certificate config destroyed"}
+{"time":1789870039142,"level":"debug","scope":"cert_config","message":"certificate config destroyed"}
+{"time":1789870039142,"level":"debug","scope":"cert_config","message":"certificate config loaded","chain_len":1,"scheme":"ecdsa_secp256r1_sha256"}
+{"time":1789870039142,"level":"debug","scope":"cert_config","message":"certificate config destroyed"}
+{"time":1789870039142,"level":"debug","scope":"cert_config","message":"certificate config loaded","chain_len":1,"scheme":"rsa_pss_rsae_sha256"}
+{"time":1789870039142,"level":"debug","scope":"cert_config","message":"certificate config destroyed"}
+failed command: /tmp/ztls-consumer-gate.eQdhjg/local-cache-handoff/o/b6515be662ac59cc448f743c40d2b87e/test --cache-dir=/tmp/ztls-consumer-gate.eQdhjg/local-cache-handoff --seed=0xd07e983d --listen=-
+
+Build Summary: 7/7 steps succeeded; 63/63 tests passed
+test success
++- run test 59 pass (59 total) 47ms MaxRSS:12M
+|  +- compile test Debug native success 34s MaxRSS:844M
+|     +- options success
+|     +- options success
++- run test 4 pass (4 total) 3ms MaxRSS:4M
+   +- compile test Debug native success 1s MaxRSS:296M
+

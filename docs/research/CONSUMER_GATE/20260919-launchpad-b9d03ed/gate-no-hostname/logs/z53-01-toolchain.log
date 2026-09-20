@@ -1,0 +1,7 @@
+warning: Git tree '/tmp/ztls-consumer-gate.OIhCbH/z53' is dirty
+zig=0.16.0
+libcrypto_version=3.6.4
+libcrypto_libdir=/nix/store/v89yca35zsb13k51ibz0mcz2rrzjwwrj-openssl-3.6.4/lib
+os=Linux
+arch=aarch64
+kernel=7.2.3

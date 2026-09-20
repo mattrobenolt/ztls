@@ -1,0 +1,13 @@
+[client] ClientHello sent → state=wait_sh
+[server] ServerHello sent → state=wait_client_finished
+[client] handshake keys installed → state=wait_ee
+[server] authenticated flight sent → state=wait_client_finished
+[client] Finished sent → state=connected
+[server] client Finished verified → state=connected
+
+=== handshake complete (ALPN=h2) ===
+
+[app]    client → server: ping
+[app]    server → client: pong
+
+=== in-memory handshake OK ===

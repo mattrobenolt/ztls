@@ -101,7 +101,7 @@ The authoritative readiness state remains `PRODUCTION_READINESS.md`.
 | ClientHello missing required extension | `error.MissingExtension` / unsupported version/group | `client_hello.zig`: malformed ClientHello tests | covered |
 | Unshared ALPN | `error.NoApplicationProtocol` | tlsfuzzer unshared ALPN test | partial — no local unit test |
 | Oversized ClientHello legacy session id | `error.InvalidVectorLength` (RFC 8446 §4.1.2 length 0..32) | `client_hello.zig`: parse rejects `session_id_len > 32`; `parse: rejects oversized legacy_session_id` covers 33 and 255 | covered |
-| Oversized SNI hostname on parse path | Accepted; the parsed hostname is exposed to the caller through `clientServerName()` | `client_hello.zig`: `parseSni` bounds `name_len` by the extension length only and applies no 253-octet cap; the encode path rejects a name over 253 octets with `ServerNameTooLong` | gap — parse-path cap absent; untracked |
+| Oversized SNI hostname on parse path | Accepted; the parsed hostname is exposed to the caller through `clientServerName()` | `client_hello.zig`: `parseSni` bounds `name_len` by the extension length only and applies no 253-octet cap; the encode path rejects a name over 253 octets with `ServerNameTooLong` | policy difference — #123 |
 | Bad client Finished MAC | `error.InvalidVerifyData` | `ServerHandshake.zig`: `processClientFinished: rejects bad verify_data` | covered |
 | Client Finished plus extra handshake message | `error.UnexpectedMessage` | `ServerHandshake.zig`: `processClientFinishedPlaintext` rejects a trailing message after Finished | partial — no dedicated unit test |
 | Non-Finished handshake in `wait_client_finished` | `error.UnexpectedMessage` | `ServerHandshake.zig`: `processClientFinishedPlaintext` requires Finished as the last message | partial — no dedicated unit test |
@@ -157,6 +157,8 @@ paths directly and remain the fastest regression signal.
 
 ## Open gaps surfaced by the inventory
 
+#124 tracks the focused negative-test and parser-fuzz gaps below.
+
 These are deliberately not closed by writing the inventory:
 
 - The RFC matrix distinguishes engine tests from caller-owned PSK and replay
@@ -183,7 +185,7 @@ These are deliberately not closed by writing the inventory:
   decrypt-failure alert mapping is covered by `0-RTT: accepted early data
   distinguishes authentication and handshake errors` (#116).
 - Oversized SNI hostnames are accepted on the parse path and surfaced to the
-  caller; the encode path is capped. This row remains a gap and has no issue.
+  caller; the encode path is capped. The policy difference is tracked by #123.
 - The ServerHello oversized-session-id overflow test asserts refusal rather than
   the exact error tag; the cap itself is enforced, so this is an evidence nit,
   not a gap.

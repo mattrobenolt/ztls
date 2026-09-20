@@ -1,0 +1,5 @@
+ztls consumer gate: red
+candidate: 91739c698f32c95449ae189a51ee39c92738c4f2/ztls-0.0.0-SHHDXoGkIACnCiBoGKuopnmqesCpayKAfx_FVMEMdp1b
+record: /tmp/ztls-production.DCwJ3H/gate-broken-import/run.json
+handoff: red (557ba42de1e4aa3f16e3cff0c7ed6bb885fddebd)
+z53: red (499c41abab505d72d9611f5fbb3cebfc91d90058)

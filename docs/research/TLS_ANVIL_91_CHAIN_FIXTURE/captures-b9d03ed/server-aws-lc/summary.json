@@ -1,0 +1,330 @@
+{
+  "counts": {
+    "total": 437,
+    "expected_skipped": 175,
+    "unexpected_skipped": 0,
+    "passed": 105,
+    "failed": 0,
+    "expected_failed": 0,
+    "errored": 0,
+    "timeout": 0,
+    "not_attempted": 157
+  },
+  "unexpected": [],
+  "expected_failures": [],
+  "feature_breakdown": {
+    "ServerKeyExchange": {
+      "not_attempted": 6,
+      "expected_skipped": 1
+    },
+    "E1CompatibilityWithTLS10_11andSSL30": {
+      "expected_skipped": 3,
+      "not_attempted": 1
+    },
+    "Fragmentation": {
+      "expected_skipped": 11,
+      "not_attempted": 2
+    },
+    "SignatureAlgorithms": {
+      "expected_skipped": 4,
+      "passed": 4,
+      "not_attempted": 3
+    },
+    "Resumption": {
+      "expected_skipped": 4
+    },
+    "AEADCiphers": {
+      "expected_skipped": 2
+    },
+    "AlertProtocol": {
+      "expected_skipped": 3,
+      "not_attempted": 4,
+      "passed": 7
+    },
+    "TLSRecordProtocol": {
+      "not_attempted": 2,
+      "expected_skipped": 2
+    },
+    "CBCBlockCipher": {
+      "expected_skipped": 4
+    },
+    "ClientHello": {
+      "not_attempted": 8,
+      "expected_skipped": 8,
+      "passed": 7
+    },
+    "ChangeCipherSpecProtocol": {
+      "expected_skipped": 1
+    },
+    "SupportedCiphersuites": {
+      "not_attempted": 4
+    },
+    "ClientCertificateMessage": {
+      "not_attempted": 1
+    },
+    "A5CipherSuite": {
+      "expected_skipped": 2
+    },
+    "ServerHello": {
+      "not_attempted": 7,
+      "expected_skipped": 5,
+      "passed": 5
+    },
+    "RSAEncryptedPremasterSecretMessage": {
+      "expected_skipped": 2
+    },
+    "CertificateVerify": {
+      "expected_skipped": 1,
+      "not_attempted": 9,
+      "passed": 1
+    },
+    "HappyFlow": {
+      "expected_skipped": 1,
+      "passed": 1
+    },
+    "CipherSuites": {
+      "expected_skipped": 1
+    },
+    "Finished": {
+      "expected_skipped": 7,
+      "passed": 7,
+      "not_attempted": 5
+    },
+    "MaximumFragmentLength": {
+      "expected_skipped": 2,
+      "not_attempted": 3
+    },
+    "ServerNameIndication": {
+      "not_attempted": 1,
+      "expected_skipped": 1
+    },
+    "CertificateStatusRequest": {
+      "expected_skipped": 1
+    },
+    "MaxFragmentLengthExtension": {
+      "expected_skipped": 1
+    },
+    "ProhibitingSSLv2": {
+      "not_attempted": 3,
+      "expected_skipped": 2
+    },
+    "DoS": {
+      "expected_skipped": 5,
+      "not_attempted": 1
+    },
+    "AntiReplay": {
+      "expected_skipped": 2
+    },
+    "EncThenMacExtension": {
+      "not_attempted": 2,
+      "expected_skipped": 2
+    },
+    "RC4Ciphersuites": {
+      "not_attempted": 2,
+      "expected_skipped": 2
+    },
+    "SCSV": {
+      "not_attempted": 1,
+      "expected_skipped": 2
+    },
+    "DoNotUseSSLVersion30": {
+      "expected_skipped": 3,
+      "not_attempted": 1
+    },
+    "PaddingExtension": {
+      "not_attempted": 1,
+      "expected_skipped": 2
+    },
+    "FfDheShare": {
+      "expected_skipped": 5,
+      "not_attempted": 4
+    },
+    "TLSExtensionForECC": {
+      "expected_skipped": 8,
+      "not_attempted": 6
+    },
+    "PointFormatExtension": {
+      "expected_skipped": 3
+    },
+    "RespectClientExtensions": {
+      "expected_skipped": 3
+    },
+    "PreSharedKey": {
+      "expected_skipped": 9,
+      "passed": 1
+    },
+    "KeyShare": {
+      "passed": 7,
+      "expected_skipped": 2,
+      "not_attempted": 6
+    },
+    "HelloRetryRequest": {
+      "not_attempted": 15,
+      "passed": 5
+    },
+    "SupportedVersions": {
+      "passed": 4,
+      "expected_skipped": 5,
+      "not_attempted": 6
+    },
+    "RecordLayer": {
+      "not_attempted": 5,
+      "expected_skipped": 2,
+      "passed": 3
+    },
+    "EncryptedExtensions": {
+      "not_attempted": 6,
+      "passed": 1
+    },
+    "EarlyData": {
+      "expected_skipped": 5
+    },
+    "CryptographicNegotiation": {
+      "passed": 2
+    },
+    "Extensions": {
+      "not_attempted": 2
+    },
+    "NewSessionTicket": {
+      "expected_skipped": 1,
+      "not_attempted": 1
+    },
+    "RecordProtocol": {
+      "passed": 12
+    },
+    "Cookie": {
+      "not_attempted": 1,
+      "expected_skipped": 1
+    },
+    "KeyUpdate": {
+      "passed": 4
+    },
+    "ClientAuthentication": {
+      "not_attempted": 1
+    },
+    "MiddleboxCompatibility": {
+      "passed": 2
+    },
+    "Certificate": {
+      "not_attempted": 11,
+      "passed": 1
+    },
+    "ComplianceRequirements": {
+      "passed": 2
+    },
+    "PreSharedKeyExchangeModes": {
+      "not_attempted": 1
+    },
+    "ServerInitiatedExtensionPoints": {
+      "not_attempted": 11
+    },
+    "ClientInitiatedExtensionPoints": {
+      "passed": 5,
+      "expected_skipped": 5
+    },
+    "unknown": {
+      "expected_skipped": 39,
+      "passed": 24,
+      "not_attempted": 14
+    }
+  },
+  "unmatched_skip_patterns": [
+    "*0Rtt*",
+    "*Client does not support legacy rsa signature and hash algorithms*",
+    "*Client does not support maximum fragment length*",
+    "*PSKModeExtension is not supported*",
+    "*RecordSizeLimit*",
+    "*Specific features required for the test have not been met by the SUT for derivation parameter CIPHER_SUITE*",
+    "*Target does not send a Hello Retry Request*",
+    "*Target does not support Record fragmentation*",
+    "de.rub.nds.tlstest.suite.tests.client.tls13.rfc8446.HelloRetryRequest.actsCorrectlyUponHelloRetryRequest",
+    "de.rub.nds.tlstest.suite.tests.client.tls13.rfc8446.HelloRetryRequest.cipherSuiteDisparity",
+    "de.rub.nds.tlstest.suite.tests.client.tls13.rfc8446.HelloRetryRequest.copiesCookieValue",
+    "de.rub.nds.tlstest.suite.tests.client.tls13.rfc8446.HelloRetryRequest.helloRetryCompressionValue",
+    "de.rub.nds.tlstest.suite.tests.client.tls13.rfc8446.HelloRetryRequest.helloRetryGreaseCipherSuite",
+    "de.rub.nds.tlstest.suite.tests.client.tls13.rfc8446.HelloRetryRequest.helloRetryGreaseExtension",
+    "de.rub.nds.tlstest.suite.tests.client.tls13.rfc8446.HelloRetryRequest.helloRetryGreaseVersionSelected",
+    "de.rub.nds.tlstest.suite.tests.client.tls13.rfc8446.HelloRetryRequest.helloRetryLegacySessionId",
+    "de.rub.nds.tlstest.suite.tests.client.tls13.rfc8446.HelloRetryRequest.helloRetryRequestsTls12CipherSuite",
+    "de.rub.nds.tlstest.suite.tests.client.tls13.rfc8446.HelloRetryRequest.namedGroupDisparity",
+    "de.rub.nds.tlstest.suite.tests.client.tls13.rfc8446.HelloRetryRequest.sendSecondHelloRetryRequest",
+    "de.rub.nds.tlstest.suite.tests.client.tls13.rfc8446.HelloRetryRequest.versionDisparity"
+  ],
+  "expected_skip_count_by_reason": {
+    "TLS 1.2 is out of scope": 130,
+    "max_fragment_length is intentionally outside the supported surface (#34)": 2,
+    "DTLS is out of scope": 7,
+    "TLS-Anvil runner does not provision caller-owned PSK/ticket state; resumption has separate local and OpenSSL coverage": 11,
+    "TLS-Anvil @Disabled because this runner does not issue the session tickets needed for server-side EarlyData tests": 5,
+    "FFDHE named groups are outside the supported TLS 1.3 surface": 1,
+    "TLS-Anvil disabled sender-restriction test; no execution evidence": 6,
+    "ztls accepts externally managed PSKs but this server runner does not issue NewSessionTicket messages": 1,
+    "TLS 1.0/1.1/1.2 compatibility behavior is out of scope": 3,
+    "legacy compression/cipher-suite compatibility behavior is out of scope for the TLS 1.3-only runner (#9)": 1,
+    "TLS-Anvil disables this client-side PSK test; pre_shared_key ordering has separate local coverage": 1,
+    "TLS-Anvil configuration-option self-test is not ztls conformance evidence": 1,
+    "TLS compression is outside the TLS 1.3-only runner scope (#9)": 1,
+    "TLS 1.2/DTLS/legacy-version tests are out of scope for the TLS 1.3-only runner (#9)": 2,
+    "ztls accepts externally managed PSKs but does not issue server tickets through this TLS-Anvil runner": 1,
+    "TLS-Anvil disabled this exact EC point-format length case because NAMED_GROUP derivation selected no case. No execution evidence exists (#108).": 2
+  },
+  "provenance": {
+    "generated_at": "2026-09-20T02:23:37.894055+00:00",
+    "adapter_allow_partial": false,
+    "source_run_dir": "zig-out/anvil/server/ci-35482992763",
+    "host": "runnervmlun5p",
+    "git": {
+      "revision": "b9d03ed",
+      "dirty": false
+    },
+    "run_metadata": {
+      "generated_at": "2026-09-20T02:06:46.198571+00:00",
+      "host": "runnervmlun5p",
+      "git": {
+        "revision": "b9d03ed",
+        "dirty": false
+      },
+      "port": 41733,
+      "server_bin": "/home/runner/work/ztls/ztls/conformance/zig-out/bin/tlsfuzzer_server",
+      "tls_anvil_jar": "/home/runner/work/ztls/ztls/conformance/zig-out/tools/TLS-Anvil.jar",
+      "chain_provider": {
+        "tls_test_framework_jar": "/home/runner/work/ztls/ztls/conformance/zig-out/tools/lib/tls-test-framework-1.5.0.jar",
+        "jar_sha256": "6a73b0f5c3c982c1f759747a3ea4b9c27609d92038cdab1036e7f3860cdad0f3",
+        "chain_provider_class_sha256": "d6646a915721dd15aeb368b5bbfc307a54bbbe37361c1de5a27ed611a048dba0",
+        "patch_source_sha256": "8a9d4c26211a0f87f8a6b40f2c937c94f89d0d39cbb1fcbf74a6a84b229d6e84",
+        "expected_jar_sha256": "6a73b0f5c3c982c1f759747a3ea4b9c27609d92038cdab1036e7f3860cdad0f3",
+        "expected_class_sha256": "d6646a915721dd15aeb368b5bbfc307a54bbbe37361c1de5a27ed611a048dba0",
+        "expected_source_sha256": "8a9d4c26211a0f87f8a6b40f2c937c94f89d0d39cbb1fcbf74a6a84b229d6e84",
+        "patch_status": "patched"
+      },
+      "validity_adapter": {
+        "x509_attacker_jar": "/home/runner/work/ztls/ztls/conformance/zig-out/tools/lib/x509-attacker-4.3.10.jar",
+        "jar_sha256": "b8b7c3b13e86e9660ffecc2ed17451082c2900722b8211c06b1e2fe5da2443b6",
+        "adapter_class_sha256": "4b2190bebef9dd7b46d794002010a0da860c5e8cd14f997ced254b8e708621de",
+        "package_info_class_sha256": "9a4308ab19c561dff78d81b5f3dfbc382591d0a3b8b8532c9beb0cbb70e9a6dd",
+        "adapter_source_sha256": "806ff6122f7fc6cb70deb7709e394cdc81c30a0df3d5edfd0d02c3a04cdd1aa2",
+        "package_info_source_sha256": "092bb326cbdb27e9f77e229c28656521671a717fb8970c94dfef215dca8262c6",
+        "expected_jar_sha256": "b8b7c3b13e86e9660ffecc2ed17451082c2900722b8211c06b1e2fe5da2443b6",
+        "expected_adapter_class_sha256": "4b2190bebef9dd7b46d794002010a0da860c5e8cd14f997ced254b8e708621de",
+        "expected_package_info_class_sha256": "9a4308ab19c561dff78d81b5f3dfbc382591d0a3b8b8532c9beb0cbb70e9a6dd",
+        "expected_adapter_source_sha256": "806ff6122f7fc6cb70deb7709e394cdc81c30a0df3d5edfd0d02c3a04cdd1aa2",
+        "expected_package_info_source_sha256": "092bb326cbdb27e9f77e229c28656521671a717fb8970c94dfef215dca8262c6",
+        "patch_status": "patched"
+      },
+      "command": "java -jar /home/runner/work/ztls/ztls/conformance/zig-out/tools/TLS-Anvil.jar -disableTcpDump -strength 1 -parallelTests 1 -parallelHandshakes 1 -outputFolder zig-out/anvil/server/ci-35482992763 server -connect 127.0.0.1:41733"
+    },
+    "tls_anvil": {
+      "jar": "/home/runner/work/ztls/ztls/conformance/zig-out/tools/TLS-Anvil.jar",
+      "command": "java -jar /home/runner/work/ztls/ztls/conformance/zig-out/tools/TLS-Anvil.jar -disableTcpDump -strength 1 -parallelTests 1 -parallelHandshakes 1 -outputFolder zig-out/anvil/server/ci-35482992763 server -connect 127.0.0.1:41733",
+      "report": {
+        "present": true,
+        "running": false,
+        "total_tests": 437,
+        "finished_tests": 437,
+        "status_count": 437,
+        "complete": true
+      }
+    }
+  },
+  "evidence_blockers": []
+}

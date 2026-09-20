@@ -1,0 +1,137 @@
+[
+  {
+    "phase": "echo",
+    "before": {
+      "3823810": {
+        "name": "handoff-test-ba",
+        "fds": 4,
+        "rss_kib": 3872
+      },
+      "3823812": {
+        "name": "handoff",
+        "fds": 10,
+        "rss_kib": 5492
+      }
+    },
+    "after": {
+      "3823810": {
+        "name": "handoff-test-ba",
+        "fds": 4,
+        "rss_kib": 3872
+      },
+      "3823812": {
+        "name": "handoff",
+        "fds": 10,
+        "rss_kib": 7876
+      }
+    }
+  },
+  {
+    "phase": "starttls",
+    "before": {
+      "3823954": {
+        "name": "handoff-test-ba",
+        "fds": 4,
+        "rss_kib": 3872
+      },
+      "3823956": {
+        "name": "handoff",
+        "fds": 10,
+        "rss_kib": 5492
+      }
+    },
+    "after": {
+      "3823954": {
+        "name": "handoff-test-ba",
+        "fds": 4,
+        "rss_kib": 3872
+      },
+      "3823956": {
+        "name": "handoff",
+        "fds": 10,
+        "rss_kib": 5904
+      }
+    }
+  },
+  {
+    "phase": "proxyv2",
+    "before": {
+      "3823965": {
+        "name": "handoff-test-ba",
+        "fds": 4,
+        "rss_kib": 3872
+      },
+      "3823966": {
+        "name": "handoff",
+        "fds": 10,
+        "rss_kib": 5492
+      }
+    },
+    "after": {
+      "3823965": {
+        "name": "handoff-test-ba",
+        "fds": 4,
+        "rss_kib": 3872
+      },
+      "3823966": {
+        "name": "handoff",
+        "fds": 10,
+        "rss_kib": 5904
+      }
+    }
+  },
+  {
+    "phase": "eof_reply",
+    "before": {
+      "3823974": {
+        "name": "handoff-test-ba",
+        "fds": 4,
+        "rss_kib": 3872
+      },
+      "3823976": {
+        "name": "handoff",
+        "fds": 10,
+        "rss_kib": 5492
+      }
+    },
+    "after": {
+      "3823974": {
+        "name": "handoff-test-ba",
+        "fds": 4,
+        "rss_kib": 3872
+      },
+      "3823976": {
+        "name": "handoff",
+        "fds": 10,
+        "rss_kib": 5904
+      }
+    }
+  },
+  {
+    "phase": "early_eof",
+    "before": {
+      "3823983": {
+        "name": "handoff-test-ba",
+        "fds": 4,
+        "rss_kib": 3872
+      },
+      "3823985": {
+        "name": "handoff",
+        "fds": 10,
+        "rss_kib": 5492
+      }
+    },
+    "after": {
+      "3823983": {
+        "name": "handoff-test-ba",
+        "fds": 4,
+        "rss_kib": 3872
+      },
+      "3823985": {
+        "name": "handoff",
+        "fds": 10,
+        "rss_kib": 5904
+      }
+    }
+  }
+]

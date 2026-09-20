@@ -1,0 +1,13 @@
+warning: Git tree '/tmp/ztls-production.DCwJ3H/handoff-ops' is dirty
+Executing uvVenvShellHook
+Skipping venv creation, '.venv' already exists
+Finished executing uvVenvShellHook
+PASS echo bytes=16384 sha256=a1f259d4365ed4320c377ce26f5c8c56dcdc9a89e7b641bfd8eabfbbeac86654
+PASS echo bytes=1048576 sha256=fbbab289f7f94b25736c58be46a994c441fd02552cc6022352e3d86d2fab7c83
+PASS soak 130/130 connections, concurrency=16
+PASS ku20: 20 updates, 20 wire responses, 20 byte-exact echoes
+PASS starttls probe: GSSENC refused, SSLRequest accepted, TLS + echo
+PASS proxy v2: header precedes data (ok src=127.0.0.1:37976 dst=127.0.0.1:18443 cipher=TLS_AES_128_GCM_SHA256)
+PASS client half-close: final reply precedes close_notify
+PASS backend half-close: echo precedes close_notify
+PASS all gates mode=tls

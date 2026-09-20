@@ -1,0 +1,13 @@
+diff --git a/src/root.zig b/src/root.zig
+index c580e47..0b70da2 100644
+--- a/src/root.zig
++++ b/src/root.zig
+@@ -9,7 +9,7 @@ pub const capabilities = @import("capabilities.zig");
+ /// RFC 8446 Appendix B.4
+ pub const CipherSuite = @import("cipher_suite.zig").CipherSuite;
+ pub const client_hello = @import("client_hello.zig");
+-pub const ClientHandshake = @import("ClientHandshake.zig");
++pub const ClientEngine = @import("ClientHandshake.zig");
+ pub const CompressionMethod = @import("compression_method.zig").CompressionMethod;
+ /// Coarse classification of the handshake error sets, shared by every
+ /// integration so there is one exhaustive table rather than one per wrapper.

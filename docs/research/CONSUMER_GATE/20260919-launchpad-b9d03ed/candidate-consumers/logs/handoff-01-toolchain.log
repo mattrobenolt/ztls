@@ -1,0 +1,10 @@
+warning: Git tree '/tmp/ztls-consumer-gate.eQdhjg/handoff' is dirty
+Executing uvVenvShellHook
+Skipping venv creation, '.venv' already exists
+Finished executing uvVenvShellHook
+zig=0.16.0
+libcrypto_version=1.1.1
+libcrypto_libdir=/nix/store/3hnfh4dzrjjncnpa9nhggr6l7m97g456-aws-lc-5.5.0/lib
+os=Linux
+arch=aarch64
+kernel=7.2.3

@@ -1,0 +1,48 @@
+warning: Git tree '/tmp/ztls-production.DCwJ3H/handoff-ops' is dirty
+Executing uvVenvShellHook
+Skipping venv creation, '.venv' already exists
+Finished executing uvVenvShellHook
+Traceback (most recent call last):
+  File "/tmp/ztls-production.DCwJ3H/handoff-ops/qualification_check.py", line 83, in <module>
+    raise SystemExit(check.run_check('tls'))
+                     ~~~~~~~~~~~~~~~^^^^^^^
+  File "/tmp/ztls-production.DCwJ3H/handoff-ops/bench/check.py", line 450, in run_check
+    asyncio.run(echo_gates(PORT))
+    ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+  File "/nix/store/3fl7bdkdxk2k4nssy1d1161isbzn6bsr-python3-3.14.7/lib/python3.14/asyncio/runners.py", line 205, in run
+    return runner.run(main)
+           ~~~~~~~~~~^^^^^^
+  File "/nix/store/3fl7bdkdxk2k4nssy1d1161isbzn6bsr-python3-3.14.7/lib/python3.14/asyncio/runners.py", line 128, in run
+    return self._loop.run_until_complete(task)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/nix/store/3fl7bdkdxk2k4nssy1d1161isbzn6bsr-python3-3.14.7/lib/python3.14/asyncio/base_events.py", line 720, in run_until_complete
+    return future.result()
+           ~~~~~~~~~~~~~^^
+  File "/tmp/ztls-production.DCwJ3H/handoff-ops/bench/check.py", line 117, in echo_gates
+    reader, writer = await asyncio.open_connection(
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<4 lines>...
+    )
+    ^
+  File "/nix/store/3fl7bdkdxk2k4nssy1d1161isbzn6bsr-python3-3.14.7/lib/python3.14/asyncio/streams.py", line 48, in open_connection
+    transport, _ = await loop.create_connection(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        lambda: protocol, host, port, **kwds)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/nix/store/3fl7bdkdxk2k4nssy1d1161isbzn6bsr-python3-3.14.7/lib/python3.14/asyncio/base_events.py", line 1199, in create_connection
+    transport, protocol = await self._create_connection_transport(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<2 lines>...
+        ssl_shutdown_timeout=ssl_shutdown_timeout)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/nix/store/3fl7bdkdxk2k4nssy1d1161isbzn6bsr-python3-3.14.7/lib/python3.14/asyncio/base_events.py", line 1232, in _create_connection_transport
+    await waiter
+  File "/nix/store/3fl7bdkdxk2k4nssy1d1161isbzn6bsr-python3-3.14.7/lib/python3.14/asyncio/sslproto.py", line 581, in _on_handshake_complete
+    raise handshake_exc
+  File "/nix/store/3fl7bdkdxk2k4nssy1d1161isbzn6bsr-python3-3.14.7/lib/python3.14/asyncio/sslproto.py", line 563, in _do_handshake
+    self._sslobj.do_handshake()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/nix/store/3fl7bdkdxk2k4nssy1d1161isbzn6bsr-python3-3.14.7/lib/python3.14/ssl.py", line 951, in do_handshake
+    self._sslobj.do_handshake()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^
+ssl.SSLCertVerificationError: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1082)

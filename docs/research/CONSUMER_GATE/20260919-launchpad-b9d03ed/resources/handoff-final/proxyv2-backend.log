@@ -1,0 +1,4 @@
+test-backend: listening on /tmp/ztls-production.DCwJ3H/handoff-runtime-final/backend.sock behavior=proxyv2
+proxyv2: FAIL EOF before a full header
+proxyv2: FAIL EOF before a full header
+proxyv2: ok src=127.0.0.1:37976 dst=127.0.0.1:18443 cipher=TLS_AES_128_GCM_SHA256

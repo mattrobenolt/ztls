@@ -1,0 +1,102 @@
+{
+  "candidate": "b9d03edfb422e4f2528635bae03cc1a5daffbe69",
+  "branch": "qualification/20260919",
+  "captures": [
+    {
+      "name": "client-openssl",
+      "run_id": 35482988396,
+      "url": "https://github.com/mattrobenolt/ztls/actions/runs/35482988396",
+      "artifact": "tls-anvil-client-openssl-summary",
+      "head_sha": "b9d03edfb422e4f2528635bae03cc1a5daffbe69",
+      "build_log_extract": "Exact checkout SHA, Zig store path, and selected provider header path from the original job log.",
+      "files": {
+        "build-provenance.log": "a8c036ac6532a7747589328a0ae06c82980080811d95c95b222a3747a0cc1a06",
+        "report.json": "95bd1d112b0a547d06748acb1d3a873cc89ada2351518180488c009898e05f55",
+        "report.normalized.json": "ad376227b141ef5a7c2ff2039311af8718762666f9e3a140cda8ef0f4bcd5c1b",
+        "run_metadata.json": "2767be7d6c25da114b91d31668911ac60e6ed00d1939c8e2011116b7cc8b167c",
+        "summary.json": "32bce90456706d4729fee0b270eaa7481ee0fa35284c0e99cd9bb89226c5ff90",
+        "summary.txt": "51596cd56c1da18baff4b93ed7717e7da2b29d882e4ac97a1eac775ee4440a37"
+      }
+    },
+    {
+      "name": "client-aws-lc",
+      "run_id": 35482989620,
+      "url": "https://github.com/mattrobenolt/ztls/actions/runs/35482989620",
+      "artifact": "tls-anvil-client-aws-lc-summary",
+      "head_sha": "b9d03edfb422e4f2528635bae03cc1a5daffbe69",
+      "build_log_extract": "Exact checkout SHA, Zig store path, and selected provider header path from the original job log.",
+      "files": {
+        "build-provenance.log": "01d893f7c2d5d9f917da9fe74f319c3fd34f46146cad5fb7f2c9dbca07cbeca8",
+        "report.json": "60018ad4c59baa265f9faa091e0097269f2eaf72424cca849fc5ea0f4ff3fc52",
+        "report.normalized.json": "89ccffe2bba98126ed5b3ec6e75002dcac7e1425778d31aa02d3ce56d24f27c6",
+        "run_metadata.json": "552b6f5d9b769157a30287b05bf4207183430acf7a2db0f458f3ca4eacd85374",
+        "summary.json": "bdb58c8c1a91f6e6829ae11c05d9b950c99be398d67ce268d5d4c89390444b2c",
+        "summary.txt": "1666b936acc7bebbfacd27eb2917b95d0e411b83dbfcad1ed83cda875818a049"
+      }
+    },
+    {
+      "name": "client-boringssl",
+      "run_id": 35482990614,
+      "url": "https://github.com/mattrobenolt/ztls/actions/runs/35482990614",
+      "artifact": "tls-anvil-client-boringssl-summary",
+      "head_sha": "b9d03edfb422e4f2528635bae03cc1a5daffbe69",
+      "build_log_extract": "Exact checkout SHA, Zig store path, and selected provider header path from the original job log.",
+      "files": {
+        "build-provenance.log": "33191bbf0a543e1bf8f6ecd4b928ed953a93e5634f85838374ca8d866660fa74",
+        "report.json": "eab605204217ca6036ab71ef5148df74632a65c8ef3b9e8ef38f71823654ee13",
+        "report.normalized.json": "59f55fea1af43f0096656088ad8ed727de16910d4d5953653d3c2174318386a8",
+        "run_metadata.json": "92597b5f35732c9c88a5e1ea48966f79e52b5e9b658b07258c8c6f49f848a960",
+        "summary.json": "34e89b07503a5bba3273eb2353e6e0fdbfc918dd117b578edc2ab34ffc9fbfc8",
+        "summary.txt": "f43144131c36f26bb78592fed0ca441e009d6c591e4d88d7a014ee877389c3b8"
+      }
+    },
+    {
+      "name": "server-openssl",
+      "run_id": 35482991762,
+      "url": "https://github.com/mattrobenolt/ztls/actions/runs/35482991762",
+      "artifact": "tls-anvil-server-openssl-summary",
+      "head_sha": "b9d03edfb422e4f2528635bae03cc1a5daffbe69",
+      "build_log_extract": "Exact checkout SHA, Zig store path, and selected provider header path from the original job log.",
+      "files": {
+        "build-provenance.log": "a7ccd08c6dc4edd6dff40b7fd7957f0142a965f08a49b49d21393137c846a368",
+        "report.json": "6e0732c0752dbf79525606a954dedc4f2c6088bc9f9ccc1e40055a15b2deb49a",
+        "report.normalized.json": "e7515bdddce79f78152e7cc1db5ef317fac77c0e0e98caa93ecf545c8ed094b6",
+        "run_metadata.json": "97945d9a88a7b2539d4cf4f0adea6051bfc1aec8560188429715a89e122b337e",
+        "summary.json": "c4542fe1dad63f20fc70c68405694a38dfb8bdc8ff6428902ecc0c2a8607704f",
+        "summary.txt": "6e1e1819bf49071a55f902276f25fae789354fddbdae638bd9c0c672bbfbd1c3"
+      }
+    },
+    {
+      "name": "server-aws-lc",
+      "run_id": 35482992763,
+      "url": "https://github.com/mattrobenolt/ztls/actions/runs/35482992763",
+      "artifact": "tls-anvil-server-aws-lc-summary",
+      "head_sha": "b9d03edfb422e4f2528635bae03cc1a5daffbe69",
+      "build_log_extract": "Exact checkout SHA, Zig store path, and selected provider header path from the original job log.",
+      "files": {
+        "build-provenance.log": "e805c5b4f2d1c25704973e0c127e88acff856a664faa50839f92c5a67a6541c0",
+        "report.json": "85ab19b2e99fc056a76f57ce64f8ed18f7733b4cc84e145f368f0de05fee7dc4",
+        "report.normalized.json": "82788d3d491d1f39beb1d766aeaad1db8f231f31a758731243f800c6614fd37c",
+        "run_metadata.json": "f61065cacbda6efd1a5f59a14792c39bb388ae08ad6631b09d628d0f5102372c",
+        "summary.json": "2c5770542b6847b5319cecdf2ba0b0738c599a62e00664f72d4fa7116536d0b9",
+        "summary.txt": "c3ba43ee067aec7645b10004307178afb48d321d9f16d024e372b556aae4db85"
+      }
+    },
+    {
+      "name": "server-boringssl",
+      "run_id": 35482993853,
+      "url": "https://github.com/mattrobenolt/ztls/actions/runs/35482993853",
+      "artifact": "tls-anvil-server-boringssl-summary",
+      "head_sha": "b9d03edfb422e4f2528635bae03cc1a5daffbe69",
+      "build_log_extract": "Exact checkout SHA, Zig store path, and selected provider header path from the original job log.",
+      "files": {
+        "build-provenance.log": "fe94ea5324216c011b8aa299902d85a4e10a2947e6df7363a6d77a28c6349215",
+        "report.json": "3016a7dc4592e2dd257c2ee02b91133953db06f847855276c0306d6fa658637c",
+        "report.normalized.json": "6b05ea0af2c8dee6b43491391032de207152886e1f090f62ee1af51bd3324841",
+        "run_metadata.json": "aa67e5a404becfd2d5cae88153fc7c4b6200b6dc532c9a647f5c65e1a50bf49e",
+        "summary.json": "eea8ca80bee0d55feb0cf9b67a014b82179cf3a6ebe589370493eb3829fd57a6",
+        "summary.txt": "a317ccc14ecd757e755893611b82fa6c50698b02b3d2dd6c5e4b9ec0e1d7e554"
+      }
+    }
+  ]
+}
