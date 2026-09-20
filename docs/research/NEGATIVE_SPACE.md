@@ -103,7 +103,7 @@ The authoritative readiness state remains `PRODUCTION_READINESS.md`.
 | ClientHello missing required extension | `error.MissingExtension` / unsupported version/group | `client_hello.zig`: malformed ClientHello tests | covered |
 | Unshared ALPN | `error.NoApplicationProtocol` | tlsfuzzer unshared ALPN test | partial — no local unit test |
 | Oversized ClientHello legacy session id | `error.InvalidVectorLength` (RFC 8446 §4.1.2 length 0..32) | `client_hello.zig`: parse rejects `session_id_len > 32`; `parse: rejects oversized legacy_session_id` covers 33 and 255 | covered |
-| Oversized SNI hostname on parse path | Accepted; the parsed hostname is exposed to the caller through `clientServerName()` | `client_hello.zig`: `parseSni` bounds `name_len` by the extension length only and applies no 253-octet cap; the encode path rejects a name over 253 octets with `ServerNameTooLong` | policy difference — #123 |
+| Empty or oversized SNI hostname | Rejected | Encoding, length preflight, and parsing share a 1–253-octet HostName policy. The parser also rejects an empty ServerNameList. | explicit DNS length policy — #123 |
 | Bad client Finished MAC | `error.InvalidVerifyData` | `ServerHandshake.zig`: `processClientFinished: rejects bad verify_data` | covered |
 | Client Finished plus extra handshake message | `error.UnexpectedMessage` | `ServerHandshake.zig`: `processClientFinishedPlaintext` rejects a trailing message after Finished | partial — no dedicated unit test |
 | Non-Finished handshake in `wait_client_finished` | `error.UnexpectedMessage` | `ServerHandshake.zig`: `processClientFinishedPlaintext` requires Finished as the last message | partial — no dedicated unit test |
@@ -186,8 +186,8 @@ These are deliberately not closed by writing the inventory:
   for 0-RTT remains caller-owned (no engine replay cache); the accepted-0-RTT
   decrypt-failure alert mapping is covered by `0-RTT: accepted early data
   distinguishes authentication and handshake errors` (#116).
-- Oversized SNI hostnames are accepted on the parse path and surfaced to the
-  caller; the encode path is capped. The policy difference is tracked by #123.
+- SNI encoding, length preflight, and parsing enforce a 1–253-octet HostName
+  bound (#123). Callers own DNS label validation and IDNA conversion.
 - The ServerHello oversized-session-id overflow test asserts refusal rather than
   the exact error tag; the cap itself is enforced, so this is an evidence nit,
   not a gap.

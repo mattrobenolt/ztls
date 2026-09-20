@@ -723,6 +723,9 @@ pub fn cipherSuite(self: *const ServerHandshake) CipherSuite {
 /// must not route using its changed SNI. Points into the caller's record buffer
 /// — copy before the next call if you need it longer.
 ///
+/// The result contains 1–253 untrusted bytes. The engine does not validate
+/// DNS labels or perform IDNA conversion. SNI does not authorize a client.
+///
 /// RFC 6066 §3 — server_name extension.
 pub fn clientServerName(self: *const ServerHandshake) ?[]const u8 {
     return self.client_server_name;

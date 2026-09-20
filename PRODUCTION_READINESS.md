@@ -158,7 +158,16 @@ The #122 patch rejects unprocessed critical extensions and invalid SAN wrappers.
 Signed public-path regressions failed before the fix. The local OpenSSL suite passes 849 tests with one skip.
 Local OpenSSL, AWS-LC, BoringSSL, and Zig 0.16 gates pass.
 Qualification of the replacement candidate remains pending.
-#123 tracks the inbound SNI policy difference. #124 tracks focused handshake and parser evidence gaps.
+
+The #123 contract applies a shared 1–253-octet SNI HostName bound to encoding, length preflight, and parsing.
+The parser also rejects an empty ServerNameList. Accepted names remain borrowed, untrusted routing input.
+DNS label validation and IDNA conversion remain caller responsibilities.
+
+Six new boundary tests pass. Four initial regressions failed before the fixes.
+The additional empty-list mutation fails its expected-error assertion.
+Local gates pass for all three providers. Both Zig compatibility lanes pass.
+
+#124 tracks focused handshake and parser evidence gaps.
 Compiler-dependent zeroization and the IDNA contract remain audit or policy questions under #125 and #126.
 Deferred C ABI work (#30) remains outside these consumers' qualification requirements.
 

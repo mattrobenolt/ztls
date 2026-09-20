@@ -712,6 +712,7 @@ pub fn lastPeerAlert(self: *const ClientHandshake) ?alert.Alert {
 // ziglint-ignore: Z024, Z015
 pub const StartError = error{
     BufferTooShort,
+    InvalidServerName,
     ServerNameTooLong,
     IdentityTooLong,
     InvalidBinderLength,

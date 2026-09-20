@@ -1,6 +1,11 @@
 //! TLS 1.3 ClientHello handshake message encoding.
 //!
 //! RFC 8446 §4.1.2
+//!
+//! RFC 6066 §3 permits opaque inbound names. ztls instead applies one
+//! 1–253-octet HostName length policy to encoding, length preflight, and parsing.
+//! A null server_name omits SNI. A present empty name is invalid.
+//! Callers own DNS label validation and IDNA conversion.
 const std = @import("std");
 const assert = std.debug.assert;
 const testing = std.testing;
@@ -47,6 +52,11 @@ const ext_header_len = 2 + 2; // extension type + data length field
 const x25519_key_share_len: usize = 2 + 2 + x25519.public_length;
 const p256_key_share_len: usize = 2 + 2 + p256.public_length;
 const p384_key_share_len: usize = 2 + 2 + p384.public_length;
+const ServerNameError = error{ InvalidServerName, ServerNameTooLong };
+
+/// RFC 1035 §2.3.4 — a 255-octet DNS wire name permits 253 presentation octets.
+pub const max_server_name_len: usize = 253;
+
 const SniNameType = enum(u8) {
     host_name = 0,
     _,
@@ -89,7 +99,13 @@ fn alpnExtLen(protocols: AlpnProtocols) AlpnError!u16 {
     return ext_header_len + data_len;
 }
 
-fn sniExtLen(name: []const u8) u16 {
+fn validateServerNameLen(name: []const u8) ServerNameError!void {
+    if (name.len == 0) return error.InvalidServerName;
+    if (name.len > max_server_name_len) return error.ServerNameTooLong;
+}
+
+fn sniExtLen(name: []const u8) ServerNameError!u16 {
+    try validateServerNameLen(name);
     return ext_header_len + sni_overhead + @as(u16, @intCast(name.len));
 }
 
@@ -116,8 +132,8 @@ fn extensionsLen(
     include_p384: bool,
     hybrid_groups: []const NamedGroup,
     kem: ?KemShare,
-) AlpnError!u16 {
-    const sni: u16 = if (server_name) |n| sniExtLen(n) else 0;
+) (AlpnError || ServerNameError)!u16 {
+    const sni: u16 = if (server_name) |n| try sniExtLen(n) else 0;
     const alpn: u16 = if (alpn_protocols.len == 0) 0 else try alpnExtLen(alpn_protocols);
     const total = sni +
         alpn +
@@ -131,7 +147,10 @@ fn extensionsLen(
     return @intCast(total);
 }
 
-pub fn encodedLen(server_name: ?[]const u8, alpn_protocols: AlpnProtocols) AlpnError!usize {
+pub fn encodedLen(
+    server_name: ?[]const u8,
+    alpn_protocols: AlpnProtocols,
+) (AlpnError || ServerNameError)!usize {
     return handshake_header_len + body_fixed_len +
         try extensionsLen(server_name, alpn_protocols, false, false, &.{}, null);
 }
@@ -139,7 +158,7 @@ pub fn encodedLen(server_name: ?[]const u8, alpn_protocols: AlpnProtocols) AlpnE
 pub fn encodedLenWithP256(
     server_name: ?[]const u8,
     alpn_protocols: AlpnProtocols,
-) AlpnError!usize {
+) (AlpnError || ServerNameError)!usize {
     return handshake_header_len + body_fixed_len +
         try extensionsLen(server_name, alpn_protocols, true, false, &.{}, null);
 }
@@ -147,7 +166,7 @@ pub fn encodedLenWithP256(
 pub fn encodedLenWithP256P384(
     server_name: ?[]const u8,
     alpn_protocols: AlpnProtocols,
-) AlpnError!usize {
+) (AlpnError || ServerNameError)!usize {
     return handshake_header_len + body_fixed_len +
         try extensionsLen(server_name, alpn_protocols, true, true, &.{}, null);
 }
@@ -155,6 +174,7 @@ pub fn encodedLenWithP256P384(
 /// Errors from ClientHello2 encoding after a HelloRetryRequest.
 pub const RetryEncodeError = error{
     BufferTooShort,
+    InvalidServerName,
     ServerNameTooLong,
     IdentityTooLong,
     InvalidBinderLength,
@@ -207,7 +227,7 @@ fn retryExtensionsLen(
     hybrid_share: ?KemShare,
     psk: ?RetryPsk,
 ) RetryEncodeError!u16 {
-    const sni: u16 = if (server_name) |n| sniExtLen(n) else 0;
+    const sni: u16 = if (server_name) |n| try sniExtLen(n) else 0;
     const alpn: u16 = if (alpn_protocols.len == 0) 0 else try alpnExtLen(alpn_protocols);
     const cookie_len: u16 = if (cookie) |c| ext_header_len + 2 + @as(u16, @intCast(c.len)) else 0;
     const psk_len: usize = if (psk) |offer|
@@ -311,7 +331,6 @@ pub fn encodeRetryAfterHrrWithHybridAndPsk(
     hybrid_share: ?KemShare,
     psk: ?RetryPsk,
 ) RetryEncodeError!PskEncodeResult {
-    if (server_name) |name| if (name.len > 253) return error.ServerNameTooLong;
     if (cookie) |c| {
         if (c.len == 0 or c.len > std.math.maxInt(u16)) return error.BufferTooShort;
     }
@@ -739,6 +758,7 @@ pub fn encodeWithPsk(
     offer_early_data: bool,
 ) (error{
     BufferTooShort,
+    InvalidServerName,
     ServerNameTooLong,
     IdentityTooLong,
     InvalidBinderLength,
@@ -780,11 +800,11 @@ pub fn encodeWithPskAndHybridGroups(
     offer_early_data: bool,
 ) (error{
     BufferTooShort,
+    InvalidServerName,
     ServerNameTooLong,
     IdentityTooLong,
     InvalidBinderLength,
 } || capabilities.HybridPolicyError || AlpnError)!PskEncodeResult {
-    if (server_name) |name| if (name.len > 253) return error.ServerNameTooLong;
     if (identity.len > 256) return error.IdentityTooLong;
     if (binder_len != 32 and binder_len != 48) return error.InvalidBinderLength;
     try validateHybridGroups(hybrid_groups, hybrid_share);
@@ -1026,7 +1046,7 @@ pub fn encode(
     public_key: x25519.PublicKey,
     server_name: ?[]const u8,
     alpn_protocols: AlpnProtocols,
-) (error{ BufferTooShort, ServerNameTooLong } || AlpnError)![]u8 {
+) (error{ BufferTooShort, InvalidServerName, ServerNameTooLong } || AlpnError)![]u8 {
     return encodeInternal(
         out,
         random,
@@ -1047,7 +1067,7 @@ pub fn encodeWithP256(
     public_key_p256: p256.PublicKey,
     server_name: ?[]const u8,
     alpn_protocols: AlpnProtocols,
-) (error{ BufferTooShort, ServerNameTooLong } || AlpnError)![]u8 {
+) (error{ BufferTooShort, InvalidServerName, ServerNameTooLong } || AlpnError)![]u8 {
     assert(backend.capabilities.client_p256);
     return encodeInternal(
         out,
@@ -1070,7 +1090,7 @@ pub fn encodeWithP256P384(
     public_key_p384: ?p384.PublicKey,
     server_name: ?[]const u8,
     alpn_protocols: AlpnProtocols,
-) (error{ BufferTooShort, ServerNameTooLong } || AlpnError)![]u8 {
+) (error{ BufferTooShort, InvalidServerName, ServerNameTooLong } || AlpnError)![]u8 {
     return encodeInternal(
         out,
         random,
@@ -1097,7 +1117,7 @@ pub fn encodeWithKem(
     server_name: ?[]const u8,
     alpn_protocols: AlpnProtocols,
     kem_share: ?KemShare,
-) (error{ BufferTooShort, ServerNameTooLong } ||
+) (error{ BufferTooShort, InvalidServerName, ServerNameTooLong } ||
     capabilities.HybridPolicyError || AlpnError)![]u8 {
     const groups: []const NamedGroup = if (kem_share) |share| &.{share.group} else &.{};
     return encodeWithHybridGroups(
@@ -1123,7 +1143,7 @@ pub fn encodeWithHybridGroups(
     alpn_protocols: AlpnProtocols,
     hybrid_groups: []const NamedGroup,
     kem_share: ?KemShare,
-) (error{ BufferTooShort, ServerNameTooLong } ||
+) (error{ BufferTooShort, InvalidServerName, ServerNameTooLong } ||
     capabilities.HybridPolicyError || AlpnError)![]u8 {
     assert(backend.capabilities.client_p256);
     if (public_key_p384 != null) assert(backend.capabilities.client_p384);
@@ -1151,9 +1171,7 @@ fn encodeInternal(
     alpn_protocols: AlpnProtocols,
     hybrid_groups: []const NamedGroup,
     kem_share: ?KemShare,
-) (error{ BufferTooShort, ServerNameTooLong } || AlpnError)![]u8 {
-    // RFC 6066 §3: HostName is a DNS name, max 253 octets.
-    if (server_name) |name| if (name.len > 253) return error.ServerNameTooLong;
+) (error{ BufferTooShort, InvalidServerName, ServerNameTooLong } || AlpnError)![]u8 {
     const include_p256 = public_key_p256 != null;
     const include_p384 = public_key_p384 != null;
     const ext_len = try extensionsLen(
@@ -1418,12 +1436,94 @@ pub fn parse(msg: []const u8) ParseError!Parsed {
     return parsed;
 }
 
+fn clientHelloWithSniForTest(out: []u8, name: ?[]const u8) ![]const u8 {
+    const base = try encode(out, .zero, .zero, null, &.{});
+    const list_len = if (name) |n| 3 + n.len else 0;
+    var w: wire.Writer = .init(out[base.len..]);
+    w.append(ExtensionType, .server_name);
+    w.append(u16, @intCast(2 + list_len));
+    w.append(u16, @intCast(list_len));
+    if (name) |n| {
+        w.append(SniNameType, .host_name);
+        w.append(u16, @intCast(n.len));
+        w.appendSlice(n);
+    }
+    const total_len = base.len + ext_header_len + 2 + list_len;
+    const extensions_at = handshake_header_len + body_fixed_len - 2;
+    const extensions_len = mem.readInt(u16, out[extensions_at..][0..2], .big);
+    mem.writeInt(u16, out[extensions_at..][0..2], @intCast(
+        @as(usize, extensions_len) + total_len - base.len,
+    ), .big);
+    mem.writeInt(u24, out[1..4], @intCast(total_len - handshake_header_len), .big);
+    return out[0..total_len];
+}
+
+// RFC 6066 §3, RFC 1035 §2.3.4 — 253 presentation octets fit a 255-octet DNS name.
+test "parse: preserves boundary SNI names as borrowed slices" {
+    const maximum = "a" ** 63 ++ "." ++ "b" ** 63 ++ "." ++ "c" ** 63 ++ "." ++ "d" ** 61;
+    const names: [2][]const u8 = .{ "a", maximum };
+    for (names) |name| {
+        var buf: [1024]u8 = undefined;
+        const message = try clientHelloWithSniForTest(&buf, name);
+        const parsed: Parsed = try parse(message);
+        try testing.expectEqual(name.len, parsed.server_name.?.len);
+        try testing.expectEqualStrings(name, parsed.server_name.?);
+        try testing.expectEqual(
+            @intFromPtr(message.ptr) + message.len - name.len,
+            @intFromPtr(parsed.server_name.?.ptr),
+        );
+        const encoded = try encode(&buf, .zero, .zero, name, &.{});
+        try testing.expectEqual(try encodedLen(name, &.{}), encoded.len);
+    }
+}
+
+// RFC 6066 §3 — ServerNameList is a nonempty vector.
+test "parse: rejects an empty SNI name list" {
+    var buf: [1024]u8 = undefined;
+    const message = try clientHelloWithSniForTest(&buf, null);
+    try testing.expectError(error.InvalidVectorLength, parse(message));
+}
+
+// RFC 6066 §3 — HostName is a nonempty vector.
+test "parse: rejects an empty SNI host name" {
+    var buf: [1024]u8 = undefined;
+    const message = try clientHelloWithSniForTest(&buf, "");
+    try testing.expectError(error.InvalidVectorLength, parse(message));
+}
+
+// RFC 6066 §3, RFC 1035 §2.3.4 — apply the encoder's DNS length policy on input.
+test "parse: rejects an SNI name beyond the DNS length limit" {
+    const name = "a" ** 63 ++ "." ++ "b" ** 63 ++ "." ++ "c" ** 63 ++ "." ++ "d" ** 62;
+    var buf: [1024]u8 = undefined;
+    const message = try clientHelloWithSniForTest(&buf, name);
+    try testing.expectError(error.InvalidVectorLength, parse(message));
+}
+
+// RFC 6066 §3 — emit no empty HostName, including through length preflight.
+test "encode: rejects an empty SNI host name" {
+    var buf: [1024]u8 = undefined;
+    try testing.expectError(error.InvalidServerName, encode(&buf, .zero, .zero, "", &.{}));
+    inline for (.{ encodedLen, encodedLenWithP256, encodedLenWithP256P384 }) |length| {
+        try testing.expectError(error.InvalidServerName, length("", &.{}));
+    }
+}
+
+// RFC 1035 §2.3.4 — length preflight applies the same bound as the encoder.
+test "encodedLen: rejects an SNI name beyond the DNS length limit" {
+    const name: [254]u8 = @splat('a');
+    const oversized: [65535]u8 = @splat('a');
+    inline for (.{ encodedLen, encodedLenWithP256, encodedLenWithP256P384 }) |length| {
+        try testing.expectError(error.ServerNameTooLong, length(&name, &.{}));
+        try testing.expectError(error.ServerNameTooLong, length(&oversized, &.{}));
+    }
+}
+
 fn parseSni(ext: []const u8) ParseError!?[]const u8 {
     if (ext.len < 2) return error.InvalidExtensionLength;
     var r: wire.Reader = .init(ext);
     const list_len = r.assumeRead(u16);
     if (list_len != ext.len - 2) return error.InvalidExtensionLength;
-    if (list_len == 0) return null;
+    if (list_len == 0) return error.InvalidVectorLength;
     if (r.remaining().len < 1 + 2) return error.InvalidVectorLength;
     const name_type = r.assumeRead(SniNameType);
     const name_len = r.assumeRead(u16);
@@ -1431,6 +1531,7 @@ fn parseSni(ext: []const u8) ParseError!?[]const u8 {
     const name = r.assumeReadSlice(name_len);
     if (r.pos != ext.len) return error.InvalidVectorLength;
     if (name_type != .host_name) return null;
+    validateServerNameLen(name) catch return error.InvalidVectorLength;
     return name;
 }
 

@@ -184,6 +184,7 @@ pub fn classify(err: HandshakeError) Class {
         error.IdentityTooLong,
         error.InvalidBinderLength,
         error.InvalidHybridPolicy,
+        error.InvalidServerName,
         error.MissingP384KeyPair,
         error.ServerNameTooLong,
         error.TooManyAlpnBytes,
@@ -249,6 +250,7 @@ test "classify: remaining buckets" {
     try testing.expectEqual(Class.options, classify(error.DeterministicNonceUnsupported));
     try testing.expectEqual(Class.options, classify(error.InvalidBinderLength));
     try testing.expectEqual(Class.options, classify(error.InvalidHybridPolicy));
+    try testing.expectEqual(Class.options, classify(error.InvalidServerName));
     try testing.expectEqual(Class.options, classify(error.HybridGroupUnavailable));
     try testing.expectEqual(Class.options, classify(error.MissingP384KeyPair));
     try testing.expectEqual(Class.internal, classify(error.LibcryptoFailed));
