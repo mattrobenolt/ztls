@@ -59,7 +59,7 @@ ztls is production-ready when all six pillars are `PROVEN`:
 
 | Pillar | Status | One-line |
 |---|---|---|
-| 1. Correctness | `PROVEN` | Fresh manual runs of both scheduled TLS-Anvil workflows at `d07c551` completed all 437 cases on OpenSSL, AWS-LC, and BoringSSL with zero unexpected results (#108). |
+| 1. Correctness | `PARTIAL` | Historical TLS-Anvil evidence covers `d07c551` (#108). The #118 path-length patch passes local gates. Independent review and candidate qualification (#119–#121) remain pending. |
 | 2. Ergonomics | `PROVEN` | CI-gated examples cover both roles across io_uring, epoll, kqueue, and `std.Io`. Core and wrapper APIs expose hybrid capabilities and reject invalid local policy before key generation or wire I/O (#105). `ztls-std` (#77) gates plain and mTLS OpenSSL interop in both directions. `ztls-xev` satisfies #76's Linux/macOS contract, including in-flight cancellation (#83). |
 | 3. Performance | `PROVEN` | n=10 captures on x86_64 (c7i.2xlarge), aarch64 (c7g.2xlarge), and macOS (Apple M1 Max) with formal CIs (p=0.000): ztls beats libssl on every comparable app-data row on all three platforms and rustls on all AES-GCM rows; regression gate committed. |
 | 4. Providers | `PROVEN` | OpenSSL, AWS-LC, and BoringSSL pass fresh strict-complete TLS-Anvil client and server runs at `d07c551`; malformed peer ML-KEM keys now produce `illegal_parameter` while provider faults remain `internal_error` (#108). |
@@ -441,9 +441,17 @@ data to openssl s_server and receives the HTTP response.
   regression-tested:
   - S5 (CRITICAL) — end-entity-as-CA bypass: BasicConstraints `cA` and, when
     KeyUsage is present, `keyCertSign` enforced on every presented-chain issuer
-    and the bundle trust anchor. `pathLenConstraint` is parsed but depth
-    enforcement is deferred (`TODO(audit S5)`). Requiring `cA` on issuers is
-    intentional and matches RFC 5280 / OpenSSL / browsers.
+    and the bundle trust anchor. The #118 patch enforces `pathLenConstraint`
+    over the selected anchored path. It excludes the target and self-issued
+    intermediates from the count. Bundle-anchor constraints apply as local
+    policy under RFC 5280 §6.2, consistent with OpenSSL.
+    Seventeen new tests cover both public certificate parsers and selected-path
+    semantics. The parent reproduced the anchor-constraint mutation failure
+    and restored a green core suite: 846 passes, one existing skip.
+    All 15 OpenSSL differential checks matched the expected verdicts.
+    `just ci`, `just check-backend-boringssl`, and Zig 0.16 `just ci-0_16`
+    passed on Linux aarch64. Independent review and final-candidate evidence
+    remain pending under #118–#121.
   - S6/S7 — three #72-class narrow-arithmetic panic sites widened to `usize`.
   - S8 — public `Aead.encrypt`/`decrypt` reject mismatched in/out slice lengths
     (`SliceLengthMismatch`) before the backend call; not peer-reachable via the
@@ -740,7 +748,9 @@ data to openssl s_server and receives the HTTP response.
   unsupported-subtree rejection, and a differential test corpus against OpenSSL
   3.6.3 covering all four GeneralName forms (#75 resolved).
 
-**Status:** `PROVEN` — #91's fixture regressions remain valid, and #108 adds
+**Status:** `PARTIAL` — #118 passes local gates but lacks independent review
+and final-candidate qualification under #119–#121. #91's fixture regressions
+remain valid, and #108 adds
 fresh strict-complete client and server proof across all three backends at clean
 `d07c551`.
 

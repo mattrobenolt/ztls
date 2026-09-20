@@ -68,6 +68,70 @@ pub const crosssigned_leaf_der = decodeSection("crosssigned_leaf_der");
 pub const crosssigned_intermediate_der = decodeSection("crosssigned_intermediate_der");
 pub const crosssigned_root_cross_der = decodeSection("crosssigned_root_cross_der");
 
+// --- pathLenConstraint family (#118) -----------------------------------------
+// Chain shape and per-case OpenSSL ground truth are documented in
+// tests/fixtures/pathlen/README.md. Roots live there as loose PEM; every
+// presented-chain certificate (intermediates, leaves, cross-signed root)
+// is a DER section here.
+
+/// CA, pathlen:0, issued by tests/fixtures/pathlen/root.crt.
+pub const pathlen_zero_inter_der = decodeSection("pathlen_zero_inter_der");
+/// CA, no constraint, issued by pathlen_zero_inter_der.
+pub const pathlen_below_zero_inter_der = decodeSection("pathlen_below_zero_inter_der");
+/// CA, no constraint, self-issued (subject DN equals its issuer's, the
+/// pathlen:0 CA's DN — RFC 5280 §6.1 self-issued certificate).
+pub const pathlen_self_issued_inter_der = decodeSection("pathlen_self_issued_inter_der");
+/// CA, no constraint, issued by pathlen_self_issued_inter_der.
+pub const pathlen_below_si_inter_der = decodeSection("pathlen_below_si_inter_der");
+pub const pathlen_below_zero_leaf_der = decodeSection("pathlen_below_zero_leaf_der");
+pub const pathlen_self_issued_leaf_der = decodeSection("pathlen_self_issued_leaf_der");
+pub const pathlen_below_si_leaf_der = decodeSection("pathlen_below_si_leaf_der");
+/// CA:TRUE pathlen:0 target certificate (RFC 5280 §4.2.1.9: the final
+/// certificate may itself be a CA) with serverAuth EKU and digitalSignature
+/// KeyUsage, issued by pathlen_zero_inter_der.
+pub const pathlen_ca_target_der = decodeSection("pathlen_ca_target_der");
+/// Client-auth leaf (no EKU) issued by pathlen_below_zero_inter_der.
+pub const pathlen_client_below_zero_leaf_der = decodeSection("pathlen_client_below_zero_leaf_der");
+/// Client-auth leaf (no EKU) issued by pathlen_zero_inter_der.
+pub const pathlen_client_zero_leaf_der = decodeSection("pathlen_client_zero_leaf_der");
+/// CA, pathlen:1, issued by tests/fixtures/pathlen/root.crt.
+pub const pathlen_one_inter_der = decodeSection("pathlen_one_inter_der");
+/// CA, no constraint, issued by pathlen_one_inter_der.
+pub const pathlen_one_mid_inter_der = decodeSection("pathlen_one_mid_inter_der");
+/// CA, no constraint, issued by pathlen_one_mid_inter_der.
+pub const pathlen_one_deep_inter_der = decodeSection("pathlen_one_deep_inter_der");
+pub const pathlen_one_leaf_der = decodeSection("pathlen_one_leaf_der");
+pub const pathlen_one_deep_leaf_der = decodeSection("pathlen_one_deep_leaf_der");
+/// CA, pathlen:2, issued by tests/fixtures/pathlen/root.crt.
+pub const pathlen_multi_outer_inter_der = decodeSection("pathlen_multi_outer_inter_der");
+/// CA, pathlen:0, issued by pathlen_multi_outer_inter_der.
+pub const pathlen_multi_inner_inter_der = decodeSection("pathlen_multi_inner_inter_der");
+/// CA, no constraint, issued by pathlen_multi_inner_inter_der.
+pub const pathlen_multi_deep_inter_der = decodeSection("pathlen_multi_deep_inter_der");
+pub const pathlen_multi_leaf_der = decodeSection("pathlen_multi_leaf_der");
+pub const pathlen_multi_deep_leaf_der = decodeSection("pathlen_multi_deep_leaf_der");
+/// CA, no constraint, issued by tests/fixtures/pathlen/root.crt.
+pub const pathlen_absent_a_inter_der = decodeSection("pathlen_absent_a_inter_der");
+/// CA, no constraint, issued by pathlen_absent_a_inter_der.
+pub const pathlen_absent_b_inter_der = decodeSection("pathlen_absent_b_inter_der");
+pub const pathlen_absent_leaf_der = decodeSection("pathlen_absent_leaf_der");
+/// CA, no constraint, issued by tests/fixtures/pathlen/root_plc1.crt.
+pub const pathlen_anchor_mid_inter_der = decodeSection("pathlen_anchor_mid_inter_der");
+/// CA, no constraint, issued by pathlen_anchor_mid_inter_der.
+pub const pathlen_anchor_deep_inter_der = decodeSection("pathlen_anchor_deep_inter_der");
+pub const pathlen_anchor_leaf_der = decodeSection("pathlen_anchor_leaf_der");
+pub const pathlen_anchor_deep_leaf_der = decodeSection("pathlen_anchor_deep_leaf_der");
+/// Cross-signing of tests/fixtures/pathlen/crosssign_root.crt's subject and
+/// key by the untrusted tests/fixtures/pathlen/crosssign_untrusted.crt, with
+/// pathlen:0 — RFC 5280 §6.1 trusted-first path building excludes it when the
+/// bundle anchors a lower certificate.
+pub const pathlen_cross_root_cross_der = decodeSection("pathlen_cross_root_cross_der");
+/// CA, no constraint, issued by tests/fixtures/pathlen/crosssign_root.crt.
+pub const pathlen_cross_mid_inter_der = decodeSection("pathlen_cross_mid_inter_der");
+/// CA, no constraint, issued by pathlen_cross_mid_inter_der.
+pub const pathlen_cross_deep_inter_der = decodeSection("pathlen_cross_deep_inter_der");
+pub const pathlen_cross_leaf_der = decodeSection("pathlen_cross_leaf_der");
+
 // --- Signature fixtures (base64-decoded at comptime) ------------------------
 
 pub const cv_sig = decodeSection("cv_sig");

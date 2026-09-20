@@ -12,6 +12,9 @@ pub const PolicyError = error{
     CertificateExtendedKeyUsageRejected,
     CertificateSignatureAlgorithmRejected,
     CertificateIssuerNotCa,
+    /// RFC 5280 §4.2.1.9 — a non-self-issued intermediate CA certificate
+    /// follows an issuer whose pathLenConstraint does not allow it.
+    CertificatePathLengthExceeded,
 };
 
 pub const LeafUsage = enum {
@@ -148,7 +151,9 @@ pub fn verifyIssuerUsage(issuer: Certificate.Parsed) VerifyIssuerUsageError!void
     if (!issuer.is_ca) return error.CertificateIssuerNotCa;
     if (!try issuer.allowsKeyUsage(key_usage_key_cert_sign))
         return error.CertificateIssuerNotCa;
-    // TODO(audit S5): pathLenConstraint parsed, not yet enforced.
+    // pathLenConstraint is enforced over the whole anchored path in
+    // certificate.zig (RFC 5280 §6.1, #118); this per-issuer check has no
+    // path context.
 }
 
 pub const VerifyAgainstBundleError = PolicyError ||

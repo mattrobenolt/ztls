@@ -221,11 +221,17 @@ pub fn parseClientChain(
         policy.certificate_signature_schemes,
     );
     if (policy.bundle) |bundle| {
-        const trust_anchor = try anchorChain(bundle, chain.constSlice(), policy.now_sec);
-        try verifyChainNameConstraints(chain.constSlice(), trust_anchor);
+        const anchored = try anchorChain(bundle, chain.constSlice(), policy.now_sec);
+        try verifyChainPathLength(chain.constSlice(), anchored.anchor, anchored.top);
+        try verifyChainNameConstraints(chain.constSlice(), anchored.anchor);
     } else if (!policy.insecure_no_chain_anchor) {
         return error.MissingTrustAnchor;
     } else {
+        // RFC 5280 §6.1 — with no anchor, the whole presented chain is the
+        // path; a presented self-signed root behaves like an anchor because
+        // §6.1.4(l) never charges a self-issued certificate budget while
+        // §6.1.4(m) still applies its constraint.
+        try verifyChainPathLength(chain.constSlice(), null, chain.constSlice().len - 1);
         try verifyChainNameConstraints(chain.constSlice(), null);
     }
 
@@ -243,15 +249,24 @@ pub fn parseClientChain(
 /// from the top down and accepting the first bundle hit matches OpenSSL's
 /// default trusted-first behavior. A bundle hit whose signature or usage
 /// checks fail is a hard error, not a cue to keep walking.
+const AnchoredChain = struct {
+    anchor: Certificate.Parsed,
+    /// Index of the highest in-path certificate — the one the anchor issues,
+    /// RFC 5280 §6.1 certificate 1. Presented certificates above it are
+    /// outside the path for this constraint check. The parser separately
+    /// verifies all presented signatures before anchor selection.
+    top: usize,
+};
+
 fn anchorChain(
     bundle: *const Certificate.Bundle,
     chain: []const Certificate.Parsed,
     now_sec: i64,
-) certificate_policy.VerifyAgainstBundleError!Certificate.Parsed {
+) certificate_policy.VerifyAgainstBundleError!AnchoredChain {
     var i = chain.len;
     while (i > 0) {
         i -= 1;
-        return certificate_policy.findVerifiedIssuerInBundle(
+        const anchor = certificate_policy.findVerifiedIssuerInBundle(
             bundle,
             chain[i],
             now_sec,
@@ -259,8 +274,56 @@ fn anchorChain(
             error.CertificateIssuerNotFound => continue,
             else => return err,
         };
+        return .{ .anchor = anchor, .top = i };
     }
     return error.CertificateIssuerNotFound;
+}
+
+/// RFC 5280 §4.2.1.9 / §6.1 — enforce pathLenConstraint over the
+/// certification path (#118). `chain` is the presented chain, leaf-first;
+/// `top` is the index of the path's first certificate (§6.1 certificate 1,
+/// the one the trust anchor issues); `anchor` is the parsed bundle anchor, or
+/// null on the explicit no-anchor path where the whole presented chain is
+/// the path.
+///
+/// Tracks the §6.1.2(k) max_path_length state variable: initialized to the
+/// trust anchor's pathLenConstraint when the anchor certificate carries one
+/// (§6.1.1(d)(g) trust-anchor inputs; OpenSSL applies an anchor's constraint
+/// and ztls matches — tests/fixtures/pathlen/README.md records the
+/// differential), else to the path length n, which no presented chain can
+/// exceed. §6.1.4(l) charges one unit for every non-self-issued path
+/// certificate except the final one (§4.2.1.9: the last certificate is not
+/// an intermediate and is not counted) and rejects when the budget is
+/// exhausted; §6.1.4(m) tightens the budget to any smaller pathLenConstraint
+/// on a path certificate, so the tightest constraint binds. No allocation:
+/// two comparisons per already-parsed certificate.
+fn verifyChainPathLength(
+    chain: []const Certificate.Parsed,
+    anchor: ?Certificate.Parsed,
+    top: usize,
+) PolicyError!void {
+    var max_path_length: usize = top + 1;
+    if (anchor) |trust_anchor| {
+        if (trust_anchor.basic_constraints_path_len) |limit| {
+            max_path_length = @min(max_path_length, limit);
+        }
+    }
+
+    var i = top;
+    while (i > 0) : (i -= 1) {
+        const cert = chain[i];
+        // §6.1: self-issued certificates are not counted when evaluating
+        // path length. §6.1.4(l): verify max_path_length is greater than
+        // zero, then decrement.
+        if (!std.mem.eql(u8, cert.subject(), cert.issuer())) {
+            if (max_path_length == 0) return error.CertificatePathLengthExceeded;
+            max_path_length -= 1;
+        }
+        // §6.1.4(m): reduce max_path_length to pathLenConstraint when smaller.
+        if (cert.basic_constraints_path_len) |plc| {
+            if (plc < max_path_length) max_path_length = plc;
+        }
+    }
 }
 
 /// Parse a Certificate handshake message and extract the leaf certificate
@@ -336,11 +399,17 @@ pub fn parse(msg: []const u8, policy: Policy) ParseError![]const u8 {
         policy.certificate_signature_schemes,
     );
     if (policy.bundle) |bundle| {
-        const trust_anchor = try anchorChain(bundle, chain.constSlice(), policy.now_sec);
-        try verifyChainNameConstraints(chain.constSlice(), trust_anchor);
+        const anchored = try anchorChain(bundle, chain.constSlice(), policy.now_sec);
+        try verifyChainPathLength(chain.constSlice(), anchored.anchor, anchored.top);
+        try verifyChainNameConstraints(chain.constSlice(), anchored.anchor);
     } else if (!policy.insecure_no_chain_anchor) {
         return error.MissingTrustAnchor;
     } else {
+        // RFC 5280 §6.1 — with no anchor, the whole presented chain is the
+        // path; a presented self-signed root behaves like an anchor because
+        // §6.1.4(l) never charges a self-issued certificate budget while
+        // §6.1.4(m) still applies its constraint.
+        try verifyChainPathLength(chain.constSlice(), null, chain.constSlice().len - 1);
         try verifyChainNameConstraints(chain.constSlice(), null);
     }
 
@@ -633,6 +702,134 @@ fn ncLeafExcludedDer() []const u8 {
 fn ncLeafOutsideDer() []const u8 {
     // ziglint-ignore: Z028
     return &@import("fixtures").nc_leaf_outside_der;
+}
+const pathlen_root_pem = "tests/fixtures/pathlen/root.crt";
+const pathlen_root_plc1_pem = "tests/fixtures/pathlen/root_plc1.crt";
+const pathlen_crosssign_root_pem = "tests/fixtures/pathlen/crosssign_root.crt";
+const pathlen_crosssign_untrusted_pem = "tests/fixtures/pathlen/crosssign_untrusted.crt";
+fn pathlenZeroInterDer() []const u8 {
+    // ziglint-ignore: Z028
+    return &@import("fixtures").pathlen_zero_inter_der;
+}
+fn pathlenBelowZeroInterDer() []const u8 {
+    // ziglint-ignore: Z028
+    return &@import("fixtures").pathlen_below_zero_inter_der;
+}
+fn pathlenSelfIssuedInterDer() []const u8 {
+    // ziglint-ignore: Z028
+    return &@import("fixtures").pathlen_self_issued_inter_der;
+}
+fn pathlenBelowSiInterDer() []const u8 {
+    // ziglint-ignore: Z028
+    return &@import("fixtures").pathlen_below_si_inter_der;
+}
+fn pathlenBelowZeroLeafDer() []const u8 {
+    // ziglint-ignore: Z028
+    return &@import("fixtures").pathlen_below_zero_leaf_der;
+}
+fn pathlenSelfIssuedLeafDer() []const u8 {
+    // ziglint-ignore: Z028
+    return &@import("fixtures").pathlen_self_issued_leaf_der;
+}
+fn pathlenBelowSiLeafDer() []const u8 {
+    // ziglint-ignore: Z028
+    return &@import("fixtures").pathlen_below_si_leaf_der;
+}
+fn pathlenCaTargetDer() []const u8 {
+    // ziglint-ignore: Z028
+    return &@import("fixtures").pathlen_ca_target_der;
+}
+fn pathlenClientBelowZeroLeafDer() []const u8 {
+    // ziglint-ignore: Z028
+    return &@import("fixtures").pathlen_client_below_zero_leaf_der;
+}
+fn pathlenClientZeroLeafDer() []const u8 {
+    // ziglint-ignore: Z028
+    return &@import("fixtures").pathlen_client_zero_leaf_der;
+}
+fn pathlenOneInterDer() []const u8 {
+    // ziglint-ignore: Z028
+    return &@import("fixtures").pathlen_one_inter_der;
+}
+fn pathlenOneMidInterDer() []const u8 {
+    // ziglint-ignore: Z028
+    return &@import("fixtures").pathlen_one_mid_inter_der;
+}
+fn pathlenOneDeepInterDer() []const u8 {
+    // ziglint-ignore: Z028
+    return &@import("fixtures").pathlen_one_deep_inter_der;
+}
+fn pathlenOneLeafDer() []const u8 {
+    // ziglint-ignore: Z028
+    return &@import("fixtures").pathlen_one_leaf_der;
+}
+fn pathlenOneDeepLeafDer() []const u8 {
+    // ziglint-ignore: Z028
+    return &@import("fixtures").pathlen_one_deep_leaf_der;
+}
+fn pathlenMultiOuterInterDer() []const u8 {
+    // ziglint-ignore: Z028
+    return &@import("fixtures").pathlen_multi_outer_inter_der;
+}
+fn pathlenMultiInnerInterDer() []const u8 {
+    // ziglint-ignore: Z028
+    return &@import("fixtures").pathlen_multi_inner_inter_der;
+}
+fn pathlenMultiDeepInterDer() []const u8 {
+    // ziglint-ignore: Z028
+    return &@import("fixtures").pathlen_multi_deep_inter_der;
+}
+fn pathlenMultiLeafDer() []const u8 {
+    // ziglint-ignore: Z028
+    return &@import("fixtures").pathlen_multi_leaf_der;
+}
+fn pathlenMultiDeepLeafDer() []const u8 {
+    // ziglint-ignore: Z028
+    return &@import("fixtures").pathlen_multi_deep_leaf_der;
+}
+fn pathlenAbsentAInterDer() []const u8 {
+    // ziglint-ignore: Z028
+    return &@import("fixtures").pathlen_absent_a_inter_der;
+}
+fn pathlenAbsentBInterDer() []const u8 {
+    // ziglint-ignore: Z028
+    return &@import("fixtures").pathlen_absent_b_inter_der;
+}
+fn pathlenAbsentLeafDer() []const u8 {
+    // ziglint-ignore: Z028
+    return &@import("fixtures").pathlen_absent_leaf_der;
+}
+fn pathlenAnchorMidInterDer() []const u8 {
+    // ziglint-ignore: Z028
+    return &@import("fixtures").pathlen_anchor_mid_inter_der;
+}
+fn pathlenAnchorDeepInterDer() []const u8 {
+    // ziglint-ignore: Z028
+    return &@import("fixtures").pathlen_anchor_deep_inter_der;
+}
+fn pathlenAnchorLeafDer() []const u8 {
+    // ziglint-ignore: Z028
+    return &@import("fixtures").pathlen_anchor_leaf_der;
+}
+fn pathlenAnchorDeepLeafDer() []const u8 {
+    // ziglint-ignore: Z028
+    return &@import("fixtures").pathlen_anchor_deep_leaf_der;
+}
+fn pathlenCrossRootCrossDer() []const u8 {
+    // ziglint-ignore: Z028
+    return &@import("fixtures").pathlen_cross_root_cross_der;
+}
+fn pathlenCrossMidInterDer() []const u8 {
+    // ziglint-ignore: Z028
+    return &@import("fixtures").pathlen_cross_mid_inter_der;
+}
+fn pathlenCrossDeepInterDer() []const u8 {
+    // ziglint-ignore: Z028
+    return &@import("fixtures").pathlen_cross_deep_inter_der;
+}
+fn pathlenCrossLeafDer() []const u8 {
+    // ziglint-ignore: Z028
+    return &@import("fixtures").pathlen_cross_leaf_der;
 }
 
 fn buildCertMsg(buf: []u8, cert_der: []const u8) []const u8 {
@@ -1147,6 +1344,418 @@ test "parse: insecure no-anchor path still enforces name constraints" {
             },
         ),
     );
+}
+
+// RFC 5280 §4.2.1.9 / §6.1 — pathLenConstraint enforcement (#118).
+//
+// Fixture family and per-case OpenSSL 3.6.4 ground truth:
+// tests/fixtures/pathlen/README.md. Every verdict below was first recorded
+// with `openssl verify` on the same DER (error 25 = "path length constraint
+// exceeded" at the constraining certificate's depth).
+
+const pathlen_now_sec: i64 = 1_800_000_000;
+
+fn pathlenBundle(pem: []const u8) !Certificate.Bundle {
+    var bundle: Certificate.Bundle = empty_bundle;
+    try addCertsFromFixturePath(&bundle, pem);
+    return bundle;
+}
+
+// RFC 5280 §4.2.1.9 — "A pathLenConstraint of zero indicates that no
+// non-self-issued intermediate CA certificates may follow in a valid
+// certification path." OpenSSL: error 25 at depth 2 (the pathlen:0 CA).
+test "parse: rejects chain exceeding pathLenConstraint zero" {
+    var bundle = try pathlenBundle(pathlen_root_pem);
+    defer bundle.deinit(testing.allocator);
+
+    var buf: [8192]u8 = undefined;
+    try testing.expectError(
+        error.CertificatePathLengthExceeded,
+        parse(
+            buildCertChainMsg(&buf, &.{
+                pathlenBelowZeroLeafDer(),
+                pathlenBelowZeroInterDer(),
+                pathlenZeroInterDer(),
+            }),
+            .{
+                .bundle = &bundle,
+                .now_sec = pathlen_now_sec,
+                .host_name = "below-zero.test",
+            },
+        ),
+    );
+}
+
+// RFC 5280 §4.2.1.9 — the last certificate in the path is not an intermediate
+// and is not counted, even when it is itself a CA certificate carrying
+// pathLenConstraint. OpenSSL: catarget OK.
+test "parse: accepts pathLenConstraint zero with a CA target" {
+    var bundle = try pathlenBundle(pathlen_root_pem);
+    defer bundle.deinit(testing.allocator);
+
+    var buf: [4096]u8 = undefined;
+    const pub_key = try parse(
+        buildCertChainMsg(&buf, &.{ pathlenCaTargetDer(), pathlenZeroInterDer() }),
+        .{
+            .bundle = &bundle,
+            .now_sec = pathlen_now_sec,
+            .host_name = "catarget.test",
+        },
+    );
+    try testing.expect(pub_key.len > 0);
+}
+
+// RFC 5280 §4.2.1.9 — pathlen:1 admits exactly one non-self-issued
+// intermediate. OpenSSL: error 25 at depth 3 (the pathlen:1 CA).
+test "parse: rejects chain exceeding pathLenConstraint one" {
+    var bundle = try pathlenBundle(pathlen_root_pem);
+    defer bundle.deinit(testing.allocator);
+
+    var buf: [16384]u8 = undefined;
+    try testing.expectError(
+        error.CertificatePathLengthExceeded,
+        parse(
+            buildCertChainMsg(&buf, &.{
+                pathlenOneDeepLeafDer(),
+                pathlenOneDeepInterDer(),
+                pathlenOneMidInterDer(),
+                pathlenOneInterDer(),
+            }),
+            .{
+                .bundle = &bundle,
+                .now_sec = pathlen_now_sec,
+                .host_name = "one-deep.test",
+            },
+        ),
+    );
+}
+
+// RFC 5280 §4.2.1.9 — exactly one non-self-issued intermediate below a
+// pathlen:1 CA is valid. OpenSSL: one.test OK.
+test "parse: accepts chain at pathLenConstraint one" {
+    var bundle = try pathlenBundle(pathlen_root_pem);
+    defer bundle.deinit(testing.allocator);
+
+    var buf: [8192]u8 = undefined;
+    const pub_key = try parse(
+        buildCertChainMsg(&buf, &.{
+            pathlenOneLeafDer(),
+            pathlenOneMidInterDer(),
+            pathlenOneInterDer(),
+        }),
+        .{
+            .bundle = &bundle,
+            .now_sec = pathlen_now_sec,
+            .host_name = "one.test",
+        },
+    );
+    try testing.expect(pub_key.len > 0);
+}
+
+// RFC 5280 §4.2.1.9 — "Where pathLenConstraint does not appear, no limit is
+// imposed": two intermediates below an unconstrained CA stay valid.
+// OpenSSL: absent.test OK.
+test "parse: imposes no path-length limit when pathLenConstraint is absent" {
+    var bundle = try pathlenBundle(pathlen_root_pem);
+    defer bundle.deinit(testing.allocator);
+
+    var buf: [8192]u8 = undefined;
+    const pub_key = try parse(
+        buildCertChainMsg(&buf, &.{
+            pathlenAbsentLeafDer(),
+            pathlenAbsentBInterDer(),
+            pathlenAbsentAInterDer(),
+        }),
+        .{
+            .bundle = &bundle,
+            .now_sec = pathlen_now_sec,
+            .host_name = "absent.test",
+        },
+    );
+    try testing.expect(pub_key.len > 0);
+}
+
+// RFC 5280 §6.1.4(m) — pathLenConstraint tightens max_path_length, so the
+// tightest constraint binds even when a looser one higher in the path would
+// allow the chain (inner pathlen:0 rejects what outer pathlen:2 permits).
+// OpenSSL: error 25 at depth 2 (the pathlen:0 inner CA).
+test "parse: enforces the tightest of multiple pathLenConstraints" {
+    var bundle = try pathlenBundle(pathlen_root_pem);
+    defer bundle.deinit(testing.allocator);
+
+    var buf: [16384]u8 = undefined;
+    try testing.expectError(
+        error.CertificatePathLengthExceeded,
+        parse(
+            buildCertChainMsg(&buf, &.{
+                pathlenMultiDeepLeafDer(),
+                pathlenMultiDeepInterDer(),
+                pathlenMultiInnerInterDer(),
+                pathlenMultiOuterInterDer(),
+            }),
+            .{
+                .bundle = &bundle,
+                .now_sec = pathlen_now_sec,
+                .host_name = "multi-deep.test",
+            },
+        ),
+    );
+}
+
+// RFC 5280 §6.1.4(l),(m) — multiple constraints all satisfied (outer
+// pathlen:2 with one intermediate below it, inner pathlen:0 with only the
+// target below it). OpenSSL: multi.test OK.
+test "parse: accepts multiple satisfied pathLenConstraints" {
+    var bundle = try pathlenBundle(pathlen_root_pem);
+    defer bundle.deinit(testing.allocator);
+
+    var buf: [8192]u8 = undefined;
+    const pub_key = try parse(
+        buildCertChainMsg(&buf, &.{
+            pathlenMultiLeafDer(),
+            pathlenMultiInnerInterDer(),
+            pathlenMultiOuterInterDer(),
+        }),
+        .{
+            .bundle = &bundle,
+            .now_sec = pathlen_now_sec,
+            .host_name = "multi.test",
+        },
+    );
+    try testing.expect(pub_key.len > 0);
+}
+
+// RFC 5280 §6.1 — "self-issued certificates are not counted when evaluating
+// path length": a self-issued intermediate (§6.1.4(l) skip) below a
+// pathlen:0 CA with only the target beneath it stays valid.
+// OpenSSL: selfissued.test OK.
+test "parse: self-issued intermediate does not consume path length" {
+    var bundle = try pathlenBundle(pathlen_root_pem);
+    defer bundle.deinit(testing.allocator);
+
+    var buf: [8192]u8 = undefined;
+    const pub_key = try parse(
+        buildCertChainMsg(&buf, &.{
+            pathlenSelfIssuedLeafDer(),
+            pathlenSelfIssuedInterDer(),
+            pathlenZeroInterDer(),
+        }),
+        .{
+            .bundle = &bundle,
+            .now_sec = pathlen_now_sec,
+            .host_name = "selfissued.test",
+        },
+    );
+    try testing.expect(pub_key.len > 0);
+}
+
+// RFC 5280 §6.1.4(l) — the self-issued exemption exempts only the self-issued
+// certificate itself: a non-self-issued intermediate beneath it still
+// consumes budget and violates the pathlen:0 CA above.
+// OpenSSL: error 25 at depth 3 (the pathlen:0 CA).
+test "parse: intermediate below a self-issued certificate still counts" {
+    var bundle = try pathlenBundle(pathlen_root_pem);
+    defer bundle.deinit(testing.allocator);
+
+    var buf: [16384]u8 = undefined;
+    try testing.expectError(
+        error.CertificatePathLengthExceeded,
+        parse(
+            buildCertChainMsg(&buf, &.{
+                pathlenBelowSiLeafDer(),
+                pathlenBelowSiInterDer(),
+                pathlenSelfIssuedInterDer(),
+                pathlenZeroInterDer(),
+            }),
+            .{
+                .bundle = &bundle,
+                .now_sec = pathlen_now_sec,
+                .host_name = "below-si.test",
+            },
+        ),
+    );
+}
+
+// RFC 5280 §6.1.1(d)(g)/§6.2 — a trust anchor supplied as a certificate
+// contributes its pathLenConstraint as the initial max_path_length input
+// (§6.1.2(k)); OpenSSL applies it (error 25 attributes the failure to the
+// anchor root itself at depth 3) and ztls matches. Two intermediates below a
+// pathlen:1 anchor are rejected.
+test "parse: trust anchor pathLenConstraint limits intermediates below it" {
+    var bundle = try pathlenBundle(pathlen_root_plc1_pem);
+    defer bundle.deinit(testing.allocator);
+
+    var buf: [8192]u8 = undefined;
+    try testing.expectError(
+        error.CertificatePathLengthExceeded,
+        parse(
+            buildCertChainMsg(&buf, &.{
+                pathlenAnchorDeepLeafDer(),
+                pathlenAnchorDeepInterDer(),
+                pathlenAnchorMidInterDer(),
+            }),
+            .{
+                .bundle = &bundle,
+                .now_sec = pathlen_now_sec,
+                .host_name = "anchor-deep.test",
+            },
+        ),
+    );
+}
+
+// RFC 5280 §6.1.1(g)/§6.1.2(k) — one intermediate below a pathlen:1 anchor
+// is within the anchor's initial budget. OpenSSL: anchor.test OK.
+test "parse: trust anchor pathLenConstraint satisfied" {
+    var bundle = try pathlenBundle(pathlen_root_plc1_pem);
+    defer bundle.deinit(testing.allocator);
+
+    var buf: [4096]u8 = undefined;
+    const pub_key = try parse(
+        buildCertChainMsg(&buf, &.{ pathlenAnchorLeafDer(), pathlenAnchorMidInterDer() }),
+        .{
+            .bundle = &bundle,
+            .now_sec = pathlen_now_sec,
+            .host_name = "anchor.test",
+        },
+    );
+    try testing.expect(pub_key.len > 0);
+}
+
+// RFC 5280 §6.1 — the prospective certification path starts at the
+// certificate issued by the trust anchor; certificates presented above the
+// anchored certificate are outside the path, so the cross-signed root's
+// pathlen:0 does not constrain it. OpenSSL (trusted-first): cross.test OK.
+test "parse: certificates above the anchored path are outside the path" {
+    var bundle = try pathlenBundle(pathlen_crosssign_root_pem);
+    defer bundle.deinit(testing.allocator);
+
+    var buf: [16384]u8 = undefined;
+    const pub_key = try parse(
+        buildCertChainMsg(&buf, &.{
+            pathlenCrossLeafDer(),
+            pathlenCrossDeepInterDer(),
+            pathlenCrossMidInterDer(),
+            pathlenCrossRootCrossDer(),
+        }),
+        .{
+            .bundle = &bundle,
+            .now_sec = pathlen_now_sec,
+            .host_name = "cross.test",
+        },
+    );
+    try testing.expect(pub_key.len > 0);
+}
+
+// RFC 5280 §6.1 — the same presented chain anchored one certificate higher
+// puts the cross-signed root inside the path, where its pathlen:0 binds.
+// OpenSSL: error 25 at depth 3 (the cross-signed root).
+test "parse: cross-signed root constraint binds inside the anchored path" {
+    var bundle = try pathlenBundle(pathlen_crosssign_untrusted_pem);
+    defer bundle.deinit(testing.allocator);
+
+    var buf: [16384]u8 = undefined;
+    try testing.expectError(
+        error.CertificatePathLengthExceeded,
+        parse(
+            buildCertChainMsg(&buf, &.{
+                pathlenCrossLeafDer(),
+                pathlenCrossDeepInterDer(),
+                pathlenCrossMidInterDer(),
+                pathlenCrossRootCrossDer(),
+            }),
+            .{
+                .bundle = &bundle,
+                .now_sec = pathlen_now_sec,
+                .host_name = "cross.test",
+            },
+        ),
+    );
+}
+
+// RFC 5280 §4.2.1.9, RFC 8446 §4.4.2 — the shared chain-verification path
+// also enforces pathLenConstraint for client-auth chains (parseClientChain).
+test "parseClientChain: rejects client chain exceeding pathLenConstraint zero" {
+    var bundle = try pathlenBundle(pathlen_root_pem);
+    defer bundle.deinit(testing.allocator);
+
+    var buf: [8192]u8 = undefined;
+    try testing.expectError(
+        error.CertificatePathLengthExceeded,
+        parseClientChain(
+            buildCertChainMsg(&buf, &.{
+                pathlenClientBelowZeroLeafDer(),
+                pathlenBelowZeroInterDer(),
+                pathlenZeroInterDer(),
+            }),
+            &.{},
+            .{
+                .bundle = &bundle,
+                .now_sec = pathlen_now_sec,
+                .leaf_usage = .client_auth,
+            },
+        ),
+    );
+}
+
+// RFC 5280 §4.2.1.9, RFC 8446 §4.4.2 — client-auth chains at a satisfied
+// constraint are accepted (target excluded from the pathlen:0 budget).
+test "parseClientChain: accepts client chain at pathLenConstraint zero" {
+    var bundle = try pathlenBundle(pathlen_root_pem);
+    defer bundle.deinit(testing.allocator);
+
+    var buf: [4096]u8 = undefined;
+    const verified = try parseClientChain(
+        buildCertChainMsg(&buf, &.{ pathlenClientZeroLeafDer(), pathlenZeroInterDer() }),
+        &.{},
+        .{
+            .bundle = &bundle,
+            .now_sec = pathlen_now_sec,
+            .leaf_usage = .client_auth,
+        },
+    );
+    try testing.expect(verified.pub_key.len > 0);
+}
+
+// RFC 5280 §4.2.1.9 — the explicit no-anchor path still enforces the
+// pathLenConstraints carried by the presented chain (mirrors the name-
+// constraint behavior above): the whole presented chain is the path.
+test "parse: insecure no-anchor path still enforces pathLenConstraint" {
+    var buf: [8192]u8 = undefined;
+    try testing.expectError(
+        error.CertificatePathLengthExceeded,
+        parse(
+            buildCertChainMsg(&buf, &.{
+                pathlenBelowZeroLeafDer(),
+                pathlenBelowZeroInterDer(),
+                pathlenZeroInterDer(),
+            }),
+            .{
+                .insecure_no_chain_anchor = true,
+                .now_sec = pathlen_now_sec,
+                .host_name = "below-zero.test",
+            },
+        ),
+    );
+}
+
+// RFC 5280 §6.1 — on the no-anchor path a presented self-signed root behaves
+// like an anchor: §6.1.4(l) never charges it budget (self-issued) while
+// §6.1.4(m) still applies its pathLenConstraint to everything below.
+test "parse: insecure no-anchor path accepts constrained chain with self-issued steps" {
+    var buf: [8192]u8 = undefined;
+    const pub_key = try parse(
+        buildCertChainMsg(&buf, &.{
+            pathlenSelfIssuedLeafDer(),
+            pathlenSelfIssuedInterDer(),
+            pathlenZeroInterDer(),
+        }),
+        .{
+            .insecure_no_chain_anchor = true,
+            .now_sec = pathlen_now_sec,
+            .host_name = "selfissued.test",
+        },
+    );
+    try testing.expect(pub_key.len > 0);
 }
 
 test "parse: malformed DER length is rejected, not crashed" {

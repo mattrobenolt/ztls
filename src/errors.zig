@@ -94,6 +94,7 @@ pub fn classify(err: HandshakeError) Class {
         error.CertificateNameConstraintUnsupported,
         error.CertificateNameConstraintViolation,
         error.CertificateNotYetValid,
+        error.CertificatePathLengthExceeded,
         error.CertificatePublicKeyInvalid,
         error.CertificateSignatureAlgorithmMismatch,
         error.CertificateSignatureAlgorithmRejected,
