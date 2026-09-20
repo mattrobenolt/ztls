@@ -168,7 +168,13 @@ The additional empty-list mutation fails its expected-error assertion.
 Local gates pass for all three providers. Both Zig compatibility lanes pass.
 
 #124 tracks focused handshake and parser evidence gaps.
-Compiler-dependent zeroization and the IDNA contract remain audit or policy questions under #125 and #126.
+Compiler-dependent zeroization remains an audit question under #125.
+
+The #126 hostname contract accepts ASCII DNS references, including caller-converted A-labels.
+Callers own IDNA conversion and reference-name syntax checks. The verifier rejects non-ASCII references.
+Three focused tests cover A-label comparison and unsupported Unicode input. Two regressions failed before the fix.
+Both local CI lanes and all three provider gates pass.
+
 Deferred C ABI work (#30) remains outside these consumers' qualification requirements.
 
 ---
@@ -715,10 +721,13 @@ data to openssl s_server and receives the HTTP response.
     after the server Finished. The `.send_finished` state alone does not prove
     a general 0.5-RTT interoperability failure. #124 tracks focused evidence
     for coalesced server data and low-level API sequences.
-  - H21 (remainder) — SHA-1 chain signatures are in fact ALREADY rejected at the
-    policy layer (`verifyChainCertificateSignatureAlgorithms`). #126 tracks
-    the remaining IDNA and A-label contract. The rfc822/URI name-constraint
-    item (#75) was fixed separately.
+  - H21 (contract defined, #126) — DNS-ID verification accepts ASCII reference
+    names, including caller-converted A-labels. The caller owns IDNA conversion
+    and reference-name syntax checks. Non-ASCII references fail with
+    `CertificateHostMismatch`, including under wildcard certificates.
+    Three focused tests include two regressions that failed before the fix.
+    SHA-1 chain signatures fail policy checks. The separate #75 fix covers
+    rfc822Name/URI name constraints.
   - #75 (fixed) — rfc822Name/URI bare-host name-constraint escape: bare-host
     constraints (no leading `.`) now do exact host matching per RFC 5280
     §4.2.1.10, instead of being routed through `dnsNameInSubtree` (subtree

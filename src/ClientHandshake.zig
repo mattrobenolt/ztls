@@ -153,10 +153,7 @@ pub const recommended_handshake_storage = 4 * frame.max_plaintext_len;
 /// via `Config.reassembly`).
 pub const Storage = ArrayBuffer(u8, recommended_handshake_storage);
 
-/// Configuration for a client handshake. Required fields have no defaults;
-/// optional fields default to values that match the previous `init(keypair)` +
-/// post-init policy assignment shape. `host_name` is the single source for
-/// both SNI (the server_name extension) and certificate SAN/CN validation.
+/// This type owns the client keypairs.
 pub const KeyPairs = handshake_key_pairs.KeyPairs;
 
 pub const HybridPolicyError = capabilities.HybridPolicyError;
@@ -192,7 +189,8 @@ pub const Config = struct {
     /// X25519 and P-256 are present by default; P-384 is opt-in to avoid
     /// unconditional extra scalar generation and ClientHello bloat.
     keypairs: KeyPairs,
-    /// DNS name sent as SNI and checked against the leaf certificate SAN/CN.
+    /// This ASCII DNS name controls SNI and verification against DNS-ID SAN entries.
+    /// The caller supplies A-labels after IDNA conversion.
     /// null disables both SNI and hostname verification.
     host_name: ?[]const u8,
     /// Current time in seconds since the Unix epoch for certificate validity.
@@ -4499,7 +4497,7 @@ test "handleRecord: KeyUpdate flood cap fires despite empty app-data interleavin
 }
 
 // RFC 8446 §4.1.2, §4.4.2.2 — Config.host_name is the single source for SNI
-// (server_name extension) and certificate SAN/CN validation.
+// (server_name extension) and certificate SAN validation.
 test "start: uses Config host_name for SNI and policy" {
     var hs: ClientHandshake = .init(.{
         .keypairs = try .init(rfc8448_client_keypair),

@@ -647,7 +647,14 @@ pub const Parsed = struct {
         CertificateFieldHasWrongDataType,
     };
 
+    /// The verifier compares an ASCII DNS reference against DNS-ID SAN entries.
+    /// Internationalized labels use caller-produced A-labels. Non-ASCII reference
+    /// names return CertificateHostMismatch. Non-ASCII DNS-ID entries do not match.
+    ///
+    /// Callers own IDNA conversion and syntax checks for reference names.
+    /// This function does not validate Punycode or compare IP-ID entries.
     pub fn verifyHostName(parsed_subject: Parsed, host_name: []const u8) VerifyHostNameError!void {
+        for (host_name) |byte| if (!std.ascii.isAscii(byte)) return error.CertificateHostMismatch;
         // RFC 6125 §6.4.4 and RFC 9525 §6.1 deprecate Common Name matching;
         // DNS-ID subjectAltName is authoritative.
         const subject_alt_name = parsed_subject.subjectAltName();
@@ -676,14 +683,8 @@ pub const Parsed = struct {
         return error.CertificateHostMismatch;
     }
 
-    // Check hostname according to RFC2818 specification:
-    //
-    // If more than one identity of a given type is present in
-    // the certificate (e.g., more than one DNSName name, a match in any one
-    // of the set is considered acceptable.) Names may contain the wildcard
-    // character * which is considered to match any single domain name
-    // component or component fragment. E.g., *.a.com matches foo.a.com but
-    // not bar.foo.a.com. f*.com matches foo.com but not bar.com.
+    // RFC 9525 §6.3 — ASCII comparison follows caller-owned IDNA conversion.
+    // A wildcard occupies the complete leftmost label.
     fn checkHostName(host_name: []const u8, dns_name: []const u8) bool {
         // Empty strings should not match
         if (host_name.len == 0 or dns_name.len == 0) return false;
@@ -758,6 +759,49 @@ test "Parsed.verifyHostName requires dNSName SAN" {
         false,
     );
     try with_san.verifyHostName("example.com");
+}
+
+// RFC 9525 §6.3 — callers supply A-labels, compared as case-insensitive ASCII.
+test "Parsed.verifyHostName accepts caller-converted A-labels" {
+    const san = "\x30\x17\x82\x15xn--bcher-kva.example";
+    const parsed = parsedForNameConstraintsTest(
+        san,
+        .empty,
+        .{ .start = 0, .end = san.len },
+        .empty,
+        false,
+    );
+    try parsed.verifyHostName("xn--bcher-kva.example");
+    try parsed.verifyHostName("XN--BCHER-KVA.EXAMPLE");
+    try std.testing.expectError(error.CertificateHostMismatch, parsed.verifyHostName("bücher.example"));
+}
+
+// RFC 9525 §6.3 — a wildcard matches an A-label, not an unconverted U-label.
+test "Parsed.verifyHostName rejects U-label references under a wildcard" {
+    const san = "\x30\x0f\x82\x0d*.example.com";
+    const parsed = parsedForNameConstraintsTest(
+        san,
+        .empty,
+        .{ .start = 0, .end = san.len },
+        .empty,
+        false,
+    );
+    try parsed.verifyHostName("xn--bcher-kva.example.com");
+    try std.testing.expectError(error.CertificateHostMismatch, parsed.verifyHostName("bücher.example.com"));
+}
+
+// RFC 9525 §2 and §6.3 — matching never treats raw UTF-8 as a DNS-ID.
+test "Parsed.verifyHostName rejects matching non-ASCII DNS identities" {
+    const san = "\x30\x11\x82\x0fbücher.example";
+    const parsed = parsedForNameConstraintsTest(
+        san,
+        .empty,
+        .{ .start = 0, .end = san.len },
+        .empty,
+        false,
+    );
+    try std.testing.expectError(error.CertificateHostMismatch, parsed.verifyHostName("bücher.example"));
+    try std.testing.expectError(error.CertificateHostMismatch, parsed.verifyHostName("xn--bcher-kva.example"));
 }
 
 // RFC 6125 §6.4.3 and CA/B Forum BR §3.2.2.6 — wildcard certificates must

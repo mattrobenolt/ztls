@@ -135,6 +135,10 @@ hostname is set, but it does not authenticate the chain to any trust root. In
 that mode, ztls does not defend against an active MITM presenting a self-signed
 certificate for the target hostname.
 
+DNS-ID verification accepts ASCII reference names. The caller validates reference-name syntax and converts internationalized labels to A-labels before verification.
+The engine rejects non-ASCII reference names and compares A-labels with ASCII case folding.
+It does not perform IDNA conversion or Punycode validation. `Parsed.verifyHostName` does not compare IP-ID entries.
+
 Evidence:
 
 - `certificate.zig` and `certificate_policy.zig` tests for hostname mismatch,
