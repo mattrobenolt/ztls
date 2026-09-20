@@ -24,16 +24,25 @@ pub const KeyPair = struct {
     public_key: PublicKey,
 
     /// Generate a keypair using the OS CSPRNG. Aborts if the CSPRNG is
-    /// unavailable (see `entropy.fill`); use `generateDeterministic` with your
-    /// own seed if you need to own entropy or handle failure.
+    /// unavailable (see `entropy.fill`). Use `fromSecret` to supply entropy.
     pub fn generate() KeyPair {
         var secret_key: [secret_length]u8 = undefined;
         entropy.fill(&secret_key);
-        return generateDeterministic(.init(secret_key)) catch unreachable;
+        return fromSecret(.init(secret_key)) catch unreachable;
+    }
+
+    /// Construct a keypair from a caller-supplied raw scalar.
+    /// Production callers must supply fresh CSPRNG bytes for each handshake.
+    /// The backend performs RFC 7748 clamping during public-key derivation.
+    pub fn fromSecret(secret_key: SecretKey) Error!KeyPair {
+        return .{
+            .secret_key = secret_key,
+            .public_key = try publicFromSecret(secret_key),
+        };
     }
 
     pub fn generateDeterministic(seed: SecretKey) Error!KeyPair {
-        return .{ .secret_key = seed, .public_key = try publicFromSecret(seed) };
+        return fromSecret(seed);
     }
 
     pub fn secureZero(self: *KeyPair) void {
@@ -91,14 +100,14 @@ test "sharedSecret: RFC 7748 X25519 vector" {
 }
 
 // RFC 7748 §6.1 — X25519 public keys are scalar multiplication by base point 9.
-test "KeyPair.generateDeterministic: RFC 7748 public keys" {
+test "KeyPair.fromSecret: RFC 7748 public keys" {
     const alice_seed = hex(32, "77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a");
-    const alice = try KeyPair.generateDeterministic(.init(alice_seed));
+    const alice = try KeyPair.fromSecret(.init(alice_seed));
     const alice_pub = hex(32, "8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a");
     try testing.expectEqualSlices(u8, &alice_pub, &alice.public_key.data);
 
     const bob_seed = hex(32, "5dab087e624a8a4b79e17f8b83800ee66f3bb1292618b6fd1c2f8b27ff88e0eb");
-    const bob = try KeyPair.generateDeterministic(.init(bob_seed));
+    const bob = try KeyPair.fromSecret(.init(bob_seed));
     const bob_pub = hex(32, "de9edb7d7b7dc1b4d35b61c2ece435373f8343c85b78674dadfc7e146f882b4f");
     try testing.expectEqualSlices(u8, &bob_pub, &bob.public_key.data);
 }
