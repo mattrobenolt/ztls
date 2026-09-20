@@ -1,0 +1,13 @@
+M  .pi/agents/security-reviewer.md
+M  docs/USAGE.md
+M  examples/handshake_keys.zig
+M  src/ClientHandshake.zig
+M  src/ServerHandshake.zig
+M  src/hkdf.zig
+M  src/hybrid_kex.zig
+M  src/p256.zig
+M  src/p384.zig
+M  src/suite_state.zig
+M  src/test/errq_alloc_check.zig
+M  src/wycheproof.zig
+M  src/x25519.zig

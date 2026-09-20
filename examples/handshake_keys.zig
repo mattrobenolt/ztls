@@ -66,7 +66,9 @@ pub fn main() !void {
 
     // ── DHE shared secret ──────────────────────
 
-    const dhe = try ztls.x25519.sharedSecret(kp.secret_key, sh.server_public_key);
+    var dhe: [ztls.x25519.secret_length]u8 = undefined;
+    defer std.crypto.secureZero(u8, &dhe);
+    try ztls.x25519.sharedSecret(kp.secret_key, sh.server_public_key, &dhe);
     print("shared_secret:     {x}\n", .{dhe});
 
     // ── Key schedule ────────────────────────

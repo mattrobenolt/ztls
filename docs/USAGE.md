@@ -762,7 +762,8 @@ Methods (all mirror their `ServerHandshake` counterparts):
 - `signature.PrivateKey.nonce_mode` selects the ECDSA nonce strategy (`signature.NonceMode`): the default `.random` is the production path; `.deterministic` opts into RFC 6979 deterministic nonces so identical key and message produce identical signature bytes, which makes a seeded handshake transcript byte-reproducible. It requires a backend compiled with nonce-type provider support and an ECDSA scheme; unsupported requests fail loudly — `error.DeterministicNonceUnsupported` for a missing capability or non-ECDSA scheme, `error.LibcryptoFailed` when the provider rejects the parameter — instead of silently signing with a random nonce. Keep `.random` in production.
 - `SignatureScheme` names the TLS signature scheme used with a loaded key, including `rsa_pss_rsae_sha256`, `ecdsa_secp256r1_sha256`, `ecdsa_secp384r1_sha384`, and `ed25519`.
 - `x25519.KeyPair.generate()` creates a fresh ephemeral X25519 keypair.
-- `x25519.KeyPair.generateDeterministic(seed)` and `x25519.sharedSecret(secret_key, peer_public_key)` are lower-level primitives for tests and fixed-vector paths.
+- `x25519.KeyPair.generateDeterministic(seed)` and `x25519.sharedSecret(secret_key, peer_public_key, out)` are lower-level primitives for tests and fixed-vector paths.
+  The caller owns the shared-secret output and its erasure. The function clears the output on error.
 - `ClientHandshake.KeyPairs.init(x25519_keypair)` generates the P-256 half and can return `p256.Error`. The caller sheds the handshake after failure (#88).
 - `initWithP256` and `initWithP256P384` accept fixed caller-supplied keypairs.
 

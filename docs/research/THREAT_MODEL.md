@@ -232,13 +232,14 @@ comparisons for Finished verify_data and X25519 identity detection, and relies
 on the selected libcrypto-family backend for primitive side-channel posture.
 Cache, power, EM, and backend-internal timing are deployment/backend concerns.
 
-### Backend compromise and backend zeroization
+### Secret erasure and backend compromise
 
-ztls does not implement fallback primitives. If the linked OpenSSL/AWS-LC/
-BoringSSL backend is compromised, ztls inherits that risk. ztls zeroes its own
-key and suite-state copies on teardown, but backend-internal scratch, provider
-contexts, allocator freelists, and primitive work buffers are governed by the
-backend's lifecycle guarantees.
+ztls clears designated owned key and suite-state fields on teardown.
+Compiler-generated copies and Zig HKDF/HMAC scratch can survive those writes.
+The [secret-lifetime audit](security/ZEROIZATION-2026-09.md) records this distinction in optimized binaries.
+
+`deinit` releases backend contexts. Providers control erasure of backend-owned memory.
+ztls does not implement fallback primitives. A compromised crypto backend compromises ztls.
 
 ### Replay safety for 0-RTT
 

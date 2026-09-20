@@ -1,0 +1,147 @@
+{
+  "binary": "/Users/matt/code/ztls/zig-out/memory.HqYLom/bin/bin/test",
+  "binary_sha256": "54a35d1a207cd3aa3cfc0c06da524942c6d82fc408a9c037a623134bef291823",
+  "symbols_argv": [
+    "llvm-nm",
+    "-S",
+    "--defined-only",
+    "/Users/matt/code/ztls/zig-out/memory.HqYLom/bin/bin/test"
+  ],
+  "functions": [
+    {
+      "symbol": "ClientHandshake.clientFinished",
+      "start": "0x1082b98",
+      "size": 4816,
+      "argv": [
+        "llvm-objdump",
+        "-dr",
+        "--symbolize-operands",
+        "--start-address=0x1082b98",
+        "--stop-address=0x1083e68",
+        "/Users/matt/code/ztls/zig-out/memory.HqYLom/bin/bin/test"
+      ],
+      "assembly": "client-finished.asm",
+      "sha256": "8a732b913363c9f1d23d447da04dff07a910c233e667c661abd3ab6f30709b77"
+    },
+    {
+      "symbol": "ClientHandshake.processServerHello",
+      "start": "0x1081028",
+      "size": 1368,
+      "argv": [
+        "llvm-objdump",
+        "-dr",
+        "--symbolize-operands",
+        "--start-address=0x1081028",
+        "--stop-address=0x1081580",
+        "/Users/matt/code/ztls/zig-out/memory.HqYLom/bin/bin/test"
+      ],
+      "assembly": "client-sh.asm",
+      "sha256": "4ac3c28be2633ee276fd768f240eb5b5253426a65647f8439479905b5c2ce1b6"
+    },
+    {
+      "symbol": "ServerHandshake.processClientHelloMessage",
+      "start": "0x1086474",
+      "size": 9780,
+      "argv": [
+        "llvm-objdump",
+        "-dr",
+        "--symbolize-operands",
+        "--start-address=0x1086474",
+        "--stop-address=0x1088aa8",
+        "/Users/matt/code/ztls/zig-out/memory.HqYLom/bin/bin/test"
+      ],
+      "assembly": "server-ch.asm",
+      "sha256": "9965a37bd707f28556249e8feb1c64443dd369915c64d1b99cfe0fb584383168"
+    },
+    {
+      "symbol": "hkdf.Hkdf(crypto.hmac.Hmac(crypto.sha2.Sha2x32(.{ 1779033703, 3144134277, 1013904242, 2773480762, 1359893119, 2600822924, 528734635, 1541459225 },256))).makeRecordLayer",
+      "start": "0x107eba4",
+      "size": 572,
+      "argv": [
+        "llvm-objdump",
+        "-dr",
+        "--symbolize-operands",
+        "--start-address=0x107eba4",
+        "--stop-address=0x107ede0",
+        "/Users/matt/code/ztls/zig-out/memory.HqYLom/bin/bin/test"
+      ],
+      "assembly": "make-layer-256.asm",
+      "sha256": "bc1849d7213b83f36a7cb188ae14bea528b5c1b26e34ac7e2286287f816ae68d"
+    },
+    {
+      "symbol": "hkdf.Hkdf(crypto.hmac.Hmac(crypto.sha2.Sha2x64(.{ 14680500436340154072, 7105036623409894663, 10473403895298186519, 1526699215303891257, 7436329637833083697, 10282925794625328401, 15784041429090275239, 5167115440072839076 },384))).makeRecordLayer",
+      "start": "0x107e968",
+      "size": 572,
+      "argv": [
+        "llvm-objdump",
+        "-dr",
+        "--symbolize-operands",
+        "--start-address=0x107e968",
+        "--stop-address=0x107eba4",
+        "/Users/matt/code/ztls/zig-out/memory.HqYLom/bin/bin/test"
+      ],
+      "assembly": "make-layer-384.asm",
+      "sha256": "5176bf0c68af2c6d3a20506d979221d0b6828eb9d48e0ebd1908a97d3741e150"
+    },
+    {
+      "symbol": "hybrid_kex.deriveClassicalSecret",
+      "start": "0x10a5954",
+      "size": 492,
+      "argv": [
+        "llvm-objdump",
+        "-dr",
+        "--symbolize-operands",
+        "--start-address=0x10a5954",
+        "--stop-address=0x10a5b40",
+        "/Users/matt/code/ztls/zig-out/memory.HqYLom/bin/bin/test"
+      ],
+      "assembly": "hybrid-classical.asm",
+      "sha256": "28ed26f3df2b330a375e1f99089aa96ed04d8a03fd97a7b9e8bb91bf8400c0fa"
+    },
+    {
+      "symbol": "p256.sharedSecret",
+      "start": "0x1081d50",
+      "size": 300,
+      "argv": [
+        "llvm-objdump",
+        "-dr",
+        "--symbolize-operands",
+        "--start-address=0x1081d50",
+        "--stop-address=0x1081e7c",
+        "/Users/matt/code/ztls/zig-out/memory.HqYLom/bin/bin/test"
+      ],
+      "assembly": "p256.asm",
+      "sha256": "dfaa71dc57c1aefc9aefb5578f94058ea3e0211595f0a792399b1e426dce7fb1"
+    },
+    {
+      "symbol": "p384.sharedSecret",
+      "start": "0x1081e7c",
+      "size": 344,
+      "argv": [
+        "llvm-objdump",
+        "-dr",
+        "--symbolize-operands",
+        "--start-address=0x1081e7c",
+        "--stop-address=0x1081fd4",
+        "/Users/matt/code/ztls/zig-out/memory.HqYLom/bin/bin/test"
+      ],
+      "assembly": "p384.asm",
+      "sha256": "f3a9175c7389ffe46feee496e06b6ebd64720b0602ae0396305ab62c2bd07187"
+    },
+    {
+      "symbol": "x25519.sharedSecret",
+      "start": "0x1081bd4",
+      "size": 380,
+      "argv": [
+        "llvm-objdump",
+        "-dr",
+        "--symbolize-operands",
+        "--start-address=0x1081bd4",
+        "--stop-address=0x1081d50",
+        "/Users/matt/code/ztls/zig-out/memory.HqYLom/bin/bin/test"
+      ],
+      "assembly": "x25519.asm",
+      "sha256": "ad3d411604dcf842a37d919d356b8d5b90a57fc43b0b7d2ad4dabc319ca0cf01"
+    }
+  ]
+}

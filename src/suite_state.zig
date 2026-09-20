@@ -108,3 +108,40 @@ pub const Suite = union(enum) {
         };
     }
 };
+
+// RFC 8446 §7.1 — erase obsolete handshake secrets.
+// Retain live traffic and resumption secrets until full cleanup.
+test "secret lifecycle preserves live epochs and clears owned secret fields" {
+    const testing = std.testing;
+    inline for (.{
+        .{ hkdf.HkdfSha256, Sha256, CipherSuite.aes_128_gcm_sha256 },
+        .{ hkdf.HkdfSha384, Sha384, CipherSuite.aes_256_gcm_sha384 },
+    }) |parameters| {
+        var arm: HashArm(parameters[0], parameters[1]) = .{
+            .transcript = .init(.{}),
+            .aead = parameters[2],
+            .handshake_secret = .init(@splat(0xa5)),
+            .client_finished_key = .init(@splat(0xa5)),
+            .server_finished_key = .init(@splat(0xa5)),
+            .client_app_secret = .init(@splat(0xa5)),
+            .server_app_secret = .init(@splat(0xa5)),
+            .resumption_master = .init(@splat(0xa5)),
+            .resumption_master_valid = true,
+        };
+        const transcript = arm.transcript.peek();
+        const obsolete = .{ "handshake_secret", "client_finished_key", "server_finished_key" };
+        const retained = .{ "client_app_secret", "server_app_secret", "resumption_master" };
+        arm.forgetHandshakeSecrets();
+        inline for (obsolete) |field|
+            try testing.expect(mem.allEqual(u8, &@field(arm, field).data, 0));
+        inline for (retained) |field|
+            try testing.expect(mem.allEqual(u8, &@field(arm, field).data, 0xa5));
+        try testing.expect(arm.resumption_master_valid);
+        try testing.expectEqual(parameters[2], arm.aead);
+        try testing.expectEqualSlices(u8, &transcript, &arm.transcript.peek());
+        arm.secureZero();
+        inline for (obsolete ++ retained) |field|
+            try testing.expect(mem.allEqual(u8, &@field(arm, field).data, 0));
+        try testing.expect(!arm.resumption_master_valid);
+    }
+}

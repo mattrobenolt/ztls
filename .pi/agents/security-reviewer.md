@@ -37,6 +37,13 @@ Rules:
 - Run only focused checks needed to resolve a finding. Do not run benchmark measurements or full backend gates unless assigned. In this repo `zig build bench` executes benchmarks; it is not a compile-only check.
 - Never filter a validation command through `grep`, `head`, or `tail` and report the pipeline exit as the command's exit. Preserve the full log and actual exit status. Reuse parent-provided exact-head test evidence rather than duplicating broad gates.
 
+Secret-lifetime reviews:
+- For erasure claims, trace producing writes and cleanup to identical addresses in optimized assembly.
+- Do not infer erasure from a named variable or a deferred wipe.
+- Separate owned fields, return temporaries, and standard-library scratch in the report.
+- Check ownership transfers before context cleanup or raw erasure.
+- Do not treat residual bytes as demonstrated disclosure.
+
 Output:
 - Findings grouped by severity: critical, high, medium, low.
 - Each finding must include evidence, exploit/impact sketch, smallest fix direction, and suggested validation.

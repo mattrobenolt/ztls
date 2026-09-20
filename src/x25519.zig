@@ -60,15 +60,19 @@ fn publicFromSecret(secret_key: SecretKey) Error!PublicKey {
 /// The result feeds directly into hkdf.handshakeSecret as the DHE input.
 ///
 /// RFC 8446 §7.4.2
-pub fn sharedSecret(secret_key: SecretKey, peer_public_key: PublicKey) Error![secret_length]u8 {
+/// The caller owns out. The function clears out on error.
+pub fn sharedSecret(
+    secret_key: SecretKey,
+    peer_public_key: PublicKey,
+    out: *[secret_length]u8,
+) Error!void {
+    errdefer std.crypto.secureZero(u8, out);
     var ours = try privateKey(secret_key);
     defer backend.x25519.freeKey(&ours);
     var peer = try publicKey(peer_public_key);
     defer backend.x25519.freeKey(&peer);
 
-    var secret: [secret_length]u8 = undefined;
-    try backend.x25519.sharedSecretDerive(&ours, &peer, &secret);
-    return secret;
+    try backend.x25519.sharedSecretDerive(&ours, &peer, out);
 }
 
 // RFC 7748 §5.2 — X25519 scalar multiplication test vector.
@@ -79,7 +83,9 @@ test "sharedSecret: RFC 7748 X25519 vector" {
     const peer: PublicKey = .init(
         hex(32, "e6db6867583030db3594c1a424b15f7c726624ec26b3353b10a903a6d0ab1c4c"),
     );
-    const secret = try sharedSecret(scalar, peer);
+    var secret: [secret_length]u8 = undefined;
+    defer std.crypto.secureZero(u8, &secret);
+    try sharedSecret(scalar, peer, &secret);
     const want = hex(32, "c3da55379de9c6908e94ea4df28d084f32eccf03491c71f754b4075577a28552");
     try testing.expectEqualSlices(u8, &want, &secret);
 }

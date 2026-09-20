@@ -61,7 +61,7 @@ revision, not automatically to later commits.
 
 | Pillar | Status | One-line |
 |---|---|---|
-| 1. Correctness | `PARTIAL` | Historical TLS-Anvil evidence covers `d07c551` (#108). The #118 fix, #119 consumer gate, and #120 candidate conformance pass. Resource and evidence residuals remain under #121–#122 and #125. |
+| 1. Correctness | `PARTIAL` | Historical TLS-Anvil evidence covers `d07c551` (#108). The #118 fix, #119 consumer gate, and #120 candidate conformance pass. Consumer resource and replacement-candidate qualification remain under #121–#122. |
 | 2. Ergonomics | `PROVEN` | CI-gated examples cover both roles across io_uring, epoll, kqueue, and `std.Io`. Core and wrapper APIs expose hybrid capabilities and reject invalid local policy before key generation or wire I/O (#105). `ztls-std` (#77) gates plain and mTLS OpenSSL interop in both directions. `ztls-xev` satisfies #76's Linux/macOS contract, including in-flight cancellation (#83). |
 | 3. Performance | `PROVEN` | n=10 captures on x86_64 (c7i.2xlarge), aarch64 (c7g.2xlarge), and macOS (Apple M1 Max) with formal CIs (p=0.000): ztls beats libssl on every comparable app-data row on all three platforms and rustls on all AES-GCM rows; regression gate committed. |
 | 4. Providers | `PROVEN` | OpenSSL, AWS-LC, and BoringSSL passed strict-complete TLS-Anvil client and server runs at `d07c551`; malformed peer ML-KEM keys produce `illegal_parameter` while provider faults remain `internal_error` (#108). The capture is bound to that revision; candidate re-qualification is #120. |
@@ -181,7 +181,18 @@ The server test stops before CertificateVerify. It does not claim a completed cl
 The 0.5-RTT test constructs coalesced server records before client Finished exists, with independent RFC 8448 application keys.
 Both public client paths receive the application data before the peer consumes Finished. The high-level path keeps Finished pending during RX.
 These tests qualify the specified API sequences, not every external server implementation.
-Compiler-dependent zeroization remains an audit question under #125.
+The #125 [secret-lifetime audit](docs/research/security/ZEROIZATION-2026-09.md) confirms residual compiler-generated copies.
+Eight compiler/target combinations distinguish erased derived salts from retained return values.
+Native disassembly checks direct ECDH outputs and local AEAD-key erasure in both Zig versions.
+Lifecycle and failure-path tests have five failing mutation controls.
+Both Zig CI recipes and all provider gates pass:
+
+- OpenSSL: 872 passes and one skip.
+- AWS-LC: 873 passes.
+- BoringSSL: 866 passes and seven skips.
+
+Diagnostic memory gates report zero errors for both compiler versions.
+The contract covers designated owned storage, not complete physical erasure of every secret copy.
 
 The #126 hostname contract accepts ASCII DNS references, including caller-converted A-labels.
 Callers own IDNA conversion and reference-name syntax checks. The verifier rejects non-ASCII references.
@@ -709,10 +720,12 @@ data to openssl s_server and receives the HTTP response.
     ABI boundary, where a Zig "must outlive" contract can't be expressed — so the
     credential-lifetime redesign belongs there, as a hard gate before the C ABI
     ships. The Zig API stays borrowed-consistent.
-  - H17 — HKDF passes `Prk` and `TrafficSecret` by value.
-    These signatures permit compiler-generated copies. They do not prove
-    unwiped stack bytes in a particular binary. #125 tracks the source,
-    disassembly, and zeroization audit. Explicit handshake locals have wipes.
+  - H17 — #125 records a [source/disassembly audit](docs/research/security/ZEROIZATION-2026-09.md).
+    Eight compiler/target combinations retain HKDF return copies outside the erased derived-salt storage.
+    Native captures expose ineffective named-wipe attempts and support direct-buffer changes.
+    Five mutation controls fail at the intended field or allocation checks.
+    Compiler-generated copies and standard-library scratch remain outside the erasure guarantee.
+    No secret disclosure or complete physical erasure is asserted.
   - Zeroing responsibility at the caller-owned-buffer boundary is now decided
     and documented rather than accidental (#81). `SliceBuffer.secureZero`
     zeroed the view's own 24-byte header — the fat pointer, its length, and
@@ -890,7 +903,7 @@ data to openssl s_server and receives the HTTP response.
 
 **Status:** `PARTIAL` — #118 passes local and GitHub gates.
 Candidate consumer and conformance evidence passes at `b9d03ed`.
-Resource and evidence residuals under #121–#122 and #124–#125 remain separate requirements.
+Consumer resource and replacement-candidate qualification under #121–#122 remain separate requirements.
 The #91 fixture regressions and #108 conformance captures retain their historical provenance.
 
 **Evidence and design decisions:**

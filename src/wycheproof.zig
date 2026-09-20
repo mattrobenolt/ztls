@@ -32,7 +32,9 @@ test "Wycheproof: X25519 shared secret tcId 1" {
     const public: ztls.x25519.PublicKey = .init(
         hex(32, "504a36999f489cd2fdbc08baff3d88fa00569ba986cba22548ffde80f9806829"),
     );
-    const shared = try ztls.x25519.sharedSecret(private, public);
+    var shared: [ztls.x25519.secret_length]u8 = undefined;
+    defer std.crypto.secureZero(u8, &shared);
+    try ztls.x25519.sharedSecret(private, public, &shared);
     const expected = hex(32, "436a2c040cf45fea9b29a0cb81b1f41458f863d0d61b453d0a982720d6d61320");
     try testing.expectEqualSlices(u8, &expected, &shared);
 }
@@ -43,7 +45,12 @@ test "Wycheproof boundary: X25519 identity element is rejected" {
         hex(32, "c8a9d5a91091ad851c668b0736c1c9a02936c0d3ad62670858088047ba057475"),
     );
     const public: ztls.x25519.PublicKey = .init(@splat(0));
-    try testing.expectError(error.IdentityElement, ztls.x25519.sharedSecret(private, public));
+    var shared: [ztls.x25519.secret_length]u8 = @splat(0xa5);
+    try testing.expectError(
+        error.IdentityElement,
+        ztls.x25519.sharedSecret(private, public, &shared),
+    );
+    try testing.expect(std.mem.allEqual(u8, &shared, 0));
 }
 
 // RFC 7748 §6.1 / Wycheproof — small-order (order-2) public key is rejected.
@@ -54,7 +61,12 @@ test "Wycheproof boundary: X25519 small-order public key is rejected" {
     const public: ztls.x25519.PublicKey = .init(
         hex(32, "0100000000000000000000000000000000000000000000000000000000000000"),
     );
-    try testing.expectError(error.IdentityElement, ztls.x25519.sharedSecret(private, public));
+    var shared: [ztls.x25519.secret_length]u8 = @splat(0xa5);
+    try testing.expectError(
+        error.IdentityElement,
+        ztls.x25519.sharedSecret(private, public, &shared),
+    );
+    try testing.expect(std.mem.allEqual(u8, &shared, 0));
 }
 
 // Wycheproof v1 (google-wycheproof 0.9rc5) — AES-GCM tcId 2.

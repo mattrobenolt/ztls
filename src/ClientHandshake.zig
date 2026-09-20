@@ -1570,19 +1570,16 @@ pub fn processServerHello(self: *ClientHandshake, msg: []const u8) ServerHelloEr
     var dhe: [80]u8 = undefined;
     const dhe_len: usize = switch (sh.key_share) {
         .x25519 => |key| blk: {
-            const secret = try x25519.sharedSecret(self.keypairs.x25519.secret_key, key);
-            @memcpy(dhe[0..32], &secret);
+            try x25519.sharedSecret(self.keypairs.x25519.secret_key, key, dhe[0..32]);
             break :blk @as(usize, 32);
         },
         .secp256r1 => |key| blk: {
-            const secret = try p256.sharedSecret(self.keypairs.p256.secret_key, key);
-            @memcpy(dhe[0..32], &secret);
+            try p256.sharedSecret(self.keypairs.p256.secret_key, key, dhe[0..32]);
             break :blk @as(usize, 32);
         },
         .secp384r1 => |key| blk: {
-            const keypair = self.keypairs.p384 orelse unreachable;
-            const secret = try p384.sharedSecret(keypair.secret_key, key);
-            @memcpy(dhe[0..48], &secret);
+            const keypair = if (self.keypairs.p384) |*pair| pair else unreachable;
+            try p384.sharedSecret(keypair.secret_key, key, dhe[0..48]);
             break :blk @as(usize, 48);
         },
         // RFC 10024 §4.2-§4.3 — ztls validates/splits the selected server
@@ -4362,7 +4359,9 @@ test "handleRecord: PSK-offering client rejects bare Finished unless server sele
     try testing.expect(client2.offered_psk != null);
 
     // Compute the valid server Finished for the PSK fast path independently.
-    const dhe = try x25519.sharedSecret(client_kp.secret_key, server_kp.public_key);
+    var dhe: [x25519.secret_length]u8 = undefined;
+    defer crypto.secureZero(u8, &dhe);
+    try x25519.sharedSecret(client_kp.secret_key, server_kp.public_key, &dhe);
     const early = hkdf.HkdfSha256.pskEarlySecret(&psk_bytes);
     const hs_secret = hkdf.HkdfSha256.handshakeSecret(early, &dhe);
 

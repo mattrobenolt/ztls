@@ -104,7 +104,8 @@ fn failMalformedKeyShare() CheckError!void {
     var peer: ztls.p256.PublicKey = .{ .data = @splat(0xff) };
     peer.data[0] = 0x04;
 
-    _ = ztls.p256.sharedSecret(secret, peer) catch |err| return switch (err) {
+    var out: [ztls.p256.secret_length]u8 = undefined;
+    ztls.p256.sharedSecret(secret, peer, &out) catch |err| return switch (err) {
         error.IdentityElement => {},
         error.LibcryptoFailed => error.UnexpectedBackendResult,
     };
@@ -221,6 +222,44 @@ fn abortEarlyServer() CheckError!void {
     return error.UnexpectedBackendResult;
 }
 
+// RFC 8446 §4.4.4 — failed client Finished emission releases uninstalled application keys.
+fn abortClientFinished() CheckError!void {
+    var ticket: ztls.ClientHandshake.SessionTicket = undefined;
+    initAbortTicket(&ticket);
+    defer ticket.secureZero();
+    var client: ztls.ClientHandshake = .init(.{
+        .keypairs = try abortKeyPairs(),
+        .host_name = null,
+        .now_sec = 0,
+        .random = .zero,
+    });
+    defer client.deinit();
+    var server: ztls.ServerHandshake = .init(.{
+        .keypairs = try abortKeyPairs(),
+        .random = .zero,
+        .psk_lookup = .{ .context = &ticket, .lookup = lookupAbortPsk },
+    });
+    defer server.deinit();
+    var client_wire: [4096]u8 = undefined;
+    var server_wire: [4096]u8 = undefined;
+    const hello = client.startWithPsk(&ticket, &client_wire, false) catch
+        return error.UnexpectedBackendResult;
+    client.completeWrite();
+    const server_hello = server.acceptClientHello(hello, &server_wire) catch
+        return error.UnexpectedBackendResult;
+    _ = client.handleRecord(server_wire[0..server_hello.len], &client_wire) catch
+        return error.UnexpectedBackendResult;
+    const flight = (server.sendPreparedServerFlight(&server_wire) catch
+        return error.UnexpectedBackendResult) orelse return error.UnexpectedBackendResult;
+    _ = client.handleRecord(server_wire[0..flight.len], &.{}) catch |err| {
+        if (err != error.BufferTooShort or client.state != .send_finished or
+            client.server_flight_progress != .finished_verified)
+            return error.UnexpectedBackendResult;
+        return;
+    };
+    return error.UnexpectedBackendResult;
+}
+
 /// One measured round of `op`: memory back to baseline first (the
 /// load-bearing axis — entries left queued hold their allocations), queue
 /// empty second.
@@ -280,6 +319,11 @@ fn runChecks() CheckError!void {
     const server_baseline = liveCount();
     std.debug.print("errq-alloc-check: early server abort\n", .{});
     for (0..100) |_| try checkRound(abortEarlyServer, server_baseline);
+
+    try abortClientFinished();
+    const finished_baseline = liveCount();
+    std.debug.print("errq-alloc-check: client Finished abort\n", .{});
+    for (0..100) |_| try checkRound(abortClientFinished, finished_baseline);
 }
 
 pub fn main() void {

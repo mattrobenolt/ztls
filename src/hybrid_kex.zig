@@ -220,7 +220,7 @@ fn writeClassicalPublic(
         .x25519 => @memcpy(out, &keypairs.x25519.public_key.data),
         .secp256r1 => @memcpy(out, &keypairs.p256.public_key.data),
         .secp384r1 => {
-            const keypair = keypairs.p384 orelse return error.UnsupportedGroup;
+            const keypair = if (keypairs.p384) |*pair| pair else return error.UnsupportedGroup;
             @memcpy(out, &keypair.public_key.data);
         },
         else => unreachable,
@@ -237,25 +237,22 @@ fn deriveClassicalSecret(
         .x25519 => blk: {
             if (peer_public.len != x25519.public_length) return error.MalformedKeyShare;
             const peer: x25519.PublicKey = .init(peer_public[0..x25519.public_length].*);
-            const secret = try x25519.sharedSecret(keypairs.x25519.secret_key, peer);
-            @memcpy(out[0..x25519.secret_length], &secret);
+            try x25519.sharedSecret(keypairs.x25519.secret_key, peer, out[0..x25519.secret_length]);
             break :blk x25519.secret_length;
         },
         .secp256r1 => blk: {
             if (peer_public.len != p256.public_length or peer_public[0] != 0x04)
                 return error.MalformedKeyShare;
             const peer: p256.PublicKey = .init(peer_public[0..p256.public_length].*);
-            const secret = try p256.sharedSecret(keypairs.p256.secret_key, peer);
-            @memcpy(out[0..p256.secret_length], &secret);
+            try p256.sharedSecret(keypairs.p256.secret_key, peer, out[0..p256.secret_length]);
             break :blk p256.secret_length;
         },
         .secp384r1 => blk: {
             if (peer_public.len != p384.public_length or peer_public[0] != 0x04)
                 return error.MalformedKeyShare;
-            const keypair = keypairs.p384 orelse return error.UnsupportedGroup;
+            const keypair = if (keypairs.p384) |*pair| pair else return error.UnsupportedGroup;
             const peer: p384.PublicKey = .init(peer_public[0..p384.public_length].*);
-            const secret = try p384.sharedSecret(keypair.secret_key, peer);
-            @memcpy(out[0..p384.secret_length], &secret);
+            try p384.sharedSecret(keypair.secret_key, peer, out);
             break :blk p384.secret_length;
         },
         else => unreachable,

@@ -1,0 +1,211 @@
+diff --git a/src/ClientHandshake.zig b/src/ClientHandshake.zig
+index 8ab6fda..2d3ef4f 100644
+--- a/src/ClientHandshake.zig
++++ b/src/ClientHandshake.zig
+@@ -1568,21 +1568,29 @@ pub fn processServerHello(self: *ClientHandshake, msg: []const u8) ServerHelloEr
+ 
+     self.suite.update(msg); // transcript now covers ... || ServerHello
+     var dhe: [80]u8 = undefined;
++    // Keep error-union payloads in their original result slots.
++    // A try-unwrapped value can leave a separate unwiped return slot.
+     const dhe_len: usize = switch (sh.key_share) {
+         .x25519 => |key| blk: {
+-            const secret = try x25519.sharedSecret(self.keypairs.x25519.secret_key, key);
+-            @memcpy(dhe[0..32], &secret);
++            var result = x25519.sharedSecret(self.keypairs.x25519.secret_key, key);
++            defer crypto.secureZero(u8, mem.asBytes(&result));
++            const secret = if (result) |*value| value else |err| return err;
++            @memcpy(dhe[0..32], secret);
+             break :blk @as(usize, 32);
+         },
+         .secp256r1 => |key| blk: {
+-            const secret = try p256.sharedSecret(self.keypairs.p256.secret_key, key);
+-            @memcpy(dhe[0..32], &secret);
++            var result = p256.sharedSecret(self.keypairs.p256.secret_key, key);
++            defer crypto.secureZero(u8, mem.asBytes(&result));
++            const secret = if (result) |*value| value else |err| return err;
++            @memcpy(dhe[0..32], secret);
+             break :blk @as(usize, 32);
+         },
+         .secp384r1 => |key| blk: {
+-            const keypair = self.keypairs.p384 orelse unreachable;
+-            const secret = try p384.sharedSecret(keypair.secret_key, key);
+-            @memcpy(dhe[0..48], &secret);
++            const keypair = if (self.keypairs.p384) |*pair| pair else unreachable;
++            var result = p384.sharedSecret(keypair.secret_key, key);
++            defer crypto.secureZero(u8, mem.asBytes(&result));
++            const secret = if (result) |*value| value else |err| return err;
++            @memcpy(dhe[0..48], secret);
+             break :blk @as(usize, 48);
+         },
+         // RFC 10024 §4.2-§4.3 — ztls validates/splits the selected server
+@@ -1615,7 +1623,10 @@ pub fn processServerHello(self: *ClientHandshake, msg: []const u8) ServerHelloEr
+         self.server_selected_psk = true;
+         break :blk self.offered_psk;
+     } else null;
+-    const keys = try self.suite.deriveHandshakeKeys(dhe[0..dhe_len], psk);
++    var keys_result = self.suite.deriveHandshakeKeys(dhe[0..dhe_len], psk);
++    // Backend ownership transfers to self. Erase the original return slot.
++    defer crypto.secureZero(u8, mem.asBytes(&keys_result));
++    const keys = if (keys_result) |*value| value else |err| return err;
+     self.rx = keys.rx;
+     self.tx = keys.tx;
+     self.state = .wait_ee;
+@@ -2000,10 +2011,14 @@ pub fn clientFinished(self: *ClientHandshake, out: []u8) ClientFinishedError![]c
+         }
+     }
+ 
+-    var keys = self.suite.finishHandshake(
++    var keys_result = self.suite.finishHandshake(
+         plain_buf[plain_len..],
+         self.server_finished_hash[0..self.server_finished_hash_len],
+-    ) catch |err| return switch (err) {
++    );
++    // On failure, errdefer releases the contexts before this wipe.
++    // Successful encryption transfers backend ownership to self below.
++    defer crypto.secureZero(u8, mem.asBytes(&keys_result));
++    const keys = if (keys_result) |*value| value else |err| return switch (err) {
+         error.BufferTooShort => error.BufferTooShort,
+         else => |e| e,
+     };
+diff --git a/src/hkdf.zig b/src/hkdf.zig
+index 3b68aca..4161048 100644
+--- a/src/hkdf.zig
++++ b/src/hkdf.zig
+@@ -136,7 +136,8 @@ fn Hkdf(comptime Hmac: type) type {
+         /// P-384. The key exchange layer owns the sizing; the key schedule
+         /// just extracts over whatever bytes it is given.
+         pub fn handshakeSecret(early: Prk, dhe: []const u8) Prk {
+-            const salt = deriveSecret(early, "derived", &empty_hash);
++            var salt = deriveSecret(early, "derived", &empty_hash);
++            defer salt.secureZero();
+             return .init(H.extract(&salt.data, dhe));
+         }
+ 
+@@ -144,7 +145,8 @@ fn Hkdf(comptime Hmac: type) type {
+         ///
+         /// No new key material at this stage; IKM is zero.
+         pub fn masterSecret(handshake: Prk) Prk {
+-            const salt = deriveSecret(handshake, "derived", &empty_hash);
++            var salt = deriveSecret(handshake, "derived", &empty_hash);
++            defer salt.secureZero();
+             return .init(H.extract(&salt.data, prk_zero));
+         }
+ 
+@@ -231,9 +233,10 @@ fn Hkdf(comptime Hmac: type) type {
+         /// negotiated cipher suite), so a single arm serves all suites of its
+         /// hash (e.g. SHA-256 covers AES-128-GCM and ChaCha20-Poly1305).
+         pub fn makeRecordLayer(key: CipherSuite, prk: TrafficSecret) aead.Error!RecordLayer {
+-            const layer_aead: aead.Aead = switch (key) {
++            var layer_aead: aead.Aead = switch (key) {
+                 inline else => |k| @unionInit(aead.Aead, @tagName(k), trafficKey(k, prk)),
+             };
++            defer layer_aead.secureZero();
+             return .init(layer_aead, trafficIv(prk));
+         }
+ 
+diff --git a/src/suite_state.zig b/src/suite_state.zig
+index 27225b2..0a85367 100644
+--- a/src/suite_state.zig
++++ b/src/suite_state.zig
+@@ -108,3 +108,39 @@ pub const Suite = union(enum) {
+         };
+     }
+ };
++
++// RFC 8446 §7.1 — erase obsolete handshake secrets but retain live traffic and resumption secrets.
++test "secret lifecycle preserves live epochs and clears owned secret fields" {
++    const testing = std.testing;
++    inline for (.{
++        .{ hkdf.HkdfSha256, Sha256, CipherSuite.aes_128_gcm_sha256 },
++        .{ hkdf.HkdfSha384, Sha384, CipherSuite.aes_256_gcm_sha384 },
++    }) |parameters| {
++        var arm: HashArm(parameters[0], parameters[1]) = .{
++            .transcript = .init(.{}),
++            .aead = parameters[2],
++            .handshake_secret = .init(@splat(0xa5)),
++            .client_finished_key = .init(@splat(0xa5)),
++            .server_finished_key = .init(@splat(0xa5)),
++            .client_app_secret = .init(@splat(0xa5)),
++            .server_app_secret = .init(@splat(0xa5)),
++            .resumption_master = .init(@splat(0xa5)),
++            .resumption_master_valid = true,
++        };
++        const transcript = arm.transcript.peek();
++        const obsolete = .{ "handshake_secret", "client_finished_key", "server_finished_key" };
++        const retained = .{ "client_app_secret", "server_app_secret", "resumption_master" };
++        arm.forgetHandshakeSecrets();
++        inline for (obsolete) |field|
++            try testing.expect(mem.allEqual(u8, &@field(arm, field).data, 0));
++        inline for (retained) |field|
++            try testing.expect(mem.allEqual(u8, &@field(arm, field).data, 0xa5));
++        try testing.expect(arm.resumption_master_valid);
++        try testing.expectEqual(parameters[2], arm.aead);
++        try testing.expectEqualSlices(u8, &transcript, &arm.transcript.peek());
++        arm.secureZero();
++        inline for (obsolete ++ retained) |field|
++            try testing.expect(mem.allEqual(u8, &@field(arm, field).data, 0));
++        try testing.expect(!arm.resumption_master_valid);
++    }
++}
+diff --git a/src/test/errq_alloc_check.zig b/src/test/errq_alloc_check.zig
+index f1e9665..1e14563 100644
+--- a/src/test/errq_alloc_check.zig
++++ b/src/test/errq_alloc_check.zig
+@@ -221,6 +221,44 @@ fn abortEarlyServer() CheckError!void {
+     return error.UnexpectedBackendResult;
+ }
+ 
++// RFC 8446 §4.4.4 — failed client Finished emission releases uninstalled application keys.
++fn abortClientFinished() CheckError!void {
++    var ticket: ztls.ClientHandshake.SessionTicket = undefined;
++    initAbortTicket(&ticket);
++    defer ticket.secureZero();
++    var client: ztls.ClientHandshake = .init(.{
++        .keypairs = try abortKeyPairs(),
++        .host_name = null,
++        .now_sec = 0,
++        .random = .zero,
++    });
++    defer client.deinit();
++    var server: ztls.ServerHandshake = .init(.{
++        .keypairs = try abortKeyPairs(),
++        .random = .zero,
++        .psk_lookup = .{ .context = &ticket, .lookup = lookupAbortPsk },
++    });
++    defer server.deinit();
++    var client_wire: [4096]u8 = undefined;
++    var server_wire: [4096]u8 = undefined;
++    const hello = client.startWithPsk(&ticket, &client_wire, false) catch
++        return error.UnexpectedBackendResult;
++    client.completeWrite();
++    const server_hello = server.acceptClientHello(hello, &server_wire) catch
++        return error.UnexpectedBackendResult;
++    _ = client.handleRecord(server_wire[0..server_hello.len], &client_wire) catch
++        return error.UnexpectedBackendResult;
++    const flight = (server.sendPreparedServerFlight(&server_wire) catch
++        return error.UnexpectedBackendResult) orelse return error.UnexpectedBackendResult;
++    _ = client.handleRecord(server_wire[0..flight.len], &.{}) catch |err| {
++        if (err != error.BufferTooShort or client.state != .send_finished or
++            client.server_flight_progress != .finished_verified)
++            return error.UnexpectedBackendResult;
++        return;
++    };
++    return error.UnexpectedBackendResult;
++}
++
+ /// One measured round of `op`: memory back to baseline first (the
+ /// load-bearing axis — entries left queued hold their allocations), queue
+ /// empty second.
+@@ -280,6 +318,11 @@ fn runChecks() CheckError!void {
+     const server_baseline = liveCount();
+     std.debug.print("errq-alloc-check: early server abort\n", .{});
+     for (0..100) |_| try checkRound(abortEarlyServer, server_baseline);
++
++    try abortClientFinished();
++    const finished_baseline = liveCount();
++    std.debug.print("errq-alloc-check: client Finished abort\n", .{});
++    for (0..100) |_| try checkRound(abortClientFinished, finished_baseline);
+ }
+ 
+ pub fn main() void {

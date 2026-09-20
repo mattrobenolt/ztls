@@ -1,0 +1,15 @@
+==4152143== Memcheck, a memory error detector
+==4152143== Copyright (C) 2002-2026, and GNU GPL'd, by Julian Seward et al.
+==4152143== Using Valgrind-3.27.1 and LibVEX; rerun with -h for copyright info
+==4152143== Command: /Users/matt/code/ztls/zig-out/memory.YYkvFg/bin/bin/test
+==4152143== Parent PID: 4152142
+==4152143== 
+==4152143== 
+==4152143== HEAP SUMMARY:
+==4152143==     in use at exit: 0 bytes in 0 blocks
+==4152143==   total heap usage: 215,047 allocs, 215,047 frees, 16,435,496 bytes allocated
+==4152143== 
+==4152143== All heap blocks were freed -- no leaks are possible
+==4152143== 
+==4152143== For lists of detected and suppressed errors, rerun with: -s
+==4152143== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)

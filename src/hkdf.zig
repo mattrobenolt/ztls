@@ -136,7 +136,8 @@ fn Hkdf(comptime Hmac: type) type {
         /// P-384. The key exchange layer owns the sizing; the key schedule
         /// just extracts over whatever bytes it is given.
         pub fn handshakeSecret(early: Prk, dhe: []const u8) Prk {
-            const salt = deriveSecret(early, "derived", &empty_hash);
+            var salt = deriveSecret(early, "derived", &empty_hash);
+            defer salt.secureZero();
             return .init(H.extract(&salt.data, dhe));
         }
 
@@ -144,7 +145,8 @@ fn Hkdf(comptime Hmac: type) type {
         ///
         /// No new key material at this stage; IKM is zero.
         pub fn masterSecret(handshake: Prk) Prk {
-            const salt = deriveSecret(handshake, "derived", &empty_hash);
+            var salt = deriveSecret(handshake, "derived", &empty_hash);
+            defer salt.secureZero();
             return .init(H.extract(&salt.data, prk_zero));
         }
 
@@ -231,9 +233,14 @@ fn Hkdf(comptime Hmac: type) type {
         /// negotiated cipher suite), so a single arm serves all suites of its
         /// hash (e.g. SHA-256 covers AES-128-GCM and ChaCha20-Poly1305).
         pub fn makeRecordLayer(key: CipherSuite, prk: TrafficSecret) aead.Error!RecordLayer {
-            const layer_aead: aead.Aead = switch (key) {
-                inline else => |k| @unionInit(aead.Aead, @tagName(k), trafficKey(k, prk)),
-            };
+            var layer_aead: aead.Aead = undefined;
+            defer layer_aead.secureZero();
+            switch (key) {
+                inline else => |k| {
+                    layer_aead = @unionInit(aead.Aead, @tagName(k), undefined);
+                    expandLabel(&@field(layer_aead, @tagName(k)).data, "key", "", .init(prk.data));
+                },
+            }
             return .init(layer_aead, trafficIv(prk));
         }
 

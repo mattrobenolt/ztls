@@ -1331,7 +1331,10 @@ fn processClientHelloMessage(
     const server_key_share: server_hello.KeyShare = switch (client_key_share) {
         .x25519 => .{ .x25519 = self.keypairs.x25519.public_key },
         .secp256r1 => .{ .secp256r1 = self.keypairs.p256.public_key },
-        .secp384r1 => .{ .secp384r1 = (self.keypairs.p384 orelse unreachable).public_key },
+        .secp384r1 => blk: {
+            const keypair = if (self.keypairs.p384) |*pair| pair else unreachable;
+            break :blk .{ .secp384r1 = keypair.public_key };
+        },
         .kem => |*share| .{ .kem = .{
             .group = share.group,
             .data = hybrid_server_share,
@@ -1624,19 +1627,16 @@ fn installHandshakeKeys(
     var dhe: [80]u8 = undefined;
     const dhe_len: usize = switch (client_key_share.*) {
         .x25519 => |public_key| blk: {
-            const secret = try x25519.sharedSecret(self.keypairs.x25519.secret_key, public_key);
-            @memcpy(dhe[0..32], &secret);
+            try x25519.sharedSecret(self.keypairs.x25519.secret_key, public_key, dhe[0..32]);
             break :blk @as(usize, 32);
         },
         .secp256r1 => |public_key| blk: {
-            const secret = try p256.sharedSecret(self.keypairs.p256.secret_key, public_key);
-            @memcpy(dhe[0..32], &secret);
+            try p256.sharedSecret(self.keypairs.p256.secret_key, public_key, dhe[0..32]);
             break :blk @as(usize, 32);
         },
         .secp384r1 => |public_key| blk: {
-            const keypair = self.keypairs.p384 orelse unreachable;
-            const secret = try p384.sharedSecret(keypair.secret_key, public_key);
-            @memcpy(dhe[0..48], &secret);
+            const keypair = if (self.keypairs.p384) |*pair| pair else unreachable;
+            try p384.sharedSecret(keypair.secret_key, public_key, dhe[0..48]);
             break :blk @as(usize, 48);
         },
         // RFC 10024 §4.3 — use the precomputed combined shared secret.

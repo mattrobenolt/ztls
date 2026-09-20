@@ -1,0 +1,27 @@
+encrypted-pem-check: ok (pipe, terminal)
+errq-alloc-check: early client abort
+errq-alloc-check: early server abort
+errq-alloc-check: client Finished abort
+errq-alloc-check: ok (allocs 154925, frees 148995, live 5930)
+ztest: Running 1 test...
+[1/1] FAIL: sharedSecret: rejects compressed P-256 point — error.TestUnexpectedResult (532.89ms)
+/nix/store/4x0z07w3mxafc59b5dirkmllvqhav1i6-zig-0.15.2/lib/zig/std/testing.zig:607:14: 0x1402217 in expect (test)
+    if (!ok) return error.TestUnexpectedResult;
+             ^
+/Users/matt/code/ztls/src/p256.zig:244:5: 0x15076d3 in test.sharedSecret: rejects compressed P-256 point (test)
+    try testing.expect(std.mem.allEqual(u8, &out, 0));
+    ^
+
+ztest: 0 passed, 1 failed, 0 skipped (of 1 total) in 710ms
+TESTS FAILED
+test
++- run test failure
+error: the following command exited with error code 1:
+/tmp/ztls-signoff-20260919/cache/o/b1047ae88d85c3c768c16ef1991252f4/test
+
+Build Summary: 6/8 steps succeeded; 1 failed
+test transitive failure
++- run test failure
+
+error: the following build command failed with exit code 1:
+/tmp/ztls-signoff-20260919/cache/o/e5b61deb4147ae677834b244a8a33d83/build /nix/store/4x0z07w3mxafc59b5dirkmllvqhav1i6-zig-0.15.2/bin/zig /nix/store/4x0z07w3mxafc59b5dirkmllvqhav1i6-zig-0.15.2/lib/zig /Users/matt/code/ztls /tmp/ztls-signoff-20260919/cache /tmp/ztls-plc-cache/global --seed 0xc6470f6e -Z0baa8a16caf294f0 test

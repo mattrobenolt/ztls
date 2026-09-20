@@ -1,0 +1,297 @@
+diff --git a/src/ClientHandshake.zig b/src/ClientHandshake.zig
+index f39969f..4fc1116 100644
+--- a/src/ClientHandshake.zig
++++ b/src/ClientHandshake.zig
+@@ -1890,6 +1890,9 @@ pub const ClientFinishedError = SendError || signature.SignError || aead.Error |
+ /// the pre-client-auth behavior. `out` receives the encrypted record. Any
+ /// error is terminal for this handshake because flight assembly advances the
+ /// transcript; send an alert when possible, then deinit.
++///
++/// A successful call installs application keys without transport I/O.
++/// The caller can then use receiveRecord before Finished reaches the peer.
+ // ziglint-ignore: Z015 -- ClientFinishedError is a public error-set alias.
+ pub fn clientFinished(self: *ClientHandshake, out: []u8) ClientFinishedError![]const u8 {
+     assert(self.state == .send_finished);
+@@ -2755,6 +2758,43 @@ test "processFlight: rejects unrequested server CertificateEntry status_request"
+     try expectEncryptedAlert(&peer, rec, .unsupported_extension);
+ }
+ 
++// RFC 8446 §4.4.2.2 — an unsupported certificate key fails before CertificateVerify.
++test "handleRecord: rejects a server key above retention capacity" {
++    // ziglint-ignore: Z007 -- Fixture imports stay test-local for published packages (#66).
++    const fixtures = @import("fixtures");
++    var bundle: crypto.Certificate.Bundle = .{};
++    defer bundle.deinit(testing.allocator);
++    try bundle.bytes.appendSlice(testing.allocator, &fixtures.key_capacity_root_der);
++    try bundle.parseCert(testing.allocator, 0, fixtures.key_capacity_time);
++    var hs = try flightReadyClient();
++    defer hs.deinit();
++    hs.policy = .{
++        .bundle = &bundle,
++        .host_name = "capacity.test",
++        .now_sec = fixtures.key_capacity_time,
++    };
++    try hs.processFlight("\x08\x00\x00\x02\x00\x00", hs.policy);
++    var plain: [4096]u8 = undefined;
++    const cert = try certificate.encode(&plain, &.{
++        &fixtures.key_capacity_leaf_der,
++        &fixtures.key_capacity_root_der,
++    });
++    const public_key = try certificate.parse(cert, hs.policy);
++    try testing.expect(public_key.len > max_leaf_pub_key);
++    var server_tx = try hs.rx.clone();
++    defer server_tx.deinit();
++    var record: [4096]u8 = undefined;
++    const encrypted = try server_tx.encrypt(.handshake, cert, &record);
++    var out: [128]u8 = undefined;
++    const result = hs.handleRecord(record[0..encrypted.len], &out);
++    const failure: HandleError = if (result) |_| return error.TestExpectedError else |err| err;
++    try testing.expectEqual(error.CertificateKeyTooLarge, failure);
++    var peer = try hs.tx.clone();
++    defer peer.deinit();
++    const response = try hs.sendAlert(alert.alertForError(failure), &out);
++    try expectEncryptedAlert(&peer, response, .unsupported_certificate);
++}
++
+ test "processFlight: RFC 8448 §3 full server flight to connected" {
+     var hs: ClientHandshake = .init(try testConfig(rfc8448_client_keypair));
+     defer hs.deinit();
+@@ -3426,6 +3466,7 @@ test "clientFinished: empty CertificateRequest with no credentials still finishe
+ 
+ // Isolate: fromP256Scalar + setCredentials alone (no clientFinished sign path).
+ test "client auth: setCredentials stores client credentials" {
++    // ziglint-ignore: Z007 -- Fixture imports stay test-local for published packages (#66).
+     const fixtures = @import("fixtures");
+     var hs: ClientHandshake = .init(try testConfig(rfc8448_client_keypair));
+     defer hs.deinit();
+@@ -4575,6 +4616,62 @@ test "handleRecord: drives RFC 8448 §3 handshake to connected" {
+     try testing.expectEqualSlices(u8, &rfc8448_client_finished, dec.content);
+ }
+ 
++// RFC 8446 §2 and §4.4.4 — server application data can precede receipt of client Finished.
++// RFC 8448 §3 supplies independent server application keys and handshake records.
++test "0.5-RTT: coalesced server data precedes client Finished delivery" {
++    const paths: []const enum { record, flight } = &.{ .record, .flight };
++    for (paths) |path| {
++        var hs = try flightReadyClient();
++        defer hs.deinit();
++        var server_handshake_rx = try hs.tx.clone();
++        defer server_handshake_rx.deinit();
++        var server_app: RecordLayer = try .init(
++            .{ .aes_128_gcm_sha256 = .init(.{
++                0x9f, 0x02, 0x28, 0x3b, 0x6c, 0x9c, 0x07, 0xef,
++                0xc2, 0x6b, 0xb9, 0xf2, 0xac, 0x92, 0xe3, 0x56,
++            }) },
++            .init(.{ 0xcf, 0x78, 0x2b, 0x88, 0xdd, 0x83, 0x54, 0x9a, 0xad, 0xf1, 0xe9, 0x84 }),
++        );
++        defer server_app.deinit();
++        var transport: [2048]u8 = undefined;
++        const flight = rfc8448Fixture("server_flight_record.b64", &transport);
++        const plaintext = "server data before client Finished";
++        const app = try server_app.encrypt(.application_data, plaintext, transport[flight.len..]);
++        const wire_len = flight.len + app.len;
++        var client_output: [256]u8 = undefined;
++        const pending = switch (path) {
++            .record => (try hs.handleRecord(transport[0..flight.len], &client_output)).write,
++            .flight => blk: {
++                const decrypted = try hs.rx.decrypt(transport[0..flight.len]);
++                try hs.processFlight(decrypted.content, hs.policy);
++                try testing.expectEqual(.send_finished, hs.state);
++                break :blk try hs.clientFinished(&client_output);
++            },
++        };
++        try testing.expect(hs.isConnected());
++        var saved: [256]u8 = undefined;
++        @memcpy(saved[0..pending.len], pending);
++        const app_record = transport[flight.len..wire_len];
++        if (path == .record) {
++            var scratch: [128]u8 = undefined;
++            try testing.expectError(error.PendingWrite, hs.handleRecord(app_record, &scratch));
++        }
++        // The peer has not consumed client Finished. RX must still make progress.
++        const result = hs.receiveRecord(app_record);
++        const failure: ?ReceiveError = if (result) |_| null else |err| err;
++        try testing.expectEqual(@as(?ReceiveError, null), failure);
++        const received = try result;
++        try testing.expect(received == .application_data);
++        try testing.expectEqualStrings(plaintext, received.application_data);
++        try testing.expectEqualSlices(u8, saved[0..pending.len], pending);
++        // Only now does the peer receive and decrypt client Finished.
++        const finished_record = try server_handshake_rx.decrypt(saved[0..pending.len]);
++        try testing.expectEqual(.handshake, finished_record.content_type);
++        try testing.expectEqualSlices(u8, &rfc8448_client_finished, finished_record.content);
++        if (path == .record) hs.completeWrite();
++    }
++}
++
+ // A produced .write must be acknowledged (completeWrite) before the engine
+ // will accept another call — so a dropped write can't silently desync.
+ test "handleRecord: unacknowledged write blocks further calls" {
+diff --git a/src/ServerHandshake.zig b/src/ServerHandshake.zig
+index 9d5053d..47ec768 100644
+--- a/src/ServerHandshake.zig
++++ b/src/ServerHandshake.zig
+@@ -5710,6 +5710,57 @@ test "handleRecord: rejects disjoint ALPN offers with the required alert" {
+     try testing.expectEqual(.no_application_protocol, received.description);
+ }
+ 
++// RFC 8446 §4.4.2.2 — an unsupported client key fails before CertificateVerify.
++test "processClientFinished: rejects a client key above retention capacity" {
++    // ziglint-ignore: Z007 -- Fixture imports stay test-local for published packages (#66).
++    const fixtures = @import("fixtures");
++    var bundle: std.crypto.Certificate.Bundle = .{};
++    defer bundle.deinit(testing.allocator);
++    try bundle.bytes.appendSlice(testing.allocator, &fixtures.key_capacity_root_der);
++    try bundle.parseCert(testing.allocator, 0, fixtures.key_capacity_time);
++    var config: Config = try testConfig(.generate());
++    config.client_auth = .required;
++    config.client_auth_bundle = &bundle;
++    config.client_auth_now_sec = fixtures.key_capacity_time;
++    var server: ServerHandshake = .init(config);
++    defer server.deinit();
++    const client_keypair: x25519.KeyPair = .generate();
++    var ch_buf: [512]u8 = undefined;
++    const ch = try client_hello.encode(&ch_buf, .zero, client_keypair.public_key, null, &.{});
++    var ch_record: [1024]u8 = undefined;
++    const header: frame.Header = .init(.handshake, @intCast(ch.len));
++    header.write(ch_record[0..frame.header_len]);
++    @memcpy(ch_record[frame.header_len..][0..ch.len], ch);
++    var out: [4096]u8 = undefined;
++    _ = try server.acceptClientHello(ch_record[0 .. frame.header_len + ch.len], &out);
++    var signer: signature.PrivateKey = try .fromP256Scalar(serverEcdsaScalar()[0..32]);
++    defer signer.deinit();
++    var plain: [4096]u8 = undefined;
++    _ = try server.sendAuthenticatedFlight(&.{serverEcdsaCertDer()}, signer.signer(), &plain, &out);
++    const cert = try certificate.encode(&plain, &.{
++        &fixtures.key_capacity_leaf_der,
++        &fixtures.key_capacity_root_der,
++    });
++    const verified = try certificate.parseClientChain(cert, &.{}, server.client_cert_policy);
++    try testing.expect(verified.pub_key.len > max_client_leaf_pub_key);
++    var client_tx = try server.rx.clone();
++    defer client_tx.deinit();
++    const record = try client_tx.encrypt(.handshake, cert, &out);
++    const result = server.processClientFinished(out[0..record.len]);
++    const failure: ClientFinishedError = if (result) |_| {
++        return error.TestExpectedError;
++    } else |err| err;
++    try testing.expectEqual(error.CertificateKeyTooLarge, failure);
++    var peer = try server.tx.clone();
++    defer peer.deinit();
++    const response = try server.sendAlert(alert.alertForError(failure), &out);
++    const decoded = try peer.decrypt(out[0..response.len]);
++    try testing.expectEqual(.alert, decoded.content_type);
++    const received = try alert.parse(decoded.content);
++    try testing.expectEqual(.fatal, received.level);
++    try testing.expectEqual(.unsupported_certificate, received.description);
++}
++
+ // RFC 8446 §4.4.4 — the server must reject a client Finished with a bad
+ // verify_data MAC. Regression for the NEGATIVE_SPACE gap: bad-ClientFinished
+ // negative tests were partial.
+diff --git a/src/certificate_policy.zig b/src/certificate_policy.zig
+index 6b94fea..bfae405 100644
+--- a/src/certificate_policy.zig
++++ b/src/certificate_policy.zig
+@@ -37,9 +37,9 @@ pub const Policy = struct {
+     insecure_no_chain_anchor: bool = false,
+     /// Current time in seconds since the Unix epoch, for validity checks.
+     now_sec: i64 = 0,
+-    /// DNS name expected in the leaf certificate SAN/CN. null = no hostname
+-    /// check. ClientHandshake.Config.host_name seeds this field at init time so
+-    /// normal callers use one value for SNI and certificate validation.
++    /// This ASCII DNS reference identifies the expected DNS-ID SAN.
++    /// The caller owns IDNA conversion to A-labels. null disables the check.
++    /// ClientHandshake.Config.host_name supplies the default value.
+     host_name: ?[]const u8 = null,
+     /// Enforce TLS 1.3 certificate residual policy for the leaf's intended use.
+     /// `.server_auth` requires KeyUsage.digitalSignature when KeyUsage is present,
+diff --git a/tests/fixtures/fixtures.txtar b/tests/fixtures/fixtures.txtar
+index 1a50930..a8a3775 100644
+--- a/tests/fixtures/fixtures.txtar
++++ b/tests/fixtures/fixtures.txtar
+@@ -282,4 +282,8 @@ MIIB0zCCAXmgAwIBAgIULpiTE9nZ+PIffEoAcbhjWxJE8GIwCgYIKoZIzj0EAwIwHjEcMBoGA1UEAwwT
+ MIIB0zCCAXmgAwIBAgIULpiTE9nZ+PIffEoAcbhjWxJE8GMwCgYIKoZIzj0EAwIwHjEcMBoGA1UEAwwTenRscyBleHRlbnNpb24gcm9vdDAeFw0yNjA5MjAwMzU0MjFaFw0yOTA2MTYwMzU0MjFaMBgxFjAUBgNVBAMMDWNyaXRpY2FsLnRlc3QwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAATISPt36i3homwKhJg9Ps/BCaKMfa+ijFPcsy/1HbodbefAtFZ1JLE5ByXpiSHtr5bu7DTEm8n9jvWxWtdoaC6wo4GaMIGXMAwGA1UdEwEB/wQCMAAwDgYDVR0PAQH/BAQDAgeAMB0GA1UdJQQWMBQGCCsGAQUFBwMBBggrBgEFBQcDAjAYBgNVHREEETEPgg1jcml0aWNhbC50ZXN0MB0GA1UdDgQWBBTAnM/nwZBVObLmKJLJw8x5ik7mHDAfBgNVHSMEGDAWgBRwQfLJO0MEi67GlDL3juh+yqcD9DAKBggqhkjOPQQDAgNIADBFAiEA2Z2HyHILDjijnZxS7lb0Jj9f1PU2wxF72SIVx+/Q2r8CIC9YNKDWqWOJLIHblzMV7sPBLOWOxv8e7xTJmsDq6KRZ
+ -- extension_valid_der --
+ MIIB0jCCAXmgAwIBAgIULpiTE9nZ+PIffEoAcbhjWxJE8F0wCgYIKoZIzj0EAwIwHjEcMBoGA1UEAwwTenRscyBleHRlbnNpb24gcm9vdDAeFw0yNjA5MjAwMzU0MjFaFw0yOTA2MTYwMzU0MjFaMBgxFjAUBgNVBAMMDWNyaXRpY2FsLnRlc3QwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAATISPt36i3homwKhJg9Ps/BCaKMfa+ijFPcsy/1HbodbefAtFZ1JLE5ByXpiSHtr5bu7DTEm8n9jvWxWtdoaC6wo4GaMIGXMAwGA1UdEwEB/wQCMAAwDgYDVR0PAQH/BAQDAgeAMB0GA1UdJQQWMBQGCCsGAQUFBwMBBggrBgEFBQcDAjAYBgNVHREEETAPgg1jcml0aWNhbC50ZXN0MB0GA1UdDgQWBBTAnM/nwZBVObLmKJLJw8x5ik7mHDAfBgNVHSMEGDAWgBRwQfLJO0MEi67GlDL3juh+yqcD9DAKBggqhkjOPQQDAgNHADBEAiAdL4eudayPuwnR5T2RkIMdntfXGvMukMiZgwpk+4oMYwIgLkF1oHEUgF2NVXqECCILje7vWaEqflRFqef7rFafS+s=
++-- key_capacity_root_der --
++MIIBpjCCAU2gAwIBAgIUE8LLf91AYSWK7H6n+UYurFEaMN0wCgYIKoZIzj0EAwIwITEfMB0GA1UEAwwWenRscyBrZXkgY2FwYWNpdHkgcm9vdDAeFw0yNjA5MjAwNzE3MzlaFw0zNjA5MTcwNzE3MzlaMCExHzAdBgNVBAMMFnp0bHMga2V5IGNhcGFjaXR5IHJvb3QwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAAS4SDPddyOHZdcCCY+T848CTPRzH2OFdzxK5jS4SlNYVedrmOjt14M6MYovuZLqb77kzQuHfQ+bJQ8iFkwIx/v9o2MwYTAdBgNVHQ4EFgQUEaXDCxfz2UtmfoVFelcAiTa5fIkwHwYDVR0jBBgwFoAUEaXDCxfz2UtmfoVFelcAiTa5fIkwDwYDVR0TAQH/BAUwAwEB/zAOBgNVHQ8BAf8EBAMCAQYwCgYIKoZIzj0EAwIDRwAwRAIgEIbXrzGqt6iYaSH8XznqQp59HNFaWMLn3eYjECcvD4wCIEeTE3MONkpTv5oyGSQXAdJqva9xrKG44W5hjocGWdX5
++-- key_capacity_leaf_der --
++MIIFoTCCBUegAwIBAgIUMZ3GlLFxtxReoj+MDeEp5w/FtXkwCgYIKoZIzj0EAwIwITEfMB0GA1UEAwwWenRscyBrZXkgY2FwYWNpdHkgcm9vdDAeFw0yNjA5MjAwNzE3NDBaFw0yOTA2MTYwNzE3NDBaMBgxFjAUBgNVBAMMDWNhcGFjaXR5LnRlc3QwggQiMA0GCSqGSIb3DQEBAQUAA4IEDwAwggQKAoIEAQCrl+lGIhDRKTx7rAzP7ni7vsSKu6vpL71f76UEVEu0X+H3XsS22mLSSVl1mPKWU0LRKv9FtD2MeMEOxm+wsviHmOjqfZPiGOoNMBU6zhoszvq1KW6Q5PDl8hMlfps/2K35PjN5XgFuj/rABa1GSiLEznw1BlHN7BfEnza1/mxUEoXDxggiEGadQDVpgcy9LmBDDMKyx6fFjP4UkefrsYmF/0P45+lgj84Q5jS0MQuOoOdS52uZglopXOtqPp2BTFo4bMl8yNQ9zXfTfgNwOkew7jOZOIwukD6mO1bi5EiuvqXFO9W9uCsf6QGlGx29dGfGXEAK2COkadyj2LTj3D6+4wDysPaPLUOwczK0OOxa0yidKrfs8izle9r40ajH2TAkgjIC5YSJHm94EH8fJTF1u+rMRQWz0YsSoXt5pJcR07a3wS0RwUjtncQGofr0x2td4VB8ucGzHPOteatuI//y2+uLlDbeJSpOnoWuAz2d6VAy/q6ai5jo4+lDo2Cd6TJSkhG9d12sDBExAcCTsfoCmYNZe10sgjKKdQSP4NU68xVzadd3suKLicvuNRbClgtT+fXdL576q5bxEL2xL39HNrX2WeFlzfeKVDLFqC9rv6gq/6qSkvfbBiwitn+1PB9K2Lr6SMxTkkwofev9uWcv/jkV9f3xcIoHTRVIP/NgRaruNZu9GYgL6Z/5jt071mZeL0UCGJVt+1q35dOFwyt3zEP0DfoO9FWMp2eCHaHSfa0ydoTwZjorrwRPmLBK6sdoK6YoIj3pTc5CUQY/8nuNhftAOeRMuiNLRngrRBJ3Y8GmqqR3ZYRGg3b39jceXSEPUIUg3gUda7ogm5+BTis2Pb+WgYqU9CfjS/x3HinlOLUDPjRDZMU+xxTzk7XigYfDrTCvRalOGxra05XtKjNOU6TV2wuAMG7ERKGjH8l6HMhPyrypt9Pm+6VbqHfk9mRbResQkmxblYDAK4HlFlqprM0///wRYe2pHUWm5gNJRFPjqb+ux2GrIE03eedQ4Y5GvbIuhyaCzQ1IhSnu/9xMx7fy2kwFgaxgKC87Z1vtAphtpXkrwXbuO4MUF+9ctRuy9E3XPADHfmG4uTV2kxbdTOoJutJvkKmQiNYEy6qfUEFSr36OHk2oBNrbk9ltWadXCbnxbMOttBYvUEabyavN54nGntnlQ84MIdJQ55jzob7Ayila+uESAa/20JKJxz7lSq1CWmimX1VnWnG2lfZxj1KfqOtqZHuzhu1sppll8gMwX6UlhUfrudaPcbyk83lnx6BFmDd8MtLoHw4jEhK4/pfMQGB7dR/noXTf01gEON3Kj9eB878ueIKG8kQ6meaKOgOTLDhxXQ4hBCPPbRLtAgMBAAGjgZowgZcwDAYDVR0TAQH/BAIwADAOBgNVHQ8BAf8EBAMCB4AwHQYDVR0lBBYwFAYIKwYBBQUHAwEGCCsGAQUFBwMCMBgGA1UdEQQRMA+CDWNhcGFjaXR5LnRlc3QwHQYDVR0OBBYEFKrWQas5cxSVtZWS4G1PqbD/589NMB8GA1UdIwQYMBaAFBGlwwsX89lLZn6FRXpXAIk2uXyJMAoGCCqGSM49BAMCA0gAMEUCIHBjekhm83S36+yvl6JDrWG2w7kSPBBPYm/bjvQPY/3XAiEAt3EJn18bM20KI9nMtPLVx9Fmq31No5igibUztNhElhQ=
+ 
+diff --git a/tests/fixtures/fixtures.zig b/tests/fixtures/fixtures.zig
+index 470162c..b326203 100644
+--- a/tests/fixtures/fixtures.zig
++++ b/tests/fixtures/fixtures.zig
+@@ -53,6 +53,10 @@ pub const server_ecdsa_scalar = decodeSection("server_ecdsa_scalar");
+ pub const client_ecdsa_cert_der = decodeSection("client_ecdsa_cert_der");
+ pub const client_ecdsa_scalar = decodeSection("client_ecdsa_scalar");
+ pub const rsa_pss_cert_der = decodeSection("rsa_pss_cert_der");
++// RSA-8192 retention-capacity fixtures (#124).
++pub const key_capacity_root_der = decodeSection("key_capacity_root_der");
++pub const key_capacity_leaf_der = decodeSection("key_capacity_leaf_der");
++pub const key_capacity_time: i64 = 1790000000;
+ pub const ed25519_cert_der = decodeSection("ed25519_cert_der");
+ pub const chain_leaf_der = decodeSection("chain_leaf_der");
+ pub const chain_intermediate_der = decodeSection("chain_intermediate_der");
+diff --git a/tests/fixtures/key_capacity/README.md b/tests/fixtures/key_capacity/README.md
+new file mode 100644
+index 0000000..84a1707
+--- /dev/null
++++ b/tests/fixtures/key_capacity/README.md
+@@ -0,0 +1,26 @@
++# Public-key retention fixtures
++
++The leaf contains a real RSA-8192 key. Its PKCS#1 public key occupies 1,038 bytes, above the engine's 1,024-byte retention capacity.
++A P-256 root signs the leaf. The leaf permits server and client authentication for `capacity.test`.
++
++`fixtures.txtar` contains both DER certificates as base64 sections. The generator creates fresh test keys and certificates.
++Regeneration changes the bytes. No private key enters the committed fixtures.
++The tests use the fixed timestamp 1790000000, which is 2026-09-21 14:13:20 UTC.
++
++OpenSSL 3.6.4 accepted the chain for both TLS roles on 2026-09-20.
++The server-role check also verified `capacity.test`. These verdicts establish fixture validity, not support for oversized keys in ztls.
++
++## Generation
++
++Run the generator in the Nix development shell:
++
++```sh
++bash tests/fixtures/key_capacity/generate.sh /tmp/ztls-key-capacity
++```
++
++Encode `root.der` into the `key_capacity_root_der` section of `tests/fixtures/fixtures.txtar`.
++Encode `leaf.der` into the `key_capacity_leaf_der` section of `tests/fixtures/fixtures.txtar`.
++Update `key_capacity_time` to a timestamp within both certificates' validity intervals.
++Keep generated DER files outside the repository.
++
++The public-path tests cite #124. They check chain validation before the retention-capacity refusal.
+diff --git a/tests/fixtures/key_capacity/generate.sh b/tests/fixtures/key_capacity/generate.sh
+new file mode 100755
+index 0000000..bbd64b1
+--- /dev/null
++++ b/tests/fixtures/key_capacity/generate.sh
+@@ -0,0 +1,23 @@
++#!/usr/bin/env bash
++set -euo pipefail
++out="${1:?usage: generate.sh OUTPUT_DIRECTORY}"
++mkdir -p "$out"
++cd "$out"
++openssl ecparam -name prime256v1 -genkey -noout -out root.key
++openssl req -x509 -new -key root.key -sha256 -days 3650 \
++  -subj '/CN=ztls key capacity root' -out root.crt \
++  -addext 'basicConstraints=critical,CA:TRUE' \
++  -addext 'keyUsage=critical,keyCertSign,cRLSign'
++openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:8192 -out leaf.key
++openssl req -new -key leaf.key -subj '/CN=capacity.test' -out leaf.csr
++printf '%s\n' 'basicConstraints=critical,CA:FALSE' \
++  'keyUsage=critical,digitalSignature' 'extendedKeyUsage=serverAuth,clientAuth' \
++  'subjectAltName=DNS:capacity.test' > leaf.ext
++openssl x509 -req -in leaf.csr -CA root.crt -CAkey root.key -CAcreateserial \
++  -out leaf.crt -days 1000 -sha256 -extfile leaf.ext
++openssl x509 -in root.crt -outform DER -out root.der
++openssl x509 -in leaf.crt -outform DER -out leaf.der
++openssl verify -CAfile root.crt -purpose sslserver -verify_hostname capacity.test leaf.crt
++openssl verify -CAfile root.crt -purpose sslclient leaf.crt
++openssl pkey -in leaf.key -pubout -outform DER -out leaf.spki.der
++wc -c root.der leaf.der leaf.spki.der

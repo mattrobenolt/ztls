@@ -90,15 +90,19 @@ fn publicFromSecret(secret_key: SecretKey) Error!PublicKey {
 /// TLS 1.3 DHE input.
 ///
 /// RFC 8446 §7.4.2
-pub fn sharedSecret(secret_key: SecretKey, peer_public_key: PublicKey) Error!SecretKey.Data {
+/// The caller owns out. The function clears out on error.
+pub fn sharedSecret(
+    secret_key: SecretKey,
+    peer_public_key: PublicKey,
+    out: *[secret_length]u8,
+) Error!void {
+    errdefer std.crypto.secureZero(u8, out);
     const ours = try privateKey(secret_key);
     defer backend.p384.freeKey(ours);
     const peer = try publicKey(peer_public_key);
     defer backend.p384.freeKey(peer);
 
-    var secret: SecretKey.Data = undefined;
-    try backend.p384.sharedSecretDerive(ours, peer, &secret);
-    return secret;
+    try backend.p384.sharedSecretDerive(ours, peer, out);
 }
 
 const test_seed_a = hex(48, "000102030405060708090a0b0c0d0e0f" ++
@@ -128,8 +132,12 @@ test "sharedSecret: P-384 deterministic peers agree" {
     const alice: KeyPair = try .generateDeterministic(.init(test_seed_a));
     const bob: KeyPair = try .generateDeterministic(.init(test_seed_b));
 
-    const alice_secret = try sharedSecret(alice.secret_key, bob.public_key);
-    const bob_secret = try sharedSecret(bob.secret_key, alice.public_key);
+    var alice_secret: [secret_length]u8 = undefined;
+    defer std.crypto.secureZero(u8, &alice_secret);
+    var bob_secret: [secret_length]u8 = undefined;
+    defer std.crypto.secureZero(u8, &bob_secret);
+    try sharedSecret(alice.secret_key, bob.public_key, &alice_secret);
+    try sharedSecret(bob.secret_key, alice.public_key, &bob_secret);
     try testing.expectEqualSlices(u8, &alice_secret, &bob_secret);
 }
 
@@ -213,10 +221,12 @@ test "sharedSecret: rejects compressed P-384 point" {
     const alice: KeyPair = try .generateDeterministic(.init(test_seed_a));
     var compressed: [public_length]u8 = @splat(0);
     compressed[0] = 0x02;
+    var out: [secret_length]u8 = @splat(0xa5);
     try testing.expectError(
         error.IdentityElement,
-        sharedSecret(alice.secret_key, .init(compressed)),
+        sharedSecret(alice.secret_key, .init(compressed), &out),
     );
+    try testing.expect(std.mem.allEqual(u8, &out, 0));
 }
 
 comptime {
