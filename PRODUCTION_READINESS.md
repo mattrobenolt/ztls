@@ -140,7 +140,11 @@ The #108 captures remain historical evidence for `d07c551`.
 Unexercised profiles remain untested. Existing z53 operation provides historical evidence for its actual deployed revision, not this candidate.
 The live service remains untouched.
 
-Candidate gates do not erase known correctness residuals. #122 tracks unprocessed critical X.509 extensions and SAN wrapper checks.
+Candidate gates do not erase known correctness residuals.
+The #122 patch rejects unprocessed critical extensions and invalid SAN wrappers.
+Signed public-path regressions failed before the fix. The local OpenSSL suite passes 849 tests with one skip.
+Local OpenSSL, AWS-LC, BoringSSL, and Zig 0.16 gates pass.
+Qualification of the replacement candidate remains pending.
 #123 tracks the inbound SNI policy difference. #124 tracks focused handshake and parser evidence gaps.
 Compiler-dependent zeroization and the IDNA contract remain audit or policy questions under #125 and #126.
 Deferred C ABI work (#30) remains outside these consumers' qualification requirements.
@@ -588,11 +592,12 @@ data to openssl s_server and receives the HTTP response.
   - H6/H7/H8/H10 — X.509 DER strictness: unknown critical extensions rejected,
     SAN dNSName matched only for context-specific GeneralNames, EKU requires a
     SEQUENCE wrapper, and duplicate instances of a processed extension are
-    rejected (RFC 5280 §4.2). Pre-existing residuals (#122): a
-    recognized-but-unimplemented critical extension is still accepted
-    (`certificate_parser.zig` continues on the non-processed extension IDs even
-    when critical; only unrecognized critical OIDs are rejected), and the outer
-    SAN SEQUENCE in `verifyHostName` is not class-checked.
+    rejected (RFC 5280 §4.2). The #122 patch also rejects unprocessed critical
+    extensions and requires a constructed universal SAN SEQUENCE.
+    Signed regressions reproduce both original acceptances. Critical-extension
+    rejection maps to `unsupported_certificate`, not `internal_error`.
+    The local suite passes 849 tests with one skip.
+    OpenSSL, AWS-LC, BoringSSL, and Zig 0.16 gates pass.
   - H9 — X.509 time strictness: UTCTime `YY` now follows RFC 5280 (00–49 → 20YY,
     50–99 → 19YY, so a long-expired 19YY cert is no longer read as 20YY),
     GeneralizedTime requires exactly `YYYYMMDDHHMMSSZ`, and impossible dates

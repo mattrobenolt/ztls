@@ -1,0 +1,326 @@
+{
+  "version": "OpenSSL 3.6.4 25 Aug 2026 (Library: OpenSSL 3.6.4 25 Aug 2026)",
+  "note": "OpenSSL accepts the primitive SEQUENCE wrapper. ztls requires constructed GeneralNames. Malformed SAN client-auth verdicts are reference controls, not ztls client-auth comparisons.",
+  "results": [
+    {
+      "fixture": "critical.crt",
+      "purpose": "sslserver",
+      "command": [
+        "openssl",
+        "verify",
+        "-attime",
+        "1800000000",
+        "-purpose",
+        "sslserver",
+        "-CAfile",
+        "/tmp/ztls-signoff-20260919/fixtures/root.crt",
+        "-verify_hostname",
+        "critical.test",
+        "/tmp/ztls-signoff-20260919/fixtures/critical.crt"
+      ],
+      "returncode": 2,
+      "stdout": "",
+      "stderr": "CN=critical.test\nerror 34 at 0 depth lookup: unhandled critical extension\nerror /tmp/ztls-signoff-20260919/fixtures/critical.crt: verification failed\n",
+      "sha256": "fab6da1cc8a3aab092889740f14e56857fa36266acecaa9ecba40290c702daca"
+    },
+    {
+      "fixture": "critical.crt",
+      "purpose": "sslclient",
+      "command": [
+        "openssl",
+        "verify",
+        "-attime",
+        "1800000000",
+        "-purpose",
+        "sslclient",
+        "-CAfile",
+        "/tmp/ztls-signoff-20260919/fixtures/root.crt",
+        "/tmp/ztls-signoff-20260919/fixtures/critical.crt"
+      ],
+      "returncode": 2,
+      "stdout": "",
+      "stderr": "CN=critical.test\nerror 34 at 0 depth lookup: unhandled critical extension\nerror /tmp/ztls-signoff-20260919/fixtures/critical.crt: verification failed\n",
+      "sha256": "fab6da1cc8a3aab092889740f14e56857fa36266acecaa9ecba40290c702daca"
+    },
+    {
+      "fixture": "ignored.crt",
+      "purpose": "sslserver",
+      "command": [
+        "openssl",
+        "verify",
+        "-attime",
+        "1800000000",
+        "-purpose",
+        "sslserver",
+        "-CAfile",
+        "/tmp/ztls-signoff-20260919/fixtures/root.crt",
+        "-verify_hostname",
+        "critical.test",
+        "/tmp/ztls-signoff-20260919/fixtures/ignored.crt"
+      ],
+      "returncode": 0,
+      "stdout": "/tmp/ztls-signoff-20260919/fixtures/ignored.crt: OK\n",
+      "stderr": "",
+      "sha256": "ef6f8da8fab03d1a3d2fc313e72391c7f89fe03c7ab49d608c93f642978d9ecb"
+    },
+    {
+      "fixture": "ignored.crt",
+      "purpose": "sslclient",
+      "command": [
+        "openssl",
+        "verify",
+        "-attime",
+        "1800000000",
+        "-purpose",
+        "sslclient",
+        "-CAfile",
+        "/tmp/ztls-signoff-20260919/fixtures/root.crt",
+        "/tmp/ztls-signoff-20260919/fixtures/ignored.crt"
+      ],
+      "returncode": 0,
+      "stdout": "/tmp/ztls-signoff-20260919/fixtures/ignored.crt: OK\n",
+      "stderr": "",
+      "sha256": "ef6f8da8fab03d1a3d2fc313e72391c7f89fe03c7ab49d608c93f642978d9ecb"
+    },
+    {
+      "fixture": "san_application.crt",
+      "purpose": "sslserver",
+      "command": [
+        "openssl",
+        "verify",
+        "-attime",
+        "1800000000",
+        "-purpose",
+        "sslserver",
+        "-CAfile",
+        "/tmp/ztls-signoff-20260919/fixtures/root.crt",
+        "-verify_hostname",
+        "critical.test",
+        "/tmp/ztls-signoff-20260919/fixtures/san_application.crt"
+      ],
+      "returncode": 2,
+      "stdout": "",
+      "stderr": "CN=critical.test\nerror 20 at 0 depth lookup: unable to get local issuer certificate\nerror /tmp/ztls-signoff-20260919/fixtures/san_application.crt: verification failed\n20AE70C12DEF0000:error:1100009E:X509 V3 routines:ossl_x509v3_cache_extensions:invalid certificate:crypto/x509/v3_purp.c:677:\n",
+      "sha256": "864c4a223bed573f385cf258cce96c37a16394bd387872c0a19bb467028f46ea"
+    },
+    {
+      "fixture": "san_application.crt",
+      "purpose": "sslclient",
+      "command": [
+        "openssl",
+        "verify",
+        "-attime",
+        "1800000000",
+        "-purpose",
+        "sslclient",
+        "-CAfile",
+        "/tmp/ztls-signoff-20260919/fixtures/root.crt",
+        "/tmp/ztls-signoff-20260919/fixtures/san_application.crt"
+      ],
+      "returncode": 2,
+      "stdout": "",
+      "stderr": "CN=critical.test\nerror 20 at 0 depth lookup: unable to get local issuer certificate\nerror /tmp/ztls-signoff-20260919/fixtures/san_application.crt: verification failed\n202E41E45AF20000:error:1100009E:X509 V3 routines:ossl_x509v3_cache_extensions:invalid certificate:crypto/x509/v3_purp.c:677:\n",
+      "sha256": "864c4a223bed573f385cf258cce96c37a16394bd387872c0a19bb467028f46ea"
+    },
+    {
+      "fixture": "san_context.crt",
+      "purpose": "sslserver",
+      "command": [
+        "openssl",
+        "verify",
+        "-attime",
+        "1800000000",
+        "-purpose",
+        "sslserver",
+        "-CAfile",
+        "/tmp/ztls-signoff-20260919/fixtures/root.crt",
+        "-verify_hostname",
+        "critical.test",
+        "/tmp/ztls-signoff-20260919/fixtures/san_context.crt"
+      ],
+      "returncode": 2,
+      "stdout": "",
+      "stderr": "CN=critical.test\nerror 20 at 0 depth lookup: unable to get local issuer certificate\nerror /tmp/ztls-signoff-20260919/fixtures/san_context.crt: verification failed\n20AEE353C2F00000:error:1100009E:X509 V3 routines:ossl_x509v3_cache_extensions:invalid certificate:crypto/x509/v3_purp.c:677:\n",
+      "sha256": "e694f5198b57b934f2c194b5df44d39fd68572a3e0d7339ad343d7454312e4cc"
+    },
+    {
+      "fixture": "san_context.crt",
+      "purpose": "sslclient",
+      "command": [
+        "openssl",
+        "verify",
+        "-attime",
+        "1800000000",
+        "-purpose",
+        "sslclient",
+        "-CAfile",
+        "/tmp/ztls-signoff-20260919/fixtures/root.crt",
+        "/tmp/ztls-signoff-20260919/fixtures/san_context.crt"
+      ],
+      "returncode": 2,
+      "stdout": "",
+      "stderr": "CN=critical.test\nerror 20 at 0 depth lookup: unable to get local issuer certificate\nerror /tmp/ztls-signoff-20260919/fixtures/san_context.crt: verification failed\n20DE896A93FD0000:error:1100009E:X509 V3 routines:ossl_x509v3_cache_extensions:invalid certificate:crypto/x509/v3_purp.c:677:\n",
+      "sha256": "e694f5198b57b934f2c194b5df44d39fd68572a3e0d7339ad343d7454312e4cc"
+    },
+    {
+      "fixture": "san_primitive.crt",
+      "purpose": "sslserver",
+      "command": [
+        "openssl",
+        "verify",
+        "-attime",
+        "1800000000",
+        "-purpose",
+        "sslserver",
+        "-CAfile",
+        "/tmp/ztls-signoff-20260919/fixtures/root.crt",
+        "-verify_hostname",
+        "critical.test",
+        "/tmp/ztls-signoff-20260919/fixtures/san_primitive.crt"
+      ],
+      "returncode": 0,
+      "stdout": "/tmp/ztls-signoff-20260919/fixtures/san_primitive.crt: OK\n",
+      "stderr": "",
+      "sha256": "ed9e4689588ca48f6db067993e519db7d10fa7f6d02edd6a3a829e7aec39a3f9"
+    },
+    {
+      "fixture": "san_primitive.crt",
+      "purpose": "sslclient",
+      "command": [
+        "openssl",
+        "verify",
+        "-attime",
+        "1800000000",
+        "-purpose",
+        "sslclient",
+        "-CAfile",
+        "/tmp/ztls-signoff-20260919/fixtures/root.crt",
+        "/tmp/ztls-signoff-20260919/fixtures/san_primitive.crt"
+      ],
+      "returncode": 0,
+      "stdout": "/tmp/ztls-signoff-20260919/fixtures/san_primitive.crt: OK\n",
+      "stderr": "",
+      "sha256": "ed9e4689588ca48f6db067993e519db7d10fa7f6d02edd6a3a829e7aec39a3f9"
+    },
+    {
+      "fixture": "san_private.crt",
+      "purpose": "sslserver",
+      "command": [
+        "openssl",
+        "verify",
+        "-attime",
+        "1800000000",
+        "-purpose",
+        "sslserver",
+        "-CAfile",
+        "/tmp/ztls-signoff-20260919/fixtures/root.crt",
+        "-verify_hostname",
+        "critical.test",
+        "/tmp/ztls-signoff-20260919/fixtures/san_private.crt"
+      ],
+      "returncode": 2,
+      "stdout": "",
+      "stderr": "CN=critical.test\nerror 20 at 0 depth lookup: unable to get local issuer certificate\nerror /tmp/ztls-signoff-20260919/fixtures/san_private.crt: verification failed\n207E3371B6E00000:error:1100009E:X509 V3 routines:ossl_x509v3_cache_extensions:invalid certificate:crypto/x509/v3_purp.c:677:\n",
+      "sha256": "c3ba8b5e9e4dfb05100cf97fed1e8694f51f585d549ff44629598c9b59d23604"
+    },
+    {
+      "fixture": "san_private.crt",
+      "purpose": "sslclient",
+      "command": [
+        "openssl",
+        "verify",
+        "-attime",
+        "1800000000",
+        "-purpose",
+        "sslclient",
+        "-CAfile",
+        "/tmp/ztls-signoff-20260919/fixtures/root.crt",
+        "/tmp/ztls-signoff-20260919/fixtures/san_private.crt"
+      ],
+      "returncode": 2,
+      "stdout": "",
+      "stderr": "CN=critical.test\nerror 20 at 0 depth lookup: unable to get local issuer certificate\nerror /tmp/ztls-signoff-20260919/fixtures/san_private.crt: verification failed\n206EFA1C42E10000:error:1100009E:X509 V3 routines:ossl_x509v3_cache_extensions:invalid certificate:crypto/x509/v3_purp.c:677:\n",
+      "sha256": "c3ba8b5e9e4dfb05100cf97fed1e8694f51f585d549ff44629598c9b59d23604"
+    },
+    {
+      "fixture": "san_set.crt",
+      "purpose": "sslserver",
+      "command": [
+        "openssl",
+        "verify",
+        "-attime",
+        "1800000000",
+        "-purpose",
+        "sslserver",
+        "-CAfile",
+        "/tmp/ztls-signoff-20260919/fixtures/root.crt",
+        "-verify_hostname",
+        "critical.test",
+        "/tmp/ztls-signoff-20260919/fixtures/san_set.crt"
+      ],
+      "returncode": 2,
+      "stdout": "",
+      "stderr": "CN=critical.test\nerror 20 at 0 depth lookup: unable to get local issuer certificate\nerror /tmp/ztls-signoff-20260919/fixtures/san_set.crt: verification failed\n200E593453F70000:error:1100009E:X509 V3 routines:ossl_x509v3_cache_extensions:invalid certificate:crypto/x509/v3_purp.c:677:\n",
+      "sha256": "b1106f2c7cfcf6bb2a08b74d2d709a261f69288547465f023d4d97445ca39bf4"
+    },
+    {
+      "fixture": "san_set.crt",
+      "purpose": "sslclient",
+      "command": [
+        "openssl",
+        "verify",
+        "-attime",
+        "1800000000",
+        "-purpose",
+        "sslclient",
+        "-CAfile",
+        "/tmp/ztls-signoff-20260919/fixtures/root.crt",
+        "/tmp/ztls-signoff-20260919/fixtures/san_set.crt"
+      ],
+      "returncode": 2,
+      "stdout": "",
+      "stderr": "CN=critical.test\nerror 20 at 0 depth lookup: unable to get local issuer certificate\nerror /tmp/ztls-signoff-20260919/fixtures/san_set.crt: verification failed\n202E37B8A5F80000:error:1100009E:X509 V3 routines:ossl_x509v3_cache_extensions:invalid certificate:crypto/x509/v3_purp.c:677:\n",
+      "sha256": "b1106f2c7cfcf6bb2a08b74d2d709a261f69288547465f023d4d97445ca39bf4"
+    },
+    {
+      "fixture": "valid.crt",
+      "purpose": "sslserver",
+      "command": [
+        "openssl",
+        "verify",
+        "-attime",
+        "1800000000",
+        "-purpose",
+        "sslserver",
+        "-CAfile",
+        "/tmp/ztls-signoff-20260919/fixtures/root.crt",
+        "-verify_hostname",
+        "critical.test",
+        "/tmp/ztls-signoff-20260919/fixtures/valid.crt"
+      ],
+      "returncode": 0,
+      "stdout": "/tmp/ztls-signoff-20260919/fixtures/valid.crt: OK\n",
+      "stderr": "",
+      "sha256": "8a49657d231e5655ff68888eeb03e986a4bcc97b5e2a344435b93bdee07d49b1"
+    },
+    {
+      "fixture": "valid.crt",
+      "purpose": "sslclient",
+      "command": [
+        "openssl",
+        "verify",
+        "-attime",
+        "1800000000",
+        "-purpose",
+        "sslclient",
+        "-CAfile",
+        "/tmp/ztls-signoff-20260919/fixtures/root.crt",
+        "/tmp/ztls-signoff-20260919/fixtures/valid.crt"
+      ],
+      "returncode": 0,
+      "stdout": "/tmp/ztls-signoff-20260919/fixtures/valid.crt: OK\n",
+      "stderr": "",
+      "sha256": "8a49657d231e5655ff68888eeb03e986a4bcc97b5e2a344435b93bdee07d49b1"
+    }
+  ]
+}

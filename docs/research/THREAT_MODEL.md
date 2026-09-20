@@ -257,7 +257,6 @@ and unscheduled extensions are not on the timeline.
 | Gap | Boundary | Tracking |
 |---|---|---|
 | directoryName name-constraint forms are unsupported: a critical NameConstraints extension rejects, non-critical instances are ignored (RFC 5280 §4.2) | Certificate policy | out of scope; no expansion issue |
-| Recognized-but-unimplemented critical X.509 extensions are accepted; only unrecognized critical OIDs are rejected | Certificate policy | `PRODUCTION_READINESS.md` residual, #122 |
 | BoGo is deferred; TLS-Anvil remains outside PR `just ci` but has dedicated server/client workflows | External conformance breadth | `BOGO_DEFERRED.md`, #50 |
 | Oversized SNI hostnames are accepted on the ClientHello parse path (`parseSni`); the encode path is capped at 253 octets | Parser hardening | `NEGATIVE_SPACE.md` policy difference, #123 |
 | Finished-with-a-trailing-message and non-Finished-in-`wait_client_finished` negative unit tests are absent | Server state-machine evidence | #124 |

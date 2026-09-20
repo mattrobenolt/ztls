@@ -68,6 +68,16 @@ pub const crosssigned_leaf_der = decodeSection("crosssigned_leaf_der");
 pub const crosssigned_intermediate_der = decodeSection("crosssigned_intermediate_der");
 pub const crosssigned_root_cross_der = decodeSection("crosssigned_root_cross_der");
 
+// RFC 5280 extension-policy fixtures (#122).
+pub const extension_valid_der = decodeSection("extension_valid_der");
+pub const extension_ignored_der = decodeSection("extension_ignored_der");
+pub const extension_critical_der = decodeSection("extension_critical_der");
+pub const extension_san_application_der = decodeSection("extension_san_application_der");
+pub const extension_san_context_der = decodeSection("extension_san_context_der");
+pub const extension_san_private_der = decodeSection("extension_san_private_der");
+pub const extension_san_set_der = decodeSection("extension_san_set_der");
+pub const extension_san_primitive_der = decodeSection("extension_san_primitive_der");
+
 // --- pathLenConstraint family (#118) -----------------------------------------
 // Chain shape and per-case OpenSSL ground truth are documented in
 // tests/fixtures/pathlen/README.md. Roots live there as loose PEM; every

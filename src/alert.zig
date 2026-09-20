@@ -125,6 +125,7 @@ pub fn alertForError(err: anyerror) Description {
         error.CertificateSignatureAlgorithmRejected,
         error.CertificateSignatureAlgorithmUnsupported,
         error.UnsupportedCertificateVersion,
+        error.CertificateUnsupportedCriticalExtension,
         error.UnsupportedClientCertificate,
         error.CertificateKeyTooLarge,
         => .unsupported_certificate,
@@ -267,6 +268,10 @@ test "alertForError: certificate failures map to certificate alerts" {
             .description = .unsupported_certificate,
         },
         .{ .err = error.UnsupportedCertificateVersion, .description = .unsupported_certificate },
+        .{
+            .err = error.CertificateUnsupportedCriticalExtension,
+            .description = .unsupported_certificate,
+        },
         .{ .err = error.UnsupportedClientCertificate, .description = .unsupported_certificate },
         .{ .err = error.CertificateKeyTooLarge, .description = .unsupported_certificate },
         .{ .err = error.CertificateHostMismatch, .description = .certificate_unknown },

@@ -644,6 +644,7 @@ pub const Parsed = struct {
     pub const VerifyHostNameError = error{
         CertificateHostMismatch,
         CertificateFieldHasInvalidLength,
+        CertificateFieldHasWrongDataType,
     };
 
     pub fn verifyHostName(parsed_subject: Parsed, host_name: []const u8) VerifyHostNameError!void {
@@ -653,6 +654,10 @@ pub const Parsed = struct {
         if (subject_alt_name.len == 0) return error.CertificateHostMismatch;
 
         const general_names = try der.Element.parse(subject_alt_name, 0);
+        if (general_names.identifier.class != .universal or
+            general_names.identifier.tag != .sequence or
+            general_names.identifier.pc != .constructed)
+            return error.CertificateFieldHasWrongDataType;
         var name_i = general_names.slice.start;
         while (name_i < general_names.slice.end) {
             const general_name = try der.Element.parse(subject_alt_name, name_i);
@@ -1417,7 +1422,10 @@ pub fn parse(cert: Certificate) ParseError!Parsed {
                     name_constraints_slice = ext_bytes_elem.slice;
                     name_constraints_critical = is_critical;
                 },
-                else => continue,
+                else => {
+                    // RFC 5280 §4.2: OID recognition does not process an extension.
+                    if (is_critical) return error.CertificateUnsupportedCriticalExtension;
+                },
             }
         }
     }

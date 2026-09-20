@@ -5,6 +5,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const Sha256 = std.crypto.hash.sha2.Sha256;
 const testing = std.testing;
+const fixtures = @import("fixtures");
 const fuzz_compat = @import("fuzz_compat.zig");
 const fs = std.fs;
 
@@ -1344,6 +1345,59 @@ test "parse: insecure no-anchor path still enforces name constraints" {
             },
         ),
     );
+}
+
+// RFC 5280 §4.2 — unprocessed critical extensions invalidate either role's chain.
+test "parse: rejects signed unprocessed critical extension for both roles" {
+    var bundle: Certificate.Bundle = empty_bundle;
+    defer bundle.deinit(testing.allocator);
+    try addCertsFromFixturePath(&bundle, "tests/fixtures/critical/root.crt");
+    var buf: [2048]u8 = undefined;
+    const msg = buildCertChainMsg(&buf, &.{&fixtures.extension_critical_der});
+    const policy: Policy = .{ .bundle = &bundle, .now_sec = 1_800_000_000 };
+    try testing.expectError(error.CertificateUnsupportedCriticalExtension, parse(msg, policy));
+    try testing.expectError(
+        error.CertificateUnsupportedCriticalExtension,
+        parseClientChain(msg, &.{}, policy),
+    );
+}
+
+// RFC 5280 §4.2 — non-critical extensions outside the verifier's support can be ignored.
+test "parse: accepts signed noncritical extension and supported critical extensions" {
+    var bundle: Certificate.Bundle = empty_bundle;
+    defer bundle.deinit(testing.allocator);
+    try addCertsFromFixturePath(&bundle, "tests/fixtures/critical/root.crt");
+    for ([_][]const u8{ &fixtures.extension_valid_der, &fixtures.extension_ignored_der }) |cert| {
+        var buf: [2048]u8 = undefined;
+        const msg = buildCertChainMsg(&buf, &.{cert});
+        const policy: Policy = .{
+            .bundle = &bundle,
+            .now_sec = 1_800_000_000,
+            .host_name = "critical.test",
+        };
+        try testing.expect((try parse(msg, policy)).len > 0);
+        _ = try parseClientChain(msg, &.{}, policy);
+    }
+}
+
+// RFC 5280 §4.2.1.6 — GeneralNames is a constructed universal SEQUENCE.
+test "parse: rejects signed SAN with an invalid wrapper" {
+    var bundle: Certificate.Bundle = empty_bundle;
+    defer bundle.deinit(testing.allocator);
+    try addCertsFromFixturePath(&bundle, "tests/fixtures/critical/root.crt");
+    for ([_][]const u8{
+        &fixtures.extension_san_application_der,
+        &fixtures.extension_san_context_der,
+        &fixtures.extension_san_private_der,
+        &fixtures.extension_san_set_der,
+        &fixtures.extension_san_primitive_der,
+    }) |cert| {
+        var buf: [2048]u8 = undefined;
+        try testing.expectError(error.CertificateFieldHasWrongDataType, parse(
+            buildCertChainMsg(&buf, &.{cert}),
+            .{ .bundle = &bundle, .now_sec = 1_800_000_000, .host_name = "critical.test" },
+        ));
+    }
 }
 
 // RFC 5280 §4.2.1.9 / §6.1 — pathLenConstraint enforcement (#118).
