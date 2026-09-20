@@ -26,6 +26,9 @@ Rules:
 - For benchmark/conformance evidence, check for clean git state, single active worker, raw outputs, metadata, and committed analysis.
 - For long TLS-Anvil/BoGo runs, check that there is exactly one active worker, the command and run directory are recorded, the parent report reached a terminal state, and raw artifacts containing TLS secrets (`keyfile.log`, packet captures, raw `zig-out/anvil/**`) remain ignored.
 - Flag any recipe or report path that lets `--allow-partial` output masquerade as acceptance evidence.
+- Treat already-pinned consumer checks as revalidation, not proof that a dependency override took effect.
+- Check resource baselines after readiness retires. Require failed-snapshot records, not only successful samples.
+- Keep private consumer source and source-bearing traces in their owning repository.
 
 Output:
 - Findings grouped as required, recommended, or ignore.

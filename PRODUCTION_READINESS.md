@@ -61,10 +61,10 @@ revision, not automatically to later commits.
 
 | Pillar | Status | One-line |
 |---|---|---|
-| 1. Correctness | `PARTIAL` | Historical TLS-Anvil evidence covers `d07c551` (#108). The #118 fix, #119 consumer gate, and #120 candidate conformance pass. Consumer resource and replacement-candidate qualification remain under #121–#122. |
+| 1. Correctness | `PROVEN` | Immutable candidate `8814f1e` passes six terminal TLS-Anvil profiles, both consumer suites, negative controls, and bounded resource/recovery checks (#121–#122). Caller responsibilities and unsupported profiles remain explicit. |
 | 2. Ergonomics | `PROVEN` | CI-gated examples cover both roles across io_uring, epoll, kqueue, and `std.Io`. Core and wrapper APIs expose hybrid capabilities and reject invalid local policy before key generation or wire I/O (#105). `ztls-std` (#77) gates plain and mTLS OpenSSL interop in both directions. `ztls-xev` satisfies #76's Linux/macOS contract, including in-flight cancellation (#83). |
 | 3. Performance | `PROVEN` | n=10 captures on x86_64 (c7i.2xlarge), aarch64 (c7g.2xlarge), and macOS (Apple M1 Max) with formal CIs (p=0.000): ztls beats libssl on every comparable app-data row on all three platforms and rustls on all AES-GCM rows; regression gate committed. |
-| 4. Providers | `PROVEN` | OpenSSL, AWS-LC, and BoringSSL passed strict-complete TLS-Anvil client and server runs at `d07c551`; malformed peer ML-KEM keys produce `illegal_parameter` while provider faults remain `internal_error` (#108). The capture is bound to that revision; candidate re-qualification is #120. |
+| 4. Providers | `PROVEN` | OpenSSL, AWS-LC, and BoringSSL pass all six terminal TLS-Anvil profiles at `8814f1e`. Malformed ML-KEM keys produce `illegal_parameter`, while provider faults remain `internal_error`. Captures remain revision-bound. |
 | 5. Marketing | `PROVEN` | README leads with the proven performance story (n=10, both architectures, honest ChaCha20 loss) and the adversarial security posture; the why-ztls narrative and headline benchmarks are on the front door, backed by PERFORMANCE.md. |
 | 6. User docs | `PROVEN` | One fetched package exposes core plus the Zig 0.16 integration modules (#79). Isolated consumer gates and `docs/USAGE.md` cover dependency wiring, hybrid capability checks, borrowed lifetimes, cleanup, drive loops, and integrations (#105). |
 
@@ -72,92 +72,119 @@ revision, not automatically to later commits.
 
 ## Production candidate qualification
 
-The selected candidate is `b9d03edfb422e4f2528635bae03cc1a5daffbe69`.
-The controller revision is `01a5b0686efc01bb7bf7970d9d49797389fbbe9f`.
+**Qualification is `PROVEN` for the recorded consumer profiles.**
+
+The immutable candidate is `8814f1e55642a7ce73841779ca0b25e530d31ef8`.
+Its package hash is `ztls-0.0.0-SHHDXrSfIgAt79mZaiELvsf6SMaWI9Z-UxL0eTwGV85r`.
+The candidate also contains the consumer-gate controller.
+Later documentation commits do not change the qualified revision.
 Only handoff and z53 participate. Kafka is abandoned and outside this gate.
 
-| Gate | Evidence and residual scope |
+| Gate | Evidence and limits |
 |---|---|
-| #118 — certificate path length | The published fix passes the local provider/Zig matrices and GitHub CI `35482684833`, including macOS. Parent review and mutation evidence support the patch. Delegated independent review did not execute. |
-| #119 — consumer compatibility | Both real consumer suites pass against the candidate. Broken-import controls fail both consumers. The hostname-removal control fails two z53 authentication tests. |
-| #120 — TLS-Anvil | Both roles account for 437 cases per provider with zero unexpected results. All six parent reports are terminal and all source trees are clean. |
-| #121 — resource cleanup and transport recovery | Revised unit and replay diagnostics free every allocation. Two early-data abort leaks have regressions. Replacement-candidate consumer recovery remains unqualified. No duration-based gate applies. |
+| #118 — certificate path length | The selected-path fix has public-path regressions, mutation controls, and OpenSSL differential results. Candidate CI `35504413278` passes. |
+| #119 — consumer compatibility | The upgrade gate replaces both original dependency pins and returns full/green. Final consumer revalidation passes separately. Broken imports fail both consumers. The hostname-removal control fails two final z53 authentication tests. |
+| #120 — TLS-Anvil | Six terminal runs cover both roles and all three providers at the replacement candidate. Each accounts for 437 cases with zero unexpected results. |
+| #121 — resources and recovery | Pool, descriptor, reconnect, partial-write, reset/EOF, backend restart, and supported rotation checks pass. Memory reports contain no unexplained failures. The AWS-LC retention is fixed provider thread/RNG state, not a zero-byte result. |
+| #122 — certificate residuals | Public-path regressions reject unprocessed critical extensions and malformed SAN wrappers. The replacement candidate passes the provider, compiler, consumer, and conformance gates. |
 
-The consumer records are under
-[`CONSUMER_GATE/20260919-launchpad-b9d03ed`](docs/research/CONSUMER_GATE/20260919-launchpad-b9d03ed/).
-Each record includes the candidate package hash, exact revisions, commands,
-original dependency pins, toolchain, and raw logs.
+The [consumer archive](docs/research/CONSUMER_GATE/20260920-launchpad-8814f1e/) binds commands, revisions, dependency pins, toolchains, and raw public results.
+Private handoff source and source-bearing traces remain in its owning repository.
+Public summaries bind the private archive by commit and hashes.
+The evidence branch and qualified consumer source branch are separate.
 
-| Consumer | Revision | Tested profile |
+| Consumer | Qualified source revision | Resource profile |
 |---|---|---|
-| handoff | `557ba42de1e4aa3f16e3cff0c7ed6bb885fddebd` | Linux aarch64, kernel 7.2.3, Zig 0.16.0, AWS-LC 5.5.0 |
-| z53 | `499c41abab505d72d9611f5fbb3cebfc91d90058` | Linux aarch64, kernel 7.2.3, Zig 0.16.0, OpenSSL 3.6.4 |
+| handoff | `bc3567bd94695084cd30ec12226e28256a740732` | Linux aarch64, kernel 7.2.3, Zig 0.16.0, AWS-LC 5.5.0 |
+| z53 | `4f63930672a3af9cec53c8588007ec566886847d` | Linux aarch64, kernel 7.2.3, Zig 0.16.0, OpenSSL 3.6.4 |
 
-handoff passed 63 tests and four TLS/plaintext build configurations.
-z53 passed four portable tests and 99 native tests, with one recorded skip.
-Its native suite covers authentication rejection, partial TLS writes, reset,
-idle expiry, cancellation, and repeated restart behavior.
+The separate upgrade capture uses the original handoff `557ba42` and z53 `499c41a` revisions.
+It passes with a full classification after dependency replacement.
+The final consumer revisions already pin the candidate.
+Their green manifests remain partial revalidation records, not evidence of a pin change.
+Together, these captures prove dependency replacement and the final consumer profiles without a classification override.
 
-The private handoff traffic probe verified `localhost` against the pinned fixture leaf for Python TLS clients.
-The probe covered:
+handoff passes 66 Zig tests, 55 Python tests, and four TLS/plaintext builds.
+Its source CI `35508762043` passes all four jobs.
+z53 passes four portable tests and 100 native tests, with one recorded skip.
+Its source CI `35509559619` passes Linux aarch64, Linux x86_64, and macOS aarch64.
 
-- Byte-exact echoes of 16 KiB and 1 MiB.
-- A batch of 130 connections at concurrency 16.
-- Twenty KeyUpdates with wire responses and byte-exact echoes.
-- PostgreSQL STARTTLS and PROXY v2.
-- Client and backend half-close behavior.
+The handoff runtime capture covers eight bounded phases:
 
-The raw OpenSSL KeyUpdate and half-close clients did not verify the peer certificate.
-Both owned processes returned to their initial descriptor counts after each phase.
-The proxy used ten descriptors and reached 7,876 KiB RSS in the final samples.
-These are bounded functional checks, not throughput measurements or proof of indefinite stability.
+- Byte-exact 16 KiB and 1 MiB echoes, plus 130 connections at concurrency 16.
+- Twenty KeyUpdates, STARTTLS, PROXY v2, and both half-close directions.
+- Thirty-two incomplete handshakes, overflow refusal, reset/EOF cleanup, and authenticated reconnect.
+- Wrong-hostname rejection and owned-backend restart.
+- Actual five-minute certificate rotation, replacement-certificate authentication, and continued traffic on the original connection.
 
-Valgrind 3.27.1 found no leaked allocations in the complete in-memory handshake example.
-The previous candidate's full unit suite leaked 124,416 direct bytes and 621,384 indirect bytes despite successful test assertions.
-The #121 follow-up fixes omitted fixture cleanup and two engine leaks during aborted early-data handshakes.
-Both abort regressions failed their allocation-count checks before the corresponding fixes.
-The revised Debug and ReleaseFast suites free every allocation, with 849 test passes and one skip each.
+Python TLS clients authenticate the fixture and hostname.
+The raw OpenSSL KeyUpdate and half-close peers do not authenticate the certificate.
+The proxy holds 74 descriptors at the full 32-slot boundary.
+Every phase returns proxy/backend counts to 10/4.
+The maximum final proxy sample is 9,812 KiB, below the predefined 65,536 KiB bound.
+These are functional resource checks, not throughput measurements or proof of indefinite stability.
 
-The optimized OpenSSL reports map to seven vector-scan branches across five functions.
-A standalone instruction probe reproduces the Memcheck definedness limitation with valid NUL-terminated strings.
-The same ReleaseFast binary reports zero Memcheck errors with the diagnostic provider that disables C vectorization.
-No suppressions apply. Production keeps the optimized provider.
-Both Linux CI lanes check the full unit suite under Memcheck.
-The Zig 0.15 lane also checks all three replay benchmark rows.
-The benchmark driver depends on Zig 0.15 APIs.
-The replay cleanup fix changes that benchmark's measurement boundary, not historical captures.
+The pool test checks four high-water reuse cycles without further pool allocation.
+Both pool-return mutations fail.
+Two consumer reload regressions fail before their fixes.
+The runtime rotation capture exercises the actual production timer.
+An initial driver failure captured a transient readiness descriptor as its baseline.
+The corrected sampler has a failing first-snapshot mutation. The failed capture remains intact in the private archive.
 
-The [resource diagnosis](docs/research/CONSUMER_GATE/20260919-launchpad-resource-cleanup/) preserves the failures, controls, source patches, and provider disassembly.
-These diagnostics do not qualify a new immutable candidate.
-Consumer pool occupancy and the remaining transport-recovery checks stay open under #121.
+The handoff memory executables pass 62 proxy and four backend tests.
+The proxy retains 1,232 reachable AWS-LC bytes in five blocks, with zero definitely, indirectly, or possibly lost bytes.
+Its strict all-leak-kinds command exits 99 with five reachability contexts and no suppressions.
+Standalone main-thread probes retain the same blocks after one and 512 RNG calls.
 
-The six candidate captures are under
-[`captures-b9d03ed`](docs/research/TLS_ANVIL_91_CHAIN_FIXTURE/captures-b9d03ed/).
-The manifest records workflow IDs, artifact hashes, and build provenance.
+A joined worker that makes 512 calls frees every allocation and reports zero errors.
+The allocation stacks identify fixed thread, error-queue, entropy, and RNG state.
+This classification applies only to those stacks and counts.
+Eight `close(-1)` warnings remain in the raw proxy log.
+The backend test executable reports zero errors and zero live bytes.
+
+The final z53 regression completes four authenticated reset/reconnect cycles without runtime allocator growth.
+After each fault, it checks descriptor recovery, vacant TLS ownership, and free transaction slots.
+The ownership-removal mutation fails with `TlsOwnershipNotReleased`.
+A retained-descriptor mutation fails with `expected 9, found 10`.
+
+Its diagnostic Memcheck run records 13,629 allocations and 13,629 frees, with zero errors and zero live bytes.
+Only three inherited descriptors remain at exit. No suppressions apply.
+The full native suite also covers partial TLS writes, authentication rejection, idle expiry, cancellation, and repeated restart behavior.
+
+The OpenSSL diagnostic build disables C vectorization for Memcheck's documented vector-scan limitation.
+Production retains the optimized provider.
+Memory captures use baseline CPU code because Valgrind does not support the native SVE instructions in the initial consumer binary.
+These detector accommodations do not support performance claims.
+
+The earlier [resource diagnosis](docs/research/CONSUMER_GATE/20260919-launchpad-resource-cleanup/) preserves real engine and fixture leaks, failing controls, and provider disassembly.
+Both early-data abort regressions fail their allocation-count checks before their corresponding fixes.
+Candidate CI checks full unit ownership in both Zig versions and all three replay rows on Zig 0.15.
+The replay driver depends on Zig 0.15 APIs. Its cleanup fix changes that benchmark's measurement boundary.
+Historical performance captures remain unchanged.
+
+The six [replacement TLS-Anvil captures](docs/research/TLS_ANVIL_91_CHAIN_FIXTURE/captures-8814f1e/) use clean candidate source and Zig 0.15.2.
+The manifest binds workflow metadata, raw reports, workflow-log hashes, and provider provenance.
+Each provider produces the same role-specific counts:
+
 | Role | Passed | Expected failed | Expected skipped | Not attempted |
 |---|---:|---:|---:|---:|
 | Client | 92 | 6 | 134 | 205 |
 | Server | 105 | 0 | 175 | 157 |
 
-Each capture uses Zig 0.15.2 with one provider:
-
-- OpenSSL 3.6.4.
-- AWS-LC 5.5.0.
-- BoringSSL 0.20260803.0.
-
+The providers are OpenSSL 3.6.4, AWS-LC 5.5.0, and BoringSSL 0.20260803.0.
+Accounted cases are not equivalent to passes.
 Expected classifications remain unchanged. No partial-run override applies.
-TLS-Anvil does not directly cover RFC 10024 hybrid groups, the new PSK continuity cases, or extracted-session ownership.
+TLS-Anvil does not directly cover RFC 10024 hybrid groups, PSK continuity, or extracted-session ownership.
 Those features retain their separate unit and interoperability evidence.
 
-The #108 captures remain historical evidence for `d07c551`.
-Unexercised profiles remain untested. Existing z53 operation provides historical evidence for its actual deployed revision, not this candidate.
-The live service remains untouched.
+The [b9d03ed consumer capture](docs/research/CONSUMER_GATE/20260919-launchpad-b9d03ed/) and earlier conformance captures remain historical evidence.
+They do not qualify later code.
+Operational and memory captures cover only the Linux aarch64 profiles in this table.
+z53 does not expose in-process certificate rotation in this profile.
 
-Candidate gates do not erase known correctness residuals.
-The #122 patch rejects unprocessed critical extensions and invalid SAN wrappers.
-Signed public-path regressions failed before the fix. The local OpenSSL suite passes 849 tests with one skip.
-Local OpenSSL, AWS-LC, BoringSSL, and Zig 0.16 gates pass.
-Qualification of the replacement candidate remains pending.
+The consumer fixes remain on their qualification PR branches. No live service changed.
+No duration-based gate applies.
+Delegated independent review did not execute. Parent verification and mutation tests are not independent review.
 
 The #123 contract applies a shared 1–253-octet SNI HostName bound to encoding, length preflight, and parsing.
 The parser also rejects an empty ServerNameList. Accepted names remain borrowed, untrusted routing input.
@@ -901,9 +928,8 @@ data to openssl s_server and receives the HTTP response.
   unsupported-subtree rejection, and a differential test corpus against OpenSSL
   3.6.3 covering all four GeneralName forms (#75 resolved).
 
-**Status:** `PARTIAL` — #118 passes local and GitHub gates.
-Candidate consumer and conformance evidence passes at `b9d03ed`.
-Consumer resource and replacement-candidate qualification under #121–#122 remain separate requirements.
+**Status:** `PROVEN` for immutable candidate `8814f1e` and the recorded profiles.
+The #118 and #122 regressions, consumer controls, resource checks, and six replacement conformance captures satisfy the qualification gates.
 The #91 fixture regressions and #108 conformance captures retain their historical provenance.
 
 **Evidence and design decisions:**
@@ -1863,10 +1889,9 @@ each passing the same correctness and interop gates.
   row-perf evidence). *(#63, #70, #71 — server capture clean; client
   capture KeyUpdate failure root-caused and fixed, CI-confirmed)*
 
-**Status:** `PROVEN` (library milestone) — strict-complete TLS-Anvil client and
-server runs at clean `d07c551` passed on OpenSSL, AWS-LC, and BoringSSL with
-zero unexpected results (#108). The capture is historical for that revision;
-candidate re-qualification is #120.
+**Status:** `PROVEN` for immutable candidate `8814f1e`.
+Six terminal TLS-Anvil client/server captures cover OpenSSL, AWS-LC, and BoringSSL with zero unexpected results.
+The #108 captures remain historical evidence for `d07c551`.
 
 Commit `d07c551` rejects non-canonical ML-KEM encapsulation keys before provider
 import. It maps peer input to `illegal_parameter` and keeps provider faults
@@ -1879,7 +1904,7 @@ suite, tlsfuzzer smoke, in-memory example, and benchmark smoke. The devshells
 select matching package paths, and the headers determine the backend family.
 All three backends have committed clean
 TLS-Anvil captures (437/437 each, no unexpected failures) bound to their
-recorded revisions; dated captures are not candidate qualification. CI-gated
+recorded revisions. Older captures do not qualify later code. CI-gated
 backend
 lanes (`just check-backend-aws-lc`, `just check-backend-boringssl`) run the
 same gates as the default. X25519, P-256, AEAD, and CertificateVerify

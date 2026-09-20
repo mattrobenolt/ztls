@@ -1,0 +1,4 @@
+	linux-vdso.so.1 (0x0000e7bb28f3c000)
+	libcrypto.so => /nix/store/3hnfh4dzrjjncnpa9nhggr6l7m97g456-aws-lc-5.5.0/lib/libcrypto.so (0x0000e7bb28bc0000)
+	libc.so.6 => /nix/store/m54cs0m994hc3n9lax7sg98sgy729qsa-glibc-2.42-84/lib/libc.so.6 (0x0000e7bb289e0000)
+	/nix/store/m54cs0m994hc3n9lax7sg98sgy729qsa-glibc-2.42-84/lib/ld-linux-aarch64.so.1 (0x0000e7bb28f00000)

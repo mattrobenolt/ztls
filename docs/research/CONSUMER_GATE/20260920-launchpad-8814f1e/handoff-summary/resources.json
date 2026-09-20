@@ -1,0 +1,226 @@
+[
+  {
+    "phase": "echo",
+    "outcome": "passed",
+    "before": [
+      {
+        "pid": 4192927,
+        "fds": 4,
+        "rss_kib": 3872
+      },
+      {
+        "pid": 4192929,
+        "fds": 10,
+        "rss_kib": 5312
+      }
+    ],
+    "after": [
+      {
+        "pid": 4192927,
+        "fds": 4,
+        "rss_kib": 3872
+      },
+      {
+        "pid": 4192929,
+        "fds": 10,
+        "rss_kib": 7676
+      }
+    ]
+  },
+  {
+    "phase": "starttls",
+    "outcome": "passed",
+    "before": [
+      {
+        "pid": 4193068,
+        "fds": 4,
+        "rss_kib": 3872
+      },
+      {
+        "pid": 4193070,
+        "fds": 10,
+        "rss_kib": 5312
+      }
+    ],
+    "after": [
+      {
+        "pid": 4193068,
+        "fds": 4,
+        "rss_kib": 3872
+      },
+      {
+        "pid": 4193070,
+        "fds": 10,
+        "rss_kib": 5724
+      }
+    ]
+  },
+  {
+    "phase": "proxyv2",
+    "outcome": "passed",
+    "before": [
+      {
+        "pid": 4193077,
+        "fds": 4,
+        "rss_kib": 3872
+      },
+      {
+        "pid": 4193079,
+        "fds": 10,
+        "rss_kib": 5312
+      }
+    ],
+    "after": [
+      {
+        "pid": 4193077,
+        "fds": 4,
+        "rss_kib": 3872
+      },
+      {
+        "pid": 4193079,
+        "fds": 10,
+        "rss_kib": 5724
+      }
+    ]
+  },
+  {
+    "phase": "eof_reply",
+    "outcome": "passed",
+    "before": [
+      {
+        "pid": 4193086,
+        "fds": 4,
+        "rss_kib": 3872
+      },
+      {
+        "pid": 4193088,
+        "fds": 10,
+        "rss_kib": 5312
+      }
+    ],
+    "after": [
+      {
+        "pid": 4193086,
+        "fds": 4,
+        "rss_kib": 3872
+      },
+      {
+        "pid": 4193088,
+        "fds": 10,
+        "rss_kib": 5724
+      }
+    ]
+  },
+  {
+    "phase": "early_eof",
+    "outcome": "passed",
+    "before": [
+      {
+        "pid": 4193095,
+        "fds": 4,
+        "rss_kib": 3872
+      },
+      {
+        "pid": 4193097,
+        "fds": 10,
+        "rss_kib": 5312
+      }
+    ],
+    "after": [
+      {
+        "pid": 4193095,
+        "fds": 4,
+        "rss_kib": 3872
+      },
+      {
+        "pid": 4193097,
+        "fds": 10,
+        "rss_kib": 5724
+      }
+    ]
+  },
+  {
+    "phase": "faults",
+    "outcome": "passed",
+    "before": [
+      {
+        "pid": 4193105,
+        "fds": 4,
+        "rss_kib": 3872
+      },
+      {
+        "pid": 4193107,
+        "fds": 10,
+        "rss_kib": 5312
+      }
+    ],
+    "after": [
+      {
+        "pid": 4193105,
+        "fds": 4,
+        "rss_kib": 3872
+      },
+      {
+        "pid": 4193107,
+        "fds": 10,
+        "rss_kib": 9812
+      }
+    ]
+  },
+  {
+    "phase": "restart",
+    "outcome": "passed",
+    "before": [
+      {
+        "pid": 4193147,
+        "fds": 4,
+        "rss_kib": 3872
+      },
+      {
+        "pid": 4193149,
+        "fds": 10,
+        "rss_kib": 5312
+      }
+    ],
+    "after": [
+      {
+        "pid": 4193153,
+        "fds": 4,
+        "rss_kib": 3872
+      },
+      {
+        "pid": 4193149,
+        "fds": 10,
+        "rss_kib": 5724
+      }
+    ]
+  },
+  {
+    "phase": "rotation",
+    "outcome": "passed",
+    "before": [
+      {
+        "pid": 4193159,
+        "fds": 4,
+        "rss_kib": 3872
+      },
+      {
+        "pid": 4193161,
+        "fds": 10,
+        "rss_kib": 5312
+      }
+    ],
+    "after": [
+      {
+        "pid": 4193159,
+        "fds": 4,
+        "rss_kib": 3496
+      },
+      {
+        "pid": 4193161,
+        "fds": 10,
+        "rss_kib": 5796
+      }
+    ]
+  }
+]

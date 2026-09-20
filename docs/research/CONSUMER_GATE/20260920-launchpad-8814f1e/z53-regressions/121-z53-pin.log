@@ -1,0 +1,17 @@
+warning: Git tree '/tmp/ztls-signoff-20260919/z53-resource' is dirty
+these 2 derivations will be built:
+  /nix/store/sryxnb7d871a022cxayw1wjvgb9zch0n-z53-zig-dependencies.drv
+  /nix/stclosure hash sha256-PsYD+hH21HxBQoj35wPPlpvgAg9SKEiX/hM09SQfrkM=
+warning: Git tree '/tmp/ztls-signoff-20260919/z53-resource' is dirty
+this derivation will be built:
+  /nix/store/mrsal8ir2jb1vzzwbjv6356sxy07n5wp-z53-0.0.0.drv
+building '/nix/store/mrsal8ir2jb1vzzwbjv6356sxy07n5wp-z53-0.0.0.drv'...
+build.zig.zon:            .url = "git+https://github.com/mattrobenolt/ztls?ref=main#8814f1e55642a7ce73841779ca0b25e530d31ef8",
+SPEC.md:   `8814f1e55642a7ce73841779ca0b25e530d31ef8`.
+dependencies.drv':
+         specified: sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+            got:    sha256-PsYD+hH21HxBQoj35wPPlpvgAg9SKEiX/hM09SQfrkM=
+error: Cannot build '/nix/store/hn0dcymdxm9hm64d289c6ry8anyfj3vg-z53-0.0.0.drv'.
+       Reason: 1 dependency failed.
+       Output paths:
+         /nix/store/1jbjx534g16fv1mb9x2f30ssln2kbj95-z53-0.0.0

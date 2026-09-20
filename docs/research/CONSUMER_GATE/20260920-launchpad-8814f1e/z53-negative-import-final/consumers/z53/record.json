@@ -1,0 +1,30 @@
+{
+  "name": "z53",
+  "source": "/tmp/ztls-signoff-20260919/z53-resource",
+  "source_kind": "path",
+  "source_dirty": "no",
+  "requested_revision": "4f63930672a3af9cec53c8588007ec566886847d",
+  "revision": "4f63930672a3af9cec53c8588007ec566886847d",
+  "subject": "Check descriptor recovery across TLS reset cycles",
+  "devshell": "default",
+  "rollback_pin": {
+    "url": "git+https://github.com/mattrobenolt/ztls?ref=main#8814f1e55642a7ce73841779ca0b25e530d31ef8",
+    "hash": "ztls-0.0.0-SHHDXrSfIgAt79mZaiELvsf6SMaWI9Z-UxL0eTwGV85r"
+  },
+  "candidate_pin": {
+    "url": "file:///tmp/ztls-consumer-gate.3XEPTu/candidate.tar.gz",
+    "hash": "ztls-0.0.0-SHHDXgugIgAgzmcjEX44wsRw5fjzJtbrvzwy5QY0cXZM"
+  },
+  "candidate_changed_pin": "yes",
+  "toolchain": {
+    "zig": "0.16.0",
+    "libcrypto_version": "3.6.4",
+    "libcrypto_libdir": "/nix/store/v89yca35zsb13k51ibz0mcz2rrzjwwrj-openssl-3.6.4/lib",
+    "os": "Linux",
+    "arch": "aarch64",
+    "kernel": "7.2.3"
+  },
+  "commands": [{"command":"just test","status":"failed","exit":1,"seconds":12,"log":"logs/z53-02-cmd.log"}],
+  "evidence": "zig-pkg/ztls-0.0.0-SHHDXgugIgAgzmcjEX44wsRw5fjzJtbrvzwy5QY0cXZM/src/root.zig:44:5: error: qualification negative control: broken ztls import|error: 1 compilation errors",
+  "status": "red"
+}

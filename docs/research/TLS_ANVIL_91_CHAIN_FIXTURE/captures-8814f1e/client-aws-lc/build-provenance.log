@@ -1,0 +1,6 @@
+anvil-client (aws-lc)	Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1	2026-09-20T10:14:12.8405070Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +8814f1e55642a7ce73841779ca0b25e530d31ef8:refs/remotes/origin/qualification/20260920-8814f1e
+anvil-client (aws-lc)	Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1	2026-09-20T10:14:13.5763043Z  * [new ref]         8814f1e55642a7ce73841779ca0b25e530d31ef8 -> origin/qualification/20260920-8814f1e
+anvil-client (aws-lc)	Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1	2026-09-20T10:14:13.5830811Z 8814f1e55642a7ce73841779ca0b25e530d31ef8
+anvil-client (aws-lc)	Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1	2026-09-20T10:14:13.7653518Z 8814f1e55642a7ce73841779ca0b25e530d31ef8
+anvil-client (aws-lc)	Build harness and TLS-Anvil tools	2026-09-20T10:15:23.7549219Z copying path '/nix/store/6yfjyxxvhzgdg0453gvj45xsv681jg9y-zig-0.15.2' from 'http://127.0.0.1:37515'...
+anvil-client (aws-lc)	Build harness and TLS-Anvil tools	2026-09-20T10:15:38.5566101Z libcrypto family: aws-lc (/nix/store/xcgz3zg6nd9sg4m2xg6jlf2lxanva74l-aws-lc-5.5.0-dev/include)

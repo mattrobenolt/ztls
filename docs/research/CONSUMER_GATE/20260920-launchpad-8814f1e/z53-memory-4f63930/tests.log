@@ -1,0 +1,16 @@
+ztest: Running 1 test...
+2026-09-20T12:04:40.405Z event=query proto=udp client=127.0.0.1:51214 qtype=1 qname="reconnect.example." rcode=0 duration_ms=633.779 src=forward upstream=127.0.0.1:61038 upstream_proto=dot tls_name="dns.example"
+2026-09-20T12:04:40.426Z event=upstream_failure upstream=127.0.0.1:61038 upstream_proto=dot tls_name="dns.example" reason="CONNRESET"
+2026-09-20T12:04:40.434Z event=query proto=udp client=127.0.0.1:51214 qtype=1 qname="reset.example." rcode=2 duration_ms=8.816 src=servfail
+2026-09-20T12:04:40.814Z event=query proto=udp client=127.0.0.1:51214 qtype=1 qname="reconnect.example." rcode=0 duration_ms=375.875 src=forward upstream=127.0.0.1:61038 upstream_proto=dot tls_name="dns.example"
+2026-09-20T12:04:40.817Z event=upstream_failure upstream=127.0.0.1:61038 upstream_proto=dot tls_name="dns.example" reason="CONNRESET"
+2026-09-20T12:04:40.819Z event=query proto=udp client=127.0.0.1:51214 qtype=1 qname="reset.example." rcode=2 duration_ms=2.042 src=servfail
+2026-09-20T12:04:41.818Z event=query proto=udp client=127.0.0.1:51214 qtype=1 qname="reconnect.example." rcode=0 duration_ms=997.395 src=forward upstream=127.0.0.1:61038 upstream_proto=dot tls_name="dns.example"
+2026-09-20T12:04:41.822Z event=upstream_failure upstream=127.0.0.1:61038 upstream_proto=dot tls_name="dns.example" reason="CONNRESET"
+2026-09-20T12:04:41.823Z event=query proto=udp client=127.0.0.1:51214 qtype=1 qname="reset.example." rcode=2 duration_ms=1.970 src=servfail
+2026-09-20T12:04:42.818Z event=query proto=udp client=127.0.0.1:51214 qtype=1 qname="reconnect.example." rcode=0 duration_ms=993.579 src=forward upstream=127.0.0.1:61038 upstream_proto=dot tls_name="dns.example"
+2026-09-20T12:04:42.822Z event=upstream_failure upstream=127.0.0.1:61038 upstream_proto=dot tls_name="dns.example" reason="CONNRESET"
+[1/1] PASS: forward TLS reset releases pools and reconnects without runtime allocation (4348.29ms)
+
+ztest: 1 passed, 0 failed, 0 skipped (of 1 total) in 4368ms
+ALL TESTS PASSED

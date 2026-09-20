@@ -1,0 +1,25 @@
+pkg-config --list-all
+pkg-config libcrypto --cflags --libs
+/nix/store/h4am1dpj4li41cq58861nysgaip7036s-zig-0.16.0/bin/zig test -OReleaseSafe -target native-native -mcpu baseline --dep runtime -Mroot=/tmp/ztls-signoff-20260919/z53-resource/tests/runtime.zig -OReleaseSafe -target native-native -mcpu baseline --dep ztls -Mruntime=/tmp/ztls-signoff-20260919/z53-resource/src/runtime.zig -I/nix/store/ik15agzk82h1sbazhalg11y8zw1xvl8n-openssl-3.6.4-dev/include -L/nix/store/v89yca35zsb13k51ibz0mcz2rrzjwwrj-openssl-3.6.4/lib -lcrypto -OReleaseSafe -target native-native -mcpu baseline --dep build_options -Mztls=/tmp/ztls-signoff-20260919/z53-resource/zig-pkg/ztls-0.0.0-SHHDXrSfIgAt79mZaiELvsf6SMaWI9Z-UxL0eTwGV85r/src/root.zig -Mbuild_options=/tmp/ztls-signoff-20260919/z53-resource-cache/c/9291a429e26420e7c36eee7e19b2ebe5/options.zig -lc --test-runner /tmp/ztls-signoff-20260919/z53-resource/zig-pkg/ztest-0.2.0-h6PBzx2NAACI2wKYtRDq8PUTvjyyRYuPB_Xcw4UK4Vk9/src/test_runner.zig --cache-dir /tmp/ztls-signoff-20260919/z53-resource-cache --global-cache-dir /tmp/ztls-signoff-20260919/consumer-global16 --name test --zig-lib-dir /nix/store/h4am1dpj4li41cq58861nysgaip7036s-zig-0.16.0/lib/zig/ --listen=-
+/tmp/ztls-signoff-20260919/z53-resource-cache/o/f2a4d805a9d5c68575c666af9a985081/test
+ztest: Running 1 test...
+2026-09-20T12:04:35.629Z event=query proto=udp client=127.0.0.1:56702 qtype=1 qname="reconnect.example." rcode=0 duration_ms=1045.581 src=forward upstream=127.0.0.1:61042 upstream_proto=dot tls_name="dns.example"
+2026-09-20T12:04:35.629Z event=upstream_failure upstream=127.0.0.1:61042 upstream_proto=dot tls_name="dns.example" reason="CONNRESET"
+2026-09-20T12:04:35.629Z event=query proto=udp client=127.0.0.1:56702 qtype=1 qname="reset.example." rcode=2 duration_ms=0.089 src=servfail
+2026-09-20T12:04:36.625Z event=query proto=udp client=127.0.0.1:56702 qtype=1 qname="reconnect.example." rcode=0 duration_ms=995.644 src=forward upstream=127.0.0.1:61042 upstream_proto=dot tls_name="dns.example"
+2026-09-20T12:04:36.625Z event=upstream_failure upstream=127.0.0.1:61042 upstream_proto=dot tls_name="dns.example" reason="CONNRESET"
+2026-09-20T12:04:36.625Z event=query proto=udp client=127.0.0.1:56702 qtype=1 qname="reset.example." rcode=2 duration_ms=0.088 src=servfail
+2026-09-20T12:04:37.625Z event=query proto=udp client=127.0.0.1:56702 qtype=1 qname="reconnect.example." rcode=0 duration_ms=999.684 src=forward upstream=127.0.0.1:61042 upstream_proto=dot tls_name="dns.example"
+2026-09-20T12:04:37.625Z event=upstream_failure upstream=127.0.0.1:61042 upstream_proto=dot tls_name="dns.example" reason="CONNRESET"
+2026-09-20T12:04:37.625Z event=query proto=udp client=127.0.0.1:56702 qtype=1 qname="reset.example." rcode=2 duration_ms=0.086 src=servfail
+2026-09-20T12:04:38.625Z event=query proto=udp client=127.0.0.1:56702 qtype=1 qname="reconnect.example." rcode=0 duration_ms=999.703 src=forward upstream=127.0.0.1:61042 upstream_proto=dot tls_name="dns.example"
+2026-09-20T12:04:38.625Z event=upstream_failure upstream=127.0.0.1:61042 upstream_proto=dot tls_name="dns.example" reason="CONNRESET"
+[1/1] PASS: forward TLS reset releases pools and reconnects without runtime allocation (4084.93ms)
+
+ztest: 1 passed, 0 failed, 0 skipped (of 1 total) in 4085ms
+ALL TESTS PASSED
+Build Summary: 4/4 steps succeeded
+test-runtime success
++- run test success 4s
+   +- compile test ReleaseSafe native-native cached 20ms MaxRSS:54M
+      +- options cached

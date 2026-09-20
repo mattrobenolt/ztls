@@ -10,6 +10,9 @@ Read `PRODUCTION_READINESS.md` for qualification status.
 
 ztls owns candidate selection, isolated checkouts, dependency substitution, and the evidence record.
 Each consumer owns its test commands and development environment.
+Consumer-specific protocol and resource harnesses live in the owning repository.
+Private source and source-bearing traces stay there.
+Public summaries can cite private archive revisions and hashes without copying those files.
 
 | Consumer | Delegated commands | Source |
 |---|---|---|
@@ -49,6 +52,10 @@ Exit one means that a consumer command failed.
 Exit two means that the harness failed before a complete record.
 A subset run does not qualify both consumers.
 A candidate identical to the original package pin does not test an upgrade.
+
+Its green record remains partial revalidation evidence.
+A separate pin-change capture can accompany revalidation of the final consumer revisions.
+Both captures retain their actual revisions and classifications.
 
 The archive comes from the selected commit, not uncommitted source files.
 Private local caches prevent reuse of compiled artifacts from another candidate.

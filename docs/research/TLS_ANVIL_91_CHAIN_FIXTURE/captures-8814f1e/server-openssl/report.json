@@ -1,0 +1,32 @@
+{
+  "ElapsedTime" : 1011237,
+  "Identifier" : "127.0.0.1:40541",
+  "Strength" : 1,
+  "Date" : "2026-09-20T10:17:59.118+00:00",
+  "TotalTests" : 437,
+  "FinishedTests" : 437,
+  "StrictlySucceededTests" : 104,
+  "ConceptuallySucceededTests" : 1,
+  "DisabledTests" : 332,
+  "PartiallyFailedTests" : 0,
+  "FullyFailedTests" : 0,
+  "DetailsFailedTestCases" : { },
+  "TestSuiteErrorTests" : 0,
+  "AdditionalConfig" : "{\"anvilTestConfig\":{\"expectedResults\":null,\"profiles\":[],\"profileFolder\":\"/home/runner/work/ztls/ztls/conformance\",\"tags\":[],\"testPackage\":\"de.rub.nds.tlstest.suite\",\"ignoreCache\":false,\"outputFolder\":\"/home/runner/work/ztls/ztls/conformance/zig-out/anvil/server/ci-35504511374\",\"parallelTests\":1,\"restartServerAfter\":0,\"timeoutActionCommand\":[],\"identifier\":\"127.0.0.1:40541\",\"strength\":1,\"connectionTimeout\":1500,\"prettyPrintJSON\":false,\"networkInterface\":\"any\",\"disableTcpDump\":true,\"doZip\":false,\"endpointMode\":\"SERVER\",\"generalPcapFilter\":\"tcp port 40541\"},\"clientConfig\":{\"port\":null,\"triggerScriptCommand\":[]},\"serverConfig\":{\"host\":\"127.0.0.1:40541\",\"sniHostname\":null,\"doNotSendSNIExtension\":false},\"exportTraces\":false,\"parallelHandshakes\":1}",
+  "AnvilConfig" : "{\"expectedResults\":null,\"profiles\":[],\"profileFolder\":\"/home/runner/work/ztls/ztls/conformance\",\"tags\":[],\"testPackage\":\"de.rub.nds.tlstest.suite\",\"ignoreCache\":false,\"outputFolder\":\"/home/runner/work/ztls/ztls/conformance/zig-out/anvil/server/ci-35504511374\",\"parallelTests\":1,\"restartServerAfter\":0,\"timeoutActionCommand\":[],\"identifier\":\"127.0.0.1:40541\",\"strength\":1,\"connectionTimeout\":1500,\"prettyPrintJSON\":false,\"networkInterface\":\"any\",\"disableTcpDump\":true,\"doZip\":false,\"endpointMode\":\"SERVER\",\"generalPcapFilter\":\"tcp port 40541\"}",
+  "TestCaseCount" : 691,
+  "TestEndpointType" : "SERVER",
+  "Running" : false,
+  "Score" : {
+    "DeprecatedFeature" : 100.0,
+    "Crypto" : 100.0,
+    "CVE" : 100.0,
+    "MessageStructure" : 100.0,
+    "Alert" : 99.62,
+    "Security" : 100.0,
+    "RecordLayer" : 98.77,
+    "Interoperability" : 99.76,
+    "Handshake" : 100.0,
+    "Certificate" : 100.0
+  }
+}

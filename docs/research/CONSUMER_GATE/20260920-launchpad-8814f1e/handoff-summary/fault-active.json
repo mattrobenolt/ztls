@@ -1,0 +1,14 @@
+{
+  "held_clients": 32,
+  "header_bytes_per_client": 2,
+  "backend": {
+    "pid": 4193105,
+    "fds": 36,
+    "rss_kib": 12832
+  },
+  "proxy": {
+    "pid": 4193107,
+    "fds": 74,
+    "rss_kib": 7120
+  }
+}

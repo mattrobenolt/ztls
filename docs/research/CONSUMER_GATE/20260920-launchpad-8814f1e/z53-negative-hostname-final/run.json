@@ -1,0 +1,55 @@
+{
+  "schema": "ztls.consumer-gate/1",
+  "generated_at": "2026-09-20T12:06:53Z",
+  "host": "Linux launchpad 7.2.3 #1-NixOS SMP PREEMPT Wed Sep  2 12:33:21 UTC 2026 aarch64 GNU/Linux",
+  "invocation": "--ztls-repo /tmp/ztls-signoff-20260919/mutant-hostname-8814 --ztls-rev 8303379496fe6f8d319c0ddb4dae839785283fba --consumer z53 --z53-repo /tmp/ztls-signoff-20260919/z53-resource --z53-rev 4f63930672a3af9cec53c8588007ec566886847d --out-dir /tmp/ztls-signoff-20260919/z53-negative-hostname-final --cache-dir /tmp/ztls-signoff-20260919/negative-gate-cache-final --require-fixed-revisions --keep-work",
+  "nix_version": "nix (Nix) 2.34.8",
+  "candidate": {
+    "repo": "/tmp/ztls-signoff-20260919/mutant-hostname-8814",
+    "revision": "8303379496fe6f8d319c0ddb4dae839785283fba",
+    "requested_revision": "8303379496fe6f8d319c0ddb4dae839785283fba",
+    "subject": "Qualification negative control: hostname (not a release candidate)",
+    "worktree_dirty": "no",
+    "archive": "file:///tmp/ztls-consumer-gate.e3dfpP/candidate.tar.gz",
+    "archive_command": "git archive --format=tar.gz --prefix=ztls/ -o candidate.tar.gz 8303379496fe6f8d319c0ddb4dae839785283fba",
+    "archive_sha256": "e0a34baf42c2a1ec26a80db058230e2c88d0fe1eb7b54901950a5efbc40452de",
+    "package_hash": "ztls-0.0.0-SHHDXh6gIgBCWiZYaB52wJg8sbOeJVm1ENLD5qAIpZpK",
+    "id": "8303379496fe6f8d319c0ddb4dae839785283fba/ztls-0.0.0-SHHDXh6gIgBCWiZYaB52wJg8sbOeJVm1ENLD5qAIpZpK"
+  },
+  "consumers": [
+{
+  "name": "z53",
+  "source": "/tmp/ztls-signoff-20260919/z53-resource",
+  "source_kind": "path",
+  "source_dirty": "no",
+  "requested_revision": "4f63930672a3af9cec53c8588007ec566886847d",
+  "revision": "4f63930672a3af9cec53c8588007ec566886847d",
+  "subject": "Check descriptor recovery across TLS reset cycles",
+  "devshell": "default",
+  "rollback_pin": {
+    "url": "git+https://github.com/mattrobenolt/ztls?ref=main#8814f1e55642a7ce73841779ca0b25e530d31ef8",
+    "hash": "ztls-0.0.0-SHHDXrSfIgAt79mZaiELvsf6SMaWI9Z-UxL0eTwGV85r"
+  },
+  "candidate_pin": {
+    "url": "file:///tmp/ztls-consumer-gate.e3dfpP/candidate.tar.gz",
+    "hash": "ztls-0.0.0-SHHDXh6gIgBCWiZYaB52wJg8sbOeJVm1ENLD5qAIpZpK"
+  },
+  "candidate_changed_pin": "yes",
+  "toolchain": {
+    "zig": "0.16.0",
+    "libcrypto_version": "3.6.4",
+    "libcrypto_libdir": "/nix/store/v89yca35zsb13k51ibz0mcz2rrzjwwrj-openssl-3.6.4/lib",
+    "os": "Linux",
+    "arch": "aarch64",
+    "kernel": "7.2.3"
+  },
+  "commands": [{"command":"just test","status":"failed","exit":1,"seconds":63,"log":"logs/z53-02-cmd.log"}],
+  "evidence": "error: process exited with error code 1|error: the following build command failed with exit code 1:",
+  "status": "red"
+}
+
+  ],
+  "result": "red",
+  "qualification": "partial",
+  "qualification_gaps": ["consumer subset requested: z53"]
+}

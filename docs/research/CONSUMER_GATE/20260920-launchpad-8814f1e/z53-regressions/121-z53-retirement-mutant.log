@@ -1,0 +1,21 @@
+warning: Git tree '/tmp/ztls-signoff-20260919/z53-resource' is dirty
+zig build test-runtime -Doptimize=ReleaseSafe -Dcpu=baseline
+ztest: Running 1 test...
+2026-09-20T10:41:39.785Z event=query proto=udp client=127.0.0.1:39597 qtype=1 qname="reconnect.example." rcode=0 duration_ms=1042.837 src=forward upstream=127.0.0.1:61054 upstream_proto=dot tls_name="dns.example"
+2026-09-20T10:41:39.785Z event=upstream_failure upstream=127.0.0.1:61054 upstream_proto=dot tls_name="dns.example" reason="CONNRESET"
+[1/1] FAIL: forward TLS reset releases pools and reconnects without runtime allocation — error.TestUnexpectedResult (1085.88ms)
+
+ztest: 0 passed, 1 failed, 0 skipped (of 1 total) in 1086ms
+TESTS FAILED
+test-runtime
++- run test failure
+error: process exited with error code 1
+failed command: ZTEST_VERBOSE=1 ZTEST_PLAIN=1 /tmp/ztls-signoff-20260919/z53-resource-cache/o/523e5c513ef25ff8a8d0255dd2a45277/test
+
+Build Summary: 2/4 steps succeeded (1 failed)
+test-runtime transitive failure
++- run test failure
+
+error: the following build command failed with exit code 1:
+/tmp/ztls-signoff-20260919/z53-resource-cache/o/0a2bb0c84cafb5ce8e5ea89c70ef045f/build /nix/store/h4am1dpj4li41cq58861nysgaip7036s-zig-0.16.0/bin/zig /nix/store/h4am1dpj4li41cq58861nysgaip7036s-zig-0.16.0/lib/zig /tmp/ztls-signoff-20260919/z53-resource /tmp/ztls-signoff-20260919/z53-resource-cache /tmp/ztls-signoff-20260919/consumer-global16 --seed 0x56d9dce4 -Z0e458805b05a9087 test-runtime -Doptimize=ReleaseSafe -Dcpu=baseline
+error: recipe `test-runtime` failed on line 29 with exit code 1

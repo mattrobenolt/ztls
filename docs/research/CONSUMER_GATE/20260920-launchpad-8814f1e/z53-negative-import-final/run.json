@@ -1,0 +1,55 @@
+{
+  "schema": "ztls.consumer-gate/1",
+  "generated_at": "2026-09-20T12:05:48Z",
+  "host": "Linux launchpad 7.2.3 #1-NixOS SMP PREEMPT Wed Sep  2 12:33:21 UTC 2026 aarch64 GNU/Linux",
+  "invocation": "--ztls-repo /tmp/ztls-signoff-20260919/mutant-import-8814 --ztls-rev 6e4428da60eea8da4bf52e6527336c38d5f1108c --consumer z53 --z53-repo /tmp/ztls-signoff-20260919/z53-resource --z53-rev 4f63930672a3af9cec53c8588007ec566886847d --out-dir /tmp/ztls-signoff-20260919/z53-negative-import-final --cache-dir /tmp/ztls-signoff-20260919/negative-gate-cache-final --require-fixed-revisions --keep-work",
+  "nix_version": "nix (Nix) 2.34.8",
+  "candidate": {
+    "repo": "/tmp/ztls-signoff-20260919/mutant-import-8814",
+    "revision": "6e4428da60eea8da4bf52e6527336c38d5f1108c",
+    "requested_revision": "6e4428da60eea8da4bf52e6527336c38d5f1108c",
+    "subject": "Qualification negative control: import (not a release candidate)",
+    "worktree_dirty": "no",
+    "archive": "file:///tmp/ztls-consumer-gate.3XEPTu/candidate.tar.gz",
+    "archive_command": "git archive --format=tar.gz --prefix=ztls/ -o candidate.tar.gz 6e4428da60eea8da4bf52e6527336c38d5f1108c",
+    "archive_sha256": "9b7764b16d19d1760f1fd60943e5f00fc2a94d6f7e4aa23c1852d4d8d6c08ed2",
+    "package_hash": "ztls-0.0.0-SHHDXgugIgAgzmcjEX44wsRw5fjzJtbrvzwy5QY0cXZM",
+    "id": "6e4428da60eea8da4bf52e6527336c38d5f1108c/ztls-0.0.0-SHHDXgugIgAgzmcjEX44wsRw5fjzJtbrvzwy5QY0cXZM"
+  },
+  "consumers": [
+{
+  "name": "z53",
+  "source": "/tmp/ztls-signoff-20260919/z53-resource",
+  "source_kind": "path",
+  "source_dirty": "no",
+  "requested_revision": "4f63930672a3af9cec53c8588007ec566886847d",
+  "revision": "4f63930672a3af9cec53c8588007ec566886847d",
+  "subject": "Check descriptor recovery across TLS reset cycles",
+  "devshell": "default",
+  "rollback_pin": {
+    "url": "git+https://github.com/mattrobenolt/ztls?ref=main#8814f1e55642a7ce73841779ca0b25e530d31ef8",
+    "hash": "ztls-0.0.0-SHHDXrSfIgAt79mZaiELvsf6SMaWI9Z-UxL0eTwGV85r"
+  },
+  "candidate_pin": {
+    "url": "file:///tmp/ztls-consumer-gate.3XEPTu/candidate.tar.gz",
+    "hash": "ztls-0.0.0-SHHDXgugIgAgzmcjEX44wsRw5fjzJtbrvzwy5QY0cXZM"
+  },
+  "candidate_changed_pin": "yes",
+  "toolchain": {
+    "zig": "0.16.0",
+    "libcrypto_version": "3.6.4",
+    "libcrypto_libdir": "/nix/store/v89yca35zsb13k51ibz0mcz2rrzjwwrj-openssl-3.6.4/lib",
+    "os": "Linux",
+    "arch": "aarch64",
+    "kernel": "7.2.3"
+  },
+  "commands": [{"command":"just test","status":"failed","exit":1,"seconds":12,"log":"logs/z53-02-cmd.log"}],
+  "evidence": "zig-pkg/ztls-0.0.0-SHHDXgugIgAgzmcjEX44wsRw5fjzJtbrvzwy5QY0cXZM/src/root.zig:44:5: error: qualification negative control: broken ztls import|error: 1 compilation errors",
+  "status": "red"
+}
+
+  ],
+  "result": "red",
+  "qualification": "partial",
+  "qualification_gaps": ["consumer subset requested: z53"]
+}

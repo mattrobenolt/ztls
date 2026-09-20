@@ -1,0 +1,6 @@
+ztls consumer gate: red
+candidate: 6e4428da60eea8da4bf52e6527336c38d5f1108c/ztls-0.0.0-SHHDXgugIgAgzmcjEX44wsRw5fjzJtbrvzwy5QY0cXZM
+record: /tmp/ztls-signoff-20260919/z53-negative-import-final/run.json
+z53: red (4f63930672a3af9cec53c8588007ec566886847d)
+qualification gaps:
+  - consumer subset requested: z53

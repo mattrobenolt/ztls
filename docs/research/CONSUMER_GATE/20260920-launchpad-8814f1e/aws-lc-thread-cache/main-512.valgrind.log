@@ -1,0 +1,80 @@
+==12671== Memcheck, a memory error detector
+==12671== Copyright (C) 2002-2026, and GNU GPL'd, by Julian Seward et al.
+==12671== Using Valgrind-3.27.1 and LibVEX; rerun with -h for copyright info
+==12671== Command: /tmp/ztls-signoff-20260919/aws-lc-cache-final/main-512
+==12671== Parent PID: 12670
+==12671== 
+==12671== 
+==12671== HEAP SUMMARY:
+==12671==     in use at exit: 1,232 bytes in 5 blocks
+==12671==   total heap usage: 14 allocs, 9 frees, 273,192 bytes allocated
+==12671== 
+==12671== 24 bytes in 1 blocks are still reachable in loss record 1 of 5
+==12671==    at 0x4885E30: malloc (in /nix/store/z7z886xwghzv19mmrc74ixcxph2b37mc-valgrind-3.27.1/libexec/valgrind/vgpreload_memcheck-arm64-linux.so)
+==12671==    by 0x4969383: OPENSSL_malloc (in /nix/store/3hnfh4dzrjjncnpa9nhggr6l7m97g456-aws-lc-5.5.0/lib/libcrypto.so)
+==12671==    by 0x4969573: OPENSSL_zalloc (in /nix/store/3hnfh4dzrjjncnpa9nhggr6l7m97g456-aws-lc-5.5.0/lib/libcrypto.so)
+==12671==    by 0x4A38573: get_entropy_source (in /nix/store/3hnfh4dzrjjncnpa9nhggr6l7m97g456-aws-lc-5.5.0/lib/libcrypto.so)
+==12671==    by 0x4A3891F: rand_bytes_impl.part.0 (in /nix/store/3hnfh4dzrjjncnpa9nhggr6l7m97g456-aws-lc-5.5.0/lib/libcrypto.so)
+==12671==    by 0x4A39DA7: RAND_bytes (in /nix/store/3hnfh4dzrjjncnpa9nhggr6l7m97g456-aws-lc-5.5.0/lib/libcrypto.so)
+==12671==    by 0x102016B: exercise (main-512.zig:8)
+==12671==    by 0x102016B: main (main-512.zig:12)
+==12671==    by 0x102016B: callMain (start.zig:698)
+==12671==    by 0x102016B: callMainWithArgs (start.zig:638)
+==12671==    by 0x102016B: main (start.zig:663)
+==12671== 
+==12671== 64 bytes in 1 blocks are still reachable in loss record 2 of 5
+==12671==    at 0x488DAA8: calloc (in /nix/store/z7z886xwghzv19mmrc74ixcxph2b37mc-valgrind-3.27.1/libexec/valgrind/vgpreload_memcheck-arm64-linux.so)
+==12671==    by 0x498C72F: CRYPTO_set_thread_local (in /nix/store/3hnfh4dzrjjncnpa9nhggr6l7m97g456-aws-lc-5.5.0/lib/libcrypto.so)
+==12671==    by 0x4952B47: ERR_set_mark (in /nix/store/3hnfh4dzrjjncnpa9nhggr6l7m97g456-aws-lc-5.5.0/lib/libcrypto.so)
+==12671==    by 0x102015F: exercise (main-512.zig:7)
+==12671==    by 0x102015F: main (main-512.zig:12)
+==12671==    by 0x102015F: callMain (start.zig:698)
+==12671==    by 0x102015F: callMainWithArgs (start.zig:638)
+==12671==    by 0x102015F: main (start.zig:663)
+==12671== 
+==12671== 344 bytes in 1 blocks are still reachable in loss record 3 of 5
+==12671==    at 0x4885E30: malloc (in /nix/store/z7z886xwghzv19mmrc74ixcxph2b37mc-valgrind-3.27.1/libexec/valgrind/vgpreload_memcheck-arm64-linux.so)
+==12671==    by 0x4969383: OPENSSL_malloc (in /nix/store/3hnfh4dzrjjncnpa9nhggr6l7m97g456-aws-lc-5.5.0/lib/libcrypto.so)
+==12671==    by 0x4969573: OPENSSL_zalloc (in /nix/store/3hnfh4dzrjjncnpa9nhggr6l7m97g456-aws-lc-5.5.0/lib/libcrypto.so)
+==12671==    by 0x4A38317: tree_jitter_initialize (in /nix/store/3hnfh4dzrjjncnpa9nhggr6l7m97g456-aws-lc-5.5.0/lib/libcrypto.so)
+==12671==    by 0x4A385E3: get_entropy_source (in /nix/store/3hnfh4dzrjjncnpa9nhggr6l7m97g456-aws-lc-5.5.0/lib/libcrypto.so)
+==12671==    by 0x4A3891F: rand_bytes_impl.part.0 (in /nix/store/3hnfh4dzrjjncnpa9nhggr6l7m97g456-aws-lc-5.5.0/lib/libcrypto.so)
+==12671==    by 0x4A39DA7: RAND_bytes (in /nix/store/3hnfh4dzrjjncnpa9nhggr6l7m97g456-aws-lc-5.5.0/lib/libcrypto.so)
+==12671==    by 0x102016B: exercise (main-512.zig:8)
+==12671==    by 0x102016B: main (main-512.zig:12)
+==12671==    by 0x102016B: callMain (start.zig:698)
+==12671==    by 0x102016B: callMainWithArgs (start.zig:638)
+==12671==    by 0x102016B: main (start.zig:663)
+==12671== 
+==12671== 400 bytes in 1 blocks are still reachable in loss record 4 of 5
+==12671==    at 0x488DAA8: calloc (in /nix/store/z7z886xwghzv19mmrc74ixcxph2b37mc-valgrind-3.27.1/libexec/valgrind/vgpreload_memcheck-arm64-linux.so)
+==12671==    by 0x4952B2B: ERR_set_mark (in /nix/store/3hnfh4dzrjjncnpa9nhggr6l7m97g456-aws-lc-5.5.0/lib/libcrypto.so)
+==12671==    by 0x102015F: exercise (main-512.zig:7)
+==12671==    by 0x102015F: main (main-512.zig:12)
+==12671==    by 0x102015F: callMain (start.zig:698)
+==12671==    by 0x102015F: callMainWithArgs (start.zig:638)
+==12671==    by 0x102015F: main (start.zig:663)
+==12671== 
+==12671== 400 bytes in 1 blocks are still reachable in loss record 5 of 5
+==12671==    at 0x4885E30: malloc (in /nix/store/z7z886xwghzv19mmrc74ixcxph2b37mc-valgrind-3.27.1/libexec/valgrind/vgpreload_memcheck-arm64-linux.so)
+==12671==    by 0x4969383: OPENSSL_malloc (in /nix/store/3hnfh4dzrjjncnpa9nhggr6l7m97g456-aws-lc-5.5.0/lib/libcrypto.so)
+==12671==    by 0x4969573: OPENSSL_zalloc (in /nix/store/3hnfh4dzrjjncnpa9nhggr6l7m97g456-aws-lc-5.5.0/lib/libcrypto.so)
+==12671==    by 0x4A388F7: rand_bytes_impl.part.0 (in /nix/store/3hnfh4dzrjjncnpa9nhggr6l7m97g456-aws-lc-5.5.0/lib/libcrypto.so)
+==12671==    by 0x4A39DA7: RAND_bytes (in /nix/store/3hnfh4dzrjjncnpa9nhggr6l7m97g456-aws-lc-5.5.0/lib/libcrypto.so)
+==12671==    by 0x102016B: exercise (main-512.zig:8)
+==12671==    by 0x102016B: main (main-512.zig:12)
+==12671==    by 0x102016B: callMain (start.zig:698)
+==12671==    by 0x102016B: callMainWithArgs (start.zig:638)
+==12671==    by 0x102016B: main (start.zig:663)
+==12671== 
+==12671== LEAK SUMMARY:
+==12671==    definitely lost: 0 bytes in 0 blocks
+==12671==    indirectly lost: 0 bytes in 0 blocks
+==12671==      possibly lost: 0 bytes in 0 blocks
+==12671==    still reachable: 1,232 bytes in 5 blocks
+==12671==                       of which reachable via heuristic:
+==12671==                         length64           : 768 bytes in 3 blocks
+==12671==         suppressed: 0 bytes in 0 blocks
+==12671== 
+==12671== For lists of detected and suppressed errors, rerun with: -s
+==12671== ERROR SUMMARY: 5 errors from 5 contexts (suppressed: 0 from 0)

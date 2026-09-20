@@ -1,0 +1,18 @@
+warning: Git tree '/tmp/ztls-signoff-20260919/z53-resource' is dirty
+zig build test-runtime -Doptimize=ReleaseSafe -Dcpu=baseline
+ztest: Running 1 test...
+2026-09-20T11:53:43.373Z event=query proto=udp client=127.0.0.1:54140 qtype=1 qname="reconnect.example." rcode=0 duration_ms=1043.643 src=forward upstream=127.0.0.1:61061 upstream_proto=dot tls_name="dns.example"
+2026-09-20T11:53:43.373Z event=upstream_failure upstream=127.0.0.1:61061 upstream_proto=dot tls_name="dns.example" reason="CONNRESET"
+2026-09-20T11:53:43.374Z event=query proto=udp client=127.0.0.1:54140 qtype=1 qname="reset.example." rcode=2 duration_ms=0.114 src=servfail
+2026-09-20T11:53:44.373Z event=query proto=udp client=127.0.0.1:54140 qtype=1 qname="reconnect.example." rcode=0 duration_ms=999.598 src=forward upstream=127.0.0.1:61061 upstream_proto=dot tls_name="dns.example"
+2026-09-20T11:53:44.373Z event=upstream_failure upstream=127.0.0.1:61061 upstream_proto=dot tls_name="dns.example" reason="CONNRESET"
+2026-09-20T11:53:44.374Z event=query proto=udp client=127.0.0.1:54140 qtype=1 qname="reset.example." rcode=2 duration_ms=0.089 src=servfail
+2026-09-20T11:53:45.373Z event=query proto=udp client=127.0.0.1:54140 qtype=1 qname="reconnect.example." rcode=0 duration_ms=999.647 src=forward upstream=127.0.0.1:61061 upstream_proto=dot tls_name="dns.example"
+2026-09-20T11:53:45.373Z event=upstream_failure upstream=127.0.0.1:61061 upstream_proto=dot tls_name="dns.example" reason="CONNRESET"
+2026-09-20T11:53:45.373Z event=query proto=udp client=127.0.0.1:54140 qtype=1 qname="reset.example." rcode=2 duration_ms=0.087 src=servfail
+2026-09-20T11:53:46.377Z event=query proto=udp client=127.0.0.1:54140 qtype=1 qname="reconnect.example." rcode=0 duration_ms=1003.745 src=forward upstream=127.0.0.1:61061 upstream_proto=dot tls_name="dns.example"
+2026-09-20T11:53:46.377Z event=upstream_failure upstream=127.0.0.1:61061 upstream_proto=dot tls_name="dns.example" reason="CONNRESET"
+[1/1] PASS: forward TLS reset releases pools and reconnects without runtime allocation (4091.96ms)
+
+ztest: 1 passed, 0 failed, 0 skipped (of 1 total) in 4092ms
+ALL TESTS PASSED

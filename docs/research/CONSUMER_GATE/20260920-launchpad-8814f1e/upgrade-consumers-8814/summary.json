@@ -1,0 +1,103 @@
+{
+  "schema": "ztls.consumer-gate/1",
+  "generated_at": "2026-09-20T11:45:49Z",
+  "host": "Linux launchpad 7.2.3 #1-NixOS SMP PREEMPT Wed Sep  2 12:33:21 UTC 2026 aarch64 GNU/Linux",
+  "nix_version": "nix (Nix) 2.34.8",
+  "candidate": {
+    "repo": "/Users/matt/code/ztls",
+    "revision": "8814f1e55642a7ce73841779ca0b25e530d31ef8",
+    "requested_revision": "8814f1e55642a7ce73841779ca0b25e530d31ef8",
+    "subject": "Audit secret lifetime and derive ECDH into caller buffers (#125)",
+    "worktree_dirty": "no",
+    "archive": "file:///tmp/ztls-consumer-gate.weckCh/candidate.tar.gz",
+    "archive_command": "git archive --format=tar.gz --prefix=ztls/ -o candidate.tar.gz 8814f1e55642a7ce73841779ca0b25e530d31ef8",
+    "archive_sha256": "cae938324fbea93bb2e586490af3dd2d755634c223840a24e27b751a70a355da",
+    "package_hash": "ztls-0.0.0-SHHDXrSfIgAt79mZaiELvsf6SMaWI9Z-UxL0eTwGV85r",
+    "id": "8814f1e55642a7ce73841779ca0b25e530d31ef8/ztls-0.0.0-SHHDXrSfIgAt79mZaiELvsf6SMaWI9Z-UxL0eTwGV85r"
+  },
+  "result": "green",
+  "qualification": "full",
+  "qualification_gaps": [],
+  "derived_from": {
+    "private_archive_path": "docs/qualification/20260920-8814f1e/consumer-gates/upgrade-consumers-8814/run.json",
+    "sha256": "128219e09513e34ac3989da2cf32e6a27d64e0bacad44aa0cf7519086c218d5a",
+    "repository": "planetscale/handoff",
+    "revision": "4e9799904b0e96f42e9aeae452733fadc88cc6c6"
+  },
+  "consumers": [
+    {
+      "name": "handoff",
+      "source_dirty": "no",
+      "requested_revision": "557ba42de1e4aa3f16e3cff0c7ed6bb885fddebd",
+      "revision": "557ba42de1e4aa3f16e3cff0c7ed6bb885fddebd",
+      "rollback_pin": {
+        "url": "git+https://github.com/mattrobenolt/ztls?ref=main#960ab943f41aad4c0ffaaf32cf26ef35cca137b1",
+        "hash": "ztls-0.0.0-SHHDXoSkIABMcZtLWfUFFHipeZyv0ycyfEZBL31sQ9Sd"
+      },
+      "candidate_pin": {
+        "url": "file:///tmp/ztls-consumer-gate.weckCh/candidate.tar.gz",
+        "hash": "ztls-0.0.0-SHHDXrSfIgAt79mZaiELvsf6SMaWI9Z-UxL0eTwGV85r"
+      },
+      "candidate_changed_pin": "yes",
+      "toolchain": {
+        "zig": "0.16.0",
+        "libcrypto_version": "1.1.1",
+        "libcrypto_libdir": "/nix/store/3hnfh4dzrjjncnpa9nhggr6l7m97g456-aws-lc-5.5.0/lib",
+        "os": "Linux",
+        "arch": "aarch64",
+        "kernel": "7.2.3"
+      },
+      "commands": [
+        {
+          "command": "just test",
+          "status": "passed",
+          "exit": 0,
+          "seconds": 44,
+          "log": "logs/handoff-02-cmd.log"
+        },
+        {
+          "command": "zig build && zig build -Doptimize=ReleaseFast && zig build -Dmode=plaintext && zig build -Doptimize=ReleaseFast -Dmode=plaintext",
+          "status": "passed",
+          "exit": 0,
+          "seconds": 22,
+          "log": "logs/handoff-03-cmd.log"
+        }
+      ],
+      "status": "green"
+    },
+    {
+      "name": "z53",
+      "source_dirty": "no",
+      "requested_revision": "499c41abab505d72d9611f5fbb3cebfc91d90058",
+      "revision": "499c41abab505d72d9611f5fbb3cebfc91d90058",
+      "rollback_pin": {
+        "url": "git+https://github.com/mattrobenolt/ztls?ref=main#960ab943f41aad4c0ffaaf32cf26ef35cca137b1",
+        "hash": "ztls-0.0.0-SHHDXoSkIABMcZtLWfUFFHipeZyv0ycyfEZBL31sQ9Sd"
+      },
+      "candidate_pin": {
+        "url": "file:///tmp/ztls-consumer-gate.weckCh/candidate.tar.gz",
+        "hash": "ztls-0.0.0-SHHDXrSfIgAt79mZaiELvsf6SMaWI9Z-UxL0eTwGV85r"
+      },
+      "candidate_changed_pin": "yes",
+      "toolchain": {
+        "zig": "0.16.0",
+        "libcrypto_version": "3.6.4",
+        "libcrypto_libdir": "/nix/store/v89yca35zsb13k51ibz0mcz2rrzjwwrj-openssl-3.6.4/lib",
+        "os": "Linux",
+        "arch": "aarch64",
+        "kernel": "7.2.3"
+      },
+      "commands": [
+        {
+          "command": "just test",
+          "status": "passed",
+          "exit": 0,
+          "seconds": 101,
+          "log": "logs/z53-02-cmd.log"
+        }
+      ],
+      "status": "green"
+    }
+  ],
+  "private_log_notice": "The raw handoff records remain in planetscale/handoff. This file is a derived summary, not the raw manifest."
+}

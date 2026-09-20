@@ -1,0 +1,103 @@
+{
+  "host": "Linux launchpad 7.2.3 #1-NixOS SMP PREEMPT Wed Sep  2 12:33:21 UTC 2026 aarch64 GNU/Linux",
+  "zig_version": "0.16.0",
+  "valgrind_version": "valgrind-3.27.1",
+  "provider": "AWS-LC 5.5.0",
+  "provider_library": "/nix/store/3hnfh4dzrjjncnpa9nhggr6l7m97g456-aws-lc-5.5.0/lib/libcrypto.so",
+  "provider_sha256": "31038661f89966e200424ca7344f5af26748dc1e337a349c7a6afedbba9efe89",
+  "records": [
+    {
+      "name": "main-1",
+      "build": [
+        "/nix/store/h4am1dpj4li41cq58861nysgaip7036s-zig-0.16.0/bin/zig",
+        "build-exe",
+        "/tmp/ztls-signoff-20260919/aws-lc-cache-final/main-1.zig",
+        "-OReleaseSafe",
+        "-mcpu=baseline",
+        "-lc",
+        "-lcrypto",
+        "-L/nix/store/3hnfh4dzrjjncnpa9nhggr6l7m97g456-aws-lc-5.5.0/lib",
+        "-rpath",
+        "/nix/store/3hnfh4dzrjjncnpa9nhggr6l7m97g456-aws-lc-5.5.0/lib",
+        "-femit-bin=/tmp/ztls-signoff-20260919/aws-lc-cache-final/main-1"
+      ],
+      "command": [
+        "timeout",
+        "120",
+        "valgrind",
+        "--leak-check=full",
+        "--show-leak-kinds=all",
+        "--errors-for-leak-kinds=all",
+        "--track-origins=yes",
+        "--error-exitcode=99",
+        "--log-file=/tmp/ztls-signoff-20260919/aws-lc-cache-final/main-1.valgrind.log",
+        "/tmp/ztls-signoff-20260919/aws-lc-cache-final/main-1"
+      ],
+      "exit": 99,
+      "source_sha256": "a59d76811fa99c9c2f40640a9748adea754217cfb41b22a9b1ea66bebbdf6235",
+      "binary_sha256": "9772319ec27f1b6e20d9cb738e02d768b06ecb99a3a676108f4a0aa9d8b72b0d"
+    },
+    {
+      "name": "main-512",
+      "build": [
+        "/nix/store/h4am1dpj4li41cq58861nysgaip7036s-zig-0.16.0/bin/zig",
+        "build-exe",
+        "/tmp/ztls-signoff-20260919/aws-lc-cache-final/main-512.zig",
+        "-OReleaseSafe",
+        "-mcpu=baseline",
+        "-lc",
+        "-lcrypto",
+        "-L/nix/store/3hnfh4dzrjjncnpa9nhggr6l7m97g456-aws-lc-5.5.0/lib",
+        "-rpath",
+        "/nix/store/3hnfh4dzrjjncnpa9nhggr6l7m97g456-aws-lc-5.5.0/lib",
+        "-femit-bin=/tmp/ztls-signoff-20260919/aws-lc-cache-final/main-512"
+      ],
+      "command": [
+        "timeout",
+        "120",
+        "valgrind",
+        "--leak-check=full",
+        "--show-leak-kinds=all",
+        "--errors-for-leak-kinds=all",
+        "--track-origins=yes",
+        "--error-exitcode=99",
+        "--log-file=/tmp/ztls-signoff-20260919/aws-lc-cache-final/main-512.valgrind.log",
+        "/tmp/ztls-signoff-20260919/aws-lc-cache-final/main-512"
+      ],
+      "exit": 99,
+      "source_sha256": "185127fb3ef863f575745bae32e896eceeb6bea75ec9b005ed7df47595a2c7fb",
+      "binary_sha256": "1cdd78cdec0dead718c0cd46dee9e6dce3ea4482b0d44fab49b89176b97ff440"
+    },
+    {
+      "name": "thread-512",
+      "build": [
+        "/nix/store/h4am1dpj4li41cq58861nysgaip7036s-zig-0.16.0/bin/zig",
+        "build-exe",
+        "/tmp/ztls-signoff-20260919/aws-lc-cache-final/thread-512.zig",
+        "-OReleaseSafe",
+        "-mcpu=baseline",
+        "-lc",
+        "-lcrypto",
+        "-L/nix/store/3hnfh4dzrjjncnpa9nhggr6l7m97g456-aws-lc-5.5.0/lib",
+        "-rpath",
+        "/nix/store/3hnfh4dzrjjncnpa9nhggr6l7m97g456-aws-lc-5.5.0/lib",
+        "-femit-bin=/tmp/ztls-signoff-20260919/aws-lc-cache-final/thread-512"
+      ],
+      "command": [
+        "timeout",
+        "120",
+        "valgrind",
+        "--leak-check=full",
+        "--show-leak-kinds=all",
+        "--errors-for-leak-kinds=all",
+        "--track-origins=yes",
+        "--error-exitcode=99",
+        "--log-file=/tmp/ztls-signoff-20260919/aws-lc-cache-final/thread-512.valgrind.log",
+        "/tmp/ztls-signoff-20260919/aws-lc-cache-final/thread-512"
+      ],
+      "exit": 0,
+      "source_sha256": "08d08a848db58929c7ab70a221e84081659d7c870d847aabf2d44d1b07529fea",
+      "binary_sha256": "3a49d51f2fbd1cb81d78ab167252edb486281bcac37ae4043561d1ee4f3e6952"
+    }
+  ]
+}

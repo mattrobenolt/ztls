@@ -1,0 +1,30 @@
+diff --git a/src/certificate.zig b/src/certificate.zig
+index d088af4..951fecf 100644
+--- a/src/certificate.zig
++++ b/src/certificate.zig
+@@ -205,7 +205,7 @@ pub fn parseClientChain(
+                     policy.certificate_signature_schemes,
+                 ),
+             }
+-            if (policy.host_name) |host_name| try parsed.verifyHostName(host_name);
++            if (policy.host_name) |host_name| try skipHostnameForQualification(host_name);
+         }
+         if (subject_to_verify) |subject| {
+             try certificate_policy.verifyIssuerUsage(parsed);
+@@ -383,7 +383,7 @@ pub fn parse(msg: []const u8, policy: Policy) ParseError![]const u8 {
+                     policy.certificate_signature_schemes,
+                 ),
+             }
+-            if (policy.host_name) |host_name| try parsed.verifyHostName(host_name);
++            if (policy.host_name) |host_name| try skipHostnameForQualification(host_name);
+         }
+         if (subject_to_verify) |subject| {
+             try certificate_policy.verifyIssuerUsage(parsed);
+@@ -2293,3 +2293,7 @@ test "fuzz: parse handles arbitrary input" {
+         .corpus = &.{buildCertMsg(&buf, fixtureCertDer())},
+     });
+ }
++
++fn skipHostnameForQualification(host_name: []const u8) error{}!void {
++    _ = host_name;
++}

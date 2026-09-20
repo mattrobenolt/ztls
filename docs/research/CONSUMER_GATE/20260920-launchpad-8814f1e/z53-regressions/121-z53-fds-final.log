@@ -1,0 +1,271 @@
+warning: Git tree '/tmp/ztls-signoff-20260919/z53-resource' is dirty
+zig build test-unit check test-compile -Doptimize=ReleaseSafe -Dcpu=baseline
+ztest: Running 4 tests...
+[1/4] PASS: TLS client starts with verified policy and caller owned buffers (1.22ms)
+[2/4] PASS: TLS record assembly retains partial input (0.02ms)
+[3/4] PASS: TLS oversized record rejects before payload arrives (0.01ms)
+[4/4] PASS: system trust bundle loads public roots (3.45ms)
+
+ztest: 4 passed, 0 failed, 0 skipped (of 4 total) in 5ms
+ALL TESTS PASSED
+zig build test-runtime -Doptimize=ReleaseSafe -Dcpu=baseline
+ztest: Running 101 tests...
+[1/101] PASS: runtime.test_0 (0.00ms)
+[2/101] PASS: native ring setup registered files and cancellation (5.62ms)
+[3/101] PASS: native proctor teardown without registered files (3.53ms)
+z53: io_uring setup: ProcessFdQuotaExceeded
+[4/101] PASS: native setup failure under descriptor quota (2.22ms)
+[5/101] PASS: range parser accepts the proc format (0.00ms)
+[6/101] PASS: range parser rejects malformed input (0.00ms)
+[7/101] PASS: spans prefer above the range and fall below it (0.03ms)
+[8/101] PASS: reserve hands out distinct ports outside the ephemeral range (0.03ms)
+[9/101] PASS: TLS setup retains start failure diagnostics (1.92ms)
+[10/101] PASS: forward native both clients reuse queued frames and allocation guard logging (39.83ms)
+2026-09-20T11:56:28.971Z event=query proto=udp client=127.0.0.1:33244 qtype=1 qname="failure.example." rcode=2 duration_ms=0.139 src=forward upstream=127.0.0.1:61177 upstream_proto=tcp
+[11/101] PASS: forward native SERVFAIL stops failover and caches five seconds (45.86ms)
+2026-09-20T11:56:29.013Z event=query proto=udp client=127.0.0.1:52047 qtype=1 qname="large.example." rcode=0 duration_ms=0.153 src=forward upstream=127.0.0.1:61241 upstream_proto=tcp
+2026-09-20T11:56:29.013Z event=query proto=tcp client=127.0.0.1:53372 qtype=1 qname="large.example." rcode=0 duration_ms=0.112 src=forward upstream=127.0.0.1:61241 upstream_proto=tcp
+[12/101] PASS: forward native large UDP truncation and full TCP (38.52ms)
+forward storage=11930320 runtime=38782768 ip=32 target=linux
+forward backend=5920 transaction=65560 session=250176
+[13/101] PASS: forward storage and nanosecond duration bounds (0.00ms)
+2026-09-20T11:56:29.051Z event=query proto=udp client=127.0.0.1:57224 qtype=1 qname="second.example." rcode=0 duration_ms=0.110 src=forward upstream=127.0.0.1:61305 upstream_proto=tcp
+2026-09-20T11:56:29.051Z event=query proto=udp client=127.0.0.1:35986 qtype=1 qname="first.example." rcode=0 duration_ms=0.286 src=forward upstream=127.0.0.1:61305 upstream_proto=tcp
+[14/101] PASS: forward native concurrent identity EDNS COOKIE DO and unknown options (38.48ms)
+2026-09-20T11:56:29.094Z event=query proto=udp client=127.0.0.1:46710 qtype=1 qname="admit.example." rcode=0 duration_ms=0.806 src=forward upstream=127.0.0.1:61369 upstream_proto=tcp
+[15/101] PASS: forward native ID question QR opcode malformed admission and partial framing (46.20ms)
+2026-09-20T11:56:29.141Z event=upstream_failure upstream=127.0.0.1:61433 upstream_proto=tcp reason="timeout"
+[16/101] PASS: forward native precise silent deadline and terminal cache (46.27ms)
+2026-09-20T11:56:29.186Z event=query proto=udp client=127.0.0.1:34983 qtype=1 qname="unsupported.example." rcode=2 duration_ms=0.002 src=servfail
+[17/101] PASS: forward native unsupported first upstream stays uncached (45.23ms)
+2026-09-20T11:56:29.227Z event=upstream_failure upstream=127.0.0.1:61561 upstream_proto=tcp reason="CONNRESET"
+2026-09-20T11:56:29.228Z event=query proto=udp client=127.0.0.1:55472 qtype=1 qname="reset.example." rcode=0 duration_ms=0.186 src=forward upstream=127.0.0.1:61561 upstream_proto=tcp
+[18/101] PASS: forward native reset sequential failure-only failover (38.39ms)
+2026-09-20T11:56:29.266Z event=upstream_failure upstream=127.0.0.1:35833 upstream_proto=tcp reason="CONNREFUSED"
+2026-09-20T11:56:29.266Z event=query proto=udp client=127.0.0.1:32968 qtype=1 qname="sequence.example." rcode=0 duration_ms=0.159 src=forward upstream=127.0.0.1:61625 upstream_proto=tcp
+[19/101] PASS: forward native refusal or deadline advances configured endpoint (38.14ms)
+2026-09-20T11:56:29.308Z event=query proto=udp client=127.0.0.1:35862 qtype=1 qname="stale.example." rcode=0 duration_ms=0.131 src=forward upstream=127.0.0.1:61689 upstream_proto=tcp
+2026-09-20T11:56:29.309Z event=upstream_failure upstream=127.0.0.1:61689 upstream_proto=tcp reason="timeout"
+[20/101] PASS: forward native stale follows transport exhaustion without replacement (46.53ms)
+2026-09-20T11:56:29.351Z event=query proto=udp client=127.0.0.1:57982 qtype=1 qname="idle.example." rcode=0 duration_ms=0.124 src=forward upstream=127.0.0.1:61753 upstream_proto=tcp
+2026-09-20T11:56:29.352Z event=query proto=udp client=127.0.0.1:57982 qtype=1 qname="idle.example." rcode=0 duration_ms=0.103 src=forward upstream=127.0.0.1:61753 upstream_proto=tcp
+[21/101] PASS: forward native configured idle expiry closes reused socket (39.41ms)
+[22/101] PASS: forward native cancellation in each upstream phase (152.34ms)
+2026-09-20T11:56:29.547Z event=query proto=udp client=127.0.0.1:53909 qtype=1 qname="pool.example." rcode=2 duration_ms=0.000 src=servfail
+[23/101] PASS: forward native pool exhaustion retains thirty-two owned requests (46.69ms)
+2026-09-20T11:56:29.593Z event=upstream_failure upstream=127.0.0.1:62137 upstream_proto=tcp reason="local_resource"
+[24/101] PASS: forward native socket resource exhaustion stays uncached (45.41ms)
+2026-09-20T11:56:29.639Z event=query proto=tcp client=127.0.0.1:47760 qtype=1 qname="expansion.example." rcode=0 duration_ms=0.121 src=forward upstream=127.0.0.1:62201 upstream_proto=tcp
+2026-09-20T11:56:29.639Z event=query proto=tcp client=127.0.0.1:47760 qtype=1 qname="expansion.example." rcode=2 duration_ms=0.448 src=servfail
+[25/101] PASS: forward native rotation encoding failure never publishes or serves stale (46.46ms)
+2026-09-20T11:56:29.685Z event=query proto=udp client=127.0.0.1:47638 qtype=1 qname="rcode.example." rcode=2 duration_ms=0.138 src=servfail
+2026-09-20T11:56:29.685Z event=query proto=udp client=127.0.0.1:47638 qtype=1 qname="rcode.example." rcode=16 duration_ms=0.084 src=forward upstream=127.0.0.1:62265 upstream_proto=tcp
+[26/101] PASS: forward native extended RCODE exclusions and client OPT (45.97ms)
+2026-09-20T11:56:29.747Z event=upstream_failure upstream=127.0.0.1:62329 upstream_proto=tcp reason="timeout"
+2026-09-20T11:56:29.806Z event=upstream_failure upstream=127.0.0.1:62393 upstream_proto=tcp reason="timeout"
+[27/101] PASS: forward native slow prefix and body do not extend deadline (117.08ms)
+[28/101] PASS: forward linked pair permutations late completions and wide indices (0.00ms)
+[29/101] PASS: forward peer association and unsupported membership (9.09ms)
+2026-09-20T11:56:29.853Z event=query proto=udp client=127.0.0.1:41236 qtype=1 qname="routed.example." rcode=0 duration_ms=0.143 src=forward upstream=127.0.0.1:62457 upstream_proto=tcp
+2026-09-20T11:56:29.853Z event=query proto=udp client=127.0.0.1:41236 qtype=1 qname="unsupported.invalid." rcode=2 duration_ms=0.000 src=servfail
+[30/101] PASS: forward native longest zone selects configured endpoint (38.52ms)
+[31/101] PASS: forward bounded partial receive and transmit offsets (6.30ms)
+[32/101] PASS: runtime_forward.test_0 (0.00ms)
+2026-09-20T11:56:29.902Z event=query proto=tcp client=127.0.0.1:38522 qtype=1 qname="oversize.example." rcode=2 duration_ms=0.331 src=servfail
+[33/101] PASS: forward native query encoding failure is uncached without attempts (45.94ms)
+[34/101] PASS: forward fixture pre-start error releases owned storage and listener (26.64ms)
+[35/101] PASS: forward secure entropy startup errors precede allocation and sockets (20.75ms)
+[36/101] PASS: forward secure entropy supplies deterministic upstream IDs without fallback (7.68ms)
+[37/101] PASS: forward peer reader fragmented prefix body and queued frames (0.00ms)
+[38/101] PASS: forward peer reader coalesced frames remain queued (0.00ms)
+[39/101] PASS: forward peer reader rejects EOF and invalid bounds (0.00ms)
+[40/101] PASS: forward UDP native answer with unused TLS fallback and cache hit logging (47.63ms)
+2026-09-20T11:56:30.047Z event=query proto=udp client=127.0.0.1:44435 qtype=1 qname="ignore.example." rcode=0 duration_ms=0.260 src=forward upstream=127.0.0.1:62713 upstream_proto=udp
+[41/101] PASS: forward UDP native ignores empty malformed wrong ID and wrong source replies (38.98ms)
+2026-09-20T11:56:30.090Z event=query proto=udp client=127.0.0.1:48287 qtype=1 qname="truncated.example." rcode=0 duration_ms=0.101 src=forward upstream=127.0.0.1:62777 upstream_proto=udp
+2026-09-20T11:56:30.090Z event=query proto=tcp client=127.0.0.1:33786 qtype=1 qname="truncated.example." rcode=0 duration_ms=0.108 src=forward upstream=127.0.0.1:62777 upstream_proto=tcp
+[42/101] PASS: forward UDP native truncation and client TCP retry (45.75ms)
+[43/101] PASS: health forward UDP native timeout advances to TCP fallback logging (88.89ms)
+2026-09-20T11:56:30.234Z event=upstream_failure upstream=127.0.0.1:62905 upstream_proto=udp reason="timeout"
+2026-09-20T11:56:30.290Z event=upstream_failure upstream=127.0.0.1:62969 upstream_proto=udp reason="timeout"
+[44/101] PASS: forward UDP native timeout distinguishes exhaustion from unsupported hostname (111.67ms)
+[45/101] PASS: forward UDP datagram boundaries and partial send rejection (6.38ms)
+[46/101] PASS: forward TLS hybrid offer interoperates with classical server, reuse, and key update (1133.60ms)
+2026-09-20T11:56:32.517Z event=query proto=udp client=127.0.0.1:36508 qtype=1 qname="reconnect.example." rcode=0 duration_ms=1043.339 src=forward upstream=127.0.0.1:63097 upstream_proto=dot tls_name="dns.example"
+2026-09-20T11:56:32.517Z event=upstream_failure upstream=127.0.0.1:63097 upstream_proto=dot tls_name="dns.example" reason="CONNRESET"
+2026-09-20T11:56:32.517Z event=query proto=udp client=127.0.0.1:36508 qtype=1 qname="reset.example." rcode=2 duration_ms=0.092 src=servfail
+2026-09-20T11:56:33.521Z event=query proto=udp client=127.0.0.1:36508 qtype=1 qname="reconnect.example." rcode=0 duration_ms=1003.617 src=forward upstream=127.0.0.1:63097 upstream_proto=dot tls_name="dns.example"
+2026-09-20T11:56:33.521Z event=upstream_failure upstream=127.0.0.1:63097 upstream_proto=dot tls_name="dns.example" reason="CONNRESET"
+2026-09-20T11:56:33.521Z event=query proto=udp client=127.0.0.1:36508 qtype=1 qname="reset.example." rcode=2 duration_ms=0.086 src=servfail
+2026-09-20T11:56:34.517Z event=query proto=udp client=127.0.0.1:36508 qtype=1 qname="reconnect.example." rcode=0 duration_ms=995.722 src=forward upstream=127.0.0.1:63097 upstream_proto=dot tls_name="dns.example"
+2026-09-20T11:56:34.517Z event=upstream_failure upstream=127.0.0.1:63097 upstream_proto=dot tls_name="dns.example" reason="CONNRESET"
+2026-09-20T11:56:34.517Z event=query proto=udp client=127.0.0.1:36508 qtype=1 qname="reset.example." rcode=2 duration_ms=0.091 src=servfail
+2026-09-20T11:56:35.517Z event=query proto=udp client=127.0.0.1:36508 qtype=1 qname="reconnect.example." rcode=0 duration_ms=999.683 src=forward upstream=127.0.0.1:63097 upstream_proto=dot tls_name="dns.example"
+2026-09-20T11:56:35.517Z event=upstream_failure upstream=127.0.0.1:63097 upstream_proto=dot tls_name="dns.example" reason="CONNRESET"
+[47/101] PASS: forward TLS reset releases pools and reconnects without runtime allocation (4085.21ms)
+[48/101] PASS: health forward TLS native rejects wrong hostname and untrusted CA probes (117.18ms)
+[49/101] PASS: forward TLS native authentication failure advances configured sequence logging (1082.45ms)
+[50/101] PASS: forward TLS selection cannot downgrade TCP clients (11.47ms)
+[51/101] PASS: forward TLS partial write retains engine acknowledgement and rejects overrun (1.12ms)
+[52/101] PASS: logging native local fragmented and coalesced TCP and sink failure (1039.91ms)
+[53/101] PASS: logging native concurrent TCP accepts retain distinct peers (39.94ms)
+[54/101] PASS: cache stress native full cache mixed concurrent clients and upstream reuse (85.56ms)
+[55/101] PASS: health native UDP exclusion recovery error rcode and no probe completion log (160.13ms)
+[56/101] PASS: health native all down stale and forced TCP probe recovery reuse (197.62ms)
+[57/101] PASS: health native pending UDP probe stop retains buffers and counters (68.92ms)
+[58/101] PASS: health native verified DoT probe and authenticated connection reuse (1138.73ms)
+[59/101] PASS: forward clock snapshot shares client and probe scheduling time (38.86ms)
+[60/101] PASS: forward clock snapshot refreshes on real event dispatch (38.25ms)
+[61/101] PASS: logging clock snapshot does not replace completion time (38.06ms)
+[62/101] SKIP: forward Darwin clock snapshot does not extend relative timers (0.00ms)
+[63/101] PASS: asynchronous stderr logging delivers completion lines (38.13ms)
+[64/101] PASS: health thresholds one two zero maximum and isolated endpoint counters (45.07ms)
+[65/101] PASS: health all down selection and local cancellation without penalties (11.26ms)
+[66/101] PASS: health probe root RD fresh secure ID admission rcodes and restoration (33.73ms)
+[67/101] PASS: health probe pressure fairness client retention and forced TCP (11.23ms)
+[68/101] PASS: health client response resets partial failure streak for every error rcode (33.74ms)
+[69/101] PASS: health full sessions defer overdue timers and retain fair cursor (11.28ms)
+[70/101] PASS: health configured candidates exclude disabled zones and preserve sparse fair order (9.89ms)
+[71/101] PASS: health empty candidate lists do not wrap or retain an earlier configuration (18.64ms)
+[72/101] PASS: health candidate list admits the complete endpoint capacity (9.95ms)
+[73/101] PASS: health TLS typed crypto and certificate classification (0.00ms)
+[74/101] PASS: health probe local retirement and idle close preserve counters (11.22ms)
+[75/101] PASS: logging formatter timestamp duration extended rcode and numeric qtype (0.08ms)
+[76/101] PASS: logging formatter hostile maximum name and local source has no upstream (0.09ms)
+[77/101] PASS: logging retained workspace preserves dirty tail across event kinds and sink failure (0.10ms)
+[78/101] PASS: logging malformed query reply and failed capture sink (0.06ms)
+[79/101] PASS: log queue drop-oldest saturation wraparound and drain order (0.02ms)
+[80/101] PASS: log queue partial write resume (0.01ms)
+[81/101] PASS: log queue executing exemption stall failure and cancellation (0.01ms)
+2026-09-20T11:56:39.850Z event=query proto=udp client=127.0.0.1:47976 qtype=1 qname="localhost." rcode=0 duration_ms=0.003 src=rfc6761
+2026-09-20T11:56:39.851Z event=query proto=udp client=127.0.0.1:47976 qtype=1 qname="localhost." rcode=0 duration_ms=0.000 src=rfc6761
+[82/101] PASS: native UDP and TCP repeated queries and cancellation (39.01ms)
+2026-09-20T11:56:39.889Z event=query proto=udp client=127.0.0.1:57810 qtype=1 qname="localhost." rcode=0 duration_ms=0.003 src=rfc6761
+2026-09-20T11:56:39.907Z event=query proto=udp client=127.0.0.1:43303 qtype=1 qname="localhost." rcode=0 duration_ms=0.001 src=rfc6761
+2026-09-20T11:56:39.924Z event=query proto=udp client=127.0.0.1:33370 qtype=1 qname="localhost." rcode=0 duration_ms=0.001 src=rfc6761
+2026-09-20T11:56:39.942Z event=query proto=udp client=127.0.0.1:45613 qtype=1 qname="localhost." rcode=0 duration_ms=0.001 src=rfc6761
+2026-09-20T11:56:39.959Z event=query proto=udp client=127.0.0.1:59996 qtype=1 qname="localhost." rcode=0 duration_ms=0.001 src=rfc6761
+2026-09-20T11:56:39.977Z event=query proto=udp client=127.0.0.1:43144 qtype=1 qname="localhost." rcode=0 duration_ms=0.001 src=rfc6761
+2026-09-20T11:56:39.994Z event=query proto=udp client=127.0.0.1:45805 qtype=1 qname="localhost." rcode=0 duration_ms=0.001 src=rfc6761
+2026-09-20T11:56:40.012Z event=query proto=udp client=127.0.0.1:35643 qtype=1 qname="localhost." rcode=0 duration_ms=0.001 src=rfc6761
+2026-09-20T11:56:40.030Z event=query proto=udp client=127.0.0.1:50628 qtype=1 qname="localhost." rcode=0 duration_ms=0.001 src=rfc6761
+2026-09-20T11:56:40.048Z event=query proto=udp client=127.0.0.1:44797 qtype=1 qname="localhost." rcode=0 duration_ms=0.001 src=rfc6761
+2026-09-20T11:56:40.067Z event=query proto=udp client=127.0.0.1:60041 qtype=1 qname="localhost." rcode=0 duration_ms=0.001 src=rfc6761
+2026-09-20T11:56:40.086Z event=query proto=udp client=127.0.0.1:55602 qtype=1 qname="localhost." rcode=0 duration_ms=0.001 src=rfc6761
+2026-09-20T11:56:40.104Z event=query proto=udp client=127.0.0.1:50633 qtype=1 qname="localhost." rcode=0 duration_ms=0.001 src=rfc6761
+2026-09-20T11:56:40.123Z event=query proto=udp client=127.0.0.1:51216 qtype=1 qname="localhost." rcode=0 duration_ms=0.001 src=rfc6761
+2026-09-20T11:56:40.142Z event=query proto=udp client=127.0.0.1:36174 qtype=1 qname="localhost." rcode=0 duration_ms=0.001 src=rfc6761
+2026-09-20T11:56:40.160Z event=query proto=udp client=127.0.0.1:53853 qtype=1 qname="localhost." rcode=0 duration_ms=0.001 src=rfc6761
+[83/101] PASS: native immediate repeated restart after server TCP close (311.24ms)
+[84/101] PASS: native immediate repeated restart after partial initialization (421.43ms)
+2026-09-20T11:56:40.624Z event=query proto=udp client=127.0.0.1:47412 qtype=1 qname="localhost." rcode=0 duration_ms=0.003 src=rfc6761
+2026-09-20T11:56:40.624Z event=query proto=udp client=127.0.0.1:47412 qtype=1 qname="localhost." rcode=0 duration_ms=0.000 src=rfc6761
+2026-09-20T11:56:40.624Z event=query proto=udp client=127.0.0.1:47412 qtype=1 qname="localhost." rcode=0 duration_ms=0.000 src=rfc6761
+2026-09-20T11:56:40.624Z event=query proto=udp client=127.0.0.1:47412 qtype=1 qname="localhost." rcode=0 duration_ms=0.000 src=rfc6761
+2026-09-20T11:56:40.624Z event=query proto=udp client=127.0.0.1:47412 qtype=1 qname="localhost." rcode=0 duration_ms=0.000 src=rfc6761
+2026-09-20T11:56:40.624Z event=query proto=udp client=127.0.0.1:47412 qtype=1 qname="localhost." rcode=0 duration_ms=0.000 src=rfc6761
+2026-09-20T11:56:40.625Z event=query proto=udp client=127.0.0.1:47412 qtype=1 qname="localhost." rcode=0 duration_ms=0.000 src=rfc6761
+2026-09-20T11:56:40.625Z event=query proto=udp client=127.0.0.1:47412 qtype=1 qname="localhost." rcode=0 duration_ms=0.000 src=rfc6761
+2026-09-20T11:56:40.625Z event=query proto=udp client=127.0.0.1:47412 qtype=1 qname="localhost." rcode=0 duration_ms=0.000 src=rfc6761
+2026-09-20T11:56:40.625Z event=query proto=udp client=127.0.0.1:47412 qtype=1 qname="localhost." rcode=0 duration_ms=0.000 src=rfc6761
+2026-09-20T11:56:40.625Z event=query proto=udp client=127.0.0.1:47412 qtype=1 qname="localhost." rcode=0 duration_ms=0.000 src=rfc6761
+2026-09-20T11:56:40.625Z event=query proto=udp client=127.0.0.1:47412 qtype=1 qname="localhost." rcode=0 duration_ms=0.000 src=rfc6761
+2026-09-20T11:56:40.625Z event=query proto=udp client=127.0.0.1:47412 qtype=1 qname="localhost." rcode=0 duration_ms=0.000 src=rfc6761
+2026-09-20T11:56:40.625Z event=query proto=udp client=127.0.0.1:47412 qtype=1 qname="localhost." rcode=0 duration_ms=0.000 src=rfc6761
+2026-09-20T11:56:40.625Z event=query proto=udp client=127.0.0.1:47412 qtype=1 qname="localhost." rcode=0 duration_ms=0.000 src=rfc6761
+2026-09-20T11:56:40.625Z event=query proto=udp client=127.0.0.1:47412 qtype=1 qname="localhost." rcode=0 duration_ms=0.000 src=rfc6761
+2026-09-20T11:56:40.625Z event=query proto=udp client=127.0.0.1:47412 qtype=1 qname="localhost." rcode=0 duration_ms=0.000 src=rfc6761
+2026-09-20T11:56:40.625Z event=query proto=udp client=127.0.0.1:47412 qtype=1 qname="localhost." rcode=0 duration_ms=0.000 src=rfc6761
+2026-09-20T11:56:40.625Z event=query proto=udp client=127.0.0.1:47412 qtype=1 qname="localhost." rcode=0 duration_ms=0.000 src=rfc6761
+2026-09-20T11:56:40.625Z event=query proto=udp client=127.0.0.1:47412 qtype=1 qname="localhost." rcode=0 duration_ms=0.000 src=rfc6761
+2026-09-20T11:56:40.625Z event=query proto=udp client=127.0.0.1:47412 qtype=1 qname="localhost." rcode=0 duration_ms=0.000 src=rfc6761
+2026-09-20T11:56:40.625Z event=query proto=udp client=127.0.0.1:47412 qtype=1 qname="localhost." rcode=0 duration_ms=0.000 src=rfc6761
+2026-09-20T11:56:40.625Z event=query proto=udp client=127.0.0.1:47412 qtype=1 qname="localhost." rcode=0 duration_ms=0.000 src=rfc6761
+2026-09-20T11:56:40.625Z event=query proto=udp client=127.0.0.1:47412 qtype=1 qname="localhost." rcode=0 duration_ms=0.000 src=rfc6761
+2026-09-20T11:56:40.625Z event=query proto=udp client=127.0.0.1:47412 qtype=1 qname="localhost." rcode=0 duration_ms=0.000 src=rfc6761
+2026-09-20T11:56:40.625Z event=query proto=udp client=127.0.0.1:47412 qtype=1 qname="localhost." rcode=0 duration_ms=0.000 src=rfc6761
+2026-09-20T11:56:40.625Z event=query proto=udp client=127.0.0.1:47412 qtype=1 qname="localhost." rcode=0 duration_ms=0.000 src=rfc6761
+2026-09-20T11:56:40.625Z event=query proto=udp client=127.0.0.1:47412 qtype=1 qname="localhost." rcode=0 duration_ms=0.000 src=rfc6761
+2026-09-20T11:56:40.625Z event=query proto=udp client=127.0.0.1:47412 qtype=1 qname="localhost." rcode=0 duration_ms=0.000 src=rfc6761
+2026-09-20T11:56:40.625Z event=query proto=udp client=127.0.0.1:47412 qtype=1 qname="localhost." rcode=0 duration_ms=0.000 src=rfc6761
+2026-09-20T11:56:40.625Z event=query proto=udp client=127.0.0.1:47412 qtype=1 qname="localhost." rcode=0 duration_ms=0.000 src=rfc6761
+2026-09-20T11:56:40.625Z event=query proto=udp client=127.0.0.1:47412 qtype=1 qname="localhost." rcode=0 duration_ms=0.000 src=rfc6761
+2026-09-20T11:56:40.625Z event=query proto=udp client=127.0.0.1:47412 qtype=1 qname="localhost." rcode=0 duration_ms=0.000 src=rfc6761
+2026-09-20T11:56:40.625Z event=query proto=udp client=127.0.0.1:47412 qtype=1 qname="localhost." rcode=0 duration_ms=0.000 src=rfc6761
+2026-09-20T11:56:40.625Z event=query proto=udp client=127.0.0.1:47412 qtype=1 qname="localhost." rcode=0 duration_ms=0.000 src=rfc6761
+2026-09-20T11:56:40.625Z event=query proto=udp client=127.0.0.1:47412 qtype=1 qname="localhost." rcode=0 duration_ms=0.000 src=rfc6761
+2026-09-20T11:56:40.625Z event=query proto=udp client=127.0.0.1:47412 qtype=1 qname="localhost." rcode=0 duration_ms=0.000 src=rfc6761
+2026-09-20T11:56:40.625Z event=query proto=udp client=127.0.0.1:47412 qtype=1 qname="localhost." rcode=0 duration_ms=0.000 src=rfc6761
+2026-09-20T11:56:40.625Z event=query proto=udp client=127.0.0.1:47412 qtype=1 qname="localhost." rcode=0 duration_ms=0.000 src=rfc6761
+2026-09-20T11:56:40.625Z event=query proto=udp client=127.0.0.1:47412 qtype=1 qname="localhost." rcode=0 duration_ms=0.000 src=rfc6761
+2026-09-20T11:56:40.625Z event=query proto=udp client=127.0.0.1:47412 qtype=1 qname="localhost." rcode=0 duration_ms=0.000 src=rfc6761
+2026-09-20T11:56:40.625Z event=query proto=udp client=127.0.0.1:47412 qtype=1 qname="localhost." rcode=0 duration_ms=0.000 src=rfc6761
+2026-09-20T11:56:40.625Z event=query proto=udp client=127.0.0.1:47412 qtype=1 qname="localhost." rcode=0 duration_ms=0.000 src=rfc6761
+2026-09-20T11:56:40.625Z event=query proto=udp client=127.0.0.1:47412 qtype=1 qname="localhost." rcode=0 duration_ms=0.000 src=rfc6761
+2026-09-20T11:56:40.625Z event=query proto=udp client=127.0.0.1:47412 qtype=1 qname="localhost." rcode=0 duration_ms=0.000 src=rfc6761
+2026-09-20T11:56:40.625Z event=query proto=udp client=127.0.0.1:47412 qtype=1 qname="localhost." rcode=0 duration_ms=0.000 src=rfc6761
+2026-09-20T11:56:40.625Z event=query proto=udp client=127.0.0.1:47412 qtype=1 qname="localhost." rcode=0 duration_ms=0.000 src=rfc6761
+2026-09-20T11:56:40.625Z event=query proto=udp client=127.0.0.1:47412 qtype=1 qname="localhost." rcode=0 duration_ms=0.000 src=rfc6761
+2026-09-20T11:56:40.625Z event=query proto=udp client=127.0.0.1:47412 qtype=1 qname="localhost." rcode=0 duration_ms=0.000 src=rfc6761
+2026-09-20T11:56:40.625Z event=query proto=udp client=127.0.0.1:47412 qtype=1 qname="localhost." rcode=0 duration_ms=0.000 src=rfc6761
+2026-09-20T11:56:40.625Z event=query proto=udp client=127.0.0.1:47412 qtype=1 qname="localhost." rcode=0 duration_ms=0.000 src=rfc6761
+2026-09-20T11:56:40.625Z event=query proto=udp client=127.0.0.1:47412 qtype=1 qname="localhost." rcode=0 duration_ms=0.000 src=rfc6761
+2026-09-20T11:56:40.625Z event=query proto=udp client=127.0.0.1:47412 qtype=1 qname="localhost." rcode=0 duration_ms=0.000 src=rfc6761
+2026-09-20T11:56:40.625Z event=query proto=udp client=127.0.0.1:47412 qtype=1 qname="localhost." rcode=0 duration_ms=0.000 src=rfc6761
+2026-09-20T11:56:40.625Z event=query proto=udp client=127.0.0.1:47412 qtype=1 qname="localhost." rcode=0 duration_ms=0.000 src=rfc6761
+2026-09-20T11:56:40.625Z event=query proto=udp client=127.0.0.1:47412 qtype=1 qname="localhost." rcode=0 duration_ms=0.000 src=rfc6761
+2026-09-20T11:56:40.625Z event=query proto=udp client=127.0.0.1:47412 qtype=1 qname="localhost." rcode=0 duration_ms=0.000 src=rfc6761
+2026-09-20T11:56:40.625Z event=query proto=udp client=127.0.0.1:47412 qtype=1 qname="localhost." rcode=0 duration_ms=0.000 src=rfc6761
+2026-09-20T11:56:40.625Z event=query proto=udp client=127.0.0.1:47412 qtype=1 qname="localhost." rcode=0 duration_ms=0.000 src=rfc6761
+2026-09-20T11:56:40.625Z event=query proto=udp client=127.0.0.1:47412 qtype=1 qname="localhost." rcode=0 duration_ms=0.000 src=rfc6761
+2026-09-20T11:56:40.625Z event=query proto=udp client=127.0.0.1:47412 qtype=1 qname="localhost." rcode=0 duration_ms=0.000 src=rfc6761
+2026-09-20T11:56:40.625Z event=query proto=udp client=127.0.0.1:47412 qtype=1 qname="localhost." rcode=0 duration_ms=0.000 src=rfc6761
+[85/101] PASS: native UDP response pool exhaustion and recovery (41.40ms)
+[86/101] PASS: native hosts reload timer failure retry and disabled checks (3056.98ms)
+[87/101] PASS: native startup rollback on bound and unresolved listeners (72.89ms)
+2026-09-20T11:56:43.803Z event=query proto=udp client=127.0.0.1:48941 qtype=1 qname="large." rcode=0 duration_ms=0.015 src=hosts
+2026-09-20T11:56:43.803Z event=query proto=tcp client=127.0.0.1:33828 qtype=1 qname="large." rcode=0 duration_ms=0.015 src=hosts
+[88/101] PASS: native hosts UDP limit TCP full response and malformed datagrams (54.78ms)
+[89/101] PASS: native provided ring depletion rearms receive (38.96ms)
+2026-09-20T11:56:43.889Z event=query proto=tcp client=127.0.0.1:47044 qtype=1 qname="localhost." rcode=0 duration_ms=0.003 src=rfc6761
+[90/101] PASS: native TCP pool exhaustion and recovery (41.39ms)
+forward ring shared=18496 sqes=32768 provided=1024 mapping-cap=262144 zone-cap=38912
+[91/101] PASS: native stop batches a full operation table (3.92ms)
+[92/101] PASS: native interrupted completion wait retains ownership (43.97ms)
+[93/101] PASS: health driver pair probe response publication and stale generations (185.49ms)
+[94/101] PASS: health driver pair probe local and transport retirement exactly once (544.01ms)
+[95/101] PASS: forward driver pair connect accepts retired timeout results (537.55ms)
+[96/101] PASS: forward driver pair successful advance waits for every owner (179.14ms)
+[97/101] PASS: forward driver pair response publishes once after every owner (179.65ms)
+[98/101] PASS: forward driver pair timeout and elapsed deadline beat success (539.67ms)
+[99/101] PASS: forward driver pair resource and transport failures have distinct dispositions (1071.58ms)
+[100/101] PASS: forward driver pair stopping suppresses every disposition (720.42ms)
+SUBMITTED_TEARDOWN tokens={ 8589934817, 8589934818 } fixed_file=160 buffer=0xfffdd6be5133 runtime=0xfffdd6bc8000 queued=2 submitted=2 remaining=0 cq_before=0 budget_ns=299999992366
+TEARDOWN_SNAPSHOT calls=1 cancel=1 syscall=1 retired=3 peers={ 0, 0 } errors={ .SUCCESS, .SUCCESS }
+TEARDOWN_MARKER opcode=NOP flags=2 opcode_flags=0 token=18446744073709551615
+TEARDOWN_CQE token=8589934817 result=-125 flags=0
+TEARDOWN_CQE token=8589934818 result=-125 flags=0
+TEARDOWN_CQE token=18446744073709551615 result=0 flags=0
+TEARDOWN_MEMORY index=0 kind=allocation address=0xfffdd6bc8000 length=38782768
+TEARDOWN_MEMORY index=1 kind=allocation address=0xfffdd6ba0000 length=608
+TEARDOWN_MEMORY index=2 kind=allocation address=0xfffdd6b80000 length=316
+TEARDOWN_MEMORY index=3 kind=allocation address=0xfffdd6b60000 length=64
+TEARDOWN_MEMORY index=4 kind=allocation address=0xfffdd6b80200 length=316
+TEARDOWN_MEMORY index=5 kind=allocation address=0xfffdd6b60040 length=64
+TEARDOWN_MEMORY index=6 kind=allocation address=0xfffdd6360000 length=8388608
+TEARDOWN_MEMORY index=7 kind=snapshot address=0x0 length=0
+TEARDOWN_MEMORY index=8 kind=release address=0xfffdd6b60000 length=64
+TEARDOWN_MEMORY index=9 kind=release address=0xfffdd6b80000 length=316
+TEARDOWN_MEMORY index=10 kind=release address=0xfffdd6b60040 length=64
+TEARDOWN_MEMORY index=11 kind=release address=0xfffdd6b80200 length=316
+TEARDOWN_MEMORY index=12 kind=release address=0xfffdd6360000 length=8388608
+TEARDOWN_MEMORY index=13 kind=release address=0xfffdd6ba0000 length=608
+TEARDOWN_MEMORY index=14 kind=release address=0xfffdd6bc8000 length=38782768
+[101/101] PASS: forward submitted receive direct Runtime teardown release barriers (46.85ms)
+
+ztest: 100 passed, 0 failed, 1 skipped (of 101 total) in 19067ms
+ALL TESTS PASSED
+ziglint
+ziglint build.zig src tests
+zig fmt --check build.zig build.zig.zon src tests
+nixfmt --check flake.nix nix/*.nix nix/modules/*.nix nix/tests/*.nix

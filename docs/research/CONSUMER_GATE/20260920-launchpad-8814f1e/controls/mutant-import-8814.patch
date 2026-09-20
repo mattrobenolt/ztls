@@ -1,0 +1,12 @@
+diff --git a/src/root.zig b/src/root.zig
+index c580e47..40ebb7e 100644
+--- a/src/root.zig
++++ b/src/root.zig
+@@ -39,3 +39,7 @@ pub const x25519 = @import("x25519.zig");
+
+ /// RFC 8446 §4.1.2 — ClientHello random bytes.
+ pub const Random = Array(32);
++
++comptime {
++    @compileError("qualification negative control: broken ztls import");
++}

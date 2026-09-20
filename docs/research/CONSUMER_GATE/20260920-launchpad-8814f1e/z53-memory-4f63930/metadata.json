@@ -1,0 +1,44 @@
+{
+  "consumer_revision": "4f63930672a3af9cec53c8588007ec566886847d",
+  "source_dirty": false,
+  "build_command": [
+    "nix",
+    "develop",
+    "--command",
+    "timeout",
+    "300",
+    "zig",
+    "build",
+    "test-runtime",
+    "-Doptimize=ReleaseSafe",
+    "-Dcpu=baseline",
+    "--verbose",
+    "--summary",
+    "all"
+  ],
+  "memory_command": [
+    "timeout",
+    "300",
+    "valgrind",
+    "--leak-check=full",
+    "--show-leak-kinds=all",
+    "--errors-for-leak-kinds=all",
+    "--track-origins=yes",
+    "--track-fds=yes",
+    "--error-exitcode=99",
+    "--log-file=/tmp/ztls-signoff-20260919/z53-memory-4f63930/valgrind.log",
+    "/tmp/ztls-signoff-20260919/z53-resource-cache/o/f2a4d805a9d5c68575c666af9a985081/test"
+  ],
+  "environment": {
+    "ZIG_GLOBAL_CACHE_DIR": "/tmp/ztls-signoff-20260919/consumer-global16",
+    "ZIG_LOCAL_CACHE_DIR": "/tmp/ztls-signoff-20260919/z53-resource-cache",
+    "ZTEST_FILTER": "forward TLS reset releases pools",
+    "ZTEST_VERBOSE": "1",
+    "ZTEST_PLAIN": "1",
+    "LD_LIBRARY_PATH": "/nix/store/ilhjg5z9hlw3ccc4bfvpi4s6kplvl7yq-openssl-3.6.4/lib"
+  },
+  "binary": "/tmp/ztls-signoff-20260919/z53-resource-cache/o/f2a4d805a9d5c68575c666af9a985081/test",
+  "binary_sha256": "7fe16be460c1d391c9ca1da3e8177f3a9ac419fb82b0bba5ee1310dcce881a58",
+  "host": "Linux launchpad 7.2.3 #1-NixOS SMP PREEMPT Wed Sep  2 12:33:21 UTC 2026 aarch64 GNU/Linux",
+  "valgrind_version": "valgrind-3.27.1"
+}
