@@ -37,9 +37,9 @@ pub const Policy = struct {
     insecure_no_chain_anchor: bool = false,
     /// Current time in seconds since the Unix epoch, for validity checks.
     now_sec: i64 = 0,
-    /// DNS name expected in the leaf certificate SAN/CN. null = no hostname
-    /// check. ClientHandshake.Config.host_name seeds this field at init time so
-    /// normal callers use one value for SNI and certificate validation.
+    /// This ASCII DNS reference identifies the expected DNS-ID SAN.
+    /// The caller owns IDNA conversion to A-labels. null disables the check.
+    /// ClientHandshake.Config.host_name supplies the default value.
     host_name: ?[]const u8 = null,
     /// Enforce TLS 1.3 certificate residual policy for the leaf's intended use.
     /// `.server_auth` requires KeyUsage.digitalSignature when KeyUsage is present,

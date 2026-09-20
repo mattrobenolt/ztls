@@ -61,7 +61,7 @@ revision, not automatically to later commits.
 
 | Pillar | Status | One-line |
 |---|---|---|
-| 1. Correctness | `PARTIAL` | Historical TLS-Anvil evidence covers `d07c551` (#108). The #118 fix, #119 consumer gate, and #120 candidate conformance pass. Resource and evidence residuals remain under #121–#122 and #124–#125. |
+| 1. Correctness | `PARTIAL` | Historical TLS-Anvil evidence covers `d07c551` (#108). The #118 fix, #119 consumer gate, and #120 candidate conformance pass. Resource and evidence residuals remain under #121–#122 and #125. |
 | 2. Ergonomics | `PROVEN` | CI-gated examples cover both roles across io_uring, epoll, kqueue, and `std.Io`. Core and wrapper APIs expose hybrid capabilities and reject invalid local policy before key generation or wire I/O (#105). `ztls-std` (#77) gates plain and mTLS OpenSSL interop in both directions. `ztls-xev` satisfies #76's Linux/macOS contract, including in-flight cancellation (#83). |
 | 3. Performance | `PROVEN` | n=10 captures on x86_64 (c7i.2xlarge), aarch64 (c7g.2xlarge), and macOS (Apple M1 Max) with formal CIs (p=0.000): ztls beats libssl on every comparable app-data row on all three platforms and rustls on all AES-GCM rows; regression gate committed. |
 | 4. Providers | `PROVEN` | OpenSSL, AWS-LC, and BoringSSL passed strict-complete TLS-Anvil client and server runs at `d07c551`; malformed peer ML-KEM keys produce `illegal_parameter` while provider faults remain `internal_error` (#108). The capture is bound to that revision; candidate re-qualification is #120. |
@@ -175,7 +175,12 @@ Five ClientHello duplicate tests exercise the remaining extension types from `cl
 EncryptedExtensions has a standalone fuzz target with empty and populated offer profiles.
 A deterministic sweep checks 8,960 single-byte replacements under both profiles.
 This is not a coverage-guided campaign. Certificate-chain verification remains unit/differential-tested, not fuzz-driven.
-The oversized retained public-key test and focused 0.5-RTT evidence remain under #124.
+Three more #124 tests cover retained-key capacity and 0.5-RTT sequencing. Four additional mutation checks fail at the intended assertions.
+Both roles validate an anchored RSA-8192 certificate, then reject its 1,038-byte public key with `CertificateKeyTooLarge` and `unsupported_certificate`.
+The server test stops before CertificateVerify. It does not claim a completed client-authentication exchange.
+The 0.5-RTT test constructs coalesced server records before client Finished exists, with independent RFC 8448 application keys.
+Both public client paths receive the application data before the peer consumes Finished. The high-level path keeps Finished pending during RX.
+These tests qualify the specified API sequences, not every external server implementation.
 Compiler-dependent zeroization remains an audit question under #125.
 
 The #126 hostname contract accepts ASCII DNS references, including caller-converted A-labels.
@@ -725,10 +730,12 @@ data to openssl s_server and receives the HTTP response.
     the retained chain`. Note this is a hygiene and honesty fix, not a
     disclosure fix: certificates are public, and the reassembly buffers hold
     whatever handshake plaintext spanned a record boundary.
-  - H20 — the high-level client record path constructs its Finished immediately
-    after the server Finished. The `.send_finished` state alone does not prove
-    a general 0.5-RTT interoperability failure. #124 tracks focused evidence
-    for coalesced server data and low-level API sequences.
+  - H20 (focused evidence, #124) — coalesced server application data succeeds
+    before delivery of client Finished through both public client paths.
+    The high-level test receives data while Finished remains pending.
+    The low-level test calls `clientFinished` before `receiveRecord`.
+    Mutations that block pending-write RX or install the wrong application key fail the receive assertion.
+    This evidence rejects the historical blanket interoperability-failure claim. It does not qualify every external server.
   - H21 (contract defined, #126) — DNS-ID verification accepts ASCII reference
     names, including caller-converted A-labels. The caller owns IDNA conversion
     and reference-name syntax checks. Non-ASCII references fail with

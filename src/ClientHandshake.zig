@@ -1890,6 +1890,9 @@ pub const ClientFinishedError = SendError || signature.SignError || aead.Error |
 /// the pre-client-auth behavior. `out` receives the encrypted record. Any
 /// error is terminal for this handshake because flight assembly advances the
 /// transcript; send an alert when possible, then deinit.
+///
+/// A successful call installs application keys without transport I/O.
+/// The caller can then use receiveRecord before Finished reaches the peer.
 // ziglint-ignore: Z015 -- ClientFinishedError is a public error-set alias.
 pub fn clientFinished(self: *ClientHandshake, out: []u8) ClientFinishedError![]const u8 {
     assert(self.state == .send_finished);
@@ -2755,6 +2758,43 @@ test "processFlight: rejects unrequested server CertificateEntry status_request"
     try expectEncryptedAlert(&peer, rec, .unsupported_extension);
 }
 
+// RFC 8446 §4.4.2.2 — an unsupported certificate key fails before CertificateVerify.
+test "handleRecord: rejects a server key above retention capacity" {
+    // ziglint-ignore: Z007 -- Fixture imports stay test-local for published packages (#66).
+    const fixtures = @import("fixtures");
+    var bundle: crypto.Certificate.Bundle = .{ .map = .empty, .bytes = .empty };
+    defer bundle.deinit(testing.allocator);
+    try bundle.bytes.appendSlice(testing.allocator, &fixtures.key_capacity_root_der);
+    try bundle.parseCert(testing.allocator, 0, fixtures.key_capacity_time);
+    var hs = try flightReadyClient();
+    defer hs.deinit();
+    hs.policy = .{
+        .bundle = &bundle,
+        .host_name = "capacity.test",
+        .now_sec = fixtures.key_capacity_time,
+    };
+    try hs.processFlight("\x08\x00\x00\x02\x00\x00", hs.policy);
+    var plain: [4096]u8 = undefined;
+    const cert = try certificate.encode(&plain, &.{
+        &fixtures.key_capacity_leaf_der,
+        &fixtures.key_capacity_root_der,
+    });
+    const public_key = try certificate.parse(cert, hs.policy);
+    try testing.expect(public_key.len > max_leaf_pub_key);
+    var server_tx = try hs.rx.clone();
+    defer server_tx.deinit();
+    var record: [4096]u8 = undefined;
+    const encrypted = try server_tx.encrypt(.handshake, cert, &record);
+    var out: [128]u8 = undefined;
+    const result = hs.handleRecord(record[0..encrypted.len], &out);
+    const failure: HandleError = if (result) |_| return error.TestExpectedError else |err| err;
+    try testing.expectEqual(error.CertificateKeyTooLarge, failure);
+    var peer = try hs.tx.clone();
+    defer peer.deinit();
+    const response = try hs.sendAlert(alert.alertForError(failure), &out);
+    try expectEncryptedAlert(&peer, response, .unsupported_certificate);
+}
+
 test "processFlight: RFC 8448 §3 full server flight to connected" {
     var hs: ClientHandshake = .init(try testConfig(rfc8448_client_keypair));
     defer hs.deinit();
@@ -3426,6 +3466,7 @@ test "clientFinished: empty CertificateRequest with no credentials still finishe
 
 // Isolate: fromP256Scalar + setCredentials alone (no clientFinished sign path).
 test "client auth: setCredentials stores client credentials" {
+    // ziglint-ignore: Z007 -- Fixture imports stay test-local for published packages (#66).
     const fixtures = @import("fixtures");
     var hs: ClientHandshake = .init(try testConfig(rfc8448_client_keypair));
     defer hs.deinit();
@@ -4573,6 +4614,62 @@ test "handleRecord: drives RFC 8448 §3 handshake to connected" {
     const dec = try peer.decrypt(dec_buf[0..ev.write.len]);
     try testing.expectEqual(.handshake, dec.content_type);
     try testing.expectEqualSlices(u8, &rfc8448_client_finished, dec.content);
+}
+
+// RFC 8446 §2 and §4.4.4 — server application data can precede receipt of client Finished.
+// RFC 8448 §3 supplies independent server application keys and handshake records.
+test "0.5-RTT: coalesced server data precedes client Finished delivery" {
+    const paths: []const enum { record, flight } = &.{ .record, .flight };
+    for (paths) |path| {
+        var hs = try flightReadyClient();
+        defer hs.deinit();
+        var server_handshake_rx = try hs.tx.clone();
+        defer server_handshake_rx.deinit();
+        var server_app: RecordLayer = try .init(
+            .{ .aes_128_gcm_sha256 = .init(.{
+                0x9f, 0x02, 0x28, 0x3b, 0x6c, 0x9c, 0x07, 0xef,
+                0xc2, 0x6b, 0xb9, 0xf2, 0xac, 0x92, 0xe3, 0x56,
+            }) },
+            .init(.{ 0xcf, 0x78, 0x2b, 0x88, 0xdd, 0x83, 0x54, 0x9a, 0xad, 0xf1, 0xe9, 0x84 }),
+        );
+        defer server_app.deinit();
+        var transport: [2048]u8 = undefined;
+        const flight = rfc8448Fixture("server_flight_record.b64", &transport);
+        const plaintext = "server data before client Finished";
+        const app = try server_app.encrypt(.application_data, plaintext, transport[flight.len..]);
+        const wire_len = flight.len + app.len;
+        var client_output: [256]u8 = undefined;
+        const pending = switch (path) {
+            .record => (try hs.handleRecord(transport[0..flight.len], &client_output)).write,
+            .flight => blk: {
+                const decrypted = try hs.rx.decrypt(transport[0..flight.len]);
+                try hs.processFlight(decrypted.content, hs.policy);
+                try testing.expectEqual(.send_finished, hs.state);
+                break :blk try hs.clientFinished(&client_output);
+            },
+        };
+        try testing.expect(hs.isConnected());
+        var saved: [256]u8 = undefined;
+        @memcpy(saved[0..pending.len], pending);
+        const app_record = transport[flight.len..wire_len];
+        if (path == .record) {
+            var scratch: [128]u8 = undefined;
+            try testing.expectError(error.PendingWrite, hs.handleRecord(app_record, &scratch));
+        }
+        // The peer has not consumed client Finished. RX must still make progress.
+        const result = hs.receiveRecord(app_record);
+        const failure: ?ReceiveError = if (result) |_| null else |err| err;
+        try testing.expectEqual(@as(?ReceiveError, null), failure);
+        const received = try result;
+        try testing.expect(received == .application_data);
+        try testing.expectEqualStrings(plaintext, received.application_data);
+        try testing.expectEqualSlices(u8, saved[0..pending.len], pending);
+        // Only now does the peer receive and decrypt client Finished.
+        const finished_record = try server_handshake_rx.decrypt(saved[0..pending.len]);
+        try testing.expectEqual(.handshake, finished_record.content_type);
+        try testing.expectEqualSlices(u8, &rfc8448_client_finished, finished_record.content);
+        if (path == .record) hs.completeWrite();
+    }
 }
 
 // A produced .write must be acknowledged (completeWrite) before the engine

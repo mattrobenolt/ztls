@@ -80,7 +80,7 @@ The authoritative readiness state remains `PRODUCTION_READINESS.md`.
 | Invalid SAN GeneralNames wrapper | `CertificateFieldHasWrongDataType` → `bad_certificate` | `certificate.zig`: signed SAN wrapper tests (#122) | Hostname verification rejects incorrect class, tag, and construction |
 | Certificate arrives with no trust bundle and no explicit insecure opt-in | `error.MissingTrustAnchor` | `certificate.zig`: `parse: rejects missing trust anchor by default`; `ClientHandshake.zig`: `processFlight: rejects unanchored Certificate by default` | covered |
 | Server Certificate request_context is non-empty | `error.UnexpectedCertificateRequestContext` (RFC 8446 §4.4.2; `illegal_parameter` at the client) | `certificate.zig`: `parse: rejects non-empty server certificate request context`; `ClientHandshake.zig`: `processFlight: rejects non-empty server Certificate request context` | covered |
-| Leaf public key exceeds retained buffer | `error.CertificateKeyTooLarge` | `ClientHandshake.zig` and `ServerHandshake.zig` raise it when the retained-key buffer is too small | partial — no dedicated unit test |
+| Leaf public key exceeds retained buffer | `error.CertificateKeyTooLarge` | Both roles validate an anchored RSA-8192 certificate, then reject its 1,038-byte key before CertificateVerify | Public-path tests check the error and encrypted `unsupported_certificate` alert (#124) |
 | Post-handshake NewSessionTicket malformed | Ticket parser error | `ClientHandshake.zig`: `handleRecord: malformed NewSessionTicket is rejected`; `NewSessionTicket.zig` negative tests | covered |
 | Post-handshake unexpected inner content type | `error.UnexpectedRecord`; caller can emit `unexpected_message` | `ClientHandshake.zig`: `handleRecord: post-handshake unexpected inner content type is rejected` | covered |
 | KeyUpdate flood | `error.TooManyKeyUpdates` | `ClientHandshake.zig`: `handleRecord: KeyUpdate flood is rejected` | covered |
@@ -159,7 +159,10 @@ paths directly and remain the fastest regression signal.
 
 ## Open gaps surfaced by the inventory
 
-#124 tracks the focused negative-test and parser-fuzz gaps below.
+#124 records focused negative tests and the standalone EncryptedExtensions fuzz target.
+The 0.5-RTT test uses coalesced server records and independent RFC 8448 application keys.
+It receives application data before the peer consumes client Finished through both public client paths.
+The low-level sequence calls `clientFinished` before `receiveRecord`. The high-level sequence keeps Finished pending during `receiveRecord`.
 
 These are deliberately not closed by writing the inventory:
 

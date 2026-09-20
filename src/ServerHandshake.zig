@@ -5710,6 +5710,57 @@ test "handleRecord: rejects disjoint ALPN offers with the required alert" {
     try testing.expectEqual(.no_application_protocol, received.description);
 }
 
+// RFC 8446 §4.4.2.2 — an unsupported client key fails before CertificateVerify.
+test "processClientFinished: rejects a client key above retention capacity" {
+    // ziglint-ignore: Z007 -- Fixture imports stay test-local for published packages (#66).
+    const fixtures = @import("fixtures");
+    var bundle: std.crypto.Certificate.Bundle = .{ .map = .empty, .bytes = .empty };
+    defer bundle.deinit(testing.allocator);
+    try bundle.bytes.appendSlice(testing.allocator, &fixtures.key_capacity_root_der);
+    try bundle.parseCert(testing.allocator, 0, fixtures.key_capacity_time);
+    var config: Config = try testConfig(.generate());
+    config.client_auth = .required;
+    config.client_auth_bundle = &bundle;
+    config.client_auth_now_sec = fixtures.key_capacity_time;
+    var server: ServerHandshake = .init(config);
+    defer server.deinit();
+    const client_keypair: x25519.KeyPair = .generate();
+    var ch_buf: [512]u8 = undefined;
+    const ch = try client_hello.encode(&ch_buf, .zero, client_keypair.public_key, null, &.{});
+    var ch_record: [1024]u8 = undefined;
+    const header: frame.Header = .init(.handshake, @intCast(ch.len));
+    header.write(ch_record[0..frame.header_len]);
+    @memcpy(ch_record[frame.header_len..][0..ch.len], ch);
+    var out: [4096]u8 = undefined;
+    _ = try server.acceptClientHello(ch_record[0 .. frame.header_len + ch.len], &out);
+    var signer: signature.PrivateKey = try .fromP256Scalar(serverEcdsaScalar()[0..32]);
+    defer signer.deinit();
+    var plain: [4096]u8 = undefined;
+    _ = try server.sendAuthenticatedFlight(&.{serverEcdsaCertDer()}, signer.signer(), &plain, &out);
+    const cert = try certificate.encode(&plain, &.{
+        &fixtures.key_capacity_leaf_der,
+        &fixtures.key_capacity_root_der,
+    });
+    const verified = try certificate.parseClientChain(cert, &.{}, server.client_cert_policy);
+    try testing.expect(verified.pub_key.len > max_client_leaf_pub_key);
+    var client_tx = try server.rx.clone();
+    defer client_tx.deinit();
+    const record = try client_tx.encrypt(.handshake, cert, &out);
+    const result = server.processClientFinished(out[0..record.len]);
+    const failure: ClientFinishedError = if (result) |_| {
+        return error.TestExpectedError;
+    } else |err| err;
+    try testing.expectEqual(error.CertificateKeyTooLarge, failure);
+    var peer = try server.tx.clone();
+    defer peer.deinit();
+    const response = try server.sendAlert(alert.alertForError(failure), &out);
+    const decoded = try peer.decrypt(out[0..response.len]);
+    try testing.expectEqual(.alert, decoded.content_type);
+    const received = try alert.parse(decoded.content);
+    try testing.expectEqual(.fatal, received.level);
+    try testing.expectEqual(.unsupported_certificate, received.description);
+}
+
 // RFC 8446 §4.4.4 — the server must reject a client Finished with a bad
 // verify_data MAC. Regression for the NEGATIVE_SPACE gap: bad-ClientFinished
 // negative tests were partial.

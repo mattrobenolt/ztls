@@ -53,6 +53,10 @@ pub const server_ecdsa_scalar = decodeSection("server_ecdsa_scalar");
 pub const client_ecdsa_cert_der = decodeSection("client_ecdsa_cert_der");
 pub const client_ecdsa_scalar = decodeSection("client_ecdsa_scalar");
 pub const rsa_pss_cert_der = decodeSection("rsa_pss_cert_der");
+// RSA-8192 retention-capacity fixtures (#124).
+pub const key_capacity_root_der = decodeSection("key_capacity_root_der");
+pub const key_capacity_leaf_der = decodeSection("key_capacity_leaf_der");
+pub const key_capacity_time: i64 = 1790000000;
 pub const ed25519_cert_der = decodeSection("ed25519_cert_der");
 pub const chain_leaf_der = decodeSection("chain_leaf_der");
 pub const chain_intermediate_der = decodeSection("chain_intermediate_der");
