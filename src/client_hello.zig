@@ -2587,6 +2587,42 @@ test "parse: rejects duplicate signature_algorithms_cert" {
     try testing.expectError(error.DuplicateExtension, parse(buf[0..new_len]));
 }
 
+fn expectDuplicateExtensionForTest(extension: ExtensionType) !void {
+    var buf: [1024]u8 = undefined;
+    const encoded = try encode(&buf, .zero, .zero, "example.test", &.{"h2"});
+    _ = try parse(encoded);
+    const offset = try findExtensionOffset(encoded, extension);
+    const data_len: usize = memx.readInt(u16, encoded[offset + 2 ..][0..2]);
+    const duplicate = encoded[offset..][0 .. ext_header_len + data_len];
+    const len = appendExtension(&buf, encoded.len, duplicate);
+    try testing.expectError(error.DuplicateExtension, parse(buf[0..len]));
+}
+
+// RFC 8446 §4.2 — each extension type occurs at most once.
+test "parse: rejects duplicate SNI" {
+    try expectDuplicateExtensionForTest(.server_name);
+}
+
+// RFC 8446 §4.2 — each extension type occurs at most once.
+test "parse: rejects duplicate ALPN" {
+    try expectDuplicateExtensionForTest(.alpn);
+}
+
+// RFC 8446 §4.2 — each extension type occurs at most once.
+test "parse: rejects duplicate supported_versions" {
+    try expectDuplicateExtensionForTest(.supported_versions);
+}
+
+// RFC 8446 §4.2 — each extension type occurs at most once.
+test "parse: rejects duplicate key_share extensions" {
+    try expectDuplicateExtensionForTest(.key_share);
+}
+
+// RFC 8446 §4.2 — each extension type occurs at most once.
+test "parse: rejects duplicate psk_key_exchange_modes" {
+    try expectDuplicateExtensionForTest(.psk_key_exchange_modes);
+}
+
 // RFC 8446 §4.1.2 — a server MUST ignore unrecognized extensions in ClientHello.
 // ztls skips them; this pins that current behavior so a regression that started
 // rejecting unknown extensions would be caught.

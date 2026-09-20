@@ -390,9 +390,7 @@ pub fn encodeWithKeyShare(
 
 /// Encode a ServerHello that selects a PSK identity (RFC 8446 §4.1.3, §4.2.11).
 /// Adds a pre_shared_key extension carrying the selected_identity index after
-/// supported_versions. Used for psk_dhe_ke resumption (key_share is still
-/// present) or psk_ke (key_share omitted by the caller via an empty key_share —
-/// not currently used, ztls only does psk_dhe_ke).
+/// supported_versions. PSK resumption uses psk_dhe_ke. The key_share remains present.
 pub fn encodeWithKeyShareAndPsk(
     out: []u8,
     random: [32]u8,

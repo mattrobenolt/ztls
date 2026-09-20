@@ -61,7 +61,7 @@ revision, not automatically to later commits.
 
 | Pillar | Status | One-line |
 |---|---|---|
-| 1. Correctness | `PARTIAL` | Historical TLS-Anvil evidence covers `d07c551` (#108). The #118 fix, #119 consumer gate, and #120 candidate conformance pass. Resource and policy residuals remain tracked under #121–#126. |
+| 1. Correctness | `PARTIAL` | Historical TLS-Anvil evidence covers `d07c551` (#108). The #118 fix, #119 consumer gate, and #120 candidate conformance pass. Resource and evidence residuals remain under #121–#122 and #124–#125. |
 | 2. Ergonomics | `PROVEN` | CI-gated examples cover both roles across io_uring, epoll, kqueue, and `std.Io`. Core and wrapper APIs expose hybrid capabilities and reject invalid local policy before key generation or wire I/O (#105). `ztls-std` (#77) gates plain and mTLS OpenSSL interop in both directions. `ztls-xev` satisfies #76's Linux/macOS contract, including in-flight cancellation (#83). |
 | 3. Performance | `PROVEN` | n=10 captures on x86_64 (c7i.2xlarge), aarch64 (c7g.2xlarge), and macOS (Apple M1 Max) with formal CIs (p=0.000): ztls beats libssl on every comparable app-data row on all three platforms and rustls on all AES-GCM rows; regression gate committed. |
 | 4. Providers | `PROVEN` | OpenSSL, AWS-LC, and BoringSSL passed strict-complete TLS-Anvil client and server runs at `d07c551`; malformed peer ML-KEM keys produce `illegal_parameter` while provider faults remain `internal_error` (#108). The capture is bound to that revision; candidate re-qualification is #120. |
@@ -167,7 +167,15 @@ Six new boundary tests pass. Four initial regressions failed before the fixes.
 The additional empty-list mutation fails its expected-error assertion.
 Local gates pass for all three providers. Both Zig compatibility lanes pass.
 
-#124 tracks focused handshake and parser evidence gaps.
+The first #124 slice adds ten tests and ten failing mutation checks.
+Both public Finished entrypoints reject trailing messages and non-Finished input with the required alert.
+Focused tests also cover disjoint ALPN offers and a missing ServerHello key share.
+Five ClientHello duplicate tests exercise the remaining extension types from `client_hello.encode`.
+
+EncryptedExtensions has a standalone fuzz target with empty and populated offer profiles.
+A deterministic sweep checks 8,960 single-byte replacements under both profiles.
+This is not a coverage-guided campaign. Certificate-chain verification remains unit/differential-tested, not fuzz-driven.
+The oversized retained public-key test and focused 0.5-RTT evidence remain under #124.
 Compiler-dependent zeroization remains an audit question under #125.
 
 The #126 hostname contract accepts ASCII DNS references, including caller-converted A-labels.
@@ -875,7 +883,7 @@ data to openssl s_server and receives the HTTP response.
 
 **Status:** `PARTIAL` — #118 passes local and GitHub gates.
 Candidate consumer and conformance evidence passes at `b9d03ed`.
-Resource and policy residuals under #121–#126 remain separate requirements.
+Resource and evidence residuals under #121–#122 and #124–#125 remain separate requirements.
 The #91 fixture regressions and #108 conformance captures retain their historical provenance.
 
 **Evidence and design decisions:**

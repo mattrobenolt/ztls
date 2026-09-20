@@ -6,6 +6,7 @@ const mem = std.mem;
 const testing = std.testing;
 
 const extension_type = @import("extension_type.zig");
+const fuzz_compat = @import("fuzz_compat.zig");
 const ExtensionType = extension_type.ExtensionType;
 const OfferedExtensions = extension_type.OfferedExtensions;
 const handshake = @import("handshake.zig");
@@ -31,6 +32,7 @@ pub const ParseError = error{
 };
 
 pub const Parsed = struct {
+    /// These ALPN bytes borrow storage from the input message.
     alpn_protocol: ?[]const u8 = null,
     /// RFC 8446 §4.2.10 — true when the server included early_data in EE,
     /// signaling 0-RTT acceptance. The client uses this to decide whether
@@ -443,4 +445,52 @@ test "parse: wrong handshake type" {
 test "parse: truncated" {
     const msg = [_]u8{ 0x08, 0x00, 0x00 };
     try testing.expectError(error.UnexpectedEof, parse(&msg, &.{}, .{}));
+}
+
+fn fuzzParse(_: void, input: []const u8) !void {
+    const Offer = struct { alpn: []const []const u8, options: Options };
+    const offers: [2]Offer = .{
+        .{ .alpn = &.{}, .options = .{} },
+        .{ .alpn = &.{ "h2", "http/1.1" }, .options = .{ .offered_extensions = .initFull() } },
+    };
+    for (offers) |offer| {
+        const parsed = parse(input, offer.alpn, offer.options) catch continue;
+        if (parsed.alpn_protocol) |protocol| {
+            try testing.expect(offer.alpn.len != 0);
+            try testing.expect(mem.eql(u8, protocol, "h2") or mem.eql(u8, protocol, "http/1.1"));
+            try testing.expect(@intFromPtr(protocol.ptr) >= @intFromPtr(input.ptr));
+            try testing.expect(
+                @intFromPtr(protocol.ptr) + protocol.len <= @intFromPtr(input.ptr) + input.len,
+            );
+        }
+    }
+}
+
+const fuzz_seeds: [2][]const u8 = .{
+    "\x08\x00\x00\x02\x00\x00",
+    "\x08\x00\x00\x19\x00\x17" ++
+        "\x00\x00\x00\x00\x00\x1c\x00\x02\x04\x00" ++
+        "\x00\x10\x00\x05\x00\x03\x02h2\x00\x2a\x00\x00",
+};
+
+// RFC 8446 §4.3.1 — arbitrary EncryptedExtensions preserve bounds and offered-only selection.
+test "fuzz: EncryptedExtensions parser with empty and populated offers" {
+    _ = try parse(fuzz_seeds[0], &.{}, .{});
+    _ = try parse(fuzz_seeds[1], &.{"h2"}, .{ .offered_extensions = .initFull() });
+    try fuzz_compat.fuzzBytes(fuzzParse, {}, .{ .corpus = &fuzz_seeds });
+}
+
+// RFC 8446 §4.3.1 — every single-byte replacement preserves parser invariants.
+test "EncryptedExtensions: bounded single-byte mutation sweep" {
+    var input: [32]u8 = undefined;
+    for (fuzz_seeds) |seed| {
+        @memcpy(input[0..seed.len], seed);
+        for (0..seed.len) |offset| {
+            for (0..256) |byte| {
+                input[offset] = @intCast(byte);
+                try fuzzParse({}, input[0..seed.len]);
+            }
+            input[offset] = seed[offset];
+        }
+    }
 }

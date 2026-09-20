@@ -2457,6 +2457,29 @@ test "processServerHello: rejects mismatched session id echo" {
     try testing.expectError(error.InvalidSessionIdEcho, hs.processServerHello(sh));
 }
 
+// RFC 8446 §4.2.8 — TLS 1.3 DHE negotiation requires a ServerHello key_share.
+test "processServerHello: rejects a missing key_share after TLS 1.3 selection" {
+    const message = "\x02\x00\x00\x2e\x03\x03" ++ "\xab" ** 32 ++
+        "\x00\x13\x01\x00\x00\x06\x00\x2b\x00\x02\x03\x04";
+    var parsed: server_hello.ServerHello = undefined;
+    try testing.expectError(
+        error.MissingExtension,
+        server_hello.parseWithSessionIdEcho(message, &.{}, &parsed),
+    );
+    var hs: ClientHandshake = .init(try testConfig(rfc8448_client_keypair));
+    defer hs.deinit();
+    hs.injectClientHello(&rfc8448_client_hello);
+    const failure: ServerHelloError = if (hs.processServerHello(message)) |_|
+        return error.TestExpectedError
+    else |err|
+        err;
+    try testing.expectEqual(error.MissingExtension, failure);
+    try testing.expectEqual(.wait_sh, hs.state);
+    var out: [64]u8 = undefined;
+    const response = try hs.sendAlert(alert.alertForError(failure), &out);
+    try expectPlaintextAlert(response, .missing_extension);
+}
+
 // RFC 8446 §4.1.3 — ServerHello must select a cipher suite offered by ClientHello.
 test "processServerHello: rejects unoffered cipher suite" {
     var hs: ClientHandshake = .init(try testConfig(.generate()));

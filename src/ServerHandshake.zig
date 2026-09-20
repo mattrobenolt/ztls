@@ -5608,6 +5608,108 @@ test "processClientFinished: verifies Finished and installs app keys" {
     try testing.expectEqual(@as(u64, 0), server.tx.seq);
 }
 
+fn advanceToClientFinishedForTest(server: *ServerHandshake) !void {
+    const keypair: x25519.KeyPair = .generate();
+    var ch_buf: [512]u8 = undefined;
+    const ch = try client_hello.encode(&ch_buf, .zero, keypair.public_key, null, &.{});
+    var record: [1024]u8 = undefined;
+    const header: frame.Header = .init(.handshake, @intCast(ch.len));
+    header.write(record[0..frame.header_len]);
+    @memcpy(record[frame.header_len..][0..ch.len], ch);
+    var out: [512]u8 = undefined;
+    _ = try server.acceptClientHello(record[0 .. frame.header_len + ch.len], &out);
+    _ = try server.sendAnonymousFlightForTest(&out);
+}
+
+// RFC 8446 §4.4.4 and §6.2 — Finished is last, with no substitute message.
+test "public Finished paths reject trailing and non-Finished handshake messages" {
+    const placements: []const enum { trailing, replacement } = &.{ .trailing, .replacement };
+    const entries: []const enum { direct, record } = &.{ .direct, .record };
+    for (placements) |placement| {
+        for (entries) |entry| {
+            var server: ServerHandshake = .init(try testConfig(.generate()));
+            defer server.deinit();
+            try advanceToClientFinishedForTest(&server);
+            var plain: [64]u8 = undefined;
+            const fin = switch (server.suite_state) {
+                inline .sha256, .sha384 => |*s| blk: {
+                    const th = s.transcript.peek();
+                    break :blk try finished.encode(
+                        @TypeOf(s.transcript),
+                        &plain,
+                        &s.client_finished_key.data,
+                        &th,
+                    );
+                },
+            };
+            const offset: usize = switch (placement) {
+                .trailing => fin.len,
+                .replacement => 0,
+            };
+            // A complete KeyUpdate is illegal in either position.
+            const update = [_]u8{ @intFromEnum(handshake.Type.key_update), 0, 0, 1, 0 };
+            @memcpy(plain[offset..][0..update.len], &update);
+            var client_tx = try server.rx.clone();
+            defer client_tx.deinit();
+            var wire_record: [128]u8 = undefined;
+            const record = try client_tx.encrypt(
+                .handshake,
+                plain[0 .. offset + update.len],
+                &wire_record,
+            );
+            var out: [128]u8 = undefined;
+            const result: HandleError!void = switch (entry) {
+                .direct => server.processClientFinished(wire_record[0..record.len]),
+                .record => blk: {
+                    _ = server.handleRecord(
+                        wire_record[0..record.len],
+                        &out,
+                    ) catch |err| break :blk err;
+                    break :blk {};
+                },
+            };
+            const failure: HandleError = if (result) |_| {
+                return error.TestExpectedError;
+            } else |err| err;
+            try testing.expectEqual(error.UnexpectedMessage, failure);
+            try testing.expectEqual(.wait_client_finished, server.state);
+            var peer = try server.tx.clone();
+            defer peer.deinit();
+            const response = try server.sendAlert(alert.alertForError(failure), &out);
+            const decoded = try peer.decrypt(out[0..response.len]);
+            try testing.expectEqual(.alert, decoded.content_type);
+            const received = try alert.parse(decoded.content);
+            try testing.expectEqual(.fatal, received.level);
+            try testing.expectEqual(.unexpected_message, received.description);
+        }
+    }
+}
+
+// RFC 7301 §3.2 — disjoint ALPN lists require no_application_protocol.
+test "handleRecord: rejects disjoint ALPN offers with the required alert" {
+    const keypair: x25519.KeyPair = .generate();
+    var ch_buf: [512]u8 = undefined;
+    const ch = try client_hello.encode(&ch_buf, .zero, keypair.public_key, null, &.{"h2"});
+    var record: [1024]u8 = undefined;
+    const header: frame.Header = .init(.handshake, @intCast(ch.len));
+    header.write(record[0..frame.header_len]);
+    @memcpy(record[frame.header_len..][0..ch.len], ch);
+    var server: ServerHandshake = .init(try testConfig(.generate()));
+    defer server.deinit();
+    server.supportAlpn(&.{"http/1.1"});
+    var out: [512]u8 = undefined;
+    const result = server.handleRecord(record[0 .. frame.header_len + ch.len], &out);
+    const failure: HandleError = if (result) |_| return error.TestExpectedError else |err| err;
+    try testing.expectEqual(error.NoApplicationProtocol, failure);
+    try testing.expectEqual(.wait_ch, server.state);
+    const response = try server.sendAlert(alert.alertForError(failure), &out);
+    const alert_header = try frame.parseHeader(response);
+    try testing.expectEqual(.alert, alert_header.content_type);
+    const received = try alert.parse(response[frame.header_len..]);
+    try testing.expectEqual(.fatal, received.level);
+    try testing.expectEqual(.no_application_protocol, received.description);
+}
+
 // RFC 8446 §4.4.4 — the server must reject a client Finished with a bad
 // verify_data MAC. Regression for the NEGATIVE_SPACE gap: bad-ClientFinished
 // negative tests were partial.
