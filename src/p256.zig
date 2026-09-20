@@ -30,14 +30,25 @@ pub const KeyPair = struct {
 
     /// Generate a keypair using the OS CSPRNG; the draw itself still aborts
     /// on CSPRNG failure (see `entropy.fill`). Fallible only for the backend
-    /// half — see `generateRetry` for the policy and `generateDeterministic`
-    /// if you need to own entropy outright.
+    /// half — see `generateRetry` for the policy and `fromSecret` to supply
+    /// entropy.
     pub fn generate() Error!KeyPair {
         return generateRetry(EntropyAttempt);
     }
 
+    /// Construct a keypair from a caller-supplied raw scalar.
+    /// Production callers must supply fresh CSPRNG bytes for each handshake.
+    /// Invalid scalars return `error.IdentityElement`; callers can draw again.
+    /// `error.LibcryptoFailed` reports a terminal backend failure.
+    pub fn fromSecret(secret_key: SecretKey) Error!KeyPair {
+        return .{
+            .secret_key = secret_key,
+            .public_key = try publicFromSecret(secret_key),
+        };
+    }
+
     pub fn generateDeterministic(seed: SecretKey) Error!KeyPair {
-        return .{ .secret_key = seed, .public_key = try publicFromSecret(seed) };
+        return fromSecret(seed);
     }
 
     /// Erase the secret and public key bytes.
@@ -52,7 +63,7 @@ const EntropyAttempt = struct {
     fn next() Error!KeyPair {
         var secret_key: [secret_length]u8 = undefined;
         entropy.fill(&secret_key);
-        return KeyPair.generateDeterministic(.init(secret_key));
+        return KeyPair.fromSecret(.init(secret_key));
     }
 };
 
@@ -112,10 +123,37 @@ const test_seed_a = hex(32, "000102030405060708090a0b0c0d0e0f" ++
 const test_seed_b = hex(32, "202122232425262728292a2b2c2d2e2f" ++
     "303132333435363738393a3b3c3d3e3f");
 
-// SEC 1 / RFC 8446 §4.2.8.2 — P-256 key shares use uncompressed points.
-test "KeyPair.generateDeterministic emits uncompressed SEC1 public key" {
-    const keypair = try KeyPair.generateDeterministic(.init(test_seed_a));
-    try testing.expectEqual(@as(u8, 0x04), keypair.public_key.data[0]);
+// RFC 8448 §5 — the fixed P-256 scalar derives the documented SEC1 public key.
+test "KeyPair.fromSecret: RFC 8448 public key" {
+    const secret = hex(32, "ab5473467e19346ceb0a0414e41da21d" ++
+        "4d2445bc3025afe97c4e8dc8d513da39");
+    const expected = hex(65, "04a6da7392ec591e17abfd535964b99894d13befb221b3def2ebe3830eac8f0151" ++
+        "812677c4d6d2237e85cf01d6910cfb83954e76ba7352830534159897e8065780");
+    const keypair = try KeyPair.fromSecret(.init(secret));
+    try testing.expectEqualSlices(u8, &expected, &keypair.public_key.data);
+}
+
+// SEC 1 §3.2.1 — callers retry IdentityElement with a fresh scalar and stop on
+// the first accepted scalar.
+test "KeyPair.fromSecret: caller retries a rejected scalar" {
+    const candidates = [_]SecretKey{
+        .init(@splat(0)),
+        .init(test_seed_a),
+    };
+    var attempts: usize = 0;
+    var keypair: ?KeyPair = null;
+    for (candidates) |candidate| {
+        attempts += 1;
+        keypair = KeyPair.fromSecret(candidate) catch |err| switch (err) {
+            error.IdentityElement => continue,
+            error.LibcryptoFailed => return err,
+        };
+        break;
+    }
+
+    try testing.expect(keypair != null);
+    try testing.expectEqual(@as(usize, 2), attempts);
+    try testing.expectEqual(@as(u8, 0x04), keypair.?.public_key.data[0]);
 }
 
 test "sharedSecret: P-256 deterministic peers agree" {
@@ -206,29 +244,29 @@ test "generateRetry: retries a bad draw and succeeds" {
 
 // SEC 1 §3.2.1 — the scalar must lie in [1, n-1]; the backend range-check
 // against the group order judges it before any point math (#88).
-test "KeyPair.generateDeterministic enforces the scalar range [1, n-1]" {
+test "KeyPair.fromSecret enforces the scalar range [1, n-1]" {
     // n, the P-256 base-point order (SEC 2, "secp256r1").
     const order = hex(32, "ffffffff00000000ffffffffffffffff" ++
         "bce6faada7179e84f3b9cac2fc632551");
     // zero: below the range.
     try testing.expectError(
         error.IdentityElement,
-        KeyPair.generateDeterministic(.init(@splat(0))),
+        KeyPair.fromSecret(.init(@splat(0))),
     );
     // n: the first scalar above the range.
     try testing.expectError(
         error.IdentityElement,
-        KeyPair.generateDeterministic(.init(order)),
+        KeyPair.fromSecret(.init(order)),
     );
     // 2^256 - 1: far above the range, still a 32-byte scalar.
     try testing.expectError(
         error.IdentityElement,
-        KeyPair.generateDeterministic(.init(@splat(0xff))),
+        KeyPair.fromSecret(.init(@splat(0xff))),
     );
     // n - 1: the largest valid scalar, so the upper bound is inclusive-exact.
     var order_minus_1 = order;
     order_minus_1[order.len - 1] -= 1; // n ends in 0x51; no borrow.
-    const keypair = try KeyPair.generateDeterministic(.init(order_minus_1));
+    const keypair = try KeyPair.fromSecret(.init(order_minus_1));
     try testing.expectEqual(@as(u8, 0x04), keypair.public_key.data[0]);
 }
 

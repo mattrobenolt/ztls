@@ -765,6 +765,8 @@ Methods (all mirror their `ServerHandshake` counterparts):
 - `x25519.KeyPair.fromSecret(secret_key)` derives a keypair from a caller-supplied 32-byte scalar. Production callers must supply fresh CSPRNG bytes for each handshake. The function supports batched entropy draws.
 - `x25519.KeyPair.generateDeterministic(seed)` remains available for tests and fixed-vector paths.
 - `x25519.sharedSecret(secret_key, peer_public_key, out)` writes the shared secret to caller-owned storage. The function clears the output on error.
+- `p256.KeyPair.fromSecret(secret_key)` derives a keypair from a caller-supplied 32-byte scalar. Production callers must supply fresh CSPRNG bytes for each handshake.
+- `error.IdentityElement` from `p256.KeyPair.fromSecret` requires a fresh draw. `error.LibcryptoFailed` is terminal.
 - `ClientHandshake.KeyPairs.init(x25519_keypair)` generates the P-256 half and can return `p256.Error`. The caller sheds the handshake after failure (#88).
 - `initWithP256` and `initWithP256P384` accept fixed caller-supplied keypairs.
 
