@@ -1,0 +1,15 @@
+==4056035== Memcheck, a memory error detector
+==4056035== Copyright (C) 2002-2026, and GNU GPL'd, by Julian Seward et al.
+==4056035== Using Valgrind-3.27.1 and LibVEX; rerun with -h for copyright info
+==4056035== Command: /tmp/ztls-memory.qCZeeD/bin/bin/benchmark --filter=BenchmarkClientHandshakeReplay --benchtime=1x --count=1
+==4056035== Parent PID: 4056034
+==4056035== 
+==4056035== 
+==4056035== HEAP SUMMARY:
+==4056035==     in use at exit: 0 bytes in 0 blocks
+==4056035==   total heap usage: 7,999 allocs, 7,999 frees, 485,575 bytes allocated
+==4056035== 
+==4056035== All heap blocks were freed -- no leaks are possible
+==4056035== 
+==4056035== For lists of detected and suppressed errors, rerun with: -s
+==4056035== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)

@@ -1,0 +1,8 @@
+zig_os: linux
+zig_arch: aarch64
+zig_abi: gnu
+zig_cpu: generic
+zig_mode: ReleaseFast
+BenchmarkClientHandshakeReplay/TLS_AES_128_GCM_SHA256	       1	   9327546 ns/op
+BenchmarkClientHandshakeReplay/TLS_AES_256_GCM_SHA384	       1	   4123030 ns/op
+BenchmarkClientHandshakeReplay/TLS_CHACHA20_POLY1305_SHA256	       1	   8001059 ns/op

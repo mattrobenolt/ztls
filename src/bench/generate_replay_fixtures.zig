@@ -100,6 +100,7 @@ fn captureSuite(arena: Allocator, suite: []const u8, port: u16) ![]u8 {
         .now_sec = 0,
         .random = client_random,
     });
+    defer hs.deinit();
     var out: [1024]u8 = undefined;
     try stream.writeAll(try hs.start(&out));
     hs.completeWrite();

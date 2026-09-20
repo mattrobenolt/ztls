@@ -1,0 +1,33 @@
+{
+  "purpose": "Ownership diagnosis, not final immutable-candidate qualification or performance evidence",
+  "base_revision": "b0631d020e19419d7af60ddd5935dc76f3fb536b",
+  "zig": "0.15.2",
+  "valgrind": "3.27.1",
+  "unit_tests": {
+    "passed": 849,
+    "failed": 0,
+    "skipped": 1
+  },
+  "production_provider": "/nix/store/v89yca35zsb13k51ibz0mcz2rrzjwwrj-openssl-3.6.4/lib/libcrypto.so.3",
+  "diagnostic_provider": "/nix/store/ilhjg5z9hlw3ccc4bfvpi4s6kplvl7yq-openssl-3.6.4/lib/libcrypto.so.3",
+  "diagnostic_difference": "-fno-tree-vectorize",
+  "optimized_contexts": 57,
+  "optimized_occurrences": 6583,
+  "diagnostic_contexts": 0,
+  "heap_bytes_at_exit": 0,
+  "baseline_benchmark_direct_bytes": 4608,
+  "baseline_benchmark_indirect_bytes": 23687,
+  "vector_branch_offsets": [
+    "0x25a318",
+    "0x25a344",
+    "0x25a99c",
+    "0x25a9c8",
+    "0x261f7c",
+    "0x2623d0",
+    "0x262868"
+  ],
+  "offset_method": "Match the first OPENSSL_strlcpy branch to the exact library disassembly, then cross-check every remaining report against that common load base.",
+  "production_provider_sha256": "56f4369cd7d5c441363a8f3678b5463f457744035e4fadf93ca416ffccfed79a",
+  "diagnostic_provider_sha256": "475bd22a20a6c9dddd8562dcd400bf23cc956f1a41f51271e7fc7558b2850d10",
+  "unit_binary_sha256": "c68c6e3bcdf9b99cf862947397650fe5aee5068454b7ba9a38764fdf6ce5a1f9"
+}

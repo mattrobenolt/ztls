@@ -62,6 +62,9 @@ Start with layers that exist today:
    Keep this row separate from full client/server benchmarks so the measurement
    boundary stays explicit.
 
+   The timed replay includes handshake-state cleanup. Captures before the #121
+   ownership fix omit that cleanup and represent a different measurement boundary.
+
 4. **Full in-memory connection**
 
    Use rustls-style no-I/O scenarios over in-memory client/server state machines:

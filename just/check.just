@@ -3,6 +3,16 @@
 test:
     zig build test --summary all
 
+[doc("Check unit and handshake-replay ownership with Linux Memcheck")]
+[group("check")]
+check-memory $output="":
+    @scripts/check-memory.sh "$output"
+
+[doc("Check unit ownership with Linux Memcheck, without the Zig 0.15 benchmark driver")]
+[group("check")]
+check-memory-units $output="":
+    @scripts/check-memory.sh --unit-only "$output"
+
 [doc("Build, test, benchmark-smoke, and tlsfuzzer-smoke with AWS-LC libcrypto")]
 [group("check")]
 check-backend-aws-lc:

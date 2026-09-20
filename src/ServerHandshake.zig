@@ -526,7 +526,6 @@ pub fn deinit(self: *ServerHandshake) void {
         .wait_client_finished, .connected => {
             self.rx.deinit();
             self.tx.deinit();
-            if (self.early_rx) |*early_rx| early_rx.deinit();
             self.suite_state.secureZero();
         },
         // rx/tx and their backend contexts moved to the extracted
@@ -536,6 +535,8 @@ pub fn deinit(self: *ServerHandshake) void {
         .extracted => self.suite_state.secureZero(),
         .wait_ch => {},
     }
+    // PSK admission can install early RX before key exchange rejects ClientHello.
+    if (self.early_rx) |*early_rx| early_rx.deinit();
     self.keypairs.secureZero();
     self.fin_frag.secureZero();
     self.ku_frag.secureZero();
@@ -3022,6 +3023,7 @@ fn testConfig(keypair: x25519.KeyPair) !Config {
 // RFC 8446 §6 — alerts before handshake protection are plaintext records.
 test "sendAlert: plaintext fatal alert before ClientHello" {
     var hs: ServerHandshake = .init(try testConfig(.generate()));
+    defer hs.deinit();
     var out: [16]u8 = undefined;
     const rec = try hs.sendAlert(.decode_error, &out);
     try testing.expectEqualSlices(u8, &.{ 0x15, 0x03, 0x03, 0x00, 0x02, 0x02, 0x32 }, rec);
@@ -3031,6 +3033,7 @@ test "sendAlert: plaintext fatal alert before ClientHello" {
 // RFC 8446 §6.1 — close_notify is sent as a warning-level alert.
 test "sendAlert: encrypted close_notify after handshake" {
     var server = try connectedTestServer();
+    defer server.deinit();
     var peer = try server.tx.clone();
     defer peer.deinit();
     var out: [64]u8 = undefined;
@@ -3046,6 +3049,7 @@ test "sendAlert: encrypted close_notify after handshake" {
 // RFC 8446 §D.4 — CCS before ClientHello is outside the compatibility window.
 test "handleRecord: rejects ChangeCipherSpec before ClientHello" {
     var hs: ServerHandshake = .init(try testConfig(.generate()));
+    defer hs.deinit();
     var ccs = [_]u8{ 0x14, 0x03, 0x03, 0x00, 0x01, 0x01 };
     var out: [64]u8 = undefined;
     try testing.expectError(error.UnexpectedRecord, hs.handleRecord(&ccs, &out));
@@ -3063,6 +3067,7 @@ test "handleRecord: drops valid ChangeCipherSpec while waiting for client Finish
     @memcpy(record[frame.header_len..][0..ch.len], ch);
 
     var hs: ServerHandshake = .init(try testConfig(.generate()));
+    defer hs.deinit();
     var out: [256]u8 = undefined;
     _ = try hs.handleRecord(record[0 .. frame.header_len + ch.len], &out);
     hs.completeWrite();
@@ -3082,6 +3087,7 @@ test "handleRecord: rejects malformed ChangeCipherSpec payload" {
     @memcpy(record[frame.header_len..][0..ch.len], ch);
 
     var hs: ServerHandshake = .init(try testConfig(.generate()));
+    defer hs.deinit();
     var out: [256]u8 = undefined;
     _ = try hs.handleRecord(record[0 .. frame.header_len + ch.len], &out);
     hs.completeWrite();
@@ -3101,6 +3107,7 @@ test "handleRecord: ClientHello returns ServerHello write and enforces pending w
     @memcpy(record[frame.header_len..][0..ch.len], ch);
 
     var hs: ServerHandshake = .init(try testConfig(.generate()));
+    defer hs.deinit();
     var out: [256]u8 = undefined;
     const ev = try hs.handleRecord(record[0 .. frame.header_len + ch.len], &out);
     try testing.expectEqual(.wait_client_finished, hs.state);
@@ -3117,6 +3124,7 @@ test "handleRecord: ClientHello returns ServerHello write and enforces pending w
 // RFC 8446 §5.1 — handshake records cannot carry zero-length fragments.
 test "handleRecord: zero-length plaintext handshake is rejected" {
     var hs: ServerHandshake = .init(try testConfig(.generate()));
+    defer hs.deinit();
     var rec = [_]u8{ 0x16, 0x03, 0x03, 0x00, 0x00 };
     var out: [64]u8 = undefined;
     try testing.expectError(error.UnexpectedRecord, hs.handleRecord(&rec, &out));
@@ -3125,6 +3133,7 @@ test "handleRecord: zero-length plaintext handshake is rejected" {
 // RFC 8446 §5.1 — application_data is invalid before the handshake completes.
 test "handleRecord: rejects application_data before connected" {
     var hs: ServerHandshake = .init(try testConfig(.generate()));
+    defer hs.deinit();
     var rec = [_]u8{ 0x17, 0x03, 0x03, 0x00, 0x05 } ++ [_]u8{0} ** 5;
     var out: [64]u8 = undefined;
     try testing.expectError(error.UnexpectedRecord, hs.handleRecord(&rec, &out));
@@ -3147,6 +3156,7 @@ test "acceptClientHello: emits ServerHello and installs handshake keys" {
     @memcpy(record[frame.header_len..][0..ch.len], ch);
 
     var hs: ServerHandshake = .init(try testConfig(server_keypair));
+    defer hs.deinit();
     hs.supportAlpn(&.{"http/1.1"});
     var out: [256]u8 = undefined;
     const sh_record = try hs.acceptClientHello(record[0 .. frame.header_len + ch.len], &out);
@@ -3166,6 +3176,7 @@ test "acceptClientHello: emits ServerHello and installs handshake keys" {
         .now_sec = 0,
         .random = .zero,
     });
+    defer client_hs.deinit();
     client_hs.injectClientHello(ch);
     try client_hs.processServerHello(sh_record[frame.header_len..][0..hdr.length()]);
     try testing.expectEqualSlices(u8, &client_hs.rx.iv.data, &hs.tx.iv.data);
@@ -3198,6 +3209,7 @@ test "acceptClientHello: negotiates secp256r1 key share" {
         .keypairs = .initWithP256(server_x25519, server_p256),
         .random = .zero,
     });
+    defer hs.deinit();
     var out: [512]u8 = undefined;
     const sh_record = try hs.acceptClientHello(
         record[0 .. frame.header_len + p256_ch.len],
@@ -3252,6 +3264,7 @@ test "acceptClientHello: negotiates secp384r1 key share" {
         .keypairs = .initWithP256P384(server_x25519, server_p256, server_p384),
         .random = .zero,
     });
+    defer hs.deinit();
     var out: [512]u8 = undefined;
     const sh_record = try hs.acceptClientHello(
         record[0 .. frame.header_len + p384_ch.len],
@@ -3269,6 +3282,7 @@ test "acceptClientHello: negotiates secp384r1 key share" {
         .now_sec = 0,
         .random = .zero,
     });
+    defer client_hs.deinit();
     client_hs.injectClientHello(p384_ch);
     try client_hs.processServerHello(sh_record[frame.header_len..][0..hdr.length()]);
     try testing.expectEqualSlices(u8, &client_hs.rx.iv.data, &hs.tx.iv.data);
@@ -3292,6 +3306,7 @@ test "acceptClientHello: emits HelloRetryRequest for missing secp256r1 key share
     @memcpy(record[frame.header_len..][0..p256_ch.len], p256_ch);
 
     var server: ServerHandshake = .init(try testConfig(.generate()));
+    defer server.deinit();
     var out: [256]u8 = undefined;
     const hrr_record = try server.acceptClientHello(
         record[0 .. frame.header_len + p256_ch.len],
@@ -3347,6 +3362,7 @@ test "acceptClientHello: rejects ClientHello2 with changed SNI or ALPN after HRR
         @memcpy(ch1_record[frame.header_len..][0..ch1.len], ch1);
 
         var server: ServerHandshake = .init(try testConfig(.generate()));
+        defer server.deinit();
         server.supportAlpn(&.{ "h2", "http/1.1" });
         var out: [512]u8 = undefined;
         _ = try server.acceptClientHello(ch1_record[0 .. frame.header_len + ch1.len], &out);
@@ -3406,6 +3422,7 @@ test "acceptClientHello: rejects early_data in ClientHello2 after HRR" {
         .random = .zero,
         .psk_lookup = .{ .context = &lookup_context, .lookup = Lookup.lookup },
     });
+    defer server.deinit();
     var out: [1024]u8 = undefined;
     _ = try server.acceptClientHello(ch1_record[0 .. frame.header_len + ch1.len], &out);
     try testing.expect(server.early_rx == null);
@@ -3731,6 +3748,7 @@ test "acceptClientHello: rejects replaced PSK identity in ClientHello2 despite v
         .random = .zero,
         .psk_lookup = .{ .context = &table, .lookup = RetryPskTable.lookup },
     });
+    defer server.deinit();
     server.supportSuites(&.{.aes_128_gcm_sha256});
 
     var harness: RetryPskHarness = .{};
@@ -3812,6 +3830,7 @@ test "acceptClientHello: rejects added, reordered, or dropped PSK identities in 
             .random = .zero,
             .psk_lookup = .{ .context = &table, .lookup = RetryPskTable.lookup },
         });
+        defer server.deinit();
         server.supportSuites(&.{.aes_128_gcm_sha256});
 
         var harness: RetryPskHarness = .{};
@@ -3883,6 +3902,7 @@ test "acceptClientHello: accepts permitted ClientHello2 PSK updates after HRR" {
             .random = .zero,
             .psk_lookup = .{ .context = &table, .lookup = RetryPskTable.lookup },
         });
+        defer server.deinit();
         server.supportSuites(&.{.aes_128_gcm_sha256});
 
         var harness: RetryPskHarness = .{};
@@ -3925,6 +3945,7 @@ test "acceptClientHello: bounded PSK identity admission before HelloRetryRequest
     // No usable key_share: the server would have to retain all 9 identities
     // across the retry, exceeding the fixed capacity — reject before the HRR.
     var server: ServerHandshake = .init(try testConfig(.generate()));
+    defer server.deinit();
     var harness: RetryPskHarness = .{};
     const ch1_record = try harness.buildCh1Record(client_keypair, &identities, 0, 0x6a6a);
     try testing.expectError(
@@ -3936,6 +3957,7 @@ test "acceptClientHello: bounded PSK identity admission before HelloRetryRequest
     // Usable key_share: no retry, no retention — the same offer count is
     // fine and the handshake proceeds (no PSK selected, full DHE).
     var server2: ServerHandshake = .init(try testConfig(.generate()));
+    defer server2.deinit();
     const ch1_usable = try harness.buildCh1Record(
         client_keypair,
         &identities,
@@ -3972,6 +3994,7 @@ test "acceptClientHello: rejects removal of an unknown identity whose binder cla
         .random = .zero,
         .psk_lookup = .{ .context = &table, .lookup = RetryPskTable.lookup },
     });
+    defer server.deinit();
     server.supportSuites(&.{.aes_128_gcm_sha256});
 
     var harness: RetryPskHarness = .{};
@@ -3999,6 +4022,7 @@ test "acceptClientHello: HRR path rejects a slack-byte identities vector in CH1"
     // No psk_lookup: PSK selection is skipped, so the malformed vector first
     // reaches the HRR-time identity capture.
     var server: ServerHandshake = .init(try testConfig(.generate()));
+    defer server.deinit();
     var harness: RetryPskHarness = .{};
     const ch1_record = try harness.buildCh1Record(
         client_keypair,
@@ -4020,6 +4044,7 @@ test "acceptClientHello: HRR path rejects a slack-byte identities vector in CH1"
 test "acceptClientHello: HRR path rejects a slack-byte identities vector in CH2" {
     const client_keypair: x25519.KeyPair = .generate();
     var server: ServerHandshake = .init(try testConfig(.generate()));
+    defer server.deinit();
     var harness: RetryPskHarness = .{};
     try harness.sendCh1(&server, client_keypair, &.{.{ .identity = "a" }});
     const offers = [_]TestPskOffer{.{ .identity = "a" }};
@@ -4046,6 +4071,7 @@ test "acceptClientHello: PSK selection rejects a slack-byte identities vector" {
         .random = .zero,
         .psk_lookup = .{ .context = &table, .lookup = RetryPskTable.lookup },
     });
+    defer server.deinit();
     var harness: RetryPskHarness = .{};
     const ch1_record = try harness.buildCh1Record(
         client_keypair,
@@ -4077,6 +4103,7 @@ test "acceptClientHello: rejects ClientHello2 that ignores HRR selected group" {
     @memcpy(ch1_record[frame.header_len..][0..hrr_ch1.len], hrr_ch1);
 
     var server: ServerHandshake = .init(try testConfig(.generate()));
+    defer server.deinit();
     var out: [512]u8 = undefined;
     _ = try server.acceptClientHello(ch1_record[0 .. frame.header_len + hrr_ch1.len], &out);
 
@@ -4112,6 +4139,7 @@ test "acceptClientHello: rejects ClientHello2 with extra key share" {
     @memcpy(ch1_record[frame.header_len..][0..hrr_ch1.len], hrr_ch1);
 
     var server: ServerHandshake = .init(try testConfig(.generate()));
+    defer server.deinit();
     var out: [512]u8 = undefined;
     _ = try server.acceptClientHello(ch1_record[0 .. frame.header_len + hrr_ch1.len], &out);
 
@@ -4148,6 +4176,7 @@ test "acceptClientHello: HRR sends at most one compatibility ChangeCipherSpec" {
     @memcpy(ch1_record[frame.header_len..][0..hrr_ch1.len], hrr_ch1);
 
     var server: ServerHandshake = .init(try testConfig(.generate()));
+    defer server.deinit();
     var hrr_out: [256]u8 = undefined;
     const hrr_record = try server.acceptClientHello(
         ch1_record[0 .. frame.header_len + hrr_ch1.len],
@@ -4207,6 +4236,7 @@ test "acceptClientHello: emits compatibility ChangeCipherSpec for non-empty lega
     @memcpy(record[frame.header_len..][0..compat_ch.len], compat_ch);
 
     var hs: ServerHandshake = .init(try testConfig(.generate()));
+    defer hs.deinit();
     var out: [256]u8 = undefined;
     const written = try hs.acceptClientHello(
         record[0 .. frame.header_len + compat_ch.len],
@@ -4248,6 +4278,7 @@ test "sendAnonymousFlightForTest: client decrypts EncryptedExtensions and Finish
     @memcpy(ch_record[frame.header_len..][0..ch.len], ch);
 
     var server: ServerHandshake = .init(try testConfig(server_keypair));
+    defer server.deinit();
     server.supportAlpn(&.{"h2"});
     var sh_out: [256]u8 = undefined;
     const sh_record = try server.acceptClientHello(
@@ -4261,6 +4292,7 @@ test "sendAnonymousFlightForTest: client decrypts EncryptedExtensions and Finish
         .now_sec = 0,
         .random = .zero,
     });
+    defer client.deinit();
     client.offerAlpn(&.{"h2"});
     client.injectClientHello(ch);
     try client.processServerHello(sh_record[frame.header_len..]);
@@ -4307,6 +4339,7 @@ test "sendPreparedServerFlight: credentials and pending write are enforced" {
     @memcpy(ch_record[frame.header_len..][0..ch.len], ch);
 
     var server_without_credentials: ServerHandshake = .init(try testConfig(.generate()));
+    defer server_without_credentials.deinit();
     var sh_out: [256]u8 = undefined;
     _ = try server_without_credentials.acceptClientHello(
         ch_record[0 .. frame.header_len + ch.len],
@@ -4322,6 +4355,7 @@ test "sendPreparedServerFlight: credentials and pending write are enforced" {
     var signer: signature.PrivateKey = try .fromP256Scalar(serverEcdsaScalar()[0..32]);
     defer signer.deinit();
     var server: ServerHandshake = .init(try testConfig(.generate()));
+    defer server.deinit();
     server.setCredentials(&.{serverEcdsaCertDer()}, signer.signer());
     _ = try server.acceptClientHello(ch_record[0 .. frame.header_len + ch.len], &sh_out);
     server.pending_write.mark();
@@ -4424,6 +4458,7 @@ test "sendAuthenticatedFlight: client decrypts authenticated server flight" {
     @memcpy(ch_record[frame.header_len..][0..ch.len], ch);
 
     var server: ServerHandshake = .init(try testConfig(server_keypair));
+    defer server.deinit();
     server.supportAlpn(&.{"h2"});
     var sh_out: [256]u8 = undefined;
     const sh_record = try server.acceptClientHello(
@@ -4454,6 +4489,7 @@ test "sendAuthenticatedFlight: client decrypts authenticated server flight" {
         .now_sec = 0,
         .random = .zero,
     });
+    defer client.deinit();
     client.offerAlpn(&.{"h2"});
     client.injectClientHello(ch);
     try client.processServerHello(sh_record[frame.header_len..]);
@@ -4486,6 +4522,7 @@ test "sendAuthenticatedFlight: optional client auth sends CertificateRequest" {
         .random = .zero,
         .client_auth = .optional,
     });
+    defer server.deinit();
     var sh_out: [256]u8 = undefined;
     const sh_record = try server.acceptClientHello(
         ch_record[0 .. frame.header_len + ch.len],
@@ -4509,6 +4546,7 @@ test "sendAuthenticatedFlight: optional client auth sends CertificateRequest" {
         .now_sec = 0,
         .random = .zero,
     });
+    defer client.deinit();
     client.policy.insecure_no_chain_anchor = true;
     client.injectClientHello(ch);
     try client.processServerHello(sh_record[frame.header_len..]);
@@ -4567,6 +4605,7 @@ fn connectedTestServerConfigure(suites_patch: ?[6]u8) !ServerHandshake {
     @memcpy(ch_record[frame.header_len..][0..ch.len], ch);
 
     var server: ServerHandshake = .init(try testConfig(server_keypair));
+    errdefer server.deinit();
     var sh_out: [256]u8 = undefined;
     _ = try server.acceptClientHello(ch_record[0 .. frame.header_len + ch.len], &sh_out);
     var flight_out: [512]u8 = undefined;
@@ -4615,12 +4654,14 @@ fn connectedTestPair() !ConnectedTestPair {
         .now_sec = 0,
         .random = .zero,
     });
+    errdefer client.deinit();
     client.policy.insecure_no_chain_anchor = true;
     var client_out: [1024]u8 = undefined;
     const ch_record = try client.start(&client_out);
     client.completeWrite();
 
     var server: ServerHandshake = .init(try testConfig(server_keypair));
+    errdefer server.deinit();
     var server_out: [4096]u8 = undefined;
     const sh_record = try server.acceptClientHello(ch_record, &server_out);
     try client.processServerHello(sh_record[frame.header_len..]);
@@ -5036,6 +5077,7 @@ test "processClientFinished: optional client auth accepts empty Certificate" {
         .now_sec = 0,
         .random = .zero,
     });
+    defer client.deinit();
     client.policy.insecure_no_chain_anchor = true;
     var client_out: [1024]u8 = undefined;
     const ch_record = try client.start(&client_out);
@@ -5048,6 +5090,7 @@ test "processClientFinished: optional client auth accepts empty Certificate" {
         .client_auth = .optional,
         .client_cert_buffer = &client_cert_storage,
     });
+    defer server.deinit();
     var server_out: [4096]u8 = undefined;
     const sh_record = try server.acceptClientHello(ch_record, &server_out);
     try client.processServerHello(sh_record[frame.header_len..]);
@@ -5098,6 +5141,7 @@ test "processClientFinished: required client auth rejects empty Certificate" {
         .now_sec = 0,
         .random = .zero,
     });
+    defer client.deinit();
     client.policy.insecure_no_chain_anchor = true;
     var client_out: [1024]u8 = undefined;
     const ch_record = try client.start(&client_out);
@@ -5108,6 +5152,7 @@ test "processClientFinished: required client auth rejects empty Certificate" {
         .random = .zero,
         .client_auth = .required,
     });
+    defer server.deinit();
     var server_out: [4096]u8 = undefined;
     const sh_record = try server.acceptClientHello(ch_record, &server_out);
     try client.processServerHello(sh_record[frame.header_len..]);
@@ -5173,6 +5218,7 @@ test "processClientFinished: required client auth verifies real client Certifica
         .now_sec = 0,
         .random = .zero,
     });
+    defer client.deinit();
     client.policy.insecure_no_chain_anchor = true;
     // Client credentials: the client fixture has clientAuth EKU so the
     // server's leaf EKU/KU enforcement (leaf_usage=.client_auth) accepts it.
@@ -5191,6 +5237,7 @@ test "processClientFinished: required client auth verifies real client Certifica
         .insecure_no_client_chain_anchor = true,
         .client_cert_buffer = &client_cert_storage,
     });
+    defer server.deinit();
     try testing.expectEqual(@as(?[]const u8, null), server.clientCertificateDer());
     try testing.expectEqual(@as(?Certificate.Parsed, null), server.clientCertificate());
     var server_out: [4096]u8 = undefined;
@@ -5292,6 +5339,7 @@ test "processClientFinished: bad client Finished does not retain identity" {
         .now_sec = 0,
         .random = .zero,
     });
+    defer client.deinit();
     client.policy.insecure_no_chain_anchor = true;
     var client_signer = try signature.PrivateKey.fromP256Scalar(clientEcdsaScalar()[0..32]);
     defer client_signer.deinit();
@@ -5308,6 +5356,7 @@ test "processClientFinished: bad client Finished does not retain identity" {
         .insecure_no_client_chain_anchor = true,
         .client_cert_buffer = &client_cert_storage,
     });
+    defer server.deinit();
     var server_out: [4096]u8 = undefined;
     const sh_record = try server.acceptClientHello(ch_record, &server_out);
     try client.processServerHello(sh_record[frame.header_len..]);
@@ -5360,6 +5409,7 @@ test "processClientFinished: client identity requires caller-owned storage" {
         .now_sec = 0,
         .random = .zero,
     });
+    defer client.deinit();
     client.policy.insecure_no_chain_anchor = true;
     var client_signer = try signature.PrivateKey.fromP256Scalar(clientEcdsaScalar()[0..32]);
     defer client_signer.deinit();
@@ -5374,6 +5424,7 @@ test "processClientFinished: client identity requires caller-owned storage" {
         .client_auth = .required,
         .insecure_no_client_chain_anchor = true,
     });
+    defer server.deinit();
     var server_out: [4096]u8 = undefined;
     const sh_record = try server.acceptClientHello(ch_record, &server_out);
     try client.processServerHello(sh_record[frame.header_len..]);
@@ -5413,6 +5464,7 @@ test "processClientFinished: required client auth rejects forged CertificateVeri
         .now_sec = 0,
         .random = .zero,
     });
+    defer client.deinit();
     client.policy.insecure_no_chain_anchor = true;
     // Present the client fixture cert (clientAuth EKU) but sign with a DISTINCT
     // private key (all-zeros scalar is invalid for P-256; use a deterministic
@@ -5431,6 +5483,7 @@ test "processClientFinished: required client auth rejects forged CertificateVeri
         .client_auth = .required,
         .insecure_no_client_chain_anchor = true,
     });
+    defer server.deinit();
     var server_out: [4096]u8 = undefined;
     const sh_record = try server.acceptClientHello(ch_record, &server_out);
     try client.processServerHello(sh_record[frame.header_len..]);
@@ -5476,6 +5529,7 @@ test "sendAuthenticatedFlight: client processes CertificateVerify and Finished" 
     @memcpy(ch_record[frame.header_len..][0..ch.len], ch);
 
     var server: ServerHandshake = .init(try testConfig(server_keypair));
+    defer server.deinit();
     server.supportAlpn(&.{"h2"});
     var sh_out: [256]u8 = undefined;
     const sh_record = try server.acceptClientHello(
@@ -5501,6 +5555,7 @@ test "sendAuthenticatedFlight: client processes CertificateVerify and Finished" 
         .now_sec = 0,
         .random = .zero,
     });
+    defer client.deinit();
     client.offerAlpn(&.{"h2"});
     client.policy.insecure_no_chain_anchor = true;
     client.injectClientHello(ch);
@@ -5522,6 +5577,7 @@ test "processClientFinished: verifies Finished and installs app keys" {
     @memcpy(ch_record[frame.header_len..][0..ch.len], ch);
 
     var server: ServerHandshake = .init(try testConfig(server_keypair));
+    defer server.deinit();
     var sh_out: [256]u8 = undefined;
     _ = try server.acceptClientHello(ch_record[0 .. frame.header_len + ch.len], &sh_out);
     var flight_out: [512]u8 = undefined;
@@ -5563,6 +5619,7 @@ test "processClientFinished: rejects bad verify_data" {
     @memcpy(ch_record[frame.header_len..][0..ch.len], ch);
 
     var server: ServerHandshake = .init(try testConfig(server_keypair));
+    defer server.deinit();
     var sh_out: [256]u8 = undefined;
     _ = try server.acceptClientHello(ch_record[0 .. frame.header_len + ch.len], &sh_out);
     var flight_out: [512]u8 = undefined;
@@ -5612,6 +5669,7 @@ test "processClientFinished: rejects EndOfEarlyData when 0-RTT was not accepted"
     @memcpy(ch_record[frame.header_len..][0..ch.len], ch);
 
     var server: ServerHandshake = .init(try testConfig(server_keypair));
+    defer server.deinit();
     var sh_out: [256]u8 = undefined;
     _ = try server.acceptClientHello(ch_record[0 .. frame.header_len + ch.len], &sh_out);
     var flight_out: [512]u8 = undefined;
@@ -5643,6 +5701,7 @@ test "handleRecord: rejects second plaintext ClientHello before Finished" {
     @memcpy(ch_record[frame.header_len..][0..ch.len], ch);
 
     var server: ServerHandshake = .init(try testConfig(.generate()));
+    defer server.deinit();
     var sh_out: [256]u8 = undefined;
     _ = try server.acceptClientHello(ch_record[0 .. frame.header_len + ch.len], &sh_out);
     var flight_out: [512]u8 = undefined;
@@ -5668,6 +5727,7 @@ test "handleRecord: rejects second plaintext ClientHello before Finished" {
 // still renegotiation and must be rejected.
 test "handleRecord: rejects protected ClientHello after connected" {
     var server = try connectedTestServer();
+    defer server.deinit();
     var client_tx = try server.rx.clone();
     defer client_tx.deinit();
 
@@ -5705,6 +5765,7 @@ test "handleRecord: rejects client KeyUpdate before Finished" {
     @memcpy(ch_record[frame.header_len..][0..ch.len], ch);
 
     var server: ServerHandshake = .init(try testConfig(.generate()));
+    defer server.deinit();
     var sh_out: [256]u8 = undefined;
     _ = try server.acceptClientHello(ch_record[0 .. frame.header_len + ch.len], &sh_out);
     var flight_out: [512]u8 = undefined;
@@ -5835,6 +5896,7 @@ test "ratchetKtlsTx: server advances only an idle TX epoch" {
 // carrying both epoch changes and the response record.
 test "handleRecord: client KeyUpdate(update_requested) ratchets rx and responds" {
     var server = try connectedTestServer();
+    defer server.deinit();
     const rx_ktls_0 = server.rxKtlsInfo();
     const tx_ktls_0 = server.txKtlsInfo();
     var client_tx = try server.rx.clone();
@@ -5895,6 +5957,7 @@ test "handleRecord: client KeyUpdate(update_requested) ratchets rx and responds"
 // The event surfaces as `.key_update` with rx=true, tx=false, response=null.
 test "handleRecord: client KeyUpdate(update_not_requested) ratchets rx only" {
     var server = try connectedTestServer();
+    defer server.deinit();
     const rx_ktls_0 = server.rxKtlsInfo();
     const tx_ktls_0 = server.txKtlsInfo();
     var client_tx = try server.rx.clone();
@@ -5944,6 +6007,7 @@ test "handleRecord: client KeyUpdate(update_not_requested) ratchets rx only" {
 // RFC 8446 §4.6.3 — server KeyUpdate is encrypted under the old send key, then ratchets.
 test "sendKeyUpdate: server-initiated KeyUpdate encrypts under old key then ratchets tx" {
     var server = try connectedTestServer();
+    defer server.deinit();
     const tx_ktls_0 = server.txKtlsInfo();
     var peer_rx_old = try server.tx.clone();
     defer peer_rx_old.deinit();
@@ -5973,6 +6037,7 @@ test "sendKeyUpdate: server-initiated KeyUpdate encrypts under old key then ratc
 // arrives, the event surfaces rx=true, tx=false, response=null.
 test "handleRecord: self-initiated sendKeyUpdate response surfaces rx only" {
     var server = try connectedTestServer();
+    defer server.deinit();
     const tx_ktls_0 = server.txKtlsInfo();
 
     // Self-initiated KeyUpdate: TX ratchets inside the call.
@@ -6014,6 +6079,7 @@ test "handleRecord: self-initiated sendKeyUpdate response surfaces rx only" {
 // RFC 8446 §5.1 — a KeyUpdate must align with a record boundary.
 test "handleRecord: KeyUpdate not at record boundary is rejected" {
     var server = try connectedTestServer();
+    defer server.deinit();
     var client_tx = try server.rx.clone();
     defer client_tx.deinit();
     const ku_t = @intFromEnum(HandshakeType.key_update);
@@ -6036,6 +6102,7 @@ test "handleRecord: KeyUpdate not at record boundary is rejected" {
 // RFC 8446 §4.6.3 — KeyUpdateRequest only defines values 0 and 1.
 test "handleRecord: invalid client KeyUpdate request is rejected" {
     var server = try connectedTestServer();
+    defer server.deinit();
     var client_tx = try server.rx.clone();
     defer client_tx.deinit();
 
@@ -6054,6 +6121,7 @@ test "handleRecord: invalid client KeyUpdate request is rejected" {
 // RFC 8446 §5.1 — an encrypted handshake record still must contain a handshake message.
 test "handleRecord: zero-length encrypted handshake is rejected" {
     var server = try connectedTestServer();
+    defer server.deinit();
     var client_tx = try server.rx.clone();
     defer client_tx.deinit();
 
@@ -6072,6 +6140,7 @@ test "handleRecord: zero-length encrypted handshake is rejected" {
 // unexpected_message.
 test "handleRecord: all-zero inner plaintext maps to unexpected_message" {
     var server = try connectedTestServer();
+    defer server.deinit();
     var client_tx = try server.rx.clone();
     defer client_tx.deinit();
 
@@ -6100,6 +6169,7 @@ test "handleRecord: all-zero inner plaintext maps to unexpected_message" {
 // KeyUpdate, and alerts; other protected content types are unexpected records.
 test "handleRecord: illegal post-handshake inner content type is rejected" {
     var server = try connectedTestServer();
+    defer server.deinit();
     var client_tx = try server.rx.clone();
     defer client_tx.deinit();
 
@@ -6119,6 +6189,7 @@ test "handleRecord: illegal post-handshake inner content type is rejected" {
 // records to bypass the cap.
 test "handleRecord: empty application data does not reset post-handshake flood counter" {
     var server = try connectedTestServer();
+    defer server.deinit();
     server.post_handshake_count = 7;
 
     var client_tx = try server.rx.clone();
@@ -6138,6 +6209,7 @@ test "handleRecord: empty application data does not reset post-handshake flood c
 // max_post_handshake_messages consecutive post-handshake messages.
 test "handleRecord: KeyUpdate flood is rejected" {
     var server = try connectedTestServer();
+    defer server.deinit();
     var out: [64]u8 = undefined;
 
     const H = hkdf.HkdfSha256;
@@ -6168,9 +6240,11 @@ test "handleRecord: KeyUpdate flood is rejected" {
 // empty application-data records are interleaved between KeyUpdates.
 test "handleRecord: KeyUpdate flood cap fires despite empty app-data interleaving" {
     var server = try connectedTestServer();
+    defer server.deinit();
     var out: [64]u8 = undefined;
 
     var peer_tx = try server.rx.clone();
+    defer peer_tx.deinit();
 
     var i: usize = 0;
     const result = while (i < max_post_handshake_messages + 1) : (i += 1) {
@@ -6185,8 +6259,9 @@ test "handleRecord: KeyUpdate flood cap fires despite empty app-data interleavin
 
         _ = server.handleRecord(rx_buf[0..ku_wire.len], &out) catch |e| break e;
 
+        const next_peer_tx: RecordLayer = try server.rx.clone();
         peer_tx.deinit();
-        peer_tx = try server.rx.clone();
+        peer_tx = next_peer_tx;
         var app_buf: [32]u8 = undefined;
         const app_wire = try peer_tx.encrypt(.application_data, "", &app_buf);
         @memcpy(rx_buf[0..app_wire.len], app_wire);
@@ -6663,6 +6738,8 @@ test "extractEstablished: NewSessionTicket is issued before extraction" {
 // ratchets independent send/receive traffic keys and remains connected.
 test "key update: simultaneous update_requested remains connected" {
     var pair = try connectedTestPair();
+    defer pair.client.deinit();
+    defer pair.server.deinit();
     try testing.expect(pair.client.isConnected());
     try testing.expect(pair.server.isConnected());
 
@@ -6805,6 +6882,7 @@ test "fuzz: connected ServerHandshake.handleRecord rejects arbitrary input" {
 
 test "application data: server sends and receives" {
     var server = try connectedTestServer();
+    defer server.deinit();
     try testing.expect(server.isConnected());
 
     var server_wire: [128]u8 = undefined;
@@ -6835,6 +6913,7 @@ fn expectInMemoryAuthenticatedHandshake(suite: CipherSuite) !void {
         .now_sec = 0,
         .random = .zero,
     });
+    defer client.deinit();
     client.offerAlpn(&.{"h2"});
     client.policy.insecure_no_chain_anchor = true;
     var client_out: [1024]u8 = undefined;
@@ -6842,6 +6921,7 @@ fn expectInMemoryAuthenticatedHandshake(suite: CipherSuite) !void {
     client.completeWrite();
 
     var server: ServerHandshake = .init(try testConfig(server_keypair));
+    defer server.deinit();
     server.supportAlpn(&.{"h2"});
     const suites = [_]CipherSuite{suite};
     server.supportSuites(&suites);
@@ -6901,12 +6981,14 @@ fn expectInMemoryKeyUpdateRoundTrip(suite: CipherSuite) !void {
         .now_sec = 0,
         .random = .zero,
     });
+    defer client.deinit();
     client.policy.insecure_no_chain_anchor = true;
     var client_out: [4096]u8 = undefined;
     const ch_record = try client.start(&client_out);
     client.completeWrite();
 
     var server: ServerHandshake = .init(try testConfig(server_keypair));
+    defer server.deinit();
     const suites = [_]CipherSuite{suite};
     server.supportSuites(&suites);
     var server_out: [4096]u8 = undefined;
@@ -7015,6 +7097,7 @@ test "selectPsk: verifies the binder for a matching PSK identity" {
         .now_sec = 0,
         .random = .zero,
     });
+    defer client.deinit();
     var ticket: ClientHandshake.SessionTicket = .{
         .ticket_age_add = 0x262a6494,
         .cipher_suite = .aes_128_gcm_sha256,
@@ -7056,6 +7139,7 @@ test "selectPsk: returns null when the PSK binder does not verify" {
         .now_sec = 0,
         .random = .zero,
     });
+    defer client.deinit();
     var ticket: ClientHandshake.SessionTicket = .{
         .ticket_age_add = 0,
         .cipher_suite = .aes_128_gcm_sha256,
@@ -7114,6 +7198,7 @@ test "selectPsk: oversized binders_len does not overflow" {
         .now_sec = 0,
         .random = .zero,
     });
+    defer client.deinit();
     var ticket: ClientHandshake.SessionTicket = .{
         .ticket_age_add = 0x262a6494,
         .cipher_suite = .aes_128_gcm_sha256,
@@ -7163,6 +7248,7 @@ test "PSK offer without psk_key_exchange_modes aborts" {
         .now_sec = 0,
         .random = .zero,
     });
+    defer client.deinit();
     var ticket: ClientHandshake.SessionTicket = .{
         .ticket_age_add = 0,
         .cipher_suite = .aes_128_gcm_sha256,
@@ -7183,6 +7269,7 @@ test "PSK offer without psk_key_exchange_modes aborts" {
         .keypairs = try .init(.generate()),
         .random = .zero,
     });
+    defer server.deinit();
     var server_out: [1024]u8 = undefined;
     try testing.expectError(
         error.MissingExtension,
@@ -7202,6 +7289,7 @@ test "PSK offer with only psk_ke disables resumption and ticket issuance" {
         .now_sec = 0,
         .random = .zero,
     });
+    defer client.deinit();
     var ticket: ClientHandshake.SessionTicket = .{
         .ticket_age_add = 0,
         .cipher_suite = .aes_128_gcm_sha256,
@@ -7244,6 +7332,7 @@ test "PSK offer with only psk_ke disables resumption and ticket issuance" {
         .random = .zero,
         .psk_lookup = .{ .context = &lookup_context, .lookup = Lookup.lookup },
     });
+    defer server.deinit();
     var server_out: [1024]u8 = undefined;
     _ = try server.acceptClientHello(record, &server_out);
     try testing.expect(server.selected_psk == null);
@@ -7352,6 +7441,7 @@ fn expectIncompatiblePskNotSelected(
         .now_sec = 0,
         .random = .zero,
     });
+    defer client.deinit();
     var ticket: ClientHandshake.SessionTicket = .{
         .ticket_age_add = 0,
         .cipher_suite = ticket_suite,
@@ -7383,6 +7473,7 @@ fn expectIncompatiblePskNotSelected(
         .random = .zero,
         .psk_lookup = .{ .context = &lookup_context, .lookup = Lookup.lookup },
     });
+    defer server.deinit();
     server.supportSuites(&.{negotiated_suite});
     var server_out: [1024]u8 = undefined;
     _ = try server.acceptClientHello(record, &server_out);
@@ -7668,6 +7759,7 @@ test "PSK fast-path rejects bare Finished when server did NOT select PSK" {
         .keypairs = try .init(.generate()),
         .random = .zero,
     });
+    defer server.deinit();
     var server_out: [4096]u8 = undefined;
     const sh_record = try server.acceptClientHello(ch_record, &server_out);
     try client.processServerHello(sh_record[frame.header_len..]);
@@ -7713,6 +7805,7 @@ test "in-memory 0-RTT early data is decrypted by the server" {
         .now_sec = 0,
         .random = .zero,
     });
+    defer client.deinit();
     client.policy.insecure_no_chain_anchor = true;
     var ticket: ClientHandshake.SessionTicket = .{
         .ticket_age_add = 0x262a6494,
@@ -7753,6 +7846,7 @@ test "in-memory 0-RTT early data is decrypted by the server" {
         .random = .zero,
         .psk_lookup = .{ .context = &lookup_ctx, .lookup = Lookup.l },
     });
+    defer server.deinit();
     var server_out: [4096]u8 = undefined;
     const sh_record = try server.acceptClientHello(ch_record, &server_out);
     try testing.expect(server.selected_psk != null);
@@ -7934,6 +8028,7 @@ test "0-RTT: server rejects early data exceeding max_early_data_size" {
         .now_sec = 0,
         .random = .zero,
     });
+    defer client.deinit();
     client.policy.insecure_no_chain_anchor = true;
     var ticket: ClientHandshake.SessionTicket = .{
         .ticket_age_add = 0x262a6494,
@@ -7969,6 +8064,7 @@ test "0-RTT: server rejects early data exceeding max_early_data_size" {
         .random = .zero,
         .psk_lookup = .{ .context = &lookup_ctx, .lookup = Lookup.l },
     });
+    defer server.deinit();
     var server_out: [4096]u8 = undefined;
     _ = try server.acceptClientHello(ch_record, &server_out);
     try testing.expect(server.early_rx != null);
@@ -7998,6 +8094,9 @@ test "0-RTT: max u32 early-data limit rejects bytes beyond remaining budget" {
     });
     server.state = .wait_client_finished;
     server.early_rx = try .init(.{ .aes_128_gcm_sha256 = key }, iv);
+    // This synthetic state initializes only early_rx, not handshake rx/tx.
+    defer server.early_rx.?.deinit();
+    defer server.keypairs.secureZero();
     server.early_data_limit = std.math.maxInt(u32);
     server.early_data_received = std.math.maxInt(u32) - 1;
 
@@ -8032,6 +8131,7 @@ test "0-RTT: no PSK selected means early data is skipped and 1-RTT completes" {
         .now_sec = 0,
         .random = .zero,
     });
+    defer client.deinit();
     client.policy.insecure_no_chain_anchor = true;
     var ticket: ClientHandshake.SessionTicket = .{
         .ticket_age_add = 0x262a6494,
@@ -8057,6 +8157,7 @@ test "0-RTT: no PSK selected means early data is skipped and 1-RTT completes" {
         .random = .zero,
         .psk_lookup = .{ .context = &no_match, .lookup = NoMatch.l },
     });
+    defer server.deinit();
     var server_out: [4096]u8 = undefined;
     const sh_record = try server.acceptClientHello(ch_record, &server_out);
     try testing.expect(server.early_rx == null);
@@ -8144,6 +8245,7 @@ test "0-RTT: declined early records in flight are skipped and 1-RTT completes" {
         .now_sec = 0,
         .random = .zero,
     });
+    defer client.deinit();
     client.policy.insecure_no_chain_anchor = true;
     // The client's ticket copy permits 0-RTT, so it offers early_data and
     // installs early_tx; the server's lookup entry has max_early_data_size
@@ -8187,6 +8289,7 @@ test "0-RTT: declined early records in flight are skipped and 1-RTT completes" {
         .random = .zero,
         .psk_lookup = .{ .context = &lookup_ctx, .lookup = Lookup.l },
     });
+    defer server.deinit();
     var server_out: [4096]u8 = undefined;
     const sh_record = try server.acceptClientHello(ch_record, &server_out);
     try testing.expect(server.selected_psk != null);
@@ -9029,6 +9132,7 @@ test "0-RTT: server declines, client sends no EndOfEarlyData" {
         .now_sec = 0,
         .random = .zero,
     });
+    defer client.deinit();
     client.policy.insecure_no_chain_anchor = true;
     // Ticket has max_early_data_size so the client installs early_tx and
     // offers early_data. The server's PSK lookup will return
@@ -9064,6 +9168,7 @@ test "0-RTT: server declines, client sends no EndOfEarlyData" {
         .random = .zero,
         .psk_lookup = .{ .context = &lookup_ctx, .lookup = Lookup.l },
     });
+    defer server.deinit();
     var server_out: [4096]u8 = undefined;
     const sh_record = try server.acceptClientHello(ch_record, &server_out);
     try testing.expect(server.selected_psk != null);
@@ -9131,6 +9236,7 @@ test "0-RTT: client rejects server-sent EndOfEarlyData" {
         .now_sec = 0,
         .random = .zero,
     });
+    defer client.deinit();
     client.policy.insecure_no_chain_anchor = true;
     var out: [4096]u8 = undefined;
     _ = try client.start(&out);
@@ -9164,6 +9270,7 @@ test "0-RTT: processClientFinished rejects Finished before EndOfEarlyData" {
         .now_sec = 0,
         .random = .zero,
     });
+    defer client.deinit();
     client.policy.insecure_no_chain_anchor = true;
     var ticket: ClientHandshake.SessionTicket = .{
         .ticket_age_add = 0x262a6494,
@@ -9199,6 +9306,7 @@ test "0-RTT: processClientFinished rejects Finished before EndOfEarlyData" {
         .random = .zero,
         .psk_lookup = .{ .context = &lookup_ctx, .lookup = Lookup.l },
     });
+    defer server.deinit();
     var server_out: [4096]u8 = undefined;
     _ = try server.acceptClientHello(ch_record, &server_out);
     try testing.expect(server.early_rx != null);
@@ -9457,6 +9565,7 @@ test "hybrid share requires explicit server policy" {
     @memcpy(ch_record[frame.header_len..][0..ch.len], ch);
 
     var server: ServerHandshake = .init(try testConfig(.generate()));
+    defer server.deinit();
     var server_out: [4096]u8 = undefined;
     _ = try server.acceptClientHello(
         ch_record[0 .. frame.header_len + ch.len],
@@ -9481,6 +9590,7 @@ test "in-memory HRR round trip reaches app data" {
         .now_sec = 0,
         .random = .zero,
     });
+    defer client.deinit();
     client.policy.insecure_no_chain_anchor = true;
 
     // ClientHello1: advertise x25519 + secp256r1 in supported_groups but send
@@ -9509,6 +9619,7 @@ test "in-memory HRR round trip reaches app data" {
     client.completeWrite();
 
     var server: ServerHandshake = .init(try testConfig(server_keypair));
+    defer server.deinit();
     var server_out: [4096]u8 = undefined;
     const hrr_record = try server.acceptClientHello(
         ch1_record[0 .. frame.header_len + ch1.len],
@@ -9594,6 +9705,7 @@ test "acceptClientHello: server suite preference" {
     @memcpy(record[frame.header_len..][0..ch.len], ch);
 
     var hs: ServerHandshake = .init(try testConfig(.generate()));
+    defer hs.deinit();
     const suites = [_]CipherSuite{.chacha20_poly1305_sha256};
     hs.supportSuites(&suites);
     var out: [256]u8 = undefined;
@@ -9621,6 +9733,7 @@ test "acceptClientHello: exposes SNI via clientServerName" {
     @memcpy(record[frame.header_len..][0..ch.len], ch);
 
     var hs: ServerHandshake = .init(try testConfig(.generate()));
+    defer hs.deinit();
     var out: [256]u8 = undefined;
     _ = try hs.acceptClientHello(record[0 .. frame.header_len + ch.len], &out);
     try testing.expectEqualStrings("example.com", hs.clientServerName().?);
@@ -9637,6 +9750,7 @@ test "acceptClientHello: clientServerName is null when SNI absent" {
     @memcpy(record[frame.header_len..][0..ch.len], ch);
 
     var hs: ServerHandshake = .init(try testConfig(.generate()));
+    defer hs.deinit();
     var out: [256]u8 = undefined;
     _ = try hs.acceptClientHello(record[0 .. frame.header_len + ch.len], &out);
     try testing.expectEqual(null, hs.clientServerName());
@@ -9654,6 +9768,7 @@ test "acceptClientHello: rejects unsupported suite" {
     header.write(record[0..frame.header_len]);
     @memcpy(record[frame.header_len..][0..ch.len], ch);
     var hs: ServerHandshake = .init(try testConfig(.generate()));
+    defer hs.deinit();
     var out: [256]u8 = undefined;
     try testing.expectError(
         error.UnsupportedCipherSuite,
@@ -9676,6 +9791,7 @@ test "acceptClientHello: ignores unknown cipher suites in mixed list" {
     @memcpy(record[frame.header_len..][0..ch.len], ch);
 
     var hs: ServerHandshake = .init(try testConfig(.generate()));
+    defer hs.deinit();
     var out: [256]u8 = undefined;
     const sh_record = try hs.acceptClientHello(record[0 .. frame.header_len + ch.len], &out);
     const sh_hdr = try frame.parseHeader(sh_record);
@@ -9700,6 +9816,7 @@ test "acceptClientHello: rejects ClientHello with no shared group" {
     @memcpy(record[frame.header_len..][0..ch.len], ch);
 
     var hs: ServerHandshake = .init(try testConfig(.generate()));
+    defer hs.deinit();
     var out: [256]u8 = undefined;
     try testing.expectError(
         error.UnsupportedKeyShare,
@@ -9723,6 +9840,7 @@ test "handleRecord: reassembles ClientHello split across records" {
     @memcpy(rec1[frame.header_len..][0..split_at], ch_msg[0..split_at]);
 
     var hs: ServerHandshake = .init(try testConfig(.generate()));
+    defer hs.deinit();
     var reassembly: [1024]u8 = undefined;
     hs.useHandshakeBuffer(&reassembly);
     var out: [256]u8 = undefined;
@@ -9758,6 +9876,7 @@ test "handleRecord: reassembles ClientHello with header and body in separate rec
     @memcpy(rec1[frame.header_len..][0..split_at], ch_msg[0..split_at]);
 
     var hs: ServerHandshake = .init(try testConfig(.generate()));
+    defer hs.deinit();
     var reassembly: [1024]u8 = undefined;
     hs.useHandshakeBuffer(&reassembly);
     var out: [256]u8 = undefined;
@@ -9789,6 +9908,7 @@ test "handleRecord: rejects CCS while ClientHello fragment pending" {
     @memcpy(rec1[frame.header_len..][0..split_at], ch_msg[0..split_at]);
 
     var hs: ServerHandshake = .init(try testConfig(.generate()));
+    defer hs.deinit();
     var reassembly: [1024]u8 = undefined;
     hs.useHandshakeBuffer(&reassembly);
     var out: [256]u8 = undefined;
@@ -9814,6 +9934,7 @@ test "handleRecord: processes alert while ClientHello fragment pending" {
     @memcpy(rec1[frame.header_len..][0..split_at], ch_msg[0..split_at]);
 
     var hs: ServerHandshake = .init(try testConfig(.generate()));
+    defer hs.deinit();
     var reassembly: [1024]u8 = undefined;
     hs.useHandshakeBuffer(&reassembly);
     var out: [256]u8 = undefined;
@@ -9910,6 +10031,7 @@ test "handleRecord: rejects fragmented ClientHello without reassembly buffer" {
     @memcpy(rec1[frame.header_len..][0..split_at], ch_msg[0..split_at]);
 
     var hs: ServerHandshake = .init(try testConfig(.generate()));
+    defer hs.deinit();
     var out: [256]u8 = undefined;
     // No useHandshakeBuffer call — fragmentation must be rejected.
     try testing.expectError(
@@ -9935,6 +10057,7 @@ test "handleRecord: state reset after invalid fragmented ClientHello" {
     @memcpy(rec1[frame.header_len..][0..split_at], ch_msg[0..split_at]);
 
     var hs: ServerHandshake = .init(try testConfig(server_keypair));
+    defer hs.deinit();
     var reassembly: [1024]u8 = undefined;
     hs.useHandshakeBuffer(&reassembly);
     var out: [256]u8 = undefined;
@@ -9979,6 +10102,7 @@ test "handleRecord: rejects trailing bytes after fragmented ClientHello" {
     @memcpy(rec1[frame.header_len..][0..split_at], ch_msg[0..split_at]);
 
     var hs: ServerHandshake = .init(try testConfig(server_keypair));
+    defer hs.deinit();
     var reassembly: [1024]u8 = undefined;
     hs.useHandshakeBuffer(&reassembly);
     var out: [256]u8 = undefined;
@@ -10025,6 +10149,7 @@ test "handleRecord: reassembles ClientHello2 split across records after HRR" {
     @memcpy(ch1_record[frame.header_len..][0..hrr_ch1.len], hrr_ch1);
 
     var hs: ServerHandshake = .init(try testConfig(server_keypair));
+    defer hs.deinit();
     var reassembly: [1024]u8 = undefined;
     hs.useHandshakeBuffer(&reassembly);
     var out: [256]u8 = undefined;
@@ -10075,6 +10200,7 @@ test "handleRecord: reassembles fragmented client Finished across encrypted reco
     @memcpy(ch_record[frame.header_len..][0..ch.len], ch);
 
     var server: ServerHandshake = .init(try testConfig(server_keypair));
+    defer server.deinit();
     var sh_out: [256]u8 = undefined;
     _ = try server.acceptClientHello(ch_record[0 .. frame.header_len + ch.len], &sh_out);
     var flight_out: [512]u8 = undefined;
@@ -10130,6 +10256,7 @@ test "handleRecord: rejects interleaved alert during Finished fragment reassembl
     @memcpy(ch_record[frame.header_len..][0..ch.len], ch);
 
     var server: ServerHandshake = .init(try testConfig(server_keypair));
+    defer server.deinit();
     var sh_out: [256]u8 = undefined;
     _ = try server.acceptClientHello(ch_record[0 .. frame.header_len + ch.len], &sh_out);
     var flight_out: [512]u8 = undefined;
@@ -10186,6 +10313,7 @@ test "handleRecord: rejects plaintext alert during Finished fragment reassembly"
     @memcpy(ch_record[frame.header_len..][0..ch.len], ch);
 
     var server: ServerHandshake = .init(try testConfig(server_keypair));
+    defer server.deinit();
     var sh_out: [256]u8 = undefined;
     _ = try server.acceptClientHello(ch_record[0 .. frame.header_len + ch.len], &sh_out);
     var flight_out: [512]u8 = undefined;
@@ -10263,6 +10391,7 @@ test "handleRecord: rejects plaintext alert while waiting for Finished" {
     @memcpy(ch_record[frame.header_len..][0..ch.len], ch);
 
     var server: ServerHandshake = .init(try testConfig(server_keypair));
+    defer server.deinit();
     var sh_out: [256]u8 = undefined;
     _ = try server.acceptClientHello(ch_record[0 .. frame.header_len + ch.len], &sh_out);
     var flight_out: [512]u8 = undefined;
@@ -10286,6 +10415,7 @@ test "handleRecord: rejects zero-length encrypted handshake while waiting for Fi
     @memcpy(ch_record[frame.header_len..][0..ch.len], ch);
 
     var server: ServerHandshake = .init(try testConfig(server_keypair));
+    defer server.deinit();
     var sh_out: [256]u8 = undefined;
     _ = try server.acceptClientHello(ch_record[0 .. frame.header_len + ch.len], &sh_out);
     var flight_out: [512]u8 = undefined;
@@ -10319,6 +10449,7 @@ test "handleRecord: reassembles ClientHello when handshake header is split after
     );
 
     var hs: ServerHandshake = .init(try testConfig(.generate()));
+    defer hs.deinit();
     var reassembly: [1024]u8 = undefined;
     hs.useHandshakeBuffer(&reassembly);
     var out: [256]u8 = undefined;
@@ -10346,6 +10477,7 @@ test "handleRecord: reassembles ClientHello when handshake header is split after
 // reassembled across handshake records and processed correctly.
 test "handleRecord: server reassembles 1-byte fragmented KeyUpdate(update_requested)" {
     var server = try connectedTestServer();
+    defer server.deinit();
     var client_tx = try server.rx.clone();
     defer client_tx.deinit();
     var server_tx_old = try server.tx.clone();
@@ -10411,6 +10543,7 @@ test "handleRecord: server reassembles 1-byte fragmented KeyUpdate(update_reques
 // the receive key with no response.
 test "handleRecord: fragmented KeyUpdate(update_not_requested) works" {
     var server = try connectedTestServer();
+    defer server.deinit();
     var client_tx = try server.rx.clone();
     defer client_tx.deinit();
 
@@ -10458,6 +10591,7 @@ test "handleRecord: fragmented KeyUpdate(update_not_requested) works" {
 // RFC 8446 §5.1 — a non-KeyUpdate handshake fragment must be rejected.
 test "handleRecord: non-KeyUpdate fragment starts are rejected" {
     var server = try connectedTestServer();
+    defer server.deinit();
     var client_tx = try server.rx.clone();
     defer client_tx.deinit();
 
@@ -10475,6 +10609,7 @@ test "handleRecord: non-KeyUpdate fragment starts are rejected" {
 // share its record.
 test "handleRecord: KeyUpdate with trailing record bytes is rejected before ratchet" {
     var server = try connectedTestServer();
+    defer server.deinit();
     var client_tx = try server.rx.clone();
     defer client_tx.deinit();
 
@@ -10503,6 +10638,7 @@ test "handleRecord: KeyUpdate with trailing record bytes is rejected before ratc
 // is rejected and clears the fragment state.
 test "handleRecord: app-data interleaving during KeyUpdate reassembly is rejected" {
     var server = try connectedTestServer();
+    defer server.deinit();
     var client_tx = try server.rx.clone();
     defer client_tx.deinit();
 
@@ -10528,6 +10664,7 @@ test "handleRecord: app-data interleaving during KeyUpdate reassembly is rejecte
 // fragmented-KeyUpdate record interlock as handleRecord.
 test "receiveApplicationData: app-data interleaving during KeyUpdate reassembly is rejected" {
     var server = try connectedTestServer();
+    defer server.deinit();
     var client_tx = try server.rx.clone();
     defer client_tx.deinit();
 
@@ -10547,6 +10684,7 @@ test "receiveApplicationData: app-data interleaving during KeyUpdate reassembly 
 // before alert handling and clears the fragment state.
 test "handleRecord: alert interleaving during KeyUpdate reassembly is rejected" {
     var server = try connectedTestServer();
+    defer server.deinit();
     var client_tx = try server.rx.clone();
     defer client_tx.deinit();
 
@@ -10606,6 +10744,7 @@ test "handleRecord: connected close_notify is clean, fatal alert records detail"
 // reassembly is rejected and clears the fragment state.
 test "handleRecord: zero-length handshake during KeyUpdate reassembly is rejected" {
     var server = try connectedTestServer();
+    defer server.deinit();
     var client_tx = try server.rx.clone();
     defer client_tx.deinit();
 
@@ -10634,6 +10773,7 @@ test "handleRecord: zero-length handshake during KeyUpdate reassembly is rejecte
 // line ~1467 evaluated `handshake_header_len + body_len` in u24.
 test "handleRecord: ClientHello body_len 0xFFFFFF rejected without overflow (fast path)" {
     var hs: ServerHandshake = .init(try testConfig(.generate()));
+    defer hs.deinit();
     var out: [64]u8 = undefined;
     // 16 03 03 00 04 = handshake record, 4-byte body.
     // 01 FF FF FF = ClientHello, body length 0xFFFFFF (overflows u24 when
@@ -10650,6 +10790,7 @@ test "handleRecord: ClientHello body_len 0xFFFFFF rejected without overflow (fas
 // line ~1423 evaluated `handshake_header_len + body_len_assembled` in u24.
 test "handleRecord: split-header reassembly body_len 0xFFFFFF rejected without overflow" {
     var hs: ServerHandshake = .init(try testConfig(.generate()));
+    defer hs.deinit();
     var reassembly: [1024]u8 = undefined;
     hs.useHandshakeBuffer(&reassembly);
     var out: [256]u8 = undefined;

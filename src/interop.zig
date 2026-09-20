@@ -746,6 +746,7 @@ fn clientInteropCaptureTicket(stream: Stream) !ztls.ClientHandshake.SessionTicke
         .insecure_no_chain_anchor = true,
         .alpn_protocols = &.{alpn_protocol},
     });
+    defer hs.deinit();
 
     var out: [4096]u8 = undefined;
     var storage: ztls.RecordBuffer.Storage = .empty;
@@ -830,6 +831,7 @@ fn clientInteropResume(stream: Stream, ticket: *const ztls.ClientHandshake.Sessi
         .insecure_no_chain_anchor = true,
         .alpn_protocols = &.{alpn_protocol},
     });
+    defer hs.deinit();
 
     var out: [4096]u8 = undefined;
     var storage: ztls.RecordBuffer.Storage = .empty;
@@ -906,6 +908,7 @@ fn clientEarlyDataInterop(
         .insecure_no_chain_anchor = true,
         .alpn_protocols = &.{alpn_protocol},
     });
+    defer hs.deinit();
 
     var out: [4096]u8 = undefined;
     var storage: ztls.RecordBuffer.Storage = .empty;
@@ -1572,6 +1575,7 @@ fn clientInteropWithCreds(stream: Stream) !void {
         .insecure_no_chain_anchor = true,
         .alpn_protocols = &.{alpn_protocol},
     });
+    defer hs.deinit();
     // Present the self-signed ECDSA fixture as the client certificate.
     var client_signer = try ztls.signature.PrivateKey.fromP256Scalar(server_scalar[0..32]);
     defer client_signer.deinit();

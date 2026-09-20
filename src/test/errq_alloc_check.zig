@@ -17,9 +17,12 @@
 //! runs BEFORE the queue assertion so a guard regression that leaves
 //! allocated entries queued fails on the memory axis first.
 //!
-//! Measured operations: malformed EC public-key rejection, per-record AEAD tag
-//! rejection, and the #114 declined encrypted-PEM load (`fromPem` on an
-//! encrypted fixture) — each one a guarded wrapper that allocates and fails.
+//! The measured operations cover these paths:
+//! - Malformed EC public-key rejection.
+//! - Per-record AEAD tag rejection.
+//! - Encrypted PEM rejection (#114).
+//! - Client cleanup before ServerHello after an early-data offer (#121).
+//! - Server cleanup after PSK admission and rejected key exchange (#121).
 //!
 //! Blind spots, explicit: liveCount tracks allocation counts, not bytes —
 //! a leak that grows an existing buffer through realloc (same count, more
@@ -34,6 +37,7 @@
 //! comptime because the API is absent. Its err.c uses system malloc directly;
 //! queue hygiene still applies there.
 const std = @import("std");
+const mem = std.mem;
 const ztls = @import("ztls");
 const fixtures = @import("fixtures");
 
@@ -143,6 +147,80 @@ fn failEncryptedPemLoad() CheckError!void {
     return error.UnexpectedBackendResult;
 }
 
+const abort_psk: [32]u8 = @splat(0x42);
+
+fn abortKeyPairs() CheckError!ztls.ClientHandshake.KeyPairs {
+    return ztls.ClientHandshake.KeyPairs.init(.generate()) catch error.UnexpectedBackendResult;
+}
+
+fn initAbortTicket(ticket: *ztls.ClientHandshake.SessionTicket) void {
+    ticket.* = .{
+        .ticket_age_add = 0,
+        .cipher_suite = .aes_128_gcm_sha256,
+        .max_early_data_size = 1024,
+    };
+    ticket.identity.appendSliceAssumeCapacity("cleanup-ticket");
+    ticket.psk.appendSliceAssumeCapacity(&abort_psk);
+}
+
+// RFC 8446 §4.2.10 — early traffic keys exist before any ServerHello arrives.
+fn abortEarlyClient() CheckError!void {
+    var ticket: ztls.ClientHandshake.SessionTicket = undefined;
+    initAbortTicket(&ticket);
+    defer ticket.secureZero();
+    var client: ztls.ClientHandshake = .init(.{
+        .keypairs = try abortKeyPairs(),
+        .host_name = null,
+        .now_sec = 0,
+        .random = .zero,
+    });
+    defer client.deinit();
+    var wire: [4096]u8 = undefined;
+    _ = client.startWithPsk(&ticket, &wire, true) catch return error.UnexpectedBackendResult;
+    if (client.state != .wait_sh or client.early_tx == null) return error.UnexpectedBackendResult;
+}
+
+fn lookupAbortPsk(context: *anyopaque, identity: []const u8) ?ztls.ServerHandshake.PskEntry {
+    const ticket: *const ztls.ClientHandshake.SessionTicket = @ptrCast(@alignCast(context));
+    if (!mem.eql(u8, identity, ticket.identity.constSlice())) return null;
+    return .{
+        .psk = ticket.psk.constSlice(),
+        .cipher_suite = ticket.cipher_suite,
+        .max_early_data_size = ticket.max_early_data_size,
+    };
+}
+
+// RFC 8446 §4.2.10, §7.4.2 — reject an all-zero shared secret after PSK admission.
+fn abortEarlyServer() CheckError!void {
+    var ticket: ztls.ClientHandshake.SessionTicket = undefined;
+    initAbortTicket(&ticket);
+    defer ticket.secureZero();
+    var client: ztls.ClientHandshake = .init(.{
+        .keypairs = try abortKeyPairs(),
+        .host_name = null,
+        .now_sec = 0,
+        .random = .zero,
+    });
+    defer client.deinit();
+    client.keypairs.x25519.public_key = .zero;
+    var client_wire: [4096]u8 = undefined;
+    const hello = client.startWithPsk(&ticket, &client_wire, true) catch
+        return error.UnexpectedBackendResult;
+    var server: ztls.ServerHandshake = .init(.{
+        .keypairs = try abortKeyPairs(),
+        .random = .zero,
+        .psk_lookup = .{ .context = &ticket, .lookup = lookupAbortPsk },
+    });
+    defer server.deinit();
+    var server_wire: [4096]u8 = undefined;
+    _ = server.acceptClientHello(hello, &server_wire) catch |err| {
+        if (err != error.IdentityElement or server.state != .wait_ch or server.early_rx == null)
+            return error.UnexpectedBackendResult;
+        return;
+    };
+    return error.UnexpectedBackendResult;
+}
+
 /// One measured round of `op`: memory back to baseline first (the
 /// load-bearing axis — entries left queued hold their allocations), queue
 /// empty second.
@@ -192,6 +270,16 @@ fn runChecks() CheckError!void {
 
     round = 0;
     while (round < 100) : (round += 1) try checkRound(failEncryptedPemLoad, pem_baseline);
+
+    try abortEarlyClient();
+    const client_baseline = liveCount();
+    std.debug.print("errq-alloc-check: early client abort\n", .{});
+    for (0..100) |_| try checkRound(abortEarlyClient, client_baseline);
+
+    try abortEarlyServer();
+    const server_baseline = liveCount();
+    std.debug.print("errq-alloc-check: early server abort\n", .{});
+    for (0..100) |_| try checkRound(abortEarlyServer, server_baseline);
 }
 
 pub fn main() void {

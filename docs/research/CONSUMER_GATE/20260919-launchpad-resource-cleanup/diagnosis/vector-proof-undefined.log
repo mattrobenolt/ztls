@@ -1,0 +1,127 @@
+==4055888== Memcheck, a memory error detector
+==4055888== Copyright (C) 2002-2026, and GNU GPL'd, by Julian Seward et al.
+==4055888== Using Valgrind-3.27.1 and LibVEX; rerun with -h for copyright info
+==4055888== Command: /tmp/ztls-signoff-20260919/vector_scan_probe
+==4055888== Parent PID: 4055886
+==4055888== 
+==4055888== Conditional jump or move depends on uninitialised value(s)
+==4055888==    at 0x101162C: main (vector_scan_probe.zig:36)
+==4055888==    by 0x101162C: callMain (start.zig:627)
+==4055888==    by 0x101162C: callMainWithArgs (start.zig:587)
+==4055888==    by 0x101162C: main (start.zig:602)
+==4055888==  Uninitialised value was created by a stack allocation
+==4055888==    at 0x1011264: vector_scan_probe.check (vector_scan_probe.zig:25)
+==4055888== 
+==4055888== Conditional jump or move depends on uninitialised value(s)
+==4055888==    at 0x101164C: main (vector_scan_probe.zig:36)
+==4055888==    by 0x101164C: callMain (start.zig:627)
+==4055888==    by 0x101164C: callMainWithArgs (start.zig:587)
+==4055888==    by 0x101164C: main (start.zig:602)
+==4055888==  Uninitialised value was created by a stack allocation
+==4055888==    at 0x1011264: vector_scan_probe.check (vector_scan_probe.zig:25)
+==4055888== 
+==4055888== Conditional jump or move depends on uninitialised value(s)
+==4055888==    at 0x101166C: main (vector_scan_probe.zig:36)
+==4055888==    by 0x101166C: callMain (start.zig:627)
+==4055888==    by 0x101166C: callMainWithArgs (start.zig:587)
+==4055888==    by 0x101166C: main (start.zig:602)
+==4055888==  Uninitialised value was created by a stack allocation
+==4055888==    at 0x1011264: vector_scan_probe.check (vector_scan_probe.zig:25)
+==4055888== 
+==4055888== Conditional jump or move depends on uninitialised value(s)
+==4055888==    at 0x101168C: main (vector_scan_probe.zig:36)
+==4055888==    by 0x101168C: callMain (start.zig:627)
+==4055888==    by 0x101168C: callMainWithArgs (start.zig:587)
+==4055888==    by 0x101168C: main (start.zig:602)
+==4055888==  Uninitialised value was created by a stack allocation
+==4055888==    at 0x1011264: vector_scan_probe.check (vector_scan_probe.zig:25)
+==4055888== 
+==4055888== Conditional jump or move depends on uninitialised value(s)
+==4055888==    at 0x10116AC: main (vector_scan_probe.zig:36)
+==4055888==    by 0x10116AC: callMain (start.zig:627)
+==4055888==    by 0x10116AC: callMainWithArgs (start.zig:587)
+==4055888==    by 0x10116AC: main (start.zig:602)
+==4055888==  Uninitialised value was created by a stack allocation
+==4055888==    at 0x1011264: vector_scan_probe.check (vector_scan_probe.zig:25)
+==4055888== 
+==4055888== Conditional jump or move depends on uninitialised value(s)
+==4055888==    at 0x10116CC: main (vector_scan_probe.zig:36)
+==4055888==    by 0x10116CC: callMain (start.zig:627)
+==4055888==    by 0x10116CC: callMainWithArgs (start.zig:587)
+==4055888==    by 0x10116CC: main (start.zig:602)
+==4055888==  Uninitialised value was created by a stack allocation
+==4055888==    at 0x1011264: vector_scan_probe.check (vector_scan_probe.zig:25)
+==4055888== 
+==4055888== Conditional jump or move depends on uninitialised value(s)
+==4055888==    at 0x10116EC: main (vector_scan_probe.zig:36)
+==4055888==    by 0x10116EC: callMain (start.zig:627)
+==4055888==    by 0x10116EC: callMainWithArgs (start.zig:587)
+==4055888==    by 0x10116EC: main (start.zig:602)
+==4055888==  Uninitialised value was created by a stack allocation
+==4055888==    at 0x1011264: vector_scan_probe.check (vector_scan_probe.zig:25)
+==4055888== 
+==4055888== Conditional jump or move depends on uninitialised value(s)
+==4055888==    at 0x101172C: main (vector_scan_probe.zig:36)
+==4055888==    by 0x101172C: callMain (start.zig:627)
+==4055888==    by 0x101172C: callMainWithArgs (start.zig:587)
+==4055888==    by 0x101172C: main (start.zig:602)
+==4055888==  Uninitialised value was created by a stack allocation
+==4055888==    at 0x1011264: vector_scan_probe.check (vector_scan_probe.zig:25)
+==4055888== 
+==4055888== Conditional jump or move depends on uninitialised value(s)
+==4055888==    at 0x101174C: main (vector_scan_probe.zig:36)
+==4055888==    by 0x101174C: callMain (start.zig:627)
+==4055888==    by 0x101174C: callMainWithArgs (start.zig:587)
+==4055888==    by 0x101174C: main (start.zig:602)
+==4055888==  Uninitialised value was created by a stack allocation
+==4055888==    at 0x1011264: vector_scan_probe.check (vector_scan_probe.zig:25)
+==4055888== 
+==4055888== Conditional jump or move depends on uninitialised value(s)
+==4055888==    at 0x101176C: main (vector_scan_probe.zig:36)
+==4055888==    by 0x101176C: callMain (start.zig:627)
+==4055888==    by 0x101176C: callMainWithArgs (start.zig:587)
+==4055888==    by 0x101176C: main (start.zig:602)
+==4055888==  Uninitialised value was created by a stack allocation
+==4055888==    at 0x1011264: vector_scan_probe.check (vector_scan_probe.zig:25)
+==4055888== 
+==4055888== Conditional jump or move depends on uninitialised value(s)
+==4055888==    at 0x101178C: main (vector_scan_probe.zig:36)
+==4055888==    by 0x101178C: callMain (start.zig:627)
+==4055888==    by 0x101178C: callMainWithArgs (start.zig:587)
+==4055888==    by 0x101178C: main (start.zig:602)
+==4055888==  Uninitialised value was created by a stack allocation
+==4055888==    at 0x1011264: vector_scan_probe.check (vector_scan_probe.zig:25)
+==4055888== 
+==4055888== Conditional jump or move depends on uninitialised value(s)
+==4055888==    at 0x10117AC: main (vector_scan_probe.zig:36)
+==4055888==    by 0x10117AC: callMain (start.zig:627)
+==4055888==    by 0x10117AC: callMainWithArgs (start.zig:587)
+==4055888==    by 0x10117AC: main (start.zig:602)
+==4055888==  Uninitialised value was created by a stack allocation
+==4055888==    at 0x1011264: vector_scan_probe.check (vector_scan_probe.zig:25)
+==4055888== 
+==4055888== Conditional jump or move depends on uninitialised value(s)
+==4055888==    at 0x10117CC: main (vector_scan_probe.zig:36)
+==4055888==    by 0x10117CC: callMain (start.zig:627)
+==4055888==    by 0x10117CC: callMainWithArgs (start.zig:587)
+==4055888==    by 0x10117CC: main (start.zig:602)
+==4055888==  Uninitialised value was created by a stack allocation
+==4055888==    at 0x1011264: vector_scan_probe.check (vector_scan_probe.zig:25)
+==4055888== 
+==4055888== Conditional jump or move depends on uninitialised value(s)
+==4055888==    at 0x10117EC: main (vector_scan_probe.zig:36)
+==4055888==    by 0x10117EC: callMain (start.zig:627)
+==4055888==    by 0x10117EC: callMainWithArgs (start.zig:587)
+==4055888==    by 0x10117EC: main (start.zig:602)
+==4055888==  Uninitialised value was created by a stack allocation
+==4055888==    at 0x1011264: vector_scan_probe.check (vector_scan_probe.zig:25)
+==4055888== 
+==4055888== 
+==4055888== HEAP SUMMARY:
+==4055888==     in use at exit: 0 bytes in 0 blocks
+==4055888==   total heap usage: 0 allocs, 0 frees, 0 bytes allocated
+==4055888== 
+==4055888== All heap blocks were freed -- no leaks are possible
+==4055888== 
+==4055888== For lists of detected and suppressed errors, rerun with: -s
+==4055888== ERROR SUMMARY: 14 errors from 14 contexts (suppressed: 0 from 0)

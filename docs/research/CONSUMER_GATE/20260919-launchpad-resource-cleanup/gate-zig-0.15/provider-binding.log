@@ -1,0 +1,85 @@
+   4055702:	find library=libcrypto.so.3 [0]; searching
+   4055702:	 search path=/nix/store/ilhjg5z9hlw3ccc4bfvpi4s6kplvl7yq-openssl-3.6.4/lib		(LD_LIBRARY_PATH)
+   4055702:	  trying file=/nix/store/ilhjg5z9hlw3ccc4bfvpi4s6kplvl7yq-openssl-3.6.4/lib/libcrypto.so.3
+   4055702:	
+   4055702:	find library=libc.so.6 [0]; searching
+   4055702:	 search path=/nix/store/ilhjg5z9hlw3ccc4bfvpi4s6kplvl7yq-openssl-3.6.4/lib		(LD_LIBRARY_PATH)
+   4055702:	  trying file=/nix/store/ilhjg5z9hlw3ccc4bfvpi4s6kplvl7yq-openssl-3.6.4/lib/libc.so.6
+   4055702:	 search path=/nix/store/v89yca35zsb13k51ibz0mcz2rrzjwwrj-openssl-3.6.4/lib:/Users/matt/code/ztls/outputs/out/lib:/nix/store/0glklzmdllhkd17qkq1269njhngvbgwd-brotli-1.2.0-lib/lib:/nix/store/afzfl957hnpm9sbr3gfk9i8b73mcm39h-krb5-1.22.2-lib/lib:/nix/store/717hhzngx3cd36rnw5d3mv2ia0vzr87r-nghttp2-1.70.0-lib/lib:/nix/store/2n3j3j85n60axyib6h4kxk7zsjm4a7y0-nghttp3-1.16.0/lib:/nix/store/5731mwd8sb24ls072pv05m7skfrxjzia-ngtcp2-1.23.0/lib:/nix/store/0s40b0an0cz4vypbji92cb7qbr65icl4-libidn2-2.3.8/lib:/nix/store/ry8vzs1d0b2zk7z3y1639g7xnx37x1nb-libpsl-0.21.5/lib:/nix/store/l7qwwwj2rs3wqddchxjx23m3s0kdhs8j-libssh2-1.11.1/lib:/nix/store/8m1ckjz4k9v5ly0dkbyqpaw02kaxrp33-zlib-1.3.2/lib:/nix/store/zf5kl4x0zjkf6zl5d84ac0xahpp0las8-zstd-1.5.7/lib:/nix/store/dwx4mpqydfhykk29yy1dxdjrbs0hn1yh-curl-8.22.0/lib:/nix/store/xplind4h97x3aq0xy1c9nm48rs7hm55z-ncurses-6.6/lib:/nix/store/3ph33ykfwcwkb9zrx8yw5i3qh35fypms-llvm-21.1.8-lib/lib:/nix/store/f1ahb6dajpsj9yjxfdh18yahhycis2y6-rust-default-1.98.1/lib		(RUNPATH from file /tmp/ztls-memory.qCZeeD/bin/bin/test)
+   4055702:	  trying file=/nix/store/v89yca35zsb13k51ibz0mcz2rrzjwwrj-openssl-3.6.4/lib/libc.so.6
+   4055702:	  trying file=/Users/matt/code/ztls/outputs/out/lib/libc.so.6
+   4055702:	  trying file=/nix/store/0glklzmdllhkd17qkq1269njhngvbgwd-brotli-1.2.0-lib/lib/libc.so.6
+   4055702:	  trying file=/nix/store/afzfl957hnpm9sbr3gfk9i8b73mcm39h-krb5-1.22.2-lib/lib/libc.so.6
+   4055702:	  trying file=/nix/store/717hhzngx3cd36rnw5d3mv2ia0vzr87r-nghttp2-1.70.0-lib/lib/libc.so.6
+   4055702:	  trying file=/nix/store/2n3j3j85n60axyib6h4kxk7zsjm4a7y0-nghttp3-1.16.0/lib/libc.so.6
+   4055702:	  trying file=/nix/store/5731mwd8sb24ls072pv05m7skfrxjzia-ngtcp2-1.23.0/lib/libc.so.6
+   4055702:	  trying file=/nix/store/0s40b0an0cz4vypbji92cb7qbr65icl4-libidn2-2.3.8/lib/libc.so.6
+   4055702:	  trying file=/nix/store/ry8vzs1d0b2zk7z3y1639g7xnx37x1nb-libpsl-0.21.5/lib/libc.so.6
+   4055702:	  trying file=/nix/store/l7qwwwj2rs3wqddchxjx23m3s0kdhs8j-libssh2-1.11.1/lib/libc.so.6
+   4055702:	  trying file=/nix/store/8m1ckjz4k9v5ly0dkbyqpaw02kaxrp33-zlib-1.3.2/lib/libc.so.6
+   4055702:	  trying file=/nix/store/zf5kl4x0zjkf6zl5d84ac0xahpp0las8-zstd-1.5.7/lib/libc.so.6
+   4055702:	  trying file=/nix/store/dwx4mpqydfhykk29yy1dxdjrbs0hn1yh-curl-8.22.0/lib/libc.so.6
+   4055702:	  trying file=/nix/store/xplind4h97x3aq0xy1c9nm48rs7hm55z-ncurses-6.6/lib/libc.so.6
+   4055702:	  trying file=/nix/store/3ph33ykfwcwkb9zrx8yw5i3qh35fypms-llvm-21.1.8-lib/lib/libc.so.6
+   4055702:	  trying file=/nix/store/f1ahb6dajpsj9yjxfdh18yahhycis2y6-rust-default-1.98.1/lib/libc.so.6
+   4055702:	 search cache=/nix/store/m54cs0m994hc3n9lax7sg98sgy729qsa-glibc-2.42-84/etc/ld.so.cache
+   4055702:	 search path=/nix/store/m54cs0m994hc3n9lax7sg98sgy729qsa-glibc-2.42-84/lib:/nix/store/waax852balprvsvdziyaf1h7r3ldvakg-xgcc-15.3.0-libgcc/lib		(system search path)
+   4055702:	  trying file=/nix/store/m54cs0m994hc3n9lax7sg98sgy729qsa-glibc-2.42-84/lib/libc.so.6
+   4055702:	
+   4055702:	find library=libdl.so.2 [0]; searching
+   4055702:	 search path=/nix/store/ilhjg5z9hlw3ccc4bfvpi4s6kplvl7yq-openssl-3.6.4/lib		(LD_LIBRARY_PATH)
+   4055702:	  trying file=/nix/store/ilhjg5z9hlw3ccc4bfvpi4s6kplvl7yq-openssl-3.6.4/lib/libdl.so.2
+   4055702:	 search path=/nix/store/m54cs0m994hc3n9lax7sg98sgy729qsa-glibc-2.42-84/lib		(system search path)
+   4055702:	  trying file=/nix/store/m54cs0m994hc3n9lax7sg98sgy729qsa-glibc-2.42-84/lib/libdl.so.2
+   4055702:	
+   4055702:	find library=libpthread.so.0 [0]; searching
+   4055702:	 search path=/nix/store/ilhjg5z9hlw3ccc4bfvpi4s6kplvl7yq-openssl-3.6.4/lib		(LD_LIBRARY_PATH)
+   4055702:	  trying file=/nix/store/ilhjg5z9hlw3ccc4bfvpi4s6kplvl7yq-openssl-3.6.4/lib/libpthread.so.0
+   4055702:	 search path=/nix/store/m54cs0m994hc3n9lax7sg98sgy729qsa-glibc-2.42-84/lib		(system search path)
+   4055702:	  trying file=/nix/store/m54cs0m994hc3n9lax7sg98sgy729qsa-glibc-2.42-84/lib/libpthread.so.0
+   4055702:	
+   4055702:	
+   4055702:	calling init: /nix/store/m54cs0m994hc3n9lax7sg98sgy729qsa-glibc-2.42-84/lib/ld-linux-aarch64.so.1
+   4055702:	
+   4055702:	
+   4055702:	calling init: /nix/store/m54cs0m994hc3n9lax7sg98sgy729qsa-glibc-2.42-84/lib/libc.so.6
+   4055702:	
+   4055702:	
+   4055702:	calling init: /nix/store/m54cs0m994hc3n9lax7sg98sgy729qsa-glibc-2.42-84/lib/libpthread.so.0
+   4055702:	
+   4055702:	
+   4055702:	calling init: /nix/store/m54cs0m994hc3n9lax7sg98sgy729qsa-glibc-2.42-84/lib/libdl.so.2
+   4055702:	
+   4055702:	
+   4055702:	calling init: /nix/store/ilhjg5z9hlw3ccc4bfvpi4s6kplvl7yq-openssl-3.6.4/lib/libcrypto.so.3
+   4055702:	
+   4055702:	
+   4055702:	initialize program: /tmp/ztls-memory.qCZeeD/bin/bin/test
+   4055702:	
+   4055702:	
+   4055702:	transferring control: /tmp/ztls-memory.qCZeeD/bin/bin/test
+   4055702:	
+ztest: Running 2 tests...
+[1/2] PASS: test_0 (274.79ms)
+[2/2] PASS: certificate_parser.test_0 (274.84ms)
+
+ztest: 2 passed, 0 failed, 0 skipped (of 2 total) in 275ms
+ALL TESTS PASSED
+   4055702:	
+   4055702:	calling fini:  [0]
+   4055702:	
+   4055702:	
+   4055702:	calling fini: /nix/store/ilhjg5z9hlw3ccc4bfvpi4s6kplvl7yq-openssl-3.6.4/lib/libcrypto.so.3 [0]
+   4055702:	
+   4055702:	
+   4055702:	calling fini: /nix/store/m54cs0m994hc3n9lax7sg98sgy729qsa-glibc-2.42-84/lib/libdl.so.2 [0]
+   4055702:	
+   4055702:	
+   4055702:	calling fini: /nix/store/m54cs0m994hc3n9lax7sg98sgy729qsa-glibc-2.42-84/lib/libpthread.so.0 [0]
+   4055702:	
+   4055702:	
+   4055702:	calling fini: /nix/store/m54cs0m994hc3n9lax7sg98sgy729qsa-glibc-2.42-84/lib/libc.so.6 [0]
+   4055702:	
+   4055702:	
+   4055702:	calling fini: /nix/store/m54cs0m994hc3n9lax7sg98sgy729qsa-glibc-2.42-84/lib/ld-linux-aarch64.so.1 [0]
+   4055702:	

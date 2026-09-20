@@ -1,0 +1,46 @@
+{
+  "compile_command": "zig build-exe vector_scan_probe.zig -O ReleaseFast -mcpu=baseline -lc",
+  "binary_sha256": "3f93f2a536cffe6eb274663f8c16b33ff2fda71c954e2ce6d85ad8b84c8d4715",
+  "cases": [
+    {
+      "case": "undefined",
+      "environment": {},
+      "exit": 99,
+      "command": [
+        "valgrind",
+        "--error-exitcode=99",
+        "--track-origins=yes",
+        "--log-file=/Users/matt/code/ztls/docs/research/CONSUMER_GATE/20260919-launchpad-resource-cleanup/diagnosis/vector-proof-undefined.log",
+        "/tmp/ztls-signoff-20260919/vector_scan_probe"
+      ]
+    },
+    {
+      "case": "zeroed",
+      "environment": {
+        "ZERO_TAIL": "1"
+      },
+      "exit": 0,
+      "command": [
+        "valgrind",
+        "--error-exitcode=99",
+        "--track-origins=yes",
+        "--log-file=/Users/matt/code/ztls/docs/research/CONSUMER_GATE/20260919-launchpad-resource-cleanup/diagnosis/vector-proof-zeroed.log",
+        "/tmp/ztls-signoff-20260919/vector_scan_probe"
+      ]
+    },
+    {
+      "case": "or",
+      "environment": {
+        "USE_OR": "1"
+      },
+      "exit": 0,
+      "command": [
+        "valgrind",
+        "--error-exitcode=99",
+        "--track-origins=yes",
+        "--log-file=/Users/matt/code/ztls/docs/research/CONSUMER_GATE/20260919-launchpad-resource-cleanup/diagnosis/vector-proof-or.log",
+        "/tmp/ztls-signoff-20260919/vector_scan_probe"
+      ]
+    }
+  ]
+}

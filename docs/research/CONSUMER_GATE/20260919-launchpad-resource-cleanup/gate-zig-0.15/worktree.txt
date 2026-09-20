@@ -1,0 +1,12 @@
+M  .pi/agents/implementation-reviewer.md
+M  docs/research/PERFORMANCE.md
+M  flake.nix
+M  just/check.just
+M  justfile
+A  scripts/check-memory.sh
+M  src/ClientHandshake.zig
+M  src/ServerHandshake.zig
+M  src/bench/generate_replay_fixtures.zig
+M  src/bench/record_protection.zig
+M  src/interop.zig
+M  src/test/errq_alloc_check.zig

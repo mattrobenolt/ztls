@@ -96,6 +96,7 @@ fn replayHandshake(records: []const u8, out: []u8) !void {
         .now_sec = 0,
         .random = rfc8448.client_random,
     });
+    defer hs.deinit();
     _ = try hs.start(out);
     hs.completeWrite();
 
@@ -197,14 +198,16 @@ fn connectPair(comptime suite: Suite) !struct {
         .random = rfc8448.client_random,
         .insecure_no_chain_anchor = true,
     });
+    errdefer client.deinit();
     var client_out: [4096]u8 = undefined;
     const ch_record = try client.start(&client_out);
     client.completeWrite();
 
-    var server: ztls.ServerHandshake = ztls.ServerHandshake.init(.{
+    var server: ztls.ServerHandshake = .init(.{
         .keypairs = try .init(try deterministicServerKeypair()),
         .random = rfc8448.server_random,
     });
+    errdefer server.deinit();
     const suites = [_]ztls.CipherSuite{suite.cipherSuite()};
     server.supportSuites(&suites);
     var server_out: [8192]u8 = undefined;

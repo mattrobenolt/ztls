@@ -683,10 +683,11 @@ pub fn deinit(self: *ClientHandshake) void {
         => {
             self.rx.deinit();
             self.tx.deinit();
-            if (self.early_tx) |*early_tx| early_tx.deinit();
         },
         .start, .wait_sh => {},
     }
+    // Early traffic keys precede ServerHello and survive an aborted wait_sh.
+    if (self.early_tx) |*early_tx| early_tx.deinit();
     if (self.kem_key) |*key| key.deinit();
     self.suite.secureZero();
     self.keypairs.secureZero();
@@ -2233,6 +2234,7 @@ const rfc8448_server_hello = [_]u8{
 //   860c06edc07858ee8e78f0e7428c58edd6b43f2ca3e6e95f02ed063cf0e1cad8
 test "transcript hash: RFC 8448 §3 ClientHello || ServerHello" {
     var hs: ClientHandshake = .init(try testConfig(.{ .secret_key = .zero, .public_key = .zero }));
+    defer hs.deinit();
     hs.suite.update(&rfc8448_client_hello);
     hs.suite.update(&rfc8448_server_hello);
 
@@ -2258,13 +2260,16 @@ test "deriveHandshakeKeys: RFC 8448 §3 server handshake key/iv/finished" {
     };
 
     var hs: ClientHandshake = .init(try testConfig(.{ .secret_key = .zero, .public_key = .zero }));
+    defer hs.deinit();
     hs.suite.update(&rfc8448_client_hello);
     hs.suite.update(&rfc8448_server_hello);
     // Collapse to the SHA-256 arm (as processServerHello would for this suite).
     const b = hs.suite.buffering;
     hs.suite = .{ .sha256 = .{ .transcript = b.sha256, .aead = .aes_128_gcm_sha256 } };
 
-    const keys = try hs.suite.deriveHandshakeKeys(&dhe, null);
+    var keys = try hs.suite.deriveHandshakeKeys(&dhe, null);
+    defer keys.rx.deinit();
+    defer keys.tx.deinit();
 
     // server_write_key
     try testing.expectEqualSlices(u8, &.{
@@ -2331,6 +2336,7 @@ const rfc8448_client_keypair: x25519.KeyPair = .{
 // integration (not just isolated derivation from a literal shared secret).
 test "processServerHello: RFC 8448 §3 installs server handshake keys" {
     var hs: ClientHandshake = .init(try testConfig(rfc8448_client_keypair));
+    defer hs.deinit();
     hs.injectClientHello(&rfc8448_client_hello);
 
     try hs.processServerHello(&rfc8448_server_hello);
@@ -2353,6 +2359,7 @@ test "processServerHello: accepts secp256r1 key_share" {
         .now_sec = 0,
         .random = .zero,
     });
+    defer hs.deinit();
     var ch_buf: [512]u8 = undefined;
     const ch = try client_hello.encodeWithP256(
         &ch_buf,
@@ -2388,6 +2395,7 @@ test "processServerHello: rejects invalid secp256r1 point" {
         .now_sec = 0,
         .random = .zero,
     });
+    defer hs.deinit();
     var ch_buf: [512]u8 = undefined;
     const ch = try client_hello.encodeWithP256(
         &ch_buf,
@@ -2416,6 +2424,7 @@ test "processServerHello: rejects invalid secp256r1 point" {
 test "processServerHello: rejects unoffered secp256r1 key_share" {
     const server_p256 = try p256.KeyPair.generateDeterministic(p256_server_seed);
     var hs: ClientHandshake = .init(try testConfig(rfc8448_client_keypair));
+    defer hs.deinit();
     var ch_buf: [512]u8 = undefined;
     const ch = try client_hello.encode(&ch_buf, .zero, hs.keypairs.x25519.public_key, null, &.{});
     hs.injectClientHello(ch);
@@ -2435,6 +2444,7 @@ test "processServerHello: rejects unoffered secp256r1 key_share" {
 // RFC 8446 §4.1.3 — ServerHello legacy_session_id_echo must match ClientHello.
 test "processServerHello: rejects mismatched session id echo" {
     var hs: ClientHandshake = .init(try testConfig(rfc8448_client_keypair));
+    defer hs.deinit();
     hs.injectClientHello(&rfc8448_client_hello);
 
     var sh_buf: [128]u8 = undefined;
@@ -2451,6 +2461,7 @@ test "processServerHello: rejects mismatched session id echo" {
 // RFC 8446 §4.1.3 — ServerHello must select a cipher suite offered by ClientHello.
 test "processServerHello: rejects unoffered cipher suite" {
     var hs: ClientHandshake = .init(try testConfig(.generate()));
+    defer hs.deinit();
     var ch_buf: [512]u8 = undefined;
     const ch = try client_hello.encode(&ch_buf, .zero, hs.keypairs.x25519.public_key, null, &.{});
     // Keep TLS_AES_128_GCM_SHA256 and replace the other recognized suites with unknowns.
@@ -2494,6 +2505,7 @@ fn rfc8448Fixture(name: []const u8, out: []u8) []u8 {
 
 fn flightReadyClient() !ClientHandshake {
     var hs: ClientHandshake = .init(try testConfig(rfc8448_client_keypair));
+    errdefer hs.deinit();
     hs.policy.insecure_no_chain_anchor = true;
     hs.injectClientHello(&rfc8448_client_hello);
     try hs.processServerHello(&rfc8448_server_hello);
@@ -2565,6 +2577,7 @@ fn encryptAllZeroInnerForTest(tx: *RecordLayer, inner_len: usize, out: []u8) ![]
 // Certificate message opt into signature-only chain handling explicitly.
 test "processFlight: stores selected ALPN" {
     var hs: ClientHandshake = .init(try testConfig(rfc8448_client_keypair));
+    defer hs.deinit();
     hs.offerAlpn(&.{ "h2", "http/1.1" });
     hs.injectClientHello(&rfc8448_client_hello);
     try hs.processServerHello(&rfc8448_server_hello);
@@ -2582,6 +2595,7 @@ test "processFlight: stores selected ALPN" {
 
 test "processFlight: rejects unoffered ALPN" {
     var hs: ClientHandshake = .init(try testConfig(rfc8448_client_keypair));
+    defer hs.deinit();
     hs.offerAlpn(&.{"http/1.1"});
     hs.injectClientHello(&rfc8448_client_hello);
     try hs.processServerHello(&rfc8448_server_hello);
@@ -2597,6 +2611,7 @@ test "processFlight: rejects unoffered ALPN" {
 
 test "processFlight: rejects unanchored Certificate by default" {
     var hs: ClientHandshake = .init(try testConfig(rfc8448_client_keypair));
+    defer hs.deinit();
     hs.injectClientHello(&rfc8448_client_hello);
     try hs.processServerHello(&rfc8448_server_hello);
 
@@ -2720,6 +2735,7 @@ test "processFlight: rejects unrequested server CertificateEntry status_request"
 
 test "processFlight: RFC 8448 §3 full server flight to connected" {
     var hs: ClientHandshake = .init(try testConfig(rfc8448_client_keypair));
+    defer hs.deinit();
     hs.policy.insecure_no_chain_anchor = true;
     hs.injectClientHello(&rfc8448_client_hello);
     try hs.processServerHello(&rfc8448_server_hello);
@@ -2752,6 +2768,7 @@ test "processFlight: rejects handshake message after server Finished" {
 // public key extracted at Certificate must survive to CertificateVerify.
 test "processFlight: handshake message spanning records needs buffer" {
     var hs: ClientHandshake = .init(try testConfig(rfc8448_client_keypair));
+    defer hs.deinit();
     hs.injectClientHello(&rfc8448_client_hello);
     try hs.processServerHello(&rfc8448_server_hello);
 
@@ -2764,6 +2781,7 @@ test "processFlight: handshake message spanning records needs buffer" {
 // reassembly storage keeps ztls allocation-free while supporting large flights.
 test "processFlight: reassembles handshake message split across records" {
     var hs: ClientHandshake = .init(try testConfig(rfc8448_client_keypair));
+    defer hs.deinit();
     hs.policy.insecure_no_chain_anchor = true;
     var reassembly: [1024]u8 = undefined;
     hs.useHandshakeBuffer(&reassembly);
@@ -2801,6 +2819,7 @@ test "processFlight: buffered path rejects handshake message after server Finish
 
 test "processFlight: RFC 8448 §3 flight split one message per record" {
     var hs: ClientHandshake = .init(try testConfig(rfc8448_client_keypair));
+    defer hs.deinit();
     hs.policy.insecure_no_chain_anchor = true;
     hs.injectClientHello(&rfc8448_client_hello);
     try hs.processServerHello(&rfc8448_server_hello);
@@ -3242,6 +3261,7 @@ const rfc8448_client_finished = [_]u8{
 // write key.
 test "clientFinished: RFC 8448 §3 emits Finished and upgrades to app keys" {
     var hs: ClientHandshake = .init(try testConfig(rfc8448_client_keypair));
+    defer hs.deinit();
     hs.policy.insecure_no_chain_anchor = true;
     hs.injectClientHello(&rfc8448_client_hello);
     try hs.processServerHello(&rfc8448_server_hello);
@@ -3274,6 +3294,7 @@ test "clientFinished: RFC 8448 §3 emits Finished and upgrades to app keys" {
 // can echo it in an empty Certificate before Finished.
 test "processFlight: accepts CertificateRequest before server Certificate" {
     var hs: ClientHandshake = .init(try testConfig(rfc8448_client_keypair));
+    defer hs.deinit();
     hs.injectClientHello(&rfc8448_client_hello);
     try hs.processServerHello(&rfc8448_server_hello);
 
@@ -3296,6 +3317,7 @@ test "processFlight: accepts CertificateRequest before server Certificate" {
 // RFC 8446 §4.3.2 — handshake-time CertificateRequest request_context MUST be empty.
 test "processFlight: rejects non-empty handshake CertificateRequest context" {
     var hs: ClientHandshake = .init(try testConfig(rfc8448_client_keypair));
+    defer hs.deinit();
     hs.injectClientHello(&rfc8448_client_hello);
     try hs.processServerHello(&rfc8448_server_hello);
 
@@ -3322,6 +3344,7 @@ test "processFlight: rejects non-empty handshake CertificateRequest context" {
 // Finished while keeping app secrets derived through the server Finished.
 test "clientFinished: sends empty Certificate before Finished for CertificateRequest" {
     var hs: ClientHandshake = .init(try testConfig(rfc8448_client_keypair));
+    defer hs.deinit();
     hs.policy.insecure_no_chain_anchor = true;
     hs.injectClientHello(&rfc8448_client_hello);
     try hs.processServerHello(&rfc8448_server_hello);
@@ -3361,6 +3384,7 @@ test "clientFinished: sends empty Certificate before Finished for CertificateReq
 // CertificateRequest. No CertificateVerify is sent.
 test "clientFinished: empty CertificateRequest with no credentials still finishes" {
     var hs: ClientHandshake = .init(try testConfig(rfc8448_client_keypair));
+    defer hs.deinit();
     hs.policy.insecure_no_chain_anchor = true;
     hs.injectClientHello(&rfc8448_client_hello);
     try hs.processServerHello(&rfc8448_server_hello);
@@ -3382,6 +3406,7 @@ test "clientFinished: empty CertificateRequest with no credentials still finishe
 test "client auth: setCredentials stores client credentials" {
     const fixtures = @import("fixtures");
     var hs: ClientHandshake = .init(try testConfig(rfc8448_client_keypair));
+    defer hs.deinit();
     var signer: signature.PrivateKey = try .fromP256Scalar(
         fixtures.client_ecdsa_scalar[0..32],
     );
@@ -3396,6 +3421,7 @@ test "client auth: setCredentials stores client credentials" {
 // nextTrafficSecret vector in hkdf.zig).
 test "ratchetClientKey: RFC 8446 §7.2 next application write key" {
     var hs: ClientHandshake = .init(try testConfig(rfc8448_client_keypair));
+    defer hs.deinit();
     hs.policy.insecure_no_chain_anchor = true;
     hs.injectClientHello(&rfc8448_client_hello);
     try hs.processServerHello(&rfc8448_server_hello);
@@ -3426,6 +3452,7 @@ fn expectHandshakeSecretsZero(suite: *const Suite) !void {
 // Drive the RFC 8448 §3 handshake to connected; rx/tx carry application keys.
 fn connectedTestClient() !ClientHandshake {
     var hs: ClientHandshake = .init(try testConfig(rfc8448_client_keypair));
+    errdefer hs.deinit();
     hs.policy.insecure_no_chain_anchor = true;
     hs.injectClientHello(&rfc8448_client_hello);
     try hs.processServerHello(&rfc8448_server_hello);
@@ -3439,6 +3466,7 @@ fn connectedTestClient() !ClientHandshake {
 
 test "handleRecord: application data resets both post-handshake flood counters" {
     var hs = try connectedTestClient();
+    defer hs.deinit();
     hs.post_handshake_key_update_count = 5;
     hs.post_handshake_new_session_ticket_count = 7;
 
@@ -3585,6 +3613,7 @@ test "ratchetKtlsTx: client advances only an idle TX epoch" {
 // epoch changes and the response record.
 test "handleRecord: server KeyUpdate(update_requested) ratchets rx and responds" {
     var hs = try connectedTestClient();
+    defer hs.deinit();
 
     // Server's sending layer (mirrors our rx at seq 0) and our pre-ratchet
     // send-key mirror to decrypt the response. Capture the server's secret_0
@@ -3650,6 +3679,7 @@ test "handleRecord: server KeyUpdate(update_requested) ratchets rx and responds"
 // coalesced in one record is illegal (cf. Go CVE-2026-32283).
 test "handleRecord: KeyUpdate not at record boundary is rejected" {
     var hs = try connectedTestClient();
+    defer hs.deinit();
     var server_tx = try hs.rx.clone();
     defer server_tx.deinit();
 
@@ -3674,6 +3704,7 @@ test "handleRecord: KeyUpdate not at record boundary is rejected" {
 // RFC 8446 §4.6.3 — KeyUpdateRequest only defines values 0 and 1.
 test "handleRecord: invalid server KeyUpdate request is rejected" {
     var hs = try connectedTestClient();
+    defer hs.deinit();
     var server_tx = try hs.rx.clone();
     defer server_tx.deinit();
 
@@ -3692,6 +3723,7 @@ test "handleRecord: invalid server KeyUpdate request is rejected" {
 // `.key_update` with rx=true, tx=false, response=null.
 test "handleRecord: server KeyUpdate(update_not_requested) surfaces key_update rx only" {
     var hs = try connectedTestClient();
+    defer hs.deinit();
     const rx_ktls_0 = hs.rxKtlsInfo();
     const tx_ktls_0 = hs.txKtlsInfo();
     var server_tx = try hs.rx.clone();
@@ -3734,6 +3766,7 @@ test "handleRecord: server KeyUpdate(update_not_requested) surfaces key_update r
 // arrives, the event surfaces rx=true, tx=false, response=null.
 test "handleRecord: self-initiated sendKeyUpdate response surfaces rx only" {
     var hs = try connectedTestClient();
+    defer hs.deinit();
     const tx_ktls_0 = hs.txKtlsInfo();
 
     // Self-initiated KeyUpdate: TX ratchets inside the call.
@@ -3777,6 +3810,7 @@ test "handleRecord: self-initiated sendKeyUpdate response surfaces rx only" {
 // RFC 8446 §6 — alerts before handshake protection are plaintext records.
 test "sendAlert: plaintext fatal alert before ServerHello" {
     var hs: ClientHandshake = .init(try testConfig(rfc8448_client_keypair));
+    defer hs.deinit();
     var out: [16]u8 = undefined;
     const rec = try hs.sendAlert(.decode_error, &out);
     try testing.expectEqualSlices(u8, &.{ 0x15, 0x03, 0x03, 0x00, 0x02, 0x02, 0x32 }, rec);
@@ -3786,6 +3820,7 @@ test "sendAlert: plaintext fatal alert before ServerHello" {
 // RFC 8446 §6.1 — close_notify is sent as a warning-level alert.
 test "sendAlert: encrypted close_notify after handshake" {
     var hs = try connectedTestClient();
+    defer hs.deinit();
     var peer = try hs.tx.clone();
     defer peer.deinit();
 
@@ -3801,6 +3836,7 @@ test "sendAlert: encrypted close_notify after handshake" {
 
 test "handleRecord: close_notify returns closed" {
     var hs = try connectedTestClient();
+    defer hs.deinit();
     var server_tx = try hs.rx.clone();
     defer server_tx.deinit();
 
@@ -3821,6 +3857,7 @@ test "handleRecord: close_notify returns closed" {
 // RFC 8446 §6.2 — fatal alerts abort; they are not clean close_notify.
 test "handleRecord: fatal alert returns PeerAlert" {
     var hs = try connectedTestClient();
+    defer hs.deinit();
     var server_tx = try hs.rx.clone();
     defer server_tx.deinit();
 
@@ -3843,6 +3880,7 @@ test "handleRecord: fatal alert returns PeerAlert" {
 // deriveSessionTicket to store resumption material).
 test "handleRecord: NewSessionTicket is surfaced as an event" {
     var hs = try connectedTestClient();
+    defer hs.deinit();
     const next_rx = try hs.suite.ratchetServerKey();
     hs.rx.deinit();
     hs.rx = next_rx;
@@ -3882,6 +3920,7 @@ test "handleRecord: NewSessionTicket is surfaced as an event" {
 // the real clientFinished transcript path.
 test "clientFinished: RFC 8448 §4 resumption_master_secret over the live transcript" {
     var hs = try connectedTestClient();
+    defer hs.deinit();
     switch (hs.suite) {
         .sha256 => |*s| {
             try testing.expect(s.resumption_master_valid);
@@ -3915,6 +3954,7 @@ test "startWithPsk: binder matches an independent HMAC over the prefix" {
         .now_sec = 0,
         .random = .zero,
     });
+    defer hs.deinit();
     // Use the RFC 8448 §4 PSK (nonce 00 00 from the §3 resumption master) so
     // the binder key chain is the vector-tested one.
     const resumption_master: hkdf.HkdfSha256.Prk = .init(.{
@@ -4130,6 +4170,7 @@ test "processServerHello rejects selected PSK with incompatible cipher suite has
         .now_sec = 0,
         .random = .zero,
     });
+    defer client.deinit();
     var ticket: SessionTicket = .{
         .ticket_age_add = 0,
         .cipher_suite = .aes_256_gcm_sha384,
@@ -4307,6 +4348,7 @@ test "handleRecord: PSK-offering client rejects bare Finished unless server sele
 // their burst accounting must not consume the KeyUpdate flood budget.
 test "handleRecord: accepts 17 consecutive NewSessionTickets" {
     var hs = try connectedTestClient();
+    defer hs.deinit();
     var server_tx = try hs.rx.clone();
     defer server_tx.deinit();
 
@@ -4330,6 +4372,7 @@ test "handleRecord: accepts 17 consecutive NewSessionTickets" {
 // a ticket-specific error rather than being mislabeled as a KeyUpdate flood.
 test "handleRecord: NewSessionTicket flood is rejected with ticket-specific error" {
     var hs = try connectedTestClient();
+    defer hs.deinit();
     var server_tx = try hs.rx.clone();
     defer server_tx.deinit();
 
@@ -4352,6 +4395,7 @@ test "handleRecord: NewSessionTicket flood is rejected with ticket-specific erro
 
 test "handleRecord: malformed NewSessionTicket is rejected" {
     var hs = try connectedTestClient();
+    defer hs.deinit();
     const next_rx = try hs.suite.ratchetServerKey();
     hs.rx.deinit();
     hs.rx = next_rx;
@@ -4367,6 +4411,7 @@ test "handleRecord: malformed NewSessionTicket is rejected" {
 // RFC 8446 §4.6.3 — consecutive KeyUpdates remain independently bounded.
 test "handleRecord: KeyUpdate flood is rejected" {
     var hs = try connectedTestClient();
+    defer hs.deinit();
     var out: [64]u8 = undefined;
 
     // Each iteration sends one KeyUpdate(update_not_requested) record. The
@@ -4394,6 +4439,7 @@ test "handleRecord: KeyUpdate flood is rejected" {
 // otherwise an attacker can interleave empty records to bypass the cap.
 test "handleRecord: empty application data does not reset flood counters" {
     var hs = try connectedTestClient();
+    defer hs.deinit();
     hs.post_handshake_key_update_count = 7;
     hs.post_handshake_new_session_ticket_count = 9;
 
@@ -4415,6 +4461,7 @@ test "handleRecord: empty application data does not reset flood counters" {
 // empty application-data records are interleaved between KeyUpdates.
 test "handleRecord: KeyUpdate flood cap fires despite empty app-data interleaving" {
     var hs = try connectedTestClient();
+    defer hs.deinit();
     var out: [64]u8 = undefined;
 
     const H = hkdf.HkdfSha256;
@@ -4459,6 +4506,7 @@ test "start: uses Config host_name for SNI and policy" {
         .now_sec = 0,
         .random = .{ .data = @splat(0xaa) },
     });
+    defer hs.deinit();
     var out: [256]u8 = undefined;
     _ = try hs.start(&out);
     try testing.expectEqualStrings("example.com", hs.policy.host_name.?);
@@ -4471,6 +4519,7 @@ test "start: uses Config host_name for SNI and policy" {
 // Finished.
 test "handleRecord: drives RFC 8448 §3 handshake to connected" {
     var hs: ClientHandshake = .init(try testConfig(rfc8448_client_keypair));
+    defer hs.deinit();
     hs.policy.insecure_no_chain_anchor = true;
     hs.injectClientHello(&rfc8448_client_hello);
 
@@ -4508,6 +4557,7 @@ test "handleRecord: drives RFC 8448 §3 handshake to connected" {
 // will accept another call — so a dropped write can't silently desync.
 test "handleRecord: unacknowledged write blocks further calls" {
     var hs = try connectedTestClient();
+    defer hs.deinit();
     var out: [128]u8 = undefined;
     _ = try hs.sendApplicationData("one", &out); // sets pending_write
     try testing.expectError(error.PendingWrite, hs.sendApplicationData("two", &out));
@@ -4591,6 +4641,7 @@ test "handleRecord: all-zero inner plaintext maps to unexpected_message" {
 // must be rejected rather than decrypted with an undefined key.
 test "handleRecord: application_data before ServerHello is rejected" {
     var hs: ClientHandshake = .init(try testConfig(rfc8448_client_keypair));
+    defer hs.deinit();
     hs.injectClientHello(&rfc8448_client_hello); // state = wait_sh
     var rec = [_]u8{ 0x17, 0x03, 0x03, 0x00, 0x05 } ++ [_]u8{0} ** 5;
     var out: [64]u8 = undefined;
@@ -4639,6 +4690,7 @@ test "fuzz: HandshakeReader handles arbitrary input" {
 // Drive an arbitrary decrypted flight through the state machine from wait_ee.
 fn fuzzProcessFlight(_: void, input: []const u8) anyerror!void {
     var hs: ClientHandshake = .init(try testConfig(rfc8448_client_keypair));
+    defer hs.deinit();
     hs.injectClientHello(&rfc8448_client_hello);
     hs.processServerHello(&rfc8448_server_hello) catch return;
     _ = hs.processFlight(input, hs.policy) catch return;
@@ -4673,6 +4725,7 @@ fn setupZeroRttClientForFuzz(ticket: *const SessionTicket) !ClientHandshake {
         .now_sec = 0,
         .random = .zero,
     });
+    errdefer hs.deinit();
 
     // Build a ClientHello with PSK + early_data but no P-256 key_share entry,
     // so a HelloRetryRequest selecting secp256r1 is valid (RFC 8446 §4.2.8).
@@ -4913,6 +4966,7 @@ test "processHelloRetryRequest: rejects already-offered key_share group" {
         .now_sec = 0,
         .random = .zero,
     });
+    defer hs.deinit();
     var ch_buf: [512]u8 = undefined;
     const ch = try client_hello.encodeWithP256(
         &ch_buf,
@@ -4941,6 +4995,7 @@ test "processHelloRetryRequest: secp256r1 selected produces ClientHello2" {
         .now_sec = 0,
         .random = .zero,
     });
+    defer hs.deinit();
     var ch_buf: [512]u8 = undefined;
     const ch = try encodeClientHelloMissingP256ShareForTest(&ch_buf, &hs);
     hs.injectClientHello(ch);
@@ -4968,6 +5023,7 @@ test "processHelloRetryRequest: transcript collapse matches §4.4.1" {
         .now_sec = 0,
         .random = .zero,
     });
+    defer hs.deinit();
     var ch_buf: [512]u8 = undefined;
     const ch = try encodeClientHelloMissingP256ShareForTest(&ch_buf, &hs);
     hs.injectClientHello(ch);
@@ -5036,6 +5092,7 @@ test "processHelloRetryRequest: rejects second HRR" {
         .now_sec = 0,
         .random = .zero,
     });
+    defer hs.deinit();
     var ch_buf: [512]u8 = undefined;
     const ch = try encodeClientHelloMissingP256ShareForTest(&ch_buf, &hs);
     hs.injectClientHello(ch);
@@ -5061,6 +5118,7 @@ test "processHelloRetryRequest: rejects unoffered selected_group" {
         .now_sec = 0,
         .random = .zero,
     });
+    defer hs.deinit();
     var ch_buf: [512]u8 = undefined;
     const ch = try encodeClientHelloMissingP256ShareForTest(&ch_buf, &hs);
     hs.injectClientHello(ch);
@@ -5084,6 +5142,7 @@ test "processServerHello: post-HRR rejects mismatched cipher suite" {
         .now_sec = 0,
         .random = .zero,
     });
+    defer hs.deinit();
     var ch_buf: [512]u8 = undefined;
     const ch = try encodeClientHelloMissingP256ShareForTest(&ch_buf, &hs);
     hs.injectClientHello(ch);
@@ -5115,6 +5174,7 @@ test "processServerHello: post-HRR rejects mismatched key_share group" {
         .now_sec = 0,
         .random = .zero,
     });
+    defer hs.deinit();
     var ch_buf: [512]u8 = undefined;
     const ch = try encodeClientHelloMissingP256ShareForTest(&ch_buf, &hs);
     hs.injectClientHello(ch);
@@ -5148,6 +5208,7 @@ test "processServerHello: post-HRR accepts matching ServerHello" {
         .now_sec = 0,
         .random = .zero,
     });
+    defer hs.deinit();
     var ch_buf: [512]u8 = undefined;
     const ch = try encodeClientHelloMissingP256ShareForTest(&ch_buf, &hs);
     hs.injectClientHello(ch);
@@ -5181,6 +5242,7 @@ test "handleRecord: HRR returns ClientHello2 as write event" {
         .now_sec = 0,
         .random = .zero,
     });
+    defer hs.deinit();
     var ch_buf: [512]u8 = undefined;
     const ch = try encodeClientHelloMissingP256ShareForTest(&ch_buf, &hs);
     hs.injectClientHello(ch);
@@ -5218,6 +5280,7 @@ test "handleRecord: HRR returns ClientHello2 as write event" {
 // fast-path check. processHelloRetryRequest returns null for non-HRR messages.
 test "processHelloRetryRequest: returns null for normal ServerHello" {
     var hs: ClientHandshake = .init(try testConfig(rfc8448_client_keypair));
+    defer hs.deinit();
     hs.injectClientHello(&rfc8448_client_hello);
 
     var out: [512]u8 = undefined;
@@ -5235,6 +5298,7 @@ test "processHelloRetryRequest: HRR with cookie echoes cookie in CH2" {
         .now_sec = 0,
         .random = .zero,
     });
+    defer hs.deinit();
     var ch_buf: [512]u8 = undefined;
     const ch = try encodeClientHelloMissingP256ShareForTest(&ch_buf, &hs);
     hs.injectClientHello(ch);

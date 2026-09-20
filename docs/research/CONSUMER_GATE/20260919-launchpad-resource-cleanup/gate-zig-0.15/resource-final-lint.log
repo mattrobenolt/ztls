@@ -1,0 +1,38 @@
+zig fmt --check src/ examples/ bench/ shared/ tests/distribution-consumer/ build.zig
+ziglint build.zig examples bench shared tests/distribution-consumer $(fd --extension zig --exclude certificate_parser.zig . src)
+ast-grep scan --rule rules/no-ztls-owned-allocations.yml src --globs '*.zig' --globs '!src/test/**' --globs '!src/bench/**' --globs '!src/interop.zig' --report-style short
+ast-grep scan --rule rules/no-c-pointer-types.yml src --globs '*.zig' --report-style short
+# std-alias rules: enforce the aliases we always want. certificate_parser.zig
+# is an upstream-derived std fork kept close to upstream, so it is excluded
+# like ziglint does.
+rc=0; for rule in rules/std-alias-*.yml; do ast-grep scan --rule "$rule" src examples bench shared --globs '*.zig' --globs '!src/certificate_parser.zig' --report-style short || rc=1; done; exit $rc
+shellcheck --severity=warning scripts/*.sh infra/bench/*.sh infra/iam/*.sh
+pinact run --fix=false --no-api .github/workflows/*.yml
+zizmor .github
+ INFO zizmor: 🌈 zizmor v1.30.1
+ WARN audit: zizmor: zizmor is running in offline mode by default; some audits and auto-fixes will not be available. see https://docs.zizmor.sh/usage/#operating-modes for details
+ INFO audit: zizmor: 🌈 completed .github/dependabot.yml
+ INFO audit: zizmor: 🌈 completed .github/workflows/ci.yml
+ INFO audit: zizmor: 🌈 completed .github/workflows/tls-anvil-client.yml
+ INFO audit: zizmor: 🌈 completed .github/workflows/tls-anvil-server.yml
+ INFO audit: zizmor: 🌈 completed .github/workflows/update-flake-lock.yml
+ INFO audit: zizmor: 🌈 completed .github/workflows/zizmor.yml
+No findings to report. Good job! (21 suppressed)
+no status-language drift
+no active-work headings referencing issues
+README index matches research files
+no closed-issue citations in research doc headings
+no tracked binary fixture files
+cargo fmt --check --manifest-path bench/rustls/Cargo.toml
+cargo clippy --all-targets --release --manifest-path bench/rustls/Cargo.toml -- -D warnings
+    Finished `release` profile [optimized] target(s) in 0.02s
+just conformance/lint
+uv run ruff format --check .
+12 files already formatted
+uv run ruff check .
+All checks passed!
+uv run ty check .
+All checks passed!
+zig fmt --check build.zig src/
+ziglint build.zig src/
+just --check --fmt --unstable --justfile justfile

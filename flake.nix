@@ -51,6 +51,12 @@
         {
           formatter = pkgs.nixfmt;
 
+          # Diagnostic provider for #121. Production keeps the optimized build.
+          # GCC vector scans trigger Memcheck reports after valid NUL terminators.
+          packages.openssl-memcheck = pkgs.openssl.overrideAttrs (old: {
+            configureFlags = old.configureFlags ++ [ "-fno-tree-vectorize" ];
+          });
+
           devShells = rec {
             base = pkgs.mkShell {
               name = "ztls-base";

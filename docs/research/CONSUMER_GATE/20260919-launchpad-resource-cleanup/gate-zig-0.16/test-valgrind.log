@@ -1,0 +1,15 @@
+==4067271== Memcheck, a memory error detector
+==4067271== Copyright (C) 2002-2026, and GNU GPL'd, by Julian Seward et al.
+==4067271== Using Valgrind-3.27.1 and LibVEX; rerun with -h for copyright info
+==4067271== Command: /Users/matt/code/ztls/zig-out/memory.81pdcj/bin/bin/test
+==4067271== Parent PID: 4067270
+==4067271== 
+==4067271== 
+==4067271== HEAP SUMMARY:
+==4067271==     in use at exit: 0 bytes in 0 blocks
+==4067271==   total heap usage: 212,467 allocs, 212,467 frees, 16,208,172 bytes allocated
+==4067271== 
+==4067271== All heap blocks were freed -- no leaks are possible
+==4067271== 
+==4067271== For lists of detected and suppressed errors, rerun with: -s
+==4067271== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)

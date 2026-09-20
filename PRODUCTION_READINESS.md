@@ -81,7 +81,7 @@ Only handoff and z53 participate. Kafka is abandoned and outside this gate.
 | #118 — certificate path length | The published fix passes the local provider/Zig matrices and GitHub CI `35482684833`, including macOS. Parent review and mutation evidence support the patch. Delegated independent review did not execute. |
 | #119 — consumer compatibility | Both real consumer suites pass against the candidate. Broken-import controls fail both consumers. The hostname-removal control fails two z53 authentication tests. |
 | #120 — TLS-Anvil | Both roles account for 437 cases per provider with zero unexpected results. All six parent reports are terminal and all source trees are clean. |
-| #121 — resource cleanup and transport recovery | Bounded handoff checks pass. Valgrind reports remain unresolved. No duration-based gate applies. |
+| #121 — resource cleanup and transport recovery | Revised unit and replay diagnostics free every allocation. Two early-data abort leaks have regressions. Replacement-candidate consumer recovery remains unqualified. No duration-based gate applies. |
 
 The consumer records are under
 [`CONSUMER_GATE/20260919-launchpad-b9d03ed`](docs/research/CONSUMER_GATE/20260919-launchpad-b9d03ed/).
@@ -113,10 +113,23 @@ The proxy used ten descriptors and reached 7,876 KiB RSS in the final samples.
 These are bounded functional checks, not throughput measurements or proof of indefinite stability.
 
 Valgrind 3.27.1 found no leaked allocations in the complete in-memory handshake example.
-The full unit suite leaked 124,416 direct bytes and 621,384 indirect bytes despite successful test assertions.
-Some handshake fixtures omit `deinit`. Full attribution remains open under #121.
-Uninitialized-value reports also occur in the standalone OpenSSL control without ztls.
-The reports remain unclassified, so the memory gate is not clean.
+The previous candidate's full unit suite leaked 124,416 direct bytes and 621,384 indirect bytes despite successful test assertions.
+The #121 follow-up fixes omitted fixture cleanup and two engine leaks during aborted early-data handshakes.
+Both abort regressions failed their allocation-count checks before the corresponding fixes.
+The revised Debug and ReleaseFast suites free every allocation, with 849 test passes and one skip each.
+
+The optimized OpenSSL reports map to seven vector-scan branches across five functions.
+A standalone instruction probe reproduces the Memcheck definedness limitation with valid NUL-terminated strings.
+The same ReleaseFast binary reports zero Memcheck errors with the diagnostic provider that disables C vectorization.
+No suppressions apply. Production keeps the optimized provider.
+Both Linux CI lanes check the full unit suite under Memcheck.
+The Zig 0.15 lane also checks all three replay benchmark rows.
+The benchmark driver depends on Zig 0.15 APIs.
+The replay cleanup fix changes that benchmark's measurement boundary, not historical captures.
+
+The [resource diagnosis](docs/research/CONSUMER_GATE/20260919-launchpad-resource-cleanup/) preserves the failures, controls, source patches, and provider disassembly.
+These diagnostics do not qualify a new immutable candidate.
+Consumer pool occupancy and the remaining transport-recovery checks stay open under #121.
 
 The six candidate captures are under
 [`captures-b9d03ed`](docs/research/TLS_ANVIL_91_CHAIN_FIXTURE/captures-b9d03ed/).
