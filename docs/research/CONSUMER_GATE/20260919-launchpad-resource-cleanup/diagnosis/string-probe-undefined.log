@@ -5,7 +5,7 @@
 ==3903221== Parent PID: 3903202
 ==3903221== 
 ==3903221== Conditional jump or move depends on uninitialised value(s)
-==3903221==    at 0x4B223D0: OPENSSL_strlcpy (in /nix/store/v89yca35zsb13k51ibz0mcz2rrzjwwrj-openssl-3.6.4/lib/libcrypto.so.3)
+==3903221==    at 0x4B223D0: OPENSSL_strlcpy (in /nix/store/HASH-openssl-3.6.4/lib/libcrypto.so.3)
 ==3903221==    by 0x1011933: string_probe.probe (string_probe.zig:14)
 ==3903221==    by 0x1011C77: main (string_probe.zig:4)
 ==3903221==    by 0x1011C77: callMain (start.zig:627)
@@ -15,7 +15,7 @@
 ==3903221==    at 0x10118E4: string_probe.probe (string_probe.zig:6)
 ==3903221== 
 ==3903221== Conditional jump or move depends on uninitialised value(s)
-==3903221==    at 0x4B21F7C: OPENSSL_strnlen (in /nix/store/v89yca35zsb13k51ibz0mcz2rrzjwwrj-openssl-3.6.4/lib/libcrypto.so.3)
+==3903221==    at 0x4B21F7C: OPENSSL_strnlen (in /nix/store/HASH-openssl-3.6.4/lib/libcrypto.so.3)
 ==3903221==    by 0x1011967: string_probe.probe (string_probe.zig:16)
 ==3903221==    by 0x1011C77: main (string_probe.zig:4)
 ==3903221==    by 0x1011C77: callMain (start.zig:627)
@@ -25,7 +25,7 @@
 ==3903221==    at 0x10118E4: string_probe.probe (string_probe.zig:6)
 ==3903221== 
 ==3903221== Conditional jump or move depends on uninitialised value(s)
-==3903221==    at 0x4B22868: OPENSSL_strlcat (in /nix/store/v89yca35zsb13k51ibz0mcz2rrzjwwrj-openssl-3.6.4/lib/libcrypto.so.3)
+==3903221==    at 0x4B22868: OPENSSL_strlcat (in /nix/store/HASH-openssl-3.6.4/lib/libcrypto.so.3)
 ==3903221==    by 0x101197F: string_probe.probe (string_probe.zig:18)
 ==3903221==    by 0x1011C77: main (string_probe.zig:4)
 ==3903221==    by 0x1011C77: callMain (start.zig:627)
@@ -35,8 +35,8 @@
 ==3903221==    at 0x10118E4: string_probe.probe (string_probe.zig:6)
 ==3903221== 
 ==3903221== Conditional jump or move depends on uninitialised value(s)
-==3903221==    at 0x4B223D0: OPENSSL_strlcpy (in /nix/store/v89yca35zsb13k51ibz0mcz2rrzjwwrj-openssl-3.6.4/lib/libcrypto.so.3)
-==3903221==    by 0x4B22897: OPENSSL_strlcat (in /nix/store/v89yca35zsb13k51ibz0mcz2rrzjwwrj-openssl-3.6.4/lib/libcrypto.so.3)
+==3903221==    at 0x4B223D0: OPENSSL_strlcpy (in /nix/store/HASH-openssl-3.6.4/lib/libcrypto.so.3)
+==3903221==    by 0x4B22897: OPENSSL_strlcat (in /nix/store/HASH-openssl-3.6.4/lib/libcrypto.so.3)
 ==3903221==    by 0x101197F: string_probe.probe (string_probe.zig:18)
 ==3903221==    by 0x1011C77: main (string_probe.zig:4)
 ==3903221==    by 0x1011C77: callMain (start.zig:627)

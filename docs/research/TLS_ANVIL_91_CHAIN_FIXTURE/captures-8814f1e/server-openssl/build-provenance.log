@@ -2,5 +2,5 @@ anvil-server (openssl)	Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba
 anvil-server (openssl)	Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1	2026-09-20T10:14:47.4612738Z  * [new ref]         8814f1e55642a7ce73841779ca0b25e530d31ef8 -> origin/qualification/20260920-8814f1e
 anvil-server (openssl)	Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1	2026-09-20T10:14:47.4668643Z 8814f1e55642a7ce73841779ca0b25e530d31ef8
 anvil-server (openssl)	Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1	2026-09-20T10:14:47.6598015Z 8814f1e55642a7ce73841779ca0b25e530d31ef8
-anvil-server (openssl)	Build harness and TLS-Anvil tools	2026-09-20T10:16:06.6429322Z copying path '/nix/store/6yfjyxxvhzgdg0453gvj45xsv681jg9y-zig-0.15.2' from 'https://cache.nixos.org'...
-anvil-server (openssl)	Build harness and TLS-Anvil tools	2026-09-20T10:17:15.7721893Z libcrypto family: openssl (/nix/store/mij14pdz6mld0xqg5c6s07mrhglwrz7r-openssl-3.6.4-dev/include)
+anvil-server (openssl)	Build harness and TLS-Anvil tools	2026-09-20T10:16:06.6429322Z copying path '/nix/store/HASH-zig-0.15.2' from 'https://cache.nixos.org'...
+anvil-server (openssl)	Build harness and TLS-Anvil tools	2026-09-20T10:17:15.7721893Z libcrypto family: openssl (/nix/store/HASH-openssl-3.6.4-dev/include)

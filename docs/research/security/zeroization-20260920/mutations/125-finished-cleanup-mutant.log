@@ -18,4 +18,4 @@ test transitive failure
 +- run exe errq-alloc-check failure
 
 error: the following build command failed with exit code 1:
-/tmp/ztls-signoff-20260919/cache/o/e5b61deb4147ae677834b244a8a33d83/build /nix/store/4x0z07w3mxafc59b5dirkmllvqhav1i6-zig-0.15.2/bin/zig /nix/store/4x0z07w3mxafc59b5dirkmllvqhav1i6-zig-0.15.2/lib/zig /Users/matt/code/ztls /tmp/ztls-signoff-20260919/cache /tmp/ztls-plc-cache/global --seed 0xb2bf1cb5 -Z2f264b7315c34b47 test
+/tmp/ztls-signoff-20260919/cache/o/e5b61deb4147ae677834b244a8a33d83/build /nix/store/HASH-zig-0.15.2/bin/zig /nix/store/HASH-zig-0.15.2/lib/zig /Users/matt/code/ztls /tmp/ztls-signoff-20260919/cache /tmp/ztls-plc-cache/global --seed 0xb2bf1cb5 -Z2f264b7315c34b47 test

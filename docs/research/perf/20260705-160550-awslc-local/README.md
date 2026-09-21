@@ -21,10 +21,10 @@ git_dirty=false
 zig_version=0.15.2
 zig_optimization_mode=ReleaseFast
 crypto_backend=aws-lc
-ztls_linked_libcrypto=/nix/store/6386897pzawhk2m445xyl2vc6r024pl8-aws-lc-1.69.0/lib/libcrypto.so
-evp_linked_libcrypto=/nix/store/bl7rmhhsy7vjb9qm3jfwgqpv3cn7wfb1-openssl-3.6.2/lib/libcrypto.so.3
-libssl_linked_libcrypto=/nix/store/bl7rmhhsy7vjb9qm3jfwgqpv3cn7wfb1-openssl-3.6.2/lib/libcrypto.so.3
-libssl_linked_libssl=/nix/store/bl7rmhhsy7vjb9qm3jfwgqpv3cn7wfb1-openssl-3.6.2/lib/libssl.so.3
+ztls_linked_libcrypto=/nix/store/HASH-aws-lc-1.69.0/lib/libcrypto.so
+evp_linked_libcrypto=/nix/store/HASH-openssl-3.6.2/lib/libcrypto.so.3
+libssl_linked_libcrypto=/nix/store/HASH-openssl-3.6.2/lib/libcrypto.so.3
+libssl_linked_libssl=/nix/store/HASH-openssl-3.6.2/lib/libssl.so.3
 rustls_version=0.23.40
 uname=Linux orbstack 7.0.11-orbstack-00360-gc9bc4d96ac70 ... aarch64 GNU/Linux
 args=--count=5 --benchtime=500ms --filter BenchmarkHandshake/,BenchmarkAppPingPong/*/size=1350

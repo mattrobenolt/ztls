@@ -11,8 +11,8 @@ perf_stat_command=perf stat -e cycles,instructions,branches,branch-misses,cache-
 perf_record_command=perf record --call-graph dwarf,16384 -F 997 --output zig-out/perf/20260705-215953-row-perf/perf-row-openssl-apppingpong-TLS_AES_128_GCM_SHA256-1350/perf.data -- zig-out/bin/bio_bench --filter ^BenchmarkAppPingPong/impl=openssl/suite=TLS_AES_128_GCM_SHA256/size=1350$ --benchtime 500ms --count 5
 bench_command=zig-out/bin/bio_bench --filter ^BenchmarkAppPingPong/impl=openssl/suite=TLS_AES_128_GCM_SHA256/size=1350$ --benchtime 500ms --count 5
 binary_path=zig-out/bin/bio_bench
-linked_libcrypto=/nix/store/y18pnbvfarnilsmgayswvi1khaw9wbsc-openssl-3.6.2/lib/libcrypto.so.3
-linked_libssl=/nix/store/y18pnbvfarnilsmgayswvi1khaw9wbsc-openssl-3.6.2/lib/libssl.so.3
+linked_libcrypto=/nix/store/HASH-openssl-3.6.2/lib/libcrypto.so.3
+linked_libssl=/nix/store/HASH-openssl-3.6.2/lib/libssl.so.3
 kernel=6.12.93
 cpu_model=Intel(R) Xeon(R) Platinum 8488C
 optimization_mode=ReleaseFast

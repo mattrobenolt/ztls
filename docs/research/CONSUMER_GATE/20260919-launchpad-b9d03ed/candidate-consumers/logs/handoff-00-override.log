@@ -1,6 +1,6 @@
 Executing uvVenvShellHook
 Creating new uv venv environment in path: '.venv'
-Using CPython 3.14.7 interpreter at: /nix/store/3fl7bdkdxk2k4nssy1d1161isbzn6bsr-python3-3.14.7/bin/python3
+Using CPython 3.14.7 interpreter at: /nix/store/HASH-python3-3.14.7/bin/python3
 Creating virtual environment at: .venv
 Activate with: source .venv/bin/activate
 Finished executing uvVenvShellHook

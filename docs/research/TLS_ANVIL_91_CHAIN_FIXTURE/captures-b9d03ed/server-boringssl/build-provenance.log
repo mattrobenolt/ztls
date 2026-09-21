@@ -1,4 +1,4 @@
 anvil-server (boringssl)	Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1	2026-09-20T02:03:52.9518437Z b9d03edfb422e4f2528635bae03cc1a5daffbe69
 anvil-server (boringssl)	Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1	2026-09-20T02:03:53.1009275Z b9d03edfb422e4f2528635bae03cc1a5daffbe69
-anvil-server (boringssl)	Build harness and TLS-Anvil tools	2026-09-20T02:05:10.8608531Z copying path '/nix/store/6yfjyxxvhzgdg0453gvj45xsv681jg9y-zig-0.15.2' from 'https://cache.nixos.org'...
-anvil-server (boringssl)	Build harness and TLS-Anvil tools	2026-09-20T02:06:32.9670605Z libcrypto family: boringssl (/nix/store/vg8qjk8nk4waix83yq1187bqbaq0p8n4-boringssl-0.20260803.0-dev/include)
+anvil-server (boringssl)	Build harness and TLS-Anvil tools	2026-09-20T02:05:10.8608531Z copying path '/nix/store/HASH-zig-0.15.2' from 'https://cache.nixos.org'...
+anvil-server (boringssl)	Build harness and TLS-Anvil tools	2026-09-20T02:06:32.9670605Z libcrypto family: boringssl (/nix/store/HASH-boringssl-0.20260803.0-dev/include)

@@ -5,7 +5,7 @@ errq-alloc-check: client Finished abort
 errq-alloc-check: ok (allocs 154925, frees 148995, live 5930)
 ztest: Running 1 test...
 [1/1] FAIL: secret lifecycle preserves live epochs and clears owned secret fields — error.TestUnexpectedResult (954.81ms)
-/nix/store/4x0z07w3mxafc59b5dirkmllvqhav1i6-zig-0.15.2/lib/zig/std/testing.zig:607:14: 0x1444c8f in expect (test)
+/nix/store/HASH-zig-0.15.2/lib/zig/std/testing.zig:607:14: 0x1444c8f in expect (test)
     if (!ok) return error.TestUnexpectedResult;
              ^
 /Users/matt/code/ztls/src/suite_state.zig:143:13: 0x150248f in test.secret lifecycle preserves live epochs and clears owned secret fields (test)
@@ -24,4 +24,4 @@ test transitive failure
 +- run test failure
 
 error: the following build command failed with exit code 1:
-/tmp/ztls-signoff-20260919/cache/o/e5b61deb4147ae677834b244a8a33d83/build /nix/store/4x0z07w3mxafc59b5dirkmllvqhav1i6-zig-0.15.2/bin/zig /nix/store/4x0z07w3mxafc59b5dirkmllvqhav1i6-zig-0.15.2/lib/zig /Users/matt/code/ztls /tmp/ztls-signoff-20260919/cache /tmp/ztls-plc-cache/global --seed 0x6075fb1c -Z628f69c1ff226034 test
+/tmp/ztls-signoff-20260919/cache/o/e5b61deb4147ae677834b244a8a33d83/build /nix/store/HASH-zig-0.15.2/bin/zig /nix/store/HASH-zig-0.15.2/lib/zig /Users/matt/code/ztls /tmp/ztls-signoff-20260919/cache /tmp/ztls-plc-cache/global --seed 0x6075fb1c -Z628f69c1ff226034 test

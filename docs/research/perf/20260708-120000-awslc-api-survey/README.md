@@ -21,7 +21,7 @@ path available. There is no alternative API to measure against.
 
 **AWS-LC version:** 5.0.0 (Nix `nixpkgs#aws-lc.dev`)
 **Header path:** `…/aws-lc-5.0.0-dev/include/openssl/`
-**Derivation:** `/nix/store/sa23jx80d87f578pqbrrk50ww730hajy-aws-lc-5.0.0-dev`
+**Derivation:** `/nix/store/HASH-aws-lc-5.0.0-dev`
 
 ### OpenSSL 3.x provider API — ABSENT
 

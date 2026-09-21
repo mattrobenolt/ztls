@@ -21,5 +21,5 @@ test-runtime transitive failure
 +- run test failure
 
 error: the following build command failed with exit code 1:
-/tmp/ztls-signoff-20260919/z53-resource-cache/o/0a2bb0c84cafb5ce8e5ea89c70ef045f/build /nix/store/h4am1dpj4li41cq58861nysgaip7036s-zig-0.16.0/bin/zig /nix/store/h4am1dpj4li41cq58861nysgaip7036s-zig-0.16.0/lib/zig /tmp/ztls-signoff-20260919/z53-resource /tmp/ztls-signoff-20260919/z53-resource-cache /tmp/ztls-signoff-20260919/consumer-global16 --seed 0x7bff61f9 -Z65a5f7c8e2fdec05 test-runtime -Doptimize=ReleaseSafe -Dcpu=baseline
+/tmp/ztls-signoff-20260919/z53-resource-cache/o/0a2bb0c84cafb5ce8e5ea89c70ef045f/build /nix/store/HASH-zig-0.16.0/bin/zig /nix/store/HASH-zig-0.16.0/lib/zig /tmp/ztls-signoff-20260919/z53-resource /tmp/ztls-signoff-20260919/z53-resource-cache /tmp/ztls-signoff-20260919/consumer-global16 --seed 0x7bff61f9 -Z65a5f7c8e2fdec05 test-runtime -Doptimize=ReleaseSafe -Dcpu=baseline
 error: recipe `test-runtime` failed on line 29 with exit code 1

@@ -5,17 +5,17 @@
 # zig_version=0.15.2
 # zig_optimization_mode=ReleaseFast
 # crypto_backend=openssl
-# openssl_pkg_config_path=/nix/store/jvnhc1z9c04n4a7b2z2hzbajsa5i6ygd-openssl-3.6.3-dev/lib/pkgconfig
-# linked_libcrypto=/nix/store/1p2gjq4x396yj65rig8fyzhrdza0psd6-openssl-3.6.3/lib/libcrypto.so.3
-# ztls_linked_libcrypto=/nix/store/1p2gjq4x396yj65rig8fyzhrdza0psd6-openssl-3.6.3/lib/libcrypto.so.3
-# evp_linked_libcrypto=/nix/store/1p2gjq4x396yj65rig8fyzhrdza0psd6-openssl-3.6.3/lib/libcrypto.so.3
-# libssl_linked_libcrypto=/nix/store/1p2gjq4x396yj65rig8fyzhrdza0psd6-openssl-3.6.3/lib/libcrypto.so.3
-# libssl_linked_libssl=/nix/store/1p2gjq4x396yj65rig8fyzhrdza0psd6-openssl-3.6.3/lib/libssl.so.3
+# openssl_pkg_config_path=/nix/store/HASH-openssl-3.6.3-dev/lib/pkgconfig
+# linked_libcrypto=/nix/store/HASH-openssl-3.6.3/lib/libcrypto.so.3
+# ztls_linked_libcrypto=/nix/store/HASH-openssl-3.6.3/lib/libcrypto.so.3
+# evp_linked_libcrypto=/nix/store/HASH-openssl-3.6.3/lib/libcrypto.so.3
+# libssl_linked_libcrypto=/nix/store/HASH-openssl-3.6.3/lib/libcrypto.so.3
+# libssl_linked_libssl=/nix/store/HASH-openssl-3.6.3/lib/libssl.so.3
 # openssl_cli_version=OpenSSL 3.6.3 9 Jun 2026 (Library: OpenSSL 3.6.3 9 Jun 2026)
 # rustls_profile=release
 # rustls_version=0.23.40
 # rustc_version=rustc 1.97.0 (2d8144b78 2026-07-07)
-# benchstat_path=/nix/store/ijgalv36gswcqvb4y2dshap64v7wy37k-benchstat-unstable-2026-07-09/bin/benchstat
+# benchstat_path=/nix/store/HASH-benchstat-unstable-2026-07-09/bin/benchstat
 # go_version=go version go1.26.4 linux/amd64
 
 ## Comparable TLS application-data rows

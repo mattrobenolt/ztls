@@ -1,4 +1,4 @@
 anvil-client (aws-lc)	Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1	2026-09-20T02:04:23.8869223Z b9d03edfb422e4f2528635bae03cc1a5daffbe69
 anvil-client (aws-lc)	Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1	2026-09-20T02:04:24.0306775Z b9d03edfb422e4f2528635bae03cc1a5daffbe69
-anvil-client (aws-lc)	Build harness and TLS-Anvil tools	2026-09-20T02:05:48.5614003Z copying path '/nix/store/6yfjyxxvhzgdg0453gvj45xsv681jg9y-zig-0.15.2' from 'http://127.0.0.1:37515'...
-anvil-client (aws-lc)	Build harness and TLS-Anvil tools	2026-09-20T02:07:00.8658063Z libcrypto family: aws-lc (/nix/store/xcgz3zg6nd9sg4m2xg6jlf2lxanva74l-aws-lc-5.5.0-dev/include)
+anvil-client (aws-lc)	Build harness and TLS-Anvil tools	2026-09-20T02:05:48.5614003Z copying path '/nix/store/HASH-zig-0.15.2' from 'http://127.0.0.1:37515'...
+anvil-client (aws-lc)	Build harness and TLS-Anvil tools	2026-09-20T02:07:00.8658063Z libcrypto family: aws-lc (/nix/store/HASH-aws-lc-5.5.0-dev/include)

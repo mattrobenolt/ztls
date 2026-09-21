@@ -8,8 +8,8 @@
     "failed": 0,
     "skipped": 1
   },
-  "production_provider": "/nix/store/v89yca35zsb13k51ibz0mcz2rrzjwwrj-openssl-3.6.4/lib/libcrypto.so.3",
-  "diagnostic_provider": "/nix/store/ilhjg5z9hlw3ccc4bfvpi4s6kplvl7yq-openssl-3.6.4/lib/libcrypto.so.3",
+  "production_provider": "/nix/store/HASH-openssl-3.6.4/lib/libcrypto.so.3",
+  "diagnostic_provider": "/nix/store/HASH-openssl-3.6.4/lib/libcrypto.so.3",
   "diagnostic_difference": "-fno-tree-vectorize",
   "optimized_contexts": 57,
   "optimized_occurrences": 6583,

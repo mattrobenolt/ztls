@@ -3,22 +3,22 @@
   "zig_version": "0.16.0",
   "valgrind_version": "valgrind-3.27.1",
   "provider": "AWS-LC 5.5.0",
-  "provider_library": "/nix/store/3hnfh4dzrjjncnpa9nhggr6l7m97g456-aws-lc-5.5.0/lib/libcrypto.so",
+  "provider_library": "/nix/store/HASH-aws-lc-5.5.0/lib/libcrypto.so",
   "provider_sha256": "31038661f89966e200424ca7344f5af26748dc1e337a349c7a6afedbba9efe89",
   "records": [
     {
       "name": "main-1",
       "build": [
-        "/nix/store/h4am1dpj4li41cq58861nysgaip7036s-zig-0.16.0/bin/zig",
+        "/nix/store/HASH-zig-0.16.0/bin/zig",
         "build-exe",
         "/tmp/ztls-signoff-20260919/aws-lc-cache-final/main-1.zig",
         "-OReleaseSafe",
         "-mcpu=baseline",
         "-lc",
         "-lcrypto",
-        "-L/nix/store/3hnfh4dzrjjncnpa9nhggr6l7m97g456-aws-lc-5.5.0/lib",
+        "-L/nix/store/HASH-aws-lc-5.5.0/lib",
         "-rpath",
-        "/nix/store/3hnfh4dzrjjncnpa9nhggr6l7m97g456-aws-lc-5.5.0/lib",
+        "/nix/store/HASH-aws-lc-5.5.0/lib",
         "-femit-bin=/tmp/ztls-signoff-20260919/aws-lc-cache-final/main-1"
       ],
       "command": [
@@ -40,16 +40,16 @@
     {
       "name": "main-512",
       "build": [
-        "/nix/store/h4am1dpj4li41cq58861nysgaip7036s-zig-0.16.0/bin/zig",
+        "/nix/store/HASH-zig-0.16.0/bin/zig",
         "build-exe",
         "/tmp/ztls-signoff-20260919/aws-lc-cache-final/main-512.zig",
         "-OReleaseSafe",
         "-mcpu=baseline",
         "-lc",
         "-lcrypto",
-        "-L/nix/store/3hnfh4dzrjjncnpa9nhggr6l7m97g456-aws-lc-5.5.0/lib",
+        "-L/nix/store/HASH-aws-lc-5.5.0/lib",
         "-rpath",
-        "/nix/store/3hnfh4dzrjjncnpa9nhggr6l7m97g456-aws-lc-5.5.0/lib",
+        "/nix/store/HASH-aws-lc-5.5.0/lib",
         "-femit-bin=/tmp/ztls-signoff-20260919/aws-lc-cache-final/main-512"
       ],
       "command": [
@@ -71,16 +71,16 @@
     {
       "name": "thread-512",
       "build": [
-        "/nix/store/h4am1dpj4li41cq58861nysgaip7036s-zig-0.16.0/bin/zig",
+        "/nix/store/HASH-zig-0.16.0/bin/zig",
         "build-exe",
         "/tmp/ztls-signoff-20260919/aws-lc-cache-final/thread-512.zig",
         "-OReleaseSafe",
         "-mcpu=baseline",
         "-lc",
         "-lcrypto",
-        "-L/nix/store/3hnfh4dzrjjncnpa9nhggr6l7m97g456-aws-lc-5.5.0/lib",
+        "-L/nix/store/HASH-aws-lc-5.5.0/lib",
         "-rpath",
-        "/nix/store/3hnfh4dzrjjncnpa9nhggr6l7m97g456-aws-lc-5.5.0/lib",
+        "/nix/store/HASH-aws-lc-5.5.0/lib",
         "-femit-bin=/tmp/ztls-signoff-20260919/aws-lc-cache-final/thread-512"
       ],
       "command": [

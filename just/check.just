@@ -223,7 +223,7 @@ examples-ci:
 
 [doc("Check formatting and lint (for CI)")]
 [group("check")]
-lint: lint-zig lint-shell lint-actions lint-just lint-markdown lint-issues lint-readme-index lint-fixtures lint-rust
+lint: lint-zig lint-shell lint-actions lint-just lint-markdown lint-issues lint-readme-index lint-fixtures lint-rust lint-store-paths
     just conformance/lint
 
 [doc("Lint markdown research docs for status-language drift")]
@@ -244,6 +244,23 @@ lint-markdown:
         exit 1
     fi
     echo "no status-language drift"
+
+[doc("Reject machine-specific Nix store paths in tracked files")]
+[group("check")]
+lint-store-paths:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    # A store hash is only resolvable on the machine that produced it, and
+    # Nix rejects fixed-output source fetches of a tree that contains one,
+    # which blocks standard fetchers from consuming the repository (#131).
+    # Evidence records the package name after the hash, never the hash.
+    matches=$(git grep -nE '/nix/store/[0-9a-z]{32}' -- . || true)
+    if [ -n "$matches" ]; then
+        printf 'machine-specific Nix store paths in tracked files:\n%s\n' "$matches" >&2
+        echo "Record the package name after the hash, not the store hash (#131)." >&2
+        exit 1
+    fi
+    echo "no machine-specific Nix store paths"
 
 [doc("Lint research doc headings for closed-issue citations")]
 [group("check")]

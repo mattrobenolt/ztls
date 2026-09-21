@@ -1,6 +1,6 @@
 Executing uvVenvShellHook
 Creating new uv venv environment in path: '.venv'
-Using CPython 3.14.7 interpreter at: /nix/store/3fl7bdkdxk2k4nssy1d1161isbzn6bsr-python3-3.14.7/bin/python3
+Using CPython 3.14.7 interpreter at: /nix/store/HASH-python3-3.14.7/bin/python3
 Creating virtual environment at: .venv
 Activate with: source .venv/bin/activate
 Finished executing uvVenvShellHook
@@ -20,7 +20,7 @@ Traceback (most recent call last):
     ~~~~~~~~~~~~~~^^^^^^
   File "/tmp/ztls-production.DCwJ3H/handoff-ops/bench/check.py", line 287, in starttls_probe
     tls = _ssl_context().wrap_socket(sock)
-  File "/nix/store/3fl7bdkdxk2k4nssy1d1161isbzn6bsr-python3-3.14.7/lib/python3.14/ssl.py", line 455, in wrap_socket
+  File "/nix/store/HASH-python3-3.14.7/lib/python3.14/ssl.py", line 455, in wrap_socket
     return self.sslsocket_class._create(
            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
         sock=sock,
@@ -30,7 +30,7 @@ Traceback (most recent call last):
         ^^^^^^^^^^^^^^^
     )
     ^
-  File "/nix/store/3fl7bdkdxk2k4nssy1d1161isbzn6bsr-python3-3.14.7/lib/python3.14/ssl.py", line 1004, in _create
+  File "/nix/store/HASH-python3-3.14.7/lib/python3.14/ssl.py", line 1004, in _create
     raise ValueError("check_hostname requires server_hostname")
 ValueError: check_hostname requires server_hostname
 
@@ -50,7 +50,7 @@ Traceback (most recent call last):
         ^^^^^^^^^^^^^^^^^
     ):
     ^
-  File "/nix/store/3fl7bdkdxk2k4nssy1d1161isbzn6bsr-python3-3.14.7/lib/python3.14/contextlib.py", line 162, in __exit__
+  File "/nix/store/HASH-python3-3.14.7/lib/python3.14/contextlib.py", line 162, in __exit__
     self.gen.throw(value)
     ~~~~~~~~~~~~~~^^^^^^^
   File "/tmp/ztls-production.DCwJ3H/handoff-ops/qualification_check.py", line 64, in observed_running

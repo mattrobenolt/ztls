@@ -35,7 +35,7 @@
     "ZTEST_FILTER": "forward TLS reset releases pools",
     "ZTEST_VERBOSE": "1",
     "ZTEST_PLAIN": "1",
-    "LD_LIBRARY_PATH": "/nix/store/ilhjg5z9hlw3ccc4bfvpi4s6kplvl7yq-openssl-3.6.4/lib"
+    "LD_LIBRARY_PATH": "/nix/store/HASH-openssl-3.6.4/lib"
   },
   "binary": "/tmp/ztls-signoff-20260919/z53-resource-cache/o/f2a4d805a9d5c68575c666af9a985081/test",
   "binary_sha256": "7fe16be460c1d391c9ca1da3e8177f3a9ac419fb82b0bba5ee1310dcce881a58",

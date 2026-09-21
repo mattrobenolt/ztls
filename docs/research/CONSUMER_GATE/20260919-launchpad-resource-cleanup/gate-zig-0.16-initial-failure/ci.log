@@ -872,7 +872,7 @@ test success
    +- compile exe encrypted-pem-check Debug native-native cached 21ms MaxRSS:52M
       +- options (reused)
 
-libcrypto family: aws-lc (/nix/store/dqas6llmc0w6gf922rcb6ncqmjjm5g1z-aws-lc-5.5.0-dev/include)
+libcrypto family: aws-lc (/nix/store/HASH-aws-lc-5.5.0-dev/include)
 encrypted-pem-check: ok (pipe, terminal)
 errq-alloc-check: early client abort
 errq-alloc-check: early server abort
@@ -1743,7 +1743,7 @@ test success
    +- compile exe encrypted-pem-check Debug native-native success 31s MaxRSS:855M
       +- options (reused)
 
-libcrypto family: boringssl (/nix/store/i7ci2wsgajn60hdg1r0hfb6rd628c80y-boringssl-0.20260803.0-dev/include)
+libcrypto family: boringssl (/nix/store/HASH-boringssl-0.20260803.0-dev/include)
 errq-alloc-check: skipped for boringssl
 encrypted-pem-check: ok (pipe, terminal)
 ztest: Running 850 tests...

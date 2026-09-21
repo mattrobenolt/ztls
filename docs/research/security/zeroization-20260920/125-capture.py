@@ -13,8 +13,8 @@ out.mkdir(exist_ok=False)
 probe = Path('/tmp/ztls-signoff-20260919/125-hkdf-probe.zig')
 shutil.copy2(probe, out / 'probe.zig')
 compilers = {
-    '015': Path('/nix/store/4x0z07w3mxafc59b5dirkmllvqhav1i6-zig-0.15.2/bin/zig'),
-    '016': Path('/nix/store/h4am1dpj4li41cq58861nysgaip7036s-zig-0.16.0/bin/zig'),
+    '015': Path('/nix/store/HASH-zig-0.15.2/bin/zig'),
+    '016': Path('/nix/store/HASH-zig-0.16.0/bin/zig'),
 }
 objdump = shutil.which('llvm-objdump')
 assert objdump

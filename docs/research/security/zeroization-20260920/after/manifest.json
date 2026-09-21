@@ -4,7 +4,7 @@
   "index_tree": "ec60d159f08b1c22d5c2e23ce9a5aa8e0426946f",
   "status": "M  .pi/agents/security-reviewer.md\nM  docs/USAGE.md\nM  examples/handshake_keys.zig\nM  src/ClientHandshake.zig\nM  src/ServerHandshake.zig\nM  src/hkdf.zig\nM  src/hybrid_kex.zig\nM  src/p256.zig\nM  src/p384.zig\nM  src/suite_state.zig\nM  src/test/errq_alloc_check.zig\nM  src/wycheproof.zig\nM  src/x25519.zig",
   "probe_sha256": "dda795ae189de102290c2c75ea9325791dcc69264048c4738cfc39ef8b8cdfc6",
-  "objdump": "/nix/store/hvzc7jddh73hq16a3wbbymmlxhwyxfb8-llvm-21.1.8/bin/llvm-objdump",
+  "objdump": "/nix/store/HASH-llvm-21.1.8/bin/llvm-objdump",
   "objdump_version": "LLVM (http://llvm.org/):\n  LLVM version 21.1.8\n  Optimized build.\n\n\n  Registered Targets:\n    aarch64     - AArch64 (little endian)\n    aarch64_32  - AArch64 (little endian ILP32)\n    aarch64_be  - AArch64 (big endian)\n    amdgcn      - AMD GCN GPUs\n    arm         - ARM\n    arm64       - ARM64 (little endian)\n    arm64_32    - ARM64 (little endian ILP32)\n    armeb       - ARM (big endian)\n    avr         - Atmel AVR Microcontroller\n    bpf         - BPF (host endian)\n    bpfeb       - BPF (big endian)\n    bpfel       - BPF (little endian)\n    hexagon     - Hexagon\n    lanai       - Lanai\n    loongarch32 - 32-bit LoongArch\n    loongarch64 - 64-bit LoongArch\n    mips        - MIPS (32-bit big endian)\n    mips64      - MIPS (64-bit big endian)\n    mips64el    - MIPS (64-bit little endian)\n    mipsel      - MIPS (32-bit little endian)\n    msp430      - MSP430 [experimental]\n    nvptx       - NVIDIA PTX 32-bit\n    nvptx64     - NVIDIA PTX 64-bit\n    ppc32       - PowerPC 32\n    ppc32le     - PowerPC 32 LE\n    ppc64       - PowerPC 64\n    ppc64le     - PowerPC 64 LE\n    r600        - AMD GPUs HD2XXX-HD6XXX\n    riscv32     - 32-bit RISC-V\n    riscv64     - 64-bit RISC-V\n    sparc       - Sparc\n    sparcel     - Sparc LE\n    sparcv9     - Sparc V9\n    spirv       - SPIR-V Logical\n    spirv32     - SPIR-V 32-bit\n    spirv64     - SPIR-V 64-bit\n    systemz     - SystemZ\n    thumb       - Thumb\n    thumbeb     - Thumb (big endian)\n    ve          - VE\n    wasm32      - WebAssembly 32-bit\n    wasm64      - WebAssembly 64-bit\n    x86         - 32-bit X86: Pentium-Pro and above\n    x86-64      - 64-bit X86: EM64T and AMD64\n    xcore       - XCore",
   "sources": {
     "src/hkdf.zig": "1a3ae96ead6a52c02ed879c58590814bbe0694574d0fe78e29e6db2cb72cd6e4",
@@ -16,12 +16,12 @@
   },
   "runs": [
     {
-      "compiler": "/nix/store/4x0z07w3mxafc59b5dirkmllvqhav1i6-zig-0.15.2/bin/zig",
+      "compiler": "/nix/store/HASH-zig-0.15.2/bin/zig",
       "compiler_sha256": "26aa685cfb6951b6dfe7ac48f6a92d49bbbc0c8e51796e6f93646c6407b3b1a3",
       "version": "0.15.2",
       "target": "aarch64-linux-gnu",
       "argv": [
-        "/nix/store/4x0z07w3mxafc59b5dirkmllvqhav1i6-zig-0.15.2/bin/zig",
+        "/nix/store/HASH-zig-0.15.2/bin/zig",
         "build-obj",
         "-OReleaseFast",
         "-target",
@@ -40,27 +40,27 @@
         "-femit-bin=/tmp/ztls-signoff-20260919/125-after-direct-buffers/015-aarch64-linux-gnu.o"
       ],
       "disasm_argv": [
-        "/nix/store/hvzc7jddh73hq16a3wbbymmlxhwyxfb8-llvm-21.1.8/bin/llvm-objdump",
+        "/nix/store/HASH-llvm-21.1.8/bin/llvm-objdump",
         "-dr",
         "--symbolize-operands",
         "/tmp/ztls-signoff-20260919/125-after-direct-buffers/015-aarch64-linux-gnu.o"
       ],
       "stdlib_sources": {
-        "/nix/store/4x0z07w3mxafc59b5dirkmllvqhav1i6-zig-0.15.2/lib/zig/std/crypto/hkdf.zig": "230b7b6a2498245543babebdd08c07701d0184f2fafd8ad522d871444be80401",
-        "/nix/store/4x0z07w3mxafc59b5dirkmllvqhav1i6-zig-0.15.2/lib/zig/std/crypto/hmac.zig": "b916f7f203d15c8e5f76a43c9f7c6a729edc51c95d0342040fe02fb567de2006",
-        "/nix/store/4x0z07w3mxafc59b5dirkmllvqhav1i6-zig-0.15.2/lib/zig/std/crypto/sha2.zig": "b69748641b6505170756eb7f006c44ca1971f56f5aeab0d2848681698bfefcb9",
-        "/nix/store/4x0z07w3mxafc59b5dirkmllvqhav1i6-zig-0.15.2/lib/zig/std/crypto.zig": "41bde1efcf6ddd6f1adbaefbb2559ff7dc281bf00da03b91cb069a7bf952066c"
+        "/nix/store/HASH-zig-0.15.2/lib/zig/std/crypto/hkdf.zig": "230b7b6a2498245543babebdd08c07701d0184f2fafd8ad522d871444be80401",
+        "/nix/store/HASH-zig-0.15.2/lib/zig/std/crypto/hmac.zig": "b916f7f203d15c8e5f76a43c9f7c6a729edc51c95d0342040fe02fb567de2006",
+        "/nix/store/HASH-zig-0.15.2/lib/zig/std/crypto/sha2.zig": "b69748641b6505170756eb7f006c44ca1971f56f5aeab0d2848681698bfefcb9",
+        "/nix/store/HASH-zig-0.15.2/lib/zig/std/crypto.zig": "41bde1efcf6ddd6f1adbaefbb2559ff7dc281bf00da03b91cb069a7bf952066c"
       },
       "object_sha256": "c9b03df878be80f170b41f4c96d35edcc694120e1545da3346cd60cfefe92ef9",
       "assembly_sha256": "2ea5bc20d380d2d5217e9133d19d0ae0dc9884dca0ee3ced8b9e67e9f41d3163"
     },
     {
-      "compiler": "/nix/store/4x0z07w3mxafc59b5dirkmllvqhav1i6-zig-0.15.2/bin/zig",
+      "compiler": "/nix/store/HASH-zig-0.15.2/bin/zig",
       "compiler_sha256": "26aa685cfb6951b6dfe7ac48f6a92d49bbbc0c8e51796e6f93646c6407b3b1a3",
       "version": "0.15.2",
       "target": "aarch64-macos",
       "argv": [
-        "/nix/store/4x0z07w3mxafc59b5dirkmllvqhav1i6-zig-0.15.2/bin/zig",
+        "/nix/store/HASH-zig-0.15.2/bin/zig",
         "build-obj",
         "-OReleaseFast",
         "-target",
@@ -79,27 +79,27 @@
         "-femit-bin=/tmp/ztls-signoff-20260919/125-after-direct-buffers/015-aarch64-macos.o"
       ],
       "disasm_argv": [
-        "/nix/store/hvzc7jddh73hq16a3wbbymmlxhwyxfb8-llvm-21.1.8/bin/llvm-objdump",
+        "/nix/store/HASH-llvm-21.1.8/bin/llvm-objdump",
         "-dr",
         "--symbolize-operands",
         "/tmp/ztls-signoff-20260919/125-after-direct-buffers/015-aarch64-macos.o"
       ],
       "stdlib_sources": {
-        "/nix/store/4x0z07w3mxafc59b5dirkmllvqhav1i6-zig-0.15.2/lib/zig/std/crypto/hkdf.zig": "230b7b6a2498245543babebdd08c07701d0184f2fafd8ad522d871444be80401",
-        "/nix/store/4x0z07w3mxafc59b5dirkmllvqhav1i6-zig-0.15.2/lib/zig/std/crypto/hmac.zig": "b916f7f203d15c8e5f76a43c9f7c6a729edc51c95d0342040fe02fb567de2006",
-        "/nix/store/4x0z07w3mxafc59b5dirkmllvqhav1i6-zig-0.15.2/lib/zig/std/crypto/sha2.zig": "b69748641b6505170756eb7f006c44ca1971f56f5aeab0d2848681698bfefcb9",
-        "/nix/store/4x0z07w3mxafc59b5dirkmllvqhav1i6-zig-0.15.2/lib/zig/std/crypto.zig": "41bde1efcf6ddd6f1adbaefbb2559ff7dc281bf00da03b91cb069a7bf952066c"
+        "/nix/store/HASH-zig-0.15.2/lib/zig/std/crypto/hkdf.zig": "230b7b6a2498245543babebdd08c07701d0184f2fafd8ad522d871444be80401",
+        "/nix/store/HASH-zig-0.15.2/lib/zig/std/crypto/hmac.zig": "b916f7f203d15c8e5f76a43c9f7c6a729edc51c95d0342040fe02fb567de2006",
+        "/nix/store/HASH-zig-0.15.2/lib/zig/std/crypto/sha2.zig": "b69748641b6505170756eb7f006c44ca1971f56f5aeab0d2848681698bfefcb9",
+        "/nix/store/HASH-zig-0.15.2/lib/zig/std/crypto.zig": "41bde1efcf6ddd6f1adbaefbb2559ff7dc281bf00da03b91cb069a7bf952066c"
       },
       "object_sha256": "b42995109984344681c1dba5a6af78cdbcf1f302a02ebbdfa6bff9eca8615621",
       "assembly_sha256": "d8876c1d9dcab07c21ad5e0152546b1b133f6904641d6c4e3857585cd94b7e33"
     },
     {
-      "compiler": "/nix/store/4x0z07w3mxafc59b5dirkmllvqhav1i6-zig-0.15.2/bin/zig",
+      "compiler": "/nix/store/HASH-zig-0.15.2/bin/zig",
       "compiler_sha256": "26aa685cfb6951b6dfe7ac48f6a92d49bbbc0c8e51796e6f93646c6407b3b1a3",
       "version": "0.15.2",
       "target": "x86_64-linux-gnu",
       "argv": [
-        "/nix/store/4x0z07w3mxafc59b5dirkmllvqhav1i6-zig-0.15.2/bin/zig",
+        "/nix/store/HASH-zig-0.15.2/bin/zig",
         "build-obj",
         "-OReleaseFast",
         "-target",
@@ -118,27 +118,27 @@
         "-femit-bin=/tmp/ztls-signoff-20260919/125-after-direct-buffers/015-x86_64-linux-gnu.o"
       ],
       "disasm_argv": [
-        "/nix/store/hvzc7jddh73hq16a3wbbymmlxhwyxfb8-llvm-21.1.8/bin/llvm-objdump",
+        "/nix/store/HASH-llvm-21.1.8/bin/llvm-objdump",
         "-dr",
         "--symbolize-operands",
         "/tmp/ztls-signoff-20260919/125-after-direct-buffers/015-x86_64-linux-gnu.o"
       ],
       "stdlib_sources": {
-        "/nix/store/4x0z07w3mxafc59b5dirkmllvqhav1i6-zig-0.15.2/lib/zig/std/crypto/hkdf.zig": "230b7b6a2498245543babebdd08c07701d0184f2fafd8ad522d871444be80401",
-        "/nix/store/4x0z07w3mxafc59b5dirkmllvqhav1i6-zig-0.15.2/lib/zig/std/crypto/hmac.zig": "b916f7f203d15c8e5f76a43c9f7c6a729edc51c95d0342040fe02fb567de2006",
-        "/nix/store/4x0z07w3mxafc59b5dirkmllvqhav1i6-zig-0.15.2/lib/zig/std/crypto/sha2.zig": "b69748641b6505170756eb7f006c44ca1971f56f5aeab0d2848681698bfefcb9",
-        "/nix/store/4x0z07w3mxafc59b5dirkmllvqhav1i6-zig-0.15.2/lib/zig/std/crypto.zig": "41bde1efcf6ddd6f1adbaefbb2559ff7dc281bf00da03b91cb069a7bf952066c"
+        "/nix/store/HASH-zig-0.15.2/lib/zig/std/crypto/hkdf.zig": "230b7b6a2498245543babebdd08c07701d0184f2fafd8ad522d871444be80401",
+        "/nix/store/HASH-zig-0.15.2/lib/zig/std/crypto/hmac.zig": "b916f7f203d15c8e5f76a43c9f7c6a729edc51c95d0342040fe02fb567de2006",
+        "/nix/store/HASH-zig-0.15.2/lib/zig/std/crypto/sha2.zig": "b69748641b6505170756eb7f006c44ca1971f56f5aeab0d2848681698bfefcb9",
+        "/nix/store/HASH-zig-0.15.2/lib/zig/std/crypto.zig": "41bde1efcf6ddd6f1adbaefbb2559ff7dc281bf00da03b91cb069a7bf952066c"
       },
       "object_sha256": "593ec7541837cc3ffab68df78b6bb4e6d8d00ebcf1fe424db546bf4936616650",
       "assembly_sha256": "9721a30795029f72aab0741cd0f92d681d19abc5207c4471f2f2b02ac0e73454"
     },
     {
-      "compiler": "/nix/store/4x0z07w3mxafc59b5dirkmllvqhav1i6-zig-0.15.2/bin/zig",
+      "compiler": "/nix/store/HASH-zig-0.15.2/bin/zig",
       "compiler_sha256": "26aa685cfb6951b6dfe7ac48f6a92d49bbbc0c8e51796e6f93646c6407b3b1a3",
       "version": "0.15.2",
       "target": "x86_64-macos",
       "argv": [
-        "/nix/store/4x0z07w3mxafc59b5dirkmllvqhav1i6-zig-0.15.2/bin/zig",
+        "/nix/store/HASH-zig-0.15.2/bin/zig",
         "build-obj",
         "-OReleaseFast",
         "-target",
@@ -157,27 +157,27 @@
         "-femit-bin=/tmp/ztls-signoff-20260919/125-after-direct-buffers/015-x86_64-macos.o"
       ],
       "disasm_argv": [
-        "/nix/store/hvzc7jddh73hq16a3wbbymmlxhwyxfb8-llvm-21.1.8/bin/llvm-objdump",
+        "/nix/store/HASH-llvm-21.1.8/bin/llvm-objdump",
         "-dr",
         "--symbolize-operands",
         "/tmp/ztls-signoff-20260919/125-after-direct-buffers/015-x86_64-macos.o"
       ],
       "stdlib_sources": {
-        "/nix/store/4x0z07w3mxafc59b5dirkmllvqhav1i6-zig-0.15.2/lib/zig/std/crypto/hkdf.zig": "230b7b6a2498245543babebdd08c07701d0184f2fafd8ad522d871444be80401",
-        "/nix/store/4x0z07w3mxafc59b5dirkmllvqhav1i6-zig-0.15.2/lib/zig/std/crypto/hmac.zig": "b916f7f203d15c8e5f76a43c9f7c6a729edc51c95d0342040fe02fb567de2006",
-        "/nix/store/4x0z07w3mxafc59b5dirkmllvqhav1i6-zig-0.15.2/lib/zig/std/crypto/sha2.zig": "b69748641b6505170756eb7f006c44ca1971f56f5aeab0d2848681698bfefcb9",
-        "/nix/store/4x0z07w3mxafc59b5dirkmllvqhav1i6-zig-0.15.2/lib/zig/std/crypto.zig": "41bde1efcf6ddd6f1adbaefbb2559ff7dc281bf00da03b91cb069a7bf952066c"
+        "/nix/store/HASH-zig-0.15.2/lib/zig/std/crypto/hkdf.zig": "230b7b6a2498245543babebdd08c07701d0184f2fafd8ad522d871444be80401",
+        "/nix/store/HASH-zig-0.15.2/lib/zig/std/crypto/hmac.zig": "b916f7f203d15c8e5f76a43c9f7c6a729edc51c95d0342040fe02fb567de2006",
+        "/nix/store/HASH-zig-0.15.2/lib/zig/std/crypto/sha2.zig": "b69748641b6505170756eb7f006c44ca1971f56f5aeab0d2848681698bfefcb9",
+        "/nix/store/HASH-zig-0.15.2/lib/zig/std/crypto.zig": "41bde1efcf6ddd6f1adbaefbb2559ff7dc281bf00da03b91cb069a7bf952066c"
       },
       "object_sha256": "e94c013a066502df01abdb3248d44a450a2047b774a69f8b7b7a5555709c9d87",
       "assembly_sha256": "c79622d881ec285e2c973cf404e47b5522128db37dcf0744474cd7ad27d8f235"
     },
     {
-      "compiler": "/nix/store/h4am1dpj4li41cq58861nysgaip7036s-zig-0.16.0/bin/zig",
+      "compiler": "/nix/store/HASH-zig-0.16.0/bin/zig",
       "compiler_sha256": "a992026adcd9fe112f535532cbef62cc4ec6739412eb7320c86a65d82fad3aa5",
       "version": "0.16.0",
       "target": "aarch64-linux-gnu",
       "argv": [
-        "/nix/store/h4am1dpj4li41cq58861nysgaip7036s-zig-0.16.0/bin/zig",
+        "/nix/store/HASH-zig-0.16.0/bin/zig",
         "build-obj",
         "-OReleaseFast",
         "-target",
@@ -196,27 +196,27 @@
         "-femit-bin=/tmp/ztls-signoff-20260919/125-after-direct-buffers/016-aarch64-linux-gnu.o"
       ],
       "disasm_argv": [
-        "/nix/store/hvzc7jddh73hq16a3wbbymmlxhwyxfb8-llvm-21.1.8/bin/llvm-objdump",
+        "/nix/store/HASH-llvm-21.1.8/bin/llvm-objdump",
         "-dr",
         "--symbolize-operands",
         "/tmp/ztls-signoff-20260919/125-after-direct-buffers/016-aarch64-linux-gnu.o"
       ],
       "stdlib_sources": {
-        "/nix/store/h4am1dpj4li41cq58861nysgaip7036s-zig-0.16.0/lib/zig/std/crypto/hkdf.zig": "230b7b6a2498245543babebdd08c07701d0184f2fafd8ad522d871444be80401",
-        "/nix/store/h4am1dpj4li41cq58861nysgaip7036s-zig-0.16.0/lib/zig/std/crypto/hmac.zig": "b916f7f203d15c8e5f76a43c9f7c6a729edc51c95d0342040fe02fb567de2006",
-        "/nix/store/h4am1dpj4li41cq58861nysgaip7036s-zig-0.16.0/lib/zig/std/crypto/sha2.zig": "e58c67128f2c754049f737688ddcef809c017dbdd6de59995da3fbe99938db85",
-        "/nix/store/h4am1dpj4li41cq58861nysgaip7036s-zig-0.16.0/lib/zig/std/crypto.zig": "fa1d7e3a94a94f74e32be2bb6a0591225ea6eb57b0541b7ba3b02ea487c5c3ff"
+        "/nix/store/HASH-zig-0.16.0/lib/zig/std/crypto/hkdf.zig": "230b7b6a2498245543babebdd08c07701d0184f2fafd8ad522d871444be80401",
+        "/nix/store/HASH-zig-0.16.0/lib/zig/std/crypto/hmac.zig": "b916f7f203d15c8e5f76a43c9f7c6a729edc51c95d0342040fe02fb567de2006",
+        "/nix/store/HASH-zig-0.16.0/lib/zig/std/crypto/sha2.zig": "e58c67128f2c754049f737688ddcef809c017dbdd6de59995da3fbe99938db85",
+        "/nix/store/HASH-zig-0.16.0/lib/zig/std/crypto.zig": "fa1d7e3a94a94f74e32be2bb6a0591225ea6eb57b0541b7ba3b02ea487c5c3ff"
       },
       "object_sha256": "a67296fa3660112c44988348d5cd1a6dd21f553db3a870d2e04bc95ac7934602",
       "assembly_sha256": "4f1fc96162716bae4247f500f68416d57a3e7a6cc5fe70d1e4b779e76c5cfd3f"
     },
     {
-      "compiler": "/nix/store/h4am1dpj4li41cq58861nysgaip7036s-zig-0.16.0/bin/zig",
+      "compiler": "/nix/store/HASH-zig-0.16.0/bin/zig",
       "compiler_sha256": "a992026adcd9fe112f535532cbef62cc4ec6739412eb7320c86a65d82fad3aa5",
       "version": "0.16.0",
       "target": "aarch64-macos",
       "argv": [
-        "/nix/store/h4am1dpj4li41cq58861nysgaip7036s-zig-0.16.0/bin/zig",
+        "/nix/store/HASH-zig-0.16.0/bin/zig",
         "build-obj",
         "-OReleaseFast",
         "-target",
@@ -235,27 +235,27 @@
         "-femit-bin=/tmp/ztls-signoff-20260919/125-after-direct-buffers/016-aarch64-macos.o"
       ],
       "disasm_argv": [
-        "/nix/store/hvzc7jddh73hq16a3wbbymmlxhwyxfb8-llvm-21.1.8/bin/llvm-objdump",
+        "/nix/store/HASH-llvm-21.1.8/bin/llvm-objdump",
         "-dr",
         "--symbolize-operands",
         "/tmp/ztls-signoff-20260919/125-after-direct-buffers/016-aarch64-macos.o"
       ],
       "stdlib_sources": {
-        "/nix/store/h4am1dpj4li41cq58861nysgaip7036s-zig-0.16.0/lib/zig/std/crypto/hkdf.zig": "230b7b6a2498245543babebdd08c07701d0184f2fafd8ad522d871444be80401",
-        "/nix/store/h4am1dpj4li41cq58861nysgaip7036s-zig-0.16.0/lib/zig/std/crypto/hmac.zig": "b916f7f203d15c8e5f76a43c9f7c6a729edc51c95d0342040fe02fb567de2006",
-        "/nix/store/h4am1dpj4li41cq58861nysgaip7036s-zig-0.16.0/lib/zig/std/crypto/sha2.zig": "e58c67128f2c754049f737688ddcef809c017dbdd6de59995da3fbe99938db85",
-        "/nix/store/h4am1dpj4li41cq58861nysgaip7036s-zig-0.16.0/lib/zig/std/crypto.zig": "fa1d7e3a94a94f74e32be2bb6a0591225ea6eb57b0541b7ba3b02ea487c5c3ff"
+        "/nix/store/HASH-zig-0.16.0/lib/zig/std/crypto/hkdf.zig": "230b7b6a2498245543babebdd08c07701d0184f2fafd8ad522d871444be80401",
+        "/nix/store/HASH-zig-0.16.0/lib/zig/std/crypto/hmac.zig": "b916f7f203d15c8e5f76a43c9f7c6a729edc51c95d0342040fe02fb567de2006",
+        "/nix/store/HASH-zig-0.16.0/lib/zig/std/crypto/sha2.zig": "e58c67128f2c754049f737688ddcef809c017dbdd6de59995da3fbe99938db85",
+        "/nix/store/HASH-zig-0.16.0/lib/zig/std/crypto.zig": "fa1d7e3a94a94f74e32be2bb6a0591225ea6eb57b0541b7ba3b02ea487c5c3ff"
       },
       "object_sha256": "6a51d62070fa716035f84a06eae10e16235a8340a0d79441d51c59018795a8b0",
       "assembly_sha256": "9a5e1894cdee51886295371a81db1d64ca1bd71ac5f93d76bd4a5ce2d6b0cc1c"
     },
     {
-      "compiler": "/nix/store/h4am1dpj4li41cq58861nysgaip7036s-zig-0.16.0/bin/zig",
+      "compiler": "/nix/store/HASH-zig-0.16.0/bin/zig",
       "compiler_sha256": "a992026adcd9fe112f535532cbef62cc4ec6739412eb7320c86a65d82fad3aa5",
       "version": "0.16.0",
       "target": "x86_64-linux-gnu",
       "argv": [
-        "/nix/store/h4am1dpj4li41cq58861nysgaip7036s-zig-0.16.0/bin/zig",
+        "/nix/store/HASH-zig-0.16.0/bin/zig",
         "build-obj",
         "-OReleaseFast",
         "-target",
@@ -274,27 +274,27 @@
         "-femit-bin=/tmp/ztls-signoff-20260919/125-after-direct-buffers/016-x86_64-linux-gnu.o"
       ],
       "disasm_argv": [
-        "/nix/store/hvzc7jddh73hq16a3wbbymmlxhwyxfb8-llvm-21.1.8/bin/llvm-objdump",
+        "/nix/store/HASH-llvm-21.1.8/bin/llvm-objdump",
         "-dr",
         "--symbolize-operands",
         "/tmp/ztls-signoff-20260919/125-after-direct-buffers/016-x86_64-linux-gnu.o"
       ],
       "stdlib_sources": {
-        "/nix/store/h4am1dpj4li41cq58861nysgaip7036s-zig-0.16.0/lib/zig/std/crypto/hkdf.zig": "230b7b6a2498245543babebdd08c07701d0184f2fafd8ad522d871444be80401",
-        "/nix/store/h4am1dpj4li41cq58861nysgaip7036s-zig-0.16.0/lib/zig/std/crypto/hmac.zig": "b916f7f203d15c8e5f76a43c9f7c6a729edc51c95d0342040fe02fb567de2006",
-        "/nix/store/h4am1dpj4li41cq58861nysgaip7036s-zig-0.16.0/lib/zig/std/crypto/sha2.zig": "e58c67128f2c754049f737688ddcef809c017dbdd6de59995da3fbe99938db85",
-        "/nix/store/h4am1dpj4li41cq58861nysgaip7036s-zig-0.16.0/lib/zig/std/crypto.zig": "fa1d7e3a94a94f74e32be2bb6a0591225ea6eb57b0541b7ba3b02ea487c5c3ff"
+        "/nix/store/HASH-zig-0.16.0/lib/zig/std/crypto/hkdf.zig": "230b7b6a2498245543babebdd08c07701d0184f2fafd8ad522d871444be80401",
+        "/nix/store/HASH-zig-0.16.0/lib/zig/std/crypto/hmac.zig": "b916f7f203d15c8e5f76a43c9f7c6a729edc51c95d0342040fe02fb567de2006",
+        "/nix/store/HASH-zig-0.16.0/lib/zig/std/crypto/sha2.zig": "e58c67128f2c754049f737688ddcef809c017dbdd6de59995da3fbe99938db85",
+        "/nix/store/HASH-zig-0.16.0/lib/zig/std/crypto.zig": "fa1d7e3a94a94f74e32be2bb6a0591225ea6eb57b0541b7ba3b02ea487c5c3ff"
       },
       "object_sha256": "d4a1edb2fdb23b4956ec99d4b6ce82d2fc041255d06f12e8a60468ca186ceee0",
       "assembly_sha256": "0e72fe9896b7e0c5fb2cb323772adc55bbb7f3569274fc43de33383dd0047ea0"
     },
     {
-      "compiler": "/nix/store/h4am1dpj4li41cq58861nysgaip7036s-zig-0.16.0/bin/zig",
+      "compiler": "/nix/store/HASH-zig-0.16.0/bin/zig",
       "compiler_sha256": "a992026adcd9fe112f535532cbef62cc4ec6739412eb7320c86a65d82fad3aa5",
       "version": "0.16.0",
       "target": "x86_64-macos",
       "argv": [
-        "/nix/store/h4am1dpj4li41cq58861nysgaip7036s-zig-0.16.0/bin/zig",
+        "/nix/store/HASH-zig-0.16.0/bin/zig",
         "build-obj",
         "-OReleaseFast",
         "-target",
@@ -313,16 +313,16 @@
         "-femit-bin=/tmp/ztls-signoff-20260919/125-after-direct-buffers/016-x86_64-macos.o"
       ],
       "disasm_argv": [
-        "/nix/store/hvzc7jddh73hq16a3wbbymmlxhwyxfb8-llvm-21.1.8/bin/llvm-objdump",
+        "/nix/store/HASH-llvm-21.1.8/bin/llvm-objdump",
         "-dr",
         "--symbolize-operands",
         "/tmp/ztls-signoff-20260919/125-after-direct-buffers/016-x86_64-macos.o"
       ],
       "stdlib_sources": {
-        "/nix/store/h4am1dpj4li41cq58861nysgaip7036s-zig-0.16.0/lib/zig/std/crypto/hkdf.zig": "230b7b6a2498245543babebdd08c07701d0184f2fafd8ad522d871444be80401",
-        "/nix/store/h4am1dpj4li41cq58861nysgaip7036s-zig-0.16.0/lib/zig/std/crypto/hmac.zig": "b916f7f203d15c8e5f76a43c9f7c6a729edc51c95d0342040fe02fb567de2006",
-        "/nix/store/h4am1dpj4li41cq58861nysgaip7036s-zig-0.16.0/lib/zig/std/crypto/sha2.zig": "e58c67128f2c754049f737688ddcef809c017dbdd6de59995da3fbe99938db85",
-        "/nix/store/h4am1dpj4li41cq58861nysgaip7036s-zig-0.16.0/lib/zig/std/crypto.zig": "fa1d7e3a94a94f74e32be2bb6a0591225ea6eb57b0541b7ba3b02ea487c5c3ff"
+        "/nix/store/HASH-zig-0.16.0/lib/zig/std/crypto/hkdf.zig": "230b7b6a2498245543babebdd08c07701d0184f2fafd8ad522d871444be80401",
+        "/nix/store/HASH-zig-0.16.0/lib/zig/std/crypto/hmac.zig": "b916f7f203d15c8e5f76a43c9f7c6a729edc51c95d0342040fe02fb567de2006",
+        "/nix/store/HASH-zig-0.16.0/lib/zig/std/crypto/sha2.zig": "e58c67128f2c754049f737688ddcef809c017dbdd6de59995da3fbe99938db85",
+        "/nix/store/HASH-zig-0.16.0/lib/zig/std/crypto.zig": "fa1d7e3a94a94f74e32be2bb6a0591225ea6eb57b0541b7ba3b02ea487c5c3ff"
       },
       "object_sha256": "66aa921fb7aa9895718d63a3204d68c8dadd4e7a2e17ce48518be2cc06f8cbaa",
       "assembly_sha256": "1e931b3f3892a407112f1427960c32e9703e98e58e315f660c565346fe38d9c3"

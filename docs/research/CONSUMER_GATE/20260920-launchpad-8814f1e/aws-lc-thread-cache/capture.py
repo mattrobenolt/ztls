@@ -7,8 +7,8 @@ import subprocess
 root = Path('/tmp/ztls-signoff-20260919')
 out = root / 'aws-lc-cache-final'
 out.mkdir()
-zig = '/nix/store/h4am1dpj4li41cq58861nysgaip7036s-zig-0.16.0/bin/zig'
-libdir = '/nix/store/3hnfh4dzrjjncnpa9nhggr6l7m97g456-aws-lc-5.5.0/lib'
+zig = '/nix/store/HASH-zig-0.16.0/bin/zig'
+libdir = '/nix/store/HASH-aws-lc-5.5.0/lib'
 records = []
 for name in ['main-1', 'main-512', 'thread-512']:
     source = out / (name + '.zig')

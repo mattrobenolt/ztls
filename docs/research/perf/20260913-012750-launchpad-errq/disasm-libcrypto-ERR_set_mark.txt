@@ -1,5 +1,5 @@
 
-/nix/store/v89yca35zsb13k51ibz0mcz2rrzjwwrj-openssl-3.6.4/lib/libcrypto.so.3:     file format elf64-littleaarch64
+/nix/store/HASH-openssl-3.6.4/lib/libcrypto.so.3:     file format elf64-littleaarch64
 
 
 Disassembly of section .init:

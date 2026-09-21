@@ -45,7 +45,7 @@
       "toolchain": {
         "zig": "0.16.0",
         "libcrypto_version": "1.1.1",
-        "libcrypto_libdir": "/nix/store/3hnfh4dzrjjncnpa9nhggr6l7m97g456-aws-lc-5.5.0/lib",
+        "libcrypto_libdir": "/nix/store/HASH-aws-lc-5.5.0/lib",
         "os": "Linux",
         "arch": "aarch64",
         "kernel": "7.2.3"
@@ -85,7 +85,7 @@
       "toolchain": {
         "zig": "0.16.0",
         "libcrypto_version": "3.6.4",
-        "libcrypto_libdir": "/nix/store/v89yca35zsb13k51ibz0mcz2rrzjwwrj-openssl-3.6.4/lib",
+        "libcrypto_libdir": "/nix/store/HASH-openssl-3.6.4/lib",
         "os": "Linux",
         "arch": "aarch64",
         "kernel": "7.2.3"
