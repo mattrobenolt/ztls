@@ -253,8 +253,11 @@ lint-store-paths:
     # A store hash is only resolvable on the machine that produced it, and
     # Nix rejects fixed-output source fetches of a tree that contains one,
     # which blocks standard fetchers from consuming the repository (#131).
-    # Evidence records the package name after the hash, never the hash.
-    matches=$(git grep -nE '/nix/store/[0-9a-z]{32}' -- . || true)
+    # Evidence records the package name after the hash, never the hash. The
+    # bare <hash>-<name> form matters as much as the /nix/store/ form: Nix
+    # resolves both against the local store during the output scan. LLVM
+    # anonymous symbol names (anon.<hash>.) are not store paths.
+    matches=$(git grep -nE -e '/nix/store/[0-9a-z]{32}' -e '\b[0-9a-z]{32}-' -- . || true)
     if [ -n "$matches" ]; then
         printf 'machine-specific Nix store paths in tracked files:\n%s\n' "$matches" >&2
         echo "Record the package name after the hash, not the store hash (#131)." >&2
