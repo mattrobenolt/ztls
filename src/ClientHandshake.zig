@@ -637,8 +637,12 @@ retry_selected_group: ?NamedGroup = null,
 /// single source for SNI and certificate validation; `now_sec` is required.
 /// `policy` remains public for advanced overrides (e.g. leaf_usage) after init.
 pub fn init(config: Config) ClientHandshake {
-    // A client sends its shares in the first flight: nothing to defer.
-    assert(config.keypairs.p256_public == .derived);
+    // A client sends its shares in the first flight: nothing to defer. A
+    // deferred key here would encode an all-zero P-256 share, so the check
+    // must survive ReleaseFast: a caller bug, not a runtime condition.
+    if (config.keypairs.p256_public != .derived) {
+        @panic("ClientHandshake.init: deferred P-256 keypair (server-only constructor)");
+    }
     return .{
         .state = .start,
         // Hash unknown until ServerHello: run both candidate transcripts.

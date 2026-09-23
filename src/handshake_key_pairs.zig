@@ -63,6 +63,8 @@ pub const KeyPairs = struct {
             error.LibcryptoFailed => return err,
         };
         defer derived.secureZero();
+        // A redrawn keypair replaces a rejected caller scalar: wipe it first.
+        std.crypto.secureZero(u8, std.mem.asBytes(&self.p256));
         self.p256 = derived;
         self.p256_public = .derived;
     }
