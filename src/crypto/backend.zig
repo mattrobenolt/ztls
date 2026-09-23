@@ -259,6 +259,16 @@ pub const p256 = struct {
         return p256_impl.p256RawPublicKeyFromPrivate(key);
     }
 
+    /// One fixed-base multiplication, SEC1-encoded (#134).
+    pub inline fn publicFromSecret(secret: *const [32]u8) Error![65]u8 {
+        return p256_impl.p256PublicFromSecret(secret);
+    }
+
+    /// The scalar alone, for ECDH (#134).
+    pub inline fn ecdhKeyFromSecret(secret: *const [32]u8) Error!*pkey {
+        return p256_impl.p256EcdhKeyFromSecret(secret);
+    }
+
     pub inline fn sharedSecretDerive(ours: *pkey, peer: *pkey, out: *[32]u8) Error!void {
         return p256_impl.p256SharedSecretDerive(ours, peer, out);
     }

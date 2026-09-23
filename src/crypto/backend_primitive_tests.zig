@@ -492,6 +492,61 @@ test "backend.p256: Wycheproof tcId 1 shared secret" {
     try testing.expectEqualSlices(u8, &want, &shared);
 }
 
+// #134 — `publicFromSecret` (one fixed-base multiplication, no EC_KEY) must
+// produce the point the checked key construction stores, for every scalar.
+test "backend.p256: publicFromSecret matches the checked construction" {
+    const scalars = [_][32]u8{
+        hex(32, "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"),
+        hex(32, "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f"),
+        hex(32, "0612465c89a023ab17855b0a6bcebfd3febb53aef84138647b5352e02c10c346"),
+        // n - 1, the largest valid scalar.
+        hex(32, "ffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632550"),
+    };
+    for (&scalars) |*scalar| {
+        const priv = try backend.p256.privateKeyFromSecret(scalar);
+        defer backend.p256.freeKey(priv);
+        const want = try backend.p256.rawPublicKeyFromPrivate(priv);
+        const got = try backend.p256.publicFromSecret(scalar);
+        try testing.expectEqualSlices(u8, &want, &got);
+    }
+}
+
+// #134 — an ECDH key built from the scalar alone (no public point) derives
+// the Wycheproof tcId 1 secret, and both new entry points keep the SEC 1
+// §3.2.1 range check: 0 and n are `IdentityElement` (#88).
+test "backend.p256: ecdhKeyFromSecret derives the Wycheproof secret and range-checks" {
+    const scalar: [32]u8 = hex(
+        32,
+        "0612465c89a023ab17855b0a6bcebfd3febb53aef84138647b5352e02c10c346",
+    );
+    const peer_pub: [65]u8 = hex(
+        65,
+        "0462d5bd3372af75fe85a040715d0f502428e07046868b0bfdfa61d731afe44f26" ++
+            "ac333a93a9e70a81cd5a95b5bf8d13990eb741c8c38872b4a07d275a014e30cf",
+    );
+    const want: [32]u8 = hex(
+        32,
+        "53020d908b0219328b658b525f26780e3ae12bcd952bb25a93bc0895e1714285",
+    );
+    const ours = try backend.p256.ecdhKeyFromSecret(&scalar);
+    defer backend.p256.freeKey(ours);
+    const peer = try backend.p256.publicKeyFromRaw(&peer_pub);
+    defer backend.p256.freeKey(peer);
+    var shared: [32]u8 = undefined;
+    try backend.p256.sharedSecretDerive(ours, peer, &shared);
+    try testing.expectEqualSlices(u8, &want, &shared);
+
+    const zero: [32]u8 = @splat(0);
+    const order: [32]u8 = hex(
+        32,
+        "ffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551",
+    );
+    for ([_]*const [32]u8{ &zero, &order }) |bad| {
+        try testing.expectError(error.IdentityElement, backend.p256.publicFromSecret(bad));
+        try testing.expectError(error.IdentityElement, backend.p256.ecdhKeyFromSecret(bad));
+    }
+}
+
 // The existing deterministic off-curve rejection tests ("backend.p256: off-
 // curve point is rejected", "backend.p256: non-04 SEC1 prefix is rejected")
 // already cover the boundary where OpenSSL rejects invalid P-256 public keys.

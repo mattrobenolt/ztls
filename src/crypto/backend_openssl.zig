@@ -1,6 +1,7 @@
 //! OpenSSL backend primitive wrappers.
 const std = @import("std");
 
+const build_options = @import("build_options");
 const c_openssl = @import("c_openssl.zig");
 const c = c_openssl.openssl;
 const is_boringssl_family = c_openssl.is_boringssl_family;
@@ -330,15 +331,8 @@ fn p256PrivateKeyFromSecretImpl(secret: *const [32]u8) Error!*pkey {
         return error.LibcryptoFailed;
     defer c.EC_GROUP_free(group);
 
-    const priv = c.BN_bin2bn(secret, secret.len, null) orelse return error.LibcryptoFailed;
+    const priv = try p256Scalar(group, secret);
     defer c.BN_clear_free(priv);
-
-    // Scalar range check [1, n-1] (SEC 1 §3.2.1) before any point math, so
-    // `IdentityElement` can only mean an invalid scalar — a library failure
-    // is `LibcryptoFailed` and not retryable (#88).
-    const order = c.EC_GROUP_get0_order(group) orelse return error.LibcryptoFailed;
-    if (c.BN_is_zero(priv) == 1 or c.BN_cmp(priv, order) >= 0)
-        return error.IdentityElement;
 
     const public = c.EC_POINT_new(group) orelse return error.LibcryptoFailed;
     defer c.EC_POINT_free(public);
@@ -360,10 +354,76 @@ fn p256PrivateKeyFromSecretImpl(secret: *const [32]u8) Error!*pkey {
     return key;
 }
 
+/// The scalar as a BIGNUM, range-checked to [1, n-1] (SEC 1 §3.2.1) before
+/// any point math. `IdentityElement` can only mean an invalid scalar; a
+/// library failure is `LibcryptoFailed` and not retryable (#88). The caller
+/// frees it with `BN_clear_free`.
+fn p256Scalar(group: *const c.EC_GROUP, secret: *const [32]u8) Error!*c.BIGNUM {
+    const priv = c.BN_bin2bn(secret, secret.len, null) orelse return error.LibcryptoFailed;
+    errdefer c.BN_clear_free(priv);
+    const order = c.EC_GROUP_get0_order(group) orelse return error.LibcryptoFailed;
+    if (c.BN_is_zero(priv) == 1 or c.BN_cmp(priv, order) >= 0)
+        return error.IdentityElement;
+    return priv;
+}
+
 pub fn p256PrivateKeyFromSecret(secret: *const [32]u8) Error!*pkey {
     errqEnter();
     defer errqExit();
     return p256PrivateKeyFromSecretImpl(secret);
+}
+
+/// The SEC1 uncompressed public point of a scalar: one fixed-base
+/// multiplication, no EC_KEY, no check. `EC_KEY_check_key` on a private key
+/// recomputes priv·G against the stored point, and here the stored point is
+/// that very product (#134). FIPS builds keep the checked construction:
+/// there the recomputation is the pairwise-consistency test.
+pub fn p256PublicFromSecret(secret: *const [32]u8) Error![65]u8 {
+    errqEnter();
+    defer errqExit();
+    if (build_options.crypto_fips) {
+        const key = try p256PrivateKeyFromSecretImpl(secret);
+        defer c.EVP_PKEY_free(key);
+        return p256RawPublicKeyFromPrivateImpl(key);
+    }
+    const group = c.EC_GROUP_new_by_curve_name(c.NID_X9_62_prime256v1) orelse
+        return error.LibcryptoFailed;
+    defer c.EC_GROUP_free(group);
+    const priv = try p256Scalar(group, secret);
+    defer c.BN_clear_free(priv);
+    const public = c.EC_POINT_new(group) orelse return error.LibcryptoFailed;
+    defer c.EC_POINT_free(public);
+    if (c.EC_POINT_mul(group, public, priv, null, null, null) != 1)
+        return error.LibcryptoFailed;
+    var out: [65]u8 = undefined;
+    const form = c.POINT_CONVERSION_UNCOMPRESSED;
+    const len = c.EC_POINT_point2oct(group, public, form, &out, out.len, null);
+    if (len != out.len or out[0] != 0x04) return error.LibcryptoFailed;
+    return out;
+}
+
+/// A private key for ECDH alone: the range-checked scalar and no public
+/// point (#134). ECDH reads only our scalar and the peer's point, so
+/// building our point here would cost a fixed-base multiplication and its
+/// check a second. FIPS builds keep the checked construction.
+pub fn p256EcdhKeyFromSecret(secret: *const [32]u8) Error!*pkey {
+    errqEnter();
+    defer errqExit();
+    if (build_options.crypto_fips) return p256PrivateKeyFromSecretImpl(secret);
+    const group = c.EC_GROUP_new_by_curve_name(c.NID_X9_62_prime256v1) orelse
+        return error.LibcryptoFailed;
+    defer c.EC_GROUP_free(group);
+    const priv = try p256Scalar(group, secret);
+    defer c.BN_clear_free(priv);
+    const ec = c.EC_KEY_new_by_curve_name(c.NID_X9_62_prime256v1) orelse
+        return error.LibcryptoFailed;
+    errdefer c.EC_KEY_free(ec);
+    // The scalar is range-checked, so this can fail only on the library side.
+    if (c.EC_KEY_set_private_key(ec, priv) != 1) return error.LibcryptoFailed;
+    const key = c.EVP_PKEY_new() orelse return error.LibcryptoFailed;
+    errdefer c.EVP_PKEY_free(key);
+    if (c.EVP_PKEY_assign_EC_KEY(key, ec) != 1) return error.LibcryptoFailed;
+    return key;
 }
 
 pub fn p256PublicKeyFromRaw(public_key: *const [65]u8) Error!*pkey {
@@ -389,6 +449,12 @@ pub fn p256PublicKeyFromRaw(public_key: *const [65]u8) Error!*pkey {
 pub fn p256RawPublicKeyFromPrivate(key: *pkey) Error![65]u8 {
     errqEnter();
     defer errqExit();
+    return p256RawPublicKeyFromPrivateImpl(key);
+}
+
+/// Unguarded impl of `p256RawPublicKeyFromPrivate`, for the FIPS branch of
+/// `p256PublicFromSecret` (one guard per outermost entry point, #88).
+fn p256RawPublicKeyFromPrivateImpl(key: *pkey) Error![65]u8 {
     const ec = c.EVP_PKEY_get1_EC_KEY(key) orelse return error.LibcryptoFailed;
     defer c.EC_KEY_free(ec);
 

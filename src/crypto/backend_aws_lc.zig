@@ -261,6 +261,14 @@ pub inline fn p256RawPublicKeyFromPrivate(key: *pkey) Error![65]u8 {
     return compat.p256RawPublicKeyFromPrivate(key);
 }
 
+pub inline fn p256PublicFromSecret(secret: *const [32]u8) Error![65]u8 {
+    return compat.p256PublicFromSecret(secret);
+}
+
+pub inline fn p256EcdhKeyFromSecret(secret: *const [32]u8) Error!*pkey {
+    return compat.p256EcdhKeyFromSecret(secret);
+}
+
 pub inline fn p256SharedSecretDerive(ours: *pkey, peer: *pkey, out: *[32]u8) Error!void {
     return compat.p256SharedSecretDerive(ours, peer, out);
 }
