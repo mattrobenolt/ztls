@@ -62,6 +62,9 @@ pub const KeyPair = struct {
 const EntropyAttempt = struct {
     fn next() Error!KeyPair {
         var secret_key: [secret_length]u8 = undefined;
+        // The drawn scalar is caller-owned scratch (#125): wipe it on every
+        // exit, including an invalid draw that the retry discards.
+        defer std.crypto.secureZero(u8, &secret_key);
         entropy.fill(&secret_key);
         return KeyPair.fromSecret(.init(secret_key));
     }

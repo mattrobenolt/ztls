@@ -54,7 +54,8 @@ pub const KeyPairs = struct {
     /// Derive a deferred P-256 public key. No-op once derived. An invalid
     /// caller scalar (`error.IdentityElement`, ~2^-32 of draws) is replaced
     /// by a `p256.KeyPair.generate` draw under its bounded retry (#88), so a
-    /// bad scalar costs one OS CSPRNG read, not the handshake.
+    /// bad scalar costs one OS CSPRNG read, not the handshake. The bound is
+    /// one caller scalar plus generate's own `generate_attempts_max` draws.
     pub fn deriveP256(self: *KeyPairs) p256.Error!void {
         if (self.p256_public == .derived) return;
         var derived = p256.KeyPair.fromSecret(self.p256.secret_key) catch |err| switch (err) {
