@@ -637,6 +637,8 @@ retry_selected_group: ?NamedGroup = null,
 /// single source for SNI and certificate validation; `now_sec` is required.
 /// `policy` remains public for advanced overrides (e.g. leaf_usage) after init.
 pub fn init(config: Config) ClientHandshake {
+    // A client sends its shares in the first flight: nothing to defer.
+    assert(config.keypairs.p256_public == .derived);
     return .{
         .state = .start,
         // Hash unknown until ServerHello: run both candidate transcripts.

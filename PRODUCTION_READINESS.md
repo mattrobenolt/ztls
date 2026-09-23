@@ -888,7 +888,11 @@ data to openssl s_server and receives the HTTP response.
     with BoringSSL/AWS-LC backends, which abort on RAND failure. Backend key
     generation is now separately fallible (#88): `p256`/`p384` `generate()`
     return `p256.Error` — bounded retry of a bad draw, terminal propagation
-    of a backend failure — as does `KeyPairs.init`; only `x25519.KeyPair.generate()`
+    of a backend failure — as does `KeyPairs.init`. `KeyPairs.initDeferredP256`
+    (server only) moves the P-256 derivation to the ClientHello that selects a
+    P-256 group (`deriveP256`): an invalid scalar redraws under `generate()`'s
+    policy, and a backend failure fails that handshake as an `AcceptError`.
+    Only `x25519.KeyPair.generate()`
     stays infallible (clamping makes an invalid scalar unreachable). The
     fail-stop contract is documented on `entropy.fill` and on the `generate()`
     convenience constructors (x25519/p256/p384), and the `getrandom` abort now

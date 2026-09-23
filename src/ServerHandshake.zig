@@ -1070,13 +1070,15 @@ fn preferredHybridShare(
 }
 
 fn encapsulateHybrid(
-    self: *const ServerHandshake,
+    self: *ServerHandshake,
     share: *const client_hello.ParsedKemKeyShare,
     server_share: *ArrayBuffer(u8, hybrid_kex.max_server_share_len),
     shared_secret: *ArrayBuffer(u8, hybrid_kex.max_shared_secret_len),
 ) hybrid_kex.Error!void {
     assert(server_share.len == 0);
     assert(shared_secret.len == 0);
+    // The selection that needs a deferred P-256 public key (see KeyPairs).
+    if (share.group == .secp256r1_mlkem768) try self.keypairs.deriveP256();
     const result = try hybrid_kex.encapsulate(
         share.group,
         share.data,
@@ -1089,7 +1091,7 @@ fn encapsulateHybrid(
 }
 
 fn selectHybridShare(
-    self: *const ServerHandshake,
+    self: *ServerHandshake,
     share: *const client_hello.ParsedKemKeyShare,
     server_share: *ArrayBuffer(u8, hybrid_kex.max_server_share_len),
     shared_secret: *ArrayBuffer(u8, hybrid_kex.max_shared_secret_len),
@@ -1331,6 +1333,11 @@ fn processClientHelloMessage(
         self.state = .wait_ch;
         return hrr;
     } else return error.UnsupportedKeyShare;
+
+    // RFC 8446 §4.2.8 — the one point where a direct P-256 selection needs
+    // our public key. A deferred key (KeyPairs.initDeferredP256) costs
+    // nothing for the X25519 majority.
+    if (client_key_share == .secp256r1) try self.keypairs.deriveP256();
 
     self.negotiated_group = switch (client_key_share) {
         .x25519 => .x25519,
@@ -3256,6 +3263,74 @@ test "acceptClientHello: negotiates secp256r1 key share" {
     try testing.expect(found_p256_key_share);
     try testing.expectEqual(NamedGroup.secp256r1, hs.negotiated_group);
     try testing.expectEqual(.wait_client_finished, hs.state);
+}
+
+const ClientShareForTest = enum { x25519, secp256r1 };
+
+fn deferredP256ServerHello(
+    hs: *ServerHandshake,
+    server_p256_secret: p256.SecretKey,
+    client_share: ClientShareForTest,
+    out: []u8,
+) !server_hello.ServerHello {
+    const client_x25519: x25519.KeyPair = .generate();
+    const client_p256 = try p256.KeyPair.generateDeterministic(.init(test_p256_seed_a));
+    var ch_buf: [512]u8 = undefined;
+    const x25519_ch = try client_hello.encode(&ch_buf, .zero, client_x25519.public_key, null, &.{});
+    var p256_ch_buf: [768]u8 = undefined;
+    const ch = switch (client_share) {
+        .x25519 => x25519_ch,
+        .secp256r1 => clientHelloWithP256KeyShare(&p256_ch_buf, x25519_ch, client_p256.public_key),
+    };
+    var record: [1024]u8 = undefined;
+    const header: frame.Header = .init(.handshake, @intCast(ch.len));
+    header.write(record[0..frame.header_len]);
+    @memcpy(record[frame.header_len..][0..ch.len], ch);
+
+    hs.* = .init(.{
+        .keypairs = .initDeferredP256(.generate(), server_p256_secret),
+        .random = .zero,
+    });
+    const sh_record = try hs.acceptClientHello(record[0 .. frame.header_len + ch.len], out);
+    const hdr = try frame.parseHeader(sh_record);
+    return server_hello.parse(sh_record[frame.header_len..][0..hdr.length()]);
+}
+
+// RFC 8446 §4.2.8 — a server that selects X25519 never uses its P-256 share,
+// so a deferred P-256 key is never derived.
+test "acceptClientHello: X25519 selection leaves a deferred P-256 key underived" {
+    var hs: ServerHandshake = undefined;
+    var out: [512]u8 = undefined;
+    _ = try deferredP256ServerHello(&hs, .init(test_p256_seed_b), .x25519, &out);
+    defer hs.deinit();
+    try testing.expectEqual(NamedGroup.x25519, hs.negotiated_group);
+    try testing.expectEqual(KeyPairs.P256Public.deferred, hs.keypairs.p256_public);
+}
+
+// RFC 8446 §4.2.8.2 — selecting secp256r1 derives the deferred key, and the
+// ServerHello share is the scalar's SEC1 point.
+test "acceptClientHello: secp256r1 selection derives a deferred P-256 key" {
+    const expected = try p256.KeyPair.generateDeterministic(.init(test_p256_seed_b));
+    var hs: ServerHandshake = undefined;
+    var out: [512]u8 = undefined;
+    const sh = try deferredP256ServerHello(&hs, .init(test_p256_seed_b), .secp256r1, &out);
+    defer hs.deinit();
+    try testing.expectEqual(NamedGroup.secp256r1, hs.negotiated_group);
+    try testing.expectEqual(KeyPairs.P256Public.derived, hs.keypairs.p256_public);
+    try testing.expectEqualSlices(u8, &expected.public_key.data, &sh.key_share.secp256r1.data);
+    try testing.expectEqual(.wait_client_finished, hs.state);
+}
+
+// SEC 1 §3.2.1 — an invalid deferred scalar is redrawn at selection time. The
+// handshake proceeds on a consistent keypair instead of failing.
+test "acceptClientHello: an invalid deferred P-256 scalar is redrawn" {
+    var hs: ServerHandshake = undefined;
+    var out: [512]u8 = undefined;
+    const sh = try deferredP256ServerHello(&hs, .init(@splat(0)), .secp256r1, &out);
+    defer hs.deinit();
+    try testing.expectEqual(NamedGroup.secp256r1, hs.negotiated_group);
+    const check = try p256.KeyPair.fromSecret(hs.keypairs.p256.secret_key);
+    try testing.expectEqualSlices(u8, &check.public_key.data, &sh.key_share.secp256r1.data);
 }
 
 // RFC 8446 §4.2.8.2, §7.1 — client and server derive matching handshake keys
@@ -9577,6 +9652,11 @@ test "in-memory RFC 10024 hybrid group matrix reaches app data" {
         var server_config = try testConfig(.generate());
         if (group == .secp384r1_mlkem1024)
             server_config.keypairs.p384 = try .generate();
+        // The P-256 hybrid runs on a deferred key: encapsulation derives it.
+        if (group == .secp256r1_mlkem768) server_config.keypairs = .initDeferredP256(
+            .generate(),
+            (try p256.KeyPair.generate()).secret_key,
+        );
         server_config.hybrid_groups = &enabled_groups;
         var server: ServerHandshake = .init(server_config);
         defer server.deinit();
@@ -9663,6 +9743,11 @@ test "RFC 10024 hybrid group matrix negotiates through HRR" {
         var server_config = try testConfig(.generate());
         if (group == .secp384r1_mlkem1024)
             server_config.keypairs.p384 = try .generate();
+        // The P-256 hybrid runs on a deferred key: encapsulation derives it.
+        if (group == .secp256r1_mlkem768) server_config.keypairs = .initDeferredP256(
+            .generate(),
+            (try p256.KeyPair.generate()).secret_key,
+        );
         server_config.hybrid_groups = &enabled_groups;
         var server: ServerHandshake = .init(server_config);
         defer server.deinit();
