@@ -160,6 +160,15 @@ fn ArrayBufferAligned(
             }
             self.len = 0;
         }
+
+        /// Zero the used span and reset. A full wipe for buffers whose
+        /// writes all land below `len` (append, set) and whose every reset
+        /// goes through here: nothing past `len` was written since the last
+        /// secureClear, so the used span is everything this buffer holds.
+        pub fn secureClear(self: *Self) void {
+            std.crypto.secureZero(T, self.slice());
+            self.len = 0;
+        }
     };
 }
 
@@ -189,6 +198,15 @@ test "appendAssumeCapacity" {
     buf.appendSliceAssumeCapacity("test");
     try testing.expectEqualStrings("test", buf.constSlice());
     try testing.expectEqual(12, buf.remainingCapacity());
+}
+
+test "secureClear zeroes the used span and leaves the tail untouched" {
+    var buf: ArrayBuffer(u8, 8) = .{ .buffer = @splat(0x5a), .len = 0 };
+    try buf.appendSlice("secret");
+    buf.secureClear();
+
+    try testing.expectEqual(@as(usize, 0), buf.len);
+    try testing.expectEqualSlices(u8, &.{ 0, 0, 0, 0, 0, 0, 0x5a, 0x5a }, &buf.buffer);
 }
 
 test "secureZero clears full storage and length" {

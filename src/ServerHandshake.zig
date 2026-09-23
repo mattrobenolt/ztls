@@ -485,6 +485,9 @@ ch_expected: usize = 0,
 /// across encrypted records (application_data → inner handshake).
 /// Verify data is at most 48 bytes (SHA-384 output length) plus the 4-byte
 /// handshake header, so a small fixed buffer is sufficient. RFC 8446 §5.1.
+/// Only appendSlice writes it and every reset is a secureClear, so no byte
+/// past `len` was written since the last wipe: deinit clears the used span,
+/// not the full 16 KiB (the no-client-auth Finished rarely fragments at all).
 fin_frag: FinishedFragmentBuffer = .empty,
 
 /// Fixed-size buffer for reassembling fragmented post-handshake KeyUpdate
@@ -510,6 +513,14 @@ pub fn init(config: Config) ServerHandshake {
         .client_cert = if (config.client_cert_buffer) |buf| .init(buf) else .empty,
         .psk_lookup = config.psk_lookup,
         .early_data_skip_limit = config.early_data_skip_limit,
+        // Spelled out, not left to the `.empty` defaults: a default (or a
+        // decl constant) with an undefined buffer lowers to one aggregate
+        // store that LLVM turns into a zero fill of the whole buffer —
+        // 17 KiB of memset per handshake for these three. The literal
+        // stores only `len`.
+        .fin_frag = .{ .buffer = undefined, .len = 0 },
+        .ku_frag = .{ .buffer = undefined, .len = 0 },
+        .client_leaf_pub_key = .{ .buffer = undefined, .len = 0 },
     };
 }
 
@@ -538,7 +549,7 @@ pub fn deinit(self: *ServerHandshake) void {
     // PSK admission can install early RX before key exchange rejects ClientHello.
     if (self.early_rx) |*early_rx| early_rx.deinit();
     self.keypairs.secureZero();
-    self.fin_frag.secureZero();
+    self.fin_frag.secureClear();
     self.ku_frag.secureZero();
     self.client_leaf_pub_key.secureZero();
     self.* = undefined;
@@ -2364,7 +2375,7 @@ fn handleWaitClientFinished(self: *ServerHandshake, record: []u8) HandleError!Ev
     const hdr = try frame.parseHeader(record);
     if (record.len < frame.header_len + hdr.length()) return error.IncompleteRecord;
     if (self.fin_frag.len > 0 and hdr.content_type != .application_data) {
-        self.fin_frag.clear();
+        self.fin_frag.secureClear();
         return error.UnexpectedMessage;
     }
     switch (hdr.content_type) {
@@ -2450,7 +2461,7 @@ fn handleWaitClientFinished(self: *ServerHandshake, record: []u8) HandleError!Ev
                 return .none;
             },
             else => {
-                if (self.fin_frag.len > 0) self.fin_frag.clear();
+                if (self.fin_frag.len > 0) self.fin_frag.secureClear();
                 return err;
             },
         };
@@ -2459,7 +2470,7 @@ fn handleWaitClientFinished(self: *ServerHandshake, record: []u8) HandleError!Ev
     }
 
     const dec = handshake.decryptProtected(&self.rx, record) catch |err| {
-        if (self.fin_frag.len > 0) self.fin_frag.clear();
+        if (self.fin_frag.len > 0) self.fin_frag.secureClear();
         return err;
     };
     return self.handleClientFlightRecord(dec);
@@ -2477,21 +2488,21 @@ fn handleClientFlightRecord(
     // content type is not handshake, reject with UnexpectedMessage.
     // This catches interleaved alerts and application data.
     if (self.fin_frag.len > 0 and dec.content_type != .handshake) {
-        self.fin_frag.clear();
+        self.fin_frag.secureClear();
         return error.UnexpectedMessage;
     }
 
     return switch (dec.content_type) {
         .handshake => blk: {
             if (dec.content.len == 0) {
-                self.fin_frag.clear();
+                self.fin_frag.secureClear();
                 return error.UnexpectedMessage;
             }
             // Buffer the plaintext and reassemble the client flight
             // (Certificate [+ CertificateVerify] + Finished, or just Finished
             // when client auth is off). RFC 8446 §4.4, §5.1.
             self.fin_frag.appendSlice(dec.content) catch {
-                self.fin_frag.clear();
+                self.fin_frag.secureClear();
                 return error.UnexpectedMessage;
             };
 
@@ -2508,7 +2519,7 @@ fn handleClientFlightRecord(
                     // a Finished, a trailing partial is illegal.
                     error.UnexpectedEof => {
                         if (saw_finished) {
-                            self.fin_frag.clear();
+                            self.fin_frag.secureClear();
                             return error.UnexpectedMessage;
                         }
                         break :blk .none;
@@ -2526,18 +2537,18 @@ fn handleClientFlightRecord(
                     .certificate, .certificate_verify => {},
                     .finished => saw_finished = true,
                     else => {
-                        self.fin_frag.clear();
+                        self.fin_frag.secureClear();
                         return error.UnexpectedMessage;
                     },
                 }
                 // After a Finished, nothing else may follow in the flight.
                 if (saw_finished) {
                     const extra = hr.next() catch {
-                        self.fin_frag.clear();
+                        self.fin_frag.secureClear();
                         return error.UnexpectedMessage;
                     };
                     if (extra != null) {
-                        self.fin_frag.clear();
+                        self.fin_frag.secureClear();
                         return error.UnexpectedMessage;
                     }
                     break;
@@ -2546,8 +2557,11 @@ fn handleClientFlightRecord(
             if (!saw_finished) break :blk .none; // still partial: wait for more
 
             // Complete client flight: validate Certificate [+ CV] + Finished.
+            // Reset before processing, wipe after: `flight` borrows the
+            // bytes until processClientFinishedPlaintext returns.
             const flight = fragment;
             self.fin_frag.clear();
+            defer std.crypto.secureZero(u8, self.fin_frag.buffer[0..flight.len]);
             try self.processClientFinishedPlaintext(flight);
             break :blk .none;
         },
@@ -8784,6 +8798,9 @@ test "0-RTT: corrupted record after the skip window aborts" {
         server.handleRecord(rest_buf[0..rest_record.len], &server_out),
     );
     try testing.expectEqual(@as(usize, 0), server.fin_frag.len);
+    // The drop wiped what the fragment held: deinit clears only the used
+    // span, so every reset must leave zeroes behind.
+    try testing.expect(std.mem.allEqual(u8, server.fin_frag.buffer[0..partial.len], 0));
     try testing.expectEqual(skipped_before, server.early_data_skip_bytes);
 }
 
