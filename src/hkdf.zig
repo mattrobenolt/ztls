@@ -125,9 +125,11 @@ fn Hkdf(comptime Hash: type, comptime ComptimeHash: type) type {
             var partial: [prk_len]u8 = undefined;
             defer hmac.wipe(&partial);
             var done: usize = 0;
-            var counter: u8 = 1;
+            // usize: the continue expression runs after the 255th block, which
+            // RFC 5869 allows, and a u8 would overflow there.
+            var counter: usize = 1;
             while (done < out.len) : (counter += 1) {
-                buf[pos] = counter;
+                buf[pos] = @intCast(counter);
                 const block = if (out.len - done >= prk_len) out[done..][0..prk_len] else &partial;
                 if (done == 0)
                     key.mac(block, .{info})
@@ -634,6 +636,26 @@ const hkdf_reference_pairs = .{
     .{ HkdfSha256, crypto.hash.sha2.Sha256, sha256_suites },
     .{ HkdfSha384, crypto.hash.sha2.Sha384, [_]CipherSuite{.aes_256_gcm_sha384} },
 };
+
+// RFC 5869 §2.3 — L may reach 255*HashLen. The block counter's last value
+// is 255, and the lengths just above 254*HashLen use it.
+test "expandLabel at the RFC 5869 length bound matches independent HKDF-Expand-Label" {
+    inline for (hkdf_reference_pairs) |pair| {
+        const H, const S, _ = pair;
+        var secret: H.Prk = undefined;
+        @memset(&secret.data, 0x5a);
+        var key: H.Keyed = .init(&secret.data);
+        defer key.secureZero();
+        const max = 255 * S.digest_length;
+        var got: [max]u8 = undefined;
+        var want: [max]u8 = undefined;
+        for ([_]usize{ 254 * S.digest_length + 1, max }) |len| {
+            H.expandLabelKeyed(got[0..len], "exp", "ctx", &key);
+            referenceExpandLabel(S, want[0..len], "exp", "ctx", &secret.data);
+            try testing.expectEqualSlices(u8, want[0..len], got[0..len]);
+        }
+    }
+}
 
 // RFC 8446 §7.1 — one keying per secret gives the same bytes as independent
 // HKDF-Expand-Label calls. The label sets are the ones ztls derives from one
