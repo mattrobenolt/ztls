@@ -128,7 +128,14 @@ test "Hmac keyed once gives the same MAC for every reuse and every split" {
             try testing.expectEqualSlices(u8, &want, &joined);
             try testing.expectEqualSlices(u8, &want, &parts);
         }
-        try testing.expectEqualSlices(u8, mem.asBytes(&before), mem.asBytes(&keyed));
+        // The state is compared by what it computes, not by its bytes: a
+        // backend context holds a block buffer that Init leaves undefined,
+        // and memcheck (just check-memory) rejects reading it.
+        var from_before: [K.mac_length]u8 = undefined;
+        var from_keyed: [K.mac_length]u8 = undefined;
+        before.mac(&from_before, .{"after five macs"});
+        keyed.mac(&from_keyed, .{"after five macs"});
+        try testing.expectEqualSlices(u8, &from_before, &from_keyed);
     }
 }
 
