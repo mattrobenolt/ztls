@@ -1,0 +1,28 @@
+--- <ztls>/src/hmac.zig	2026-09-24 03:55:23.578156086 -0700
++++ src/hmac.zig	2026-09-24 03:51:10.304752266 -0700
+@@ -12,6 +12,9 @@
+ const crypto = std.crypto;
+ const mem = std.mem;
+ 
++pub var count_init: usize = 0;
++pub var count_mac: usize = 0;
++
+ pub fn Hmac(comptime Hash: type) type {
+     return struct {
+         const Self = @This();
+@@ -21,6 +24,7 @@
+         outer: Hash,
+ 
+         pub fn init(key: []const u8) Self {
++            if (!@inComptime()) count_init += 1;
+             // RFC 2104 §2: a key longer than the block is hashed first.
+             var digest: [mac_length]u8 = undefined;
+             defer wipe(&digest);
+@@ -42,6 +46,7 @@
+         /// HMAC(key, parts[0] || parts[1] || ...). `parts` is a tuple of
+         /// byte slices, so a message in pieces needs no copy.
+         pub fn mac(self: *const Self, out: *[mac_length]u8, parts: anytype) void {
++            if (!@inComptime()) count_mac += 1;
+             var h = self.inner;
+             defer wipe(mem.asBytes(&h));
+             inline for (parts) |part| h.update(part);

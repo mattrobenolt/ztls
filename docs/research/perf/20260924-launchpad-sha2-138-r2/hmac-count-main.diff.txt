@@ -1,0 +1,53 @@
+--- /tmp/lane-sh-hs/main.zig	2026-09-24 02:52:22.100646156 -0700
++++ main.zig	2026-09-24 03:51:10.319846952 -0700
+@@ -4,6 +4,15 @@
+ const ztls = @import("ztls");
+ const fixtures = @import("fixtures");
+ 
++var server_init: usize = 0;
++var server_mac: usize = 0;
++fn snap() [2]usize {
++    return .{ ztls.hmac_count.count_init, ztls.hmac_count.count_mac };
++}
++fn add(before: [2]usize) void {
++    server_init += ztls.hmac_count.count_init - before[0];
++    server_mac += ztls.hmac_count.count_mac - before[1];
++}
+ fn connectPair(suite: ztls.CipherSuite) !void {
+     var client: ztls.ClientHandshake = .init(.{
+         .keypairs = try .init(try .generateDeterministic(.init(@splat(0x11)))),
+@@ -25,22 +34,28 @@
+     const suites = [_]ztls.CipherSuite{suite};
+     server.supportSuites(&suites);
+     var server_out: [8192]u8 = undefined;
++    var b = snap();
+     const sh_record = try server.acceptClientHello(ch_record, &server_out);
++    add(b);
+     try client.processServerHello(sh_record[ztls.frame.header_len..]);
+ 
+     var signer: ztls.signature.PrivateKey = try .fromP256Scalar(fixtures.server_ecdsa_scalar[0..32]);
+     defer signer.deinit();
++    b = snap();
+     const flight_record = try server.sendPreparedAuthenticatedFlight(
+         &.{&fixtures.server_ecdsa_cert_der},
+         signer.signer(),
+         &server_out,
+     );
++    add(b);
+     const ev = try client.handleRecord(server_out[0..flight_record.len], &client_out);
+     const client_finished = switch (ev) {
+         .write => |w| w,
+         else => return error.UnexpectedEvent,
+     };
++    b = snap();
+     try server.processClientFinished(client_out[0..client_finished.len]);
++    add(b);
+     client.completeWrite();
+     if (!client.isConnected() or !server.isConnected()) return error.HandshakeIncomplete;
+ }
+@@ -55,4 +70,5 @@
+     else
+         .aes_128_gcm_sha256;
+     for (0..n) |_| try connectPair(suite);
++    std.debug.print("server per handshake: keyings={d} expands_or_macs={d}; total incl client: keyings={d} macs={d}\n", .{ server_init / n, server_mac / n, ztls.hmac_count.count_init / n, ztls.hmac_count.count_mac / n });
+ }

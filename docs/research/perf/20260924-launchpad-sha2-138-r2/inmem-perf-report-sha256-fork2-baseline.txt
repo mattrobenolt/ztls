@@ -1,0 +1,40 @@
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 2K of event 'cycles:u'
+# Event count (approx.): 1660301878
+#
+# Overhead  Shared Object          Symbol                                                                                                                                                                                                                                          IPC   [IPC Coverage]
+# ........  .....................  ..............................................................................................................................................................................................................................................  ....................
+#
+    25.16%  libcrypto.so           [.] Lcurve25519_x25519_byte_alt_scalarloop
+    17.04%  libcrypto.so           [.] __ecp_nistz256_mul_mont
+     6.32%  libcrypto.so           [.] __ecp_nistz256_sqr_mont
+     6.15%  libcrypto.so           [.] Lcurve25519_x25519base_byte_alt_scalarloop
+     4.72%  hs                     [.] compiler_rt.memset
+     4.07%  libcrypto.so           [.] ecp_nistz256_select_w7
+     3.16%  libcrypto.so           [.] ecp_nistz256_point_add_affine
+     2.56%  libcrypto.so           [.] __ecp_nistz256_sub_from
+     2.52%  libcrypto.so           [.] ecp_nistz256_ord_sqr_mont
+     2.06%  libcrypto.so           [.] ecp_nistz256_point_double
+     1.79%  libcrypto.so           [.] SHA256_Final
+     1.79%  libcrypto.so           [.] Lbignum_montinv_p256_midloop
+     1.28%  libcrypto.so           [.] Lcurve25519_x25519_byte_alt_invmidloop
+     1.14%  libcrypto.so           [.] beeu_mod_inverse_vartime
+     1.10%  libcrypto.so           [.] ecp_nistz256_point_add
+     1.10%  libcrypto.so           [.] rol64
+     1.10%  libcrypto.so           [.] sha256_block_data_order_hw
+     1.05%  libcrypto.so           [.] Lcurve25519_x25519base_byte_alt_invmidloop
+     0.97%  libcrypto.so           [.] jent_keccakp_chi
+     0.87%  libcrypto.so           [.] __ecp_nistz256_sub_morf
+     0.78%  libcrypto.so           [.] __ecp_nistz256_add_to
+     0.78%  hs                     [.] compiler_rt.memcpy.memcpyFast
+     0.78%  libcrypto.so           [.] ecp_nistz256_point_mul_base
+     0.70%  libcrypto.so           [.] jent_keccakp_theta
+     0.60%  hs                     [.] hmac.Hmac(crypto.sha2.Sha2(.{ .Context = cimport.struct_sha256_state_st, .digest_length = 32, .block_length = 64, .init = (extern 'SHA256_Init'), .update = (extern 'SHA256_Update'), .final = (extern 'SHA256_Final') })).init
+     0.50%  libcrypto.so           [.] ecp_nistz256_ord_mul_mont
+     0.47%  libcrypto.so           [.] jent_memaccess
+     0.41%  libcrypto.so           [.] Lbignum_montinv_p256_loop
+     0.39%  libcrypto.so           [.] xoshiro128starstar

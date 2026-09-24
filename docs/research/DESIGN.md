@@ -296,14 +296,15 @@ later backend if its API differences are worth supporting directly.
 There is no parallel `std.crypto` AEAD/KEX/signature backend. This is new
 pre-alpha software, so there is no compatibility burden that justifies
 preserving a second product path for provider-sensitive primitives. That does
-not make every `std.crypto` use implementation debt: the stdlib HMAC/HKDF
-constructions, timing-safe comparison, secure zeroing, and randomness are
-acceptable where they keep the code smaller and do not create backend policy or
-algorithm agility divergence. Handshake SHA-256/SHA-384 are the exception:
-stdlib SHA-2 selects its code at compile time from the target CPU, so a portable
-build loses the SHA extensions. `src/crypto/sha2.zig` runs them on the
-backend's runtime-dispatched code instead, and the stdlib HMAC/HKDF generics
-instantiate over those types (#138).
+not make every `std.crypto` use implementation debt: timing-safe comparison,
+secure zeroing, and randomness are acceptable where they keep the code smaller
+and do not create backend policy or algorithm agility divergence. The
+handshake key schedule is the exception (#138). Stdlib SHA-2 selects its code
+at compile time from the target CPU, so a portable build loses the SHA
+extensions. `src/crypto/sha2.zig` runs SHA-256/SHA-384 on the backend's
+runtime-dispatched code instead. HMAC (`src/hmac.zig`) and HKDF
+(`src/hkdf.zig`) are ztls code over those types, so that one keying of a
+secret serves every label derived from it.
 
 This changes the memory contract. ztls-owned code still does not allocate, does
 not import `std.heap`, does not own TLS buffers, and does no I/O. A production

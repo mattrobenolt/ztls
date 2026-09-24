@@ -1,0 +1,18 @@
+field-x25519-run1.json
+build            n  median cyc/hs       min       max  vs base-native  median ins/hs  valid
+base-native      5        167,476   166,562   168,340           +0.0%        519,457  True TLSv1.3/TLS_AES_128_GCM_SHA256/X25519 tickets=0
+base-baseline    5        242,800   241,836   242,900          +45.0%        787,929  True TLSv1.3/TLS_AES_128_GCM_SHA256/X25519 tickets=0
+fork-native      5        166,676   166,521   167,190           -0.5%        518,284  True TLSv1.3/TLS_AES_128_GCM_SHA256/X25519 tickets=0
+fork-baseline    5        167,357   167,001   167,812           -0.1%        521,400  True TLSv1.3/TLS_AES_128_GCM_SHA256/X25519 tickets=0
+field-x25519-run2.json
+build            n  median cyc/hs       min       max  vs base-native  median ins/hs  valid
+base-native      5        167,876   167,657   167,957           +0.0%        519,819  True TLSv1.3/TLS_AES_128_GCM_SHA256/X25519 tickets=0
+base-baseline    5        242,932   242,360   243,149          +44.7%        787,797  True TLSv1.3/TLS_AES_128_GCM_SHA256/X25519 tickets=0
+fork-native      5        166,876   166,340   167,767           -0.6%        518,210  True TLSv1.3/TLS_AES_128_GCM_SHA256/X25519 tickets=0
+fork-baseline    5        167,396   166,894   167,724           -0.3%        520,813  True TLSv1.3/TLS_AES_128_GCM_SHA256/X25519 tickets=0
+field-x25519mlkem768-run1.json
+build            n  median cyc/hs       min       max  vs base-native  median ins/hs  valid
+base-native      5        208,208   207,959   209,743           +0.0%        692,417  True TLSv1.3/TLS_AES_128_GCM_SHA256/X25519MLKEM768 tickets=0
+base-baseline    5        300,173   299,094   300,449          +44.2%      1,033,998  True TLSv1.3/TLS_AES_128_GCM_SHA256/X25519MLKEM768 tickets=0
+fork-native      5        207,157   206,964   207,500           -0.5%        689,888  True TLSv1.3/TLS_AES_128_GCM_SHA256/X25519MLKEM768 tickets=0
+fork-baseline    5        207,240   206,878   208,388           -0.5%        693,602  True TLSv1.3/TLS_AES_128_GCM_SHA256/X25519MLKEM768 tickets=0

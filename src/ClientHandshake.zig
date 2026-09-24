@@ -452,8 +452,10 @@ const Suite = union(enum) {
 
                 var master = H.masterSecret(s.handshake_secret);
                 defer master.secureZero();
-                s.client_app_secret = H.clientApplicationTrafficSecret(master, &app_th);
-                s.server_app_secret = H.serverApplicationTrafficSecret(master, &app_th);
+                var master_key: H.Keyed = .init(&master.data);
+                defer master_key.secureZero();
+                s.client_app_secret = H.deriveSecretKeyed(&master_key, "c ap traffic", &app_th);
+                s.server_app_secret = H.deriveSecretKeyed(&master_key, "s ap traffic", &app_th);
 
                 s.transcript.update(fin); // client Finished now part of the transcript
 
@@ -461,10 +463,8 @@ const Suite = union(enum) {
                 // through the client Finished. Derived before
                 // forgetHandshakeSecrets wipes the handshake_secret (which feeds
                 // the master secret).
-                const res_th_raw = s.transcript.peek();
-                var res_th: H.TranscriptHash = undefined;
-                @memcpy(res_th.data[0..], res_th_raw[0..]);
-                s.resumption_master = H.resumptionMasterSecret(master, &res_th);
+                const res_th: H.TranscriptHash = .init(s.transcript.peek());
+                s.resumption_master = H.deriveSecretKeyed(&master_key, "res master", &res_th);
                 s.resumption_master_valid = true;
 
                 var tx = try H.makeRecordLayer(s.aead, s.client_app_secret);
@@ -516,23 +516,27 @@ const Suite = union(enum) {
             .buffering => unreachable,
             inline .sha256, .sha384 => |*s| {
                 const H = @TypeOf(s.*).Hkdf;
-                const early = if (psk) |p| H.pskEarlySecret(p) else H.early_secret;
-                s.handshake_secret = H.handshakeSecret(early, dhe);
+                s.handshake_secret = H.handshakeSecretFor(psk, dhe);
 
-                const th = s.transcript.peek();
-                var client_secret =
-                    H.clientHandshakeTrafficSecret(s.handshake_secret, &.init(th));
+                const th: H.TranscriptHash = .init(s.transcript.peek());
+                var handshake_key: H.Keyed = .init(&s.handshake_secret.data);
+                defer handshake_key.secureZero();
+                var client_secret = H.deriveSecretKeyed(&handshake_key, "c hs traffic", &th);
                 defer client_secret.secureZero();
-                var server_secret =
-                    H.serverHandshakeTrafficSecret(s.handshake_secret, &.init(th));
+                var server_secret = H.deriveSecretKeyed(&handshake_key, "s hs traffic", &th);
                 defer server_secret.secureZero();
 
-                s.client_finished_key = H.finishedKey(client_secret);
-                s.server_finished_key = H.finishedKey(server_secret);
-
-                var rx = try H.makeRecordLayer(s.aead, server_secret);
+                var rx = try H.makeRecordLayerAndFinishedKey(
+                    s.aead,
+                    server_secret,
+                    &s.server_finished_key,
+                );
                 errdefer rx.deinit();
-                const tx = try H.makeRecordLayer(s.aead, client_secret);
+                const tx = try H.makeRecordLayerAndFinishedKey(
+                    s.aead,
+                    client_secret,
+                    &s.client_finished_key,
+                );
 
                 return .{ .rx = rx, .tx = tx };
             },

@@ -7,6 +7,7 @@ const Sha256 = @import("crypto/backend.zig").sha2.Sha256;
 const testing = std.testing;
 
 const handshake = @import("handshake.zig");
+const hmac = @import("hmac.zig");
 const wire = @import("wire.zig");
 
 pub const VerifyError = error{
@@ -26,7 +27,7 @@ pub fn verify(
     finished_key: []const u8,
     transcript_hash: []const u8,
 ) VerifyError!void {
-    const Hmac = crypto.auth.hmac.Hmac(Hash);
+    const Hmac = hmac.Hmac(Hash);
     const Digest = [Hmac.mac_length]u8;
 
     if (msg.len < 4) return error.UnexpectedEof;
@@ -55,7 +56,7 @@ pub fn encode(
     finished_key: []const u8,
     transcript_hash: []const u8,
 ) error{BufferTooShort}![]u8 {
-    const Hmac = crypto.auth.hmac.Hmac(Hash);
+    const Hmac = hmac.Hmac(Hash);
     const total = 4 + Hmac.mac_length; // header(4) + verify_data
     if (out.len < total) return error.BufferTooShort;
 

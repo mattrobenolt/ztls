@@ -48,8 +48,8 @@ The AEAD seam is already clean enough to preserve:
 - `src/RecordLayer.zig` only calls `Aead.encrypt` / `Aead.decrypt`;
 - HKDF derives byte-array traffic keys and constructs `RecordLayer` values.
 
-The non-AEAD seams are mixed. The HKDF and HMAC constructions stay on
-`std.crypto`. Their SHA-2 runs on the backend (see §4). X25519, certificate
+The non-AEAD seams are mixed. HKDF and HMAC are ztls code, and their SHA-2
+runs on the backend (see §4). X25519, certificate
 signature verification, and server signing are real backend boundaries and need
 a `src/crypto/` facade so provider decisions do not leak through the handshake
 state machines.
@@ -137,12 +137,19 @@ Requirements:
 
 ### 4. HKDF/HMAC/SHA transcript hashing
 
-The HKDF and HMAC constructions stay on the `std.crypto` generics. The SHA-256
-and SHA-384 under them, and the transcript hashes, run on the backend through
-`src/crypto/sha2.zig` (#138). The reason is performance, not FIPS: stdlib SHA-2
-selects its code at compile time, so a `-Dcpu=baseline` build runs the software
-path on a host with SHA extensions. The libcrypto family selects at run time.
-The existing RFC 8448 Finished/HKDF vectors run through the backend types.
+The SHA-256 and SHA-384 under the key schedule, and the transcript hashes, run
+on the backend through `src/crypto/sha2.zig` (#138). The reason is
+performance, not FIPS: stdlib SHA-2 selects its code at compile time, so a
+`-Dcpu=baseline` build runs the software path on a host with SHA extensions.
+The libcrypto family selects at run time. The existing RFC 8448
+Finished/HKDF vectors run through the backend types.
+
+HMAC (`src/hmac.zig`) and HKDF (`src/hkdf.zig`) are ztls code. A keyed HMAC
+state holds the inner and outer pad states, so each expand under an already
+keyed secret costs two compressions instead of four. The handshakes key each
+secret once for the labels derived from it. The keyed state is a secret: it
+lives on the stack of one derivation and is wiped in a `defer`. No
+per-connection struct holds one.
 
 Comptime constants (`Hash("")`, the zero-PSK early secret) stay on std, because
 libcrypto cannot run at comptime. A test pins them to the runtime backend

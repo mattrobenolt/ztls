@@ -1828,22 +1828,38 @@ each passing the same correctness and interop gates.
   `conformance/build.zig` uses the same header inference, so `anvil_client` and
   `tlsfuzzer_server` can be built as AWS-LC-linked harness binaries.
 - Handshake SHA-256/SHA-384 (transcript, HMAC, HKDF, Finished, PSK binders)
-  run on the backend through `src/crypto/sha2.zig` (#138). The HKDF/HMAC
-  constructions remain the `std.crypto` generics. Certificate-chain digests in
-  `src/certificate_parser.zig` and comptime constants stay on std. Evidence:
-  equivalence tests against std in `src/crypto/backend_primitive_tests.zig`
-  (lengths 0..300, large inputs, random update splits, copy-then-continue
-  snapshots, HMAC/HKDF), the RFC 8448 vectors, a comptime-versus-runtime pin in
-  `src/hkdf.zig`, and a mutation of the backend update that turns 70 tests red.
+  run on the backend through `src/crypto/sha2.zig` (#138). HMAC
+  (`src/hmac.zig`) and HKDF (`src/hkdf.zig`) are ztls code. The handshakes
+  key each secret once for the labels derived from it, so one server
+  handshake does 14 HMAC keyings and 22 MACs instead of 25 and 25. The keyed
+  pad states stay on the stack of one derivation and are wiped in a `defer`.
+  Certificate-chain digests in `src/certificate_parser.zig` and comptime
+  constants stay on std. Evidence:
+  - equivalence tests against std in `src/crypto/backend_primitive_tests.zig`
+    (lengths 0..300, large inputs, random update splits, copy-then-continue
+    snapshots, HMAC/HKDF) and in `src/hmac.zig` (key and message length
+    classes, reuse, split messages)
+  - batched expands and batched record layers against independent std
+    HKDF-Expand-Label for every label set, in `src/hkdf.zig`
+  - the RFC 8448 vectors, and a comptime-versus-runtime pin in `src/hkdf.zig`
+  - mutations: a backend update that drops a byte (70 red), a corrupted
+    cached outer pad state (64 red), and a MAC that spends the cached inner
+    state (74 red, among them every batched test)
+  - a size ceiling test for ServerHandshake, EstablishedSession, and the
+    suite state on each backend
   These tests pass on OpenSSL, AWS-LC, and BoringSSL. The `-Dcrypto-fips=true`
   identity builds and runs them too. OpenSSL-FIPS caveat: the low-level
   `SHA*_Init` API is libcrypto's default implementation, not the FIPS
   provider. The std code it replaces was also outside the FIPS boundary.
-  Performance ([capture](docs/research/perf/20260924-launchpad-sha2-138/ANALYSIS.md),
-  launchpad, AWS-LC 5.5.0): a `-Dcpu=baseline` handoff build now needs
-  0.4-0.7% more cycles for each handshake than a native build, not 43-44%.
-  On a native build, the SHA-256 field row costs 0.2-1.2% more cycles.
-  SHA-384 in-memory handshakes cost 15.7% fewer.
+  Performance ([round 1](docs/research/perf/20260924-launchpad-sha2-138/ANALYSIS.md),
+  [round 2](docs/research/perf/20260924-launchpad-sha2-138-r2/ANALYSIS.md),
+  launchpad, AWS-LC 5.5.0), handoff field row `handshake-c64`, cycles per
+  handshake:
+  - A `-Dcpu=baseline` build needs 0.0-0.4% more than a native build. Before
+    #138 it needed 43-45% more.
+  - A native build needs 0.5-0.6% fewer than native before #138, on both the
+    X25519 and X25519MLKEM768 rows.
+  - SHA-384 in-memory handshakes need 18.8% fewer on a native build.
 - `src/crypto/backend_primitive_tests.zig` exercises the backend facade
   directly for X25519 (RFC 7748 known vectors plus low-order/all-zero public-key
   rejection), P-256 ECDH (mutual key agreement with fixed scalars, non-04 SEC1

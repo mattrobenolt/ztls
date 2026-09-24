@@ -1671,6 +1671,7 @@ fn installHandshakeKeys(
         },
     };
     defer std.crypto.secureZero(u8, dhe[0..dhe_len]);
+    const psk: ?[]const u8 = if (self.selected_psk) |sp| sp.psk else null;
     switch (suite) {
         .aes_128_gcm_sha256, .chacha20_poly1305_sha256 => {
             var transcript: Sha256 = if (self.retry_transcript) |rt| switch (rt) {
@@ -1679,18 +1680,7 @@ fn installHandshakeKeys(
             } else .init(.{});
             transcript.update(ch_msg);
             transcript.update(sh_msg);
-            const early = if (self.selected_psk) |sp|
-                hkdf.HkdfSha256.pskEarlySecret(sp.psk)
-            else
-                hkdf.HkdfSha256.early_secret;
-            self.suite_state = .{ .sha256 = makeHandshakeArm(
-                hkdf.HkdfSha256,
-                Sha256,
-                transcript,
-                suite,
-                dhe[0..dhe_len],
-                early,
-            ) };
+            try self.installHandshakeArm(.sha256, transcript, suite, dhe[0..dhe_len], psk);
         },
         .aes_256_gcm_sha384 => {
             var transcript: Sha384 = if (self.retry_transcript) |rt| switch (rt) {
@@ -1699,64 +1689,56 @@ fn installHandshakeKeys(
             } else .init(.{});
             transcript.update(ch_msg);
             transcript.update(sh_msg);
-            self.suite_state = .{ .sha384 = makeHandshakeArm(
-                hkdf.HkdfSha384,
-                Sha384,
-                transcript,
-                suite,
-                dhe[0..dhe_len],
-                if (self.selected_psk) |sp|
-                    hkdf.HkdfSha384.pskEarlySecret(sp.psk)
-                else
-                    hkdf.HkdfSha384.early_secret,
-            ) };
+            try self.installHandshakeArm(.sha384, transcript, suite, dhe[0..dhe_len], psk);
         },
     }
     self.retry_transcript = null;
     self.retry_ch1_digest = null;
     self.retry_psk = .none;
     self.retry_selected_group = null;
-
-    switch (self.suite_state) {
-        inline .sha256, .sha384 => |s| {
-            const H = @TypeOf(s).Hkdf;
-            const th = s.transcript.peek();
-            var client_secret = H.clientHandshakeTrafficSecret(s.handshake_secret, &.init(th));
-            defer client_secret.secureZero();
-            var server_secret = H.serverHandshakeTrafficSecret(s.handshake_secret, &.init(th));
-            defer server_secret.secureZero();
-            var rx = try H.makeRecordLayer(s.aead, client_secret);
-            errdefer rx.deinit();
-            const tx = try H.makeRecordLayer(s.aead, server_secret);
-            self.rx = rx;
-            self.tx = tx;
-        },
-    }
 }
 
-fn makeHandshakeArm(
-    comptime H: type,
-    comptime Hash: type,
-    transcript: Hash,
+/// RFC 8446 §7.1 — derive every secret rooted at the ServerHello
+/// transcript, and install the arm and both handshake record layers. The
+/// handshake secret is keyed once for both traffic secrets, and each traffic
+/// secret once for its finished key, write key, and IV (#138).
+fn installHandshakeArm(
+    self: *ServerHandshake,
+    comptime tag: @typeInfo(Suite).@"union".tag_type.?,
+    transcript: @FieldType(@FieldType(Suite, @tagName(tag)), "transcript"),
     aead_key: CipherSuite,
     dhe: []const u8,
-    early: H.Prk,
-) HashArm(H, Hash) {
-    var handshake_secret = H.handshakeSecret(early, dhe);
-    const th = transcript.peek();
-    var client_secret = H.clientHandshakeTrafficSecret(handshake_secret, &.init(th));
-    var server_secret = H.serverHandshakeTrafficSecret(handshake_secret, &.init(th));
-    const arm: HashArm(H, Hash) = .{
+    psk: ?[]const u8,
+) aead.Error!void {
+    const H = @FieldType(Suite, @tagName(tag)).Hkdf;
+    var arm: @FieldType(Suite, @tagName(tag)) = .{
         .transcript = transcript,
         .aead = aead_key,
-        .handshake_secret = handshake_secret,
-        .client_finished_key = H.finishedKey(client_secret),
-        .server_finished_key = H.finishedKey(server_secret),
+        .handshake_secret = H.handshakeSecretFor(psk, dhe),
     };
-    handshake_secret.secureZero();
-    client_secret.secureZero();
-    server_secret.secureZero();
-    return arm;
+    errdefer arm.secureZero();
+    const th: H.TranscriptHash = .init(transcript.peek());
+    var handshake_key: H.Keyed = .init(&arm.handshake_secret.data);
+    defer handshake_key.secureZero();
+    var client_secret = H.deriveSecretKeyed(&handshake_key, "c hs traffic", &th);
+    defer client_secret.secureZero();
+    var server_secret = H.deriveSecretKeyed(&handshake_key, "s hs traffic", &th);
+    defer server_secret.secureZero();
+    var rx = try H.makeRecordLayerAndFinishedKey(
+        aead_key,
+        client_secret,
+        &arm.client_finished_key,
+    );
+    errdefer rx.deinit();
+    const tx = try H.makeRecordLayerAndFinishedKey(
+        aead_key,
+        server_secret,
+        &arm.server_finished_key,
+    );
+    self.suite_state = @unionInit(Suite, @tagName(tag), arm);
+    arm.secureZero();
+    self.rx = rx;
+    self.tx = tx;
 }
 
 // Test-only helper for anonymous handshakes. Keep private: TLS server callers
@@ -2171,16 +2153,16 @@ fn verifyClientFinished(
             @memcpy(app_th.data[0..], self.server_finished_hash[0..self.server_finished_hash_len]);
             var master = H.masterSecret(s.handshake_secret);
             defer master.secureZero();
-            s.client_app_secret = H.clientApplicationTrafficSecret(master, &app_th);
+            var master_key: H.Keyed = .init(&master.data);
+            defer master_key.secureZero();
+            s.client_app_secret = H.deriveSecretKeyed(&master_key, "c ap traffic", &app_th);
             errdefer s.client_app_secret.secureZero();
             const next_rx = try H.makeRecordLayer(s.aead, s.client_app_secret);
             self.rx.deinit();
             self.rx = next_rx;
             s.transcript.update(msg_raw);
-            const res_th_raw = s.transcript.peek();
-            var res_th: H.TranscriptHash = undefined;
-            @memcpy(res_th.data[0..], res_th_raw[0..]);
-            s.resumption_master = H.resumptionMasterSecret(master, &res_th);
+            const res_th: H.TranscriptHash = .init(s.transcript.peek());
+            s.resumption_master = H.deriveSecretKeyed(&master_key, "res master", &res_th);
             s.resumption_master_valid = true;
             s.forgetHandshakeSecrets();
         },
@@ -6566,6 +6548,24 @@ fn expectSameEstablishedEvent(expected: Event, actual: Event) !void {
         },
         .none, .closed, .write => {},
     }
+}
+
+// #138 — per-connection memory is a published consumer number (handoff
+// holds one EstablishedSession per live connection), so these structs must
+// not grow by accident. The HMAC pad states for the key schedule are
+// stack-local to one derivation and never land in them. Ceilings are the
+// sizes measured at the #138 change on aarch64-linux: OpenSSL 3.6.4,
+// AWS-LC 5.9.0, BoringSSL 0.20260803.0. A deliberate growth updates them.
+test "per-connection structs stay within their measured sizes" {
+    const Ceiling = struct { server: usize, established: usize, suite: usize };
+    const ceiling: Ceiling = switch (backend.active) {
+        .openssl, .@"openssl-fips" => .{ .server = 19360, .established = 712, .suite = 520 },
+        .@"aws-lc", .@"aws-lc-fips" => .{ .server = 21064, .established = 1848, .suite = 520 },
+        .boringssl => .{ .server = 21024, .established = 1824, .suite = 512 },
+    };
+    try testing.expect(@sizeOf(ServerHandshake) <= ceiling.server);
+    try testing.expect(@sizeOf(EstablishedSession) <= ceiling.established);
+    try testing.expect(@sizeOf(Suite) <= ceiling.suite);
 }
 
 // RFC 8446 §4.6.3, §5.1, §6.1 — the extracted session runs the same connected

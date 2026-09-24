@@ -6,22 +6,31 @@
 //! (`OPENSSL_armcap`, `OPENSSL_ia32cap`). These types put the handshake
 //! transcript, HMAC, and HKDF on that runtime-dispatched code.
 //!
-//! The types follow the `std.crypto.hash` interface, so
-//! `std.crypto.auth.hmac.Hmac` and `std.crypto.kdf.hkdf.Hkdf` instantiate over
-//! them unchanged. They are copyable value types: the context is the backend's
-//! plain stack struct (`SHA256_CTX`, `SHA512_CTX`), which holds no pointers
-//! and allocates nothing. A copy is an independent snapshot of the running
-//! hash, which the transcript uses for Transcript-Hash values (RFC 8446
-//! §4.4.1). OpenSSL 3 marks these low-level functions deprecated but still
-//! ships them. translate-c does not turn the attribute into an error.
+//! The types follow the `std.crypto.hash` interface, so hmac.zig and the std
+//! HMAC and HKDF generics instantiate over them unchanged. They are copyable
+//! value types: the context is the backend's plain stack struct
+//! (`SHA256_CTX`, `SHA512_CTX`), which holds no pointers and allocates
+//! nothing. A copy is an independent snapshot of the running hash, which the
+//! transcript uses for Transcript-Hash values (RFC 8446 §4.4.1).
+//!
+//! OpenSSL 3 declares these low-level functions under
+//! `OPENSSL_NO_DEPRECATED_3_0`. translate-c ignores the deprecation
+//! attribute, so a default OpenSSL build compiles. An OpenSSL built with
+//! `no-deprecated` omits the declarations, and this file then fails to
+//! compile on the missing `SHA256_Init`. The OpenSSL in the flake ships them.
 //!
 //! Return codes: `SHA*_Init` and `SHA*_Update` always return 1 in OpenSSL 3,
-//! AWS-LC, and BoringSSL. `SHA*_Final` returns 0 only when the context
-//! `md_len` does not match the called function, which these types make
-//! impossible. The std interface has no error channel, so a 0 panics: a
-//! silent wrong digest would corrupt the key schedule. None of these functions
-//! pushes onto the libcrypto error queue, so they take no `errqEnter` /
-//! `errqExit` guard (#88).
+//! AWS-LC, and BoringSSL. `SHA*_Final` is documented to return 0 only on
+//! programmer error. In OpenSSL that is a context `md_len` outside the
+//! supported digest lengths. `md_len` comes from `Init`, and `SHA384_Final`
+//! and `SHA512_Final` are one function that selects the output length by
+//! `md_len`. So a mismatched `Init`/`Final` pair would not return 0: it would
+//! write the wrong length. Each type here fixes its pair at comptime, and
+//! nothing else writes the context, so neither failure can occur. The std
+//! interface has no error channel, so a 0 panics: a silent wrong digest would
+//! corrupt the key schedule. None of these functions pushes onto the
+//! libcrypto error queue, so they take no `errqEnter` / `errqExit` guard
+//! (#88).
 //!
 //! These types do not run at comptime. Comptime-constant digests (for
 //! example `Hash("")` in hkdf.zig) stay on std.

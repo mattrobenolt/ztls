@@ -1,0 +1,51 @@
+capture: #138 round 2, HMAC keyed once per secret
+date: 2026-09-24 (America/Los_Angeles)
+host: launchpad, Linux 7.2.6 aarch64 NixOS, Neoverse-V3, 4 logical CPUs
+toolchain: Zig 0.16.0
+libcrypto (handoff and the in-memory program): AWS-LC 5.5.0 (handoff flake)
+
+ztls base: a40f1cc (main), unmodified
+ztls fork r1: 9881a69 (round 1 of #138)
+ztls fork r2: the #138 branch working tree on top of 9881a69, built before
+  the documentation edits of the round-2 commit. The code is the committed
+  round-2 code.
+
+handoff: 9a7bafc, which pins ztls a40f1cc. Scratch clones only:
+  /tmp/lane-sh-handoff and /tmp/lane-sh-base, both clean at 9a7bafc.
+
+field binaries (ReleaseFast), sha256:
+  tls   base-native   zig-out-fast/bin/handoff (lane-sh-handoff, no fork)
+        2f168fea864cab4fae71b577648098685d1e6dbee08709c37a7f53f5fe0a3ff6
+  tls:a base-baseline -Dcpu=baseline, lane-sh-base
+        c8b39f3c745d31fa4088dd46499a233949a8f77d14bfb2825818d06f865e79ac
+  tls:b fork-native   -Dcpu=native --fork=<ztls #138 r2 tree>
+        567c27e6889ffdaa77f54e730e9c19efd91ce37fbfcd7ae36c47f5b14b14a0e9
+  tls:c fork-baseline -Dcpu=baseline --fork=<ztls #138 r2 tree>
+        913fab9654e4d7d561da111f5d2715f4685149a8e8893af8d422872aff78cb6c
+  The base binaries are the round-1 base binaries (same source, same build).
+
+field command: identical to ../20260924-launchpad-sha2-138/metadata.txt,
+  with the r2 fork binaries as variants b and c. Two X25519 runs and one
+  X25519MLKEM768 run. cycles per handshake = perf.cycles /
+  extra.backend_requests (cycles.py).
+
+in-memory handshake: the program in
+  ../20260924-launchpad-sha2-138/inmem-handshake-main.zig.txt, rebuilt for
+  the r2 tree. inmem-handshake-run.sh interleaves base, r1, and r2 builds,
+  native and baseline, five repetitions, cycles:u slope between 200 and 2200
+  handshakes on CPU 2.
+
+perf reports: `perf record -e cycles:u` of 3000 in-memory SHA-256
+  handshakes on CPU 2, about 2,000 samples each.
+
+HMAC counts: hmac-count-instrumentation.diff.txt adds two counters to a
+  scratch copy of src/hmac.zig. hmac-count-main.diff.txt reads them around
+  the server calls of the in-memory program. The counters are not in the
+  committed code.
+
+struct sizes: a scratch program prints @sizeOf for ServerHandshake,
+  EstablishedSession, the ServerHandshake suite state, and ClientHandshake,
+  built against a40f1cc, 9881a69, and the r2 tree on each backend.
+
+load: other agent lanes shared the host. Every capture ran under
+  /tmp/handoff-bench.lock.

@@ -106,11 +106,11 @@ Lifecycle and rekey rules:
 ### 2. HKDF / hash policy
 
 The TLS 1.3 key schedule (RFC 8446 §7.1) needs HKDF-Extract and HKDF-Expand as
-*distinct* steps. Policy: **the HKDF/HMAC constructions stay on the
-`std.crypto` generics, instantiated over the backend SHA-256/SHA-384 types in
+*distinct* steps. Policy: **HKDF and HMAC are ztls code (`src/hkdf.zig`,
+`src/hmac.zig`) over the backend SHA-256/SHA-384 types in
 `src/crypto/sha2.zig`** (#138, CRYPTO_ROADMAP §4). Transcript hashing uses the
-same types. Moving the HKDF/HMAC constructions themselves only makes sense for
-FIPS posture.
+same types. Moving HKDF and HMAC themselves behind the backend only makes
+sense for FIPS posture.
 
 If/when that policy appears, the facade shape is flat:
 

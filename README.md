@@ -91,8 +91,8 @@ and a smaller thing to attack.
 It's written in Zig, so there's no allocator in the hot path and no C in our own
 source. AEAD, X25519/P-256 ECDHE, and CertificateVerify sign/verify come from the
 libcrypto backend, and so does the SHA-2 under the key schedule and transcript
-hash. The HKDF/HMAC constructions and Ed25519 certificate-chain signature
-verification stay on `std.crypto`. ztls handles the
+hash. Ed25519 certificate-chain signature verification stays on `std.crypto`.
+ztls handles the
 protocol wrapped around all of it.
 
 ## Start here

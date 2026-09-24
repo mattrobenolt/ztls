@@ -1,0 +1,75 @@
+FAIL: 0.5-RTT: coalesced server data precedes client Finished delivery — error.AuthenticationFailed
+FAIL: batched expands under one keying match independent HKDF-Expand-Label — error.TestExpectedEqual
+FAIL: batched record layer and finished key match independent HKDF-Expand-Label — error.TestExpectedEqual
+FAIL: capi: full client handshake through the C ABI — error.TestExpectedEqual
+FAIL: capi: KeyUpdate response is surfaced as a write event — error.TestExpectedEqual
+FAIL: capi: KeyUpdate without response maps to none without pending write — error.TestExpectedEqual
+FAIL: capi: NewSessionTicket maps to none without pending write — error.TestExpectedEqual
+FAIL: clientFinished: empty CertificateRequest with no credentials still finishes — error.InvalidVerifyData
+FAIL: clientFinished: RFC 8448 §3 emits Finished and upgrades to app keys — error.InvalidVerifyData
+FAIL: clientFinished: RFC 8448 §4 resumption_master_secret over the live transcript — error.InvalidVerifyData
+FAIL: clientFinished: sends empty Certificate before Finished for CertificateRequest — error.InvalidVerifyData
+FAIL: deriveHandshakeKeys: RFC 8448 §3 server handshake key/iv/finished — error.TestExpectedEqual
+FAIL: extractEstablished: NewSessionTicket is issued before extraction — error.AuthenticationFailed
+FAIL: handleRecord: accepts 17 consecutive NewSessionTickets — error.InvalidVerifyData
+FAIL: handleRecord: all-zero inner plaintext maps to unexpected_message — error.InvalidVerifyData
+FAIL: handleRecord: application data resets both post-handshake flood counters — error.InvalidVerifyData
+FAIL: handleRecord: close_notify returns closed — error.InvalidVerifyData
+FAIL: handleRecord: drives RFC 8448 §3 handshake to connected — error.AuthenticationFailed
+FAIL: handleRecord: empty application data does not reset flood counters — error.InvalidVerifyData
+FAIL: handleRecord: fatal alert returns PeerAlert — error.InvalidVerifyData
+FAIL: handleRecord: invalid server KeyUpdate request is rejected — error.InvalidVerifyData
+FAIL: handleRecord: KeyUpdate flood cap fires despite empty app-data interleaving — error.InvalidVerifyData
+FAIL: handleRecord: KeyUpdate flood is rejected — error.InvalidVerifyData
+FAIL: handleRecord: KeyUpdate not at record boundary is rejected — error.InvalidVerifyData
+FAIL: handleRecord: malformed NewSessionTicket is rejected — error.InvalidVerifyData
+FAIL: handleRecord: NewSessionTicket flood is rejected with ticket-specific error — error.InvalidVerifyData
+FAIL: handleRecord: NewSessionTicket is surfaced as an event — error.InvalidVerifyData
+FAIL: handleRecord: post-handshake unexpected inner content type is rejected — error.InvalidVerifyData
+FAIL: handleRecord: PSK-offering client rejects bare Finished unless server selected PSK — error.InvalidVerifyData
+FAIL: handleRecord: self-initiated sendKeyUpdate response surfaces rx only — error.InvalidVerifyData
+FAIL: handleRecord: server KeyUpdate(update_not_requested) surfaces key_update rx only — error.InvalidVerifyData
+FAIL: handleRecord: server KeyUpdate(update_requested) ratchets rx and responds — error.InvalidVerifyData
+FAIL: handleRecord: unacknowledged write blocks further calls — error.InvalidVerifyData
+FAIL: Hmac keyed once gives the same MAC for every reuse and every split — error.TestExpectedEqual
+FAIL: in-memory authenticated client-server handshake reaches app data — error.AuthenticationFailed
+FAIL: in-memory authenticated client-server handshake suite matrix — error.AuthenticationFailed
+FAIL: in-memory HRR round trip reaches app data — error.AuthenticationFailed
+FAIL: in-memory KeyUpdate round trip across all cipher suites — error.AuthenticationFailed
+FAIL: in-memory PSK resumption reaches app data — error.AuthenticationFailed
+FAIL: in-memory RFC 10024 hybrid group matrix reaches app data — error.AuthenticationFailed
+FAIL: in-memory RFC 10024 PSK resumption matrix reaches app data — error.AuthenticationFailed
+FAIL: in-memory RFC 10024 PSK resumption survives HRR — error.AuthenticationFailed
+FAIL: in-memory RFC 10024 SHA-384 PSK resumption survives HRR — error.AuthenticationFailed
+FAIL: in-memory X25519 handshake on deferred keypairs reaches app data — error.AuthenticationFailed
+FAIL: key update: simultaneous update_requested remains connected — error.AuthenticationFailed
+FAIL: NewSessionTicket emission derives matching client and server PSKs — error.AuthenticationFailed
+FAIL: NewSessionTicket emission owns unique bounded nonces — error.AuthenticationFailed
+FAIL: OpenSSL s_client interoperates with ztls P-384 server — error.OpenSslClientFailed
+FAIL: OpenSSL s_client interoperates with ztls RFC 10024 server groups — error.OpenSslClientFailed
+FAIL: OpenSSL s_client interoperates with ztls server — error.OpenSslClientFailed
+FAIL: OpenSSL s_client resumes with ztls server-issued ticket — error.OpenSslClientFailed
+FAIL: OpenSSL s_client with -cert interoperates with ztls server (required client auth) — error.OpenSslClientFailed
+FAIL: OpenSSL s_server interoperates with ztls client — error.AuthenticationFailed
+FAIL: OpenSSL s_server interoperates with ztls P-384 client — error.AuthenticationFailed
+FAIL: OpenSSL s_server interoperates with ztls RFC 10024 client groups — error.AuthenticationFailed
+FAIL: processClientFinished: required client auth rejects empty Certificate — error.TestUnexpectedError
+FAIL: processClientFinished: required client auth verifies real client Certificate + CV — error.AuthenticationFailed
+FAIL: processFlight: buffered path rejects handshake message after server Finished — error.TestUnexpectedError
+FAIL: processFlight: reassembles handshake message split across records — error.InvalidVerifyData
+FAIL: processFlight: rejects handshake message after server Finished — error.TestUnexpectedError
+FAIL: processFlight: RFC 8448 §3 flight split one message per record — error.InvalidVerifyData
+FAIL: processFlight: RFC 8448 §3 full server flight to connected — error.InvalidVerifyData
+FAIL: processServerHello: RFC 8448 §3 installs server handshake keys — error.TestExpectedEqual
+FAIL: ratchetClientKey: RFC 8446 §7.2 next application write key — error.InvalidVerifyData
+FAIL: ratchetKtlsTx: client advances only an idle TX epoch — error.InvalidVerifyData
+FAIL: receiveKtlsRecord: client finds KeyUpdate after NewSessionTicket — error.InvalidVerifyData
+FAIL: receiveKtlsRecord: client processes kernel-decrypted records — error.InvalidVerifyData
+FAIL: receiveRecord: RX progresses while a client TX record is pending — error.InvalidVerifyData
+FAIL: sendAlert: encrypted close_notify after handshake — error.InvalidVerifyData
+FAIL: server-issued NewSessionTicket resumes and can be renewed — error.AuthenticationFailed
+FAIL: ztls client resumes with OpenSSL s_server (PSK resumption) — error.AuthenticationFailed
+FAIL: ztls client sends 0-RTT early data to OpenSSL s_server — error.AuthenticationFailed
+FAIL: ztls client with credentials interoperates with OpenSSL s_server -Verify — error.AuthenticationFailed
+FAIL: ztls-to-ztls TCP KeyUpdate round trip with ChaCha20-Poly1305 — error.AuthenticationFailed
+TESTS FAILED

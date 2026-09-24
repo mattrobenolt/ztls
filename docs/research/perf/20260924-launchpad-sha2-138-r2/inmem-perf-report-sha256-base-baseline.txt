@@ -1,0 +1,40 @@
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 2K of event 'cycles:u'
+# Event count (approx.): 2062002500
+#
+# Overhead  Shared Object          Symbol                                                                                                                                                                                                              IPC   [IPC Coverage]
+# ........  .....................  ..................................................................................................................................................................................................................  ....................
+#
+    21.36%  hs                     [.] crypto.sha2.Sha2x32(.{ 1779033703, 3144134277, 1013904242, 2773480762, 1359893119, 2600822924, 528734635, 1541459225 },256).round
+    20.16%  libcrypto.so           [.] Lcurve25519_x25519_byte_alt_scalarloop
+    14.96%  libcrypto.so           [.] __ecp_nistz256_mul_mont
+     4.72%  libcrypto.so           [.] Lcurve25519_x25519base_byte_alt_scalarloop
+     4.29%  hs                     [.] compiler_rt.memset
+     4.19%  libcrypto.so           [.] __ecp_nistz256_sqr_mont
+     3.86%  libcrypto.so           [.] ecp_nistz256_select_w7
+     2.76%  libcrypto.so           [.] ecp_nistz256_point_add_affine
+     2.06%  libcrypto.so           [.] ecp_nistz256_ord_sqr_mont
+     1.80%  libcrypto.so           [.] ecp_nistz256_point_double
+     1.50%  libcrypto.so           [.] __ecp_nistz256_sub_from
+     1.32%  libcrypto.so           [.] Lbignum_montinv_p256_midloop
+     1.25%  libcrypto.so           [.] beeu_mod_inverse_vartime
+     1.09%  libcrypto.so           [.] Lcurve25519_x25519_byte_alt_invmidloop
+     0.96%  libcrypto.so           [.] ecp_nistz256_point_add
+     0.86%  libcrypto.so           [.] rol64
+     0.78%  libcrypto.so           [.] jent_keccakp_chi
+     0.69%  libcrypto.so           [.] __ecp_nistz256_add_to
+     0.62%  libcrypto.so           [.] __ecp_nistz256_sub_morf
+     0.62%  libcrypto.so           [.] Lcurve25519_x25519base_byte_alt_invmidloop
+     0.62%  libcrypto.so           [.] ecp_nistz256_point_mul_base
+     0.61%  libcrypto.so           [.] jent_keccakp_theta
+     0.54%  hs                     [.] crypto.sha2.Sha2x32(.{ 1779033703, 3144134277, 1013904242, 2773480762, 1359893119, 2600822924, 528734635, 1541459225 },256).final
+     0.45%  libcrypto.so           [.] jent_memaccess
+     0.43%  libcrypto.so           [.] ecp_nistz256_points_mul_public
+     0.40%  libcrypto.so           [.] __bn_mul4x_mont
+     0.37%  libcrypto.so           [.] ecp_nistz256_select_w5
+     0.35%  libcrypto.so           [.] jent_keccakp_rho
+     0.32%  libcrypto.so           [.] Lbignum_montinv_p256_loop

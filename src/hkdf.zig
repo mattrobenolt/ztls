@@ -1,7 +1,7 @@
 //! TLS 1.3 HKDF key derivation.
 //!
-//! Wraps std.crypto.kdf.hkdf, instantiated over the libcrypto-backed SHA-2
-//! types in crypto/sha2.zig (#138), with TLS 1.3-specific label expansion per
+//! HKDF (RFC 5869) over hmac.zig and the libcrypto-backed SHA-2 types in
+//! crypto/sha2.zig (#138), with TLS 1.3-specific label expansion per
 //! RFC 8446 §7.1 and §7.3.
 const std = @import("std");
 const assert = std.debug.assert;
@@ -9,11 +9,13 @@ const crypto = std.crypto;
 const testing = std.testing;
 
 const aead = @import("aead.zig");
+const backend = @import("crypto/backend.zig");
 const CipherSuite = @import("cipher_suite.zig").CipherSuite;
+const hmac = @import("hmac.zig");
 const Iv = @import("aead.zig").Iv;
 const memx = @import("memx.zig");
 const RecordLayer = @import("RecordLayer.zig");
-const sha2 = @import("crypto/backend.zig").sha2;
+const sha2 = backend.sha2;
 
 /// TLS_AES_128_GCM_SHA256 and TLS_CHACHA20_POLY1305_SHA256.
 pub const HkdfSha256 = Hkdf(sha2.Sha256, crypto.hash.sha2.Sha256);
@@ -26,25 +28,31 @@ pub const HkdfSha384 = Hkdf(sha2.Sha384, crypto.hash.sha2.Sha384);
 /// below: libcrypto cannot run at comptime.
 fn Hkdf(comptime Hash: type, comptime ComptimeHash: type) type {
     comptime assert(Hash.digest_length == ComptimeHash.digest_length);
-    const Hmac = crypto.auth.hmac.Hmac(Hash);
-    const H = crypto.kdf.hkdf.Hkdf(Hmac);
+    const ComptimeHmac = hmac.Hmac(ComptimeHash);
 
     return struct {
         /// Length of the pseudorandom key and all derived secrets.
-        pub const prk_len = H.prk_length;
+        pub const prk_len = Hash.digest_length;
         pub const Prk = memx.Array(prk_len);
         pub const TranscriptHash = memx.Array(prk_len);
         pub const TrafficSecret = memx.Array(prk_len);
         pub const FinishedKey = memx.Array(prk_len);
         const prk_zero = &Prk.zero.data;
 
+        /// HMAC keyed by one secret. Every derivation below that takes a
+        /// `*const Keyed` reuses its pad states (#138). A `Keyed` is a
+        /// secret: stack only, wiped with `secureZero` in a `defer`.
+        pub const Keyed = hmac.Hmac(Hash);
+
         comptime {
             assert(prk_len == 32 or prk_len == 48);
         }
 
         /// RFC 8446 §7.1 — HKDF-Extract.
-        pub inline fn extract(salt: []const u8, ikm: []const u8) Prk {
-            return .init(H.extract(salt, ikm));
+        pub fn extract(salt: []const u8, ikm: []const u8) Prk {
+            var out: Prk = undefined;
+            Keyed.create(&out.data, ikm, salt);
+            return out;
         }
 
         /// RFC 8446 §7.1 — HKDF-Expand-Label.
@@ -58,22 +66,46 @@ fn Hkdf(comptime Hash: type, comptime ComptimeHash: type) type {
             context: []const u8,
             prk: Prk,
         ) void {
+            var key: Keyed = .init(&prk.data);
+            defer key.secureZero();
+            expandLabelKeyed(out, label, context, &key);
+        }
+
+        /// HKDF-Expand-Label under a secret that is already keyed.
+        pub fn expandLabelKeyed(
+            out: []u8,
+            comptime label: []const u8,
+            context: []const u8,
+            key: *const Keyed,
+        ) void {
+            expandLabelWith(Keyed, out, label, context, key);
+        }
+
+        fn expandLabelWith(
+            comptime K: type,
+            out: []u8,
+            comptime label: []const u8,
+            context: []const u8,
+            key: *const K,
+        ) void {
             const tls13_prefix = "tls13 ";
             comptime assert(tls13_prefix.len + label.len <= 255); // label<7..255>
             assert(context.len <= 255); // context<0..255>
-            assert(out.len <= std.math.maxInt(u16)); // length is uint16
+            assert(out.len <= 255 * prk_len); // RFC 5869 §2.3: L <= 255*HashLen
 
             // HkdfLabel wire encoding (RFC 8446 §7.1):
             //   uint16 length
             //   opaque label<7..255>  = "tls13 " + label
             //   opaque context<0..255>
+            // followed by the one-byte HKDF-Expand block counter.
             const full_label = tls13_prefix ++ label;
             const length_field = @sizeOf(u16);
             const label_len_field = @sizeOf(u8);
             const context_len_field = @sizeOf(u8);
+            const counter_field = @sizeOf(u8);
             const max_context_len = 255;
             const header_len = length_field + label_len_field + context_len_field;
-            const buf_len = header_len + full_label.len + max_context_len;
+            const buf_len = header_len + full_label.len + max_context_len + counter_field;
             var buf: [buf_len]u8 = undefined;
             var pos: usize = 0;
 
@@ -87,8 +119,23 @@ fn Hkdf(comptime Hash: type, comptime ComptimeHash: type) type {
             pos += 1;
             @memcpy(buf[pos..][0..context.len], context);
             pos += context.len;
+            const info = buf[0 .. pos + counter_field];
 
-            H.expand(out, buf[0..pos], prk.data);
+            // RFC 5869 §2.3 — T(i) = HMAC(PRK, T(i-1) || info || i).
+            var partial: [prk_len]u8 = undefined;
+            defer hmac.wipe(&partial);
+            var done: usize = 0;
+            var counter: u8 = 1;
+            while (done < out.len) : (counter += 1) {
+                buf[pos] = counter;
+                const block = if (out.len - done >= prk_len) out[done..][0..prk_len] else &partial;
+                if (done == 0)
+                    key.mac(block, .{info})
+                else
+                    key.mac(block, .{ out[done - prk_len ..][0..prk_len], info });
+                if (block == &partial) @memcpy(out[done..], partial[0 .. out.len - done]);
+                done += block.len;
+            }
         }
 
         // Hash("") — used as the transcript context for the "derived" steps
@@ -105,26 +152,48 @@ fn Hkdf(comptime Hash: type, comptime ComptimeHash: type) type {
         /// Salt and IKM are both zero — comptime constant per RFC 8446 §7.1.
         pub const early_secret: Prk = blk: {
             @setEvalBranchQuota(100_000);
-            const ComptimeH = crypto.kdf.hkdf.Hkdf(crypto.auth.hmac.Hmac(ComptimeHash));
-            break :blk .init(ComptimeH.extract(prk_zero, prk_zero));
+            var out: Prk = undefined;
+            ComptimeHmac.create(&out.data, prk_zero, prk_zero);
+            break :blk out;
+        };
+
+        /// Derive-Secret(early_secret, "derived", ""): the HandshakeSecret
+        /// salt for a handshake without a PSK, also a comptime constant.
+        const early_derived: Prk = blk: {
+            @setEvalBranchQuota(1_000_000);
+            const key: ComptimeHmac = .init(&early_secret.data);
+            var out: Prk = undefined;
+            expandLabelWith(ComptimeHmac, &out.data, "derived", &empty_hash.data, &key);
+            break :blk out;
         };
 
         /// RFC 8446 §7.1 — EarlySecret for a PSK or resumption handshake.
         pub inline fn pskEarlySecret(psk: []const u8) Prk {
-            return .init(H.extract(prk_zero, psk));
+            return extract(prk_zero, psk);
         }
 
         /// RFC 8446 §7.1 — Derive-Secret.
         ///
         /// Expands `secret` using `label` and a transcript hash as context.
         /// Output is always `prk_len` bytes (the hash output length).
-        pub inline fn deriveSecret(
+        pub fn deriveSecret(
             secret: Prk,
             comptime label: []const u8,
             transcript_hash: *const TranscriptHash,
         ) Prk {
+            var key: Keyed = .init(&secret.data);
+            defer key.secureZero();
+            return deriveSecretKeyed(&key, label, transcript_hash);
+        }
+
+        /// Derive-Secret under a secret that is already keyed.
+        pub fn deriveSecretKeyed(
+            key: *const Keyed,
+            comptime label: []const u8,
+            transcript_hash: *const TranscriptHash,
+        ) Prk {
             var out: Prk = undefined;
-            expandLabel(&out.data, label, &transcript_hash.data, secret);
+            expandLabelKeyed(&out.data, label, &transcript_hash.data, key);
             return out;
         }
 
@@ -137,7 +206,17 @@ fn Hkdf(comptime Hash: type, comptime ComptimeHash: type) type {
         pub fn handshakeSecret(early: Prk, dhe: []const u8) Prk {
             var salt = deriveSecret(early, "derived", &empty_hash);
             defer salt.secureZero();
-            return .init(H.extract(&salt.data, dhe));
+            return extract(&salt.data, dhe);
+        }
+
+        /// RFC 8446 §7.1 — HandshakeSecret from the negotiated PSK, or from
+        /// none. Without a PSK the "derived" salt is `early_derived`, so only
+        /// the extract runs.
+        pub fn handshakeSecretFor(psk: ?[]const u8, dhe: []const u8) Prk {
+            const p = psk orelse return extract(&early_derived.data, dhe);
+            var early = pskEarlySecret(p);
+            defer early.secureZero();
+            return handshakeSecret(early, dhe);
         }
 
         /// RFC 8446 §7.1 — MasterSecret.
@@ -146,24 +225,24 @@ fn Hkdf(comptime Hash: type, comptime ComptimeHash: type) type {
         pub fn masterSecret(handshake: Prk) Prk {
             var salt = deriveSecret(handshake, "derived", &empty_hash);
             defer salt.secureZero();
-            return .init(H.extract(&salt.data, prk_zero));
+            return extract(&salt.data, prk_zero);
         }
 
         // RFC 8446 §7.1 — secrets derived from EarlySecret.
 
         pub inline fn externalBinderKey(early: Prk) FinishedKey {
-            return .init(deriveSecret(early, "ext binder", &empty_hash).data);
+            return deriveSecret(early, "ext binder", &empty_hash);
         }
 
         pub inline fn resumptionBinderKey(early: Prk) FinishedKey {
-            return .init(deriveSecret(early, "res binder", &empty_hash).data);
+            return deriveSecret(early, "res binder", &empty_hash);
         }
 
         pub inline fn clientEarlyTrafficSecret(
             early: Prk,
             transcript_hash: *const TranscriptHash,
         ) TrafficSecret {
-            return .init(deriveSecret(early, "c e traffic", transcript_hash).data);
+            return deriveSecret(early, "c e traffic", transcript_hash);
         }
 
         pub inline fn earlyExporterMasterSecret(
@@ -179,14 +258,14 @@ fn Hkdf(comptime Hash: type, comptime ComptimeHash: type) type {
             handshake: Prk,
             transcript_hash: *const TranscriptHash,
         ) TrafficSecret {
-            return .init(deriveSecret(handshake, "c hs traffic", transcript_hash).data);
+            return deriveSecret(handshake, "c hs traffic", transcript_hash);
         }
 
         pub inline fn serverHandshakeTrafficSecret(
             handshake: Prk,
             transcript_hash: *const TranscriptHash,
         ) TrafficSecret {
-            return .init(deriveSecret(handshake, "s hs traffic", transcript_hash).data);
+            return deriveSecret(handshake, "s hs traffic", transcript_hash);
         }
 
         // RFC 8446 §7.1 — traffic secrets from MasterSecret.
@@ -195,14 +274,14 @@ fn Hkdf(comptime Hash: type, comptime ComptimeHash: type) type {
             master: Prk,
             transcript_hash: *const TranscriptHash,
         ) TrafficSecret {
-            return .init(deriveSecret(master, "c ap traffic", transcript_hash).data);
+            return deriveSecret(master, "c ap traffic", transcript_hash);
         }
 
         pub inline fn serverApplicationTrafficSecret(
             master: Prk,
             transcript_hash: *const TranscriptHash,
         ) TrafficSecret {
-            return .init(deriveSecret(master, "s ap traffic", transcript_hash).data);
+            return deriveSecret(master, "s ap traffic", transcript_hash);
         }
 
         pub inline fn resumptionMasterSecret(
@@ -223,7 +302,7 @@ fn Hkdf(comptime Hash: type, comptime ComptimeHash: type) type {
         ///   HKDF-Expand-Label(secret_N, "traffic upd", "", Hash.length)
         pub inline fn nextTrafficSecret(secret: TrafficSecret) TrafficSecret {
             var out: TrafficSecret = undefined;
-            expandLabel(&out.data, "traffic upd", "", .init(secret.data));
+            expandLabel(&out.data, "traffic upd", "", secret);
             return out;
         }
 
@@ -232,21 +311,42 @@ fn Hkdf(comptime Hash: type, comptime ComptimeHash: type) type {
         /// negotiated cipher suite), so a single arm serves all suites of its
         /// hash (e.g. SHA-256 covers AES-128-GCM and ChaCha20-Poly1305).
         pub fn makeRecordLayer(key: CipherSuite, prk: TrafficSecret) aead.Error!RecordLayer {
+            var secret: Keyed = .init(&prk.data);
+            defer secret.secureZero();
+            return makeRecordLayerKeyed(key, &secret);
+        }
+
+        /// makeRecordLayer plus the RFC 8446 §4.4.4 finished key, for a
+        /// handshake traffic secret: three expands under one keying.
+        pub fn makeRecordLayerAndFinishedKey(
+            key: CipherSuite,
+            prk: TrafficSecret,
+            finished_key: *FinishedKey,
+        ) aead.Error!RecordLayer {
+            var secret: Keyed = .init(&prk.data);
+            defer secret.secureZero();
+            expandLabelKeyed(&finished_key.data, "finished", "", &secret);
+            return makeRecordLayerKeyed(key, &secret);
+        }
+
+        fn makeRecordLayerKeyed(key: CipherSuite, secret: *const Keyed) aead.Error!RecordLayer {
             var layer_aead: aead.Aead = undefined;
             defer layer_aead.secureZero();
             switch (key) {
                 inline else => |k| {
                     layer_aead = @unionInit(aead.Aead, @tagName(k), undefined);
-                    expandLabel(&@field(layer_aead, @tagName(k)).data, "key", "", .init(prk.data));
+                    expandLabelKeyed(&@field(layer_aead, @tagName(k)).data, "key", "", secret);
                 },
             }
-            return .init(layer_aead, trafficIv(prk));
+            var iv: Iv = undefined;
+            expandLabelKeyed(&iv.data, "iv", "", secret);
+            return .init(layer_aead, iv);
         }
 
         /// RFC 8446 §4.4.4 — derive the finished key from a traffic secret.
         pub inline fn finishedKey(prk: TrafficSecret) FinishedKey {
             var out: FinishedKey = undefined;
-            expandLabel(&out.data, "finished", "", .init(prk.data));
+            expandLabel(&out.data, "finished", "", prk);
             return out;
         }
 
@@ -259,7 +359,7 @@ fn Hkdf(comptime Hash: type, comptime ComptimeHash: type) type {
             transcript_hash: *const TranscriptHash,
         ) [prk_len]u8 {
             var out: [prk_len]u8 = undefined;
-            Hmac.create(&out, &transcript_hash.data, &finished_key.data);
+            Keyed.create(&out, &transcript_hash.data, &finished_key.data);
             return out;
         }
 
@@ -269,7 +369,7 @@ fn Hkdf(comptime Hash: type, comptime ComptimeHash: type) type {
             prk: TrafficSecret,
         ) @FieldType(aead.Aead, @tagName(key)) {
             var out: @FieldType(aead.Aead, @tagName(key)) = undefined;
-            expandLabel(&out.data, "key", "", .init(prk.data));
+            expandLabel(&out.data, "key", "", prk);
             return out;
         }
 
@@ -277,7 +377,7 @@ fn Hkdf(comptime Hash: type, comptime ComptimeHash: type) type {
         /// Always 12 bytes for all TLS 1.3 cipher suites.
         pub inline fn trafficIv(prk: TrafficSecret) Iv {
             var iv: Iv = undefined;
-            expandLabel(&iv.data, "iv", "", .init(prk.data));
+            expandLabel(&iv.data, "iv", "", prk);
             return iv;
         }
     };
@@ -491,7 +591,8 @@ test "HkdfSha256: RFC 8448 §3/§4 PSK and resumption secrets" {
 // RFC 8446 §7.1 — the comptime constants come from std (libcrypto cannot run
 // at comptime), and every runtime derivation runs on the backend hash (#138).
 // With a zero PSK, the runtime PSK early secret is the comptime early_secret,
-// and the backend Hash("") is the comptime "derived" context.
+// the backend Hash("") is the comptime "derived" context, and the runtime
+// Derive-Secret(early_secret, "derived", "") is the comptime salt.
 test "comptime std constants match the runtime backend hash" {
     inline for (.{
         .{ HkdfSha256, sha2.Sha256 },
@@ -503,6 +604,150 @@ test "comptime std constants match the runtime backend hash" {
         var runtime_empty: [H.prk_len]u8 = undefined;
         Hash.hash(&.{}, &runtime_empty, .{});
         try testing.expectEqualSlices(u8, &H.empty_hash.data, &runtime_empty);
+        const runtime_derived = H.deriveSecret(runtime_early, "derived", &.init(runtime_empty));
+        try testing.expectEqualSlices(u8, &H.early_derived.data, &runtime_derived.data);
+    }
+}
+
+/// Independent HKDF-Expand-Label: std HKDF and HMAC over std SHA-2, with no
+/// code from hmac.zig or the libcrypto backend.
+fn referenceExpandLabel(
+    comptime S: type,
+    out: []u8,
+    label: []const u8,
+    context: []const u8,
+    secret: *const [S.digest_length]u8,
+) void {
+    var info: [2 + 1 + 255 + 1 + 255]u8 = undefined;
+    std.mem.writeInt(u16, info[0..2], @intCast(out.len), .big);
+    info[2] = @intCast("tls13 ".len + label.len);
+    @memcpy(info[3..][0.."tls13 ".len], "tls13 ");
+    @memcpy(info[9..][0..label.len], label);
+    info[9 + label.len] = @intCast(context.len);
+    @memcpy(info[10 + label.len ..][0..context.len], context);
+    const Ref = crypto.kdf.hkdf.Hkdf(crypto.auth.hmac.Hmac(S));
+    Ref.expand(out, info[0 .. 10 + label.len + context.len], secret.*);
+}
+
+const sha256_suites = [_]CipherSuite{ .aes_128_gcm_sha256, .chacha20_poly1305_sha256 };
+const hkdf_reference_pairs = .{
+    .{ HkdfSha256, crypto.hash.sha2.Sha256, sha256_suites },
+    .{ HkdfSha384, crypto.hash.sha2.Sha384, [_]CipherSuite{.aes_256_gcm_sha384} },
+};
+
+// RFC 8446 §7.1 — one keying per secret gives the same bytes as independent
+// HKDF-Expand-Label calls. The label sets are the ones ztls derives from one
+// secret: the handshake secret (c hs traffic, s hs traffic, derived), the
+// master secret (c ap traffic, s ap traffic, exp master, res master), the
+// early secret (binders, c e traffic, e exp master), a traffic secret
+// (finished, key, iv, traffic upd), and the resumption master (resumption).
+// A multi-block output covers RFC 5869 §2.3 chaining.
+test "batched expands under one keying match independent HKDF-Expand-Label" {
+    var prng: std.Random.DefaultPrng = .init(0x1383);
+    const random = prng.random();
+    inline for (hkdf_reference_pairs) |pair| {
+        const H, const S, _ = pair;
+        for (0..8) |_| {
+            var secret: H.Prk = undefined;
+            random.bytes(&secret.data);
+            var th: H.TranscriptHash = undefined;
+            random.bytes(&th.data);
+            var key: H.Keyed = .init(&secret.data);
+            defer key.secureZero();
+
+            const transcript_labels = .{
+                "c hs traffic", "s hs traffic", "c ap traffic", "s ap traffic",
+                "exp master",   "res master",   "c e traffic",  "e exp master",
+            };
+            inline for (transcript_labels) |label| {
+                var want: [H.prk_len]u8 = undefined;
+                referenceExpandLabel(S, &want, label, &th.data, &secret.data);
+                const got = H.deriveSecretKeyed(&key, label, &th);
+                try testing.expectEqualSlices(u8, &want, &got.data);
+            }
+            inline for (.{ "derived", "ext binder", "res binder" }) |label| {
+                var want: [H.prk_len]u8 = undefined;
+                referenceExpandLabel(S, &want, label, &H.empty_hash.data, &secret.data);
+                const got = H.deriveSecretKeyed(&key, label, &H.empty_hash);
+                try testing.expectEqualSlices(u8, &want, &got.data);
+            }
+            inline for (.{
+                .{ "finished", H.prk_len }, .{ "traffic upd", H.prk_len },
+                .{ "key", 16 },             .{ "key", 32 },
+                .{ "iv", 12 },              .{ "exporter", 3 * H.prk_len + 5 },
+            }) |case| {
+                var want: [case[1]]u8 = undefined;
+                referenceExpandLabel(S, &want, case[0], "", &secret.data);
+                var got: [case[1]]u8 = undefined;
+                H.expandLabelKeyed(&got, case[0], "", &key);
+                try testing.expectEqualSlices(u8, &want, &got);
+            }
+            var nonce: [8]u8 = undefined;
+            random.bytes(&nonce);
+            var want_psk: [H.prk_len]u8 = undefined;
+            referenceExpandLabel(S, &want_psk, "resumption", &nonce, &secret.data);
+            try testing.expectEqualSlices(u8, &want_psk, &H.resumptionPsk(secret, &nonce).data);
+        }
+    }
+}
+
+// RFC 8446 §7.3, §4.4.4 — the batched record-layer derivations install the
+// write key and IV, and the finished key, that independent HKDF-Expand-Label
+// calls produce, for every cipher suite of each hash.
+test "batched record layer and finished key match independent HKDF-Expand-Label" {
+    var prng: std.Random.DefaultPrng = .init(0x1384);
+    inline for (hkdf_reference_pairs) |pair| {
+        const H, const S, const suites = pair;
+        inline for (suites) |suite| {
+            if (backend.supportsCipherSuite(suite))
+                try expectBatchedRecordLayer(H, S, suite, prng.random());
+        }
+    }
+}
+
+fn expectBatchedRecordLayer(
+    comptime H: type,
+    comptime S: type,
+    comptime suite: CipherSuite,
+    random: std.Random,
+) !void {
+    var secret: H.TrafficSecret = undefined;
+    random.bytes(&secret.data);
+    var want_key: @FieldType(aead.Aead, @tagName(suite)) = undefined;
+    referenceExpandLabel(S, &want_key.data, "key", "", &secret.data);
+    var want_iv: [12]u8 = undefined;
+    referenceExpandLabel(S, &want_iv, "iv", "", &secret.data);
+    var want_finished: [H.prk_len]u8 = undefined;
+    referenceExpandLabel(S, &want_finished, "finished", "", &secret.data);
+
+    var finished_key: H.FinishedKey = undefined;
+    var both = try H.makeRecordLayerAndFinishedKey(suite, secret, &finished_key);
+    defer both.deinit();
+    var layer = try H.makeRecordLayer(suite, secret);
+    defer layer.deinit();
+    try testing.expectEqualSlices(u8, &want_finished, &finished_key.data);
+    for ([_]*const RecordLayer{ &both, &layer }) |l| {
+        try testing.expectEqualSlices(u8, &want_key.data, &@field(l.aead, @tagName(suite)).data);
+        try testing.expectEqualSlices(u8, &want_iv, &l.iv.data);
+    }
+}
+
+// RFC 8446 §7.1 — handshakeSecretFor matches the unbatched schedule, with
+// and without a PSK. Without one it extracts under the comptime salt.
+test "handshakeSecretFor matches handshakeSecret over the early secret" {
+    const dhe: [48]u8 = @splat(0x5a);
+    const psk: [32]u8 = @splat(0xa5);
+    inline for (.{ HkdfSha256, HkdfSha384 }) |H| {
+        try testing.expectEqualSlices(
+            u8,
+            &H.handshakeSecret(H.early_secret, &dhe).data,
+            &H.handshakeSecretFor(null, &dhe).data,
+        );
+        try testing.expectEqualSlices(
+            u8,
+            &H.handshakeSecret(H.pskEarlySecret(&psk), &dhe).data,
+            &H.handshakeSecretFor(&psk, &dhe).data,
+        );
     }
 }
 
