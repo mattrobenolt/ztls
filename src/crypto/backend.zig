@@ -17,6 +17,11 @@ const backend_aws_lc = @import("backend_aws_lc.zig");
 const backend_boringssl = @import("backend_boringssl.zig");
 const backend_openssl = @import("backend_openssl.zig");
 
+/// Handshake SHA-256 and SHA-384 on the libcrypto runtime-dispatched code
+/// (#138). One implementation serves every family: all three expose the same
+/// `SHA256_CTX` / `SHA512_CTX` API.
+pub const sha2 = @import("sha2.zig");
+
 pub const Backend = enum {
     openssl,
     @"aws-lc",

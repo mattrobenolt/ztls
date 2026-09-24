@@ -6,8 +6,8 @@
 //! KeyUpdate. No allocations, no I/O.
 const std = @import("std");
 const assert = std.debug.assert;
-const Sha256 = std.crypto.hash.sha2.Sha256;
-const Sha384 = std.crypto.hash.sha2.Sha384;
+const Sha256 = backend.sha2.Sha256;
+const Sha384 = backend.sha2.Sha384;
 const mem = std.mem;
 const testing = std.testing;
 

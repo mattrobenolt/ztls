@@ -1,0 +1,1932 @@
+[
+  {
+    "target": {
+      "kind": "handoff",
+      "mode": "tls",
+      "port": 6666,
+      "idle_rss_kib": 6232,
+      "extra_config": {
+        "version": "handoff 9a7bafc (zig 0.16.0)",
+        "cpus": "1",
+        "pinned_tasks": "3",
+        "workers": "1",
+        "listen": "127.0.0.1",
+        "proxy_args": "--max-conns 5000 --backlog 4096",
+        "negotiated": "TLSv1.3/TLS_AES_128_GCM_SHA256/X25519MLKEM768 tickets=0",
+        "negotiated_unpinned_client": "TLSv1.3/TLS_AES_128_GCM_SHA256/X25519MLKEM768 tickets=0"
+      }
+    },
+    "workload": {
+      "name": "handshake-c64",
+      "command": "ping",
+      "connections": 64,
+      "pipeline": 1,
+      "requests": 50000,
+      "data_size": 0,
+      "keyspace": 0,
+      "duration": 3.0,
+      "key_pattern": "",
+      "keepalive": false,
+      "clients": 8,
+      "clients_all_cpus": true,
+      "metric": "M4",
+      "offered_rate": 0,
+      "capacity_rps": null,
+      "rate_fraction": null,
+      "hold": 0.0,
+      "ramp": 0
+    },
+    "rps": 3013.33,
+    "latency": {
+      "avg": 12.305,
+      "min": 6.208,
+      "p50": 11.047,
+      "p95": 21.375,
+      "p99": 32.463,
+      "p90": null,
+      "p999": null,
+      "max": 40.447
+    },
+    "perf": {
+      "cycles": 2266681846,
+      "ref_cycles": null,
+      "instructions": 7394829797,
+      "context_switches": 0,
+      "cache_misses": 17521094,
+      "cache_references": null,
+      "branch_misses": null,
+      "branches": null
+    },
+    "server_usage": {
+      "cpu_pct": 26.652153405304027,
+      "user_s": 0.72,
+      "sys_s": 0.39
+    },
+    "client_usage": {
+      "cpu_pct": 76.0657588995639,
+      "user_s": 2.7091250000000002,
+      "sys_s": 0.458682
+    },
+    "backend_usage": {
+      "cpu_pct": 2.1609854112408673,
+      "user_s": 0.01,
+      "sys_s": 0.08
+    },
+    "server_rss_kib": 9436,
+    "valid": true,
+    "invalid_reason": "",
+    "git_sha": "9a7bafc",
+    "timestamp": "2026-09-24T02:38:05",
+    "extra": {
+      "repetition": 0,
+      "warmup": 1.0,
+      "client": "valkey-benchmark",
+      "client_processes": 1,
+      "backend_requests": 10688,
+      "proxy_core_busy": 98.1,
+      "backend_core_busy": 100.0,
+      "client_cores_busy": 99.3,
+      "suite": "field",
+      "backend": "sink",
+      "fd_limit": "524288:524288",
+      "kex": "x25519mlkem768",
+      "pm_qos": "off",
+      "cpu_map": "housekeeping=0 proxy=1 backend=2 client=3 idle=- (4 physical cores, 4 logical CPUs)"
+    }
+  },
+  {
+    "target": {
+      "kind": "handoff",
+      "mode": "tls",
+      "port": 6666,
+      "idle_rss_kib": 6236,
+      "extra_config": {
+        "version": "handoff 9a7bafc (zig 0.16.0)",
+        "cpus": "1",
+        "pinned_tasks": "3",
+        "workers": "1",
+        "listen": "127.0.0.1",
+        "proxy_args": "--max-conns 5000 --backlog 4096",
+        "variant": "a",
+        "binary": "/tmp/lane-sh-bin/base-baseline/bin/handoff",
+        "negotiated": "TLSv1.3/TLS_AES_128_GCM_SHA256/X25519MLKEM768 tickets=0",
+        "negotiated_unpinned_client": "TLSv1.3/TLS_AES_128_GCM_SHA256/X25519MLKEM768 tickets=0"
+      }
+    },
+    "workload": {
+      "name": "handshake-c64",
+      "command": "ping",
+      "connections": 64,
+      "pipeline": 1,
+      "requests": 50000,
+      "data_size": 0,
+      "keyspace": 0,
+      "duration": 3.0,
+      "key_pattern": "",
+      "keepalive": false,
+      "clients": 8,
+      "clients_all_cpus": true,
+      "metric": "M4",
+      "offered_rate": 0,
+      "capacity_rps": null,
+      "rate_fraction": null,
+      "hold": 0.0,
+      "ramp": 0
+    },
+    "rps": 3001.67,
+    "latency": {
+      "avg": 12.982000000000001,
+      "min": 6.28,
+      "p50": 12.199,
+      "p95": 21.471,
+      "p99": 25.583,
+      "p90": null,
+      "p999": null,
+      "max": 35.167
+    },
+    "perf": {
+      "cycles": 3532519500,
+      "ref_cycles": null,
+      "instructions": 12048007892,
+      "context_switches": 0,
+      "cache_misses": 17853901,
+      "cache_references": null,
+      "branch_misses": null,
+      "branches": null
+    },
+    "server_usage": {
+      "cpu_pct": 35.61229092758105,
+      "user_s": 1.13,
+      "sys_s": 0.34
+    },
+    "client_usage": {
+      "cpu_pct": 78.6755711659407,
+      "user_s": 2.873005,
+      "sys_s": 0.37437699999999996
+    },
+    "backend_usage": {
+      "cpu_pct": 1.9380838600044108,
+      "user_s": 0.01,
+      "sys_s": 0.06999999999999999
+    },
+    "server_rss_kib": 8800,
+    "valid": true,
+    "invalid_reason": "",
+    "git_sha": "9a7bafc",
+    "timestamp": "2026-09-24T02:38:11",
+    "extra": {
+      "repetition": 0,
+      "warmup": 1.0,
+      "client": "valkey-benchmark",
+      "client_processes": 1,
+      "backend_requests": 11670,
+      "proxy_core_busy": 99.5,
+      "backend_core_busy": 100.0,
+      "client_cores_busy": 100.0,
+      "suite": "field",
+      "backend": "sink",
+      "fd_limit": "524288:524288",
+      "kex": "x25519mlkem768",
+      "pm_qos": "off",
+      "cpu_map": "housekeeping=0 proxy=1 backend=2 client=3 idle=- (4 physical cores, 4 logical CPUs)"
+    }
+  },
+  {
+    "target": {
+      "kind": "handoff",
+      "mode": "tls",
+      "port": 6666,
+      "idle_rss_kib": 6240,
+      "extra_config": {
+        "version": "handoff 9a7bafc (zig 0.16.0)",
+        "cpus": "1",
+        "pinned_tasks": "3",
+        "workers": "1",
+        "listen": "127.0.0.1",
+        "proxy_args": "--max-conns 5000 --backlog 4096",
+        "variant": "b",
+        "binary": "/tmp/lane-sh-bin/fork-native/bin/handoff",
+        "negotiated": "TLSv1.3/TLS_AES_128_GCM_SHA256/X25519MLKEM768 tickets=0",
+        "negotiated_unpinned_client": "TLSv1.3/TLS_AES_128_GCM_SHA256/X25519MLKEM768 tickets=0"
+      }
+    },
+    "workload": {
+      "name": "handshake-c64",
+      "command": "ping",
+      "connections": 64,
+      "pipeline": 1,
+      "requests": 50000,
+      "data_size": 0,
+      "keyspace": 0,
+      "duration": 3.0,
+      "key_pattern": "",
+      "keepalive": false,
+      "clients": 8,
+      "clients_all_cpus": true,
+      "metric": "M4",
+      "offered_rate": 0,
+      "capacity_rps": null,
+      "rate_fraction": null,
+      "hold": 0.0,
+      "ramp": 0
+    },
+    "rps": 2588.67,
+    "latency": {
+      "avg": 13.749,
+      "min": 5.888,
+      "p50": 11.255,
+      "p95": 25.807,
+      "p99": 36.159,
+      "p90": null,
+      "p999": null,
+      "max": 52.351
+    },
+    "perf": {
+      "cycles": 1937027605,
+      "ref_cycles": null,
+      "instructions": 6463258523,
+      "context_switches": 0,
+      "cache_misses": 13989023,
+      "cache_references": null,
+      "branch_misses": null,
+      "branches": null
+    },
+    "server_usage": {
+      "cpu_pct": 20.387643051151638,
+      "user_s": 0.61,
+      "sys_s": 0.24
+    },
+    "client_usage": {
+      "cpu_pct": 65.90611492225632,
+      "user_s": 2.388345,
+      "sys_s": 0.35925999999999997
+    },
+    "backend_usage": {
+      "cpu_pct": 1.9188369930495661,
+      "user_s": 0.02,
+      "sys_s": 0.06
+    },
+    "server_rss_kib": 9924,
+    "valid": true,
+    "invalid_reason": "",
+    "git_sha": "9a7bafc",
+    "timestamp": "2026-09-24T02:38:17",
+    "extra": {
+      "repetition": 0,
+      "warmup": 1.0,
+      "client": "valkey-benchmark",
+      "client_processes": 1,
+      "backend_requests": 9273,
+      "proxy_core_busy": 99.0,
+      "backend_core_busy": 97.9,
+      "client_cores_busy": 99.5,
+      "suite": "field",
+      "backend": "sink",
+      "fd_limit": "524288:524288",
+      "kex": "x25519mlkem768",
+      "pm_qos": "off",
+      "cpu_map": "housekeeping=0 proxy=1 backend=2 client=3 idle=- (4 physical cores, 4 logical CPUs)"
+    }
+  },
+  {
+    "target": {
+      "kind": "handoff",
+      "mode": "tls",
+      "port": 6666,
+      "idle_rss_kib": 6164,
+      "extra_config": {
+        "version": "handoff 9a7bafc (zig 0.16.0)",
+        "cpus": "1",
+        "pinned_tasks": "3",
+        "workers": "1",
+        "listen": "127.0.0.1",
+        "proxy_args": "--max-conns 5000 --backlog 4096",
+        "variant": "c",
+        "binary": "/tmp/lane-sh-bin/fork-baseline/bin/handoff",
+        "negotiated": "TLSv1.3/TLS_AES_128_GCM_SHA256/X25519MLKEM768 tickets=0",
+        "negotiated_unpinned_client": "TLSv1.3/TLS_AES_128_GCM_SHA256/X25519MLKEM768 tickets=0"
+      }
+    },
+    "workload": {
+      "name": "handshake-c64",
+      "command": "ping",
+      "connections": 64,
+      "pipeline": 1,
+      "requests": 50000,
+      "data_size": 0,
+      "keyspace": 0,
+      "duration": 3.0,
+      "key_pattern": "",
+      "keepalive": false,
+      "clients": 8,
+      "clients_all_cpus": true,
+      "metric": "M4",
+      "offered_rate": 0,
+      "capacity_rps": null,
+      "rate_fraction": null,
+      "hold": 0.0,
+      "ramp": 0
+    },
+    "rps": 3120.33,
+    "latency": {
+      "avg": 13.089999999999998,
+      "min": 6.28,
+      "p50": 12.503,
+      "p95": 20.415,
+      "p99": 26.399,
+      "p90": null,
+      "p999": null,
+      "max": 31.455
+    },
+    "perf": {
+      "cycles": 2595138369,
+      "ref_cycles": null,
+      "instructions": 8758225335,
+      "context_switches": 0,
+      "cache_misses": 19326377,
+      "cache_references": null,
+      "branch_misses": null,
+      "branches": null
+    },
+    "server_usage": {
+      "cpu_pct": 27.487794659648166,
+      "user_s": 0.89,
+      "sys_s": 0.24
+    },
+    "client_usage": {
+      "cpu_pct": 83.5330818060404,
+      "user_s": 3.011593,
+      "sys_s": 0.422189
+    },
+    "backend_usage": {
+      "cpu_pct": 2.4325481999688647,
+      "user_s": 0.010000000000000002,
+      "sys_s": 0.09
+    },
+    "server_rss_kib": 10316,
+    "valid": true,
+    "invalid_reason": "",
+    "git_sha": "9a7bafc",
+    "timestamp": "2026-09-24T02:38:23",
+    "extra": {
+      "repetition": 0,
+      "warmup": 1.0,
+      "client": "valkey-benchmark",
+      "client_processes": 1,
+      "backend_requests": 12510,
+      "proxy_core_busy": 99.8,
+      "backend_core_busy": 100.0,
+      "client_cores_busy": 99.5,
+      "suite": "field",
+      "backend": "sink",
+      "fd_limit": "524288:524288",
+      "kex": "x25519mlkem768",
+      "pm_qos": "off",
+      "cpu_map": "housekeeping=0 proxy=1 backend=2 client=3 idle=- (4 physical cores, 4 logical CPUs)"
+    }
+  },
+  {
+    "target": {
+      "kind": "handoff",
+      "mode": "tls",
+      "port": 6666,
+      "idle_rss_kib": 6236,
+      "extra_config": {
+        "version": "handoff 9a7bafc (zig 0.16.0)",
+        "cpus": "1",
+        "pinned_tasks": "3",
+        "workers": "1",
+        "listen": "127.0.0.1",
+        "proxy_args": "--max-conns 5000 --backlog 4096",
+        "variant": "a",
+        "binary": "/tmp/lane-sh-bin/base-baseline/bin/handoff",
+        "negotiated": "TLSv1.3/TLS_AES_128_GCM_SHA256/X25519MLKEM768 tickets=0",
+        "negotiated_unpinned_client": "TLSv1.3/TLS_AES_128_GCM_SHA256/X25519MLKEM768 tickets=0"
+      }
+    },
+    "workload": {
+      "name": "handshake-c64",
+      "command": "ping",
+      "connections": 64,
+      "pipeline": 1,
+      "requests": 50000,
+      "data_size": 0,
+      "keyspace": 0,
+      "duration": 3.0,
+      "key_pattern": "",
+      "keepalive": false,
+      "clients": 8,
+      "clients_all_cpus": true,
+      "metric": "M4",
+      "offered_rate": 0,
+      "capacity_rps": null,
+      "rate_fraction": null,
+      "hold": 0.0,
+      "ramp": 0
+    },
+    "rps": 2997.0,
+    "latency": {
+      "avg": 13.11,
+      "min": 6.152,
+      "p50": 12.271,
+      "p95": 22.031,
+      "p99": 26.943,
+      "p90": null,
+      "p999": null,
+      "max": 39.455
+    },
+    "perf": {
+      "cycles": 3774549483,
+      "ref_cycles": null,
+      "instructions": 12975934166,
+      "context_switches": 0,
+      "cache_misses": 18290286,
+      "cache_references": null,
+      "branch_misses": null,
+      "branches": null
+    },
+    "server_usage": {
+      "cpu_pct": 36.94878924758068,
+      "user_s": 1.16,
+      "sys_s": 0.36
+    },
+    "client_usage": {
+      "cpu_pct": 83.63914866385367,
+      "user_s": 2.965605,
+      "sys_s": 0.474977
+    },
+    "backend_usage": {
+      "cpu_pct": 1.45850483872029,
+      "user_s": 0.0,
+      "sys_s": 0.06
+    },
+    "server_rss_kib": 8972,
+    "valid": true,
+    "invalid_reason": "",
+    "git_sha": "9a7bafc",
+    "timestamp": "2026-09-24T02:38:29",
+    "extra": {
+      "repetition": 1,
+      "warmup": 1.0,
+      "client": "valkey-benchmark",
+      "client_processes": 1,
+      "backend_requests": 12573,
+      "proxy_core_busy": 100.0,
+      "backend_core_busy": 100.0,
+      "client_cores_busy": 100.0,
+      "suite": "field",
+      "backend": "sink",
+      "fd_limit": "524288:524288",
+      "kex": "x25519mlkem768",
+      "pm_qos": "off",
+      "cpu_map": "housekeeping=0 proxy=1 backend=2 client=3 idle=- (4 physical cores, 4 logical CPUs)"
+    }
+  },
+  {
+    "target": {
+      "kind": "handoff",
+      "mode": "tls",
+      "port": 6666,
+      "idle_rss_kib": 6240,
+      "extra_config": {
+        "version": "handoff 9a7bafc (zig 0.16.0)",
+        "cpus": "1",
+        "pinned_tasks": "3",
+        "workers": "1",
+        "listen": "127.0.0.1",
+        "proxy_args": "--max-conns 5000 --backlog 4096",
+        "variant": "b",
+        "binary": "/tmp/lane-sh-bin/fork-native/bin/handoff",
+        "negotiated": "TLSv1.3/TLS_AES_128_GCM_SHA256/X25519MLKEM768 tickets=0",
+        "negotiated_unpinned_client": "TLSv1.3/TLS_AES_128_GCM_SHA256/X25519MLKEM768 tickets=0"
+      }
+    },
+    "workload": {
+      "name": "handshake-c64",
+      "command": "ping",
+      "connections": 64,
+      "pipeline": 1,
+      "requests": 50000,
+      "data_size": 0,
+      "keyspace": 0,
+      "duration": 3.0,
+      "key_pattern": "",
+      "keepalive": false,
+      "clients": 8,
+      "clients_all_cpus": true,
+      "metric": "M4",
+      "offered_rate": 0,
+      "capacity_rps": null,
+      "rate_fraction": null,
+      "hold": 0.0,
+      "ramp": 0
+    },
+    "rps": 3012.33,
+    "latency": {
+      "avg": 12.938,
+      "min": 6.432,
+      "p50": 11.911,
+      "p95": 21.487,
+      "p99": 28.447,
+      "p90": null,
+      "p999": null,
+      "max": 43.839
+    },
+    "perf": {
+      "cycles": 2503906418,
+      "ref_cycles": null,
+      "instructions": 8393934319,
+      "context_switches": 0,
+      "cache_misses": 18505995,
+      "cache_references": null,
+      "branch_misses": null,
+      "branches": null
+    },
+    "server_usage": {
+      "cpu_pct": 26.482172777583855,
+      "user_s": 0.74,
+      "sys_s": 0.35
+    },
+    "client_usage": {
+      "cpu_pct": 79.9163349370814,
+      "user_s": 2.898904,
+      "sys_s": 0.39025099999999996
+    },
+    "backend_usage": {
+      "cpu_pct": 2.672512849113967,
+      "user_s": 0.0,
+      "sys_s": 0.10999999999999999
+    },
+    "server_rss_kib": 10008,
+    "valid": true,
+    "invalid_reason": "",
+    "git_sha": "9a7bafc",
+    "timestamp": "2026-09-24T02:38:35",
+    "extra": {
+      "repetition": 1,
+      "warmup": 1.0,
+      "client": "valkey-benchmark",
+      "client_processes": 1,
+      "backend_requests": 12050,
+      "proxy_core_busy": 99.5,
+      "backend_core_busy": 99.0,
+      "client_cores_busy": 99.3,
+      "suite": "field",
+      "backend": "sink",
+      "fd_limit": "524288:524288",
+      "kex": "x25519mlkem768",
+      "pm_qos": "off",
+      "cpu_map": "housekeeping=0 proxy=1 backend=2 client=3 idle=- (4 physical cores, 4 logical CPUs)"
+    }
+  },
+  {
+    "target": {
+      "kind": "handoff",
+      "mode": "tls",
+      "port": 6666,
+      "idle_rss_kib": 6164,
+      "extra_config": {
+        "version": "handoff 9a7bafc (zig 0.16.0)",
+        "cpus": "1",
+        "pinned_tasks": "3",
+        "workers": "1",
+        "listen": "127.0.0.1",
+        "proxy_args": "--max-conns 5000 --backlog 4096",
+        "variant": "c",
+        "binary": "/tmp/lane-sh-bin/fork-baseline/bin/handoff",
+        "negotiated": "TLSv1.3/TLS_AES_128_GCM_SHA256/X25519MLKEM768 tickets=0",
+        "negotiated_unpinned_client": "TLSv1.3/TLS_AES_128_GCM_SHA256/X25519MLKEM768 tickets=0"
+      }
+    },
+    "workload": {
+      "name": "handshake-c64",
+      "command": "ping",
+      "connections": 64,
+      "pipeline": 1,
+      "requests": 50000,
+      "data_size": 0,
+      "keyspace": 0,
+      "duration": 3.0,
+      "key_pattern": "",
+      "keepalive": false,
+      "clients": 8,
+      "clients_all_cpus": true,
+      "metric": "M4",
+      "offered_rate": 0,
+      "capacity_rps": null,
+      "rate_fraction": null,
+      "hold": 0.0,
+      "ramp": 0
+    },
+    "rps": 3481.0,
+    "latency": {
+      "avg": 10.378,
+      "min": 5.768,
+      "p50": 10.023,
+      "p95": 14.695,
+      "p99": 17.455,
+      "p90": null,
+      "p999": null,
+      "max": 26.527
+    },
+    "perf": {
+      "cycles": 2965233106,
+      "ref_cycles": null,
+      "instructions": 9874973659,
+      "context_switches": 0,
+      "cache_misses": 25417160,
+      "cache_references": null,
+      "branch_misses": null,
+      "branches": null
+    },
+    "server_usage": {
+      "cpu_pct": 38.670182448714925,
+      "user_s": 0.87,
+      "sys_s": 0.72
+    },
+    "client_usage": {
+      "cpu_pct": 90.81367394482106,
+      "user_s": 3.296497,
+      "sys_s": 0.437287
+    },
+    "backend_usage": {
+      "cpu_pct": 2.675295641106064,
+      "user_s": 0.0,
+      "sys_s": 0.10999999999999999
+    },
+    "server_rss_kib": 8840,
+    "valid": true,
+    "invalid_reason": "",
+    "git_sha": "9a7bafc",
+    "timestamp": "2026-09-24T02:38:40",
+    "extra": {
+      "repetition": 1,
+      "warmup": 1.0,
+      "client": "valkey-benchmark",
+      "client_processes": 1,
+      "backend_requests": 14120,
+      "proxy_core_busy": 65.2,
+      "backend_core_busy": 94.4,
+      "client_cores_busy": 98.8,
+      "suite": "field",
+      "backend": "sink",
+      "fd_limit": "524288:524288",
+      "kex": "x25519mlkem768",
+      "pm_qos": "off",
+      "cpu_map": "housekeeping=0 proxy=1 backend=2 client=3 idle=- (4 physical cores, 4 logical CPUs)"
+    }
+  },
+  {
+    "target": {
+      "kind": "handoff",
+      "mode": "tls",
+      "port": 6666,
+      "idle_rss_kib": 6232,
+      "extra_config": {
+        "version": "handoff 9a7bafc (zig 0.16.0)",
+        "cpus": "1",
+        "pinned_tasks": "3",
+        "workers": "1",
+        "listen": "127.0.0.1",
+        "proxy_args": "--max-conns 5000 --backlog 4096",
+        "negotiated": "TLSv1.3/TLS_AES_128_GCM_SHA256/X25519MLKEM768 tickets=0",
+        "negotiated_unpinned_client": "TLSv1.3/TLS_AES_128_GCM_SHA256/X25519MLKEM768 tickets=0"
+      }
+    },
+    "workload": {
+      "name": "handshake-c64",
+      "command": "ping",
+      "connections": 64,
+      "pipeline": 1,
+      "requests": 50000,
+      "data_size": 0,
+      "keyspace": 0,
+      "duration": 3.0,
+      "key_pattern": "",
+      "keepalive": false,
+      "clients": 8,
+      "clients_all_cpus": true,
+      "metric": "M4",
+      "offered_rate": 0,
+      "capacity_rps": null,
+      "rate_fraction": null,
+      "hold": 0.0,
+      "ramp": 0
+    },
+    "rps": 2032.99,
+    "latency": {
+      "avg": 20.834,
+      "min": 6.28,
+      "p50": 19.871,
+      "p95": 38.687,
+      "p99": 48.511,
+      "p90": null,
+      "p999": null,
+      "max": 65.055
+    },
+    "perf": {
+      "cycles": 1768700758,
+      "ref_cycles": null,
+      "instructions": 5866437549,
+      "context_switches": 0,
+      "cache_misses": 12421218,
+      "cache_references": null,
+      "branch_misses": null,
+      "branches": null
+    },
+    "server_usage": {
+      "cpu_pct": 19.414805589207297,
+      "user_s": 0.59,
+      "sys_s": 0.21
+    },
+    "client_usage": {
+      "cpu_pct": 80.32429497044548,
+      "user_s": 2.71037,
+      "sys_s": 0.599286
+    },
+    "backend_usage": {
+      "cpu_pct": 1.69879548905564,
+      "user_s": 0.0,
+      "sys_s": 0.07000000000000006
+    },
+    "server_rss_kib": 8968,
+    "valid": true,
+    "invalid_reason": "",
+    "git_sha": "9a7bafc",
+    "timestamp": "2026-09-24T02:38:46",
+    "extra": {
+      "repetition": 1,
+      "warmup": 1.0,
+      "client": "valkey-benchmark",
+      "client_processes": 1,
+      "backend_requests": 8485,
+      "proxy_core_busy": 94.4,
+      "backend_core_busy": 99.8,
+      "client_cores_busy": 99.0,
+      "suite": "field",
+      "backend": "sink",
+      "fd_limit": "524288:524288",
+      "kex": "x25519mlkem768",
+      "pm_qos": "off",
+      "cpu_map": "housekeeping=0 proxy=1 backend=2 client=3 idle=- (4 physical cores, 4 logical CPUs)"
+    }
+  },
+  {
+    "target": {
+      "kind": "handoff",
+      "mode": "tls",
+      "port": 6666,
+      "idle_rss_kib": 6240,
+      "extra_config": {
+        "version": "handoff 9a7bafc (zig 0.16.0)",
+        "cpus": "1",
+        "pinned_tasks": "3",
+        "workers": "1",
+        "listen": "127.0.0.1",
+        "proxy_args": "--max-conns 5000 --backlog 4096",
+        "variant": "b",
+        "binary": "/tmp/lane-sh-bin/fork-native/bin/handoff",
+        "negotiated": "TLSv1.3/TLS_AES_128_GCM_SHA256/X25519MLKEM768 tickets=0",
+        "negotiated_unpinned_client": "TLSv1.3/TLS_AES_128_GCM_SHA256/X25519MLKEM768 tickets=0"
+      }
+    },
+    "workload": {
+      "name": "handshake-c64",
+      "command": "ping",
+      "connections": 64,
+      "pipeline": 1,
+      "requests": 50000,
+      "data_size": 0,
+      "keyspace": 0,
+      "duration": 3.0,
+      "key_pattern": "",
+      "keepalive": false,
+      "clients": 8,
+      "clients_all_cpus": true,
+      "metric": "M4",
+      "offered_rate": 0,
+      "capacity_rps": null,
+      "rate_fraction": null,
+      "hold": 0.0,
+      "ramp": 0
+    },
+    "rps": 3619.67,
+    "latency": {
+      "avg": 9.868,
+      "min": 5.736,
+      "p50": 9.583,
+      "p95": 13.287,
+      "p99": 15.823,
+      "p90": null,
+      "p999": null,
+      "max": 20.639
+    },
+    "perf": {
+      "cycles": 3025064603,
+      "ref_cycles": null,
+      "instructions": 10079846305,
+      "context_switches": 0,
+      "cache_misses": 26627544,
+      "cache_references": null,
+      "branch_misses": null,
+      "branches": null
+    },
+    "server_usage": {
+      "cpu_pct": 39.678199577551716,
+      "user_s": 0.7,
+      "sys_s": 0.93
+    },
+    "client_usage": {
+      "cpu_pct": 93.173707633324,
+      "user_s": 3.432007,
+      "sys_s": 0.395406
+    },
+    "backend_usage": {
+      "cpu_pct": 2.677669910141526,
+      "user_s": 0.020000000000000004,
+      "sys_s": 0.08999999999999997
+    },
+    "server_rss_kib": 10468,
+    "valid": true,
+    "invalid_reason": "",
+    "git_sha": "9a7bafc",
+    "timestamp": "2026-09-24T02:38:52",
+    "extra": {
+      "repetition": 2,
+      "warmup": 1.0,
+      "client": "valkey-benchmark",
+      "client_processes": 1,
+      "backend_requests": 14456,
+      "proxy_core_busy": 60.6,
+      "backend_core_busy": 95.1,
+      "client_cores_busy": 99.0,
+      "suite": "field",
+      "backend": "sink",
+      "fd_limit": "524288:524288",
+      "kex": "x25519mlkem768",
+      "pm_qos": "off",
+      "cpu_map": "housekeeping=0 proxy=1 backend=2 client=3 idle=- (4 physical cores, 4 logical CPUs)"
+    }
+  },
+  {
+    "target": {
+      "kind": "handoff",
+      "mode": "tls",
+      "port": 6666,
+      "idle_rss_kib": 6164,
+      "extra_config": {
+        "version": "handoff 9a7bafc (zig 0.16.0)",
+        "cpus": "1",
+        "pinned_tasks": "3",
+        "workers": "1",
+        "listen": "127.0.0.1",
+        "proxy_args": "--max-conns 5000 --backlog 4096",
+        "variant": "c",
+        "binary": "/tmp/lane-sh-bin/fork-baseline/bin/handoff",
+        "negotiated": "TLSv1.3/TLS_AES_128_GCM_SHA256/X25519MLKEM768 tickets=0",
+        "negotiated_unpinned_client": "TLSv1.3/TLS_AES_128_GCM_SHA256/X25519MLKEM768 tickets=0"
+      }
+    },
+    "workload": {
+      "name": "handshake-c64",
+      "command": "ping",
+      "connections": 64,
+      "pipeline": 1,
+      "requests": 50000,
+      "data_size": 0,
+      "keyspace": 0,
+      "duration": 3.0,
+      "key_pattern": "",
+      "keepalive": false,
+      "clients": 8,
+      "clients_all_cpus": true,
+      "metric": "M4",
+      "offered_rate": 0,
+      "capacity_rps": null,
+      "rate_fraction": null,
+      "hold": 0.0,
+      "ramp": 0
+    },
+    "rps": 3577.33,
+    "latency": {
+      "avg": 9.93,
+      "min": 5.584,
+      "p50": 9.415,
+      "p95": 13.727,
+      "p99": 18.847,
+      "p90": null,
+      "p999": null,
+      "max": 43.999
+    },
+    "perf": {
+      "cycles": 3032422509,
+      "ref_cycles": null,
+      "instructions": 10131742135,
+      "context_switches": 0,
+      "cache_misses": 26465451,
+      "cache_references": null,
+      "branch_misses": null,
+      "branches": null
+    },
+    "server_usage": {
+      "cpu_pct": 39.85742005387763,
+      "user_s": 0.84,
+      "sys_s": 0.8
+    },
+    "client_usage": {
+      "cpu_pct": 92.60630679578776,
+      "user_s": 3.424168,
+      "sys_s": 0.386065
+    },
+    "backend_usage": {
+      "cpu_pct": 2.430330491090099,
+      "user_s": 0.0,
+      "sys_s": 0.09999999999999998
+    },
+    "server_rss_kib": 10616,
+    "valid": true,
+    "invalid_reason": "",
+    "git_sha": "9a7bafc",
+    "timestamp": "2026-09-24T02:38:58",
+    "extra": {
+      "repetition": 2,
+      "warmup": 1.0,
+      "client": "valkey-benchmark",
+      "client_processes": 1,
+      "backend_requests": 14459,
+      "proxy_core_busy": 59.8,
+      "backend_core_busy": 94.2,
+      "client_cores_busy": 98.8,
+      "suite": "field",
+      "backend": "sink",
+      "fd_limit": "524288:524288",
+      "kex": "x25519mlkem768",
+      "pm_qos": "off",
+      "cpu_map": "housekeeping=0 proxy=1 backend=2 client=3 idle=- (4 physical cores, 4 logical CPUs)"
+    }
+  },
+  {
+    "target": {
+      "kind": "handoff",
+      "mode": "tls",
+      "port": 6666,
+      "idle_rss_kib": 6232,
+      "extra_config": {
+        "version": "handoff 9a7bafc (zig 0.16.0)",
+        "cpus": "1",
+        "pinned_tasks": "3",
+        "workers": "1",
+        "listen": "127.0.0.1",
+        "proxy_args": "--max-conns 5000 --backlog 4096",
+        "negotiated": "TLSv1.3/TLS_AES_128_GCM_SHA256/X25519MLKEM768 tickets=0",
+        "negotiated_unpinned_client": "TLSv1.3/TLS_AES_128_GCM_SHA256/X25519MLKEM768 tickets=0"
+      }
+    },
+    "workload": {
+      "name": "handshake-c64",
+      "command": "ping",
+      "connections": 64,
+      "pipeline": 1,
+      "requests": 50000,
+      "data_size": 0,
+      "keyspace": 0,
+      "duration": 3.0,
+      "key_pattern": "",
+      "keepalive": false,
+      "clients": 8,
+      "clients_all_cpus": true,
+      "metric": "M4",
+      "offered_rate": 0,
+      "capacity_rps": null,
+      "rate_fraction": null,
+      "hold": 0.0,
+      "ramp": 0
+    },
+    "rps": 2312.67,
+    "latency": {
+      "avg": 15.826999999999998,
+      "min": 6.112,
+      "p50": 15.007,
+      "p95": 26.351,
+      "p99": 30.191,
+      "p90": null,
+      "p999": null,
+      "max": 44.511
+    },
+    "perf": {
+      "cycles": 1888727495,
+      "ref_cycles": null,
+      "instructions": 6233922051,
+      "context_switches": 0,
+      "cache_misses": 13750413,
+      "cache_references": null,
+      "branch_misses": null,
+      "branches": null
+    },
+    "server_usage": {
+      "cpu_pct": 21.154639038452668,
+      "user_s": 0.53,
+      "sys_s": 0.34
+    },
+    "client_usage": {
+      "cpu_pct": 68.08808742053708,
+      "user_s": 2.353841,
+      "sys_s": 0.44618199999999997
+    },
+    "backend_usage": {
+      "cpu_pct": 1.945254164455419,
+      "user_s": 0.0,
+      "sys_s": 0.08000000000000007
+    },
+    "server_rss_kib": 10480,
+    "valid": true,
+    "invalid_reason": "",
+    "git_sha": "9a7bafc",
+    "timestamp": "2026-09-24T02:39:04",
+    "extra": {
+      "repetition": 2,
+      "warmup": 1.0,
+      "client": "valkey-benchmark",
+      "client_processes": 1,
+      "backend_requests": 8994,
+      "proxy_core_busy": 99.0,
+      "backend_core_busy": 100.0,
+      "client_cores_busy": 99.3,
+      "suite": "field",
+      "backend": "sink",
+      "fd_limit": "524288:524288",
+      "kex": "x25519mlkem768",
+      "pm_qos": "off",
+      "cpu_map": "housekeeping=0 proxy=1 backend=2 client=3 idle=- (4 physical cores, 4 logical CPUs)"
+    }
+  },
+  {
+    "target": {
+      "kind": "handoff",
+      "mode": "tls",
+      "port": 6666,
+      "idle_rss_kib": 6236,
+      "extra_config": {
+        "version": "handoff 9a7bafc (zig 0.16.0)",
+        "cpus": "1",
+        "pinned_tasks": "3",
+        "workers": "1",
+        "listen": "127.0.0.1",
+        "proxy_args": "--max-conns 5000 --backlog 4096",
+        "variant": "a",
+        "binary": "/tmp/lane-sh-bin/base-baseline/bin/handoff",
+        "negotiated": "TLSv1.3/TLS_AES_128_GCM_SHA256/X25519MLKEM768 tickets=0",
+        "negotiated_unpinned_client": "TLSv1.3/TLS_AES_128_GCM_SHA256/X25519MLKEM768 tickets=0"
+      }
+    },
+    "workload": {
+      "name": "handshake-c64",
+      "command": "ping",
+      "connections": 64,
+      "pipeline": 1,
+      "requests": 50000,
+      "data_size": 0,
+      "keyspace": 0,
+      "duration": 3.0,
+      "key_pattern": "",
+      "keepalive": false,
+      "clients": 8,
+      "clients_all_cpus": true,
+      "metric": "M4",
+      "offered_rate": 0,
+      "capacity_rps": null,
+      "rate_fraction": null,
+      "hold": 0.0,
+      "ramp": 0
+    },
+    "rps": 2100.67,
+    "latency": {
+      "avg": 17.787,
+      "min": 6.528,
+      "p50": 17.263,
+      "p95": 27.903,
+      "p99": 39.167,
+      "p90": null,
+      "p999": null,
+      "max": 55.583
+    },
+    "perf": {
+      "cycles": 2443607969,
+      "ref_cycles": null,
+      "instructions": 8268915930,
+      "context_switches": 0,
+      "cache_misses": 11981582,
+      "cache_references": null,
+      "branch_misses": null,
+      "branches": null
+    },
+    "server_usage": {
+      "cpu_pct": 24.136641947962662,
+      "user_s": 0.7,
+      "sys_s": 0.3
+    },
+    "client_usage": {
+      "cpu_pct": 54.01917167769879,
+      "user_s": 1.898828,
+      "sys_s": 0.339115
+    },
+    "backend_usage": {
+      "cpu_pct": 2.1722977753166384,
+      "user_s": 0.01999999999999999,
+      "sys_s": 0.06999999999999995
+    },
+    "server_rss_kib": 9880,
+    "valid": true,
+    "invalid_reason": "",
+    "git_sha": "9a7bafc",
+    "timestamp": "2026-09-24T02:39:10",
+    "extra": {
+      "repetition": 2,
+      "warmup": 1.0,
+      "client": "valkey-benchmark",
+      "client_processes": 1,
+      "backend_requests": 7993,
+      "proxy_core_busy": 100.0,
+      "backend_core_busy": 100.0,
+      "client_cores_busy": 100.0,
+      "suite": "field",
+      "backend": "sink",
+      "fd_limit": "524288:524288",
+      "kex": "x25519mlkem768",
+      "pm_qos": "off",
+      "cpu_map": "housekeeping=0 proxy=1 backend=2 client=3 idle=- (4 physical cores, 4 logical CPUs)"
+    }
+  },
+  {
+    "target": {
+      "kind": "handoff",
+      "mode": "tls",
+      "port": 6666,
+      "idle_rss_kib": 6164,
+      "extra_config": {
+        "version": "handoff 9a7bafc (zig 0.16.0)",
+        "cpus": "1",
+        "pinned_tasks": "3",
+        "workers": "1",
+        "listen": "127.0.0.1",
+        "proxy_args": "--max-conns 5000 --backlog 4096",
+        "variant": "c",
+        "binary": "/tmp/lane-sh-bin/fork-baseline/bin/handoff",
+        "negotiated": "TLSv1.3/TLS_AES_128_GCM_SHA256/X25519MLKEM768 tickets=0",
+        "negotiated_unpinned_client": "TLSv1.3/TLS_AES_128_GCM_SHA256/X25519MLKEM768 tickets=0"
+      }
+    },
+    "workload": {
+      "name": "handshake-c64",
+      "command": "ping",
+      "connections": 64,
+      "pipeline": 1,
+      "requests": 50000,
+      "data_size": 0,
+      "keyspace": 0,
+      "duration": 3.0,
+      "key_pattern": "",
+      "keepalive": false,
+      "clients": 8,
+      "clients_all_cpus": true,
+      "metric": "M4",
+      "offered_rate": 0,
+      "capacity_rps": null,
+      "rate_fraction": null,
+      "hold": 0.0,
+      "ramp": 0
+    },
+    "rps": 1608.67,
+    "latency": {
+      "avg": 23.172,
+      "min": 7.888,
+      "p50": 22.079,
+      "p95": 39.519,
+      "p99": 50.335,
+      "p90": null,
+      "p999": null,
+      "max": 62.943
+    },
+    "perf": {
+      "cycles": 1399066173,
+      "ref_cycles": null,
+      "instructions": 4574085606,
+      "context_switches": 0,
+      "cache_misses": 10018089,
+      "cache_references": null,
+      "branch_misses": null,
+      "branches": null
+    },
+    "server_usage": {
+      "cpu_pct": 15.100755100064479,
+      "user_s": 0.47,
+      "sys_s": 0.16
+    },
+    "client_usage": {
+      "cpu_pct": 44.50301017946209,
+      "user_s": 1.598644,
+      "sys_s": 0.257914
+    },
+    "backend_usage": {
+      "cpu_pct": 1.4381671523870947,
+      "user_s": 0.0,
+      "sys_s": 0.06000000000000005
+    },
+    "server_rss_kib": 10480,
+    "valid": true,
+    "invalid_reason": "",
+    "git_sha": "9a7bafc",
+    "timestamp": "2026-09-24T02:39:16",
+    "extra": {
+      "repetition": 3,
+      "warmup": 1.0,
+      "client": "valkey-benchmark",
+      "client_processes": 1,
+      "backend_requests": 6512,
+      "proxy_core_busy": 100.0,
+      "backend_core_busy": 100.0,
+      "client_cores_busy": 100.0,
+      "suite": "field",
+      "backend": "sink",
+      "fd_limit": "524288:524288",
+      "kex": "x25519mlkem768",
+      "pm_qos": "off",
+      "cpu_map": "housekeeping=0 proxy=1 backend=2 client=3 idle=- (4 physical cores, 4 logical CPUs)"
+    }
+  },
+  {
+    "target": {
+      "kind": "handoff",
+      "mode": "tls",
+      "port": 6666,
+      "idle_rss_kib": 6232,
+      "extra_config": {
+        "version": "handoff 9a7bafc (zig 0.16.0)",
+        "cpus": "1",
+        "pinned_tasks": "3",
+        "workers": "1",
+        "listen": "127.0.0.1",
+        "proxy_args": "--max-conns 5000 --backlog 4096",
+        "negotiated": "TLSv1.3/TLS_AES_128_GCM_SHA256/X25519MLKEM768 tickets=0",
+        "negotiated_unpinned_client": "TLSv1.3/TLS_AES_128_GCM_SHA256/X25519MLKEM768 tickets=0"
+      }
+    },
+    "workload": {
+      "name": "handshake-c64",
+      "command": "ping",
+      "connections": 64,
+      "pipeline": 1,
+      "requests": 50000,
+      "data_size": 0,
+      "keyspace": 0,
+      "duration": 3.0,
+      "key_pattern": "",
+      "keepalive": false,
+      "clients": 8,
+      "clients_all_cpus": true,
+      "metric": "M4",
+      "offered_rate": 0,
+      "capacity_rps": null,
+      "rate_fraction": null,
+      "hold": 0.0,
+      "ramp": 0
+    },
+    "rps": 2888.67,
+    "latency": {
+      "avg": 13.617,
+      "min": 5.928,
+      "p50": 12.551,
+      "p95": 23.583,
+      "p99": 27.487,
+      "p90": null,
+      "p999": null,
+      "max": 35.231
+    },
+    "perf": {
+      "cycles": 2388838582,
+      "ref_cycles": null,
+      "instructions": 7988619491,
+      "context_switches": 0,
+      "cache_misses": 17852240,
+      "cache_references": null,
+      "branch_misses": null,
+      "branches": null
+    },
+    "server_usage": {
+      "cpu_pct": 25.493643037041956,
+      "user_s": 0.77,
+      "sys_s": 0.28
+    },
+    "client_usage": {
+      "cpu_pct": 77.2023438432721,
+      "user_s": 2.75324,
+      "sys_s": 0.426318
+    },
+    "backend_usage": {
+      "cpu_pct": 1.6995762024694647,
+      "user_s": 0.020000000000000004,
+      "sys_s": 0.050000000000000044
+    },
+    "server_rss_kib": 8536,
+    "valid": true,
+    "invalid_reason": "",
+    "git_sha": "9a7bafc",
+    "timestamp": "2026-09-24T02:39:21",
+    "extra": {
+      "repetition": 3,
+      "warmup": 1.0,
+      "client": "valkey-benchmark",
+      "client_processes": 1,
+      "backend_requests": 11568,
+      "proxy_core_busy": 99.8,
+      "backend_core_busy": 100.0,
+      "client_cores_busy": 98.8,
+      "suite": "field",
+      "backend": "sink",
+      "fd_limit": "524288:524288",
+      "kex": "x25519mlkem768",
+      "pm_qos": "off",
+      "cpu_map": "housekeeping=0 proxy=1 backend=2 client=3 idle=- (4 physical cores, 4 logical CPUs)"
+    }
+  },
+  {
+    "target": {
+      "kind": "handoff",
+      "mode": "tls",
+      "port": 6666,
+      "idle_rss_kib": 6240,
+      "extra_config": {
+        "version": "handoff 9a7bafc (zig 0.16.0)",
+        "cpus": "1",
+        "pinned_tasks": "3",
+        "workers": "1",
+        "listen": "127.0.0.1",
+        "proxy_args": "--max-conns 5000 --backlog 4096",
+        "variant": "a",
+        "binary": "/tmp/lane-sh-bin/base-baseline/bin/handoff",
+        "negotiated": "TLSv1.3/TLS_AES_128_GCM_SHA256/X25519MLKEM768 tickets=0",
+        "negotiated_unpinned_client": "TLSv1.3/TLS_AES_128_GCM_SHA256/X25519MLKEM768 tickets=0"
+      }
+    },
+    "workload": {
+      "name": "handshake-c64",
+      "command": "ping",
+      "connections": 64,
+      "pipeline": 1,
+      "requests": 50000,
+      "data_size": 0,
+      "keyspace": 0,
+      "duration": 3.0,
+      "key_pattern": "",
+      "keepalive": false,
+      "clients": 8,
+      "clients_all_cpus": true,
+      "metric": "M4",
+      "offered_rate": 0,
+      "capacity_rps": null,
+      "rate_fraction": null,
+      "hold": 0.0,
+      "ramp": 0
+    },
+    "rps": 3077.67,
+    "latency": {
+      "avg": 12.595000000000002,
+      "min": 5.896,
+      "p50": 11.999,
+      "p95": 19.087,
+      "p99": 27.759,
+      "p90": null,
+      "p999": null,
+      "max": 37.183
+    },
+    "perf": {
+      "cycles": 3750421479,
+      "ref_cycles": null,
+      "instructions": 12946301655,
+      "context_switches": 0,
+      "cache_misses": 18788568,
+      "cache_references": null,
+      "branch_misses": null,
+      "branches": null
+    },
+    "server_usage": {
+      "cpu_pct": 37.18190823723331,
+      "user_s": 1.09,
+      "sys_s": 0.44
+    },
+    "client_usage": {
+      "cpu_pct": 83.56800179202361,
+      "user_s": 3.012224,
+      "sys_s": 0.42635399999999996
+    },
+    "backend_usage": {
+      "cpu_pct": 2.4301900808649184,
+      "user_s": 0.0,
+      "sys_s": 0.09999999999999987
+    },
+    "server_rss_kib": 11240,
+    "valid": true,
+    "invalid_reason": "",
+    "git_sha": "9a7bafc",
+    "timestamp": "2026-09-24T02:39:27",
+    "extra": {
+      "repetition": 3,
+      "warmup": 1.0,
+      "client": "valkey-benchmark",
+      "client_processes": 1,
+      "backend_requests": 12506,
+      "proxy_core_busy": 93.9,
+      "backend_core_busy": 99.5,
+      "client_cores_busy": 99.3,
+      "suite": "field",
+      "backend": "sink",
+      "fd_limit": "524288:524288",
+      "kex": "x25519mlkem768",
+      "pm_qos": "off",
+      "cpu_map": "housekeeping=0 proxy=1 backend=2 client=3 idle=- (4 physical cores, 4 logical CPUs)"
+    }
+  },
+  {
+    "target": {
+      "kind": "handoff",
+      "mode": "tls",
+      "port": 6666,
+      "idle_rss_kib": 6240,
+      "extra_config": {
+        "version": "handoff 9a7bafc (zig 0.16.0)",
+        "cpus": "1",
+        "pinned_tasks": "3",
+        "workers": "1",
+        "listen": "127.0.0.1",
+        "proxy_args": "--max-conns 5000 --backlog 4096",
+        "variant": "b",
+        "binary": "/tmp/lane-sh-bin/fork-native/bin/handoff",
+        "negotiated": "TLSv1.3/TLS_AES_128_GCM_SHA256/X25519MLKEM768 tickets=0",
+        "negotiated_unpinned_client": "TLSv1.3/TLS_AES_128_GCM_SHA256/X25519MLKEM768 tickets=0"
+      }
+    },
+    "workload": {
+      "name": "handshake-c64",
+      "command": "ping",
+      "connections": 64,
+      "pipeline": 1,
+      "requests": 50000,
+      "data_size": 0,
+      "keyspace": 0,
+      "duration": 3.0,
+      "key_pattern": "",
+      "keepalive": false,
+      "clients": 8,
+      "clients_all_cpus": true,
+      "metric": "M4",
+      "offered_rate": 0,
+      "capacity_rps": null,
+      "rate_fraction": null,
+      "hold": 0.0,
+      "ramp": 0
+    },
+    "rps": 2805.0,
+    "latency": {
+      "avg": 13.611,
+      "min": 5.928,
+      "p50": 12.359,
+      "p95": 23.567,
+      "p99": 27.375,
+      "p90": null,
+      "p999": null,
+      "max": 33.887
+    },
+    "perf": {
+      "cycles": 2333293862,
+      "ref_cycles": null,
+      "instructions": 7831026119,
+      "context_switches": 0,
+      "cache_misses": 17650403,
+      "cache_references": null,
+      "branch_misses": null,
+      "branches": null
+    },
+    "server_usage": {
+      "cpu_pct": 26.1437533269814,
+      "user_s": 0.63,
+      "sys_s": 0.45
+    },
+    "client_usage": {
+      "cpu_pct": 76.06837577794707,
+      "user_s": 2.6583579999999998,
+      "sys_s": 0.483878
+    },
+    "backend_usage": {
+      "cpu_pct": 2.178646110581785,
+      "user_s": 0.0,
+      "sys_s": 0.09000000000000008
+    },
+    "server_rss_kib": 8796,
+    "valid": true,
+    "invalid_reason": "",
+    "git_sha": "9a7bafc",
+    "timestamp": "2026-09-24T02:39:33",
+    "extra": {
+      "repetition": 3,
+      "warmup": 1.0,
+      "client": "valkey-benchmark",
+      "client_processes": 1,
+      "backend_requests": 11258,
+      "proxy_core_busy": 90.0,
+      "backend_core_busy": 99.0,
+      "client_cores_busy": 98.8,
+      "suite": "field",
+      "backend": "sink",
+      "fd_limit": "524288:524288",
+      "kex": "x25519mlkem768",
+      "pm_qos": "off",
+      "cpu_map": "housekeeping=0 proxy=1 backend=2 client=3 idle=- (4 physical cores, 4 logical CPUs)"
+    }
+  },
+  {
+    "target": {
+      "kind": "handoff",
+      "mode": "tls",
+      "port": 6666,
+      "idle_rss_kib": 6232,
+      "extra_config": {
+        "version": "handoff 9a7bafc (zig 0.16.0)",
+        "cpus": "1",
+        "pinned_tasks": "3",
+        "workers": "1",
+        "listen": "127.0.0.1",
+        "proxy_args": "--max-conns 5000 --backlog 4096",
+        "negotiated": "TLSv1.3/TLS_AES_128_GCM_SHA256/X25519MLKEM768 tickets=0",
+        "negotiated_unpinned_client": "TLSv1.3/TLS_AES_128_GCM_SHA256/X25519MLKEM768 tickets=0"
+      }
+    },
+    "workload": {
+      "name": "handshake-c64",
+      "command": "ping",
+      "connections": 64,
+      "pipeline": 1,
+      "requests": 50000,
+      "data_size": 0,
+      "keyspace": 0,
+      "duration": 3.0,
+      "key_pattern": "",
+      "keepalive": false,
+      "clients": 8,
+      "clients_all_cpus": true,
+      "metric": "M4",
+      "offered_rate": 0,
+      "capacity_rps": null,
+      "rate_fraction": null,
+      "hold": 0.0,
+      "ramp": 0
+    },
+    "rps": 3488.5,
+    "latency": {
+      "avg": 10.468999999999998,
+      "min": 5.784,
+      "p50": 9.959,
+      "p95": 15.327,
+      "p99": 18.127,
+      "p90": null,
+      "p999": null,
+      "max": 30.959
+    },
+    "perf": {
+      "cycles": 2934345930,
+      "ref_cycles": null,
+      "instructions": 9754205837,
+      "context_switches": 0,
+      "cache_misses": 24310479,
+      "cache_references": null,
+      "branch_misses": null,
+      "branches": null
+    },
+    "server_usage": {
+      "cpu_pct": 37.89194933233516,
+      "user_s": 0.76,
+      "sys_s": 0.8
+    },
+    "client_usage": {
+      "cpu_pct": 91.17253807973684,
+      "user_s": 3.285952,
+      "sys_s": 0.46741499999999997
+    },
+    "backend_usage": {
+      "cpu_pct": 2.1860739999424137,
+      "user_s": 0.08,
+      "sys_s": 0.010000000000000009
+    },
+    "server_rss_kib": 9388,
+    "valid": true,
+    "invalid_reason": "",
+    "git_sha": "9a7bafc",
+    "timestamp": "2026-09-24T02:39:39",
+    "extra": {
+      "repetition": 4,
+      "warmup": 1.0,
+      "client": "valkey-benchmark",
+      "client_processes": 1,
+      "backend_requests": 14099,
+      "proxy_core_busy": 63.3,
+      "backend_core_busy": 89.4,
+      "client_cores_busy": 99.3,
+      "suite": "field",
+      "backend": "sink",
+      "fd_limit": "524288:524288",
+      "kex": "x25519mlkem768",
+      "pm_qos": "off",
+      "cpu_map": "housekeeping=0 proxy=1 backend=2 client=3 idle=- (4 physical cores, 4 logical CPUs)"
+    }
+  },
+  {
+    "target": {
+      "kind": "handoff",
+      "mode": "tls",
+      "port": 6666,
+      "idle_rss_kib": 6236,
+      "extra_config": {
+        "version": "handoff 9a7bafc (zig 0.16.0)",
+        "cpus": "1",
+        "pinned_tasks": "3",
+        "workers": "1",
+        "listen": "127.0.0.1",
+        "proxy_args": "--max-conns 5000 --backlog 4096",
+        "variant": "a",
+        "binary": "/tmp/lane-sh-bin/base-baseline/bin/handoff",
+        "negotiated": "TLSv1.3/TLS_AES_128_GCM_SHA256/X25519MLKEM768 tickets=0",
+        "negotiated_unpinned_client": "TLSv1.3/TLS_AES_128_GCM_SHA256/X25519MLKEM768 tickets=0"
+      }
+    },
+    "workload": {
+      "name": "handshake-c64",
+      "command": "ping",
+      "connections": 64,
+      "pipeline": 1,
+      "requests": 50000,
+      "data_size": 0,
+      "keyspace": 0,
+      "duration": 3.0,
+      "key_pattern": "",
+      "keepalive": false,
+      "clients": 8,
+      "clients_all_cpus": true,
+      "metric": "M4",
+      "offered_rate": 0,
+      "capacity_rps": null,
+      "rate_fraction": null,
+      "hold": 0.0,
+      "ramp": 0
+    },
+    "rps": 2624.0,
+    "latency": {
+      "avg": 15.520999999999999,
+      "min": 5.592,
+      "p50": 12.663,
+      "p95": 36.191,
+      "p99": 52.735,
+      "p90": null,
+      "p999": null,
+      "max": 81.599
+    },
+    "perf": {
+      "cycles": 3477676693,
+      "ref_cycles": null,
+      "instructions": 11943949330,
+      "context_switches": 0,
+      "cache_misses": 17414850,
+      "cache_references": null,
+      "branch_misses": null,
+      "branches": null
+    },
+    "server_usage": {
+      "cpu_pct": 35.6097985080124,
+      "user_s": 0.99,
+      "sys_s": 0.47
+    },
+    "client_usage": {
+      "cpu_pct": 85.62229345514731,
+      "user_s": 2.953305,
+      "sys_s": 0.557034
+    },
+    "backend_usage": {
+      "cpu_pct": 1.7073191065485407,
+      "user_s": 0.01999999999999999,
+      "sys_s": 0.050000000000000044
+    },
+    "server_rss_kib": 9344,
+    "valid": true,
+    "invalid_reason": "",
+    "git_sha": "9a7bafc",
+    "timestamp": "2026-09-24T02:39:45",
+    "extra": {
+      "repetition": 4,
+      "warmup": 1.0,
+      "client": "valkey-benchmark",
+      "client_processes": 1,
+      "backend_requests": 11560,
+      "proxy_core_busy": 90.0,
+      "backend_core_busy": 98.3,
+      "client_cores_busy": 100.0,
+      "suite": "field",
+      "backend": "sink",
+      "fd_limit": "524288:524288",
+      "kex": "x25519mlkem768",
+      "pm_qos": "off",
+      "cpu_map": "housekeeping=0 proxy=1 backend=2 client=3 idle=- (4 physical cores, 4 logical CPUs)"
+    }
+  },
+  {
+    "target": {
+      "kind": "handoff",
+      "mode": "tls",
+      "port": 6666,
+      "idle_rss_kib": 6240,
+      "extra_config": {
+        "version": "handoff 9a7bafc (zig 0.16.0)",
+        "cpus": "1",
+        "pinned_tasks": "3",
+        "workers": "1",
+        "listen": "127.0.0.1",
+        "proxy_args": "--max-conns 5000 --backlog 4096",
+        "variant": "b",
+        "binary": "/tmp/lane-sh-bin/fork-native/bin/handoff",
+        "negotiated": "TLSv1.3/TLS_AES_128_GCM_SHA256/X25519MLKEM768 tickets=0",
+        "negotiated_unpinned_client": "TLSv1.3/TLS_AES_128_GCM_SHA256/X25519MLKEM768 tickets=0"
+      }
+    },
+    "workload": {
+      "name": "handshake-c64",
+      "command": "ping",
+      "connections": 64,
+      "pipeline": 1,
+      "requests": 50000,
+      "data_size": 0,
+      "keyspace": 0,
+      "duration": 3.0,
+      "key_pattern": "",
+      "keepalive": false,
+      "clients": 8,
+      "clients_all_cpus": true,
+      "metric": "M4",
+      "offered_rate": 0,
+      "capacity_rps": null,
+      "rate_fraction": null,
+      "hold": 0.0,
+      "ramp": 0
+    },
+    "rps": 3483.33,
+    "latency": {
+      "avg": 10.218,
+      "min": 5.736,
+      "p50": 9.799,
+      "p95": 14.815,
+      "p99": 17.983,
+      "p90": null,
+      "p999": null,
+      "max": 24.751
+    },
+    "perf": {
+      "cycles": 2880694677,
+      "ref_cycles": null,
+      "instructions": 9602062986,
+      "context_switches": 0,
+      "cache_misses": 24874657,
+      "cache_references": null,
+      "branch_misses": null,
+      "branches": null
+    },
+    "server_usage": {
+      "cpu_pct": 37.21075672930235,
+      "user_s": 0.83,
+      "sys_s": 0.7
+    },
+    "client_usage": {
+      "cpu_pct": 89.43341047657492,
+      "user_s": 3.311963,
+      "sys_s": 0.36510499999999996
+    },
+    "backend_usage": {
+      "cpu_pct": 2.6752831635446106,
+      "user_s": 0.0,
+      "sys_s": 0.10999999999999988
+    },
+    "server_rss_kib": 8988,
+    "valid": true,
+    "invalid_reason": "",
+    "git_sha": "9a7bafc",
+    "timestamp": "2026-09-24T02:39:51",
+    "extra": {
+      "repetition": 4,
+      "warmup": 1.0,
+      "client": "valkey-benchmark",
+      "client_processes": 1,
+      "backend_requests": 13795,
+      "proxy_core_busy": 64.3,
+      "backend_core_busy": 94.4,
+      "client_cores_busy": 99.0,
+      "suite": "field",
+      "backend": "sink",
+      "fd_limit": "524288:524288",
+      "kex": "x25519mlkem768",
+      "pm_qos": "off",
+      "cpu_map": "housekeeping=0 proxy=1 backend=2 client=3 idle=- (4 physical cores, 4 logical CPUs)"
+    }
+  },
+  {
+    "target": {
+      "kind": "handoff",
+      "mode": "tls",
+      "port": 6666,
+      "idle_rss_kib": 6164,
+      "extra_config": {
+        "version": "handoff 9a7bafc (zig 0.16.0)",
+        "cpus": "1",
+        "pinned_tasks": "3",
+        "workers": "1",
+        "listen": "127.0.0.1",
+        "proxy_args": "--max-conns 5000 --backlog 4096",
+        "variant": "c",
+        "binary": "/tmp/lane-sh-bin/fork-baseline/bin/handoff",
+        "negotiated": "TLSv1.3/TLS_AES_128_GCM_SHA256/X25519MLKEM768 tickets=0",
+        "negotiated_unpinned_client": "TLSv1.3/TLS_AES_128_GCM_SHA256/X25519MLKEM768 tickets=0"
+      }
+    },
+    "workload": {
+      "name": "handshake-c64",
+      "command": "ping",
+      "connections": 64,
+      "pipeline": 1,
+      "requests": 50000,
+      "data_size": 0,
+      "keyspace": 0,
+      "duration": 3.0,
+      "key_pattern": "",
+      "keepalive": false,
+      "clients": 8,
+      "clients_all_cpus": true,
+      "metric": "M4",
+      "offered_rate": 0,
+      "capacity_rps": null,
+      "rate_fraction": null,
+      "hold": 0.0,
+      "ramp": 0
+    },
+    "rps": 3347.0,
+    "latency": {
+      "avg": 10.769999999999998,
+      "min": 5.592,
+      "p50": 10.183,
+      "p95": 16.063,
+      "p99": 19.743,
+      "p90": null,
+      "p999": null,
+      "max": 28.431
+    },
+    "perf": {
+      "cycles": 2890040304,
+      "ref_cycles": null,
+      "instructions": 9620582542,
+      "context_switches": 0,
+      "cache_misses": 23590634,
+      "cache_references": null,
+      "branch_misses": null,
+      "branches": null
+    },
+    "server_usage": {
+      "cpu_pct": 35.243723257700864,
+      "user_s": 0.78,
+      "sys_s": 0.67
+    },
+    "client_usage": {
+      "cpu_pct": 89.76514188142362,
+      "user_s": 3.235771,
+      "sys_s": 0.45715799999999995
+    },
+    "backend_usage": {
+      "cpu_pct": 2.673661764377309,
+      "user_s": 0.0,
+      "sys_s": 0.1100000000000001
+    },
+    "server_rss_kib": 9260,
+    "valid": true,
+    "invalid_reason": "",
+    "git_sha": "9a7bafc",
+    "timestamp": "2026-09-24T02:39:56",
+    "extra": {
+      "repetition": 4,
+      "warmup": 1.0,
+      "client": "valkey-benchmark",
+      "client_processes": 1,
+      "backend_requests": 13754,
+      "proxy_core_busy": 77.2,
+      "backend_core_busy": 96.1,
+      "client_cores_busy": 99.0,
+      "suite": "field",
+      "backend": "sink",
+      "fd_limit": "524288:524288",
+      "kex": "x25519mlkem768",
+      "pm_qos": "off",
+      "cpu_map": "housekeeping=0 proxy=1 backend=2 client=3 idle=- (4 physical cores, 4 logical CPUs)"
+    }
+  }
+]

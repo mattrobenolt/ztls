@@ -1827,8 +1827,23 @@ each passing the same correctness and interop gates.
   test` inside `.#openssl` and `.#aws-lc` follows the selected headers.
   `conformance/build.zig` uses the same header inference, so `anvil_client` and
   `tlsfuzzer_server` can be built as AWS-LC-linked harness binaries.
-- HKDF/HMAC/SHA transcript hashing remain on `std.crypto`, matching the roadmap
-  policy unless a concrete provider/FIPS requirement appears.
+- Handshake SHA-256/SHA-384 (transcript, HMAC, HKDF, Finished, PSK binders)
+  run on the backend through `src/crypto/sha2.zig` (#138). The HKDF/HMAC
+  constructions remain the `std.crypto` generics. Certificate-chain digests in
+  `src/certificate_parser.zig` and comptime constants stay on std. Evidence:
+  equivalence tests against std in `src/crypto/backend_primitive_tests.zig`
+  (lengths 0..300, large inputs, random update splits, copy-then-continue
+  snapshots, HMAC/HKDF), the RFC 8448 vectors, a comptime-versus-runtime pin in
+  `src/hkdf.zig`, and a mutation of the backend update that turns 70 tests red.
+  These tests pass on OpenSSL, AWS-LC, and BoringSSL. The `-Dcrypto-fips=true`
+  identity builds and runs them too. OpenSSL-FIPS caveat: the low-level
+  `SHA*_Init` API is libcrypto's default implementation, not the FIPS
+  provider. The std code it replaces was also outside the FIPS boundary.
+  Performance ([capture](docs/research/perf/20260924-launchpad-sha2-138/ANALYSIS.md),
+  launchpad, AWS-LC 5.5.0): a `-Dcpu=baseline` handoff build now needs
+  0.4-0.7% more cycles for each handshake than a native build, not 43-44%.
+  On a native build, the SHA-256 field row costs 0.2-1.2% more cycles.
+  SHA-384 in-memory handshakes cost 15.7% fewer.
 - `src/crypto/backend_primitive_tests.zig` exercises the backend facade
   directly for X25519 (RFC 7748 known vectors plus low-order/all-zero public-key
   rejection), P-256 ECDH (mutual key agreement with fixed scalars, non-04 SEC1

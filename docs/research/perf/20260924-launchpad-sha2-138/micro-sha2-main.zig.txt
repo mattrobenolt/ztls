@@ -1,0 +1,96 @@
+//! Scratch micro-benchmark for ztls #138: std SHA-2 vs AWS-LC SHA-2 under the
+//! std HMAC/HKDF generics. The backend type copies src/crypto/sha2.zig.
+const std = @import("std");
+const c = @cImport(@cInclude("openssl/sha.h"));
+
+fn Sha2(comptime f: anytype) type {
+    return struct {
+        const Self = @This();
+        pub const digest_length = f.digest_length;
+        pub const block_length = f.block_length;
+        pub const Options = struct {};
+        context: f.Context,
+        pub fn init(options: Options) Self {
+            _ = options;
+            var self: Self = undefined;
+            check(f.init(&self.context));
+            return self;
+        }
+        pub fn hash(b: []const u8, out: *[digest_length]u8, options: Options) void {
+            var d: Self = .init(options);
+            d.update(b);
+            d.final(out);
+        }
+        pub fn update(d: *Self, b: []const u8) void {
+            check(f.update(&d.context, b.ptr, b.len));
+        }
+        pub fn final(d: *Self, out: *[digest_length]u8) void {
+            check(f.final(out, &d.context));
+        }
+        pub fn peek(d: Self) [digest_length]u8 {
+            var copy = d;
+            var out: [digest_length]u8 = undefined;
+            copy.final(&out);
+            return out;
+        }
+    };
+}
+inline fn check(rc: c_int) void {
+    if (rc != 1) @panic("sha");
+}
+const BSha256 = Sha2(.{ .Context = c.SHA256_CTX, .digest_length = 32, .block_length = 64, .init = c.SHA256_Init, .update = c.SHA256_Update, .final = c.SHA256_Final });
+const BSha384 = Sha2(.{ .Context = c.SHA512_CTX, .digest_length = 48, .block_length = 128, .init = c.SHA384_Init, .update = c.SHA384_Update, .final = c.SHA384_Final });
+
+fn hkdfExpandLabel(comptime H: type, prk: [H.digest_length]u8) [H.digest_length]u8 {
+    const Hkdf = std.crypto.kdf.hkdf.Hkdf(std.crypto.auth.hmac.Hmac(H));
+    const info = [_]u8{ 0, H.digest_length, 18 } ++ "tls13 c hs traffic".* ++ [_]u8{H.digest_length} ++ [_]u8{0x5a} ** H.digest_length;
+    var out: [H.digest_length]u8 = undefined;
+    Hkdf.expand(&out, &info, prk);
+    return out;
+}
+
+fn transcript(comptime H: type, msg: []const u8) [H.digest_length]u8 {
+    var t: H = .init(.{});
+    var acc: [H.digest_length]u8 = @splat(0);
+    var off: usize = 0;
+    // six handshake messages of mixed size, a snapshot after each
+    for ([_]usize{ 250, 120, 30, 900, 80, 50 }) |n| {
+        t.update(msg[off..][0..n]);
+        off += n;
+        const d = t.peek();
+        for (&acc, d) |*a, x| a.* ^= x;
+    }
+    return acc;
+}
+
+pub fn main(init: std.process.Init.Minimal) !void {
+    var args = init.args.iterate();
+    _ = args.next();
+    const op = args.next().?;
+    const n = try std.fmt.parseInt(usize, args.next().?, 10);
+    var msg: [2048]u8 = undefined;
+    for (&msg, 0..) |*b, i| b.* = @truncate(i *% 131);
+    var acc: u8 = 0;
+    inline for (.{
+        .{ "hkdf256-std", std.crypto.hash.sha2.Sha256, 0 },
+        .{ "hkdf256-be", BSha256, 0 },
+        .{ "hkdf384-std", std.crypto.hash.sha2.Sha384, 0 },
+        .{ "hkdf384-be", BSha384, 0 },
+        .{ "tx256-std", std.crypto.hash.sha2.Sha256, 1 },
+        .{ "tx256-be", BSha256, 1 },
+        .{ "tx384-std", std.crypto.hash.sha2.Sha384, 1 },
+        .{ "tx384-be", BSha384, 1 },
+    }) |e| {
+        if (std.mem.eql(u8, op, e[0])) {
+            const H = e[1];
+            var prk: [H.digest_length]u8 = @splat(7);
+            for (0..n) |_| {
+                const out = if (e[2] == 0) hkdfExpandLabel(H, prk) else transcript(H, &msg);
+                prk = out;
+                std.mem.doNotOptimizeAway(&prk);
+            }
+            acc ^= prk[0];
+        }
+    }
+    std.mem.doNotOptimizeAway(acc);
+}

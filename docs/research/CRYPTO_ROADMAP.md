@@ -48,8 +48,8 @@ The AEAD seam is already clean enough to preserve:
 - `src/RecordLayer.zig` only calls `Aead.encrypt` / `Aead.decrypt`;
 - HKDF derives byte-array traffic keys and constructs `RecordLayer` values.
 
-The non-AEAD seams are mixed. HKDF, HMAC, and SHA-2 can stay on `std.crypto`
-until there is a concrete provider/FIPS requirement. X25519, certificate
+The non-AEAD seams are mixed. The HKDF and HMAC constructions stay on
+`std.crypto`. Their SHA-2 runs on the backend (see §4). X25519, certificate
 signature verification, and server signing are real backend boundaries and need
 a `src/crypto/` facade so provider decisions do not leak through the handshake
 state machines.
@@ -137,12 +137,16 @@ Requirements:
 
 ### 4. HKDF/HMAC/SHA transcript hashing
 
-Keep the TLS 1.3 key schedule and transcript hashes on `std.crypto` by default.
-Moving these to libcrypto only makes sense for a concrete provider/FIPS policy,
-not as cleanup for its own sake.
+The HKDF and HMAC constructions stay on the `std.crypto` generics. The SHA-256
+and SHA-384 under them, and the transcript hashes, run on the backend through
+`src/crypto/sha2.zig` (#138). The reason is performance, not FIPS: stdlib SHA-2
+selects its code at compile time, so a `-Dcpu=baseline` build runs the software
+path on a host with SHA extensions. The libcrypto family selects at run time.
+The existing RFC 8448 Finished/HKDF vectors run through the backend types.
 
-If that policy appears later, move SHA-256/SHA-384, HKDF, and HMAC behind a small
-facade and run the existing RFC 8448 Finished/HKDF vectors against it.
+Comptime constants (`Hash("")`, the zero-PSK early secret) stay on std, because
+libcrypto cannot run at comptime. A test pins them to the runtime backend
+values.
 
 ### 5. Key exchange
 

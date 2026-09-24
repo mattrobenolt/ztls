@@ -1,0 +1,50 @@
+Executing uvVenvShellHook
+Skipping venv creation, '.venv' already exists
+Finished executing uvVenvShellHook
+Installed 17 packages in 10ms
+run suite: field
+run backend: sink
+run fd_limit: 524288:524288
+run kex: x25519
+run pm_qos: off
+run cpu_map: housekeeping=0 proxy=1 backend=2 client=3 idle=- (4 physical cores, 4 logical CPUs)
+PASS preflight handoff/tls: 64B and 1MiB GETs byte-exact TLSv1.3/TLS_AES_128_GCM_SHA256/X25519 tickets=0
+  handoff/tls handshake-c64 rep=0: 4262 rps server=45% client=90% backend=3% cores: proxy=68% backend=78% client=100%
+PASS preflight handoff/tls: 64B and 1MiB GETs byte-exact TLSv1.3/TLS_AES_128_GCM_SHA256/X25519 tickets=0
+  handoff/tls:a handshake-c64 rep=0: 3489 rps server=35% client=78% backend=2% cores: proxy=99% backend=100% client=100%
+PASS preflight handoff/tls: 64B and 1MiB GETs byte-exact TLSv1.3/TLS_AES_128_GCM_SHA256/X25519 tickets=0
+  handoff/tls:b handshake-c64 rep=0: 3646 rps server=29% client=80% backend=2% cores: proxy=100% backend=100% client=100%
+PASS preflight handoff/tls: 64B and 1MiB GETs byte-exact TLSv1.3/TLS_AES_128_GCM_SHA256/X25519 tickets=0
+  handoff/tls:c handshake-c64 rep=0: 2809 rps server=24% client=69% backend=2% cores: proxy=100% backend=100% client=100%
+PASS preflight handoff/tls: 64B and 1MiB GETs byte-exact TLSv1.3/TLS_AES_128_GCM_SHA256/X25519 tickets=0
+  handoff/tls:a handshake-c64 rep=1: 3560 rps server=37% client=79% backend=3% cores: proxy=93% backend=100% client=100%
+PASS preflight handoff/tls: 64B and 1MiB GETs byte-exact TLSv1.3/TLS_AES_128_GCM_SHA256/X25519 tickets=0
+  handoff/tls:b handshake-c64 rep=1: 3722 rps server=35% client=85% backend=2% cores: proxy=72% backend=98% client=99%
+PASS preflight handoff/tls: 64B and 1MiB GETs byte-exact TLSv1.3/TLS_AES_128_GCM_SHA256/X25519 tickets=0
+  handoff/tls:c handshake-c64 rep=1: 4032 rps server=31% client=86% backend=2% cores: proxy=79% backend=98% client=98%
+PASS preflight handoff/tls: 64B and 1MiB GETs byte-exact TLSv1.3/TLS_AES_128_GCM_SHA256/X25519 tickets=0
+  handoff/tls handshake-c64 rep=1: 4096 rps server=38% client=89% backend=2% cores: proxy=68% backend=96% client=99%
+PASS preflight handoff/tls: 64B and 1MiB GETs byte-exact TLSv1.3/TLS_AES_128_GCM_SHA256/X25519 tickets=0
+  handoff/tls:b handshake-c64 rep=2: 3004 rps server=28% client=83% backend=2% cores: proxy=88% backend=99% client=98%
+PASS preflight handoff/tls: 64B and 1MiB GETs byte-exact TLSv1.3/TLS_AES_128_GCM_SHA256/X25519 tickets=0
+  handoff/tls:c handshake-c64 rep=2: 4137 rps server=39% client=89% backend=2% cores: proxy=71% backend=95% client=100%
+PASS preflight handoff/tls: 64B and 1MiB GETs byte-exact TLSv1.3/TLS_AES_128_GCM_SHA256/X25519 tickets=0
+  handoff/tls handshake-c64 rep=2: 4259 rps server=39% client=91% backend=3% cores: proxy=65% backend=96% client=99%
+PASS preflight handoff/tls: 64B and 1MiB GETs byte-exact TLSv1.3/TLS_AES_128_GCM_SHA256/X25519 tickets=0
+  handoff/tls:a handshake-c64 rep=2: 3665 rps server=43% client=92% backend=3% cores: proxy=76% backend=97% client=100%
+PASS preflight handoff/tls: 64B and 1MiB GETs byte-exact TLSv1.3/TLS_AES_128_GCM_SHA256/X25519 tickets=0
+  handoff/tls:c handshake-c64 rep=3: 4315 rps server=33% client=88% backend=3% cores: proxy=78% backend=97% client=98%
+PASS preflight handoff/tls: 64B and 1MiB GETs byte-exact TLSv1.3/TLS_AES_128_GCM_SHA256/X25519 tickets=0
+  handoff/tls handshake-c64 rep=3: 4301 rps server=39% client=93% backend=3% cores: proxy=70% backend=95% client=99%
+PASS preflight handoff/tls: 64B and 1MiB GETs byte-exact TLSv1.3/TLS_AES_128_GCM_SHA256/X25519 tickets=0
+  handoff/tls:a handshake-c64 rep=3: 2984 rps server=33% client=85% backend=2% cores: proxy=94% backend=98% client=99%
+PASS preflight handoff/tls: 64B and 1MiB GETs byte-exact TLSv1.3/TLS_AES_128_GCM_SHA256/X25519 tickets=0
+  handoff/tls:b handshake-c64 rep=3: 4079 rps server=37% client=90% backend=3% cores: proxy=86% backend=98% client=100%
+PASS preflight handoff/tls: 64B and 1MiB GETs byte-exact TLSv1.3/TLS_AES_128_GCM_SHA256/X25519 tickets=0
+  handoff/tls handshake-c64 rep=4: 3747 rps server=29% client=87% backend=3% cores: proxy=100% backend=100% client=100%
+PASS preflight handoff/tls: 64B and 1MiB GETs byte-exact TLSv1.3/TLS_AES_128_GCM_SHA256/X25519 tickets=0
+  handoff/tls:a handshake-c64 rep=4: 3465 rps server=32% client=76% backend=3% cores: proxy=100% backend=98% client=100%
+PASS preflight handoff/tls: 64B and 1MiB GETs byte-exact TLSv1.3/TLS_AES_128_GCM_SHA256/X25519 tickets=0
+  handoff/tls:b handshake-c64 rep=4: 3971 rps server=32% client=80% backend=2% cores: proxy=99% backend=100% client=99%
+PASS preflight handoff/tls: 64B and 1MiB GETs byte-exact TLSv1.3/TLS_AES_128_GCM_SHA256/X25519 tickets=0
+  handoff/tls:c handshake-c64 rep=4: 2531 rps server=24% client=62% backend=2% cores: proxy=100% backend=98% client=100%

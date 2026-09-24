@@ -1,14 +1,11 @@
 //! TLS 1.3 HKDF key derivation.
 //!
-//! Wraps std.crypto.kdf.hkdf with TLS 1.3-specific label expansion per
+//! Wraps std.crypto.kdf.hkdf, instantiated over the libcrypto-backed SHA-2
+//! types in crypto/sha2.zig (#138), with TLS 1.3-specific label expansion per
 //! RFC 8446 §7.1 and §7.3.
 const std = @import("std");
 const assert = std.debug.assert;
 const crypto = std.crypto;
-const HmacSha256 = crypto.auth.hmac.sha2.HmacSha256;
-const HmacSha384 = crypto.auth.hmac.sha2.HmacSha384;
-const Sha256 = crypto.hash.sha2.Sha256;
-const Sha384 = crypto.hash.sha2.Sha384;
 const testing = std.testing;
 
 const aead = @import("aead.zig");
@@ -16,14 +13,20 @@ const CipherSuite = @import("cipher_suite.zig").CipherSuite;
 const Iv = @import("aead.zig").Iv;
 const memx = @import("memx.zig");
 const RecordLayer = @import("RecordLayer.zig");
+const sha2 = @import("crypto/backend.zig").sha2;
 
 /// TLS_AES_128_GCM_SHA256 and TLS_CHACHA20_POLY1305_SHA256.
-pub const HkdfSha256 = Hkdf(HmacSha256);
+pub const HkdfSha256 = Hkdf(sha2.Sha256, crypto.hash.sha2.Sha256);
 
 /// TLS_AES_256_GCM_SHA384.
-pub const HkdfSha384 = Hkdf(HmacSha384);
+pub const HkdfSha384 = Hkdf(sha2.Sha384, crypto.hash.sha2.Sha384);
 
-fn Hkdf(comptime Hmac: type) type {
+/// `Hash` is the libcrypto-backed hash for every runtime derivation (#138).
+/// `ComptimeHash` is the same function in std, used only for the constants
+/// below: libcrypto cannot run at comptime.
+fn Hkdf(comptime Hash: type, comptime ComptimeHash: type) type {
+    comptime assert(Hash.digest_length == ComptimeHash.digest_length);
+    const Hmac = crypto.auth.hmac.Hmac(Hash);
     const H = crypto.kdf.hkdf.Hkdf(Hmac);
 
     return struct {
@@ -94,12 +97,7 @@ fn Hkdf(comptime Hmac: type) type {
         const empty_hash: TranscriptHash = blk: {
             @setEvalBranchQuota(100_000);
             var out: TranscriptHash = undefined;
-            const S = switch (prk_len) {
-                32 => Sha256,
-                48 => Sha384,
-                else => unreachable,
-            };
-            S.hash(&.{}, &out.data, .{});
+            ComptimeHash.hash(&.{}, &out.data, .{});
             break :blk out;
         };
 
@@ -107,7 +105,8 @@ fn Hkdf(comptime Hmac: type) type {
         /// Salt and IKM are both zero — comptime constant per RFC 8446 §7.1.
         pub const early_secret: Prk = blk: {
             @setEvalBranchQuota(100_000);
-            break :blk .init(H.extract(prk_zero, prk_zero));
+            const ComptimeH = crypto.kdf.hkdf.Hkdf(crypto.auth.hmac.Hmac(ComptimeHash));
+            break :blk .init(ComptimeH.extract(prk_zero, prk_zero));
         };
 
         /// RFC 8446 §7.1 — EarlySecret for a PSK or resumption handshake.
@@ -450,8 +449,7 @@ test "HkdfSha256: RFC 8448 §3/§4 PSK and resumption secrets" {
         0xf6, 0xbe, 0x9e, 0x05, 0x71, 0x1a, 0x83, 0x96,
         0x47, 0x3a, 0xef, 0xa0, 0x1e, 0x92, 0x4a, 0x14,
     };
-    var binder_verify_data: [32]u8 = undefined;
-    HmacSha256.create(&binder_verify_data, &binder_hash, &finished_key.data);
+    const binder_verify_data = HkdfSha256.binder(finished_key, &.init(binder_hash));
     try testing.expectEqualSlices(u8, &.{
         0x3a, 0xdd, 0x4f, 0xb2, 0xd8, 0xfd, 0xf8, 0x22,
         0xa0, 0xca, 0x3c, 0xf7, 0x67, 0x8e, 0xf5, 0xe8,
@@ -488,6 +486,24 @@ test "HkdfSha256: RFC 8448 §3/§4 PSK and resumption secrets" {
         0x4c, 0x0e, 0x60, 0x91, 0x18, 0x6d, 0x34, 0xf8,
         0x12, 0x08, 0x9f, 0xf5, 0xbe, 0x2e, 0xf7, 0xdf,
     }, &early_exporter.data);
+}
+
+// RFC 8446 §7.1 — the comptime constants come from std (libcrypto cannot run
+// at comptime), and every runtime derivation runs on the backend hash (#138).
+// With a zero PSK, the runtime PSK early secret is the comptime early_secret,
+// and the backend Hash("") is the comptime "derived" context.
+test "comptime std constants match the runtime backend hash" {
+    inline for (.{
+        .{ HkdfSha256, sha2.Sha256 },
+        .{ HkdfSha384, sha2.Sha384 },
+    }) |pair| {
+        const H, const Hash = pair;
+        const runtime_early = H.pskEarlySecret(H.prk_zero);
+        try testing.expectEqualSlices(u8, &H.early_secret.data, &runtime_early.data);
+        var runtime_empty: [H.prk_len]u8 = undefined;
+        Hash.hash(&.{}, &runtime_empty, .{});
+        try testing.expectEqualSlices(u8, &H.empty_hash.data, &runtime_empty);
+    }
 }
 
 test "HkdfSha256.handshakeSecret: RFC 8448 §3" {

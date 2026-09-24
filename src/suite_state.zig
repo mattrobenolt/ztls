@@ -8,8 +8,9 @@ const CipherSuite = @import("cipher_suite.zig").CipherSuite;
 const RecordLayer = @import("RecordLayer.zig");
 const hkdf = @import("hkdf.zig");
 
-const Sha256 = crypto.hash.sha2.Sha256;
-const Sha384 = crypto.hash.sha2.Sha384;
+const sha2 = @import("crypto/backend.zig").sha2;
+const Sha256 = sha2.Sha256;
+const Sha384 = sha2.Sha384;
 
 pub fn HashArm(comptime Hkdf_: type, comptime Hash: type) type {
     return struct {

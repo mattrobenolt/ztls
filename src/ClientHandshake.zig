@@ -6,8 +6,8 @@
 const std = @import("std");
 const assert = std.debug.assert;
 const crypto = std.crypto;
-const Sha256 = crypto.hash.sha2.Sha256;
-const Sha384 = crypto.hash.sha2.Sha384;
+const Sha256 = backend.sha2.Sha256;
+const Sha384 = backend.sha2.Sha384;
 const testing = std.testing;
 const fuzz_compat = @import("fuzz_compat.zig");
 const mem = std.mem;
@@ -334,14 +334,19 @@ const Suite = union(enum) {
         sha256: Sha256,
         sha384: Sha384,
 
-        const init: Buffering = .{ .sha256 = .init(.{}), .sha384 = .init(.{}) };
+        fn init() Buffering {
+            return .{ .sha256 = .init(.{}), .sha384 = .init(.{}) };
+        }
     };
 
     buffering: Buffering,
     sha256: HashArm(hkdf.HkdfSha256, Sha256),
     sha384: HashArm(hkdf.HkdfSha384, Sha384),
 
-    pub const init: Suite = .{ .buffering = .init };
+    /// A function, not a constant: libcrypto hash init cannot run at comptime.
+    fn init() Suite {
+        return .{ .buffering = .init() };
+    }
 
     fn secureZero(self: *Suite) void {
         switch (self.*) {
@@ -669,7 +674,7 @@ pub fn init(config: Config) ClientHandshake {
     return .{
         .state = .start,
         // Hash unknown until ServerHello: run both candidate transcripts.
-        .suite = .init,
+        .suite = .init(),
         .keypairs = config.keypairs,
         .random = config.random,
         .policy = .{

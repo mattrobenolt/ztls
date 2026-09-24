@@ -3,7 +3,7 @@
 //! RFC 8446 §4.4.4
 const std = @import("std");
 const crypto = std.crypto;
-const Sha256 = crypto.hash.sha2.Sha256;
+const Sha256 = @import("crypto/backend.zig").sha2.Sha256;
 const testing = std.testing;
 
 const handshake = @import("handshake.zig");

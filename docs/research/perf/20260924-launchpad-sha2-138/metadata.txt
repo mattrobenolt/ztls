@@ -1,0 +1,53 @@
+capture: handshake SHA-2 on the libcrypto backend (#138)
+date: 2026-09-24 (America/Los_Angeles), runs 02:30-03:40 local
+host: launchpad, Linux 7.2.6 aarch64 NixOS, Neoverse-V3, 4 logical CPUs
+toolchain: Zig 0.16.0
+libcrypto (handoff and scratch programs): AWS-LC 5.5.0 (handoff flake)
+
+ztls base: a40f1cc (main), unmodified
+ztls fork: the #138 branch working tree, parent a40f1cc. The binaries were
+  built before one final edit that only reorders an import in src/hkdf.zig.
+  No code path changed after the build.
+
+handoff: 9a7bafc, which pins ztls a40f1cc. Scratch clones only:
+  /tmp/lane-sh-handoff (fork builds, and the default `tls` target)
+  /tmp/lane-sh-base (base-baseline build)
+  Both clones were clean at 9a7bafc.
+
+field binaries (ReleaseFast), sha256:
+  tls   base-native   zig-out-fast/bin/handoff (lane-sh-handoff, no fork)
+        2f168fea864cab4fae71b577648098685d1e6dbee08709c37a7f53f5fe0a3ff6
+  tls:a base-baseline -Dcpu=baseline, lane-sh-base
+        c8b39f3c745d31fa4088dd46499a233949a8f77d14bfb2825818d06f865e79ac
+  tls:b fork-native   -Dcpu=native --fork=<ztls #138 tree>
+        2063d3a786cfde4bdd680703824ece41b183764c7ffe587561089e15dc659536
+  tls:c fork-baseline -Dcpu=baseline --fork=<ztls #138 tree>
+        46b46fa1d6c99adeac743b4714fea9ee1722022aad71e0e1425a5c0571fba585
+  The fork binaries import SHA256_Init/Update/Final and
+  SHA384_Init/Update/Final from libcrypto (nm -D). The base binaries import
+  none of them.
+
+field command (from /tmp/lane-sh-handoff, under /tmp/handoff-bench.lock):
+  nix develop --command flock /tmp/handoff-bench.lock timeout 2400 \
+    uv run python -m bench run --suite field --mode tls,tls:a,tls:b,tls:c \
+    --variant 'a@<base-baseline>=' --variant 'b@<fork-native>=' \
+    --variant 'c@<fork-baseline>=' --row handshake-c64 --reps 5 --perf \
+    [--kex x25519 | --kex x25519mlkem768] --output <json>
+  field-x25519.json and field-x25519-run2.json are two independent runs.
+  cycles per handshake = perf.cycles / extra.backend_requests (cycles.py).
+
+in-memory handshake: inmem-handshake-main.zig.txt, a scratch program that
+  depends on ztls by path (base clone at a40f1cc, or the fork tree). One
+  process runs client and server. Built in the handoff devshell (AWS-LC
+  5.5.0), ReleaseFast, -Dcpu=native and -Dcpu=baseline. inmem-handshake-run.sh
+  pins to CPU 2 and takes the perf stat cycles:u slope between 200 and 2200
+  handshakes. Five interleaved repetitions.
+
+SHA-2 micro-benchmark: micro-sha2-main.zig.txt, one HKDF-Expand (one HMAC)
+  and one six-message transcript with a snapshot after each message. The
+  backend type is a copy of src/crypto/sha2.zig. micro-sha2-run.sh takes the
+  cycles:u slope between 20000 and 220000 iterations on CPU 2. Three
+  repetitions.
+
+load: other agent lanes shared the host. Every capture ran under the bench
+  lock. Field runs report proxy, backend, and client core occupancy per row.

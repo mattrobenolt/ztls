@@ -58,4 +58,5 @@ pub const openssl = @cImport({
     @cInclude("openssl/obj_mac.h");
     @cInclude("openssl/pem.h");
     @cInclude("openssl/rsa.h");
+    @cInclude("openssl/sha.h");
 });

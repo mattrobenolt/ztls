@@ -1,0 +1,58 @@
+//! Scratch in-memory ztls handshake loop for #138 (client + server, one
+//! process). Mirrors src/bench/record_protection.zig connectPair.
+const std = @import("std");
+const ztls = @import("ztls");
+const fixtures = @import("fixtures");
+
+fn connectPair(suite: ztls.CipherSuite) !void {
+    var client: ztls.ClientHandshake = .init(.{
+        .keypairs = try .init(try .generateDeterministic(.init(@splat(0x11)))),
+        .host_name = "ztls.server.test",
+        .now_sec = 0,
+        .random = .{ .data = @splat(0x33) },
+        .insecure_no_chain_anchor = true,
+    });
+    defer client.deinit();
+    var client_out: [4096]u8 = undefined;
+    const ch_record = try client.start(&client_out);
+    client.completeWrite();
+
+    var server: ztls.ServerHandshake = .init(.{
+        .keypairs = try .init(try .generateDeterministic(.init(@splat(0x22)))),
+        .random = .{ .data = @splat(0x44) },
+    });
+    defer server.deinit();
+    const suites = [_]ztls.CipherSuite{suite};
+    server.supportSuites(&suites);
+    var server_out: [8192]u8 = undefined;
+    const sh_record = try server.acceptClientHello(ch_record, &server_out);
+    try client.processServerHello(sh_record[ztls.frame.header_len..]);
+
+    var signer: ztls.signature.PrivateKey = try .fromP256Scalar(fixtures.server_ecdsa_scalar[0..32]);
+    defer signer.deinit();
+    const flight_record = try server.sendPreparedAuthenticatedFlight(
+        &.{&fixtures.server_ecdsa_cert_der},
+        signer.signer(),
+        &server_out,
+    );
+    const ev = try client.handleRecord(server_out[0..flight_record.len], &client_out);
+    const client_finished = switch (ev) {
+        .write => |w| w,
+        else => return error.UnexpectedEvent,
+    };
+    try server.processClientFinished(client_out[0..client_finished.len]);
+    client.completeWrite();
+    if (!client.isConnected() or !server.isConnected()) return error.HandshakeIncomplete;
+}
+
+pub fn main(init: std.process.Init.Minimal) !void {
+    var args = init.args.iterate();
+    _ = args.next();
+    const which = args.next().?;
+    const n = try std.fmt.parseInt(usize, args.next().?, 10);
+    const suite: ztls.CipherSuite = if (std.mem.eql(u8, which, "sha384"))
+        .aes_256_gcm_sha384
+    else
+        .aes_128_gcm_sha256;
+    for (0..n) |_| try connectPair(suite);
+}

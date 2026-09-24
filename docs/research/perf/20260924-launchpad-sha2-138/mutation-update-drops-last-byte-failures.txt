@@ -1,0 +1,71 @@
+[10/891] FAIL: OpenSSL s_server interoperates with ztls P-384 client — error.AuthenticationFailed 
+[11/891] FAIL: OpenSSL s_server interoperates with ztls RFC 10024 client groups — error.AuthenticationFailed 
+[12/891] FAIL: ztls client resumes with OpenSSL s_server 
+[13/891] FAIL: ztls client sends 0-RTT early data to OpenSSL s_server — error.AuthenticationFailed 
+[14/891] FAIL: OpenSSL s_client interoperates with ztls server — error.OpenSslClientFailed 
+[15/891] FAIL: OpenSSL s_client resumes with ztls server-issued ticket — error.OpenSslClientFailed 
+[16/891] FAIL: OpenSSL s_client interoperates with ztls P-384 server — error.OpenSslClientFailed 
+[17/891] FAIL: OpenSSL s_client interoperates with ztls RFC 10024 server groups — error.OpenSslClientFailed 
+[18/891] FAIL: OpenSSL s_client with -cert interoperates with ztls server 
+[19/891] FAIL: ztls client with credentials interoperates with OpenSSL s_server -Verify — error.AuthenticationFailed 
+[293/891] FAIL: transcript hash: RFC 8448 §3 ClientHello || ServerHello — error.TestExpectedEqual 
+[294/891] FAIL: deriveHandshakeKeys: RFC 8448 §3 server handshake key/iv/finished — error.TestExpectedEqual 
+[295/891] FAIL: processServerHello: RFC 8448 §3 installs server handshake keys — error.TestExpectedEqual 
+[310/891] FAIL: processFlight: RFC 8448 §3 full server flight to connected — error.SignatureVerificationFailed 
+[311/891] FAIL: processFlight: rejects handshake message after server Finished — error.TestUnexpectedError 
+[313/891] FAIL: processFlight: reassembles handshake message split across records — error.SignatureVerificationFailed 
+[314/891] FAIL: processFlight: buffered path rejects handshake message after server Finished — error.TestUnexpectedError 
+[315/891] FAIL: processFlight: RFC 8448 §3 flight split one message per record — error.SignatureVerificationFailed 
+[322/891] FAIL: processFlight: rejects wrong server Finished verify_data — error.SignatureVerificationFailed 
+[334/891] FAIL: handleRecord: post-handshake unexpected inner content type is rejected — error.SignatureVerificationFailed 
+[336/891] FAIL: clientFinished: RFC 8448 §3 emits Finished and upgrades to app keys — error.SignatureVerificationFailed 
+[339/891] FAIL: clientFinished: sends empty Certificate before Finished for CertificateRequest — error.SignatureVerificationFailed 
+[340/891] FAIL: clientFinished: empty CertificateRequest with no credentials still finishes — error.SignatureVerificationFailed 
+[342/891] FAIL: ratchetClientKey: RFC 8446 §7.2 next application write key — error.SignatureVerificationFailed 
+[343/891] FAIL: handleRecord: application data resets both post-handshake flood counters — error.SignatureVerificationFailed 
+[344/891] FAIL: receiveRecord: RX progresses while a client TX record is pending — error.SignatureVerificationFailed 
+[345/891] FAIL: receiveKtlsRecord: client processes kernel-decrypted records — error.SignatureVerificationFailed 
+[346/891] FAIL: receiveKtlsRecord: client finds KeyUpdate after NewSessionTicket — error.SignatureVerificationFailed 
+[347/891] FAIL: ratchetKtlsTx: client advances only an idle TX epoch — error.SignatureVerificationFailed 
+[348/891] FAIL: handleRecord: server KeyUpdate
+[349/891] FAIL: handleRecord: KeyUpdate not at record boundary is rejected — error.SignatureVerificationFailed 
+[350/891] FAIL: handleRecord: invalid server KeyUpdate request is rejected — error.SignatureVerificationFailed 
+[351/891] FAIL: handleRecord: server KeyUpdate
+[352/891] FAIL: handleRecord: self-initiated sendKeyUpdate response surfaces rx only — error.SignatureVerificationFailed 
+[354/891] FAIL: sendAlert: encrypted close_notify after handshake — error.SignatureVerificationFailed 
+[355/891] FAIL: handleRecord: close_notify returns closed — error.SignatureVerificationFailed 
+[356/891] FAIL: handleRecord: fatal alert returns PeerAlert — error.SignatureVerificationFailed 
+[357/891] FAIL: handleRecord: NewSessionTicket is surfaced as an event — error.SignatureVerificationFailed 
+[358/891] FAIL: clientFinished: RFC 8448 §4 resumption_master_secret over the live transcript — error.SignatureVerificationFailed 
+[367/891] FAIL: handleRecord: accepts 17 consecutive NewSessionTickets — error.SignatureVerificationFailed 
+[368/891] FAIL: handleRecord: NewSessionTicket flood is rejected with ticket-specific error — error.SignatureVerificationFailed 
+[369/891] FAIL: handleRecord: malformed NewSessionTicket is rejected — error.SignatureVerificationFailed 
+[370/891] FAIL: handleRecord: KeyUpdate flood is rejected — error.SignatureVerificationFailed 
+[371/891] FAIL: handleRecord: empty application data does not reset flood counters — error.SignatureVerificationFailed 
+[372/891] FAIL: handleRecord: KeyUpdate flood cap fires despite empty app-data interleaving — error.SignatureVerificationFailed 
+[374/891] FAIL: handleRecord: drives RFC 8448 §3 handshake to connected — error.AuthenticationFailed 
+[375/891] FAIL: 0.5-RTT: coalesced server data precedes client Finished delivery — error.AuthenticationFailed 
+[376/891] FAIL: handleRecord: unacknowledged write blocks further calls — error.SignatureVerificationFailed 
+[380/891] FAIL: handleRecord: all-zero inner plaintext maps to unexpected_message — error.SignatureVerificationFailed 
+[457/891] FAIL: HkdfSha256.trafficKey: RFC 8448 §3 server handshake — error.TestExpectedEqual 
+[458/891] FAIL: HkdfSha384: traffic key/iv, finished key, traffic-upd 
+[459/891] FAIL: HkdfSha256.trafficIv: RFC 8448 §3 server handshake — error.TestExpectedEqual 
+[461/891] FAIL: HkdfSha256: RFC 8448 §3/§4 PSK and resumption secrets — error.TestExpectedEqual 
+[462/891] FAIL: comptime std constants match the runtime backend hash — error.TestExpectedEqual 
+[463/891] FAIL: HkdfSha256.handshakeSecret: RFC 8448 §3 — error.TestExpectedEqual 
+[464/891] FAIL: HkdfSha256.masterSecret: RFC 8448 §3 — error.TestExpectedEqual 
+[465/891] FAIL: HkdfSha256.clientHandshakeTrafficSecret: RFC 8448 §3 — error.TestExpectedEqual 
+[466/891] FAIL: HkdfSha256.finishedKey: RFC 8448 §3 server — error.TestExpectedEqual 
+[467/891] FAIL: HkdfSha256.nextTrafficSecret: RFC 8446 §7.2 — error.TestExpectedEqual 
+[468/891] FAIL: HkdfSha256.serverHandshakeTrafficSecret: RFC 8448 §3 — error.TestExpectedEqual 
+[683/891] FAIL: acceptClientHello: rejects replaced PSK identity in ClientHello2 despite valid binder — error.TestExpectedError 
+[684/891] FAIL: acceptClientHello: rejects added, reordered, or dropped PSK identities in CH2 — error.TestExpectedError 
+[685/891] FAIL: acceptClientHello: accepts permitted ClientHello2 PSK updates after HRR — error.IllegalParameter 
+[703/891] FAIL: NewSessionTicket emission owns unique bounded nonces — error.TestUnexpectedResult 
+[71/891] FAIL: backend.sha2: one-shot hash matches std for lengths 0..300 — error.TestExpectedEqual 
+[72/891] FAIL: backend.sha2: large inputs match std — error.TestExpectedEqual 
+[73/891] FAIL: backend.sha2: random update splits and copy-then-continue snapshots match std — error.TestExpectedEqual 
+[74/891] FAIL: backend.sha2: copied contexts diverge independently — error.TestExpectedEqual 
+[75/891] FAIL: backend.sha2: HMAC and HKDF over backend types match std — error.TestExpectedEqual 
+[9/891] FAIL: OpenSSL s_server interoperates with ztls client — error.AuthenticationFailed 
+TESTS FAILED

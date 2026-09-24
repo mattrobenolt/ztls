@@ -77,7 +77,7 @@ test "messageHashSynthetic: SHA-384 header" {
 // message_hash(CH1) || HRR || CH2 — this test exercises only the synthetic
 // message structure, not the full transcript.
 test "messageHashSynthetic: RFC 8448 §5 ClientHello1 SHA-256" {
-    const Sha256 = std.crypto.hash.sha2.Sha256;
+    const Sha256 = @import("crypto/backend.zig").sha2.Sha256;
 
     // RFC 8448 §5 — ClientHello1 payload (180 octets), handshake record body.
     const ch1: []const u8 = &.{

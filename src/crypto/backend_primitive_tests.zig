@@ -1427,3 +1427,143 @@ test "backend error-queue hygiene: cert/key mismatch preservation is lane-depend
         try expectQueueMatchesCallerResidue();
     }
 }
+
+// ---------------------------------------------------------------------------
+// SHA-2 — backend.sha2 against std.crypto.hash.sha2 (#138)
+// ---------------------------------------------------------------------------
+
+const sha2_pairs = .{
+    .{ backend.sha2.Sha256, std.crypto.hash.sha2.Sha256 },
+    .{ backend.sha2.Sha384, std.crypto.hash.sha2.Sha384 },
+};
+
+fn sha2Input(buf: []u8, seed: u64) []u8 {
+    var prng: std.Random.DefaultPrng = .init(seed);
+    prng.random().bytes(buf);
+    return buf;
+}
+
+// FIPS 180-4 §6.2, §6.5 — SHA-256 and SHA-384 digests. The backend types
+// match std for every length 0..300, which crosses one and two block
+// boundaries and every padding case for both block sizes.
+test "backend.sha2: one-shot hash matches std for lengths 0..300" {
+    var buf: [300]u8 = undefined;
+    const input = sha2Input(&buf, 0x138);
+    inline for (sha2_pairs) |pair| {
+        const B, const S = pair;
+        comptime std.debug.assert(B.digest_length == S.digest_length);
+        comptime std.debug.assert(B.block_length == S.block_length);
+        for (0..input.len + 1) |len| {
+            var got: [B.digest_length]u8 = undefined;
+            var want: [S.digest_length]u8 = undefined;
+            B.hash(input[0..len], &got, .{});
+            S.hash(input[0..len], &want, .{});
+            try testing.expectEqualSlices(u8, &want, &got);
+        }
+    }
+}
+
+// FIPS 180-4 §6.2, §6.5 — multi-block inputs, including lengths that end one
+// byte past a block boundary.
+test "backend.sha2: large inputs match std" {
+    var buf: [(1 << 16) + 129]u8 = undefined;
+    const input = sha2Input(&buf, 0x1380);
+    const lengths = [_]usize{ 4096, 4097, 1 << 16, (1 << 16) + 1, input.len };
+    inline for (sha2_pairs) |pair| {
+        const B, const S = pair;
+        for (lengths) |len| {
+            var got: [B.digest_length]u8 = undefined;
+            var want: [S.digest_length]u8 = undefined;
+            B.hash(input[0..len], &got, .{});
+            S.hash(input[0..len], &want, .{});
+            try testing.expectEqualSlices(u8, &want, &got);
+        }
+    }
+}
+
+// RFC 8446 §4.4.1 — the transcript hash absorbs messages at arbitrary
+// boundaries and takes Transcript-Hash snapshots by copying the running
+// context. Random split points and a snapshot after every update must match
+// std, and the snapshot must not disturb the running hash.
+test "backend.sha2: random update splits and copy-then-continue snapshots match std" {
+    var buf: [2048]u8 = undefined;
+    const input = sha2Input(&buf, 0x13800);
+    var prng: std.Random.DefaultPrng = .init(0x138000);
+    const random = prng.random();
+    inline for (sha2_pairs) |pair| {
+        const B, const S = pair;
+        for (0..200) |_| {
+            const len = random.uintAtMost(usize, input.len);
+            var b: B = .init(.{});
+            var s: S = .init(.{});
+            var pos: usize = 0;
+            while (pos < len) {
+                const n = random.uintAtMost(usize, @min(len - pos, 300));
+                b.update(input[pos..][0..n]);
+                s.update(input[pos..][0..n]);
+                pos += n;
+
+                var snapshot = b;
+                try testing.expectEqualSlices(u8, &s.peek(), &snapshot.finalResult());
+                try testing.expectEqualSlices(u8, &s.peek(), &b.peek());
+            }
+            var got: [B.digest_length]u8 = undefined;
+            b.final(&got);
+            try testing.expectEqualSlices(u8, &s.finalResult(), &got);
+        }
+    }
+}
+
+// RFC 8446 §4.4.1 — a copied context is an independent value: the copy and
+// the original diverge on different input without sharing state.
+test "backend.sha2: copied contexts diverge independently" {
+    inline for (sha2_pairs) |pair| {
+        const B, const S = pair;
+        var original: B = .init(.{});
+        original.update("ClientHello");
+        var copy = original;
+        copy.update("HelloRetryRequest");
+        original.update("ServerHello");
+
+        var want_original: [S.digest_length]u8 = undefined;
+        var want_copy: [S.digest_length]u8 = undefined;
+        S.hash("ClientHelloServerHello", &want_original, .{});
+        S.hash("ClientHelloHelloRetryRequest", &want_copy, .{});
+        try testing.expectEqualSlices(u8, &want_original, &original.finalResult());
+        try testing.expectEqualSlices(u8, &want_copy, &copy.finalResult());
+    }
+}
+
+// RFC 2104 §2, RFC 5869 §2 — std's generic HMAC and HKDF instantiated over
+// the backend types match the all-std instantiation. Key lengths cover the
+// empty key, a digest-sized key, a block-sized key, and a key longer than a
+// block (hashed first).
+test "backend.sha2: HMAC and HKDF over backend types match std" {
+    var buf: [300]u8 = undefined;
+    const input = sha2Input(&buf, 0x138000);
+    inline for (sha2_pairs) |pair| {
+        const B, const S = pair;
+        const HmacB = std.crypto.auth.hmac.Hmac(B);
+        const HmacS = std.crypto.auth.hmac.Hmac(S);
+        const key_lengths = [_]usize{ 0, B.digest_length, B.block_length, B.block_length + 1, 300 };
+        for (key_lengths) |key_len| {
+            const key = input[0..key_len];
+            const msg = input[key_len / 2 ..];
+            var got: [HmacB.mac_length]u8 = undefined;
+            var want: [HmacS.mac_length]u8 = undefined;
+            HmacB.create(&got, msg, key);
+            HmacS.create(&want, msg, key);
+            try testing.expectEqualSlices(u8, &want, &got);
+
+            const HkdfB = std.crypto.kdf.hkdf.Hkdf(HmacB);
+            const HkdfS = std.crypto.kdf.hkdf.Hkdf(HmacS);
+            const prk_b = HkdfB.extract(key, msg);
+            try testing.expectEqualSlices(u8, &HkdfS.extract(key, msg), &prk_b);
+            var okm_b: [3 * B.digest_length + 5]u8 = undefined;
+            var okm_s: [3 * S.digest_length + 5]u8 = undefined;
+            HkdfB.expand(&okm_b, "tls13 derived", prk_b);
+            HkdfS.expand(&okm_s, "tls13 derived", prk_b);
+            try testing.expectEqualSlices(u8, &okm_s, &okm_b);
+        }
+    }
+}
