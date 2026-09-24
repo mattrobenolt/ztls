@@ -1077,8 +1077,8 @@ fn encapsulateHybrid(
 ) hybrid_kex.Error!void {
     assert(server_share.len == 0);
     assert(shared_secret.len == 0);
-    // The selection that needs a deferred P-256 public key (see KeyPairs).
-    if (share.group == .secp256r1_mlkem768) try self.keypairs.deriveP256();
+    // Encapsulation writes our classical public key: derive it if deferred.
+    try self.keypairs.deriveFor(share.group);
     const result = try hybrid_kex.encapsulate(
         share.group,
         share.data,
@@ -1334,21 +1334,26 @@ fn processClientHelloMessage(
         return hrr;
     } else return error.UnsupportedKeyShare;
 
-    // RFC 8446 §4.2.8 — the one point where a direct P-256 selection needs
-    // our public key. A deferred key (KeyPairs.initDeferredP256) costs
-    // nothing for the X25519 majority.
-    if (client_key_share == .secp256r1) try self.keypairs.deriveP256();
-
     self.negotiated_group = switch (client_key_share) {
         .x25519 => .x25519,
         .secp256r1 => .secp256r1,
         .secp384r1 => .secp384r1,
         .kem => |*share| share.group,
     };
+    // RFC 8446 §4.2.8 — the one point where a classical selection needs our
+    // public key. A deferred key (KeyPairs.initDeferred) is derived for the
+    // selected group only; a hybrid derived its key at encapsulation.
+    try self.keypairs.deriveFor(self.negotiated_group);
 
     const server_key_share: server_hello.KeyShare = switch (client_key_share) {
-        .x25519 => .{ .x25519 = self.keypairs.x25519.public_key },
-        .secp256r1 => .{ .secp256r1 = self.keypairs.p256.public_key },
+        .x25519 => blk: {
+            assert(self.keypairs.derived.contains(.x25519));
+            break :blk .{ .x25519 = self.keypairs.x25519.public_key };
+        },
+        .secp256r1 => blk: {
+            assert(self.keypairs.derived.contains(.p256));
+            break :blk .{ .secp256r1 = self.keypairs.p256.public_key };
+        },
         .secp384r1 => blk: {
             const keypair = if (self.keypairs.p384) |*pair| pair else unreachable;
             break :blk .{ .secp384r1 = keypair.public_key };
@@ -3267,7 +3272,14 @@ test "acceptClientHello: negotiates secp256r1 key share" {
 
 const ClientShareForTest = enum { x25519, secp256r1 };
 
-fn deferredP256ServerHello(
+// RFC 7748 §6.1 — Alice's scalar and public key: a deferred X25519 key must
+// derive to exactly this.
+const test_x25519_seed = memx.hex(32, "77076d0a7318a57d3c16c17251b26645" ++
+    "df4c2f87ebc0992ab177fba51db92c2a");
+const test_x25519_public = memx.hex(32, "8520f0098930a754748b7ddcb43ef75a" ++
+    "0dbf3a0d26381af4eba4a98eaa9b4e6a");
+
+fn deferredServerHello(
     hs: *ServerHandshake,
     server_p256_secret: p256.SecretKey,
     client_share: ClientShareForTest,
@@ -3288,7 +3300,7 @@ fn deferredP256ServerHello(
     @memcpy(record[frame.header_len..][0..ch.len], ch);
 
     hs.* = .init(.{
-        .keypairs = .initDeferredP256(.generate(), server_p256_secret),
+        .keypairs = .initDeferred(.init(test_x25519_seed), server_p256_secret),
         .random = .zero,
     });
     const sh_record = try hs.acceptClientHello(record[0 .. frame.header_len + ch.len], out);
@@ -3296,27 +3308,31 @@ fn deferredP256ServerHello(
     return server_hello.parse(sh_record[frame.header_len..][0..hdr.length()]);
 }
 
-// RFC 8446 §4.2.8 — a server that selects X25519 never uses its P-256 share,
-// so a deferred P-256 key is never derived.
-test "acceptClientHello: X25519 selection leaves a deferred P-256 key underived" {
+// RFC 8446 §4.2.8, RFC 7748 §6.1 — selecting X25519 derives the deferred
+// X25519 key, never the unused P-256 one, and the ServerHello share is the
+// scalar's public key.
+test "acceptClientHello: X25519 selection derives only the deferred X25519 key" {
     var hs: ServerHandshake = undefined;
     var out: [512]u8 = undefined;
-    _ = try deferredP256ServerHello(&hs, .init(test_p256_seed_b), .x25519, &out);
+    const sh = try deferredServerHello(&hs, .init(test_p256_seed_b), .x25519, &out);
     defer hs.deinit();
     try testing.expectEqual(NamedGroup.x25519, hs.negotiated_group);
-    try testing.expectEqual(KeyPairs.P256Public.deferred, hs.keypairs.p256_public);
+    try testing.expect(hs.keypairs.derived.eql(.init(.{ .x25519 = true })));
+    try testing.expectEqualSlices(u8, &test_x25519_public, &sh.key_share.x25519.data);
 }
 
-// RFC 8446 §4.2.8.2 — selecting secp256r1 derives the deferred key, and the
-// ServerHello share is the scalar's SEC1 point.
-test "acceptClientHello: secp256r1 selection derives a deferred P-256 key" {
+// RFC 8446 §4.2.8.2 — selecting secp256r1 derives the deferred P-256 key,
+// never the unused X25519 one, and the ServerHello share is the scalar's
+// SEC1 point.
+test "acceptClientHello: P-256 selection never derives the deferred X25519 key" {
     const expected = try p256.KeyPair.generateDeterministic(.init(test_p256_seed_b));
     var hs: ServerHandshake = undefined;
     var out: [512]u8 = undefined;
-    const sh = try deferredP256ServerHello(&hs, .init(test_p256_seed_b), .secp256r1, &out);
+    const sh = try deferredServerHello(&hs, .init(test_p256_seed_b), .secp256r1, &out);
     defer hs.deinit();
     try testing.expectEqual(NamedGroup.secp256r1, hs.negotiated_group);
-    try testing.expectEqual(KeyPairs.P256Public.derived, hs.keypairs.p256_public);
+    try testing.expect(hs.keypairs.derived.eql(.init(.{ .p256 = true })));
+    try testing.expect(mem.allEqual(u8, &hs.keypairs.x25519.public_key.data, 0));
     try testing.expectEqualSlices(u8, &expected.public_key.data, &sh.key_share.secp256r1.data);
     try testing.expectEqual(.wait_client_finished, hs.state);
 }
@@ -3326,7 +3342,7 @@ test "acceptClientHello: secp256r1 selection derives a deferred P-256 key" {
 test "acceptClientHello: an invalid deferred P-256 scalar is redrawn" {
     var hs: ServerHandshake = undefined;
     var out: [512]u8 = undefined;
-    const sh = try deferredP256ServerHello(&hs, .init(@splat(0)), .secp256r1, &out);
+    const sh = try deferredServerHello(&hs, .init(@splat(0)), .secp256r1, &out);
     defer hs.deinit();
     try testing.expectEqual(NamedGroup.secp256r1, hs.negotiated_group);
     const check = try p256.KeyPair.fromSecret(hs.keypairs.p256.secret_key);
@@ -9614,18 +9630,103 @@ test "preferredHybridShare follows server preference" {
     try testing.expectEqual(NamedGroup.secp256r1_mlkem768, selected.?.group);
 }
 
+/// Deferred server keypairs with fixed scalars (RFC 7748 §6.1 Alice for
+/// X25519) so a derived ServerHello share is checkable.
+fn deferredTestKeyPairs() KeyPairs {
+    return .initDeferred(.init(test_x25519_seed), .init(test_p256_seed_b));
+}
+
+/// Each standardized hybrid group with the deferred public key its
+/// classical component needs (RFC 10024 §4).
+const HybridDerivation = struct { group: NamedGroup, derived: std.EnumSet(KeyPairs.Public) };
+const hybrid_derivations = [_]HybridDerivation{
+    .{ .group = .x25519_mlkem768, .derived = .init(.{ .x25519 = true }) },
+    .{ .group = .secp256r1_mlkem768, .derived = .init(.{ .p256 = true }) },
+    .{ .group = .secp384r1_mlkem1024, .derived = .initEmpty() },
+};
+
+/// RFC 8446 §2 — drive a handshake from the ServerHello the server just
+/// wrote to connected on both sides, then round-trip application data.
+fn finishInMemoryHandshake(
+    client: *ClientHandshake,
+    server: *ServerHandshake,
+    sh_record: []u8,
+) !void {
+    var client_out: [4096]u8 = undefined;
+    var server_out: [4096]u8 = undefined;
+    _ = try client.handleRecord(sh_record, &client_out);
+
+    var signer = try signature.PrivateKey.fromP256Scalar(serverEcdsaScalar()[0..32]);
+    defer signer.deinit();
+    var plaintext: [4096]u8 = undefined;
+    const flight_record = try server.sendAuthenticatedFlight(
+        &.{serverEcdsaCertDer()},
+        signer.signer(),
+        &plaintext,
+        &server_out,
+    );
+    const flight_ev = try client.handleRecord(server_out[0..flight_record.len], &client_out);
+    const client_finished = switch (flight_ev) {
+        .write => |w| w,
+        else => return error.UnexpectedEvent,
+    };
+    client.completeWrite();
+    try testing.expect(client.isConnected());
+
+    try server.processClientFinished(client_out[0..client_finished.len]);
+    try testing.expect(server.isConnected());
+
+    const client_app = try client.sendApplicationData("ping", &client_out);
+    client.completeWrite();
+    try testing.expectEqualStrings(
+        "ping",
+        try server.receiveApplicationData(client_out[0..client_app.len]),
+    );
+    const server_app = try server.sendApplicationData("pong", &server_out);
+    var server_app_mut: [128]u8 = undefined;
+    @memcpy(server_app_mut[0..server_app.len], server_app);
+    const app_ev = try client.handleRecord(server_app_mut[0..server_app.len], &client_out);
+    try testing.expectEqualStrings("pong", app_ev.application_data);
+}
+
+// RFC 8446 §4.2.8, §7.4.2 — a client that offers X25519 and P-256 shares
+// gets X25519. The server derives that one deferred key, and the handshake
+// reaches application data on it.
+test "in-memory X25519 handshake on deferred keypairs reaches app data" {
+    var client: ClientHandshake = .init(.{
+        .keypairs = try .init(.generate()),
+        .host_name = null,
+        .now_sec = 0,
+        .random = .zero,
+    });
+    client.policy.insecure_no_chain_anchor = true;
+    defer client.deinit();
+    var client_out: [4096]u8 = undefined;
+    const ch_record = try client.start(&client_out);
+    client.completeWrite();
+
+    var server: ServerHandshake = .init(.{ .keypairs = deferredTestKeyPairs(), .random = .zero });
+    defer server.deinit();
+    var server_out: [4096]u8 = undefined;
+    const sh_record = try server.acceptClientHello(ch_record, &server_out);
+    try testing.expectEqual(NamedGroup.x25519, server.negotiated_group);
+    try testing.expect(server.keypairs.derived.eql(.init(.{ .x25519 = true })));
+    try testing.expectEqualSlices(u8, &test_x25519_public, &server.keypairs.x25519.public_key.data);
+
+    try finishInMemoryHandshake(&client, &server, server_out[0..sh_record.len]);
+    // Derived once: the finished handshake still holds the RFC 7748 key.
+    try testing.expectEqualSlices(u8, &test_x25519_public, &server.keypairs.x25519.public_key.data);
+}
+
 // RFC 10024 §4 — every standardized hybrid group completes an in-memory
 // authenticated handshake and protects application data with the composed
-// ECDHE + ML-KEM shared secret.
+// ECDHE + ML-KEM shared secret. The server's classical keys start deferred:
+// encapsulation derives exactly the one the group uses.
 test "in-memory RFC 10024 hybrid group matrix reaches app data" {
-    const groups = [_]NamedGroup{
-        .x25519_mlkem768,
-        .secp256r1_mlkem768,
-        .secp384r1_mlkem1024,
-    };
     var tested = false;
 
-    for (groups) |group| {
+    for (hybrid_derivations) |case| {
+        const group = case.group;
         if (!backend.supportsServerHybridGroup(group)) continue;
         tested = true;
 
@@ -9649,14 +9750,9 @@ test "in-memory RFC 10024 hybrid group matrix reaches app data" {
         const ch_record = try client.start(&client_out);
         client.completeWrite();
 
-        var server_config = try testConfig(.generate());
+        var server_config: Config = .{ .keypairs = deferredTestKeyPairs(), .random = .zero };
         if (group == .secp384r1_mlkem1024)
             server_config.keypairs.p384 = try .generate();
-        // The P-256 hybrid runs on a deferred key: encapsulation derives it.
-        if (group == .secp256r1_mlkem768) server_config.keypairs = .initDeferredP256(
-            .generate(),
-            (try p256.KeyPair.generate()).secret_key,
-        );
         server_config.hybrid_groups = &enabled_groups;
         var server: ServerHandshake = .init(server_config);
         defer server.deinit();
@@ -9664,46 +9760,9 @@ test "in-memory RFC 10024 hybrid group matrix reaches app data" {
         var server_out: [4096]u8 = undefined;
         const sh_record = try server.acceptClientHello(ch_record, &server_out);
         try testing.expectEqual(group, server.negotiated_group);
+        try testing.expect(server.keypairs.derived.eql(case.derived));
 
-        _ = try client.handleRecord(server_out[0..sh_record.len], &client_out);
-
-        var signer = try signature.PrivateKey.fromP256Scalar(serverEcdsaScalar()[0..32]);
-        defer signer.deinit();
-        var plaintext: [4096]u8 = undefined;
-        const flight_record = try server.sendAuthenticatedFlight(
-            &.{serverEcdsaCertDer()},
-            signer.signer(),
-            &plaintext,
-            &server_out,
-        );
-        const flight_ev = try client.handleRecord(
-            server_out[0..flight_record.len],
-            &client_out,
-        );
-        const client_finished = switch (flight_ev) {
-            .write => |w| w,
-            else => return error.UnexpectedEvent,
-        };
-        client.completeWrite();
-        try testing.expect(client.isConnected());
-
-        try server.processClientFinished(client_out[0..client_finished.len]);
-        try testing.expect(server.isConnected());
-
-        const client_app = try client.sendApplicationData("ping", &client_out);
-        client.completeWrite();
-        try testing.expectEqualStrings(
-            "ping",
-            try server.receiveApplicationData(client_out[0..client_app.len]),
-        );
-        const server_app = try server.sendApplicationData("pong", &server_out);
-        var server_app_mut: [128]u8 = undefined;
-        @memcpy(server_app_mut[0..server_app.len], server_app);
-        const app_ev = try client.handleRecord(
-            server_app_mut[0..server_app.len],
-            &client_out,
-        );
-        try testing.expectEqualStrings("pong", app_ev.application_data);
+        try finishInMemoryHandshake(&client, &server, server_out[0..sh_record.len]);
     }
 
     if (!tested) return error.SkipZigTest;
@@ -9711,16 +9770,14 @@ test "in-memory RFC 10024 hybrid group matrix reaches app data" {
 
 // RFC 8446 §4.1.4, RFC 10024 §4.1 — advertising a hybrid group without an
 // initial share lets the server select it through HRR; ClientHello2 then
-// carries exactly that group's full hybrid share.
+// carries exactly that group's full hybrid share. ClientHello1 carries real
+// X25519 and P-256 shares the server passes over, so HRR derives nothing and
+// ClientHello2 derives only the hybrid's classical key.
 test "RFC 10024 hybrid group matrix negotiates through HRR" {
-    const groups = [_]NamedGroup{
-        .x25519_mlkem768,
-        .secp256r1_mlkem768,
-        .secp384r1_mlkem1024,
-    };
     var tested = false;
 
-    for (groups) |group| {
+    for (hybrid_derivations) |case| {
+        const group = case.group;
         if (!backend.supportsServerHybridGroup(group)) continue;
         tested = true;
 
@@ -9739,15 +9796,13 @@ test "RFC 10024 hybrid group matrix negotiates through HRR" {
         var client_out: [4096]u8 = undefined;
         const ch1_record = try client.start(&client_out);
         client.completeWrite();
+        const ch1_header = try frame.parseHeader(ch1_record);
+        const ch1 = try client_hello.parse(ch1_record[frame.header_len..][0..ch1_header.length()]);
+        try testing.expect(ch1.public_key != null and ch1.public_key_p256 != null);
 
-        var server_config = try testConfig(.generate());
+        var server_config: Config = .{ .keypairs = deferredTestKeyPairs(), .random = .zero };
         if (group == .secp384r1_mlkem1024)
             server_config.keypairs.p384 = try .generate();
-        // The P-256 hybrid runs on a deferred key: encapsulation derives it.
-        if (group == .secp256r1_mlkem768) server_config.keypairs = .initDeferredP256(
-            .generate(),
-            (try p256.KeyPair.generate()).secret_key,
-        );
         server_config.hybrid_groups = &enabled_groups;
         var server: ServerHandshake = .init(server_config);
         defer server.deinit();
@@ -9759,6 +9814,7 @@ test "RFC 10024 hybrid group matrix negotiates through HRR" {
             hrr_record[frame.header_len..][0..hrr_header.length()],
         );
         try testing.expectEqual(group, hrr.selected_group.?);
+        try testing.expect(server.keypairs.derived.eql(.initEmpty()));
 
         var hrr_rx: [4096]u8 = undefined;
         @memcpy(hrr_rx[0..hrr_record.len], hrr_record);
@@ -9780,6 +9836,7 @@ test "RFC 10024 hybrid group matrix negotiates through HRR" {
 
         const sh_record = try server.acceptClientHello(ch2_record, &server_out);
         try testing.expectEqual(group, server.negotiated_group);
+        try testing.expect(server.keypairs.derived.eql(case.derived));
         _ = try client.handleRecord(server_out[0..sh_record.len], &client_out);
         try testing.expectEqual(group, client.retry_selected_group.?);
     }
@@ -9840,7 +9897,6 @@ test "hybrid share requires explicit server policy" {
 // §4.4.1 transcript collapse end-to-end.
 test "in-memory HRR round trip reaches app data" {
     const client_keypair: x25519.KeyPair = .generate();
-    const server_keypair: x25519.KeyPair = .generate();
 
     var client: ClientHandshake = .init(.{
         .keypairs = try .init(client_keypair),
@@ -9876,7 +9932,9 @@ test "in-memory HRR round trip reaches app data" {
     client.pending_write.mark();
     client.completeWrite();
 
-    var server: ServerHandshake = .init(try testConfig(server_keypair));
+    // Deferred keys: HRR names a group without deriving anything, and
+    // ClientHello2 derives the X25519 key alone (#136).
+    var server: ServerHandshake = .init(.{ .keypairs = deferredTestKeyPairs(), .random = .zero });
     defer server.deinit();
     var server_out: [4096]u8 = undefined;
     const hrr_record = try server.acceptClientHello(
@@ -9889,8 +9947,9 @@ test "in-memory HRR round trip reaches app data" {
     const hrr = try server_hello.parseHelloRetryRequest(
         hrr_record[frame.header_len..][0..hrr_hdr.length()],
     );
-    try testing.expect(hrr.selected_group != null);
+    try testing.expectEqual(NamedGroup.x25519, hrr.selected_group.?);
     try testing.expectEqual(.wait_ch, server.state);
+    try testing.expect(server.keypairs.derived.eql(.initEmpty()));
 
     // Client consumes the HRR and emits ClientHello2 as a framed .write event.
     var client_out: [1024]u8 = undefined;
@@ -9914,6 +9973,7 @@ test "in-memory HRR round trip reaches app data" {
     // Server accepts ClientHello2 and emits ServerHello.
     const sh_record = try server.acceptClientHello(ch2_record[0..ch2_msg.len], &server_out);
     try testing.expectEqual(.wait_client_finished, server.state);
+    try testing.expect(server.keypairs.derived.eql(.init(.{ .x25519 = true })));
     // Client processes the real ServerHello (post-HRR).
     try client.processServerHello(sh_record[frame.header_len..]);
 

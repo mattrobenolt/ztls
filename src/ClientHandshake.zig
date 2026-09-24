@@ -268,6 +268,25 @@ test "start validates hybrid policy before key generation and output" {
     try testing.expect(mem.allEqual(u8, &out, 0xaa));
 }
 
+// RFC 8446 §4.2.8 — every KeyShareEntry carries the sender's real public
+// key. A deferred server-side key is all zero, so init refuses it (#136).
+test "init refuses deferred X25519 or P-256 keypairs" {
+    var deferred = [_]KeyPairs{
+        try .init(.generate()),
+        .initDeferredP256(.generate(), .init(@splat(0x42))),
+        .initDeferred(.init(@splat(0x11)), .init(@splat(0x42))),
+    };
+    // No constructor defers X25519 alone; the check must not depend on one.
+    deferred[0].derived.remove(.x25519);
+    for (&deferred) |*kp| {
+        defer kp.secureZero();
+        try testing.expectError(error.DeferredKeyPair, requireDerivedKeyPairs(kp));
+    }
+    var eager: KeyPairs = try .init(.generate());
+    defer eager.secureZero();
+    try requireDerivedKeyPairs(&eager);
+}
+
 const ServerFlightProgress = enum {
     none,
     certificate_verified,
@@ -633,16 +652,20 @@ server_finished_hash_len: u8 = 0,
 /// same group. RFC 8446 §4.1.4.
 retry_selected_group: ?NamedGroup = null,
 
+/// A client sends its shares in the first flight: nothing to defer. A
+/// deferred key would go out as an all-zero X25519 or P-256 share.
+fn requireDerivedKeyPairs(keypairs: *const KeyPairs) error{DeferredKeyPair}!void {
+    if (!keypairs.derived.eql(.initFull())) return error.DeferredKeyPair;
+}
+
 /// Start a client handshake from a Config. The Config's `host_name` is the
 /// single source for SNI and certificate validation; `now_sec` is required.
 /// `policy` remains public for advanced overrides (e.g. leaf_usage) after init.
 pub fn init(config: Config) ClientHandshake {
-    // A client sends its shares in the first flight: nothing to defer. A
-    // deferred key here would encode an all-zero P-256 share, so the check
-    // must survive ReleaseFast: a caller bug, not a runtime condition.
-    if (config.keypairs.p256_public != .derived) {
-        @panic("ClientHandshake.init: deferred P-256 keypair (server-only constructor)");
-    }
+    // The check must survive ReleaseFast: a caller bug, not a runtime
+    // condition.
+    requireDerivedKeyPairs(&config.keypairs) catch
+        @panic("ClientHandshake.init: deferred keypair (server-only constructor)");
     return .{
         .state = .start,
         // Hash unknown until ServerHello: run both candidate transcripts.

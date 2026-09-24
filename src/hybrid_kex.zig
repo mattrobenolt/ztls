@@ -4,6 +4,7 @@
 //! role-specific key_share component order and the shared-secret concatenation
 //! required by RFC 10024, without allocating or copying whole shares.
 const std = @import("std");
+const assert = std.debug.assert;
 const testing = std.testing;
 
 const backend = @import("crypto/backend.zig");
@@ -217,8 +218,15 @@ fn writeClassicalPublic(
     out: []u8,
 ) Error!void {
     switch (group) {
-        .x25519 => @memcpy(out, &keypairs.x25519.public_key.data),
-        .secp256r1 => @memcpy(out, &keypairs.p256.public_key.data),
+        // A deferred key is all zero until derived (KeyPairs.deriveFor).
+        .x25519 => {
+            assert(keypairs.derived.contains(.x25519));
+            @memcpy(out, &keypairs.x25519.public_key.data);
+        },
+        .secp256r1 => {
+            assert(keypairs.derived.contains(.p256));
+            @memcpy(out, &keypairs.p256.public_key.data);
+        },
         .secp384r1 => {
             const keypair = if (keypairs.p384) |*pair| pair else return error.UnsupportedGroup;
             @memcpy(out, &keypair.public_key.data);
@@ -284,9 +292,9 @@ comptime {
         .secp384r1_mlkem1024,
     }) |group| {
         const spec = group.hybridSpec().?;
-        std.debug.assert(spec.client_share_len <= max_client_share_len);
-        std.debug.assert(spec.server_share_len <= max_server_share_len);
-        std.debug.assert(spec.shared_secret_len <= max_shared_secret_len);
+        assert(spec.client_share_len <= max_client_share_len);
+        assert(spec.server_share_len <= max_server_share_len);
+        assert(spec.shared_secret_len <= max_shared_secret_len);
     }
 }
 
