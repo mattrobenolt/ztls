@@ -78,6 +78,9 @@ pub const KeyPairs = struct {
         switch (classical) {
             .x25519 => try self.deriveX25519(),
             .secp256r1 => try self.deriveP256(),
+            // Only X25519 and P-256 can be deferred (`Public`). P-384 is
+            // always eager, and selection requires its keypair. A new
+            // deferrable group needs its own arm here.
             else => {},
         }
     }
