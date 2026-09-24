@@ -63,11 +63,44 @@ pub fn advance(self: *RecordBuffer, n: usize) void {
     self.filled += n;
 }
 
+pub const NextError = error{
+    /// The header's length exceeds the RFC 8446 §5.2 maximum.
+    RecordTooLarge,
+    /// The header's content type is none of the four TLS 1.3 defines
+    /// (RFC 8446 §5: terminate with `unexpected_message`).
+    UnexpectedRecord,
+};
+
 /// Return the next complete record as a mutable slice into storage, or null if
 /// a full record isn't buffered yet (read more via writable/advance). The slice
 /// stays valid until the next `next()` or `writable()` call — decrypt it in
 /// place before then. RFC 8446 §5.1.
-pub fn next(self: *RecordBuffer) error{RecordTooLarge}!?[]u8 {
+///
+/// A header fails as soon as its 5 bytes arrive, before any wait for the
+/// body. A non-TLS peer (an HTTP request, a Postgres StartupMessage) reads
+/// as a header with a plausible length and no valid type, so waiting for
+/// its body would hold the connection until the peer gives up (#139).
+pub fn next(self: *RecordBuffer) NextError!?[]u8 {
+    const hdr = try self.header() orelse return null;
+    const avail = self.storage[self.pos..self.filled];
+    const total = frame.header_len + hdr.length();
+    if (avail.len < total) return null;
+    self.pos += total;
+    return avail[0..total];
+}
+
+/// True when the next `next()` call returns without more transport reads:
+/// a complete record is buffered, or the buffered header already fails.
+/// Poll-style drive loops use this to drain coalesced records, and to reach
+/// a header error, without blocking on the transport.
+pub fn hasRecord(self: *const RecordBuffer) bool {
+    const hdr = (self.header() catch return true) orelse return false;
+    const avail = self.storage[self.pos..self.filled];
+    return avail.len >= frame.header_len + hdr.length();
+}
+
+/// The buffered record header, null before 5 bytes arrive.
+fn header(self: *const RecordBuffer) NextError!?frame.Header {
     const avail = self.storage[self.pos..self.filled];
     if (avail.len < frame.header_len) return null;
     const hdr = frame.parseHeader(avail) catch |e| return switch (e) {
@@ -75,20 +108,15 @@ pub fn next(self: *RecordBuffer) error{RecordTooLarge}!?[]u8 {
         error.BufferTooShort => unreachable,
         error.RecordTooLarge => error.RecordTooLarge,
     };
-    const total = frame.header_len + hdr.length();
-    if (avail.len < total) return null;
-    self.pos += total;
-    return avail[0..total];
-}
-
-/// True when a complete record is buffered and the next `next()` call will
-/// return it without more transport reads. Poll-style drive loops use this to
-/// drain coalesced records without blocking on the transport.
-pub fn hasRecord(self: *const RecordBuffer) bool {
-    const avail = self.storage[self.pos..self.filled];
-    if (avail.len < frame.header_len) return false;
-    const hdr = frame.parseHeader(avail) catch return false;
-    return avail.len >= frame.header_len + hdr.length();
+    switch (hdr.content_type) {
+        .change_cipher_spec, .alert, .handshake, .application_data => return hdr,
+        // legacy_record_version stays unchecked: RFC 8446 §5.1 says it
+        // "MUST be ignored for all purposes".
+        .invalid, _ => {
+            @branchHint(.cold);
+            return error.UnexpectedRecord;
+        },
+    }
 }
 
 /// True when no transport bytes remain buffered, including a partial record.
@@ -179,6 +207,64 @@ test "next: in-place mutation of a returned record survives across next()" {
     // r1's bytes are untouched by next() (no compaction until writable()).
     try testing.expectEqual(@as(u8, 0xff), r1[5]);
     try testing.expectEqual(@as(u8, 0x22), r2[5]);
+}
+
+fn expectUnexpected(data: []const u8) !void {
+    var storage: [min_storage]u8 = undefined;
+    var rb: RecordBuffer = .init(&storage);
+    @memcpy(rb.writable()[0..data.len], data);
+    rb.advance(data.len);
+    // The verdict is ready without the body: a poll loop reaches it.
+    try testing.expect(rb.hasRecord());
+    try testing.expectError(error.UnexpectedRecord, rb.next());
+}
+
+// RFC 8446 §5 — an unexpected record type terminates the connection. A
+// non-TLS peer's first flight fails at its 5th byte instead of waiting for a
+// body it will never send (#139).
+test "next: a header with an invalid content type fails before its body" {
+    // `GET / HTTP/1.1` reads as type 0x47, length 0x202f (8,239).
+    try expectUnexpected("GET /");
+    try expectUnexpected("GET / HTTP/1.1\r\n");
+    // A Postgres StartupMessage (protocol 3.0) reads as type 0, length 0x2900.
+    try expectUnexpected(&.{ 0x00, 0x00, 0x00, 0x29, 0x00, 0x00, 0x03, 0x00, 0x00 });
+    // Every type outside the four TLS 1.3 defines, including heartbeat (24),
+    // which TLS 1.3 does not use.
+    for ([_]u8{ 0, 1, 19, 24, 25, 0x80, 0xff }) |t| {
+        try expectUnexpected(&.{ t, 0x03, 0x03, 0x00, 0x10 });
+    }
+    // Fewer than 5 bytes is no verdict yet.
+    try expectIncomplete("GET ");
+}
+
+test "next: each valid content type still waits for its body" {
+    for ([_]u8{ 20, 21, 22, 23 }) |t| {
+        var storage: [min_storage]u8 = undefined;
+        var rb: RecordBuffer = .init(&storage);
+        // legacy_record_version is ignored, so a 0x0301 initial ClientHello
+        // and a nonsense version both frame.
+        const hdr = [_]u8{ t, 0x03, 0x01, 0x00, 0x02 };
+        @memcpy(rb.writable()[0..hdr.len], &hdr);
+        rb.advance(hdr.len);
+        try testing.expect(!rb.hasRecord());
+        try testing.expectEqual(@as(?[]u8, null), try rb.next());
+        const body = [_]u8{ 0xaa, 0xbb };
+        @memcpy(rb.writable()[0..body.len], &body);
+        rb.advance(body.len);
+        try testing.expect(rb.hasRecord());
+        try testing.expectEqual(@as(usize, 7), (try rb.next()).?.len);
+    }
+}
+
+test "hasRecord: an oversized header is ready, so a poll loop reaches the error" {
+    var storage: [min_storage]u8 = undefined;
+    var rb: RecordBuffer = .init(&storage);
+    const len: u16 = frame.max_ciphertext_len + 1;
+    const hdr = [_]u8{ 23, 0x03, 0x03, @intCast(len >> 8), @intCast(len & 0xff) };
+    @memcpy(rb.writable()[0..hdr.len], &hdr);
+    rb.advance(hdr.len);
+    try testing.expect(rb.hasRecord());
+    try testing.expectError(error.RecordTooLarge, rb.next());
 }
 
 test "next: oversized length is rejected" {
