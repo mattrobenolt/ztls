@@ -10,7 +10,7 @@
 //! After the handshake completes, rx/tx carry application traffic keys; the
 //! finale round-trips a message through them to show they are live.
 const std = @import("std");
-const print = std.debug.print;
+const Io = std.Io;
 const Allocator = std.mem.Allocator;
 
 const txtar = @import("txtar");
@@ -100,8 +100,12 @@ fn fixture(alloc: Allocator, name: []const u8, out: []u8) ![]u8 {
     return error.FixtureNotFound;
 }
 
-pub fn main() !void {
-    print("=== TLS 1.3 client handshake (RFC 8448 §3) ===\n\n", .{});
+pub fn main(init: std.process.Init) !void {
+    var stdout_buf: [4096]u8 = undefined;
+    var stdout_file = Io.File.stdout().writer(init.io, &stdout_buf);
+    const stdout = &stdout_file.interface;
+    defer stdout.flush() catch {};
+    try stdout.print("=== TLS 1.3 client handshake (RFC 8448 §3) ===\n\n", .{});
 
     var fixture_buf: [8192]u8 = undefined;
     var fba: std.heap.FixedBufferAllocator = .init(&fixture_buf);
@@ -114,12 +118,14 @@ pub fn main() !void {
         .host_name = null,
         .now_sec = 0,
         .random = .zero,
+        // The RFC 8448 §3 trace cert is fixed test data with no anchor.
+        .insecure_no_chain_anchor = true,
     });
     defer hs.deinit();
     // We replay the fixed §3 ClientHello (so the transcript matches the trace),
     // so inject it rather than encoding a fresh one via start().
     hs.injectClientHello(&client_hello);
-    print("[client] ClientHello sent ({} bytes)          → state={s}\n", .{
+    try stdout.print("[client] ClientHello sent ({} bytes)          → state={s}\n", .{
         client_hello.len, @tagName(hs.state),
     });
 
@@ -128,19 +134,25 @@ pub fn main() !void {
     // Each server record goes through the one inbound entry point, handleRecord.
     var sh = server_hello_record;
     _ = try hs.handleRecord(&sh, &out.buffer);
-    print("[server] ServerHello                          → state={s}\n", .{@tagName(hs.state)});
+    try stdout.print("[server] ServerHello → state={s}\n", .{@tagName(hs.state)});
 
     var ccs = ccs_record;
     _ = try hs.handleRecord(&ccs, &out.buffer);
-    print("[server] ChangeCipherSpec (discarded)         → state={s}\n", .{@tagName(hs.state)});
+    try stdout.print(
+        "[server] ChangeCipherSpec (discarded) → state={s}\n",
+        .{@tagName(hs.state)},
+    );
 
     const ev = try hs.handleRecord(server_flight_record, &out.buffer);
-    print("[server] EncryptedExtensions/Cert/CV/Finished → state={s}\n", .{@tagName(hs.state)});
-    print("[client] Finished sent ({} wire bytes)\n", .{ev.write.len});
+    try stdout.print(
+        "[server] EncryptedExtensions/Cert/CV/Finished → state={s}\n",
+        .{@tagName(hs.state)},
+    );
+    try stdout.print("[client] Finished sent ({} wire bytes)\n", .{ev.write.len});
     hs.completeWrite(); // acknowledge the Finished was sent
 
     if (!hs.isConnected()) return error.HandshakeIncomplete;
-    print("\n=== handshake complete — application keys installed ===\n\n", .{});
+    try stdout.print("\n=== handshake complete — application keys installed ===\n\n", .{});
 
     // Application data round-trip with the negotiated keys. Capture a mirror of
     // our send layer to stand in for the peer's read side.
@@ -150,10 +162,10 @@ pub fn main() !void {
     var app_out: ztls.ClientHandshake.OutBuffer = .empty;
     const record = try hs.sendApplicationData(message, &app_out.buffer);
     app_out.resize(@intCast(record.len));
-    print("[client] encrypted {} bytes                    → {} wire bytes\n", .{
+    try stdout.print("[client] encrypted {} bytes                    → {} wire bytes\n", .{
         message.len, record.len,
     });
 
     const dec = try peer.decrypt(app_out.slice());
-    print("[peer]   decrypted: \"{s}\"\n", .{dec.content});
+    try stdout.print("[peer]   decrypted: \"{s}\"\n", .{dec.content});
 }

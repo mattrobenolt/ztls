@@ -34,9 +34,9 @@
 //! window is the point.
 //!
 //! fd plumbing that `std.posix` dropped in Zig 0.16 (`pipe`, `dup2`, `fcntl`,
-//! `alarm`) goes through libc, so this check compiles unchanged under 0.15.2
-//! and 0.16 on Linux and macOS; reads use `std.posix.read`, whose
-//! `error.WouldBlock` is the typed form of "this non-blocking fd is empty".
+//! `alarm`) goes through libc on Linux and macOS; reads use `std.posix.read`,
+//! whose `error.WouldBlock` is the typed form of "this non-blocking fd is
+//! empty".
 const std = @import("std");
 const ztls = @import("ztls");
 const fixtures = @import("fixtures");

@@ -11,26 +11,25 @@
 //! If no peer is listening, this example exits non-zero instead of pretending
 //! it proved TLS.
 const std = @import("std");
+const Io = std.Io;
 const print = std.debug.print;
 const CertificateBundle = std.crypto.Certificate.Bundle;
 
 const fixtures = @import("fixtures");
-const net = @import("net_compat");
-const Address = net.Address;
 const ztls = @import("ztls");
+
+const IpAddress = Io.net.IpAddress;
 
 const trust_anchor_der: []const u8 = &fixtures.server_ecdsa_cert_der;
 const connect_host = "127.0.0.1";
 const server_name = "ztls.server.test";
 const port: u16 = 8443;
 
-var debug_allocator: std.heap.DebugAllocator(.{}) = .init;
-
-pub fn main() !void {
-    const gpa = debug_allocator.allocator();
-    defer _ = debug_allocator.deinit();
-    const addr: Address = try net.parseIp(connect_host, port);
-    const stream = net.connect(addr) catch |err| switch (err) {
+pub fn main(init: std.process.Init) !void {
+    const io = init.io;
+    const gpa = init.gpa;
+    const addr: IpAddress = try .parse(connect_host, port);
+    const stream = addr.connect(io, .{ .mode = .stream }) catch |err| switch (err) {
         error.ConnectionRefused => {
             print("[https]  could not connect to {s}:{d}\n", .{ connect_host, port });
             print("         Start the server first: zig build example-https_server\n", .{});
@@ -38,17 +37,17 @@ pub fn main() !void {
         },
         else => return err,
     };
-    defer net.close(stream);
+    defer stream.close(io);
     print("[https]  connected to {s}:{d}\n", .{ connect_host, port });
 
     const client_keypair: ztls.x25519.KeyPair = .generate();
     var random: ztls.Random = .empty;
-    net.fillRandom(&random.data);
+    io.random(&random.data);
 
     var hs: ztls.ClientHandshake = .init(.{
         .keypairs = try .init(client_keypair),
         .host_name = server_name,
-        .now_sec = net.timestamp(),
+        .now_sec = Io.Timestamp.now(io, .real).toSeconds(),
         .random = random,
         .alpn_protocols = &.{"http/1.1"},
     });
@@ -56,10 +55,7 @@ pub fn main() !void {
 
     // Certificate verification policy: pinned trust anchor.
     // This is example-wrapper allocation, not ztls core allocation.
-    var bundle: CertificateBundle = if (@hasDecl(CertificateBundle, "empty"))
-        .empty
-    else
-        .{};
+    var bundle: CertificateBundle = .empty;
     defer bundle.deinit(gpa);
     const cert_start: u32 = @intCast(bundle.bytes.items.len);
     try bundle.bytes.appendSlice(gpa, trust_anchor_der);
@@ -70,17 +66,17 @@ pub fn main() !void {
     var storage: ztls.RecordBuffer.Storage = .empty;
     var rb: ztls.RecordBuffer = .init(&storage.buffer);
 
-    try net.writeAll(stream, try hs.start(&out.buffer));
+    try ztls.io.writeAll(io, stream, try hs.start(&out.buffer));
     hs.completeWrite();
     print("[https]  ClientHello sent → state={s}\n", .{@tagName(hs.state)});
 
     while (!hs.isConnected()) {
-        const n = try net.read(stream, rb.writable());
+        const n = try ztls.io.fill(io, stream, &rb);
         if (n == 0) return error.ServerClosed;
         rb.advance(n);
         while (try rb.next()) |record| switch (try hs.handleRecord(record, &out.buffer)) {
             .write => |w| {
-                try net.writeAll(stream, w);
+                try ztls.io.writeAll(io, stream, w);
                 hs.completeWrite();
             },
             .application_data,
@@ -94,13 +90,13 @@ pub fn main() !void {
     print("[https]  handshake complete (ALPN={s})\n", .{hs.selectedAlpnProtocol().?});
 
     const request = "GET / HTTP/1.0\r\n\r\n";
-    try net.writeAll(stream, try hs.sendApplicationData(request, &out.buffer));
+    try ztls.io.writeAll(io, stream, try hs.sendApplicationData(request, &out.buffer));
     hs.completeWrite();
     print("[https]  sent: {s}", .{request});
 
     var response_seen = false;
     while (true) {
-        const n = try net.read(stream, rb.writable());
+        const n = try ztls.io.fill(io, stream, &rb);
         if (n == 0) break;
         rb.advance(n);
         while (try rb.next()) |record| switch (try hs.handleRecord(record, &out.buffer)) {
@@ -109,7 +105,7 @@ pub fn main() !void {
                 response_seen = true;
             },
             .write => |w| {
-                try net.writeAll(stream, w);
+                try ztls.io.writeAll(io, stream, w);
                 hs.completeWrite();
             },
             .closed => {
@@ -118,7 +114,7 @@ pub fn main() !void {
             },
             .key_update => |ku| {
                 if (ku.response) |w| {
-                    try net.writeAll(stream, w);
+                    try ztls.io.writeAll(io, stream, w);
                     hs.completeWrite();
                 }
             },

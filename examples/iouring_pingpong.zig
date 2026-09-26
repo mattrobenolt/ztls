@@ -6,13 +6,14 @@
 //! is intentionally boring; the point is proving ztls's Sans-I/O record driver
 //! composes with io_uring for the TLS data path.
 const std = @import("std");
+const Io = std.Io;
 const IoUring = std.os.linux.IoUring;
 const print = std.debug.print;
-const net = @import("net_compat");
-const Address = net.Address;
 const builtin = @import("builtin");
 
 const ztls = @import("ztls");
+
+const IpAddress = Io.net.IpAddress;
 
 const fixtures = @import("fixtures");
 
@@ -33,41 +34,44 @@ const rounds = 4;
 const IoError = error{ IoUringFailed, PeerClosed };
 
 const ServerCtx = struct {
-    listener: *net.Server,
+    io: Io,
+    listener: *Io.net.Server,
     keypair: ztls.x25519.KeyPair,
 };
 
-pub fn main() !void {
+pub fn main(init: std.process.Init) !void {
+    const io = init.io;
     const client_keypair: ztls.x25519.KeyPair = .generate();
     const server_keypair: ztls.x25519.KeyPair = .generate();
 
-    const addr: Address = try net.parseIp(host, port);
+    const addr: IpAddress = try .parse(host, port);
     // Loopback-only convenience so repeated CI/dev runs do not trip over
     // TIME_WAIT; don't cargo-cult this into public listener code.
-    var server_listener = try net.listen(addr, .{ .reuse_address = true });
-    defer net.deinitServer(&server_listener);
-    const actual_port = net.serverPort(server_listener);
+    var server_listener = try addr.listen(io, .{ .reuse_address = true });
+    defer server_listener.deinit(io);
+    const actual_port = server_listener.socket.address.getPort();
     print("[iouring] server listening on {s}:{d}\n", .{ host, actual_port });
 
-    var sctx: ServerCtx = .{ .listener = &server_listener, .keypair = server_keypair };
+    var sctx: ServerCtx = .{ .io = io, .listener = &server_listener, .keypair = server_keypair };
     const server_thread: std.Thread = try .spawn(.{}, serverRun, .{&sctx});
 
-    try clientRun(client_keypair, actual_port);
+    try clientRun(io, client_keypair, actual_port);
 
     server_thread.join();
     print("\n=== io_uring ping-pong OK ===\n", .{});
 }
 
 fn serverRun(ctx: *ServerCtx) !void {
+    const io = ctx.io;
     var ring: IoUring = try .init(8, 0);
     defer ring.deinit();
 
-    const stream = try net.accept(ctx.listener);
-    defer net.close(stream);
+    const stream = try ctx.listener.accept(io);
+    defer stream.close(io);
     print("[server] accepted connection\n", .{});
 
     var random: ztls.Random = undefined;
-    net.fillRandom(&random.data);
+    io.random(&random.data);
 
     var hs: ztls.ServerHandshake = .init(.{
         .keypairs = try .init(ctx.keypair),
@@ -86,16 +90,16 @@ fn serverRun(ctx: *ServerCtx) !void {
     var flight: ztls.ServerHandshake.FlightBuffer = .empty;
 
     while (!hs.isConnected()) {
-        const n = try recvIntoRecordBuffer(&ring, net.fd(stream), &rb);
+        const n = try recvIntoRecordBuffer(&ring, stream.socket.handle, &rb);
         if (n == 0) return error.ClientClosed;
         while (try rb.next()) |record| {
             const ev = try hs.handleRecord(record, &out.buffer);
             switch (ev) {
                 .write => |w| {
-                    try sendAll(&ring, net.fd(stream), w);
+                    try sendAll(&ring, stream.socket.handle, w);
                     hs.completeWrite();
                     if (try hs.sendServerFlightBuffered(&flight)) |flight_bytes| {
-                        try sendAll(&ring, net.fd(stream), flight_bytes);
+                        try sendAll(&ring, stream.socket.handle, flight_bytes);
                         hs.completeWrite();
                     }
                 },
@@ -109,7 +113,7 @@ fn serverRun(ctx: *ServerCtx) !void {
     var round: usize = 1;
     var msg_buf: [64]u8 = undefined;
     while (true) {
-        const n = try recvIntoRecordBuffer(&ring, net.fd(stream), &rb);
+        const n = try recvIntoRecordBuffer(&ring, stream.socket.handle, &rb);
         if (n == 0) return error.ClientClosed;
         while (try rb.next()) |record| {
             const ev = try hs.handleRecord(record, &out.buffer);
@@ -119,23 +123,23 @@ fn serverRun(ctx: *ServerCtx) !void {
                         return error.UnexpectedPing;
                     }
                     const rec = try hs.sendApplicationData(pong(&msg_buf, round), &out.buffer);
-                    try sendAll(&ring, net.fd(stream), rec);
+                    try sendAll(&ring, stream.socket.handle, rec);
                     hs.completeWrite();
                     round += 1;
                 },
                 .write => |w| {
-                    try sendAll(&ring, net.fd(stream), w);
+                    try sendAll(&ring, stream.socket.handle, w);
                     hs.completeWrite();
                 },
                 .closed => {
                     const close = try hs.sendAlert(.close_notify, &out.buffer);
-                    try sendAll(&ring, net.fd(stream), close);
+                    try sendAll(&ring, stream.socket.handle, close);
                     hs.completeWrite();
                     return;
                 },
                 .key_update => |ku| {
                     if (ku.response) |w| {
-                        try sendAll(&ring, net.fd(stream), w);
+                        try sendAll(&ring, stream.socket.handle, w);
                         hs.completeWrite();
                     }
                 },
@@ -145,22 +149,22 @@ fn serverRun(ctx: *ServerCtx) !void {
     }
 }
 
-fn clientRun(client_keypair: ztls.x25519.KeyPair, actual_port: u16) !void {
+fn clientRun(io: Io, client_keypair: ztls.x25519.KeyPair, actual_port: u16) !void {
     var ring: IoUring = try .init(8, 0);
     defer ring.deinit();
 
-    const addr: Address = try net.parseIp(host, actual_port);
-    const stream = try net.connect(addr);
-    defer net.close(stream);
+    const addr: IpAddress = try .parse(host, actual_port);
+    const stream = try addr.connect(io, .{ .mode = .stream });
+    defer stream.close(io);
     print("[client] connected to {s}:{d}\n", .{ host, actual_port });
 
     var random: ztls.Random = undefined;
-    net.fillRandom(&random.data);
+    io.random(&random.data);
 
     var hs: ztls.ClientHandshake = .init(.{
         .keypairs = try .init(client_keypair),
         .host_name = server_name,
-        .now_sec = net.timestamp(),
+        .now_sec = Io.Timestamp.now(io, .real).toSeconds(),
         .random = random,
         .insecure_no_chain_anchor = true,
         .alpn_protocols = &.{alpn},
@@ -171,16 +175,16 @@ fn clientRun(client_keypair: ztls.x25519.KeyPair, actual_port: u16) !void {
     var storage: ztls.RecordBuffer.Storage = .empty;
     var rb: ztls.RecordBuffer = .init(&storage.buffer);
 
-    try sendAll(&ring, net.fd(stream), try hs.start(&out.buffer));
+    try sendAll(&ring, stream.socket.handle, try hs.start(&out.buffer));
     hs.completeWrite();
     print("[client] ClientHello sent → state={s}\n", .{@tagName(hs.state)});
 
     while (!hs.isConnected()) {
-        const n = try recvIntoRecordBuffer(&ring, net.fd(stream), &rb);
+        const n = try recvIntoRecordBuffer(&ring, stream.socket.handle, &rb);
         if (n == 0) return error.ServerClosed;
         while (try rb.next()) |record| switch (try hs.handleRecord(record, &out.buffer)) {
             .write => |w| {
-                try sendAll(&ring, net.fd(stream), w);
+                try sendAll(&ring, stream.socket.handle, w);
                 hs.completeWrite();
             },
             .application_data,
@@ -196,11 +200,11 @@ fn clientRun(client_keypair: ztls.x25519.KeyPair, actual_port: u16) !void {
     var msg_buf: [64]u8 = undefined;
     var round: usize = 1;
     const first = try hs.sendApplicationData(ping(&msg_buf, round), &out.buffer);
-    try sendAll(&ring, net.fd(stream), first);
+    try sendAll(&ring, stream.socket.handle, first);
     hs.completeWrite();
 
     while (true) {
-        const n = try recvIntoRecordBuffer(&ring, net.fd(stream), &rb);
+        const n = try recvIntoRecordBuffer(&ring, stream.socket.handle, &rb);
         if (n == 0) return error.ServerClosed;
         while (try rb.next()) |record| switch (try hs.handleRecord(record, &out.buffer)) {
             .application_data => |data| {
@@ -210,23 +214,23 @@ fn clientRun(client_keypair: ztls.x25519.KeyPair, actual_port: u16) !void {
                 print("[client] received: {s}", .{data});
                 if (round == rounds) {
                     const close = try hs.sendAlert(.close_notify, &out.buffer);
-                    try sendAll(&ring, net.fd(stream), close);
+                    try sendAll(&ring, stream.socket.handle, close);
                     hs.completeWrite();
                     return;
                 }
                 round += 1;
                 const rec = try hs.sendApplicationData(ping(&msg_buf, round), &out.buffer);
-                try sendAll(&ring, net.fd(stream), rec);
+                try sendAll(&ring, stream.socket.handle, rec);
                 hs.completeWrite();
             },
             .write => |w| {
-                try sendAll(&ring, net.fd(stream), w);
+                try sendAll(&ring, stream.socket.handle, w);
                 hs.completeWrite();
             },
             .closed => return,
             .key_update => |ku| {
                 if (ku.response) |w| {
-                    try sendAll(&ring, net.fd(stream), w);
+                    try sendAll(&ring, stream.socket.handle, w);
                     hs.completeWrite();
                 }
             },

@@ -52,11 +52,9 @@ pub fn build(b: *Build) void {
     const expose_xev = b.option(
         bool,
         "xev",
-        "Expose Zig 0.16 ztls_xev and fetch its lazy libxev dependency",
+        "Expose ztls_xev and fetch its lazy libxev dependency",
     ) orelse false;
-    const supports_integrations = builtin.zig_version.major > 0 or
-        builtin.zig_version.minor >= 16;
-    if (supports_integrations) {
+    {
         const std_mod = b.addModule("ztls_std", .{
             .root_source_file = b.path("integrations/ztls-std/src/root.zig"),
             .target = target,
@@ -89,14 +87,6 @@ pub fn build(b: *Build) void {
             if (libxev) |dependency| xev_mod.addImport("xev", dependency.module("xev"));
             xev_mod.addImport("ztls", mod);
             xev_mod.link_libc = true;
-        }
-    } else {
-        for ([_][]const u8{ "ztls_std", "ztls_xev", "ztls_ktls" }) |name| {
-            _ = b.addModule(name, .{
-                .root_source_file = b.path("src/integration_requires_zig_0_16.zig"),
-                .target = target,
-                .optimize = optimize,
-            });
         }
     }
 
@@ -239,7 +229,7 @@ pub fn build(b: *Build) void {
             .root_module = capi_mod,
             .linkage = .static,
         });
-        // Zig 0.15's self-hosted ELF archiver (the default for Debug) can emit
+        // The self-hosted ELF archiver (the default for Debug) can emit
         // truncated/malformed archives in some CI environments even for a
         // clean single-object .a (ziglang/zig#25129). Using the LLVM toolchain
         // routes archiving through llvm-ar, which produces a well-formed

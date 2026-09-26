@@ -4,11 +4,15 @@
 /// two parties sharing a key and IV, sending application data back
 /// and forth across a simulated channel.
 const std = @import("std");
-const print = std.debug.print;
+const Io = std.Io;
 
 const ztls = @import("ztls");
 
-pub fn main() !void {
+pub fn main(init: std.process.Init) !void {
+    var stdout_buf: [4096]u8 = undefined;
+    var stdout_file = Io.File.stdout().writer(init.io, &stdout_buf);
+    const stdout = &stdout_file.interface;
+    defer stdout.flush() catch {};
     // In a real TLS connection, key and IV are derived from the handshake
     // key schedule. Here we just pick fixed values for demonstration.
     var sender: ztls.RecordLayer =
@@ -29,14 +33,14 @@ pub fn main() !void {
         var out: [256 + ztls.RecordLayer.overhead]u8 = undefined;
         const wire = try sender.encrypt(.application_data, msg, &out);
 
-        print("encrypted {} bytes -> {} wire bytes\n", .{ msg.len, wire.len });
+        try stdout.print("encrypted {} bytes -> {} wire bytes\n", .{ msg.len, wire.len });
 
         // Receiver: decrypt in place. `wire` is modified; result points into it.
         const received = try receiver.decrypt(wire);
 
-        print("  content_type: {s}\n", .{@tagName(received.content_type)});
-        print("  content:      {s}\n", .{received.content});
+        try stdout.print("  content_type: {s}\n", .{@tagName(received.content_type)});
+        try stdout.print("  content:      {s}\n", .{received.content});
     }
 
-    print("\nsender seq: {d}  receiver seq: {d}\n", .{ sender.seq, receiver.seq });
+    try stdout.print("\nsender seq: {d}  receiver seq: {d}\n", .{ sender.seq, receiver.seq });
 }

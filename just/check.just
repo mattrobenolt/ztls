@@ -8,11 +8,6 @@ test:
 check-memory $output="":
     @scripts/check-memory.sh "$output"
 
-[doc("Check unit ownership with Linux Memcheck, without the Zig 0.15 benchmark driver")]
-[group("check")]
-check-memory-units $output="":
-    @scripts/check-memory.sh --unit-only "$output"
-
 [doc("Build, test, benchmark-smoke, and tlsfuzzer-smoke with AWS-LC libcrypto")]
 [group("check")]
 check-backend-aws-lc:
@@ -73,19 +68,15 @@ check-backend-boringssl:
         exit 1
     }
 
-[doc("Run AWS-LC and BoringSSL tests under Zig 0.16")]
+[doc("Run AWS-LC and BoringSSL tests against the devshell libcrypto builds")]
 [group("check")]
-check-backends-0_16:
+check-backends:
     #!/usr/bin/env bash
     set -euo pipefail
-    case "$(zig version)" in
-        0.16.*) ;;
-        *) echo "check-backends-0_16 requires Zig 0.16" >&2; exit 1 ;;
-    esac
     aws_lc_pkg_config_path="${ZTLS_AWS_LC_PKG_CONFIG_PATH:-}"
     boringssl_pkg_config_path="${ZTLS_BORINGSSL_PKG_CONFIG_PATH:-}"
     if [ -z "$aws_lc_pkg_config_path" ] || [ -z "$boringssl_pkg_config_path" ]; then
-        echo "run inside the ztls Zig 0.16 Nix devshell" >&2
+        echo "run inside a ztls Nix devshell" >&2
         exit 1
     fi
     cache_dir=$(mktemp -d)
@@ -144,22 +135,17 @@ flake-check n="20":
     done
     echo "{{ n }} consecutive green runs"
 
-[doc("Run every in-tree integration gate (needs a Zig 0.16 devshell)")]
+[doc("Run every in-tree integration gate")]
 [group("check")]
 integrations-ci:
     just integrations/ztls-std/ci
     just integrations/ztls-xev/ci
     if [ "$(uname -s)" = Linux ]; then just integrations/ztls-ktls/ci; else echo "ztls-ktls: Linux-only, skipped"; fi
 
-[doc("Compile core ztls as an isolated fetched package with Zig 0.15.2")]
+[doc("Compile core and integration modules as an isolated fetched package")]
 [group("check")]
-distribution-core-ci:
-    ./scripts/distribution-smoke.sh core
-
-[doc("Compile integration modules as an isolated fetched package with Zig 0.16")]
-[group("check")]
-distribution-integrations-ci:
-    ./scripts/distribution-smoke.sh integrations
+distribution-ci:
+    ./scripts/distribution-smoke.sh
 
 # Consumer compatibility gate (#119). ztls owns candidate provenance,
 # isolation, and the record; the consumers own their commands. See
@@ -336,7 +322,7 @@ lint-readme-index:
 [doc("Format Zig code")]
 [group("check")]
 fmt-zig:
-    zig fmt src/ examples/ bench/ shared/ build.zig
+    zig fmt src/ examples/ bench/ build.zig
 
 [doc("Format Rust benchmark code (bench/rustls)")]
 [group("check")]
@@ -345,14 +331,14 @@ fmt-rust:
 
 [group("check")]
 lint-zig:
-    zig fmt --check src/ examples/ bench/ shared/ tests/distribution-consumer/ build.zig
-    ziglint build.zig examples bench shared tests/distribution-consumer $(fd --extension zig --exclude certificate_parser.zig . src)
+    zig fmt --check src/ examples/ bench/ tests/distribution-consumer/ build.zig
+    ziglint build.zig examples bench tests/distribution-consumer $(fd --extension zig --exclude certificate_parser.zig . src)
     ast-grep scan --rule rules/no-ztls-owned-allocations.yml src --globs '*.zig' --globs '!src/test/**' --globs '!src/bench/**' --globs '!src/interop.zig' --report-style short
     ast-grep scan --rule rules/no-c-pointer-types.yml src --globs '*.zig' --report-style short
     # std-alias rules: enforce the aliases we always want. certificate_parser.zig
     # is an upstream-derived std fork kept close to upstream, so it is excluded
     # like ziglint does.
-    rc=0; for rule in rules/std-alias-*.yml; do ast-grep scan --rule "$rule" src examples bench shared --globs '*.zig' --globs '!src/certificate_parser.zig' --report-style short || rc=1; done; exit $rc
+    rc=0; for rule in rules/std-alias-*.yml; do ast-grep scan --rule "$rule" src examples bench --globs '*.zig' --globs '!src/certificate_parser.zig' --report-style short || rc=1; done; exit $rc
 
 [doc("Lint shell scripts")]
 [group("check")]

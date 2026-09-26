@@ -11,13 +11,13 @@ const testing = std.testing;
 const assert = std.debug.assert;
 
 const ztls = @import("ztls");
-const net = @import("net_compat");
 
 const fixtures = @import("fixtures");
 const cert_der: []const u8 = &fixtures.server_ecdsa_cert_der;
 const scalar: []const u8 = &fixtures.server_ecdsa_scalar;
 
-pub fn main() !void {
+pub fn main(init: std.process.Init) !void {
+    const io = init.io;
     // Load the server's signing key from a fixture P-256 scalar.
     var signer: ztls.signature.PrivateKey = try .fromP256Scalar(scalar[0..32]);
     defer signer.deinit();
@@ -28,9 +28,9 @@ pub fn main() !void {
     const server_keypair: ztls.x25519.KeyPair = .generate();
 
     var client_random: ztls.Random = undefined;
-    net.fillRandom(&client_random.data);
+    io.random(&client_random.data);
     var server_random: ztls.Random = undefined;
-    net.fillRandom(&server_random.data);
+    io.random(&server_random.data);
 
     // ── Client setup ────────────────────────
     var client: ztls.ClientHandshake = .init(.{

@@ -6,11 +6,15 @@
 /// Uses known values from RFC 8448 §3 throughout so every intermediate
 /// value can be cross-referenced against the spec.
 const std = @import("std");
-const print = std.debug.print;
+const Io = std.Io;
 
 const ztls = @import("ztls");
 
-pub fn main() !void {
+pub fn main(init: std.process.Init) !void {
+    var stdout_buf: [4096]u8 = undefined;
+    var stdout_file = Io.File.stdout().writer(init.io, &stdout_buf);
+    const stdout = &stdout_file.interface;
+    defer stdout.flush() catch {};
     // ── X25519 key exchange ──────────────────────
 
     // Use the RFC 8448 §3 client private key for deterministic output.
@@ -46,7 +50,7 @@ pub fn main() !void {
         "server",
         &.{},
     );
-    print("ClientHello: {} bytes\n", .{client_hello.len});
+    try stdout.print("ClientHello: {} bytes\n", .{client_hello.len});
 
     // ── ServerHello ────────────────────────
 
@@ -61,15 +65,19 @@ pub fn main() !void {
     };
 
     const sh = try ztls.server_hello.parse(server_hello_bytes);
-    print("cipher_suite:      {s}\n", .{@tagName(sh.cipher_suite)});
-    print("server_public_key: {x}\n", .{sh.server_public_key.data});
+    try stdout.print("cipher_suite:      {s}\n", .{@tagName(sh.cipher_suite)});
+    const server_public_key = switch (sh.key_share) {
+        .x25519 => |pk| pk,
+        else => return error.UnexpectedKeyShare,
+    };
+    try stdout.print("server_public_key: {x}\n", .{server_public_key.data});
 
     // ── DHE shared secret ──────────────────────
 
     var dhe: [ztls.x25519.secret_length]u8 = undefined;
     defer std.crypto.secureZero(u8, &dhe);
-    try ztls.x25519.sharedSecret(kp.secret_key, sh.server_public_key, &dhe);
-    print("shared_secret:     {x}\n", .{dhe});
+    try ztls.x25519.sharedSecret(kp.secret_key, server_public_key, &dhe);
+    try stdout.print("shared_secret:     {x}\n", .{dhe});
 
     // ── Key schedule ────────────────────────
 
@@ -89,10 +97,10 @@ pub fn main() !void {
     const client_hs_secret = hkdf.clientHandshakeTrafficSecret(handshake, &transcript_hs);
     const server_hs_secret = hkdf.serverHandshakeTrafficSecret(handshake, &transcript_hs);
 
-    print("\nhandshake_secret:        {x}\n", .{handshake.data});
-    print("master_secret:           {x}\n", .{master.data});
-    print("client_hs_traffic:       {x}\n", .{client_hs_secret.data});
-    print("server_hs_traffic:       {x}\n", .{server_hs_secret.data});
+    try stdout.print("\nhandshake_secret:        {x}\n", .{handshake.data});
+    try stdout.print("master_secret:           {x}\n", .{master.data});
+    try stdout.print("client_hs_traffic:       {x}\n", .{client_hs_secret.data});
+    try stdout.print("server_hs_traffic:       {x}\n", .{server_hs_secret.data});
 
     // ── RecordLayer keys ───────────────────────
 
@@ -101,10 +109,10 @@ pub fn main() !void {
     const client_key = hkdf.trafficKey(.aes_128_gcm_sha256, client_hs_secret);
     const client_iv = hkdf.trafficIv(client_hs_secret);
 
-    print("\nserver_write_key: {x}\n", .{server_key.data});
-    print("server_write_iv:  {x}\n", .{server_iv.data});
-    print("client_write_key: {x}\n", .{client_key.data});
-    print("client_write_iv:  {x}\n", .{client_iv.data});
+    try stdout.print("\nserver_write_key: {x}\n", .{server_key.data});
+    try stdout.print("server_write_iv:  {x}\n", .{server_iv.data});
+    try stdout.print("client_write_key: {x}\n", .{client_key.data});
+    try stdout.print("client_write_iv:  {x}\n", .{client_iv.data});
 
     // ── RecordLayer round-trip ─────────────────────
 
@@ -118,7 +126,7 @@ pub fn main() !void {
     const wire = try server_tx.encrypt(.handshake, plaintext, &out);
     const received = try client_rx.decrypt(wire);
 
-    print("\nencrypted {} bytes → {} wire bytes\n", .{ plaintext.len, wire.len });
-    print("content_type: {s}\n", .{@tagName(received.content_type)});
-    print("content:      {s}\n", .{received.content});
+    try stdout.print("\nencrypted {} bytes → {} wire bytes\n", .{ plaintext.len, wire.len });
+    try stdout.print("content_type: {s}\n", .{@tagName(received.content_type)});
+    try stdout.print("content:      {s}\n", .{received.content});
 }

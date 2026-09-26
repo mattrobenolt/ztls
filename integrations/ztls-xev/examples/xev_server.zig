@@ -210,7 +210,7 @@ pub fn main(init: std.process.Init) !void {
 
     var listener: Listener = .{
         .loop = &loop,
-        .io = std.Io.Threaded.global_single_threaded.io(),
+        .io = init.io,
         .gpa = init.gpa,
         .config = &config,
         .pool = .empty,

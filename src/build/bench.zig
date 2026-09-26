@@ -78,7 +78,9 @@ fn addReplayFixtureGenerator(b: *Build, opts: Options) void {
             .root_source_file = b.path("src/bench/generate_replay_fixtures.zig"),
             .target = opts.target,
             .optimize = .ReleaseFast,
-            .imports = &.{.{ .name = "ztls", .module = opts.ztls_mod }},
+            .imports = &.{
+                .{ .name = "ztls", .module = opts.ztls_mod },
+            },
         }),
     });
     const run = b.addRunArtifact(exe);

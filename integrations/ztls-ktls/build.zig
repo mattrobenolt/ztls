@@ -20,12 +20,6 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
-    const net_compat_mod = b.addModule("net_compat", .{
-        .root_source_file = ztls_dep.path("shared/net_compat.zig"),
-        .target = target,
-        .optimize = optimize,
-        .link_libc = true,
-    });
     const mod = b.addModule("ztls_ktls", .{
         .root_source_file = b.path("src/root.zig"),
         .target = target,
@@ -55,7 +49,6 @@ pub fn build(b: *std.Build) void {
                 .{ .name = "ztls_ktls", .module = mod },
                 .{ .name = "ztls", .module = ztls_mod },
                 .{ .name = "fixtures", .module = fixtures_mod },
-                .{ .name = "net_compat", .module = net_compat_mod },
             },
         }),
         .test_runner = test_runner,
@@ -77,7 +70,6 @@ pub fn build(b: *std.Build) void {
             .{ .name = "ztls_ktls", .module = mod },
             .{ .name = "ztls", .module = ztls_mod },
             .{ .name = "fixtures", .module = fixtures_mod },
-            .{ .name = "net_compat", .module = net_compat_mod },
         },
     });
     const example = b.addExecutable(.{

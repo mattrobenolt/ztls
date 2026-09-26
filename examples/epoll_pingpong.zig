@@ -23,46 +23,37 @@
 const std = @import("std");
 const debug_print = std.debug.print;
 const mem = std.mem;
-const fs = std.fs;
 const posix = std.posix;
-const heap = std.heap;
 const crypto = std.crypto;
 const linux = std.os.linux;
 const Allocator = mem.Allocator;
 const Thread = std.Thread;
 const Base64Decoder = std.base64.standard.Decoder;
 const Io = std.Io;
+const IpAddress = Io.net.IpAddress;
 const builtin = @import("builtin");
 
-const net = @import("net_compat");
-const Address = net.Address;
 const ztls = @import("ztls");
-
-const NoopMutex = struct {
-    fn lock(_: *NoopMutex) void {}
-    fn unlock(_: *NoopMutex) void {}
-};
-const Mutex = if (is_zig_16) NoopMutex else Thread.Mutex;
-const SpinEvent = struct {
-    ready: std.atomic.Value(bool) = .init(false),
-
-    fn set(self: *SpinEvent) void {
-        self.ready.store(true, .release);
-    }
-
-    fn wait(self: *SpinEvent) void {
-        const req: std.c.timespec = .{ .sec = 0, .nsec = std.time.ns_per_ms };
-        while (!self.ready.load(.acquire)) _ = std.c.nanosleep(&req, null);
-    }
-};
-const ResetEvent = if (is_zig_16) SpinEvent else Thread.ResetEvent;
-const is_zig_16 = builtin.zig_version.major == 0 and builtin.zig_version.minor >= 16;
-const ArgsVector = if (is_zig_16) std.process.Args.Vector else void;
-const Init = if (is_zig_16) std.process.Init else void;
 
 comptime {
     if (builtin.os.tag != .linux) @compileError("epoll_pingpong is Linux-only");
 }
+
+/// One-shot cross-thread signal, futex-backed through the Io.
+const ReadyEvent = struct {
+    state: std.atomic.Value(u32) = .init(0),
+
+    fn set(self: *ReadyEvent, io: Io) void {
+        self.state.store(1, .release);
+        io.futexWake(u32, &self.state.raw, 1);
+    }
+
+    fn wait(self: *ReadyEvent, io: Io) void {
+        while (self.state.load(.acquire) == 0) {
+            io.futexWaitUncancelable(u32, &self.state.raw, 0);
+        }
+    }
+};
 
 const host = "127.0.0.1";
 const default_cert = "tests/fixtures/rsa_pss/server.crt";
@@ -88,15 +79,12 @@ const usage =
 /// mutex. Print failures are ignored: this is example output, not a side effect
 /// the protocol depends on.
 const LockedWriter = struct {
-    mutex: Mutex = .{},
-
-    fn init() LockedWriter {
-        return .{};
-    }
+    io: Io,
+    mutex: Io.Mutex = .init,
 
     fn print(self: *LockedWriter, comptime fmt: []const u8, args: anytype) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
         debug_print(fmt, args);
     }
 
@@ -107,8 +95,10 @@ const LockedWriter = struct {
     fn flush(_: *LockedWriter) void {}
 };
 
-var stdout: LockedWriter = .init();
-var stderr: LockedWriter = .init();
+// Runtime-initialized in main before any thread spawns: the mutex locks
+// through the Io.
+var stdout: LockedWriter = undefined;
+var stderr: LockedWriter = undefined;
 
 // -- Connection: socket + epoll + ztls write outbox --------------------------
 
@@ -172,65 +162,52 @@ const Conn = struct {
     }
 };
 
-fn setNonBlocking(fd: posix.fd_t) !void {
-    if (comptime is_zig_16) {
-        const flags = std.c.fcntl(fd, linux.F.GETFL, @as(i32, 0));
-        if (flags < 0) return error.FcntlFailed;
-        if (std.c.fcntl(fd, linux.F.SETFL, flags | linux.SOCK.NONBLOCK) < 0)
-            return error.FcntlFailed;
-        return;
-    }
+// Raw linux syscalls, no libc: linux.* return the raw usize rc, and
+// linux.errno(rc) is .SUCCESS when the call did not fail.
 
-    const flags = try posix.fcntl(fd, linux.F.GETFL, 0);
-    _ = try posix.fcntl(fd, linux.F.SETFL, flags | linux.SOCK.NONBLOCK);
+fn setNonBlocking(fd: posix.fd_t) !void {
+    const getfl = linux.fcntl(fd, linux.F.GETFL, 0);
+    if (linux.errno(getfl) != .SUCCESS) return error.FcntlFailed;
+    if (linux.errno(linux.fcntl(fd, linux.F.SETFL, getfl | linux.SOCK.NONBLOCK)) != .SUCCESS)
+        return error.FcntlFailed;
 }
 
 fn sendFd(fd: posix.fd_t, bytes: []const u8) !usize {
-    if (comptime !is_zig_16) return posix.send(fd, bytes, 0);
-    const n = std.c.send(fd, bytes.ptr, bytes.len, 0);
-    if (n < 0) return switch (std.c.errno(n)) {
+    const rc = linux.sendto(fd, bytes.ptr, bytes.len, 0, null, 0);
+    return switch (linux.errno(rc)) {
+        .SUCCESS => rc,
         .AGAIN => error.WouldBlock,
         else => error.SocketFailed,
     };
-    return @intCast(n);
 }
 
 fn recvFd(fd: posix.fd_t, buf: []u8) !usize {
-    if (comptime !is_zig_16) return posix.recv(fd, buf, 0);
-    const n = std.c.recv(fd, buf.ptr, buf.len, 0);
-    if (n < 0) return switch (std.c.errno(n)) {
+    const rc = linux.recvfrom(fd, buf.ptr, buf.len, 0, null, null);
+    return switch (linux.errno(rc)) {
+        .SUCCESS => rc,
         .AGAIN => error.WouldBlock,
         else => error.SocketFailed,
     };
-    return @intCast(n);
-}
-
-fn checkConnect(fd: posix.fd_t) !void {
-    if (comptime is_zig_16) return;
-    try posix.getsockoptError(fd);
 }
 
 fn closeFd(fd: posix.fd_t) void {
-    if (comptime is_zig_16) _ = linux.close(fd) else posix.close(fd);
+    _ = linux.close(fd);
 }
 
 fn epollCreate1(flags: u32) !posix.fd_t {
-    if (comptime !is_zig_16) return posix.epoll_create1(flags);
-    const fd = std.c.epoll_create1(flags);
-    if (fd < 0) return error.EpollFailed;
-    return fd;
+    const rc = linux.epoll_create1(flags);
+    if (linux.errno(rc) != .SUCCESS) return error.EpollFailed;
+    return @intCast(rc);
 }
 
 fn epollCtl(epfd: posix.fd_t, op: u32, fd: posix.fd_t, event: *linux.epoll_event) !void {
-    if (comptime !is_zig_16) return posix.epoll_ctl(epfd, op, fd, event);
-    if (std.c.epoll_ctl(epfd, op, fd, event) < 0) return error.EpollFailed;
+    if (linux.errno(linux.epoll_ctl(epfd, op, fd, event)) != .SUCCESS) return error.EpollFailed;
 }
 
 fn epollWait(epfd: posix.fd_t, events: []linux.epoll_event, timeout_ms: i32) !usize {
-    if (comptime !is_zig_16) return posix.epoll_wait(epfd, events, timeout_ms);
-    const n = std.c.epoll_wait(epfd, events.ptr, @intCast(events.len), timeout_ms);
-    if (n < 0) return error.EpollFailed;
-    return @intCast(n);
+    const rc = linux.epoll_wait(epfd, events.ptr, @intCast(events.len), timeout_ms);
+    if (linux.errno(rc) != .SUCCESS) return error.EpollFailed;
+    return rc;
 }
 
 const FillResult = enum { more, closed };
@@ -269,7 +246,7 @@ const Args = struct {
     rounds: u32,
     port: u16,
 
-    fn init(args_vector: ArgsVector) !Args {
+    fn init(process_args: std.process.Args) !Args {
         var result: Args = .{
             .cert = default_cert,
             .key = default_key,
@@ -279,10 +256,7 @@ const Args = struct {
             .port = 0,
         };
 
-        var args = if (comptime is_zig_16)
-            std.process.Args.iterate(.{ .vector = args_vector })
-        else
-            std.process.args();
+        var args = std.process.Args.iterate(process_args);
         _ = args.skip();
         while (args.next()) |arg| {
             if (mem.eql(u8, arg, "--cert")) {
@@ -314,13 +288,9 @@ fn parsePemCerts(arena: Allocator, pem: []const u8) !std.ArrayList([]const u8) {
     var list: std.ArrayList([]const u8) = .empty;
 
     var pos: usize = 0;
-    // mem.indexOfPos is deprecated in 0.16 in favor of mem.findPos, which
-    // does not exist in 0.15. Suppress until 0.15 support is dropped (#61).
-    // ziglint-ignore: Z011
-    while (mem.indexOfPos(u8, pem, pos, begin)) |start| {
+    while (mem.findPos(u8, pem, pos, begin)) |start| {
         const body_start = start + begin.len;
-        // ziglint-ignore: Z011
-        const body_end = mem.indexOfPos(u8, pem, body_start, end) orelse
+        const body_end = mem.findPos(u8, pem, body_start, end) orelse
             return error.MissingPemEndMarker;
 
         var clean: std.ArrayList(u8) = .empty;
@@ -344,34 +314,21 @@ fn parsePemCerts(arena: Allocator, pem: []const u8) !std.ArrayList([]const u8) {
 // -- Entry point --------------------------------------------------------------
 
 /// Handoff from the server thread: the ephemeral port it bound, published once
-/// the listener is ready. The ResetEvent establishes the happens-before edge.
+/// the listener is ready. The ReadyEvent establishes the happens-before edge.
 const Shared = struct {
-    ready: ResetEvent = .{},
+    ready: ReadyEvent = .{},
     port: u16 = 0,
 };
 
-var debug_allocator: heap.DebugAllocator(.{}) = .init;
-
-pub const main = if (is_zig_16) main16 else main15;
-
-fn main16(init: Init) !u8 {
-    return run(init.minimal.args.vector);
-}
-
-fn main15() !u8 {
-    return run({});
-}
-
-fn run(args_vector: ArgsVector) !u8 {
-    const gpa = debug_allocator.allocator();
-    defer _ = debug_allocator.deinit();
-    var arena_allocator: heap.ArenaAllocator = .init(gpa);
-    defer arena_allocator.deinit();
-    const arena = arena_allocator.allocator();
+pub fn main(init: std.process.Init) !u8 {
+    const io = init.io;
+    stdout = .{ .io = io };
+    stderr = .{ .io = io };
+    const arena = init.arena.allocator();
     defer stdout.flush();
     defer stderr.flush();
 
-    const args = Args.init(args_vector) catch |err| {
+    const args = Args.init(init.minimal.args) catch |err| {
         stderr.print("{s}\n", .{usage});
         switch (err) {
             error.InvalidRounds => stderr.print(
@@ -383,7 +340,7 @@ fn run(args_vector: ArgsVector) !u8 {
         return 1;
     };
 
-    const cert_pem = try net.readFileAlloc(arena, args.cert, 1 << 20);
+    const cert_pem = try Io.Dir.cwd().readFileAlloc(io, args.cert, arena, .limited(1 << 20));
     var cert_list = try parsePemCerts(arena, cert_pem);
     const certs = try cert_list.toOwnedSlice(arena);
 
@@ -394,15 +351,15 @@ fn run(args_vector: ArgsVector) !u8 {
     const server_thread: Thread = try .spawn(
         .{},
         serverEntry,
-        .{ arena, &args, certs, &shared, &server_result },
+        .{ io, arena, &args, certs, &shared, &server_result },
     );
 
-    shared.ready.wait();
+    shared.ready.wait(io);
 
     const client_thread: Thread = try .spawn(
         .{},
         clientEntry,
-        .{ arena, &args, shared.port, &client_result },
+        .{ io, arena, &args, shared.port, &client_result },
     );
     client_thread.join();
     server_thread.join();
@@ -422,28 +379,30 @@ fn run(args_vector: ArgsVector) !u8 {
 /// stack trace. On error before `shared.ready.set()` (e.g. bind/listen fails)
 /// we set the event ourselves so main is not stranded in `ready.wait()`.
 fn serverEntry(
+    io: Io,
     arena: Allocator,
     args: *const Args,
     certs: []const []const u8,
     shared: *Shared,
     result: *?anyerror,
 ) void {
-    serverRun(arena, args, certs, shared) catch |err| {
+    serverRun(io, arena, args, certs, shared) catch |err| {
         result.* = err;
         stderr.print("[server] failed: {s}\n", .{@errorName(err)});
-        shared.ready.set();
+        shared.ready.set(io);
     };
 }
 
 /// void-returning entry wrapper for the client thread: captures clientRun's
 /// error into `result` and prints a clean one-line diagnostic.
 fn clientEntry(
+    io: Io,
     arena: Allocator,
     args: *const Args,
     port: u16,
     result: *?anyerror,
 ) void {
-    clientRun(arena, args, port) catch |err| {
+    clientRun(io, arena, args, port) catch |err| {
         result.* = err;
         stderr.print("[client] failed: {s}\n", .{@errorName(err)});
     };
@@ -452,23 +411,24 @@ fn clientEntry(
 // -- Server -------------------------------------------------------------------
 
 fn serverRun(
+    io: Io,
     arena: Allocator,
     args: *const Args,
     certs: []const []const u8,
     shared: *Shared,
 ) !void {
-    const addr: Address = try net.parseIp(host, args.port);
-    var listener = try net.listen(addr, .{ .reuse_address = true });
-    defer net.deinitServer(&listener);
-    const listen_fd = net.serverFd(listener);
+    const addr: IpAddress = try .parse(host, args.port);
+    var listener = try addr.listen(io, .{ .reuse_address = true });
+    defer listener.deinit(io);
+    const listen_fd = listener.socket.handle;
     try setNonBlocking(listen_fd);
 
-    const actual_port = net.serverPort(listener);
+    const actual_port = listener.socket.address.getPort();
     stdout.print("[server] listening on {s}:{d}\n", .{ host, actual_port });
     shared.port = actual_port;
-    shared.ready.set();
+    shared.ready.set(io);
 
-    const key_pem = try net.readFileAlloc(arena, args.key, 1 << 20);
+    const key_pem = try Io.Dir.cwd().readFileAlloc(io, args.key, arena, .limited(1 << 20));
     var private_key: ztls.signature.PrivateKey = try .fromPemAuto(key_pem);
     defer private_key.deinit();
     try private_key.pairsWith(certs[0]);
@@ -479,7 +439,7 @@ fn serverRun(
     try epollCtl(epoll_fd, linux.EPOLL.CTL_ADD, listen_fd, &listen_ev);
 
     var random: ztls.Random = .empty;
-    net.fillRandom(&random.data);
+    io.random(&random.data);
     var hs_storage: ztls.ServerHandshake.Storage = .empty;
     var hs: ztls.ServerHandshake = .init(.{
         .keypairs = try .init(.generate()),
@@ -508,16 +468,16 @@ fn serverRun(
         const n = try epollWait(epoll_fd, &events, -1);
         for (events[0..n]) |event| {
             if (event.data.fd == listen_fd) {
-                const accepted = net.accept(&listener) catch |err| switch (err) {
+                const accepted = listener.accept(io) catch |err| switch (err) {
                     error.WouldBlock => continue,
                     else => return err,
                 };
                 if (connected) {
-                    net.close(accepted); // one client only
+                    accepted.close(io); // one client only
                     continue;
                 }
-                try setNonBlocking(net.fd(accepted));
-                conn = try .init(epoll_fd, net.fd(accepted), linux.EPOLL.IN);
+                try setNonBlocking(accepted.socket.handle);
+                conn = try .init(epoll_fd, accepted.socket.handle, linux.EPOLL.IN);
                 connected = true;
                 stdout.writeAll("[server] accepted connection\n");
                 continue;
@@ -571,37 +531,35 @@ fn serverRun(
 
 // -- Client -------------------------------------------------------------------
 
-fn clientRun(arena: Allocator, args: *const Args, port: u16) !void {
-    const addr: Address = try net.parseIp(host, port);
-    const stream = try net.connect(addr);
-    defer net.close(stream);
-    const fd = net.fd(stream);
+fn clientRun(io: Io, arena: Allocator, args: *const Args, port: u16) !void {
+    const addr: IpAddress = try .parse(host, port);
+    const stream = try addr.connect(io, .{ .mode = .stream });
+    defer stream.close(io);
+    const fd = stream.socket.handle;
     try setNonBlocking(fd);
 
     const epoll_fd = try epollCreate1(0);
     defer closeFd(epoll_fd);
     var conn: Conn = try .init(epoll_fd, fd, linux.EPOLL.OUT);
 
-    var bundle: crypto.Certificate.Bundle = if (@hasDecl(crypto.Certificate.Bundle, "empty"))
-        .empty
-    else
-        .{};
-    const trust_pem = try net.readFileAlloc(arena, args.trust, 1 << 20);
+    var bundle: crypto.Certificate.Bundle = .empty;
+    const trust_pem = try Io.Dir.cwd().readFileAlloc(io, args.trust, arena, .limited(1 << 20));
     const trust_list = try parsePemCerts(arena, trust_pem);
+    const now_sec = Io.Timestamp.now(io, .real).toSeconds();
     for (trust_list.items) |trust_der| {
         const cert_start: u32 = @intCast(bundle.bytes.items.len);
         try bundle.bytes.appendSlice(arena, trust_der);
-        try bundle.parseCert(arena, cert_start, net.timestamp());
+        try bundle.parseCert(arena, cert_start, now_sec);
     }
 
     var random: ztls.Random = .empty;
-    net.fillRandom(&random.data);
+    io.random(&random.data);
     var hs_storage: ztls.ClientHandshake.Storage = .empty;
 
     var hs: ztls.ClientHandshake = .init(.{
         .keypairs = try .init(.generate()),
         .host_name = args.host,
-        .now_sec = net.timestamp(),
+        .now_sec = now_sec,
         .random = random,
         .alpn_protocols = &.{alpn},
         .bundle = &bundle,
@@ -624,7 +582,6 @@ fn clientRun(arena: Allocator, args: *const Args, port: u16) !void {
         const n = try epollWait(epoll_fd, &events, -1);
         for (events[0..n]) |event| {
             if (!connected and event.events & linux.EPOLL.OUT != 0) {
-                try checkConnect(fd); // surfaces a failed async connect
                 connected = true;
                 stdout.print("[client] connected to {s}:{d}\n", .{ host, port });
                 try conn.send(&hs, try hs.start(&out.buffer));

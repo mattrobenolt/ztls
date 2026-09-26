@@ -396,7 +396,7 @@ test "xev client: handshake, write, read, close_notify" {
     defer client.deinit();
 
     try client.conn.init(
-        std.Io.Threaded.global_single_threaded.io(),
+        testing.io,
         loop,
         .initFd(fds[0]),
         &config,
@@ -567,7 +567,7 @@ test "xev server: handshake, echo, and close against an xev client" {
     var client_config: tls.ClientConfig = try .init(.{ .verify = .insecure, .alpn = &.{"h2"} });
     defer client_config.deinit();
 
-    const io = std.Io.Threaded.global_single_threaded.io();
+    const io = testing.io;
     var pair: Pair = .{ .loop = loop };
     defer pair.client_received.deinit(testing.allocator);
 
@@ -701,7 +701,7 @@ test "xev server: a client that handshakes then leaves without speaking" {
     var client_config: tls.ClientConfig = try .init(.{ .verify = .insecure });
     defer client_config.deinit();
 
-    const io = std.Io.Threaded.global_single_threaded.io();
+    const io = testing.io;
     var s: Silent = .{ .loop = loop };
 
     try s.server.init(io, loop, .initFd(fds[1]), &server_config, null, s.server_storage.buffers());
@@ -855,7 +855,7 @@ fn CloseWhileReading(comptime Xev: type) type {
             var client_config: tls.ClientConfig = try .init(.{ .verify = .insecure });
             defer client_config.deinit();
 
-            const io = std.Io.Threaded.global_single_threaded.io();
+            const io = testing.io;
             try s.server.init(
                 io,
                 loop,
@@ -1120,7 +1120,7 @@ fn CloseWhileWriting(comptime Xev: type) type {
             var client_config: tls.ClientConfig = try .init(.{ .verify = .insecure });
             defer client_config.deinit();
 
-            const io = std.Io.Threaded.global_single_threaded.io();
+            const io = testing.io;
             try s.server.init(
                 io,
                 loop,

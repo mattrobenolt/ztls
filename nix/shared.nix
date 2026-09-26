@@ -7,7 +7,7 @@
 # is already short and readable; the helper `let` block was the mess.
 #
 # `pkgs` must already carry the mattware + rust-overlay overlays (applied in
-# flake.nix) so pkgs.rust-bin / pkgs.zig_0_15 / pkgs.ast-grep resolve. This file
+# flake.nix) so pkgs.rust-bin / pkgs.zig_0_16 / pkgs.ast-grep resolve. This file
 # never touches `inputs` (which is unavailable inside perSystem anyway).
 { pkgs, lib }:
 rec {
@@ -77,8 +77,7 @@ rec {
     export ZTLS_BORINGSSL_LIB_DIR=${pkgs.boringssl}/lib
   '';
 
-  # commonPackages takes the Zig toolchain pair so the same package list can
-  # target either Zig 0.15 (default) or Zig 0.16 (#61).
+  # commonPackages takes the Zig toolchain pair. ztls is Zig 0.16-only.
   commonPackages =
     zig-tools:
     (with pkgs; [
@@ -116,17 +115,13 @@ rec {
       ]
     );
 
-  zig0_15 = {
-    zig = pkgs.zig_0_15;
-    zls = pkgs.zls_0_15;
-  };
-  zig0_16 = {
+  zig = {
     zig = pkgs.zig_0_16;
     zls = pkgs.zls_0_16;
   };
 
-  # The OpenSSL package paths shared by the openssl, zig-0_16, and docs
-  # shells (previously triplicated in flake.nix).
+  # The OpenSSL package paths shared by the openssl and docs shells
+  # (previously triplicated in flake.nix).
   opensslBackend = {
     pkgConfigPath = "${pkgs.openssl.dev}/lib/pkgconfig";
     packages = [
@@ -140,7 +135,7 @@ rec {
       name,
       pkgConfigPath,
       packages,
-      zig-tools ? zig0_15,
+      zig-tools ? zig,
     }:
     pkgs.mkShell {
       inherit name;

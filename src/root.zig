@@ -20,6 +20,7 @@ pub const EstablishedSession = @import("EstablishedSession.zig");
 pub const ExtensionType = @import("extension_type.zig").ExtensionType;
 pub const frame = @import("frame.zig");
 pub const hkdf = @import("hkdf.zig");
+pub const io = @import("io.zig");
 pub const kex = @import("kex.zig");
 pub const ktls = @import("ktls.zig");
 const memx = @import("memx.zig");

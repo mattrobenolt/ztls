@@ -1,5 +1,4 @@
-//! Compatibility layer for byte-slice fuzz targets across Zig std.testing APIs.
-const builtin = @import("builtin");
+//! Adapter from std.testing.fuzz's Smith-driven input to byte-slice targets.
 const std = @import("std");
 const testing = std.testing;
 
@@ -10,10 +9,6 @@ pub fn fuzzBytes(
     context: anytype,
     options: testing.FuzzInputOptions,
 ) anyerror!void {
-    if (comptime builtin.zig_version.major == 0 and builtin.zig_version.minor < 16) {
-        return testing.fuzz(context, testOne, options);
-    }
-
     const Wrapper = struct {
         fn run(ctx: @TypeOf(context), smith: *testing.Smith) anyerror!void {
             var buf: [max_input_len]u8 = undefined;

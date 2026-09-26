@@ -29,7 +29,7 @@ const IntrospectingClient = tls.ClientWith(.{
 });
 
 fn testIo() Io {
-    return Io.Threaded.global_single_threaded.io();
+    return testing.io;
 }
 
 /// Wrap a raw fd as a `net.Stream`. The address is unused by the read/write

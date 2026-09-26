@@ -9,13 +9,17 @@
 ///     → RecordLayer keys and IVs
 ///     → encrypt/decrypt application data
 const std = @import("std");
-const print = std.debug.print;
+const Io = std.Io;
 
 const ztls = @import("ztls");
 const hkdf = ztls.hkdf.HkdfSha256;
 const RecordLayer = ztls.RecordLayer;
 
-pub fn main() !void {
+pub fn main(init: std.process.Init) !void {
+    var stdout_buf: [4096]u8 = undefined;
+    var stdout_file = Io.File.stdout().writer(init.io, &stdout_buf);
+    const stdout = &stdout_file.interface;
+    defer stdout.flush() catch {};
     // X25519 shared secret from RFC 8448 §3.
     const dhe_secret: [32]u8 = .{
         0x8b, 0xd4, 0x05, 0x4f, 0xb5, 0x5b, 0x9d, 0x63,
@@ -40,12 +44,12 @@ pub fn main() !void {
     const client_hs_secret = hkdf.clientHandshakeTrafficSecret(handshake, &transcript_hs);
     const server_hs_secret = hkdf.serverHandshakeTrafficSecret(handshake, &transcript_hs);
 
-    print("=== key schedule (RFC 8448 §3) ===\n", .{});
-    print("early_secret:         {x}\n", .{hkdf.early_secret.data});
-    print("handshake_secret:     {x}\n", .{handshake.data});
-    print("master_secret:        {x}\n", .{master.data});
-    print("client_hs_secret:     {x}\n", .{client_hs_secret.data});
-    print("server_hs_secret:     {x}\n", .{server_hs_secret.data});
+    try stdout.print("=== key schedule (RFC 8448 §3) ===\n", .{});
+    try stdout.print("early_secret:         {x}\n", .{hkdf.early_secret.data});
+    try stdout.print("handshake_secret:     {x}\n", .{handshake.data});
+    try stdout.print("master_secret:        {x}\n", .{master.data});
+    try stdout.print("client_hs_secret:     {x}\n", .{client_hs_secret.data});
+    try stdout.print("server_hs_secret:     {x}\n", .{server_hs_secret.data});
 
     // Derive RecordLayer keys and IVs from the server handshake traffic secret.
     const server_write_key = hkdf.trafficKey(.aes_128_gcm_sha256, server_hs_secret);
@@ -54,11 +58,11 @@ pub fn main() !void {
     const client_write_key = hkdf.trafficKey(.aes_128_gcm_sha256, client_hs_secret);
     const client_write_iv = hkdf.trafficIv(client_hs_secret);
 
-    print("\n=== handshake traffic keys ===\n", .{});
-    print("server_write_key: {x}\n", .{server_write_key.data});
-    print("server_write_iv:  {x}\n", .{server_write_iv.data});
-    print("client_write_key: {x}\n", .{client_write_key.data});
-    print("client_write_iv:  {x}\n", .{client_write_iv.data});
+    try stdout.print("\n=== handshake traffic keys ===\n", .{});
+    try stdout.print("server_write_key: {x}\n", .{server_write_key.data});
+    try stdout.print("server_write_iv:  {x}\n", .{server_write_iv.data});
+    try stdout.print("client_write_key: {x}\n", .{client_write_key.data});
+    try stdout.print("client_write_iv:  {x}\n", .{client_write_iv.data});
 
     // Wire up RecordLayers with derived keys.
     const server_aead: ztls.aead.Aead = .{ .aes_128_gcm_sha256 = server_write_key };
@@ -73,8 +77,8 @@ pub fn main() !void {
     const wire = try server_tx.encrypt(.handshake, plaintext, &out);
     const received = try client_rx.decrypt(wire);
 
-    print("\n=== record layer ===\n", .{});
-    print("encrypted {} bytes -> {} wire bytes\n", .{ plaintext.len, wire.len });
-    print("content_type: {s}\n", .{@tagName(received.content_type)});
-    print("content:      {s}\n", .{received.content});
+    try stdout.print("\n=== record layer ===\n", .{});
+    try stdout.print("encrypted {} bytes -> {} wire bytes\n", .{ plaintext.len, wire.len });
+    try stdout.print("content_type: {s}\n", .{@tagName(received.content_type)});
+    try stdout.print("content:      {s}\n", .{received.content});
 }

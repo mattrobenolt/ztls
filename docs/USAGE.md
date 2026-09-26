@@ -37,7 +37,7 @@ The engine owns the TLS protocol: framing, encryption, transcript hashing, alert
 
 ## Fresh project setup
 
-Use Zig 0.15.2 or newer. ztls links a libcrypto-family provider through `pkg-config`; the repository devshell supplies OpenSSL by default.
+Use Zig 0.16. ztls links a libcrypto-family provider through `pkg-config`; the repository devshell supplies OpenSSL by default.
 
 Start from Zig's generated project files so `build.zig.zon` gets a valid package fingerprint:
 
@@ -89,7 +89,7 @@ The root package also exposes all three integration modules from the same fetch:
 
 | Dependency module | Import name | Requirement |
 |---|---|---|
-| `ztls` | caller-chosen, normally `ztls` | Zig 0.15.2 or newer |
+| `ztls` | caller-chosen, normally `ztls` | Zig 0.16 |
 | `ztls_std` | caller-chosen, normally `ztls_std` | Zig 0.16 |
 | `ztls_xev` | caller-chosen, normally `ztls_xev` | Zig 0.16 and the dependency option `.xev = true` |
 | `ztls_ktls` | caller-chosen, normally `ztls_ktls` | Zig 0.16 on Linux |
@@ -120,7 +120,6 @@ through `PKG_CONFIG_PATH`. The compiler infers OpenSSL, AWS-LC, or BoringSSL
 from the selected headers. Add `.@"crypto-fips" = true` only to narrow OpenSSL
 or AWS-LC capabilities for an explicitly configured FIPS build.
 
-Importing an integration under Zig 0.15 reports its Zig 0.16 requirement.
 Importing `ztls_xev` without `.xev = true` reports the missing opt-in. The three
 integration directories keep standalone manifests for in-tree development, but
 external consumers should depend only on the root package. For a commit URL,

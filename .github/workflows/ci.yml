@@ -36,7 +36,7 @@ jobs:
 
   # kqueue coverage. Five defects in integrations/ztls-xev have been invisible
   # under io_uring and every one was found because a human ran a Mac by hand;
-  # the 21/21 that closed #76 was stale within a day. Scoped to the 0.16
+  # the 21/21 that closed #76 was stale within a day. Scoped to the
   # integrations rather than the whole lane — conformance needs a Python/TLS-Anvil
   # stack that has never been exercised on macOS.
   test-macos-integrations:
@@ -50,19 +50,5 @@ jobs:
           persist-credentials: false
       - uses: DeterminateSystems/determinate-nix-action@61cbfe2efc2d4e7a8a6d56967c3c1058e846c858 # v3.21.9
       - uses: DeterminateSystems/magic-nix-cache-action@908b263ff629f4cc17666315b7fd3ec127c6244d # v14
-      - name: Run the 0.16 integration and distribution gates on kqueue
-        run: nix develop .#zig-0_16 --command just integrations-ci distribution-integrations-ci
-
-  test-zig-0_16:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: DeterminateSystems/determinate-nix-action@61cbfe2efc2d4e7a8a6d56967c3c1058e846c858 # v3.21.9
-      - uses: DeterminateSystems/magic-nix-cache-action@908b263ff629f4cc17666315b7fd3ec127c6244d # v14
-      - name: Run core checks under Zig 0.16
-        run: nix develop .#zig-0_16 --command just ci-0_16
+      - name: Run the integration and distribution gates on kqueue
+        run: nix develop --command just integrations-ci distribution-ci

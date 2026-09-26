@@ -43,8 +43,7 @@
             commonHook
             boringsslPc
             backendShell
-            zig0_15
-            zig0_16
+            zig
             opensslBackend
             ;
         in
@@ -60,53 +59,14 @@
           devShells = rec {
             base = pkgs.mkShell {
               name = "ztls-base";
-              packages = commonPackages zig0_15;
-              shellHook = commonHook zig0_15;
+              packages = commonPackages zig;
+              shellHook = commonHook zig;
             };
 
             openssl = backendShell {
               name = "ztls-openssl";
               pkgConfigPath = opensslBackend.pkgConfigPath;
               packages = opensslBackend.packages;
-            };
-
-            # Zig 0.16 lane: same OpenSSL backend as the default shell but
-            # with the 0.16 toolchain. CI uses this to prove 0.16 support is
-            # real, not a local spot-check (#61).
-            zig-0_16 = backendShell {
-              name = "ztls-zig-0_16";
-              pkgConfigPath = opensslBackend.pkgConfigPath;
-              packages = opensslBackend.packages;
-              zig-tools = zig0_16;
-            };
-
-            # ztls-std integration (#77): Zig 0.16 + OpenSSL backend. The
-            # integration builds against the ztls core via an in-tree path dep
-            # (integrations/ztls-std/build.zig.zon). Reuses shared helpers.
-            ztls-std = backendShell {
-              name = "ztls-std";
-              pkgConfigPath = opensslBackend.pkgConfigPath;
-              packages = opensslBackend.packages;
-              zig-tools = zig0_16;
-            };
-
-            # ztls-xev integration (#76): Zig 0.16 + OpenSSL backend. libxev is a
-            # pure-Zig dependency fetched by the package, so this shell is the
-            # same shape as ztls-std.
-            ztls-xev = backendShell {
-              name = "ztls-xev";
-              pkgConfigPath = opensslBackend.pkgConfigPath;
-              packages = opensslBackend.packages;
-              zig-tools = zig0_16;
-            };
-
-            # ztls-ktls integration (#78): Zig 0.16 + OpenSSL backend. The
-            # package itself is Linux-only and root CI skips it on macOS.
-            ztls-ktls = backendShell {
-              name = "ztls-ktls";
-              pkgConfigPath = opensslBackend.pkgConfigPath;
-              packages = opensslBackend.packages;
-              zig-tools = zig0_16;
             };
 
             aws-lc = backendShell {

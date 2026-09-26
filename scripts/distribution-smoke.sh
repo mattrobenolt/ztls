@@ -1,20 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-mode=${1:-}
-case "$mode" in
-    core | integrations) ;;
+case "$(zig version)" in
+    0.16.*) ;;
     *)
-        echo "usage: $0 {core|integrations}" >&2
-        exit 2
-        ;;
-esac
-
-zig_version=$(zig version)
-case "$mode:$zig_version" in
-    core:0.15.2* | integrations:0.16.*) ;;
-    *)
-        echo "$mode distribution smoke found unsupported Zig version $zig_version" >&2
+        echo "distribution smoke requires Zig 0.16, found $(zig version)" >&2
         exit 1
         ;;
 esac
@@ -113,50 +103,34 @@ build_consumer() {
     )
 }
 
-if [ "$mode" = core ]; then
-    build_consumer core
-    assert_not_cached benchmark txtar ztest libxev
+build_consumer core
+assert_not_cached benchmark txtar ztest libxev
 
-    for selected in std xev; do
-        guard_log="$tmp/zig-0.15-$selected-guard.log"
-        if build_consumer "$selected" >"$guard_log" 2>&1; then
-            echo "Zig 0.15 unexpectedly compiled the $selected integration" >&2
-            exit 1
-        fi
-        if ! grep -F "ztls integration modules require Zig 0.16 or newer" "$guard_log" >/dev/null; then
-            cat "$guard_log" >&2
-            echo "$selected failure did not use the Zig 0.16 diagnostic" >&2
-            exit 1
-        fi
-    done
-    assert_not_cached benchmark txtar ztest libxev
-else
-    build_consumer std
-    assert_not_cached benchmark txtar ztest libxev
+build_consumer std
+assert_not_cached benchmark txtar ztest libxev
 
-    xev_guard_log="$tmp/xev-option-guard.log"
-    if build_consumer xev_without_option >"$xev_guard_log" 2>&1; then
-        echo "ztls_xev unexpectedly compiled without the xev dependency option" >&2
-        exit 1
-    fi
-    if ! grep -F "ztls_xev is opt-in" "$xev_guard_log" >/dev/null; then
-        cat "$xev_guard_log" >&2
-        echo "ztls_xev failure did not use the opt-in diagnostic" >&2
-        exit 1
-    fi
-
-    if [ "$(uname -s)" = Linux ]; then
-        build_consumer ktls
-    else
-        echo "ztls_ktls: Linux-only distribution smoke skipped"
-    fi
-
-    build_consumer xev
-    cache_contains libxev || {
-        echo "ztls_xev did not fetch its declared libxev dependency" >&2
-        exit 1
-    }
-    assert_not_cached benchmark txtar ztest
+xev_guard_log="$tmp/xev-option-guard.log"
+if build_consumer xev_without_option >"$xev_guard_log" 2>&1; then
+    echo "ztls_xev unexpectedly compiled without the xev dependency option" >&2
+    exit 1
+fi
+if ! grep -F "ztls_xev is opt-in" "$xev_guard_log" >/dev/null; then
+    cat "$xev_guard_log" >&2
+    echo "ztls_xev failure did not use the opt-in diagnostic" >&2
+    exit 1
 fi
 
-echo "ztls $mode distribution smoke passed from an isolated fetched package"
+if [ "$(uname -s)" = Linux ]; then
+    build_consumer ktls
+else
+    echo "ztls_ktls: Linux-only distribution smoke skipped"
+fi
+
+build_consumer xev
+cache_contains libxev || {
+    echo "ztls_xev did not fetch its declared libxev dependency" >&2
+    exit 1
+}
+assert_not_cached benchmark txtar ztest
+
+echo "ztls distribution smoke passed from an isolated fetched package"

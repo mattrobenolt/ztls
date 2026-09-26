@@ -1,4 +1,4 @@
-//! Minimal TLS 1.3 HTTPS server using `std.net` and `ServerHandshake`.
+//! Minimal TLS 1.3 HTTPS server using `Io.net` and `ServerHandshake`.
 //!
 //! Binds to 127.0.0.1:8443, accepts one connection, completes a server-
 //! authenticated handshake, and responds to a single HTTP/1.0 GET request.
@@ -12,11 +12,11 @@
 //! The server exits successfully only after handling one request. A 5-second
 //! idle timeout exits non-zero so CI cannot mistake "no client" for TLS proof.
 const std = @import("std");
+const Io = std.Io;
 const print = std.debug.print;
-const net = @import("net_compat");
-const Address = net.Address;
-
 const ztls = @import("ztls");
+
+const IpAddress = Io.net.IpAddress;
 
 const fixtures = @import("fixtures");
 
@@ -30,16 +30,17 @@ const scalar: []const u8 = &fixtures.server_ecdsa_scalar;
 
 const response = "HTTP/1.0 200 OK\r\nContent-Length: 18\r\n\r\nHello from ztls!";
 
-pub fn main() !void {
-    const addr: Address = try net.parseIp(host, port);
-    var server = try net.listen(addr, .{ .reuse_address = true });
-    defer net.deinitServer(&server);
+pub fn main(init: std.process.Init) !void {
+    const io = init.io;
+    const addr: IpAddress = try .parse(host, port);
+    var server = try addr.listen(io, .{ .reuse_address = true });
+    defer server.deinit(io);
     print("[https]  server listening on https://{s}:{d}/\n", .{ host, port });
 
     // Wait up to 5 seconds for a client connection so the build step
     // does not hang forever when run without a client.
     var pollfd = [1]std.posix.pollfd{.{
-        .fd = net.serverFd(server),
+        .fd = server.socket.handle,
         .events = std.posix.POLL.IN,
         .revents = 0,
     }};
@@ -53,13 +54,13 @@ pub fn main() !void {
         return error.NoClientConnected;
     }
 
-    const stream = try net.accept(&server);
-    defer net.close(stream);
+    const stream = try server.accept(io);
+    defer stream.close(io);
     print("[https]  client connected\n", .{});
 
     const server_keypair: ztls.x25519.KeyPair = .generate();
     var random: ztls.Random = undefined;
-    net.fillRandom(&random.data);
+    io.random(&random.data);
     var hs: ztls.ServerHandshake = .init(.{
         .keypairs = try .init(server_keypair),
         .random = random,
@@ -77,17 +78,17 @@ pub fn main() !void {
     var flight: ztls.ServerHandshake.FlightBuffer = .empty;
 
     while (!hs.isConnected()) {
-        const n = try net.read(stream, rb.writable());
+        const n = try ztls.io.fill(io, stream, &rb);
         if (n == 0) return error.ClientClosed;
         rb.advance(n);
         while (try rb.next()) |record| {
             const ev = try hs.handleRecord(record, &out.buffer);
             switch (ev) {
                 .write => |w| {
-                    try net.writeAll(stream, w);
+                    try ztls.io.writeAll(io, stream, w);
                     hs.completeWrite();
                     if (try hs.sendServerFlightBuffered(&flight)) |flight_bytes| {
-                        try net.writeAll(stream, flight_bytes);
+                        try ztls.io.writeAll(io, stream, flight_bytes);
                         hs.completeWrite();
                     }
                 },
@@ -100,7 +101,7 @@ pub fn main() !void {
 
     // Handle one request, send response, close gracefully.
     while (true) {
-        const n = try net.read(stream, rb.writable());
+        const n = try ztls.io.fill(io, stream, &rb);
         if (n == 0) return error.ClientClosed;
         rb.advance(n);
         while (try rb.next()) |record| {
@@ -109,22 +110,22 @@ pub fn main() !void {
                 .application_data => |data| {
                     if (std.mem.startsWith(u8, data, "GET ")) {
                         const rec = try hs.sendApplicationData(response, &out.buffer);
-                        try net.writeAll(stream, rec);
+                        try ztls.io.writeAll(io, stream, rec);
                         hs.completeWrite();
                     }
                     const close = try hs.sendAlert(.close_notify, &out.buffer);
-                    try net.writeAll(stream, close);
+                    try ztls.io.writeAll(io, stream, close);
                     hs.completeWrite();
                     return;
                 },
                 .write => |w| {
-                    try net.writeAll(stream, w);
+                    try ztls.io.writeAll(io, stream, w);
                     hs.completeWrite();
                 },
                 .closed => return,
                 .key_update => |ku| {
                     if (ku.response) |w| {
-                        try net.writeAll(stream, w);
+                        try ztls.io.writeAll(io, stream, w);
                         hs.completeWrite();
                     }
                 },

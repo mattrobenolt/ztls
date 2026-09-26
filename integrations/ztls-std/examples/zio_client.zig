@@ -27,12 +27,11 @@ const net = Io.net;
 const mem = std.mem;
 const print = std.debug.print;
 
-const zio = @import("zio");
 const tls = @import("ztls_std");
-
-// Route std.log / std.debug.print through zio so they cannot block the loop.
+const zio = @import("zio");
 pub const std_options_debug_io = zio.debug_io;
 
+// Route std.log / std.debug.print through zio so they cannot block the loop.
 /// Retain the verified chain so `info().peer_chain` can report it.
 const Client = tls.ClientWith(.{
     .peer_chain_storage = tls.core.ClientHandshake.recommended_handshake_storage,
@@ -180,7 +179,7 @@ fn fetchTask(f: *Fetch) void {
 fn deadline(io: Io, ms: u64) void {
     // ziglint-ignore: Z026 -- Cancelable is the whole error set, and being
     // cancelled means the fetch won, which the caller already knows.
-    io.sleep(.{ .nanoseconds = @intCast(ms * std.time.ns_per_ms) }, .awake) catch {};
+    io.sleep(.fromNanoseconds(ms * std.time.ns_per_ms), .awake) catch {};
 }
 
 /// Whichever arm finishes first wins; `Select.cancel` stops the other.

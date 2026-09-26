@@ -16,12 +16,7 @@ pub fn build(b: *std.Build) void {
     });
     const ztls_mod = ztls_dep.module("ztls");
 
-    // Shared 0.15/0.16 networking compat shim — same module as the examples.
-    const net_compat_mod = b.createModule(.{
-        .root_source_file = b.path("../shared/net_compat.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
+    // Shared networking helpers — same module as the examples.
 
     // Test fixtures module — same module as the root build.
     const fixtures_mod = b.createModule(.{
@@ -66,7 +61,6 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
             .imports = &.{.{ .name = "ztls", .module = ztls_mod }},
         });
-        exe_mod.addImport("net_compat", net_compat_mod);
         exe_mod.addImport("fixtures", fixtures_mod);
         exe_mod.link_libc = true;
         const exe = b.addExecutable(.{
@@ -86,7 +80,6 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
             .imports = &.{.{ .name = "ztls", .module = ztls_mod }},
         });
-        mod.addImport("net_compat", net_compat_mod);
         mod.addImport("fixtures", fixtures_mod);
         mod.link_libc = true;
         const unit_tests = b.addTest(.{ .root_module = mod });

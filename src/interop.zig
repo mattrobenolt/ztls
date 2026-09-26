@@ -1,23 +1,20 @@
 const std = @import("std");
-const fs = std.fs;
 const heap = std.heap;
 const mem = std.mem;
+const Io = std.Io;
 const testing = std.testing;
 const Child = std.process.Child;
 const Allocator = mem.Allocator;
-const builtin = @import("builtin");
+const IpAddress = Io.net.IpAddress;
+const Stream = Io.net.Stream;
+const Server = Io.net.Server;
+const path = Io.Dir.path;
 
 const fixtures = @import("fixtures");
 
 const backend = @import("crypto/backend.zig");
 const entropy = @import("entropy.zig");
 const ztls = @import("root.zig");
-
-const is_zig_16 = builtin.zig_version.major == 0 and builtin.zig_version.minor >= 16;
-const Net = if (is_zig_16) std.Io.net else std.net;
-const Address = if (is_zig_16) Net.IpAddress else Net.Address;
-const Stream = Net.Stream;
-const Server = Net.Server;
 
 const host = "127.0.0.1";
 const alpn_protocol = "http/1.1";
@@ -67,10 +64,10 @@ test "OpenSSL s_server interoperates with ztls client" {
     var tmp = testing.tmpDir(.{});
     defer tmp.cleanup();
     const dir = try tmpDirPath(arena, &tmp);
-    const cert_path = try fs.path.join(arena, &.{ dir, "cert.pem" });
-    const key_path = try fs.path.join(arena, &.{ dir, "key.pem" });
+    const cert_path = try path.join(arena, &.{ dir, "cert.pem" });
+    const key_path = try path.join(arena, &.{ dir, "key.pem" });
 
-    try genCert(arena, cert_path, key_path);
+    try genCert(cert_path, key_path);
 
     for (client_suites, 0..) |suite, i| {
         try runClientSuite(arena, cert_path, key_path, suite, 14433 + @as(u16, @intCast(i)));
@@ -89,9 +86,9 @@ test "OpenSSL s_server interoperates with ztls P-384 client" {
     var tmp = testing.tmpDir(.{});
     defer tmp.cleanup();
     const dir = try tmpDirPath(arena, &tmp);
-    const cert_path = try fs.path.join(arena, &.{ dir, "cert.pem" });
-    const key_path = try fs.path.join(arena, &.{ dir, "key.pem" });
-    try genCert(arena, cert_path, key_path);
+    const cert_path = try path.join(arena, &.{ dir, "cert.pem" });
+    const key_path = try path.join(arena, &.{ dir, "key.pem" });
+    try genCert(cert_path, key_path);
 
     try runClientGroup(arena, cert_path, key_path, p384_group, 20343);
 }
@@ -106,9 +103,9 @@ test "OpenSSL s_server interoperates with ztls RFC 10024 client groups" {
     var tmp = testing.tmpDir(.{});
     defer tmp.cleanup();
     const dir = try tmpDirPath(arena, &tmp);
-    const cert_path = try fs.path.join(arena, &.{ dir, "cert.pem" });
-    const key_path = try fs.path.join(arena, &.{ dir, "key.pem" });
-    try genCert(arena, cert_path, key_path);
+    const cert_path = try path.join(arena, &.{ dir, "cert.pem" });
+    const key_path = try path.join(arena, &.{ dir, "key.pem" });
+    try genCert(cert_path, key_path);
 
     var tested = false;
     for (hybrid_groups, 0..) |group, i| {
@@ -137,9 +134,9 @@ test "ztls client resumes with OpenSSL s_server (PSK resumption)" {
     var tmp = testing.tmpDir(.{});
     defer tmp.cleanup();
     const dir = try tmpDirPath(arena, &tmp);
-    const cert_path = try fs.path.join(arena, &.{ dir, "cert.pem" });
-    const key_path = try fs.path.join(arena, &.{ dir, "key.pem" });
-    try genCert(arena, cert_path, key_path);
+    const cert_path = try path.join(arena, &.{ dir, "cert.pem" });
+    const key_path = try path.join(arena, &.{ dir, "key.pem" });
+    try genCert(cert_path, key_path);
 
     try runResumptionInterop(arena, cert_path, key_path, 19433);
 }
@@ -157,9 +154,9 @@ test "ztls client sends 0-RTT early data to OpenSSL s_server" {
     var tmp = testing.tmpDir(.{});
     defer tmp.cleanup();
     const dir = try tmpDirPath(arena, &tmp);
-    const cert_path = try fs.path.join(arena, &.{ dir, "cert.pem" });
-    const key_path = try fs.path.join(arena, &.{ dir, "key.pem" });
-    try genCert(arena, cert_path, key_path);
+    const cert_path = try path.join(arena, &.{ dir, "cert.pem" });
+    const key_path = try path.join(arena, &.{ dir, "key.pem" });
+    try genCert(cert_path, key_path);
 
     try runEarlyDataInterop(arena, cert_path, key_path, 19434);
 }
@@ -184,7 +181,7 @@ test "OpenSSL s_client resumes with ztls server-issued ticket" {
     var tmp = testing.tmpDir(.{});
     defer tmp.cleanup();
     const dir = try tmpDirPath(arena, &tmp);
-    const session_path = try fs.path.join(arena, &.{ dir, "session.pem" });
+    const session_path = try path.join(arena, &.{ dir, "session.pem" });
     try runServerResumptionSuite(arena, session_path, 16533);
 }
 
@@ -226,9 +223,9 @@ test "OpenSSL s_client with -cert interoperates with ztls server (required clien
     var tmp = testing.tmpDir(.{});
     defer tmp.cleanup();
     const dir = try tmpDirPath(arena, &tmp);
-    const client_cert_path = try fs.path.join(arena, &.{ dir, "client.pem" });
-    const client_key_path = try fs.path.join(arena, &.{ dir, "client.key" });
-    try genCert(arena, client_cert_path, client_key_path);
+    const client_cert_path = try path.join(arena, &.{ dir, "client.pem" });
+    const client_key_path = try path.join(arena, &.{ dir, "client.key" });
+    try genCert(client_cert_path, client_key_path);
 
     try runServerClientAuthSuite(
         arena,
@@ -251,10 +248,10 @@ test "ztls client with credentials interoperates with OpenSSL s_server -Verify" 
     // s_server needs a server cert/key (self-signed) and a CAfile that trusts
     // the ztls client's self-signed fixture certificate. The fixture cert is
     // self-signed, so its own PEM is the CAfile.
-    const server_cert_path = try fs.path.join(arena, &.{ dir, "server.pem" });
-    const server_key_path = try fs.path.join(arena, &.{ dir, "server.key" });
-    try genCert(arena, server_cert_path, server_key_path);
-    const client_ca_path = try fs.path.join(arena, &.{ dir, "client_ca.pem" });
+    const server_cert_path = try path.join(arena, &.{ dir, "server.pem" });
+    const server_key_path = try path.join(arena, &.{ dir, "server.key" });
+    try genCert(server_cert_path, server_key_path);
+    const client_ca_path = try path.join(arena, &.{ dir, "client_ca.pem" });
     try writeFixtureCertPem(arena, client_ca_path);
 
     try runClientAuthClientSuite(arena, server_cert_path, server_key_path, client_ca_path, 18433);
@@ -277,13 +274,13 @@ test "ztls-to-ztls TCP KeyUpdate round trip with ChaCha20-Poly1305" {
 
     const ServerThread = struct {
         fn run(c: *KuCtx) !void {
-            const addr = try parseAddress(host, 0);
-            var listener = try listen(addr);
-            defer deinitServer(&listener);
-            c.port.store(serverPort(&listener), .release);
+            const addr: IpAddress = try .parse(host, 0);
+            var listener = try addr.listen(testing.io, .{ .reuse_address = true });
+            defer listener.deinit(testing.io);
+            c.port.store(listener.socket.address.getPort(), .release);
 
-            const stream = try accept(&listener);
-            defer closeStream(stream);
+            const stream = try listener.accept(testing.io);
+            defer stream.close(testing.io);
 
             var random: ztls.Random = .empty;
             entropy.fill(&random.data);
@@ -305,17 +302,16 @@ test "ztls-to-ztls TCP KeyUpdate round trip with ChaCha20-Poly1305" {
 
             // Drive handshake.
             while (!hs.isConnected()) {
-                const n = try read(stream, rb.writable());
+                const n = try ztls.io.fill(testing.io, stream, &rb);
                 if (n == 0) return error.ClientClosed;
-                rb.advance(n);
                 while (try rb.next()) |record| {
                     const ev = try hs.handleRecord(record, &out.buffer);
                     switch (ev) {
                         .write => |w| {
-                            try writeAll(stream, w);
+                            try ztls.io.writeAll(testing.io, stream, w);
                             hs.completeWrite();
                             if (try hs.sendServerFlightBuffered(&flight)) |fb| {
-                                try writeAll(stream, fb);
+                                try ztls.io.writeAll(testing.io, stream, fb);
                                 hs.completeWrite();
                             }
                         },
@@ -327,35 +323,34 @@ test "ztls-to-ztls TCP KeyUpdate round trip with ChaCha20-Poly1305" {
 
             // Server sends KeyUpdate(update_requested).
             const ku = try hs.sendKeyUpdate(&out.buffer, .update_requested);
-            try writeAll(stream, ku);
+            try ztls.io.writeAll(testing.io, stream, ku);
             hs.completeWrite();
 
             // Echo loop: expect client's KeyUpdate response, then app data.
             while (true) {
-                const n = try read(stream, rb.writable());
+                const n = try ztls.io.fill(testing.io, stream, &rb);
                 if (n == 0) return error.ClientClosed;
-                rb.advance(n);
                 while (try rb.next()) |record| {
                     const ev = try hs.handleRecord(record, &out.buffer);
                     switch (ev) {
                         .key_update => |ku_ev| {
                             if (ku_ev.response) |w| {
-                                try writeAll(stream, w);
+                                try ztls.io.writeAll(testing.io, stream, w);
                                 hs.completeWrite();
                             }
                         },
                         .application_data => |data| {
                             if (!mem.eql(u8, data, "after-ku")) return error.UnexpectedAppData;
                             const resp = try hs.sendApplicationData("pong-ku", &out.buffer);
-                            try writeAll(stream, resp);
+                            try ztls.io.writeAll(testing.io, stream, resp);
                             hs.completeWrite();
                             const close = try hs.sendAlert(.close_notify, &out.buffer);
-                            try writeAll(stream, close);
+                            try ztls.io.writeAll(testing.io, stream, close);
                             hs.completeWrite();
                             return;
                         },
                         .write => |w| {
-                            try writeAll(stream, w);
+                            try ztls.io.writeAll(testing.io, stream, w);
                             hs.completeWrite();
                         },
                         .closed => return,
@@ -380,9 +375,9 @@ test "ztls-to-ztls TCP KeyUpdate round trip with ChaCha20-Poly1305" {
 
     // Client side.
     const client_keypair: ztls.x25519.KeyPair = .generate();
-    const addr = try parseAddress(host, server_port);
-    const stream = try connect(addr);
-    defer closeStream(stream);
+    const addr: IpAddress = try .parse(host, server_port);
+    const stream = try addr.connect(testing.io, .{ .mode = .stream });
+    defer stream.close(testing.io);
 
     var random: ztls.Random = .empty;
     entropy.fill(&random.data);
@@ -399,16 +394,15 @@ test "ztls-to-ztls TCP KeyUpdate round trip with ChaCha20-Poly1305" {
     var storage: ztls.RecordBuffer.Storage = .empty;
     var rb: ztls.RecordBuffer = .init(&storage.buffer);
 
-    try writeAll(stream, try hs.start(&out.buffer));
+    try ztls.io.writeAll(testing.io, stream, try hs.start(&out.buffer));
     hs.completeWrite();
 
     while (!hs.isConnected()) {
-        const n = try read(stream, rb.writable());
+        const n = try ztls.io.fill(testing.io, stream, &rb);
         if (n == 0) return error.ServerClosed;
-        rb.advance(n);
         while (try rb.next()) |record| switch (try hs.handleRecord(record, &out.buffer)) {
             .write => |w| {
-                try writeAll(stream, w);
+                try ztls.io.writeAll(testing.io, stream, w);
                 hs.completeWrite();
             },
             .application_data,
@@ -424,20 +418,19 @@ test "ztls-to-ztls TCP KeyUpdate round trip with ChaCha20-Poly1305" {
     var saw_key_update = false;
     var got_pong = false;
     while (!got_pong) {
-        const n = try read(stream, rb.writable());
+        const n = try ztls.io.fill(testing.io, stream, &rb);
         if (n == 0) break;
-        rb.advance(n);
         while (try rb.next()) |record| switch (try hs.handleRecord(record, &out.buffer)) {
             .key_update => |ku| {
                 if (ku.response) |w| {
-                    try writeAll(stream, w);
+                    try ztls.io.writeAll(testing.io, stream, w);
                     hs.completeWrite();
                 }
                 // Send app data under the new keys after the KeyUpdate.
                 if (!saw_key_update) {
                     saw_key_update = true;
                     const app = try hs.sendApplicationData("after-ku", &out.buffer);
-                    try writeAll(stream, app);
+                    try ztls.io.writeAll(testing.io, stream, app);
                     hs.completeWrite();
                 }
             },
@@ -446,7 +439,7 @@ test "ztls-to-ztls TCP KeyUpdate round trip with ChaCha20-Poly1305" {
                 got_pong = true;
             },
             .write => |w| {
-                try writeAll(stream, w);
+                try ztls.io.writeAll(testing.io, stream, w);
                 hs.completeWrite();
             },
             .closed => return,
@@ -468,7 +461,7 @@ fn runClientSuite(
     var server = try startServer(arena, cert_path, key_path, suite, port);
     defer killChild(&server);
     const stream = try connectWithRetry(port);
-    defer closeStream(stream);
+    defer stream.close(testing.io);
     try clientInterop(stream, null);
 }
 
@@ -482,7 +475,7 @@ fn runClientGroup(
     var server = try startServerWithGroup(arena, cert_path, key_path, group, port);
     defer killChild(&server);
     const stream = try connectWithRetry(port);
-    defer closeStream(stream);
+    defer stream.close(testing.io);
     try clientInterop(stream, group.ztls_group);
 }
 
@@ -499,11 +492,11 @@ fn runResumptionInterop(
     const stream1 = try connectWithRetry(port);
     var ticket: ztls.ClientHandshake.SessionTicket = try clientInteropCaptureTicket(stream1);
     defer ticket.secureZero();
-    closeStream(stream1);
+    stream1.close(testing.io);
 
     // Connection 2: offer the ticket and resume.
     const stream2 = try connectWithRetry(port);
-    defer closeStream(stream2);
+    defer stream2.close(testing.io);
     try clientInteropResume(stream2, &ticket);
 }
 
@@ -526,32 +519,28 @@ fn runEarlyDataInterop(
         "-early_data",            "-max_early_data",
         "16384",                  "-no_anti_replay",
     };
-    var server = if (comptime is_zig_16)
-        try std.process.spawn(testing.io, .{ .argv = argv, .stdout = .ignore, .stderr = .ignore })
-    else blk: {
-        var child = Child.init(argv, arena);
-        child.stdout_behavior = .Ignore;
-        child.stderr_behavior = .Ignore;
-        try child.spawn();
-        break :blk child;
-    };
+    var server = try std.process.spawn(testing.io, .{
+        .argv = argv,
+        .stdout = .ignore,
+        .stderr = .ignore,
+    });
     defer killChild(&server);
 
     // Connection 1: full handshake, capture the NST (with early_data).
     const stream1 = try connectWithRetry(port);
     var ticket: ztls.ClientHandshake.SessionTicket = try clientInteropCaptureTicket(stream1);
     defer ticket.secureZero();
-    closeStream(stream1);
+    stream1.close(testing.io);
 
     if (ticket.max_early_data_size == null) return error.NoEarlyDataInTicket;
 
     // Connection 2: offer early_data + send 0-RTT data, then resume.
     const stream2 = try connectWithRetry(port);
-    defer closeStream(stream2);
+    defer stream2.close(testing.io);
     try clientEarlyDataInterop(stream2, &ticket);
 }
 
-fn genCert(arena: Allocator, cert_path: []const u8, key_path: []const u8) !void {
+fn genCert(cert_path: []const u8, key_path: []const u8) !void {
     const argv = &.{
         "openssl",                 "req",     "-x509",
         "-newkey",                 "ec",      "-pkeyopt",
@@ -560,21 +549,12 @@ fn genCert(arena: Allocator, cert_path: []const u8, key_path: []const u8) !void 
         "1",                       "-nodes",  "-subj",
         "/CN=localhost",           "-addext", "subjectAltName=DNS:localhost",
     };
-    if (comptime is_zig_16) {
-        var child = try std.process.spawn(testing.io, .{
-            .argv = argv,
-            .stdout = .ignore,
-            .stderr = .ignore,
-        });
-        const term = try waitChild(&child);
-        if (!exitedZero(term)) return error.CertGenFailed;
-        return;
-    }
-
-    var child = Child.init(argv, arena);
-    child.stdout_behavior = .Ignore;
-    child.stderr_behavior = .Ignore;
-    const term = try child.spawnAndWait();
+    var child = try std.process.spawn(testing.io, .{
+        .argv = argv,
+        .stdout = .ignore,
+        .stderr = .ignore,
+    });
+    const term = try waitChild(&child);
     if (!exitedZero(term)) return error.CertGenFailed;
 }
 
@@ -596,19 +576,11 @@ fn startServer(
         "-alpn",   alpn_protocol,
         "-quiet",
     };
-    if (comptime is_zig_16) {
-        return std.process.spawn(testing.io, .{
-            .argv = argv,
-            .stdout = .ignore,
-            .stderr = .ignore,
-        });
-    }
-
-    var child = Child.init(argv, arena);
-    child.stdout_behavior = .Ignore;
-    child.stderr_behavior = .Ignore;
-    try child.spawn();
-    return child;
+    return std.process.spawn(testing.io, .{
+        .argv = argv,
+        .stdout = .ignore,
+        .stderr = .ignore,
+    });
 }
 
 fn startServerWithGroup(
@@ -630,19 +602,11 @@ fn startServerWithGroup(
         "-alpn",                  alpn_protocol,
         "-quiet",
     };
-    if (comptime is_zig_16) {
-        return std.process.spawn(testing.io, .{
-            .argv = argv,
-            .stdout = .ignore,
-            .stderr = .ignore,
-        });
-    }
-
-    var child = Child.init(argv, arena);
-    child.stdout_behavior = .Ignore;
-    child.stderr_behavior = .Ignore;
-    try child.spawn();
-    return child;
+    return std.process.spawn(testing.io, .{
+        .argv = argv,
+        .stdout = .ignore,
+        .stderr = .ignore,
+    });
 }
 
 fn clientInterop(stream: Stream, group: ?ztls.kex.NamedGroup) !void {
@@ -676,21 +640,20 @@ fn clientInterop(stream: Stream, group: ?ztls.kex.NamedGroup) !void {
     var storage: ztls.RecordBuffer.Storage = .empty;
     var rb: ztls.RecordBuffer = .init(&storage.buffer);
 
-    try writeAll(stream, try hs.start(&out));
+    try ztls.io.writeAll(testing.io, stream, try hs.start(&out));
     hs.completeWrite();
 
     while (!hs.isConnected()) {
-        const n = try read(stream, rb.writable());
+        const n = try ztls.io.fill(testing.io, stream, &rb);
         if (n == 0) return error.ServerClosed;
-        rb.advance(n);
         while (try rb.next()) |record| switch (try hs.handleRecord(record, &out)) {
             .write => |w| {
-                try writeAll(stream, w);
+                try ztls.io.writeAll(testing.io, stream, w);
                 hs.completeWrite();
             },
             .key_update => |ku| {
                 if (ku.response) |w| {
-                    try writeAll(stream, w);
+                    try ztls.io.writeAll(testing.io, stream, w);
                     hs.completeWrite();
                 }
             },
@@ -703,22 +666,22 @@ fn clientInterop(stream: Stream, group: ?ztls.kex.NamedGroup) !void {
     }
     try testing.expectEqualStrings(alpn_protocol, hs.selectedAlpnProtocol().?);
 
-    try writeAll(stream, try hs.sendApplicationData("GET / HTTP/1.0\r\n\r\n", &out));
+    const request = try hs.sendApplicationData("GET / HTTP/1.0\r\n\r\n", &out);
+    try ztls.io.writeAll(testing.io, stream, request);
     hs.completeWrite();
 
     while (true) {
-        const n = try read(stream, rb.writable());
+        const n = try ztls.io.fill(testing.io, stream, &rb);
         if (n == 0) break;
-        rb.advance(n);
         while (try rb.next()) |record| switch (try hs.handleRecord(record, &out)) {
             .application_data => |data| if (mem.startsWith(u8, data, "HTTP/1.0 200")) return,
             .write => |w| {
-                try writeAll(stream, w);
+                try ztls.io.writeAll(testing.io, stream, w);
                 hs.completeWrite();
             },
             .key_update => |ku| {
                 if (ku.response) |w| {
-                    try writeAll(stream, w);
+                    try ztls.io.writeAll(testing.io, stream, w);
                     hs.completeWrite();
                 }
             },
@@ -752,21 +715,20 @@ fn clientInteropCaptureTicket(stream: Stream) !ztls.ClientHandshake.SessionTicke
     var storage: ztls.RecordBuffer.Storage = .empty;
     var rb: ztls.RecordBuffer = .init(&storage.buffer);
 
-    try writeAll(stream, try hs.start(&out));
+    try ztls.io.writeAll(testing.io, stream, try hs.start(&out));
     hs.completeWrite();
 
     while (!hs.isConnected()) {
-        const n = try read(stream, rb.writable());
+        const n = try ztls.io.fill(testing.io, stream, &rb);
         if (n == 0) return error.ServerClosed;
-        rb.advance(n);
         while (try rb.next()) |record| switch (try hs.handleRecord(record, &out)) {
             .write => |w| {
-                try writeAll(stream, w);
+                try ztls.io.writeAll(testing.io, stream, w);
                 hs.completeWrite();
             },
             .key_update => |ku| {
                 if (ku.response) |w| {
-                    try writeAll(stream, w);
+                    try ztls.io.writeAll(testing.io, stream, w);
                     hs.completeWrite();
                 }
             },
@@ -781,15 +743,15 @@ fn clientInteropCaptureTicket(stream: Stream) !ztls.ClientHandshake.SessionTicke
     // Read post-handshake records until a NewSessionTicket arrives. The server
     // may send the NST immediately or after the request; send the GET and read
     // until both the NST and the response are seen.
-    try writeAll(stream, try hs.sendApplicationData("GET / HTTP/1.0\r\n\r\n", &out));
+    const request = try hs.sendApplicationData("GET / HTTP/1.0\r\n\r\n", &out);
+    try ztls.io.writeAll(testing.io, stream, request);
     hs.completeWrite();
 
     var ticket: ?ztls.ClientHandshake.SessionTicket = null;
     var got_response = false;
     while (true) {
-        const n = try read(stream, rb.writable());
+        const n = try ztls.io.fill(testing.io, stream, &rb);
         if (n == 0) break;
-        rb.advance(n);
         while (try rb.next()) |record| switch (try hs.handleRecord(record, &out)) {
             .new_session_ticket => |nst| {
                 ticket = try hs.deriveSessionTicket(nst);
@@ -798,12 +760,12 @@ fn clientInteropCaptureTicket(stream: Stream) !ztls.ClientHandshake.SessionTicke
                 got_response = true;
             },
             .write => |w| {
-                try writeAll(stream, w);
+                try ztls.io.writeAll(testing.io, stream, w);
                 hs.completeWrite();
             },
             .key_update => |ku| {
                 if (ku.response) |w| {
-                    try writeAll(stream, w);
+                    try ztls.io.writeAll(testing.io, stream, w);
                     hs.completeWrite();
                 }
             },
@@ -837,21 +799,20 @@ fn clientInteropResume(stream: Stream, ticket: *const ztls.ClientHandshake.Sessi
     var storage: ztls.RecordBuffer.Storage = .empty;
     var rb: ztls.RecordBuffer = .init(&storage.buffer);
 
-    try writeAll(stream, try hs.startWithPsk(ticket, &out, false));
+    try ztls.io.writeAll(testing.io, stream, try hs.startWithPsk(ticket, &out, false));
     hs.completeWrite();
 
     while (!hs.isConnected()) {
-        const n = try read(stream, rb.writable());
+        const n = try ztls.io.fill(testing.io, stream, &rb);
         if (n == 0) return error.ServerClosed;
-        rb.advance(n);
         while (try rb.next()) |record| switch (try hs.handleRecord(record, &out)) {
             .write => |w| {
-                try writeAll(stream, w);
+                try ztls.io.writeAll(testing.io, stream, w);
                 hs.completeWrite();
             },
             .key_update => |ku| {
                 if (ku.response) |w| {
-                    try writeAll(stream, w);
+                    try ztls.io.writeAll(testing.io, stream, w);
                     hs.completeWrite();
                 }
             },
@@ -863,22 +824,22 @@ fn clientInteropResume(stream: Stream, ticket: *const ztls.ClientHandshake.Sessi
         };
     }
 
-    try writeAll(stream, try hs.sendApplicationData("GET / HTTP/1.0\r\n\r\n", &out));
+    const request = try hs.sendApplicationData("GET / HTTP/1.0\r\n\r\n", &out);
+    try ztls.io.writeAll(testing.io, stream, request);
     hs.completeWrite();
 
     while (true) {
-        const n = try read(stream, rb.writable());
+        const n = try ztls.io.fill(testing.io, stream, &rb);
         if (n == 0) break;
-        rb.advance(n);
         while (try rb.next()) |record| switch (try hs.handleRecord(record, &out)) {
             .application_data => |data| if (mem.startsWith(u8, data, "HTTP/1.0 200")) return,
             .write => |w| {
-                try writeAll(stream, w);
+                try ztls.io.writeAll(testing.io, stream, w);
                 hs.completeWrite();
             },
             .key_update => |ku| {
                 if (ku.response) |w| {
-                    try writeAll(stream, w);
+                    try ztls.io.writeAll(testing.io, stream, w);
                     hs.completeWrite();
                 }
             },
@@ -915,27 +876,26 @@ fn clientEarlyDataInterop(
     var rb: ztls.RecordBuffer = .init(&storage.buffer);
 
     // Send the PSK ClientHello with early_data.
-    try writeAll(stream, try hs.startWithPsk(ticket, &out, true));
+    try ztls.io.writeAll(testing.io, stream, try hs.startWithPsk(ticket, &out, true));
     hs.completeWrite();
 
     // Send 0-RTT data immediately (before the server responds).
     const early = try hs.sendEarlyData("GET / HTTP/1.0\r\n\r\n", &out);
-    try writeAll(stream, early);
+    try ztls.io.writeAll(testing.io, stream, early);
     hs.completeWrite();
 
     // Process the server's response (ServerHello + flight).
     while (!hs.isConnected()) {
-        const n = try read(stream, rb.writable());
+        const n = try ztls.io.fill(testing.io, stream, &rb);
         if (n == 0) return error.ServerClosed;
-        rb.advance(n);
         while (try rb.next()) |record| switch (try hs.handleRecord(record, &out)) {
             .write => |w| {
-                try writeAll(stream, w);
+                try ztls.io.writeAll(testing.io, stream, w);
                 hs.completeWrite();
             },
             .key_update => |ku| {
                 if (ku.response) |w| {
-                    try writeAll(stream, w);
+                    try ztls.io.writeAll(testing.io, stream, w);
                     hs.completeWrite();
                 }
             },
@@ -949,18 +909,17 @@ fn clientEarlyDataInterop(
 
     // Read the server's response (the 0-RTT data was the GET request).
     while (true) {
-        const n = try read(stream, rb.writable());
+        const n = try ztls.io.fill(testing.io, stream, &rb);
         if (n == 0) break;
-        rb.advance(n);
         while (try rb.next()) |record| switch (try hs.handleRecord(record, &out)) {
             .application_data => |data| if (mem.startsWith(u8, data, "HTTP/1.0 200")) return,
             .write => |w| {
-                try writeAll(stream, w);
+                try ztls.io.writeAll(testing.io, stream, w);
                 hs.completeWrite();
             },
             .key_update => |ku| {
                 if (ku.response) |w| {
-                    try writeAll(stream, w);
+                    try ztls.io.writeAll(testing.io, stream, w);
                     hs.completeWrite();
                 }
             },
@@ -1091,21 +1050,12 @@ fn startClient(arena: Allocator, suite: []const u8, port: u16) !Child {
         suite,         "-alpn",
         alpn_protocol, "-quiet",
     };
-    if (comptime is_zig_16) {
-        return std.process.spawn(testing.io, .{
-            .argv = argv,
-            .stdin = .pipe,
-            .stdout = .pipe,
-            .stderr = .ignore,
-        });
-    }
-
-    var child = Child.init(argv, arena);
-    child.stdin_behavior = .Pipe;
-    child.stdout_behavior = .Pipe;
-    child.stderr_behavior = .Ignore;
-    try child.spawn();
-    return child;
+    return std.process.spawn(testing.io, .{
+        .argv = argv,
+        .stdin = .pipe,
+        .stdout = .pipe,
+        .stderr = .ignore,
+    });
 }
 
 fn startClientSaveSession(
@@ -1123,7 +1073,7 @@ fn startClientSaveSession(
         alpn_protocol,            "-sess_out",
         session_path,             "-quiet",
     };
-    return spawnClient(arena, argv);
+    return spawnClient(argv);
 }
 
 fn startClientReuseSession(
@@ -1141,25 +1091,16 @@ fn startClientReuseSession(
         alpn_protocol,            "-sess_in",
         session_path,             "-quiet",
     };
-    return spawnClient(arena, argv);
+    return spawnClient(argv);
 }
 
-fn spawnClient(arena: Allocator, argv: []const []const u8) !Child {
-    if (comptime is_zig_16) {
-        return std.process.spawn(testing.io, .{
-            .argv = argv,
-            .stdin = .pipe,
-            .stdout = .pipe,
-            .stderr = .ignore,
-        });
-    }
-
-    var child = Child.init(argv, arena);
-    child.stdin_behavior = .Pipe;
-    child.stdout_behavior = .Pipe;
-    child.stderr_behavior = .Ignore;
-    try child.spawn();
-    return child;
+fn spawnClient(argv: []const []const u8) !Child {
+    return std.process.spawn(testing.io, .{
+        .argv = argv,
+        .stdin = .pipe,
+        .stdout = .pipe,
+        .stderr = .ignore,
+    });
 }
 
 fn startClientWithGroup(arena: Allocator, group: InteropGroup, port: u16) !Child {
@@ -1173,44 +1114,35 @@ fn startClientWithGroup(arena: Allocator, group: InteropGroup, port: u16) !Child
         group.openssl_name,       "-alpn",
         alpn_protocol,            "-quiet",
     };
-    if (comptime is_zig_16) {
-        return std.process.spawn(testing.io, .{
-            .argv = argv,
-            .stdin = .pipe,
-            .stdout = .pipe,
-            .stderr = .ignore,
-        });
-    }
-
-    var child = Child.init(argv, arena);
-    child.stdin_behavior = .Pipe;
-    child.stdout_behavior = .Pipe;
-    child.stderr_behavior = .Ignore;
-    try child.spawn();
-    return child;
+    return std.process.spawn(testing.io, .{
+        .argv = argv,
+        .stdin = .pipe,
+        .stdout = .pipe,
+        .stderr = .ignore,
+    });
 }
 
 fn serverThread(args: *const ServerArgs) !void {
-    const addr = try parseAddress(host, args.port);
-    var server = try listen(addr);
-    defer deinitServer(&server);
-    const stream = try accept(&server);
-    defer closeStream(stream);
+    const addr: IpAddress = try .parse(host, args.port);
+    var server = try addr.listen(testing.io, .{ .reuse_address = true });
+    defer server.deinit(testing.io);
+    const stream = try server.accept(testing.io);
+    defer stream.close(testing.io);
     try serve(stream, args.suite, args.group, null, .none);
 }
 
 fn resumptionServerThread(args: *ServerResumptionArgs) !void {
-    const addr = try parseAddress(host, args.port);
-    var server = try listen(addr);
-    defer deinitServer(&server);
+    const addr: IpAddress = try .parse(host, args.port);
+    var server = try addr.listen(testing.io, .{ .reuse_address = true });
+    defer server.deinit(testing.io);
     {
-        const stream = try accept(&server);
-        defer closeStream(stream);
+        const stream = try server.accept(testing.io);
+        defer stream.close(testing.io);
         try serve(stream, .aes_128_gcm_sha256, null, &args.ticket, .issue);
     }
     {
-        const stream = try accept(&server);
-        defer closeStream(stream);
+        const stream = try server.accept(testing.io);
+        defer stream.close(testing.io);
         try serve(stream, .aes_128_gcm_sha256, null, &args.ticket, .reuse);
     }
 }
@@ -1258,23 +1190,22 @@ fn serve(
     errdefer |err| sendBestEffortAlert(&hs, stream, err, &out);
 
     while (!hs.isConnected()) {
-        const n = try read(stream, rb.writable());
+        const n = try ztls.io.fill(testing.io, stream, &rb);
         if (n == 0) return error.ClientClosed;
-        rb.advance(n);
         while (try rb.next()) |record| {
             const ev = try hs.handleRecord(record, &out);
             switch (ev) {
                 .write => |w| {
-                    try writeAll(stream, w);
+                    try ztls.io.writeAll(testing.io, stream, w);
                     hs.completeWrite();
                     if (try hs.sendPreparedServerFlight(&out)) |flight| {
-                        try writeAll(stream, flight);
+                        try ztls.io.writeAll(testing.io, stream, flight);
                         hs.completeWrite();
                     }
                 },
                 .key_update => |ku| {
                     if (ku.response) |w| {
-                        try writeAll(stream, w);
+                        try ztls.io.writeAll(testing.io, stream, w);
                         hs.completeWrite();
                     }
                 },
@@ -1305,7 +1236,7 @@ fn serve(
                 },
                 &out,
             );
-            try writeAll(stream, ticket_record);
+            try ztls.io.writeAll(testing.io, stream, ticket_record);
             hs.completeWrite();
         },
         .reuse => state.did_resume = hs.isResumed(),
@@ -1314,21 +1245,20 @@ fn serve(
         while (try rb.next()) |record| switch (try hs.handleRecord(record, &out)) {
             .application_data => |data| return sendResponse(stream, &hs, data, &out),
             .write => |w| {
-                try writeAll(stream, w);
+                try ztls.io.writeAll(testing.io, stream, w);
                 hs.completeWrite();
             },
             .key_update => |ku| {
                 if (ku.response) |w| {
-                    try writeAll(stream, w);
+                    try ztls.io.writeAll(testing.io, stream, w);
                     hs.completeWrite();
                 }
             },
             .closed => return,
             .none => {},
         };
-        const n = try read(stream, rb.writable());
+        const n = try ztls.io.fill(testing.io, stream, &rb);
         if (n == 0) return error.ClientClosed;
-        rb.advance(n);
     }
 }
 
@@ -1340,10 +1270,10 @@ fn sendResponse(
 ) !void {
     if (!mem.startsWith(u8, request, "GET ")) return error.UnexpectedRequest;
     const rec = try hs.sendApplicationData(response, out);
-    try writeAll(stream, rec);
+    try ztls.io.writeAll(testing.io, stream, rec);
     hs.completeWrite();
     const close = try hs.sendAlert(.close_notify, out);
-    try writeAll(stream, close);
+    try ztls.io.writeAll(testing.io, stream, close);
     hs.completeWrite();
 }
 
@@ -1381,11 +1311,11 @@ const ServerAuthArgs = struct {
 };
 
 fn serverClientAuthThread(args: *const ServerAuthArgs) !void {
-    const addr = try parseAddress(host, args.port);
-    var server = try listen(addr);
-    defer deinitServer(&server);
-    const stream = try accept(&server);
-    defer closeStream(stream);
+    const addr: IpAddress = try .parse(host, args.port);
+    var server = try addr.listen(testing.io, .{ .reuse_address = true });
+    defer server.deinit(testing.io);
+    const stream = try server.accept(testing.io);
+    defer stream.close(testing.io);
     try serveClientAuth(stream);
 }
 
@@ -1415,23 +1345,22 @@ fn serveClientAuth(stream: Stream) !void {
     errdefer |err| sendBestEffortAlert(&hs, stream, err, &out);
 
     while (!hs.isConnected()) {
-        const n = try read(stream, rb.writable());
+        const n = try ztls.io.fill(testing.io, stream, &rb);
         if (n == 0) return error.ClientClosed;
-        rb.advance(n);
         while (try rb.next()) |record| {
             const ev = try hs.handleRecord(record, &out);
             switch (ev) {
                 .write => |w| {
-                    try writeAll(stream, w);
+                    try ztls.io.writeAll(testing.io, stream, w);
                     hs.completeWrite();
                     if (try hs.sendPreparedServerFlight(&out)) |flight| {
-                        try writeAll(stream, flight);
+                        try ztls.io.writeAll(testing.io, stream, flight);
                         hs.completeWrite();
                     }
                 },
                 .key_update => |ku| {
                     if (ku.response) |w| {
-                        try writeAll(stream, w);
+                        try ztls.io.writeAll(testing.io, stream, w);
                         hs.completeWrite();
                     }
                 },
@@ -1446,18 +1375,17 @@ fn serveClientAuth(stream: Stream) !void {
     }
 
     while (true) {
-        const n = try read(stream, rb.writable());
+        const n = try ztls.io.fill(testing.io, stream, &rb);
         if (n == 0) return error.ClientClosed;
-        rb.advance(n);
         while (try rb.next()) |record| switch (try hs.handleRecord(record, &out)) {
             .application_data => |data| return sendResponse(stream, &hs, data, &out),
             .write => |w| {
-                try writeAll(stream, w);
+                try ztls.io.writeAll(testing.io, stream, w);
                 hs.completeWrite();
             },
             .key_update => |ku| {
                 if (ku.response) |w| {
-                    try writeAll(stream, w);
+                    try ztls.io.writeAll(testing.io, stream, w);
                     hs.completeWrite();
                 }
             },
@@ -1484,21 +1412,12 @@ fn startClientWithCert(
         cert_path,                "-key",
         key_path,                 "-quiet",
     };
-    if (comptime is_zig_16) {
-        return std.process.spawn(testing.io, .{
-            .argv = argv,
-            .stdin = .pipe,
-            .stdout = .pipe,
-            .stderr = .ignore,
-        });
-    }
-
-    var child = Child.init(argv, arena);
-    child.stdin_behavior = .Pipe;
-    child.stdout_behavior = .Pipe;
-    child.stderr_behavior = .Ignore;
-    try child.spawn();
-    return child;
+    return std.process.spawn(testing.io, .{
+        .argv = argv,
+        .stdin = .pipe,
+        .stdout = .pipe,
+        .stderr = .ignore,
+    });
 }
 
 // RFC 8446 §4.7.2 — ztls client presenting credentials to `openssl s_server
@@ -1523,7 +1442,7 @@ fn runClientAuthClientSuite(
     defer killChild(&child);
     // Give s_server a moment to bind.
     const stream = try connectWithRetry(port);
-    defer closeStream(stream);
+    defer stream.close(testing.io);
     try clientInteropWithCreds(stream);
 }
 
@@ -1547,19 +1466,11 @@ fn startServerVerify(
         "-CAfile",                ca_path,
         "-quiet",
     };
-    if (comptime is_zig_16) {
-        return std.process.spawn(testing.io, .{
-            .argv = argv,
-            .stdout = .ignore,
-            .stderr = .ignore,
-        });
-    }
-
-    var child = Child.init(argv, arena);
-    child.stdout_behavior = .Ignore;
-    child.stderr_behavior = .Ignore;
-    try child.spawn();
-    return child;
+    return std.process.spawn(testing.io, .{
+        .argv = argv,
+        .stdout = .ignore,
+        .stderr = .ignore,
+    });
 }
 
 fn clientInteropWithCreds(stream: Stream) !void {
@@ -1585,21 +1496,20 @@ fn clientInteropWithCreds(stream: Stream) !void {
     var storage: ztls.RecordBuffer.Storage = .empty;
     var rb: ztls.RecordBuffer = .init(&storage.buffer);
 
-    try writeAll(stream, try hs.start(&out));
+    try ztls.io.writeAll(testing.io, stream, try hs.start(&out));
     hs.completeWrite();
 
     while (!hs.isConnected()) {
-        const n = try read(stream, rb.writable());
+        const n = try ztls.io.fill(testing.io, stream, &rb);
         if (n == 0) return error.ServerClosed;
-        rb.advance(n);
         while (try rb.next()) |record| switch (try hs.handleRecord(record, &out)) {
             .write => |w| {
-                try writeAll(stream, w);
+                try ztls.io.writeAll(testing.io, stream, w);
                 hs.completeWrite();
             },
             .key_update => |ku| {
                 if (ku.response) |w| {
-                    try writeAll(stream, w);
+                    try ztls.io.writeAll(testing.io, stream, w);
                     hs.completeWrite();
                 }
             },
@@ -1612,22 +1522,22 @@ fn clientInteropWithCreds(stream: Stream) !void {
     }
     try testing.expectEqualStrings(alpn_protocol, hs.selectedAlpnProtocol().?);
 
-    try writeAll(stream, try hs.sendApplicationData("GET / HTTP/1.0\r\n\r\n", &out));
+    const request = try hs.sendApplicationData("GET / HTTP/1.0\r\n\r\n", &out);
+    try ztls.io.writeAll(testing.io, stream, request);
     hs.completeWrite();
 
     while (true) {
-        const n = try read(stream, rb.writable());
+        const n = try ztls.io.fill(testing.io, stream, &rb);
         if (n == 0) break;
-        rb.advance(n);
         while (try rb.next()) |record| switch (try hs.handleRecord(record, &out)) {
             .application_data => |data| if (mem.startsWith(u8, data, "HTTP/1.0 200")) return,
             .write => |w| {
-                try writeAll(stream, w);
+                try ztls.io.writeAll(testing.io, stream, w);
                 hs.completeWrite();
             },
             .key_update => |ku| {
                 if (ku.response) |w| {
-                    try writeAll(stream, w);
+                    try ztls.io.writeAll(testing.io, stream, w);
                     hs.completeWrite();
                 }
             },
@@ -1656,11 +1566,7 @@ fn writeFixtureCertPem(arena: Allocator, pem_path: []const u8) !void {
         "-----BEGIN CERTIFICATE-----\n{s}\n-----END CERTIFICATE-----\n",
         .{encoded},
     );
-    if (is_zig_16) {
-        try std.Io.Dir.cwd().writeFile(testing.io, .{ .sub_path = pem_path, .data = pem });
-    } else {
-        try fs.cwd().writeFile(.{ .sub_path = pem_path, .data = pem });
-    }
+    try Io.Dir.cwd().writeFile(testing.io, .{ .sub_path = pem_path, .data = pem });
 }
 
 fn sendBestEffortAlert(
@@ -1671,13 +1577,13 @@ fn sendBestEffortAlert(
 ) void {
     const description = ztls.alert.alertForError(err);
     const alert_record = hs.sendAlert(description, out) catch return;
-    writeAll(stream, alert_record) catch return;
+    ztls.io.writeAll(testing.io, stream, alert_record) catch return;
 }
 
 fn connectWithRetry(port: u16) !Stream {
-    const addr = try parseAddress("127.0.0.1", port);
+    const addr: IpAddress = try .parse("127.0.0.1", port);
     for (0..100) |_| {
-        return connect(addr) catch {
+        return addr.connect(testing.io, .{ .mode = .stream }) catch {
             sleep20ms();
             continue;
         };
@@ -1686,92 +1592,24 @@ fn connectWithRetry(port: u16) !Stream {
 }
 
 fn tmpDirPath(arena: Allocator, tmp: anytype) ![]const u8 {
-    if (comptime is_zig_16) {
-        var path_buf: [fs.max_path_bytes]u8 = undefined;
-        const len = try tmp.dir.realPath(testing.io, &path_buf);
-        return arena.dupe(u8, path_buf[0..len]);
-    }
-    return tmp.dir.realpathAlloc(arena, ".");
-}
-
-fn parseAddress(ip: []const u8, port: u16) !Address {
-    return if (comptime is_zig_16)
-        Net.IpAddress.parse(ip, port)
-    else
-        Net.Address.parseIp(ip, port);
-}
-
-fn listen(addr: Address) !Server {
-    return if (comptime is_zig_16)
-        addr.listen(testing.io, .{ .reuse_address = true })
-    else
-        addr.listen(.{ .reuse_address = true });
-}
-
-fn deinitServer(server: *Server) void {
-    if (comptime is_zig_16) server.deinit(testing.io) else server.deinit();
-}
-
-fn serverPort(server: *const Server) u16 {
-    if (comptime is_zig_16) return server.socket.address.getPort();
-    return server.listen_address.in.getPort();
-}
-
-fn accept(server: *Server) !Stream {
-    if (comptime is_zig_16) return server.accept(testing.io);
-    return (try server.accept()).stream;
-}
-
-fn connect(addr: Address) !Stream {
-    return if (comptime is_zig_16)
-        addr.connect(testing.io, .{ .mode = .stream })
-    else
-        std.net.tcpConnectToAddress(addr);
-}
-
-fn closeStream(stream: Stream) void {
-    if (comptime is_zig_16) stream.close(testing.io) else stream.close();
-}
-
-fn read(stream: Stream, buf: []u8) !usize {
-    if (comptime !is_zig_16) return stream.read(buf);
-    var data: [1][]u8 = .{buf};
-    return testing.io.vtable.netRead(testing.io.userdata, stream.socket.handle, &data);
-}
-
-fn writeAll(stream: Stream, bytes: []const u8) !void {
-    if (comptime !is_zig_16) return stream.writeAll(bytes);
-    var rest = bytes;
-    while (rest.len != 0) {
-        const data: [1][]const u8 = .{rest};
-        const n = try testing.io.vtable.netWrite(
-            testing.io.userdata,
-            stream.socket.handle,
-            "",
-            &data,
-            1,
-        );
-        rest = rest[n..];
-    }
+    var path_buf: [Io.Dir.max_path_bytes]u8 = undefined;
+    const len = try tmp.dir.realPath(testing.io, &path_buf);
+    return arena.dupe(u8, path_buf[0..len]);
 }
 
 fn killChild(child: *Child) void {
-    if (comptime is_zig_16) child.kill(testing.io) else _ = child.kill() catch return;
+    child.kill(testing.io);
 }
 
 fn waitChild(child: *Child) !Child.Term {
-    return if (comptime is_zig_16) child.wait(testing.io) else child.wait();
+    return child.wait(testing.io);
 }
 
 fn exitedZero(term: Child.Term) bool {
-    return if (comptime is_zig_16)
-        term == .exited and term.exited == 0
-    else
-        term == .Exited and term.Exited == 0;
+    return term == .exited and term.exited == 0;
 }
 
 fn writeFileAll(file: anytype, bytes: []const u8) !void {
-    if (comptime !is_zig_16) return file.writeAll(bytes);
     var writer_buf: [1024]u8 = undefined;
     var writer = file.writer(testing.io, &writer_buf);
     try writer.interface.writeAll(bytes);
@@ -1779,7 +1617,6 @@ fn writeFileAll(file: anytype, bytes: []const u8) !void {
 }
 
 fn readFileAll(file: anytype, buf: []u8) !usize {
-    if (comptime !is_zig_16) return file.readAll(buf);
     var reader_buf: [1024]u8 = undefined;
     var reader = file.readerStreaming(testing.io, &reader_buf);
     var total: usize = 0;
@@ -1792,14 +1629,9 @@ fn readFileAll(file: anytype, buf: []u8) !usize {
 }
 
 fn closeFile(file: anytype) void {
-    if (comptime is_zig_16) file.close(testing.io) else file.close();
+    file.close(testing.io);
 }
 
 fn sleep20ms() void {
-    if (comptime is_zig_16) {
-        const req: std.c.timespec = .{ .sec = 0, .nsec = 20 * std.time.ns_per_ms };
-        _ = std.c.nanosleep(&req, null);
-    } else {
-        std.Thread.sleep(20 * std.time.ns_per_ms);
-    }
+    testing.io.sleep(.fromNanoseconds(20 * std.time.ns_per_ms), .awake) catch return;
 }

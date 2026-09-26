@@ -4,14 +4,10 @@
 //! chooses fresh server randomness/key_share. The generated records are then
 //! frozen into a txtar archive for replay benchmarks.
 const std = @import("std");
-const fs = std.fs;
+const Io = std.Io;
 const mem = std.mem;
-const Child = std.process.Child;
-const net = std.net;
-const time = std.time;
 const heap = std.heap;
-const sleep = std.Thread.sleep;
-const Allocator = std.mem.Allocator;
+const Allocator = mem.Allocator;
 
 const ztls = @import("ztls");
 
@@ -52,24 +48,23 @@ const client_random: ztls.Random = .{ .data = .{
     0xa2, 0xef, 0x62, 0x83, 0x02, 0x4d, 0xec, 0xe7,
 } };
 
-pub fn connectWithRetry(port: u16) !net.Stream {
-    const addr: net.Address = try .parseIp("127.0.0.1", port);
+pub fn connectWithRetry(io: Io, port: u16) !Io.net.Stream {
+    const addr: Io.net.IpAddress = try .parse(host, port);
     for (0..100) |_| {
-        return net.tcpConnectToAddress(addr) catch {
-            sleep(20 * time.ns_per_ms);
+        return addr.connect(io, .{ .mode = .stream }) catch {
+            const delay: Io.Duration = .fromNanoseconds(20 * std.time.ns_per_ms);
+            io.sleep(delay, .awake) catch return error.ServerNeverCameUp;
             continue;
         };
     }
     return error.ServerNeverCameUp;
 }
 
-pub fn main() !void {
-    var arena_allocator: heap.ArenaAllocator = .init(heap.smp_allocator);
-    defer arena_allocator.deinit();
-    const arena = arena_allocator.allocator();
+pub fn main(init: std.process.Init) !void {
+    const arena = init.arena.allocator();
 
     var stdout_buf: [4096]u8 = undefined;
-    var stdout_file = fs.File.stdout().writer(&stdout_buf);
+    var stdout_file = Io.File.stdout().writer(init.io, &stdout_buf);
     const stdout = &stdout_file.interface;
     defer stdout.flush() catch {};
 
@@ -77,9 +72,9 @@ pub fn main() !void {
     // in source comments rather than emitting leading prose here.
     for (suites, 0..) |suite, i| {
         const port: u16 = base_port + @as(u16, @intCast(i));
-        const records = try captureSuite(arena, suite.name, port);
+        const records = try captureSuite(init.io, arena, suite.name, port);
         try stdout.print("\n-- {s}.records.b64 --\n", .{suite.file});
-        var encoder = std.base64.standard.Encoder;
+        const encoder = std.base64.standard.Encoder;
         const n = encoder.calcSize(records.len);
         const encoded = try arena.alloc(u8, n);
         _ = encoder.encode(encoded, records);
@@ -87,22 +82,24 @@ pub fn main() !void {
     }
 }
 
-fn captureSuite(arena: Allocator, suite: []const u8, port: u16) ![]u8 {
-    var server = try startServer(arena, suite, port);
-    defer _ = server.kill() catch {};
+fn captureSuite(io: Io, arena: Allocator, suite: []const u8, port: u16) ![]u8 {
+    var server = try startServer(io, arena, suite, port);
+    defer server.kill(io);
 
-    const stream = try connectWithRetry(port);
-    defer stream.close();
+    const stream = try connectWithRetry(io, port);
+    defer stream.close(io);
 
     var hs: ztls.ClientHandshake = .init(.{
         .keypairs = try .init(client_keypair),
         .host_name = replay_host_name,
         .now_sec = 0,
         .random = client_random,
+        // Fixture capture replays bytes; the self-signed test cert has no anchor.
+        .insecure_no_chain_anchor = true,
     });
     defer hs.deinit();
     var out: [1024]u8 = undefined;
-    try stream.writeAll(try hs.start(&out));
+    try ztls.io.writeAll(io, stream, try hs.start(&out));
     hs.completeWrite();
 
     var storage: ztls.RecordBuffer.Storage = .empty;
@@ -112,14 +109,13 @@ fn captureSuite(arena: Allocator, suite: []const u8, port: u16) ![]u8 {
     errdefer records.deinit(arena);
 
     while (!hs.isConnected()) {
-        const n = try stream.read(rb.writable());
+        const n = try ztls.io.fill(io, stream, &rb);
         if (n == 0) return error.ServerClosed;
-        rb.advance(n);
         while (try rb.next()) |record| {
             try records.appendSlice(arena, record);
             switch (try hs.handleRecord(record, &out)) {
                 .write => |w| {
-                    try stream.writeAll(w);
+                    try ztls.io.writeAll(io, stream, w);
                     hs.completeWrite();
                 },
                 .none => {},
@@ -135,19 +131,19 @@ fn captureSuite(arena: Allocator, suite: []const u8, port: u16) ![]u8 {
     return records.toOwnedSlice(arena);
 }
 
-fn startServer(arena: mem.Allocator, suite: []const u8, port: u16) !Child {
+fn startServer(io: Io, arena: Allocator, suite: []const u8, port: u16) !std.process.Child {
     const port_str = try std.fmt.allocPrint(arena, "{d}", .{port});
-    var child = Child.init(&.{
-        "openssl",                   "s_server",
-        "-tls1_3",                   "-ciphersuites",
-        suite,                       "-key",
-        "tests/fixtures/server.key", "-cert",
-        "tests/fixtures/server.crt", "-port",
-        port_str,                    "-www",
-        "-quiet",
-    }, arena);
-    child.stdout_behavior = .Ignore;
-    child.stderr_behavior = .Ignore;
-    try child.spawn();
-    return child;
+    return std.process.spawn(io, .{
+        .argv = &.{
+            "openssl",                   "s_server",
+            "-tls1_3",                   "-ciphersuites",
+            suite,                       "-key",
+            "tests/fixtures/server.key", "-cert",
+            "tests/fixtures/server.crt", "-port",
+            port_str,                    "-www",
+            "-quiet",
+        },
+        .stdout = .ignore,
+        .stderr = .ignore,
+    });
 }

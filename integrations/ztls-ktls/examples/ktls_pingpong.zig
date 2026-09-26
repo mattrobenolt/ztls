@@ -1,8 +1,8 @@
 const std = @import("std");
 const testing = std.testing;
 const posix = std.posix;
+const Io = std.Io;
 const linux = std.os.linux;
-const net = @import("net_compat");
 const ztls = @import("ztls");
 const ztls_ktls = @import("ztls_ktls");
 const fixtures = @import("fixtures");
@@ -38,7 +38,8 @@ const Scenario = enum {
 };
 
 const ServerContext = struct {
-    listener: *net.Server,
+    io: Io,
+    listener: *Io.net.Server,
     keypair: ztls.x25519.KeyPair,
     suite: ztls.CipherSuite,
     scenario: Scenario,
@@ -49,8 +50,8 @@ const ServerContext = struct {
 
 /// Run a loopback client and server with both post-handshake data planes owned
 /// by Linux kTLS. The same code is exercised by the tests below.
-pub fn main() !void {
-    try runScenario(.aes_128_gcm_sha256, .both_ktls);
+pub fn main(init: std.process.Init) !void {
+    try runScenario(init.io, .aes_128_gcm_sha256, .both_ktls);
     std.debug.print("ztls-ktls: loopback handoff, rekey, and closure succeeded\n", .{});
 }
 
@@ -58,74 +59,75 @@ pub fn main() !void {
 // userspace/kTLS boundary, exercises both live KeyUpdate directions when the
 // kernel supports them, and exchanges explicit close_notify alerts.
 test "Linux kTLS AES-128-GCM handoff, rekey, and clean closure" {
-    try runScenario(.aes_128_gcm_sha256, .full);
+    try runScenario(testing.io, .aes_128_gcm_sha256, .full);
 }
 
 test "Linux kTLS AES-256-GCM handoff, rekey, and clean closure" {
-    try runScenario(.aes_256_gcm_sha384, .full);
+    try runScenario(testing.io, .aes_256_gcm_sha384, .full);
 }
 
 test "Linux kTLS ChaCha20-Poly1305 handoff, rekey, and clean closure" {
-    try runScenario(.chacha20_poly1305_sha256, .full);
+    try runScenario(testing.io, .chacha20_poly1305_sha256, .full);
 }
 
 // RFC 8446 §4.6.3 — both package roles can own their kernel data planes and
 // complete crossed live key updates without exposing stale key snapshots.
 test "Linux kTLS client and server roles interoperate" {
-    try runScenario(.aes_128_gcm_sha256, .both_ktls);
+    try runScenario(testing.io, .aes_128_gcm_sha256, .both_ktls);
 }
 
 // RFC 8446 §5.1 — an empty application record is not EOF, and the kernel only
 // notices KeyUpdate at byte zero. The client skips the empty record and
 // proactively ratchets when a complete NewSessionTicket precedes KeyUpdate.
 test "Linux kTLS handles empty data then coalesced ticket and KeyUpdate" {
-    try runScenario(.aes_128_gcm_sha256, .client_coalesced_key_update);
+    try runScenario(testing.io, .aes_128_gcm_sha256, .client_coalesced_key_update);
 }
 
 // RFC 8446 §5.1 — Finished and application data are loaded into one
 // RecordBuffer fill before either is processed. Handoff drains and delivers the
 // application bytes exactly once before installing TLS_RX.
 test "Linux kTLS drains forced read-ahead before handoff" {
-    try runScenario(.aes_128_gcm_sha256, .forced_handoff);
+    try runScenario(testing.io, .aes_128_gcm_sha256, .forced_handoff);
 }
 
 // RFC 8446 §5.3 — activation refuses an encrypted userspace record until its
 // full transport delivery has been acknowledged.
 test "Linux kTLS pending-write handoff drains existing read-ahead" {
-    try runScenario(.aes_128_gcm_sha256, .pending_write_guard);
+    try runScenario(testing.io, .aes_128_gcm_sha256, .pending_write_guard);
 }
 
 // RFC 8446 §4.6.1, §5.3 — ticket preparation and its userspace-encrypted
 // record must complete before the kernel can own the server TX record layer.
 test "Linux kTLS rejects handoff until NewSessionTicket is flushed" {
-    try runScenario(.aes_128_gcm_sha256, .pending_ticket_guard);
+    try runScenario(testing.io, .aes_128_gcm_sha256, .pending_ticket_guard);
 }
 
 // RFC 8446 §4.6.3 — an update_requested response is sent in userspace before
 // activation can permit kernel application data.
 test "Linux kTLS rejects handoff with a KeyUpdate response owed" {
-    try runScenario(.aes_128_gcm_sha256, .pending_key_update_response_guard);
+    try runScenario(testing.io, .aes_128_gcm_sha256, .pending_key_update_response_guard);
 }
 
 // RFC 8446 §6.1 — TCP FIN without close_notify is truncation, never clean EOF.
 test "Linux kTLS rejects a bare FIN as truncated TLS" {
-    try runScenario(.aes_128_gcm_sha256, .abrupt_client);
+    try runScenario(testing.io, .aes_128_gcm_sha256, .abrupt_client);
 }
 
 // RFC 8446 §5.1 — Linux pauses after a first-fragment KeyUpdate and cannot
 // expose its continuation. The supported policy is a bounded fatal error.
 test "Linux kTLS rejects fragmented KeyUpdate without hanging" {
-    try runScenario(.aes_128_gcm_sha256, .fragmented_key_update);
+    try runScenario(testing.io, .aes_128_gcm_sha256, .fragmented_key_update);
 }
 
-fn runScenario(suite: ztls.CipherSuite, scenario: Scenario) !void {
+fn runScenario(io: Io, suite: ztls.CipherSuite, scenario: Scenario) !void {
     const client_keypair: ztls.x25519.KeyPair = .generate();
     const server_keypair: ztls.x25519.KeyPair = .generate();
 
-    const address = try net.parseIp(host, 0);
-    var listener = try net.listen(address, .{ .reuse_address = true });
-    defer net.deinitServer(&listener);
+    const address: Io.net.IpAddress = try .parse(host, 0);
+    var listener = try address.listen(io, .{ .reuse_address = true });
+    defer listener.deinit(io);
     var context: ServerContext = .{
+        .io = io,
         .listener = &listener,
         .keypair = server_keypair,
         .suite = suite,
@@ -136,7 +138,7 @@ fn runScenario(suite: ztls.CipherSuite, scenario: Scenario) !void {
     var client_error: ?anyerror = null;
     runClient(
         client_keypair,
-        net.serverPort(listener),
+        listener.socket.address.getPort(),
         &context,
         scenario,
     ) catch |err| {
@@ -170,19 +172,19 @@ fn serverThread(context: *ServerContext) void {
             .ktls_unavailable
         else
             .{ .failed = err };
-        context.activation_gate.post(testIo());
+        context.activation_gate.post(context.io);
         return;
     };
     context.outcome = .passed;
 }
 
 fn runServer(context: *ServerContext) !void {
-    const stream = try net.accept(context.listener);
-    defer net.close(stream);
-    try setTimeouts(net.fd(stream));
+    const stream = try context.listener.accept(context.io);
+    defer stream.close(context.io);
+    try setTimeouts(stream.socket.handle);
 
     var random: ztls.Random = undefined;
-    net.fillRandom(&random.data);
+    context.io.random(&random.data);
     const supported_suites = [_]ztls.CipherSuite{context.suite};
     var handshake: ztls.ServerHandshake = .init(.{
         .keypairs = try .init(context.keypair),
@@ -267,7 +269,7 @@ fn runServer(context: *ServerContext) !void {
         try testing.expectEqual(ztls.ServerHandshake.KeyUpdateRequest.update_requested, request);
         try testing.expectError(
             error.PendingKeyUpdateResponse,
-            ztls_ktls.Server.activate(net.fd(stream), &handshake, &buffered),
+            ztls_ktls.Server.activate(stream.socket.handle, &handshake, &buffered),
         );
         const response = try handshake.sendKeyUpdate(
             &out.buffer,
@@ -323,14 +325,14 @@ fn runServer(context: *ServerContext) !void {
     partial.advance(1);
     try testing.expectError(
         error.BufferedCiphertext,
-        ztls_ktls.Server.activate(net.fd(stream), &handshake, &partial),
+        ztls_ktls.Server.activate(stream.socket.handle, &handshake, &partial),
     );
 
     if (context.scenario == .pending_write_guard) {
         const guard = try handshake.sendApplicationData("guard", &out.buffer);
         try testing.expectError(
             error.PendingWrite,
-            ztls_ktls.Server.activate(net.fd(stream), &handshake, &buffered),
+            ztls_ktls.Server.activate(stream.socket.handle, &handshake, &buffered),
         );
 
         try writeSocketAll(stream, guard);
@@ -343,7 +345,7 @@ fn runServer(context: *ServerContext) !void {
         defer ticket_psk.secureZero();
         try testing.expectError(
             error.PendingTicket,
-            ztls_ktls.Server.activate(net.fd(stream), &handshake, &buffered),
+            ztls_ktls.Server.activate(stream.socket.handle, &handshake, &buffered),
         );
         const ticket = try handshake.sendNewSessionTicket(
             &ticket_psk,
@@ -356,7 +358,7 @@ fn runServer(context: *ServerContext) !void {
         );
         try testing.expectError(
             error.PendingWrite,
-            ztls_ktls.Server.activate(net.fd(stream), &handshake, &buffered),
+            ztls_ktls.Server.activate(stream.socket.handle, &handshake, &buffered),
         );
         try writeSocketAll(stream, ticket);
         handshake.completeWrite();
@@ -364,7 +366,7 @@ fn runServer(context: *ServerContext) !void {
     }
 
     var connection = try ztls_ktls.Server.activate(
-        net.fd(stream),
+        stream.socket.handle,
         &handshake,
         &buffered,
     );
@@ -373,7 +375,7 @@ fn runServer(context: *ServerContext) !void {
         .unsupported => .unsupported,
     };
     context.capability.store(@intFromEnum(capability), .release);
-    context.activation_gate.post(testIo());
+    context.activation_gate.post(context.io);
 
     var short_read_buffer: [ztls.frame.max_plaintext_len - 1]u8 = undefined;
     try testing.expectError(error.BufferTooShort, connection.read(&short_read_buffer));
@@ -425,16 +427,17 @@ fn runClient(
     context: *ServerContext,
     scenario: Scenario,
 ) !void {
-    const stream = try net.connect(try net.parseIp(host, port));
-    defer net.close(stream);
-    try setTimeouts(net.fd(stream));
+    const client_addr: Io.net.IpAddress = try .parse(host, port);
+    const stream = try client_addr.connect(context.io, .{ .mode = .stream });
+    defer stream.close(context.io);
+    try setTimeouts(stream.socket.handle);
 
     var random: ztls.Random = undefined;
-    net.fillRandom(&random.data);
+    context.io.random(&random.data);
     var handshake: ztls.ClientHandshake = .init(.{
         .keypairs = try .init(keypair),
         .host_name = server_name,
-        .now_sec = net.timestamp(),
+        .now_sec = Io.Timestamp.now(context.io, .real).toSeconds(),
         .random = random,
         .insecure_no_chain_anchor = true,
         .alpn_protocols = &.{"h2"},
@@ -491,12 +494,12 @@ fn runClient(
 
     if (scenario == .both_ktls or scenario == .client_coalesced_key_update) {
         var connection = try ztls_ktls.Client.activate(
-            net.fd(stream),
+            stream.socket.handle,
             &handshake,
             &buffered,
         );
         if (scenario != .client_coalesced_key_update) {
-            context.activation_gate.waitUncancelable(testIo());
+            context.activation_gate.waitUncancelable(context.io);
         }
         try writeAll(&connection, "ping");
         if (scenario == .client_coalesced_key_update) {
@@ -540,7 +543,7 @@ fn runClient(
     }
 
     if (!sent_ping) {
-        context.activation_gate.waitUncancelable(testIo());
+        context.activation_gate.waitUncancelable(context.io);
         try sendApplicationData(stream, &handshake, &out, "ping");
     }
     if (scenario == .pending_write_guard) {
@@ -596,7 +599,7 @@ fn runClient(
 }
 
 fn sendServerApplication(
-    stream: net.Stream,
+    stream: Io.net.Stream,
     handshake: *ztls.ServerHandshake,
     out: *ztls.ServerHandshake.OutBuffer,
     data: []const u8,
@@ -606,7 +609,7 @@ fn sendServerApplication(
 }
 
 fn readServerKeyUpdate(
-    stream: net.Stream,
+    stream: Io.net.Stream,
     handshake: *ztls.ServerHandshake,
     buffered: *ztls.RecordBuffer,
 ) !ztls.ServerHandshake.KeyUpdateRequest {
@@ -625,7 +628,7 @@ fn readServerKeyUpdate(
 }
 
 fn readServerApplication(
-    stream: net.Stream,
+    stream: Io.net.Stream,
     handshake: *ztls.ServerHandshake,
     buffered: *ztls.RecordBuffer,
     expected: []const u8,
@@ -648,7 +651,7 @@ fn readServerApplication(
 }
 
 fn readServerClose(
-    stream: net.Stream,
+    stream: Io.net.Stream,
     handshake: *ztls.ServerHandshake,
     buffered: *ztls.RecordBuffer,
 ) !void {
@@ -667,7 +670,7 @@ fn readServerClose(
 }
 
 fn readClientKeyUpdate(
-    stream: net.Stream,
+    stream: Io.net.Stream,
     handshake: *ztls.ClientHandshake,
     buffered: *ztls.RecordBuffer,
     expected: ztls.ClientHandshake.KeyUpdateRequest,
@@ -690,7 +693,7 @@ fn readClientKeyUpdate(
 }
 
 fn sendApplicationData(
-    stream: net.Stream,
+    stream: Io.net.Stream,
     handshake: *ztls.ClientHandshake,
     out: *ztls.ClientHandshake.OutBuffer,
     data: []const u8,
@@ -700,7 +703,7 @@ fn sendApplicationData(
 }
 
 fn readClientApplication(
-    stream: net.Stream,
+    stream: Io.net.Stream,
     handshake: *ztls.ClientHandshake,
     buffered: *ztls.RecordBuffer,
     out: *ztls.ClientHandshake.OutBuffer,
@@ -737,7 +740,7 @@ fn readClientApplication(
 }
 
 fn readClientClose(
-    stream: net.Stream,
+    stream: Io.net.Stream,
     handshake: *ztls.ClientHandshake,
     buffered: *ztls.RecordBuffer,
     out: *ztls.ClientHandshake.OutBuffer,
@@ -762,7 +765,7 @@ fn readClientClose(
 }
 
 fn sendClientClose(
-    stream: net.Stream,
+    stream: Io.net.Stream,
     handshake: *ztls.ClientHandshake,
     out: *ztls.ClientHandshake.OutBuffer,
 ) !void {
@@ -771,7 +774,7 @@ fn sendClientClose(
 }
 
 fn readClientFatal(
-    stream: net.Stream,
+    stream: Io.net.Stream,
     handshake: *ztls.ClientHandshake,
     buffered: *ztls.RecordBuffer,
     out: *ztls.ClientHandshake.OutBuffer,
@@ -824,16 +827,12 @@ fn writeAll(connection: anytype, bytes: []const u8) !void {
     }
 }
 
-fn testIo() std.Io {
-    return std.Io.Threaded.global_single_threaded.io();
-}
-
-fn writeSocketAll(stream: net.Stream, bytes: []const u8) !void {
+fn writeSocketAll(stream: Io.net.Stream, bytes: []const u8) !void {
     var rest = bytes;
     var attempts: u8 = 0;
     while (rest.len != 0 and attempts < 128) : (attempts += 1) {
         const rc = linux.sendto(
-            net.fd(stream),
+            stream.socket.handle,
             rest.ptr,
             rest.len,
             linux.MSG.NOSIGNAL,
@@ -855,10 +854,10 @@ fn writeSocketAll(stream: net.Stream, bytes: []const u8) !void {
     if (rest.len != 0) return error.TooManyWrites;
 }
 
-fn readSocket(stream: net.Stream, bytes: []u8) !usize {
+fn readSocket(stream: Io.net.Stream, bytes: []u8) !usize {
     var interruptions: u8 = 0;
     while (interruptions < 16) : (interruptions += 1) {
-        const rc = linux.recvfrom(net.fd(stream), bytes.ptr, bytes.len, 0, null, null);
+        const rc = linux.recvfrom(stream.socket.handle, bytes.ptr, bytes.len, 0, null, null);
         switch (linux.errno(rc)) {
             .SUCCESS => return @intCast(@as(isize, @bitCast(rc))),
             .INTR => continue,

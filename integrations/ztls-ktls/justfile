@@ -1,7 +1,7 @@
 # ztls-ktls integration workflows (#78).
 #
-# Zig 0.16 and Linux only. Enter the devshell with
-# `nix develop ../..#ztls-ktls`, or let direnv do it via .envrc.
+# Linux only. Enter the root devshell with `nix develop ../..`, or let direnv
+# do it via .envrc.
 
 [private]
 default:

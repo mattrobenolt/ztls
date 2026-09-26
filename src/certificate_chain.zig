@@ -9,11 +9,7 @@ const pem_end_certificate = "-----END CERTIFICATE-----";
 const pem_decoder = std.base64.standard.decoderWithIgnore("\t\n\x0b\x0c\r ");
 
 inline fn findBytes(haystack: []const u8, needle: []const u8) ?usize {
-    if (comptime @hasDecl(std.mem, "find")) return std.mem.find(u8, haystack, needle);
-
-    // Zig 0.15 uses indexOf; Zig 0.16 renamed it to find.
-    // ziglint-ignore: Z011
-    return std.mem.indexOf(u8, haystack, needle);
+    return std.mem.find(u8, haystack, needle);
 }
 
 pub const PemDecodeError = error{

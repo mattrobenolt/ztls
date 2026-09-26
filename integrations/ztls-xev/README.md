@@ -264,8 +264,9 @@ just lint
 just ci                # everything above
 ```
 
-Devshell: `nix develop .#ztls-xev`, or `cd` here and let direnv do it. The root
-workspace delegates via `just integrations-ci`, wired into `just ci-0_16`.
+Devshell: the root default (`nix develop ../..`), or `cd` here and let direnv
+do it. The root workspace delegates via `just integrations-ci`, wired into
+`just ci`.
 
 ```
 zig build example-xev_client -- --host example.com

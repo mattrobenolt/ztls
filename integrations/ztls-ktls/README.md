@@ -141,7 +141,7 @@ Do not gate on `uname`; use `rekeySupport()`.
 ## Development
 
 ```sh
-nix develop ../..#ztls-ktls
+nix develop ../..
 just ci
 just flake-check 20
 ```

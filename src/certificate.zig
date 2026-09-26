@@ -2,12 +2,11 @@
 //!
 //! RFC 8446 §4.4.2, §4.4.3
 const std = @import("std");
-const builtin = @import("builtin");
+const Io = std.Io;
 const Sha256 = std.crypto.hash.sha2.Sha256;
 const testing = std.testing;
 const fixtures = @import("fixtures");
 const fuzz_compat = @import("fuzz_compat.zig");
-const fs = std.fs;
 
 const ArrayBuffer = @import("array_buffer.zig").ArrayBuffer;
 const certificate_policy = @import("certificate_policy.zig");
@@ -1121,19 +1120,16 @@ test "parse: rejects missing trust anchor by default" {
     );
 }
 
-const empty_bundle: Certificate.Bundle = if (@hasDecl(Certificate.Bundle, "empty")) .empty else .{};
+const empty_bundle: Certificate.Bundle = .empty;
 
 fn addCertsFromFixturePath(bundle: *Certificate.Bundle, path: []const u8) !void {
-    if (comptime builtin.zig_version.major == 0 and builtin.zig_version.minor >= 16) {
-        return bundle.addCertsFromFilePath(
-            testing.allocator,
-            testing.io,
-            std.Io.Timestamp.now(testing.io, .real),
-            std.Io.Dir.cwd(),
-            path,
-        );
-    }
-    return bundle.addCertsFromFilePath(testing.allocator, fs.cwd(), path);
+    return bundle.addCertsFromFilePath(
+        testing.allocator,
+        testing.io,
+        Io.Timestamp.now(testing.io, .real),
+        Io.Dir.cwd(),
+        path,
+    );
 }
 
 test "parse: validates leaf against trust bundle" {

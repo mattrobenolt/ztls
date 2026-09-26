@@ -2,7 +2,7 @@
     .name = .ztls,
     .version = "0.0.0",
     .fingerprint = 0x767a5b455ec37148,
-    .minimum_zig_version = "0.15.2",
+    .minimum_zig_version = "0.16.0",
     .dependencies = .{
         // Test-only: decodes the RFC 8448 fixture archive. Lazy so consumers
         // of the library never fetch it.
@@ -12,8 +12,8 @@
             .lazy = true,
         },
         .benchmark = .{
-            .url = "git+https://github.com/mattrobenolt/zig-benchmark#6e7e9ab7ed8bd8147c491ac53a1d326633a5c47a",
-            .hash = "benchmark-0.1.0-JS72VvXxAACo8j9BYddbkivgNHXIeD1V27013BuCtW-_",
+            .url = "git+https://github.com/mattrobenolt/zig-benchmark#95ca5b488e2c9bfd20ea9ecd92d38dc11d5ede7d",
+            .hash = "benchmark-0.1.0-JS72VkomAQAHiEPwJB4rOn0vjLChZnQhcMqVKLPFZCQ4",
             .lazy = true,
         },
         // Test-only: plain-text test runner that writes one line per test to

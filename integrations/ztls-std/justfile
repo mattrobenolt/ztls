@@ -1,6 +1,6 @@
 # ztls-std integration workflows (#77).
 #
-# Zig 0.16 only. Enter the devshell with `nix develop ../..#ztls-std`, or let
+# Enter the root devshell with `nix develop ../..`, or let
 # direnv do it via .envrc. The root workspace delegates here rather than
 # absorbing these details.
 

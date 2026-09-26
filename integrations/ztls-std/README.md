@@ -594,8 +594,8 @@ seam, and it is the reason the zero-copy read path had to go.
 ## Build
 
 In-tree, depends on the ztls core via a path dep (`../..`), the same pattern
-`conformance/` uses. Devshell: `nix develop .#ztls-std` (Zig 0.16 + OpenSSL
-backend), or just `cd` into this directory — direnv loads it via `.envrc`.
+`conformance/` uses. Devshell: the root default (`nix develop ../..`), or
+just `cd` into this directory — direnv loads it via `.envrc`.
 
 ```
 just build             # smoke executable
@@ -611,8 +611,7 @@ in both directions, including mTLS success and rejection paths; an absent
 executable is a test failure, not a skip.
 
 The root workspace delegates to this subproject through `just integrations-ci`,
-which is wired into `just ci-0_16` (the Zig 0.16 CI lane). The 0.15 lane cannot
-build a 0.16-only integration, so it does not pretend to.
+which is wired into `just ci`. ztls is Zig 0.16-only.
 
 Run the example client against a real server:
 

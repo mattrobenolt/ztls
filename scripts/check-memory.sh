@@ -29,7 +29,7 @@ trap 'printf "Memory evidence retained: %s\n" "$output"' EXIT
 
 git rev-parse HEAD > "$output/revision.txt"
 git status --porcelain=v1 > "$output/worktree.txt"
-git diff --binary HEAD -- src tests bench shared build.zig build.zig.zon \
+git diff --binary HEAD -- src tests bench build.zig build.zig.zon \
     flake.nix flake.lock nix scripts/check-memory.sh justfile just > "$output/source.patch"
 zig version > "$output/zig-version.txt"
 valgrind --version > "$output/valgrind-version.txt"

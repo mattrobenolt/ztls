@@ -19,8 +19,8 @@ const mem = std.mem;
 const print = std.debug.print;
 const testing = std.testing;
 
-const xev = @import("xev");
 const tls = @import("ztls_xev");
+const xev = @import("xev");
 
 const usage =
     \\Usage: xev_client --host <host> [--port <port>] [--insecure] [--alpn <proto>] [--path <path>]
@@ -188,8 +188,8 @@ pub fn main(init: std.process.Init) !void {
     const host_str = host orelse die("--host is required\n{s}", .{usage});
 
     // libxev has no resolver, and the certificate bundle load is file I/O, so
-    // both go through a blocking std.Io before the event loop starts.
-    const blocking = Io.Threaded.global_single_threaded.io();
+    // both go through the blocking std.Io before the event loop starts.
+    const blocking = init.io;
     const address = try resolve(blocking, host_str, port);
 
     var config = if (insecure)
@@ -255,7 +255,6 @@ fn resolve(io: Io, host: []const u8, port: u16) !Io.net.IpAddress {
 // An IP literal must not go anywhere near a resolver: no /etc/resolv.conf, no
 // network, no surprises in a test.
 test "resolve: an IP literal needs no DNS" {
-    const io = Io.Threaded.global_single_threaded.io();
-    const addr = try resolve(io, "127.0.0.1", 8443);
+    const addr = try resolve(testing.io, "127.0.0.1", 8443);
     try testing.expect(addr == .ip4);
 }

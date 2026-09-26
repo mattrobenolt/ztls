@@ -418,11 +418,10 @@ data to openssl s_server and receives the HTTP response.
 - RFC 8448 known-answer vectors for the key schedule and transcript.
 - OpenSSL interop in both directions, covered by `zig build test`.
 - tlsfuzzer conformance, CI-gated (`just conformance/tlsfuzzer`).
-- The TLS-Anvil/tlsfuzzer Zig shims build under both Zig 0.15.2 and Zig
-  0.16; `just ci-0_16` (CI-gated via the `test-zig-0_16` job in
-  `.github/workflows/ci.yml`) runs the full core gate (test + lint + examples +
-  conformance) under 0.16, so the external conformance harness is no longer
-  tied to the removed `std.net` APIs. *(#58, #61)*
+- The TLS-Anvil/tlsfuzzer Zig shims build under Zig 0.16; `just ci`
+  (CI-gated via the `test` job in `.github/workflows/ci.yml`) runs the full
+  gate (test + lint + examples + conformance) under 0.16, so the external
+  conformance harness is not tied to the removed `std.net` APIs. *(#58, #61)*
 - TLS-Anvil wrapper/report helper tests are CI-gated under `just conformance/ci`:
   synthetic skip-list normalization, synthetic real-output adapter coverage,
   per-run metadata/provenance capture, and per-run tool-log capture helpers.
@@ -1083,18 +1082,14 @@ Sans-I/O API is pleasant across every I/O model ztls claims to support.
   cells.
 - `just ci` runs deterministic TLS smoke examples through `examples-ci`:
   `example-tcp_loopback`, `example-in_memory_handshake`,
-  `example-epoll_pingpong`, and `example-iouring_pingpong`. The same four
-  deterministic examples also run under Zig 0.16 via `just ci-0_16`
-  (CI-gated), covering the `std.Io.net` transport
-  boundary for TCP loopback plus the raw-fd epoll and io_uring examples.
-  The 0.16 lane runs the full core gate (test + lint + examples +
-  conformance); two `ziglint-ignore: Z011` inline suppressions bridge
-  `mem.indexOfPos`/`std.meta.Int` deprecations that are inherent to
-  dual-version support until 0.15 is dropped. *(#58, #61)*
+  `example-epoll_pingpong`, and `example-iouring_pingpong`, covering the
+  `std.Io.net` transport boundary for TCP loopback plus the raw-fd epoll and
+  io_uring examples. ztls is Zig 0.16-only; the dual-version compat shims and
+  Z011 suppressions are gone. *(#58, #61)*
 - CI still does not execute manual peer-dependent demos such as `https_client`,
-  `https_server`, or `iouring_client`; those demos now compile on both Zig
-  0.15.2 and Zig 0.16 and exit non-zero when the peer or io_uring support is
-  unavailable, so they cannot be mistaken for proof if wired into a gate later.
+  `https_server`, or `iouring_client`; those demos compile under Zig 0.16 and
+  exit non-zero when the peer or io_uring support is unavailable, so they
+  cannot be mistaken for proof if wired into a gate later.
 
 **Status:** `PROVEN` for the core Sans-I/O surface. The higher-order
 `std.Io.net` wrapper is tracked separately below as `PROVEN`.
@@ -1158,8 +1153,7 @@ conformance harness integration (TLS-Anvil through the C ABI per
 opinionated TLS 1.3 stream over Zig 0.16 `std.Io.net`. It is a separate
 workspace with its own `build.zig`, `build.zig.zon` (path dep on the core), and
 `justfile`; the root delegates through `just integrations-ci`, which is wired
-into `just ci-0_16` and therefore runs in the `test-zig-0_16` CI job. The 0.15
-lane cannot build a 0.16-only integration and does not gate it.
+into `just ci` and therefore runs in the `test` CI job.
 
 **Landed and gated.** `Client`/`Server` are the connection types
 (`StreamImpl(Hs, role, config)`), with eager `connect`/`accept`, `Io.Reader`/
@@ -1321,9 +1315,8 @@ identical experiment reported a bare `ReadFailed`.
 `integrations/ztls-xev/` is the completion-driven integration. libxev does not
 implement `std.Io` — it borrows `std.Io.net.IpAddress` as a type and nothing else
 — so unlike a `std.Io` runtime it needs a real adapter rather than working through
-ztls-std unchanged. Separate workspace, own `build.zig`/`justfile`, own
-`nix develop .#ztls-xev` shell; gated by `just integrations-ci` inside
-`just ci-0_16`.
+ztls-std unchanged. Separate workspace, own `build.zig`/`justfile`; gated by
+`just integrations-ci` inside `just ci`.
 
 **Landed and gated.** Both roles. `Conn(role)` is one implementation
 parameterised by client/server, exported as `Client` and `Server`: they share the
@@ -1900,8 +1893,8 @@ each passing the same correctness and interop gates.
   `libssl.pc` for BoringSSL (nixpkgs ships neither) and exports
   `ZTLS_BORINGSSL_PKG_CONFIG_PATH` / `ZTLS_BORINGSSL_LIB_DIR` env vars in
   `commonHook`. Zig 0.16 needs BoringSSL warning pragma macros disabled during
-  `@cImport`; they only suppress C warnings. `just check-backends-0_16` runs the
-  full AWS-LC and BoringSSL suites, while `ci-0_16` runs OpenSSL and that gate.
+  `@cImport`; they only suppress C warnings. `just check-backends` runs the
+  full AWS-LC and BoringSSL suites, while `just ci` runs OpenSSL and that gate.
   TLS-Anvil workflow matrices include `boringssl` alongside
   `openssl` and `aws-lc` for both client and server scheduled/dispatch runs.
   The first BoringSSL TLS-Anvil captures are complete. Server run
@@ -2120,13 +2113,12 @@ told clearly and backed by numbers").
 guides, without reading source.
 
 **Current evidence:** `README.md` gives a root on-ramp and fresh-project module
-wiring pointer. The root fetched package exposes `ztls` on Zig 0.15.2 and the
-Zig 0.16 `ztls_std`, `ztls_xev`, and Linux-only `ztls_ktls` integration modules
-(#79). `ztls_xev` gates its libxev dependency behind an explicit opt-in. The
-distribution consumer compiles from an isolated package cache, checks the Zig
-0.15 integration-version diagnostic, checks the xev opt-in diagnostic, and
-rejects eager benchmark, test-runner, fixture-decoder, or libxev fetches on
-core and standard-wrapper paths. `docs/USAGE.md` documents the
+wiring pointer. The root fetched package exposes `ztls` and the
+`ztls_std`, `ztls_xev`, and Linux-only `ztls_ktls` integration modules, all
+Zig 0.16-only (#79). `ztls_xev` gates its libxev dependency behind an explicit
+opt-in. The distribution consumer compiles from an isolated package cache,
+checks the xev opt-in diagnostic, and rejects eager benchmark, test-runner,
+fixture-decoder, or libxev fetches on core and standard-wrapper paths. `docs/USAGE.md` documents the
 caller-owned-buffer model, `RecordBuffer`, `Outbox`, the `pending_write` /
 `completeWrite()` interlock,
 server credential flow (`setCredentials` plus `sendServerFlightBuffered`), ALPN

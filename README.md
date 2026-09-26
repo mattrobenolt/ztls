@@ -111,7 +111,7 @@ Run them from the devshell:
 ```sh
 nix develop .#openssl
 just examples-ci
-nix develop .#ztls-ktls --command just integrations/ztls-ktls/ci
+just integrations/ztls-ktls/ci
 ```
 
 `nix develop .#aws-lc` selects AWS-LC headers and libraries. The compiler
@@ -162,7 +162,7 @@ FIPS-provider activation. A BoGo conformance runner is deferred.
 
 ## Fresh project
 
-Use Zig 0.15.2 or newer. ztls links a libcrypto-family provider through
+Use Zig 0.16. ztls links a libcrypto-family provider through
 `pkg-config`; the devshell supplies OpenSSL by default.
 
 ```sh
@@ -222,8 +222,7 @@ exposes the Zig 0.16 integration modules:
 | `ztls_xev` | Non-blocking libxev adapter | Zig 0.16 and `.xev = true` in the `b.dependency` options |
 | `ztls_ktls` | Linux kernel TLS data plane | Zig 0.16 and Linux |
 
-Core `ztls` remains compatible with Zig 0.15.2. Importing an integration with
-Zig 0.15 reports the version requirement directly. `ztls_xev` is opt-in so a
+ztls requires Zig 0.16. `ztls_xev` is opt-in so a
 core or `ztls_std` consumer does not fetch libxev. The exact wiring is in
 [`docs/USAGE.md`](docs/USAGE.md).
 

@@ -6,13 +6,14 @@
 //! If io_uring or the peer is unavailable, this example exits non-zero instead
 //! of pretending it proved TLS.
 const std = @import("std");
+const Io = std.Io;
 const IoUring = std.os.linux.IoUring;
 const print = std.debug.print;
 const posix = std.posix;
-const net = @import("net_compat");
 const crypto = std.crypto;
-const Address = net.Address;
 const builtin = @import("builtin");
+
+const IpAddress = Io.net.IpAddress;
 
 const ztls = @import("ztls");
 
@@ -30,11 +31,9 @@ const port: u16 = 8443;
 
 const IoError = error{ IoUringFailed, PeerClosed };
 
-var debug_allocator: std.heap.DebugAllocator(.{}) = .init;
-
-pub fn main() !void {
-    const gpa = debug_allocator.allocator();
-    defer _ = debug_allocator.deinit();
+pub fn main(init: std.process.Init) !void {
+    const io = init.io;
+    const gpa = init.gpa;
     var ring = IoUring.init(8, 0) catch |err| switch (err) {
         error.PermissionDenied, error.SystemOutdated => {
             print("[iouring] io_uring unavailable: {}\n", .{err});
@@ -44,8 +43,8 @@ pub fn main() !void {
     };
     defer ring.deinit();
 
-    const addr: Address = try net.parseIp(connect_host, port);
-    const stream = net.connect(addr) catch |err| switch (err) {
+    const addr: IpAddress = try .parse(connect_host, port);
+    const stream = addr.connect(io, .{ .mode = .stream }) catch |err| switch (err) {
         error.ConnectionRefused => {
             print("[iouring] could not connect to {s}:{d}\n", .{ connect_host, port });
             print("           Start the server first: zig build example-https_server\n", .{});
@@ -53,17 +52,17 @@ pub fn main() !void {
         },
         else => return err,
     };
-    defer net.close(stream);
+    defer stream.close(io);
     print("[iouring] connected to {s}:{d}\n", .{ connect_host, port });
 
     const client_keypair: ztls.x25519.KeyPair = .generate();
     var random: ztls.Random = undefined;
-    net.fillRandom(&random.data);
+    io.random(&random.data);
 
     var hs: ztls.ClientHandshake = .init(.{
         .keypairs = try .init(client_keypair),
         .host_name = server_name,
-        .now_sec = net.timestamp(),
+        .now_sec = Io.Timestamp.now(io, .real).toSeconds(),
         .random = random,
         .alpn_protocols = &.{"http/1.1"},
     });
@@ -71,10 +70,7 @@ pub fn main() !void {
 
     // Certificate verification: pinned trust anchor for the test server.
     // This is example-wrapper allocation, not ztls core allocation.
-    var bundle: crypto.Certificate.Bundle = if (@hasDecl(crypto.Certificate.Bundle, "empty"))
-        .empty
-    else
-        .{};
+    var bundle: crypto.Certificate.Bundle = .empty;
     defer bundle.deinit(gpa);
     const cert_start: u32 = @intCast(bundle.bytes.items.len);
     try bundle.bytes.appendSlice(gpa, trust_anchor_der);
@@ -85,16 +81,16 @@ pub fn main() !void {
     var storage: ztls.RecordBuffer.Storage = .empty;
     var rb: ztls.RecordBuffer = .init(&storage.buffer);
 
-    try sendAll(&ring, net.fd(stream), try hs.start(&out.buffer));
+    try sendAll(&ring, stream.socket.handle, try hs.start(&out.buffer));
     hs.completeWrite();
     print("[iouring] ClientHello sent → state={s}\n", .{@tagName(hs.state)});
 
     while (!hs.isConnected()) {
-        const n = try recvIntoRecordBuffer(&ring, net.fd(stream), &rb);
+        const n = try recvIntoRecordBuffer(&ring, stream.socket.handle, &rb);
         if (n == 0) return error.PeerClosed;
         while (try rb.next()) |record| switch (try hs.handleRecord(record, &out.buffer)) {
             .write => |w| {
-                try sendAll(&ring, net.fd(stream), w);
+                try sendAll(&ring, stream.socket.handle, w);
                 hs.completeWrite();
             },
             .application_data,
@@ -108,13 +104,13 @@ pub fn main() !void {
     print("[iouring] handshake complete (ALPN={s})\n", .{hs.selectedAlpnProtocol().?});
 
     const request = "GET / HTTP/1.0\r\n\r\n";
-    try sendAll(&ring, net.fd(stream), try hs.sendApplicationData(request, &out.buffer));
+    try sendAll(&ring, stream.socket.handle, try hs.sendApplicationData(request, &out.buffer));
     hs.completeWrite();
     print("[iouring] sent: {s}", .{request});
 
     var response_seen = false;
     while (true) {
-        const n = try recvIntoRecordBuffer(&ring, net.fd(stream), &rb);
+        const n = try recvIntoRecordBuffer(&ring, stream.socket.handle, &rb);
         if (n == 0) break;
         while (try rb.next()) |record| switch (try hs.handleRecord(record, &out.buffer)) {
             .application_data => |data| {
@@ -122,7 +118,7 @@ pub fn main() !void {
                 response_seen = true;
             },
             .write => |w| {
-                try sendAll(&ring, net.fd(stream), w);
+                try sendAll(&ring, stream.socket.handle, w);
                 hs.completeWrite();
             },
             .closed => {
@@ -131,7 +127,7 @@ pub fn main() !void {
             },
             .key_update => |ku| {
                 if (ku.response) |w| {
-                    try sendAll(&ring, net.fd(stream), w);
+                    try sendAll(&ring, stream.socket.handle, w);
                     hs.completeWrite();
                 }
             },
