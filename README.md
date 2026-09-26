@@ -22,7 +22,8 @@ is in the repo with the disassembly that explains it.
 
 The evidence is two n=10 captures: a `c7i.2xlarge` (Intel Xeon, x86_64) and a
 `c7g.2xlarge` (Graviton4, aarch64), OpenSSL 3.6.3, rustls 0.23.4x, Zig 0.15.2
-ReleaseFast. Both produce formal confidence intervals (±0% to ±5% across rows)
+ReleaseFast (captured before ztls required Zig 0.16; relative deltas stand,
+absolute numbers are historical). Both produce formal confidence intervals (±0% to ±5% across rows)
 and p=0.000 on every comparable row. The smallest ztls win over rustls on a
 comparable AES-GCM row is +65%; the deltas are large enough that noise doesn't
 change the answer.

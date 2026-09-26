@@ -679,8 +679,9 @@ The compact post-handshake server engine, constructed only by
 `ServerHandshake.extractEstablished()` at handshake completion (#115). A
 connection pool keeps one `ServerHandshake` per worker and one
 `ztls.EstablishedSession` per live connection. The size is lane-dependent
-because each `RecordLayer` embeds its backend AEAD context (Zig 0.15.2,
-aarch64-linux; x86_64 compiles to the same numbers):
+because each `RecordLayer` embeds its backend AEAD context (measured under
+Zig 0.15.2, aarch64-linux; x86_64 compiles to the same numbers; ztls now
+requires Zig 0.16, so treat these as historical, not current):
 
 | Lane | `EstablishedSession` | `ServerHandshake` |
 |---|---|---|
