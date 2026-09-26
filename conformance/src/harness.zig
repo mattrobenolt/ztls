@@ -66,7 +66,12 @@ pub fn readRecord(io: Io, stream: Stream, buf: []u8) ![]u8 {
     return buf[0 .. ztls.frame.header_len + len];
 }
 
-pub fn sendBestEffortCloseNotify(io: Io, hs: *ztls.ServerHandshake, stream: Stream, out: []u8) void {
+pub fn sendBestEffortCloseNotify(
+    io: Io,
+    hs: *ztls.ServerHandshake,
+    stream: Stream,
+    out: []u8,
+) void {
     const alert_record = hs.sendAlert(.close_notify, out) catch return;
     ztls.io.writeAll(io, stream, alert_record) catch return;
 }
@@ -87,7 +92,8 @@ pub fn connectWithRetry(io: Io, port: u16) !Stream {
     const addr: Io.net.IpAddress = try .parse("127.0.0.1", port);
     for (0..100) |_| {
         return addr.connect(io, .{ .mode = .stream }) catch {
-            io.sleep(.fromNanoseconds(20 * std.time.ns_per_ms), .awake) catch return error.ServerNeverCameUp;
+            const delay: Io.Duration = .fromNanoseconds(20 * std.time.ns_per_ms);
+            io.sleep(delay, .awake) catch return error.ServerNeverCameUp;
             continue;
         };
     }

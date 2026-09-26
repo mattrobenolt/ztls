@@ -230,7 +230,12 @@ fn logLocalPort(stream: Io.net.Stream) void {
 /// the decrypted record bytes so the actual server Certificate message and
 /// its validity dates are recoverable offline from the per-invocation log.
 /// Only CertificateExpired/CertificateNotYetValid — no other failure class.
-fn logValidityProbe(io: Io, hs: *const ztls.ClientHandshake, err: anyerror, record: []const u8) void {
+fn logValidityProbe(
+    io: Io,
+    hs: *const ztls.ClientHandshake,
+    err: anyerror,
+    record: []const u8,
+) void {
     if (err != error.CertificateExpired and err != error.CertificateNotYetValid) return;
     const plain = validityProbePlaintext(record);
     print(
