@@ -159,7 +159,7 @@ These detector accommodations do not support performance claims.
 The earlier [resource diagnosis](docs/research/CONSUMER_GATE/20260919-launchpad-resource-cleanup/) preserves real engine and fixture leaks, failing controls, and provider disassembly.
 Both early-data abort regressions fail their allocation-count checks before their corresponding fixes.
 Candidate CI checks full unit ownership in both Zig versions and all three replay rows on Zig 0.15.
-The replay driver depends on Zig 0.15 APIs. Its cleanup fix changes that benchmark's measurement boundary.
+The replay driver depended on Zig 0.15 APIs at the time (since ported). Its cleanup fix changes that benchmark's measurement boundary.
 Historical performance captures remain unchanged.
 
 The six [replacement TLS-Anvil captures](docs/research/TLS_ANVIL_91_CHAIN_FIXTURE/captures-8814f1e/) use clean candidate source and Zig 0.15.2.

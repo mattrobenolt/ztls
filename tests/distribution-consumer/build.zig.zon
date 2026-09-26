@@ -2,7 +2,7 @@
     .name = .ztls_distribution_consumer,
     .version = "0.0.0",
     .fingerprint = 0x1e3100c831535344,
-    .minimum_zig_version = "0.15.2",
+    .minimum_zig_version = "0.16.0",
     .dependencies = .{},
     .paths = .{
         "build.zig",

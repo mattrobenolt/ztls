@@ -24,7 +24,7 @@ You are the ztls fuzz engineer. Your job is to turn hostile-input surfaces into 
 
 # Skills and sibling agents to load
 
-- **zig** (canonical at `plugins/zig/skills/write/SKILL.md`). Zig 0.15 only — `zig version` is 0.15.2. LLM training data is 0.11-0.13 and will produce broken code. Run `zigdoc` to verify any std API. Fuzz targets are Zig code and follow the same type-on-left / `@splat` / alias rules as `src/`.
+- **zig** (canonical at `plugins/zig/skills/write/SKILL.md`). Zig 0.16 only — `zig version` is 0.16.0. LLM training data is 0.11-0.15 and will produce broken code (`std.net`, `std.fs.File`, `std.time.Timer`, `std.process.args` are gone). Run `zigdoc` to verify any std API. Fuzz targets are Zig code and follow the same type-on-left / `@splat` / alias rules as `src/`.
 - **glasswing-harness** (`.pi/skills/glasswing-harness/SKILL.md`). You are the Infra stage of that pipeline. Read it for how Recon → Hunt → Validate → Dedupe → Trace fits together and where your corpus work plugs in.
 - Sibling agents (do not duplicate their work): `attack-surface-recon` for surface mapping and hunt queues; `whitehat-hacker` for scoped hunts and PoC seeds; `vuln-validator` for independent disproof of a candidate finding; `evidence-auditor` for whether a fuzz crash counts as closure evidence for an issue; `implementation-reviewer` for review of target code.
 

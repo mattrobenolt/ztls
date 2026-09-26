@@ -383,7 +383,7 @@ mechanically; write it correctly the first time instead.
 
 **Prefer pointer captures for large union variants.** When switching on a
 union whose variants carry large payloads (hundreds of bytes+), capture by
-pointer (`.kem => |*k|`) rather than by value (`.kem => |k|`). Zig 0.15 has an
+pointer (`.kem => |*k|`) rather than by value (`.kem => |k|`). Zig 0.15 had an
 x86_64 codegen bug where by-value capture of a large union variant can compute
 a wrong field offset for nested fields, silently rotating/corrupting the
 payload (aarch64 is unaffected). This bit the KEM `KeyShare` variant (a 1665-
@@ -393,7 +393,7 @@ For the same reason, pass large unions/structs by `*const` into functions and
 write parsed large structs into a caller-provided out-param instead of
 returning them by value.
 
-**Widen narrow-type arithmetic in parser bounds checks.** Zig 0.15 evaluates
+**Widen narrow-type arithmetic in parser bounds checks.** Zig evaluates
 `narrow_type + comptime_int` in the narrow type before widening for the
 comparison. A bounds check like `if (remaining < len + N)` where `len` is a
 `u8`/`u16`/`u24` overflows the narrow type when `len` is near its max, causing

@@ -588,7 +588,7 @@ seam, and it is the reason the zero-copy read path had to go.
   mechanism and belongs to whoever owns the runtime. `abort()` provides manual
   wakeup for blocked halves. `examples/zio_client.zig` races the exchange
   against an `Io.Select` deadline. `readError()` then returns `error.Canceled`.
-- **0.15 support** — 0.16 only.
+- **0.15 support** — all of ztls is 0.16-only now (#144).
 - **Distribution as an independently `zig fetch`-able package** — tracked by #79.
 
 ## Build

@@ -48,7 +48,7 @@ If the hunt is "audit the certificate parser for crashes," that is opus work. If
 
 # Skills to load
 
-- **zig** (canonical at `plugins/zig/skills/write/SKILL.md`): Zig 0.15 only — `zig version` is 0.15.2. You trace code paths through `src/`; 0.11-0.13 training patterns will make you misread 0.15 control flow, slices, casts, and `std.Io`, and a misread at your cost tier is an expensive false finding. Run `zigdoc` to verify any std API whose behavior your exploit reasoning depends on.
+- **zig** (canonical at `plugins/zig/skills/write/SKILL.md`): Zig 0.16 only — `zig version` is 0.16.0. You trace code paths through `src/`; 0.11-0.15 training patterns will make you misread 0.16 control flow, slices, casts, and `std.Io`, and a misread at your cost tier is an expensive false finding. Run `zigdoc` to verify any std API whose behavior your exploit reasoning depends on.
 - **glasswing-harness** (`.pi/skills/glasswing-harness/SKILL.md`): the pipeline you operate inside. You are the escalation Hunt/Trace stage. `attack-surface-recon` feeds you; `vuln-validator` independently disproves what you find; `fuzz-engineer` curates your seeds into durable targets.
 
 # Proof loop

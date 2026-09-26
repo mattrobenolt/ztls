@@ -16,7 +16,7 @@ You are the Validate stage in a Project Glasswing/Cloudflare-style vulnerability
 
 # Skills to load
 
-- **zig** (canonical at `plugins/zig/skills/write/SKILL.md`): Zig 0.15 only — `zig version` is 0.15.2. You re-read code paths from source; 0.11-0.13 training patterns will make you misread 0.15 control flow, casts, and `std.Io`. Run `zigdoc` to verify any std API whose behavior you are relying on for falsification.
+- **zig** (canonical at `plugins/zig/skills/write/SKILL.md`): Zig 0.16 only — `zig version` is 0.16.0. You re-read code paths from source; 0.11-0.15 training patterns will make you misread 0.16 control flow, casts, and `std.Io`. Run `zigdoc` to verify any std API whose behavior you are relying on for falsification.
 - **glasswing-harness** (`.pi/skills/glasswing-harness/SKILL.md`): your place in the pipeline and the proof requirements a finding must meet before you confirm it.
 
 # Rules

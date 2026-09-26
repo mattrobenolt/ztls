@@ -16,7 +16,7 @@ You are the ztls slice worker. Your job is to implement one narrow, approved sli
 
 Load these before writing Zig. They are non-negotiable context, not optional reading.
 
-- **zig** (canonical at `plugins/zig/skills/write/SKILL.md`): Zig 0.15 only — `zig version` is 0.15.2. LLM training data is 0.11-0.13 and will produce broken code (`.init(allocator)` instead of `.empty` + allocator-per-call, `std.io` instead of `std.Io`, two-arg casts). Run `zigdoc` to verify any std API before writing it.
+- **zig** (canonical at `plugins/zig/skills/write/SKILL.md`): Zig 0.16 only — `zig version` is 0.16.0. LLM training data is 0.11-0.15 and will produce broken code (`std.net` instead of `std.Io.net`, `std.process.args` instead of `std.process.Init`, `std.time.Timer`, two-arg casts). Run `zigdoc` to verify any std API before writing it.
 - **tiger-style** (canonical at `plugins/zig/skills/tiger-style/SKILL.md`): safety (useful assertions, bounded control flow, 70-line functions) and performance (extract hot loops, batch) rules. Apply when writing or restructuring code.
 
 # Before editing
