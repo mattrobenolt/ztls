@@ -4,16 +4,20 @@ pub const Family = enum {
     boringssl,
 };
 
-// opensslv.h is common to all three supported families. AWS-LC and BoringSSL
-// reach their base.h identity macros through crypto.h, so the selected headers
-// are the compile-time source of truth for the backend family.
-const identity = @cImport({
-    @cInclude("openssl/opensslv.h");
-});
+// #145 — the translated decls come from the openssl_c module (wrapper
+// header src/crypto/openssl_c.h, b.addTranslateC in src/build/translate_c.zig).
+// The wrapper's family dispatch happens in the C preprocessor over the same
+// identity macros checked here: opensslv.h is common to all three supported
+// families, and AWS-LC and BoringSSL reach their base.h identity macros
+// through crypto.h, so translate-c emits OPENSSL_IS_AWSLC /
+// OPENSSL_IS_BORINGSSL exactly when the wrapper took the BoringSSL-family
+// branch. translate-c renders a valueless #define as an empty-string const,
+// so @hasDecl keeps working as the Zig-side mirror of that dispatch.
+const translated = @import("openssl_c");
 
-pub const family: Family = if (@hasDecl(identity, "OPENSSL_IS_AWSLC"))
+pub const family: Family = if (@hasDecl(translated, "OPENSSL_IS_AWSLC"))
     .@"aws-lc"
-else if (@hasDecl(identity, "OPENSSL_IS_BORINGSSL"))
+else if (@hasDecl(translated, "OPENSSL_IS_BORINGSSL"))
     .boringssl
 else
     .openssl;
@@ -29,34 +33,4 @@ else
 // mattrobenolt/ztls#82).
 pub const is_boringssl_family = family != .openssl;
 
-pub const openssl = @cImport({
-    if (family == .boringssl) {
-        @cInclude("openssl/base.h");
-        // Zig 0.16 translate-c emits BoringSSL's expanded _Pragma tokens as C
-        // declarations. These macros only suppress C compiler warnings.
-        @cUndef("OPENSSL_BEGIN_ALLOW_DEPRECATED");
-        @cDefine("OPENSSL_BEGIN_ALLOW_DEPRECATED", "");
-        @cUndef("OPENSSL_END_ALLOW_DEPRECATED");
-        @cDefine("OPENSSL_END_ALLOW_DEPRECATED", "");
-        @cUndef("OPENSSL_GNUC_CLANG_PRAGMA");
-        @cDefine("OPENSSL_GNUC_CLANG_PRAGMA(arg)", "");
-        @cUndef("OPENSSL_CLANG_PRAGMA");
-        @cDefine("OPENSSL_CLANG_PRAGMA(arg)", "");
-    } else if (is_boringssl_family) {
-        @cInclude("openssl/base.h");
-    }
-    if (is_boringssl_family) @cInclude("openssl/aead.h");
-    if (is_boringssl_family) @cInclude("openssl/curve25519.h");
-    if (!is_boringssl_family) @cInclude("openssl/core.h");
-    if (!is_boringssl_family) @cInclude("openssl/core_names.h");
-    @cInclude("openssl/bio.h");
-    @cInclude("openssl/bn.h");
-    @cInclude("openssl/ec.h");
-    @cInclude("openssl/err.h");
-    @cInclude("openssl/evp.h");
-    if (!is_boringssl_family) @cInclude("openssl/params.h");
-    @cInclude("openssl/obj_mac.h");
-    @cInclude("openssl/pem.h");
-    @cInclude("openssl/rsa.h");
-    @cInclude("openssl/sha.h");
-});
+pub const openssl = translated;

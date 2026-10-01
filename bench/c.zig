@@ -1,10 +1,4 @@
-pub const openssl = @cImport({
-    @cInclude("openssl/bio.h");
-    @cInclude("openssl/bn.h");
-    @cInclude("openssl/ec.h");
-    @cInclude("openssl/err.h");
-    @cInclude("openssl/evp.h");
-    @cInclude("openssl/obj_mac.h");
-    @cInclude("openssl/pem.h");
-    @cInclude("openssl/rsa.h");
-});
+// #145 — the translated C API now comes from the shared openssl_c module
+// (wrapper header src/crypto/openssl_c.h): this bench lane's header set is a
+// subset of the library's.
+pub const openssl = @import("openssl_c");

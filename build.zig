@@ -7,6 +7,7 @@ const panic = std.debug.panic;
 const bench_mod = @import("src/build/bench.zig");
 const examples_mod = @import("src/build/examples.zig");
 const tests = @import("src/build/tests.zig");
+const translate_c = @import("src/build/translate_c.zig");
 
 fn nativeTarget() Target.Query {
     var query: Target.Query = .{ .cpu_model = .native };
@@ -46,6 +47,16 @@ pub fn build(b: *Build) void {
     mod.addOptions("build_options", build_options);
     mod.link_libc = true;
     mod.linkSystemLibrary("crypto", .{});
+
+    // #145 — the deprecated @cImport blocks moved to translate-c wrapper
+    // headers. Created before the dependency-consumer early return: every
+    // build that compiles src/ needs the translated module, consumers
+    // included.
+    const c_modules = translate_c.addModules(b, .{
+        .target = target,
+        .optimize = optimize,
+    });
+    mod.addImport("openssl_c", c_modules.openssl_c);
 
     // Library-only mirrors of the standalone integration build scripts. The
     // distribution smoke compiles each mirror from the fetched root package.
@@ -103,6 +114,7 @@ pub fn build(b: *Build) void {
     test_mod.addOptions("build_options", build_options);
     test_mod.link_libc = true;
     test_mod.linkSystemLibrary("crypto", .{});
+    test_mod.addImport("openssl_c", c_modules.openssl_c);
     const txtar_mod = if (b.lazyDependency("txtar", .{
         .target = target,
         .optimize = optimize,
@@ -128,6 +140,7 @@ pub fn build(b: *Build) void {
     });
     c_mod.link_libc = true;
     c_mod.linkSystemLibrary("crypto", .{});
+    c_mod.addImport("openssl_c", c_modules.openssl_c);
 
     const c_ssl_mod = b.createModule(.{
         .root_source_file = b.path("bench/c_ssl.zig"),
@@ -137,6 +150,7 @@ pub fn build(b: *Build) void {
     c_ssl_mod.link_libc = true;
     c_ssl_mod.linkSystemLibrary("ssl", .{});
     c_ssl_mod.linkSystemLibrary("crypto", .{});
+    c_ssl_mod.addImport("openssl_ssl", c_modules.openssl_ssl);
 
     const benchmark_dep = b.lazyDependency("benchmark", .{
         .target = target,
@@ -149,6 +163,8 @@ pub fn build(b: *Build) void {
         .ztest = ztest_dep,
         .ztls_mod = mod,
         .fixtures_mod = fixtures_mod,
+        .openssl_c = c_modules.openssl_c,
+        .pty_c = c_modules.pty_c,
         .target = target,
         .optimize = optimize,
     });
@@ -158,6 +174,7 @@ pub fn build(b: *Build) void {
         .ztls_mod = mod,
         .c_mod = c_mod,
         .c_ssl_mod = c_ssl_mod,
+        .openssl_c = c_modules.openssl_c,
         .build_options = build_options,
         .benchmark_dep = benchmark_dep,
         .txtar_mod = txtar_mod,
@@ -199,6 +216,9 @@ pub fn build(b: *Build) void {
             .optimize = optimize,
         });
         capi_mod.addOptions("build_options", build_options);
+        // capi.zig imports root.zig relatively, so it compiles the crypto
+        // tree (and c_openssl.zig) within itself (#145).
+        capi_mod.addImport("openssl_c", c_modules.openssl_c);
         capi_mod.link_libc = true;
 
         const crypto_cflags = b.run(&.{ "pkg-config", "--cflags-only-I", "libcrypto" });

@@ -1,3 +1,2 @@
-pub const openssl = @cImport({
-    @cInclude("openssl/ssl.h");
-});
+// #145 — translated from the wrapper header bench/c_ssl.h.
+pub const openssl = @import("openssl_ssl");

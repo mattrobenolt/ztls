@@ -45,10 +45,7 @@ const fixtures = @import("fixtures");
 /// the counting hooks to measure the declined path.
 const encrypted_pkcs8_pem = fixtures.rsa_pss_key_encrypted_pkcs8_pem;
 
-const c = @cImport({
-    @cInclude("openssl/crypto.h");
-    @cInclude("openssl/err.h");
-});
+const c = @import("openssl_c");
 
 /// Plain globals, not thread-locals: this executable is single-threaded, and
 /// the counters only exist to observe libcrypto's allocation behavior here.

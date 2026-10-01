@@ -41,16 +41,7 @@ const std = @import("std");
 const ztls = @import("ztls");
 const fixtures = @import("fixtures");
 
-const c = @cImport({
-    // POSIX.1-2001 exposes the PTY allocation calls (`posix_openpt`,
-    // `grantpt`, `unlockpt`, `ptsname`) on glibc and Darwin alike.
-    @cDefine("_XOPEN_SOURCE", "700");
-    @cInclude("fcntl.h");
-    @cInclude("signal.h");
-    @cInclude("stdlib.h");
-    @cInclude("termios.h");
-    @cInclude("unistd.h");
-});
+const c = @import("pty_c");
 
 const PrivateKey = ztls.signature.PrivateKey;
 

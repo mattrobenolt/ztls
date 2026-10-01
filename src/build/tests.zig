@@ -16,6 +16,12 @@ pub fn addSteps(b: *Build, opts: struct {
     /// Fixtures module — the #114 non-interaction check loads the encrypted
     /// PEM fixtures directly.
     fixtures_mod: *Build.Module,
+    /// Translated libcrypto C API (#145) — the #88 errq check counts
+    /// allocations through CRYPTO_set_mem_functions.
+    openssl_c: *Build.Module,
+    /// Translated POSIX PTY C API (#145) — the #114 non-interaction check
+    /// replaces its own standard streams through libc calls.
+    pty_c: *Build.Module,
     /// Build target for standalone check executables. Required: the only
     /// caller (build.zig) always passes it.
     target: Build.ResolvedTarget,
@@ -57,6 +63,7 @@ pub fn addSteps(b: *Build, opts: struct {
     });
     errq_mod.addImport("ztls", opts.ztls_mod);
     errq_mod.addImport("fixtures", opts.fixtures_mod);
+    errq_mod.addImport("openssl_c", opts.openssl_c);
     errq_mod.link_libc = true;
     errq_mod.linkSystemLibrary("crypto", .{});
 
@@ -84,6 +91,7 @@ pub fn addSteps(b: *Build, opts: struct {
     });
     pem_mod.addImport("ztls", opts.ztls_mod);
     pem_mod.addImport("fixtures", opts.fixtures_mod);
+    pem_mod.addImport("pty_c", opts.pty_c);
     pem_mod.link_libc = true;
     pem_mod.linkSystemLibrary("crypto", .{});
 

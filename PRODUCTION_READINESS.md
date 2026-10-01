@@ -1893,7 +1893,8 @@ each passing the same correctness and interop gates.
   `libssl.pc` for BoringSSL (nixpkgs ships neither) and exports
   `ZTLS_BORINGSSL_PKG_CONFIG_PATH` / `ZTLS_BORINGSSL_LIB_DIR` env vars in
   `commonHook`. Zig 0.16 needs BoringSSL warning pragma macros disabled during
-  `@cImport`; they only suppress C warnings. `just check-backends` runs the
+  header translation; the translate-c wrapper `openssl_c.h` neuters them and
+  they only suppress C warnings (#145). `just check-backends` runs the
   full AWS-LC and BoringSSL suites, while `just ci` runs OpenSSL and that gate.
   TLS-Anvil workflow matrices include `boringssl` alongside
   `openssl` and `aws-lc` for both client and server scheduled/dispatch runs.
@@ -2014,8 +2015,9 @@ dispatch through the backend facade; capability tables are backend-owned.
   The legacy `EC_KEY_*` / `EVP_PKEY_assign_*` / `d2i_*` / `EVP_DigestSign*` API
   is the only key-construction/signature path AWS-LC provides, so there is no
   alternative API to measure against — a measurement with nothing to compare
-  against is not informative. `c_openssl.zig` already conditionally excludes
-  `core.h`, `core_names.h`, and `params.h` from the AWS-LC `@cImport`. The
+  against is not informative. The translate-c wrapper (`openssl_c.h`)
+  already conditionally excludes `core.h`, `core_names.h`, and `params.h`
+  from the AWS-LC translation (#145). The
   `backend_aws_lc.zig` header doc cites this as a compatibility decision (#60
   slice C). A prior scratch measurement on OpenSSL 3.6.2 showed the legacy
   EC/RSA construction path is faster than naive `EVP_PKEY_fromdata`/decoder

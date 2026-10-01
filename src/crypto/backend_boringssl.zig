@@ -9,8 +9,8 @@
 //! `EVP_PKEY_fromdata`, `OSSL_PARAM`, `OSSL_PROVIDER`,
 //! `EVP_PKEY_CTX_new_from_name` are absent from the BoringSSL headers. The
 //! legacy API is the only key-construction/signature path BoringSSL provides.
-//! `c_openssl.zig` excludes `core.h`, `core_names.h`, and `params.h` from the
-//! BoringSSL `@cImport`.
+//! The translate-c wrapper (`openssl_c.h`) excludes `core.h`, `core_names.h`,
+//! and `params.h` from the BoringSSL translation (#145).
 //!
 //! Pure ML-KEM uses BoringSSL's EVP_PKEY_ALG and EVP_KEM interfaces. ztls owns
 //! the RFC 10024 hybrid composition so the wire construction is backend-neutral.

@@ -11,8 +11,9 @@
 //! `OSSL_PROVIDER`, `OSSL_DECODER`, and `EVP_PKEY_CTX_new_from_name` are absent
 //! from the AWS-LC headers (`openssl/evp.h`, `openssl/ec_key.h`, etc.). The
 //! legacy API is the only key-construction/signature path AWS-LC provides, so
-//! there is no alternative to measure against. `c_openssl.zig` already excludes
-//! `core.h`, `core_names.h`, and `params.h` from the AWS-LC `@cImport`.
+//! there is no alternative to measure against. The translate-c wrapper
+//! (`openssl_c.h`) already excludes `core.h`, `core_names.h`, and `params.h`
+//! from the AWS-LC translation (#145).
 const std = @import("std");
 const assert = std.debug.assert;
 const c = @import("c_openssl.zig").openssl;

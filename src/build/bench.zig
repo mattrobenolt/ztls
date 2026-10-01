@@ -6,6 +6,10 @@ pub const Options = struct {
     ztls_mod: *Build.Module,
     c_mod: *Build.Module,
     c_ssl_mod: *Build.Module,
+    /// Translated libcrypto C API (#145) — the benchmark_root tree
+    /// reaches src/crypto via relative imports (../aead.zig, ../root.zig),
+    /// so it compiles c_openssl.zig within itself.
+    openssl_c: *Build.Module,
     build_options: *Build.Step.Options,
     benchmark_dep: *Build.Dependency,
     txtar_mod: ?*Build.Module,
@@ -34,6 +38,7 @@ fn addZtlsBenchmarks(b: *Build, opts: Options) void {
     mod.addOptions("build_options", opts.build_options);
     mod.linkSystemLibrary("crypto", .{});
     mod.addImport("fixtures", opts.fixtures_mod);
+    mod.addImport("openssl_c", opts.openssl_c);
 
     const exe = addBenchmark(b, opts, "benchmark", mod);
 
