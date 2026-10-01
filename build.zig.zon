@@ -7,8 +7,8 @@
         // Test-only: decodes the RFC 8448 fixture archive. Lazy so consumers
         // of the library never fetch it.
         .txtar = .{
-            .url = "git+https://github.com/mattrobenolt/txtar#85c27385a0c14a1129a653af363a334266d48734",
-            .hash = "txtar-0.1.0-RyJLBJ5rAABCV5lD0YSt048wd3l9Nk9a4_TnEnm0MZ9P",
+            .url = "git+https://github.com/mattrobenolt/txtar?ref=v0.2.0#a58514df03a5a01d1847252e36248e3cd0728014",
+            .hash = "txtar-0.2.0-RyJLBG6HAACtIWvLB_sjlVl2CpaGh2sB0lN--cLsPg52",
             .lazy = true,
         },
         .benchmark = .{
