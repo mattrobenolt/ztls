@@ -43,6 +43,7 @@ def run_report(*extra_args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [sys.executable, str(SCRIPTS_DIR / "anvil_report.py"), *extra_args],
         capture_output=True,
+        check=False,
         text=True,
     )
 

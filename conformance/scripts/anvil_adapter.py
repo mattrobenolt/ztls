@@ -348,9 +348,8 @@ def raw_tls_anvil_report_from_zip(run_dir: Path) -> dict[str, Any] | None:
     if not zipped.is_file():
         return None
     try:
-        with zipfile.ZipFile(zipped) as zf:
-            with zf.open("report.json") as report:
-                raw = json.loads(report.read().decode())
+        with zipfile.ZipFile(zipped) as zf, zf.open("report.json") as report:
+            raw = json.loads(report.read().decode())
     except KeyError, json.JSONDecodeError, zipfile.BadZipFile:
         return None
     if not isinstance(raw, dict) or normalized_from_tests(raw) is not None:

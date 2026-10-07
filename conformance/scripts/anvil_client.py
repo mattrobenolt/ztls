@@ -11,7 +11,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from scripts.anvil_server import (  # noqa: E402
+from scripts.anvil_server import (
     ANVIL_JAR,
     ANVIL_TOOL_LOG_DIR,
     CONF_DIR,

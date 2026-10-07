@@ -13,8 +13,8 @@ import pytest
 
 from scripts import anvil_client
 from scripts.anvil_client import (
-    INVOCATIONS_DIR_NAME,
     INVOCATION_HEADER,
+    INVOCATIONS_DIR_NAME,
     TRIGGER_FAIL_EXIT,
     write_run_metadata,
     write_trigger_script,
@@ -41,7 +41,7 @@ def _fake_client(path: Path, body: str) -> Path:
 def _run_trigger(trigger: Path, marker: str) -> subprocess.CompletedProcess[bytes]:
     env = os.environ.copy()
     env["ATTRIB_MARKER"] = marker
-    return subprocess.run([str(trigger)], capture_output=True, env=env, timeout=30)
+    return subprocess.run([str(trigger)], capture_output=True, check=False, env=env, timeout=30)
 
 
 def _invocation_files(tmp_path: Path) -> list[Path]:

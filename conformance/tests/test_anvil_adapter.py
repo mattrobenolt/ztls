@@ -1,7 +1,7 @@
 import json
 import subprocess
-import zipfile
 import sys
+import zipfile
 from pathlib import Path
 
 from scripts.anvil_adapter import extract_feature
@@ -14,6 +14,7 @@ def run_adapter(*extra_args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [sys.executable, str(SCRIPTS_DIR / "anvil_adapter.py"), *extra_args],
         capture_output=True,
+        check=False,
         text=True,
     )
 
@@ -22,6 +23,7 @@ def run_report(*extra_args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [sys.executable, str(SCRIPTS_DIR / "anvil_report.py"), *extra_args],
         capture_output=True,
+        check=False,
         text=True,
     )
 
