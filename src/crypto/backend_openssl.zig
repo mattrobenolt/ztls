@@ -951,7 +951,6 @@ fn configureDeterministicNonce(
     if (c.EVP_PKEY_CTX_set_params(pctx, &params) != 1) return error.LibcryptoFailed;
 }
 
-// ziglint-ignore: Z015 -- SignError is a public error-set alias.
 pub fn signatureSign(
     key: *pkey,
     scheme: SignatureScheme,

@@ -73,7 +73,6 @@ pub const Class = enum {
 /// the new failure belongs to. That decision is security-relevant — silently
 /// reporting a certificate failure as a generic protocol error is exactly the
 /// bug this shape prevents — so it does not get a default.
-// ziglint-ignore: Z012 -- HandshakeError is a public error-set alias.
 pub fn classify(err: HandshakeError) Class {
     return switch (err) {
         // ── Peer certificate did not authenticate ──

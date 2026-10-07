@@ -259,7 +259,6 @@ fn retryExtensionsLen(
 /// ephemeral keys; the one matching `selected_group` is emitted in key_share.
 /// RFC 8446 §4.1.4 does not require generating a fresh key for the selected
 /// group — the existing keypair is reused.
-// ziglint-ignore: Z015 -- RetryEncodeError is a public error-set alias.
 pub fn encodeRetryAfterHrr(
     out: []u8,
     random: Random,
@@ -286,7 +285,6 @@ pub fn encodeRetryAfterHrr(
     );
 }
 
-// ziglint-ignore: Z015 -- RetryEncodeError is a public error-set alias.
 pub fn encodeRetryAfterHrrWithHybrid(
     out: []u8,
     random: Random,
@@ -316,7 +314,6 @@ pub fn encodeRetryAfterHrrWithHybrid(
     )).msg;
 }
 
-// ziglint-ignore: Z015 -- RetryEncodeError is a public error-set alias.
 pub fn encodeRetryAfterHrrWithHybridAndPsk(
     out: []u8,
     random: Random,

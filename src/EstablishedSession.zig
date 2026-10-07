@@ -101,7 +101,6 @@ pub fn lastPeerAlert(self: *const EstablishedSession) ?alert.Alert {
 /// inbound update_requested KeyUpdate — produce the response record in `out`
 /// encrypted under the old TX key (RFC 8446 §4.6.3). The same connected
 /// handleRecord path the handshake engine runs.
-// ziglint-ignore: Z015 -- HandleError is composed of public error-set aliases.
 pub fn handle(self: *EstablishedSession, record: []u8, out: []u8) HandleError!Event {
     if (self.pending_write.isPending()) return error.PendingWrite;
     return handshake.serverHandleConnected(self, record, out);
@@ -111,14 +110,12 @@ pub fn handle(self: *EstablishedSession, record: []u8, out: []u8) HandleError!Ev
 /// TX record is in flight. A received update_requested KeyUpdate sets the
 /// response obligation (`hasPendingKeyUpdateResponse`) without producing the
 /// response — the caller serializes it against its own TX.
-// ziglint-ignore: Z015 -- ReceiveError is a public error-set alias.
 pub fn receive(self: *EstablishedSession, record: []u8) ReceiveError!ReceiveEvent {
     return handshake.serverReceiveRecord(self, record);
 }
 
 /// Serialize and encrypt one application-data record under the current TX
 /// key. Refuses while a KeyUpdate response is owed (RFC 8446 §4.6.3).
-// ziglint-ignore: Z015 -- SendError is a public error-set alias.
 pub fn sendApplicationData(
     self: *EstablishedSession,
     plaintext: []const u8,
@@ -130,7 +127,6 @@ pub fn sendApplicationData(
 /// Send an alert through the established record path (encrypted).
 /// close_notify is a warning-level alert; everything else is fatal
 /// (RFC 8446 §6.1, §6.2).
-// ziglint-ignore: Z015 -- AlertError is a public error-set alias.
 pub fn sendAlert(
     self: *EstablishedSession,
     description: alert.Description,
@@ -141,7 +137,6 @@ pub fn sendAlert(
 
 /// Serialize, encrypt, and send a KeyUpdate; then ratchet the TX key so the
 /// update takes effect for subsequent records (RFC 8446 §4.6.3).
-// ziglint-ignore: Z015 -- SendError is a public error-set alias.
 pub fn sendKeyUpdate(
     self: *EstablishedSession,
     out: []u8,
@@ -153,7 +148,6 @@ pub fn sendKeyUpdate(
 /// Derive and install the next TX traffic key after an external record layer
 /// has sent a KeyUpdate under the old key. `request` must match that record;
 /// update_not_requested also satisfies any owed response.
-// ziglint-ignore: Z015 -- SendError is a public error-set alias.
 pub fn ratchetTx(self: *EstablishedSession, request: KeyUpdateRequest) SendError!void {
     return handshake.ratchetKtlsTx(.server, self, request);
 }

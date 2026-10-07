@@ -147,7 +147,6 @@ pub fn decryptProtected(
     };
 }
 
-// ziglint-ignore: Z015 -- SendError is public; ziglint does not follow imported error-set aliases.
 pub fn sendApplicationData(self: anytype, plaintext: []const u8, out: []u8) SendError![]u8 {
     comptime requireHandshakeShape(@TypeOf(self));
     assertConnected(self);
@@ -160,7 +159,6 @@ pub fn sendApplicationData(self: anytype, plaintext: []const u8, out: []u8) Send
     return record;
 }
 
-// ziglint-ignore: Z015 -- SendError is public; ziglint does not follow imported error-set aliases.
 pub fn sendPreparedApplicationData(
     self: anytype,
     plaintext_len: usize,
@@ -177,7 +175,6 @@ pub fn sendPreparedApplicationData(
     return record;
 }
 
-// ziglint-ignore: Z015 -- SendError is public; ziglint does not follow imported error-set aliases.
 pub fn sendKeyUpdate(
     comptime sender: KeyUpdateSender,
     self: anytype,
@@ -202,7 +199,6 @@ pub fn sendKeyUpdate(
 /// a KeyUpdate under the old key. `request` describes the record already sent.
 /// The caller must serialize the send and subsequent key installation around
 /// this call. RFC 8446 §4.6.3.
-// ziglint-ignore: Z015 -- SendError is public; ziglint does not follow imported error-set aliases.
 pub fn ratchetKtlsTx(
     comptime sender: KeyUpdateSender,
     self: anytype,
@@ -299,7 +295,6 @@ fn reassembleServerKeyUpdate(self: anytype, content: []u8) ReceiveError!?KeyUpda
 /// counter (the flood cap); handshake content must be exactly one KeyUpdate
 /// aligned to the record boundary (§5.1); alerts either close (close_notify,
 /// §6.1) or surface as PeerAlert (§6.2).
-// ziglint-ignore: Z015 -- ReceiveError is a public error-set alias.
 pub fn serverReceivePlaintext(
     self: anytype,
     content_type: frame.ContentType,
@@ -339,7 +334,6 @@ pub fn serverReceivePlaintext(
 
 /// Decrypt and classify one complete connected-state record. Server role;
 /// mutates RX only, so an unrelated TX record may still be in flight.
-// ziglint-ignore: Z015 -- ReceiveError is a public error-set alias.
 pub fn serverReceiveRecord(self: anytype, record: []u8) ReceiveError!ReceiveEvent {
     comptime requireEstablishedShape(@TypeOf(self));
     const dec = try decryptProtected(&self.rx, record);
@@ -368,7 +362,6 @@ pub fn serverHandleConnected(
 
 /// Serialize and encrypt one alert under the current TX key. close_notify is
 /// warning-level; every other description is fatal (RFC 8446 §6.1, §6.2).
-// ziglint-ignore: Z015 -- AlertError is a public error-set alias.
 pub fn sendEstablishedAlert(
     self: anytype,
     description: alert.Description,

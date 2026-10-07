@@ -42,7 +42,6 @@ pub fn sendData(fd: posix.socket_t, bytes: []const u8) SendError!usize {
     };
 }
 
-// ziglint-ignore: Z015 -- package-private syscall helper error set.
 pub fn sendControl(
     fd: posix.socket_t,
     content_type: u8,

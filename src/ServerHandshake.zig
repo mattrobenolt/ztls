@@ -992,7 +992,6 @@ pub const AlertError = handshake.AlertError;
 /// record. The returned bytes must be written before continuing the handshake.
 /// Installs handshake traffic keys for the encrypted server flight.
 /// RFC 8446 §4.1.2, §4.1.3, §5.1, §7.1.
-// ziglint-ignore: Z015 -- AcceptError is a public error-set alias.
 pub fn acceptClientHello(
     self: *ServerHandshake,
     record: []const u8,
@@ -1794,7 +1793,6 @@ fn encodeEncryptedExtensionsFinished(
 /// (`64*SP || context || 0 || transcript_hash`) for a full handshake.
 /// Any error is terminal for this handshake because flight assembly advances
 /// the transcript; send an alert when possible, then deinit.
-// ziglint-ignore: Z015 -- FlightError is a public error-set alias.
 pub fn sendAuthenticatedFlight(
     self: *ServerHandshake,
     certs_der: []const []const u8,
@@ -1805,7 +1803,6 @@ pub fn sendAuthenticatedFlight(
     return self.sendCertificateChainFlight(.init(certs_der), signer, plaintext, out);
 }
 
-// ziglint-ignore: Z015 -- FlightError is a public error-set alias.
 pub fn sendCertificateChainFlight(
     self: *ServerHandshake,
     chain: CertificateChain,
@@ -1823,7 +1820,6 @@ pub fn sendCertificateChainFlight(
     return self.encryptServerFlight(flight, out);
 }
 
-// ziglint-ignore: Z015 -- FlightError is a public error-set alias.
 pub fn sendPreparedAuthenticatedFlight(
     self: *ServerHandshake,
     certs_der: []const []const u8,
@@ -1833,7 +1829,6 @@ pub fn sendPreparedAuthenticatedFlight(
     return self.sendPreparedCertificateChainFlight(.init(certs_der), signer, out);
 }
 
-// ziglint-ignore: Z015 -- FlightError is a public error-set alias.
 pub fn sendPreparedCertificateChainFlight(
     self: *ServerHandshake,
     chain: CertificateChain,
@@ -1851,7 +1846,6 @@ pub fn sendPreparedCertificateChainFlight(
     return self.encryptPreparedServerFlight(flight.len, out);
 }
 
-// ziglint-ignore: Z015 -- FlightError is a public error-set alias.
 pub fn sendAuthenticatedFlightBuffered(
     self: *ServerHandshake,
     certs_der: []const []const u8,
@@ -1875,7 +1869,6 @@ pub fn sendAuthenticatedFlightBuffered(
 /// latch; callers must write the returned bytes and then call completeWrite().
 /// Any error is terminal for this handshake because flight assembly advances
 /// the transcript; send an alert when possible, then deinit.
-// ziglint-ignore: Z015 -- FlightError is a public error-set alias.
 pub fn sendPreparedServerFlight(self: *ServerHandshake, out: []u8) FlightError!?[]const u8 {
     if (self.pending_write.isPending()) return error.PendingWrite;
     if (self.state != .wait_client_finished or self.server_flight_sent) return null;
@@ -1899,7 +1892,6 @@ pub fn sendPreparedServerFlight(self: *ServerHandshake, out: []u8) FlightError!?
 }
 
 /// Buffered variant of sendPreparedServerFlight for callers using FlightBuffer.
-// ziglint-ignore: Z015 -- FlightError is a public error-set alias.
 pub fn sendServerFlightBuffered(self: *ServerHandshake, out: *FlightBuffer) FlightError!?[]u8 {
     const record = (try self.sendPreparedServerFlight(&out.buffer)) orelse return null;
     out.resize(@intCast(record.len));
@@ -2040,7 +2032,6 @@ fn clearServerApplicationWriteSecret(self: *ServerHandshake) void {
 /// Consume the client's encrypted Finished, verify it against the transcript
 /// through server Finished, then install application traffic keys. RFC 8446
 /// §4.4.4, §7.1.
-// ziglint-ignore: Z015 -- ClientFinishedError is a public error-set alias.
 pub fn processClientFinished(self: *ServerHandshake, record: []u8) ClientFinishedError!void {
     assert(self.state == .wait_client_finished);
     // RFC 8446 §4.5 — if the server accepted 0-RTT, the client MUST send
@@ -2170,7 +2161,6 @@ fn verifyClientFinished(
     self.state = .connected;
 }
 
-// ziglint-ignore: Z015 -- HandleError is a public error-set alias.
 pub fn handleRecord(
     self: *ServerHandshake,
     record: []u8,
@@ -2572,7 +2562,6 @@ fn handleClientFlightRecord(
 /// Process one connected-state record without touching TX state or the
 /// pending-write latch. The caller owns any KeyUpdate response. This permits a
 /// full-duplex driver to continue RX while a TX record drains. RFC 8446 §4.6.3.
-// ziglint-ignore: Z015 -- ReceiveError is a public error-set alias.
 pub fn receiveRecord(self: *ServerHandshake, record: []u8) ReceiveError!ReceiveEvent {
     assert(self.state == .connected);
     return handshake.serverReceiveRecord(self, record);
@@ -2581,7 +2570,6 @@ pub fn receiveRecord(self: *ServerHandshake, record: []u8) ReceiveError!ReceiveE
 /// Process one complete record already decrypted by Linux kTLS. Call exactly
 /// once per `TLS_GET_RECORD_TYPE` result; the record boundary is security-
 /// relevant for KeyUpdate. The kernel owns record sequence advancement.
-// ziglint-ignore: Z015 -- ReceiveError is a public error-set alias.
 pub fn receiveKtlsRecord(
     self: *ServerHandshake,
     content_type: frame.ContentType,
@@ -2591,7 +2579,6 @@ pub fn receiveKtlsRecord(
     return handshake.serverReceivePlaintext(self, content_type, content);
 }
 
-// ziglint-ignore: Z015 -- SendError is a public error-set alias.
 pub fn sendKeyUpdate(
     self: *ServerHandshake,
     out: []u8,
@@ -2603,7 +2590,6 @@ pub fn sendKeyUpdate(
 /// Advance server TX after Linux kTLS has accepted a KeyUpdate control record
 /// under the old key. `request` must match that record; a not-requested update
 /// satisfies any owed response. Install `txKtlsInfo()` before any later send.
-// ziglint-ignore: Z015 -- SendError is a public error-set alias.
 pub fn ratchetKtlsTx(
     self: *ServerHandshake,
     request: KeyUpdateRequest,
@@ -2611,7 +2597,6 @@ pub fn ratchetKtlsTx(
     return handshake.ratchetKtlsTx(.server, self, request);
 }
 
-// ziglint-ignore: Z015 -- AlertError is a public error-set alias.
 pub fn sendAlert(
     self: *ServerHandshake,
     description: alert.Description,
@@ -2647,7 +2632,6 @@ pub fn sendAlert(
 /// The caller owns the opaque identity and all storage, expiration, rotation,
 /// replay, random `ticket_age_add`, resumption-chain, and client-auth continuity
 /// policy. `params.ticket` must not alias `out`. RFC 8446 §4.6.1.
-// ziglint-ignore: Z015 -- TicketSendError is a public error-set alias.
 pub fn sendNewSessionTicket(
     self: *ServerHandshake,
     prepared: *const TicketPsk,
@@ -2685,7 +2669,6 @@ pub fn sendNewSessionTicket(
     return record;
 }
 
-// ziglint-ignore: Z015 -- SendError is a public error-set alias.
 pub fn sendApplicationData(
     self: *ServerHandshake,
     plaintext: []const u8,
@@ -2694,7 +2677,6 @@ pub fn sendApplicationData(
     return handshake.sendApplicationData(self, plaintext, out);
 }
 
-// ziglint-ignore: Z015 -- SendError is a public error-set alias.
 pub fn sendPreparedApplicationData(
     self: *ServerHandshake,
     plaintext_len: usize,
@@ -2728,7 +2710,6 @@ pub fn rxKtlsInfo(self: *const ServerHandshake) RecordLayer.KtlsInfo {
     return self.rx.ktlsInfo();
 }
 
-// ziglint-ignore: Z015 -- ReceiveError is a public error-set alias.
 pub fn receiveApplicationData(self: *ServerHandshake, record: []u8) ReceiveError![]const u8 {
     assert(self.state == .connected);
     if (self.ku_frag.len != 0) return error.UnexpectedRecord;

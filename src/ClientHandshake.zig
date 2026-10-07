@@ -745,7 +745,6 @@ pub fn lastPeerAlert(self: *const ClientHandshake) ?alert.Alert {
     return self.last_peer_alert;
 }
 
-// ziglint-ignore: Z024, Z015
 pub const StartError = error{
     BufferTooShort,
     InvalidServerName,
@@ -790,7 +789,6 @@ pub fn peerCertificateChain(self: *const ClientHandshake) []const []const u8 {
 
 /// Offer ALPN protocols in ClientHello. Each protocol must be 1..255 bytes.
 /// The slice is caller-owned and only needs to live until start() encodes it.
-/// ziglint-ignore: Z012
 pub fn offerAlpn(self: *ClientHandshake, protocols: AlpnProtocols) void {
     assert(self.state == .start);
     self.alpn_protocols = protocols;
@@ -833,7 +831,6 @@ pub fn setCertificateChain(self: *ClientHandshake, chain: CertificateChain, sign
 /// (for SNI) and `random`, frame it as a plaintext record into `out`, absorb
 /// it into the transcript, and advance start -> wait_sh. Returns the wire-ready
 /// record to send (then completeWrite() once sent). RFC 8446 §4.1.2, §5.1.
-// ziglint-ignore: Z015 -- StartError is a public error-set alias.
 pub fn start(self: *ClientHandshake, out: []u8) StartError![]const u8 {
     assert(self.state == .start);
     if (out.len < frame.header_len) return error.BufferTooShort;
@@ -875,7 +872,6 @@ pub fn start(self: *ClientHandshake, out: []u8) StartError![]const u8 {
 /// ClientHello prefix (§4.2.11.2), and patch it in. The full ClientHello is
 /// absorbed into the transcript. `out` receives the wire-ready record. RFC
 /// 8446 §4.1.3, §4.2.11.
-// ziglint-ignore: Z015 -- StartError is a public error-set alias.
 pub fn startWithPsk(
     self: *ClientHandshake,
     ticket: *const SessionTicket,
@@ -1131,7 +1127,6 @@ pub fn hasPendingKeyUpdateResponse(self: *const ClientHandshake) bool {
 /// decrypted application data, handles post-handshake control messages
 /// (KeyUpdate), and surfaces a KeyUpdate response as `.key_update`. `record` is
 /// decrypted in place; `out` receives any record to send. RFC 8446 §5.
-// ziglint-ignore: Z015 -- HandleError is a public error-set alias.
 pub fn handleRecord(self: *ClientHandshake, record: []u8, out: []u8) HandleError!Event {
     if (self.pending_write.isPending()) return error.PendingWrite;
     const ev: Event = if (self.state == .connected)
@@ -1150,7 +1145,6 @@ pub const AlertError = RecordLayer.EncryptError || error{PendingWrite};
 /// Encode a TLS alert record (then completeWrite() once sent). Before handshake
 /// keys exist this emits a plaintext alert record; after ServerHello it encrypts
 /// the alert under the current send traffic key. RFC 8446 §6.
-// ziglint-ignore: Z015 -- AlertError is a public error-set alias.
 pub fn sendAlert(
     self: *ClientHandshake,
     description: alert.Description,
@@ -1171,7 +1165,6 @@ pub fn sendAlert(
 
 /// Encrypt application data into a wire-ready record (then completeWrite() once
 /// sent). RFC 8446 §5.2.
-// ziglint-ignore: Z015 -- SendError is a public error-set alias.
 pub fn sendApplicationData(
     self: *ClientHandshake,
     plaintext: []const u8,
@@ -1185,7 +1178,6 @@ pub fn sendApplicationData(
 /// server Finished is verified. The caller MUST ensure 0-RTT is replay-safe;
 /// 0-RTT data is not forward-secret and can be replayed by a network attacker.
 /// RFC 8446 §4.2.10, §7.1. Returns the encrypted record (then completeWrite).
-// ziglint-ignore: Z015 -- SendError is a public error-set alias.
 pub fn sendEarlyData(
     self: *ClientHandshake,
     plaintext: []const u8,
@@ -1198,7 +1190,6 @@ pub fn sendEarlyData(
     return record;
 }
 
-// ziglint-ignore: Z015 -- SendError is a public error-set alias.
 pub fn sendPreparedApplicationData(
     self: *ClientHandshake,
     plaintext_len: usize,
@@ -1424,7 +1415,6 @@ fn patchRetryPskBinder(
 /// wait_sh for the real ServerHello.
 ///
 /// RFC 8446 §4.1.4, §4.4.1.
-// ziglint-ignore: Z015 -- HelloRetryRequestError is a public error-set alias.
 pub fn processHelloRetryRequest(
     self: *ClientHandshake,
     msg: []const u8,
@@ -1570,7 +1560,6 @@ pub fn processHelloRetryRequest(
 /// Process the server's ServerHello: parse it, absorb it into the transcript,
 /// compute the DHE shared secret, and install the handshake-traffic keys.
 /// RFC 8446 §4.1.3, §7.1. Advances wait_sh -> wait_ee.
-// ziglint-ignore: Z015 -- ServerHelloError is a public error-set alias.
 pub fn processServerHello(self: *ClientHandshake, msg: []const u8) ServerHelloError!void {
     assert(self.state == .wait_sh);
     var sh: server_hello.ServerHello = undefined;
@@ -1681,7 +1670,6 @@ pub const FlightError = error{
 /// one message per record): self.state persists and each call resumes. A
 /// single handshake message must still fit within one payload — message-
 /// spanning-records reassembly is not yet supported.
-// ziglint-ignore: Z015 -- FlightError is a public error-set alias.
 pub fn processFlight(
     self: *ClientHandshake,
     payload: []const u8,
@@ -1905,7 +1893,6 @@ pub const SendError = RecordLayer.EncryptError || error{
 /// rx/tx are swapped to application-traffic keys. After this returns, both
 /// directions carry application data. `out` receives the encrypted record and
 /// the returned slice is the bytes to send.
-// ziglint-ignore: Z015 -- SendError is a public error-set alias.
 pub const ClientFinishedError = SendError || signature.SignError || aead.Error || error{
     UnexpectedMessage,
     SignatureSchemeNotOffered,
@@ -1928,7 +1915,6 @@ pub const ClientFinishedError = SendError || signature.SignError || aead.Error |
 ///
 /// A successful call installs application keys without transport I/O.
 /// The caller can then use receiveRecord before Finished reaches the peer.
-// ziglint-ignore: Z015 -- ClientFinishedError is a public error-set alias.
 pub fn clientFinished(self: *ClientHandshake, out: []u8) ClientFinishedError![]const u8 {
     assert(self.state == .send_finished);
     if (self.server_flight_progress != .finished_verified) return error.UnexpectedMessage;
@@ -2078,7 +2064,6 @@ pub const ReceiveError = RecordLayer.DecryptError || alert.ParseError ||
 /// Process one connected-state record without touching TX state or the
 /// pending-write latch. The caller owns any KeyUpdate response. This permits a
 /// full-duplex driver to continue RX while a TX record drains. RFC 8446 §4.6.3.
-// ziglint-ignore: Z015 -- ReceiveError is a public error-set alias.
 pub fn receiveRecord(self: *ClientHandshake, record: []u8) ReceiveError!ReceiveEvent {
     assert(self.state == .connected);
     const dec = try handshake.decryptProtected(&self.rx, record);
@@ -2088,7 +2073,6 @@ pub fn receiveRecord(self: *ClientHandshake, record: []u8) ReceiveError!ReceiveE
 /// Process one complete record already decrypted by Linux kTLS. Call exactly
 /// once per `TLS_GET_RECORD_TYPE` result; the record boundary is security-
 /// relevant for KeyUpdate. The kernel owns record sequence advancement.
-// ziglint-ignore: Z015 -- ReceiveError is a public error-set alias.
 pub fn receiveKtlsRecord(
     self: *ClientHandshake,
     content_type: frame.ContentType,
@@ -2200,7 +2184,6 @@ fn handleConnected(
 /// Send a KeyUpdate. Encrypts the message under the current (old) send key,
 /// then ratchets our send key so subsequent records use the next generation
 /// (RFC 8446 §4.6.3, §7.2). `request` asks the peer to update in return.
-// ziglint-ignore: Z015 -- SendError is a public error-set alias.
 pub fn sendKeyUpdate(
     self: *ClientHandshake,
     out: []u8,
@@ -2212,7 +2195,6 @@ pub fn sendKeyUpdate(
 /// Advance client TX after Linux kTLS has accepted a KeyUpdate control record
 /// under the old key. `request` must match that record; a not-requested update
 /// satisfies any owed response. Install `txKtlsInfo()` before any later send.
-// ziglint-ignore: Z015 -- SendError is a public error-set alias.
 pub fn ratchetKtlsTx(
     self: *ClientHandshake,
     request: KeyUpdateRequest,
@@ -2795,7 +2777,6 @@ test "processFlight: rejects unrequested server CertificateEntry status_request"
 
 // RFC 8446 §4.4.2.2 — an unsupported certificate key fails before CertificateVerify.
 test "handleRecord: rejects a server key above retention capacity" {
-    // ziglint-ignore: Z007 -- Fixture imports stay test-local for published packages (#66).
     const fixtures = @import("fixtures");
     var bundle: crypto.Certificate.Bundle = .{ .map = .empty, .bytes = .empty };
     defer bundle.deinit(testing.allocator);

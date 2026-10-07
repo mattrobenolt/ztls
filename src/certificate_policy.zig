@@ -64,7 +64,6 @@ const key_usage_key_cert_sign: u4 = 5;
 pub const VerifyServerAuthError = PolicyError || Certificate.ParseError;
 pub const VerifyClientAuthError = PolicyError || Certificate.ParseError;
 
-// ziglint-ignore: Z015 -- VerifyServerAuthError is a public error-set alias.
 pub fn verifyServerAuth(parsed: Certificate.Parsed) VerifyServerAuthError!void {
     return verifyServerAuthWithSignatureSchemes(
         parsed,
@@ -72,7 +71,6 @@ pub fn verifyServerAuth(parsed: Certificate.Parsed) VerifyServerAuthError!void {
     );
 }
 
-// ziglint-ignore: Z015 -- VerifyServerAuthError is a public error-set alias.
 pub fn verifyServerAuthWithSignatureSchemes(
     parsed: Certificate.Parsed,
     certificate_signature_schemes: []const SignatureScheme,
@@ -80,7 +78,6 @@ pub fn verifyServerAuthWithSignatureSchemes(
     return verifyLeafAuth(parsed, certificate_signature_schemes, &eku_server_auth_oid);
 }
 
-// ziglint-ignore: Z015 -- VerifyClientAuthError is a public error-set alias.
 pub fn verifyClientAuth(parsed: Certificate.Parsed) VerifyClientAuthError!void {
     return verifyClientAuthWithSignatureSchemes(
         parsed,
@@ -88,7 +85,6 @@ pub fn verifyClientAuth(parsed: Certificate.Parsed) VerifyClientAuthError!void {
     );
 }
 
-// ziglint-ignore: Z015 -- VerifyClientAuthError is a public error-set alias.
 pub fn verifyClientAuthWithSignatureSchemes(
     parsed: Certificate.Parsed,
     certificate_signature_schemes: []const SignatureScheme,
@@ -146,7 +142,6 @@ pub const VerifyIssuerUsageError = PolicyError || Certificate.ParseError;
 
 // RFC 5280 §4.2.1.9 and §4.2.1.3 — every certificate used to issue another
 // certificate must assert cA and permit keyCertSign when KeyUsage is present.
-// ziglint-ignore: Z015 -- VerifyIssuerUsageError is a public error-set alias.
 pub fn verifyIssuerUsage(issuer: Certificate.Parsed) VerifyIssuerUsageError!void {
     if (!issuer.is_ca) return error.CertificateIssuerNotCa;
     if (!try issuer.allowsKeyUsage(key_usage_key_cert_sign))
@@ -161,7 +156,6 @@ pub const VerifyAgainstBundleError = PolicyError ||
     Certificate.Parsed.VerifyError ||
     error{CertificateIssuerNotFound};
 
-// ziglint-ignore: Z015 -- VerifyAgainstBundleError is a public error-set alias.
 pub fn findVerifiedIssuerInBundle(
     bundle: *const Certificate.Bundle,
     subject: Certificate.Parsed,
@@ -176,7 +170,6 @@ pub fn findVerifiedIssuerInBundle(
     return issuer;
 }
 
-// ziglint-ignore: Z015 -- VerifyAgainstBundleError is a public error-set alias.
 pub fn verifyAgainstBundle(
     bundle: *const Certificate.Bundle,
     subject: Certificate.Parsed,

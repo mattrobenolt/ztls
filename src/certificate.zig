@@ -103,7 +103,6 @@ pub fn encodeWithRequestContext(
 /// request_context echo, list bounds, and per-entry extension syntax.
 ///
 /// RFC 8446 §4.4.2
-// ziglint-ignore: Z015 -- ParseError is a public error-set alias.
 pub fn parseClientCertificate(
     msg: []const u8,
     expected_request_context: []const u8,
@@ -146,7 +145,6 @@ pub fn parseClientCertificate(
 /// non-empty client request_context and uses the client-auth leaf policy. The
 /// caller must keep `msg` alive until the returned slices have been consumed.
 /// RFC 8446 §4.4.2 (client Certificate), §4.4.3 (client CertificateVerify).
-// ziglint-ignore: Z015 -- ParseError is a public error-set alias.
 pub fn parseClientChain(
     msg: []const u8,
     expected_request_context: []const u8,
@@ -332,7 +330,6 @@ fn verifyChainPathLength(
 /// the explicit insecure_no_chain_anchor test/demo opt-in.
 ///
 /// RFC 8446 §4.4.2
-// ziglint-ignore: Z015 -- ParseError is a public error-set alias.
 pub fn parse(msg: []const u8, policy: Policy) ParseError![]const u8 {
     if (msg.len < 4 + 1 + 3) return error.UnexpectedEof;
     var r: wire.Reader = .init(msg);

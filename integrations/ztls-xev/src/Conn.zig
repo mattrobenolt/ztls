@@ -468,7 +468,6 @@ pub fn ConnWith(comptime Xev: type, comptime role: root.Role) type {
         pub fn handshake(
             self: *Self,
             ctx: anytype,
-            // ziglint-ignore: Z023 -- comptime callback keeps anyopaque out of the API.
             comptime cb: fn (@TypeOf(ctx), root.HandshakeResult) void,
         ) void {
             const T = Thunk(@TypeOf(ctx), root.HandshakeResult, cb);
@@ -505,7 +504,6 @@ pub fn ConnWith(comptime Xev: type, comptime role: root.Role) type {
             self: *Self,
             buf: []u8,
             ctx: anytype,
-            // ziglint-ignore: Z023 -- comptime callback keeps anyopaque out of the API.
             comptime cb: fn (@TypeOf(ctx), root.ReadResult) void,
         ) void {
             const T = Thunk(@TypeOf(ctx), root.ReadResult, cb);
@@ -536,7 +534,6 @@ pub fn ConnWith(comptime Xev: type, comptime role: root.Role) type {
             self: *Self,
             plaintext: []const u8,
             ctx: anytype,
-            // ziglint-ignore: Z023 -- comptime callback keeps anyopaque out of the API.
             comptime cb: fn (@TypeOf(ctx), root.WriteResult) void,
         ) void {
             const T = Thunk(@TypeOf(ctx), root.WriteResult, cb);
@@ -575,7 +572,6 @@ pub fn ConnWith(comptime Xev: type, comptime role: root.Role) type {
         pub fn close(
             self: *Self,
             ctx: anytype,
-            // ziglint-ignore: Z023 -- comptime callback keeps anyopaque out of the API.
             comptime cb: fn (@TypeOf(ctx)) void,
         ) void {
             self.beginClose(Thunk(@TypeOf(ctx), void, cb).invokeVoid, @ptrCast(ctx), .orderly);
@@ -587,7 +583,6 @@ pub fn ConnWith(comptime Xev: type, comptime role: root.Role) type {
         pub fn closeReset(
             self: *Self,
             ctx: anytype,
-            // ziglint-ignore: Z023 -- comptime callback keeps anyopaque out of the API.
             comptime cb: fn (@TypeOf(ctx)) void,
         ) void {
             self.beginClose(Thunk(@TypeOf(ctx), void, cb).invokeVoid, @ptrCast(ctx), .abortive);

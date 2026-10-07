@@ -52,7 +52,6 @@ pub const PrivateKey = struct {
     /// schemes — so a key whose scheme this backend cannot sign (Ed25519,
     /// P-521 today) fails here with `error.UnsupportedKeyScheme`, at load
     /// time instead of at the first handshake signature.
-    // ziglint-ignore: Z015 -- LoadError is a public error-set alias.
     pub fn fromPemAuto(pem: []const u8) LoadError!PrivateKey {
         const key = try backend.sign.privateKeyFromPem(pem);
         // Two fallible steps: a scheme-rejected key must not leak the
