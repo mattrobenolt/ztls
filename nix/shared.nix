@@ -22,7 +22,7 @@ rec {
   rustToolchain = pkgs.rust-bin.fromRustupToolchainFile ../bench/rustls/rust-toolchain.toml;
 
   wrangler = pkgs.writeShellScriptBin "wrangler" ''
-    exec env NPM_CONFIG_MIN_RELEASE_AGE=0 ${pkgs.nodejs}/bin/npx wrangler@4.141.0 "$@"
+    exec env NPM_CONFIG_MIN_RELEASE_AGE=0 ${pkgs.nodejs}/bin/npx wrangler@4.148.0 "$@"
   '';
 
   # nixpkgs boringssl ships headers (dev) and libcrypto/libssl .so (out) but no
