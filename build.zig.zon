@@ -20,8 +20,8 @@
         // stderr instead of Zig's TUI progress protocol. Lazy so consumers of
         // the library never fetch it.
         .ztest = .{
-            .url = "https://github.com/mattrobenolt/ztest/archive/e8a7c83a961502ff85ed82fbab06af78c81a0836.tar.gz",
-            .hash = "ztest-0.2.0-h6PBzyKEAAC49mtm1NO2CTeniItVuL0l06TpBDMDTe19",
+            .url = "https://github.com/mattrobenolt/ztest/archive/d1a70d1e99d4e8751d5ceddfe8dcc761e7831aad.tar.gz",
+            .hash = "ztest-0.2.0-h6PBz_h1AAD8Z41oiZbR5aKo2xAzeqbuW9KIxfClUgwp",
             .lazy = true,
         },
         // Integration-only: fetched when a consumer opts into ztls_xev.
