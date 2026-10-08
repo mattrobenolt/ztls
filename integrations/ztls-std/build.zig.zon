@@ -15,10 +15,11 @@
         // `examples/zio_client.zig` proving the integration. Lazy so a consumer
         // of ztls-std never fetches an I/O runtime it did not ask for.
         .zio = .{
-            // Includes upstream #735, which drops the reserved AArch64 FFR
-            // clobber that made Zig report a successful build as a failure.
-            .url = "git+https://github.com/lalinsky/zio#631c0d592acb18c65379ae09baf0ddcfa7ca98da",
-            .hash = "zio-0.17.0-xHbVVPqjKQAQdaRNRxJyRs-unPb9K9fosl7C2h-IaZoa",
+            // v0.19.1 is the first tagged release past the old commit pin. It
+            // carries zio #735, which drops the reserved AArch64 FFR clobber
+            // that made Zig report a successful build as a failure (#104).
+            .url = "git+https://github.com/lalinsky/zio?ref=v0.19.1#4daa0c0a9522a37c4d28e3dcec2515cc955abe71",
+            .hash = "zio-0.19.1-xHbVVJXzKwAKLRAABWeDvQG9Dg1kf9FM3haWG0YqtScn",
             .lazy = true,
         },
         // Test-only: plain-text test runner. Lazy so consumers never fetch it.
