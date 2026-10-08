@@ -1,7 +1,6 @@
 import de.rub.nds.tlstest.framework.utils.X509CertificateChainProvider;
 import de.rub.nds.x509attacker.config.X509CertificateConfig;
 import de.rub.nds.x509attacker.config.extension.BasicConstraintsConfig;
-import de.rub.nds.x509attacker.constants.DefaultEncodingRule;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
@@ -9,16 +8,21 @@ import java.util.TreeSet;
 
 /**
  * ztls #91 regression probe (CONFIG level: it asserts on the generated
- * X509CertificateConfig objects, not on encoded certificates; the single-case
+ * X509CertificateConfig objects, not on encoded certificates; a built
+ * signing cert decodes with a critical CA:TRUE basicConstraints — verified
+ * against the v1.5.3 native provider during #146 — and the single-case
  * HappyFlow run is the behavioral DER-level proof). Loads the effective class
  * through the classpath TLS-Anvil itself uses and asserts: signing-cert
- * configs carry a present, critical basicConstraints cA=true with the cA field
- * explicitly encoded; leaf configs stay untouched; per-builder chain counts
- * and leaf key-type / modulus diversity stay exactly at the upstream v1.5.0
- * baseline. Exits non-zero on any violation.
+ * configs carry a present, critical basicConstraints cA=true; leaf configs
+ * stay untouched; per-builder chain counts and leaf key-type / modulus
+ * diversity stay exactly at the upstream baseline. Since the v1.5.3 bump
+ * (#146) the cA fix is upstream-native — the probe guards against a jar swap
+ * or an upstream regression, not against a missing local patch. Exits
+ * non-zero on any violation.
  */
 public class AnvilChainProviderProbe {
-    // Upstream v1.5.0 baseline (unchanged by the patch).
+    // Upstream baseline (unchanged from v1.5.0 through v1.5.3; the class diff
+    // between those releases only adds the signing-cert basicConstraints).
     private static final int EXPECTED_CHAINS_PER_BUILDER = 38;
     private static final Set<String> EXPECTED_LEAF_TYPES =
             Set.of("dsa", "ecdh_ecdsa", "rsa", "rsaes_oaep", "rsassa_pss");
@@ -97,13 +101,12 @@ public class AnvilChainProviderProbe {
             if (bc == null
                     || !bc.isPresent()
                     || !bc.isCritical()
-                    || !bc.isCa()
-                    || bc.getIncludeCA() != DefaultEncodingRule.ENCODE) {
+                    || !bc.isCa()) {
                 System.out.println(
                         "FAIL "
                                 + label
                                 + ": signing config basicConstraints missing or not "
-                                + "present/critical/cA/includeCA=ENCODE (found="
+                                + "present/critical/cA (found="
                                 + (bc != null)
                                 + ")");
                 failures++;

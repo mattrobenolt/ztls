@@ -8,8 +8,8 @@
             .path = "../",
         },
         .tlsanvil = .{
-            .url = "https://github.com/tls-attacker/TLS-Anvil/releases/download/v1.5.0/TLS-Anvil-v1.5.0.zip",
-            .hash = "N-V-__8AAACiugX9TDNHS4gUMmDdAre7aDQZEvrSeorGViEk",
+            .url = "https://github.com/tls-attacker/TLS-Anvil/releases/download/v1.5.3/TLS-Anvil-v1.5.3.zip",
+            .hash = "N-V-__8AACw-uAW_q-8V3uKsbmBDtDxMZuAd7ea0tDv0uhE_",
         },
     },
     .paths = .{

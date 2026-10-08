@@ -7,8 +7,10 @@
 # its effective code sources, so classpath masking is visible, and exits
 # nonzero on any failed check.
 #
-# - A tls-test-framework override is prepended: its class exists in both jars,
-#   so shadowing the patched one is enough.
+# - A tls-test-framework override is prepended: its class exists in both
+#   jars, so shadowing the installed one is enough. The installed provider is
+#   upstream-native since v1.5.3 (#146); a v1.5.0-era jar passed here
+#   demonstrates the red state the probe guards against.
 # - An x509-attacker override REPLACES the installed jar on the probe
 #   classpath: merely prepending it would still load the patched-only classes
 #   (DateTimeAdapter, package-info) from the installed jar later on the
@@ -21,7 +23,7 @@ set -euo pipefail
 conf_dir="$(cd "$(dirname "$0")/../.." && pwd)"
 src_dir="$(cd "$(dirname "$0")" && pwd)"
 tools_dir="$conf_dir/zig-out/tools"
-effective_ttf="$tools_dir/lib/tls-test-framework-1.5.0.jar"
+effective_ttf="$tools_dir/lib/tls-test-framework-1.5.3.jar"
 effective_x509="$tools_dir/lib/x509-attacker-4.3.10.jar"
 
 for jar in "$tools_dir/TLS-Anvil.jar" "$effective_ttf" "$effective_x509"; do

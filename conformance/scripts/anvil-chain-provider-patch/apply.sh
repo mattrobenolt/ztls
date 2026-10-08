@@ -1,23 +1,25 @@
 #!/usr/bin/env bash
-# ztls conformance patches (#91): rebuild/replace classes inside the jars the
-# conformance build installs under zig-out/tools/lib. Two independent patches,
-# each applied atomically to its own pinned jar with its own provenance stamp:
+# ztls conformance patches (#91, #146): rebuild/replace classes inside the
+# jars the conformance build installs under zig-out/tools/lib. One remaining
+# patch, applied atomically to its own pinned jar with its own provenance
+# stamp:
 #
-# 1. tls-test-framework-1.5.0.jar: rebuild X509CertificateChainProvider from
-#    the patched source in this directory. Upstream v1.5.0 (and v1.5.2/main as
-#    of 2026-09-12) builds each chain's self-signed signing certificate without
-#    a basicConstraints extension, so every generated root is a non-conforming
-#    CA certificate (RFC 5280 §4.2.1.9). The patch adds a critical
-#    basicConstraints cA=true to the signing certs only; leaf configs and all
-#    other chain diversity are untouched.
-#
-# 2. x509-attacker-4.3.10.jar: inject DateTimeAdapter + package-info into
+# 1. x509-attacker-4.3.10.jar: inject DateTimeAdapter + package-info into
 #    de.rub.nds.x509attacker.config. Upstream has no package-info, so JAXB
 #    marshals the config's joda-time DateTime validity fields as EMPTY
 #    elements; TLS-Attacker's Config.createCopy()/ConfigIO round trips then
-#    replace the configured validity dates with the copy's current time. The package-level adapter preserves the
-#    configured instants (including deliberately expired/future windows)
-#    exactly; it never relaxes any ztls-side validation.
+#    replace the configured validity dates with the copy's current time. The
+#    package-level adapter preserves the configured instants (including
+#    deliberately expired/future windows) exactly; it never relaxes any
+#    ztls-side validation.
+#
+# The tls-test-framework jar is NO LONGER patched. TLS-Anvil v1.5.3 adopted
+# the #91 chain fix upstream: X509CertificateChainProvider now adds a
+# critical basicConstraints cA=true to every chain signing certificate
+# (RFC 5280 §4.2.1.9), which is exactly what the retired local fork used to
+# do. The v1.5.0-era fork and its patch block were removed with the v1.5.3
+# bump (#146); probe.sh still verifies the installed (upstream) provider
+# carries the fix.
 #
 # See NOTICE.md for the Apache-2.0 attribution and modification notice.
 #
@@ -69,25 +71,7 @@ update_jar() {
 
 sha256_of() { sha256sum "$1" | cut -d' ' -f1; }
 
-# --- Patch 1: chain provider basicConstraints (RFC 5280 §4.2.1.9) ---
-expect_only "tls-test-framework-1.5.0.jar" 'tls-test-framework-*.jar'
-ttf_jar="$tools_lib_dir/tls-test-framework-1.5.0.jar"
-ttf_class=de/rub/nds/tlstest/framework/utils/X509CertificateChainProvider.class
-javac -proc:none -cp "$classpath" -d "$work" "$src_dir/X509CertificateChainProvider.java"
-update_jar "$ttf_jar" "$ttf_class"
-ttf_jar_sha256=$(sha256_of "$ttf_jar")
-# Provenance stamp: run_metadata records these digests next to the live
-# digests of the installed jar so a stale or unpatched artifact is
-# distinguishable from a patched one (a source hash alone proves nothing).
-cat >"$ttf_jar.provenance" <<EOF
-patched=true
-jar_sha256=$ttf_jar_sha256
-class_sha256=$(sha256_of "$work/$ttf_class")
-source_sha256=$(sha256_of "$src_dir/X509CertificateChainProvider.java")
-EOF
-echo "patched X509CertificateChainProvider (basicConstraints cA) into $ttf_jar"
-
-# --- Patch 2: x509-attacker DateTime JAXB adapter (validity preservation) ---
+# --- DateTimeAdapter patch: x509-attacker JAXB validity preservation ---
 expect_only "x509-attacker-4.3.10.jar" 'x509-attacker-*.jar'
 x509_jar="$tools_lib_dir/x509-attacker-4.3.10.jar"
 adapter_class=de/rub/nds/x509attacker/config/DateTimeAdapter.class

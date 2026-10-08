@@ -80,12 +80,8 @@ def test_write_run_metadata_records_command_git_and_client_fields(tmp_path: Path
     assert "revision" in metadata["git"]
     assert "dirty" in metadata["git"]
     assert "chain_provider" in metadata
-    assert metadata["chain_provider"]["patch_status"] in {
-        "patched",
-        "unpatched",
-        "stale",
-        "jar_missing",
-    }
+    assert metadata["chain_provider"]["jar_sha256"] is not None
+    assert metadata["chain_provider"]["chain_provider_class_sha256"] is not None
     assert "validity_adapter" in metadata
     assert metadata["validity_adapter"]["patch_status"] in {
         "patched",

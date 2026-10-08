@@ -577,6 +577,25 @@ data to openssl s_server and receives the HTTP response.
   base revision and artifact/source hashes in `validity-probe-metadata.json`. This is
   local regression evidence; the fresh full captures with both patches are
   preserved in `captures-e5800ee/` and accepted above.
+- **TLS-Anvil v1.5.3 transition (#146): upstream adopted the chain fix, the
+  local tls-test-framework patch is retired.** Upstream v1.5.3's
+  `X509CertificateChainProvider` adds a critical `basicConstraints`
+  `cA=true` to every chain signing certificate — the same fix the retired
+  fork carried (#91). The fork source, its `apply.sh` patch block, and the
+  ttf provenance stamp are removed; the installed
+  `tls-test-framework-1.5.3.jar` is byte-identical to upstream. Verified
+  at both levels: the config probe passes against the native provider
+  (the `includeCA=ENCODE` config check was fork-implementation detail, not
+  the invariant — a built signing cert decodes with a critical
+  `CA:TRUE` basicConstraints), and the mutation direction stays red: the
+  probe fails a pristine v1.5.0-era jar passed as the override. The
+  `x509-attacker-4.3.10` DateTimeAdapter patch is unchanged — that jar is
+  byte-identical between the two release zips. Run metadata still binds each
+  run to the exact installed ttf jar and effective class bytes, without
+  patch-stamp semantics. `just conformance/ci` and the full `just ci` gate
+  are green under v1.5.3. All v1.5.0 counts and captures in this file are
+  that suite's provenance; the v1.5.3 strict-count re-baseline lands via the
+  scheduled/dispatched CI suite runs.
 - Wycheproof boundary vectors at the libcrypto seam.
 - Fuzzing on the major parsers plus record decrypt and server `handleRecord`
   pre-auth/post-auth dispatch.
