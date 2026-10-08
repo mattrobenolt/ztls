@@ -59,6 +59,12 @@ rec {
     ];
   };
 
+  # nixpkgs-unstable flipped the default openssl to the 3.5 LTS line (2026-10-06);
+  # ztls pins the 3.6 line so the default backend, the CLI interop peer, and the
+  # #121 memcheck diagnostic do not silently hop lines with a lockfile refresh.
+  # The name intentionally shadows pkgs.openssl below (the ast-grep pattern).
+  openssl = pkgs.openssl_3_6;
+
   # commonHook is interpolated into backendShell's shellHook and used directly
   # by the base shell. It isolates both Zig caches by compiler version. The
   # BoringSSL path references boringsslPc when a shell calls commonHook.
@@ -69,12 +75,16 @@ rec {
     unset ZIG_GLOBAL_CACHE_DIR
     export ZIG_LOCAL_CACHE_DIR=.zig-cache/${zig-tools.zig.version}
     export ZIG_GLOBAL_CACHE_DIR="''${XDG_CACHE_HOME:-$HOME/.cache}/zig/${zig-tools.zig.version}"
-    export ZTLS_OPENSSL_PKG_CONFIG_PATH=${pkgs.openssl.dev}/lib/pkgconfig
-    export ZTLS_OPENSSL_LIB_DIR=${pkgs.openssl.out}/lib
+    export ZTLS_OPENSSL_PKG_CONFIG_PATH=${openssl.dev}/lib/pkgconfig
+    export ZTLS_OPENSSL_LIB_DIR=${openssl.out}/lib
     export ZTLS_AWS_LC_PKG_CONFIG_PATH=${pkgs.aws-lc.dev}/lib/pkgconfig
     export ZTLS_AWS_LC_LIB_DIR=${pkgs.aws-lc}/lib
     export ZTLS_BORINGSSL_PKG_CONFIG_PATH=${boringsslPc}
     export ZTLS_BORINGSSL_LIB_DIR=${pkgs.boringssl}/lib
+    # Some devShell packages propagate the nixpkgs default-line openssl into
+    # PATH ahead of the pinned one. Prepend so the CLI interop peer rides the
+    # pinned 3.6 line, not whatever the default propagates.
+    export PATH=${openssl.bin}/bin:$PATH
   '';
 
   # commonPackages takes the Zig toolchain pair. ztls is Zig 0.16-only.
@@ -123,10 +133,10 @@ rec {
   # The OpenSSL package paths shared by the openssl and docs shells
   # (previously triplicated in flake.nix).
   opensslBackend = {
-    pkgConfigPath = "${pkgs.openssl.dev}/lib/pkgconfig";
+    pkgConfigPath = "${openssl.dev}/lib/pkgconfig";
     packages = [
-      pkgs.openssl.dev
-      pkgs.openssl.out
+      openssl.dev
+      openssl.out
     ];
   };
 

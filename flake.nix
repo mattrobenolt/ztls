@@ -44,6 +44,7 @@
             boringsslPc
             backendShell
             zig
+            openssl
             opensslBackend
             ;
         in
@@ -52,7 +53,7 @@
 
           # Diagnostic provider for #121. Production keeps the optimized build.
           # GCC vector scans trigger Memcheck reports after valid NUL terminators.
-          packages.openssl-memcheck = pkgs.openssl.overrideAttrs (old: {
+          packages.openssl-memcheck = openssl.overrideAttrs (old: {
             configureFlags = old.configureFlags ++ [ "-fno-tree-vectorize" ];
           });
 
