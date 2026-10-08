@@ -595,7 +595,12 @@ data to openssl s_server and receives the HTTP response.
   patch-stamp semantics. `just conformance/ci` and the full `just ci` gate
   are green under v1.5.3. All v1.5.0 counts and captures in this file are
   that suite's provenance; the v1.5.3 strict-count re-baseline lands via the
-  scheduled/dispatched CI suite runs.
+  scheduled/dispatched CI suite runs. Those suite workflows had silently
+  failed on every run since the Zig 0.16 migration — Zig 0.16.0's zip-dep
+  fetch cannot write its temp zip under a fresh global cache (ziglang
+  #31964) — so no scheduled suite evidence exists for that period; the
+  commonHook now mkdirs the cache tmp/ (red→green reproduced locally) and
+  the dispatched runs produce the first post-0.16 suite evidence.
 - Wycheproof boundary vectors at the libcrypto seam.
 - Fuzzing on the major parsers plus record decrypt and server `handleRecord`
   pre-auth/post-auth dispatch.

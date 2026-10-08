@@ -75,6 +75,13 @@ rec {
     unset ZIG_GLOBAL_CACHE_DIR
     export ZIG_LOCAL_CACHE_DIR=.zig-cache/${zig-tools.zig.version}
     export ZIG_GLOBAL_CACHE_DIR="''${XDG_CACHE_HOME:-$HOME/.cache}/zig/${zig-tools.zig.version}"
+    # Zig 0.16.0 zip-dep fetch writes tmp/<random>.zip under the global cache
+    # without creating tmp/ (or the cache root) first, so a fresh cache fails
+    # with 'failed to create temporary zip file: FileNotFound' — ziglang
+    # #31964, fixed on master, unreleased. This broke the TLS-Anvil suite
+    # workflows for every fresh runner since the 0.16 migration. No-op once
+    # the pinned zig carries the fix; drop this line then.
+    mkdir -p "$ZIG_GLOBAL_CACHE_DIR/tmp"
     export ZTLS_OPENSSL_PKG_CONFIG_PATH=${openssl.dev}/lib/pkgconfig
     export ZTLS_OPENSSL_LIB_DIR=${openssl.out}/lib
     export ZTLS_AWS_LC_PKG_CONFIG_PATH=${pkgs.aws-lc.dev}/lib/pkgconfig
