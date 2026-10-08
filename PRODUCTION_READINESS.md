@@ -594,13 +594,20 @@ data to openssl s_server and receives the HTTP response.
   run to the exact installed ttf jar and effective class bytes, without
   patch-stamp semantics. `just conformance/ci` and the full `just ci` gate
   are green under v1.5.3. All v1.5.0 counts and captures in this file are
-  that suite's provenance; the v1.5.3 strict-count re-baseline lands via the
-  scheduled/dispatched CI suite runs. Those suite workflows had silently
-  failed on every run since the Zig 0.16 migration — Zig 0.16.0's zip-dep
-  fetch cannot write its temp zip under a fresh global cache (ziglang
-  #31964) — so no scheduled suite evidence exists for that period; the
-  commonHook now mkdirs the cache tmp/ (red→green reproduced locally) and
-  the dispatched runs produce the first post-0.16 suite evidence.
+  that suite's provenance; the v1.5.3 strict-count re-baseline has landed:
+  six dispatched workflow runs at `9f8daf2` (client and server, OpenSSL
+  3.6.5 / AWS-LC 5.10.0 / BoringSSL 0.20260803.0) strict-normalized with
+  `437/437` finished and zero unexpected results, and the counts are
+  identical to the v1.5.0 baseline on every role and provider — client
+  `92/6/134/205` (passed/expected-failed/expected-skipped/not-attempted)
+  and server `105/0/175/157`, with the six client expected-failures all
+  the #52 DSA-root class. Evidence:
+  `docs/research/TLS_ANVIL_91_CHAIN_FIXTURE/captures-9f8daf2/`. Those suite
+  workflows had silently failed on every run since the Zig 0.16 migration —
+  Zig 0.16.0's zip-dep fetch cannot write its temp zip under a fresh global
+  cache (ziglang #31964) — so no scheduled suite evidence exists for that
+  period; the commonHook now mkdirs the cache tmp/ (red→green reproduced
+  locally) and the dispatched runs are the first post-0.16 suite evidence.
 - Wycheproof boundary vectors at the libcrypto seam.
 - Fuzzing on the major parsers plus record decrypt and server `handleRecord`
   pre-auth/post-auth dispatch.

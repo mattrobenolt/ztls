@@ -1,0 +1,31 @@
+{
+  "generated_at": "2026-10-08T10:26:50.344950+00:00",
+  "host": "runnervm8df0l",
+  "git": {
+    "revision": "9f8daf2",
+    "dirty": false
+  },
+  "port": 37661,
+  "server_bin": "/home/runner/work/ztls/ztls/conformance/zig-out/bin/tlsfuzzer_server",
+  "tls_anvil_jar": "/home/runner/work/ztls/ztls/conformance/zig-out/tools/TLS-Anvil.jar",
+  "chain_provider": {
+    "tls_test_framework_jar": "/home/runner/work/ztls/ztls/conformance/zig-out/tools/lib/tls-test-framework-1.5.3.jar",
+    "jar_sha256": "a508398cbc45e71fb053b2d3a4cd875b47f2de22c14fdb66d49441a5bd5f47b8",
+    "chain_provider_class_sha256": "e0ce219a2c42984420c9584a009fae338459ab98804f156fbe411aeaf1ae62d4"
+  },
+  "validity_adapter": {
+    "x509_attacker_jar": "/home/runner/work/ztls/ztls/conformance/zig-out/tools/lib/x509-attacker-4.3.10.jar",
+    "jar_sha256": "982781f8cfc86547e38da7c9a93b22f288f982e4feb22c1a2646f268f4df0a39",
+    "adapter_class_sha256": "4b2190bebef9dd7b46d794002010a0da860c5e8cd14f997ced254b8e708621de",
+    "package_info_class_sha256": "9a4308ab19c561dff78d81b5f3dfbc382591d0a3b8b8532c9beb0cbb70e9a6dd",
+    "adapter_source_sha256": "806ff6122f7fc6cb70deb7709e394cdc81c30a0df3d5edfd0d02c3a04cdd1aa2",
+    "package_info_source_sha256": "092bb326cbdb27e9f77e229c28656521671a717fb8970c94dfef215dca8262c6",
+    "expected_jar_sha256": "982781f8cfc86547e38da7c9a93b22f288f982e4feb22c1a2646f268f4df0a39",
+    "expected_adapter_class_sha256": "4b2190bebef9dd7b46d794002010a0da860c5e8cd14f997ced254b8e708621de",
+    "expected_package_info_class_sha256": "9a4308ab19c561dff78d81b5f3dfbc382591d0a3b8b8532c9beb0cbb70e9a6dd",
+    "expected_adapter_source_sha256": "806ff6122f7fc6cb70deb7709e394cdc81c30a0df3d5edfd0d02c3a04cdd1aa2",
+    "expected_package_info_source_sha256": "092bb326cbdb27e9f77e229c28656521671a717fb8970c94dfef215dca8262c6",
+    "patch_status": "patched"
+  },
+  "command": "java -jar /home/runner/work/ztls/ztls/conformance/zig-out/tools/TLS-Anvil.jar -disableTcpDump -strength 1 -parallelTests 1 -parallelHandshakes 1 -outputFolder zig-out/anvil/server/ci-37763010335 server -connect 127.0.0.1:37661"
+}

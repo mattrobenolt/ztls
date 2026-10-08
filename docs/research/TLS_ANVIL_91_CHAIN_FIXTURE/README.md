@@ -5,6 +5,19 @@ The two PEM files are the exact certificate chain TLS-Anvil presented to the
 ztls client for the reproduced failing case. Status claims live in
 `PRODUCTION_READINESS.md`; this directory is evidence only.
 
+**Transition note (#146, 2026-10-08):** the sections below describe the fix
+as it existed between the v1.5.0 pin and the v1.5.3 bump. TLS-Anvil v1.5.3
+adopted the chain fix upstream — `X509CertificateChainProvider` adds a
+critical `basicConstraints` `cA=true` to every chain signing certificate —
+so the forked source (`X509CertificateChainProvider.java`) and its
+`apply.sh` patch block were removed; the installed
+`tls-test-framework-1.5.3.jar` is byte-identical to upstream. The
+`x509-attacker-4.3.10` DateTimeAdapter patch is unchanged. Run metadata
+binds each run to the exact installed ttf jar and effective class bytes,
+without patch-stamp semantics. The v1.5.3 six-run re-baseline lives in
+`captures-9f8daf2/` (counts identical to the v1.5.0 baseline on every role
+and provider).
+
 ## Reproduced case
 
 - Test: `de.rub.nds.tlstest.suite.tests.both.tls13.rfc8446.HappyFlow.happyFlow`

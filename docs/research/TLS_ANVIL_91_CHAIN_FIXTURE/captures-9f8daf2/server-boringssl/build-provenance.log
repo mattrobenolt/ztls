@@ -1,0 +1,6 @@
+anvil-server (boringssl)	Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1	2026-10-08T10:22:54.5509618Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +9f8daf2093022097e329db31eae73b54bdf8769a:refs/remotes/origin/main
+anvil-server (boringssl)	Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1	2026-10-08T10:22:55.5895137Z  * [new ref]         9f8daf2093022097e329db31eae73b54bdf8769a -> origin/main
+anvil-server (boringssl)	Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1	2026-10-08T10:22:55.5958957Z 9f8daf2093022097e329db31eae73b54bdf8769a
+anvil-server (boringssl)	Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1	2026-10-08T10:22:55.7769718Z 9f8daf2093022097e329db31eae73b54bdf8769a
+anvil-server (boringssl)	Build harness and TLS-Anvil tools	2026-10-08T10:24:14.3300724Z copying path '/nix/store/HASH-zig-0.16.0' from 'https://cache.nixos.org'...
+anvil-server (boringssl)	Build harness and TLS-Anvil tools	2026-10-08T10:25:18.7292689Z libcrypto family: boringssl (/nix/store/HASH-boringssl-0.20260803.0-dev/include)
